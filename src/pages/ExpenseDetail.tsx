@@ -32,7 +32,6 @@ function formatDateTime(dateStr: string) {
   return `${day}/${month}/${year} ${hours}:${mins}`
 }
 
-const HARDCODED_EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 const HARDCODED_EMPLOYEE_NAME = 'Andy Jones'
 const HARDCODED_EMPLOYEE_EMAIL = 'andy.jones@kumonix.com'
 const HARDCODED_MANAGER_EMAIL = 'Andy.Jones@kumonix.com'

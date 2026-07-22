@@ -71,8 +71,6 @@ export default function Expenses() {
   const approvedTotal = claims.filter(c => c.status === 'approved').reduce((s, c) => s + c.amount, 0)
   const pendingTotal = claims.filter(c => c.status === 'pending').reduce((s, c) => s + c.amount, 0)
 
-  const submittedTotal = claims.filter(c => c.status === 'submitted').reduce((s, c) => s + c.amount, 0)
-
   const filters: { key: Filter; label: string }[] = [
     { key: 'draft', label: t('expenses.draft') },
     { key: 'submitted', label: t('expenses.submitted') },

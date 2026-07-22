@@ -77,11 +77,11 @@ export default function MyProfile() {
   const addressLines = [profile.address_line_1, profile.address_line_2, profile.address_line_3, profile.address_line_4].filter(Boolean)
 
   async function openMembers() {
-    if (profile.department) {
+    if (profile?.department) {
       const { data } = await supabase
         .from('employees')
         .select('first_name, last_name, job_title')
-        .eq('department', profile.department)
+        .eq('department', profile!.department)
         .eq('is_active', true)
         .order('first_name')
       setMembers((data || []) as DeptMember[])

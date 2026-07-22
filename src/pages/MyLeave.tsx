@@ -16,11 +16,6 @@ interface LeaveBalance {
   colour: string
 }
 
-interface PendingRequest {
-  id: number
-  days_requested: number
-}
-
 export default function MyLeave() {
   const navigate = useNavigate()
   const { t } = useLanguage()
