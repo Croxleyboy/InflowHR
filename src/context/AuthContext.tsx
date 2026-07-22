@@ -97,6 +97,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       options: {
         scopes: 'openid email profile',
         redirectTo: window.location.origin,
+        queryParams: {
+          prompt: 'select_account',
+        },
       },
     })
   }

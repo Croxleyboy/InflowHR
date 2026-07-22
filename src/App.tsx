@@ -1,9 +1,10 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
 import { FeatureProvider } from './context/FeatureContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Login from './pages/Login'
+import AccessDenied from './pages/AccessDenied'
 import Footer from './components/Footer'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
@@ -38,9 +39,18 @@ import AdminAnnouncements from './pages/admin/AdminAnnouncements'
 import AdminOnboarding from './pages/admin/AdminOnboarding'
 import AdminTickets from './pages/admin/AdminTickets'
 import AdminBenefits from './pages/admin/AdminBenefits'
+import AdminCompanies from './pages/admin/AdminCompanies'
+
+function AdminGate() {
+  const { companyUser } = useAuth()
+  if (!companyUser || !['admin', 'hr'].includes(companyUser.role)) {
+    return <Navigate to="/" replace />
+  }
+  return <AdminLayout />
+}
 
 function AuthGate() {
-  const { user, loading } = useAuth()
+  const { user, loading, companyUser } = useAuth()
 
   if (loading) {
     return <div className="auth-loading">Loading...</div>
@@ -50,10 +60,14 @@ function AuthGate() {
     return <Login />
   }
 
+  if (!companyUser) {
+    return <AccessDenied />
+  }
+
   return (
     <Routes>
-      {/* Admin Portal — no app-shell / footer */}
-      <Route path="/admin" element={<AdminLayout />}>
+      {/* Admin Portal — locked to admin/hr roles */}
+      <Route path="/admin" element={<AdminGate />}>
         <Route index element={<AdminDashboard />} />
         <Route path="expenses" element={<AdminExpenses />} />
         <Route path="leave" element={<AdminLeave />} />
@@ -65,6 +79,7 @@ function AuthGate() {
         <Route path="onboarding" element={<AdminOnboarding />} />
         <Route path="tickets" element={<AdminTickets />} />
         <Route path="benefits" element={<AdminBenefits />} />
+        <Route path="companies" element={<AdminCompanies />} />
       </Route>
 
       {/* Employee App */}

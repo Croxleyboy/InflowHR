@@ -13,6 +13,7 @@ const MENU_ITEMS = [
   { path: '/admin/onboarding', label: 'Onboarding', icon: '🚀' },
   { path: '/admin/tickets', label: 'HR Tickets', icon: '🎫' },
   { path: '/admin/benefits', label: 'Benefits', icon: '🎁' },
+  { path: '/admin/companies', label: 'Companies', icon: '🏢' },
 ]
 
 export default function AdminLayout() {
