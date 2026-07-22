@@ -2,9 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 import Chevron from '../components/Chevron'
-
-const EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
 type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected'
 
@@ -46,6 +45,7 @@ function formatDate(dateStr: string) {
 export default function MyLeaveHistory() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
+  const { employeeId: EMPLOYEE_ID } = useAuth()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [typeMap, setTypeMap] = useState<Map<number, LeaveType>>(new Map())
   const [filter, setFilter] = useState<StatusFilter>('all')

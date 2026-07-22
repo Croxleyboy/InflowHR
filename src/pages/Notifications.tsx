@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 type Tab = 'company' | 'actions' | 'notifications'
 
@@ -28,8 +29,6 @@ interface Announcement {
   published_at: string
 }
 
-const HARDCODED_EMAIL = 'andy.jones@kumonix.com'
-const HARDCODED_EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
 function formatNotifDate(dateStr: string) {
   const d = new Date(dateStr)
@@ -128,6 +127,7 @@ export default function Notifications() {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useLanguage()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL } = useAuth()
   const initialTab = (location.state as { tab?: Tab } | null)?.tab || 'actions'
   const [tab, setTab] = useState<Tab>(initialTab)
   const [actions, setActions] = useState<WorkflowItem[]>([])

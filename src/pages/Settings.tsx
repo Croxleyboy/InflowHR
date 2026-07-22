@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useFeatures, type Features } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import type { Lang } from '../lib/translations'
 
@@ -23,6 +24,7 @@ const monthLabels = [
 export default function Settings() {
   const { features, setFeatures } = useFeatures()
   const { lang, setLang, t, fyStartMonth, setFyStartMonth } = useLanguage()
+  const { employeeName, employeeEmail, companyUser } = useAuth()
   const [draft, setDraft] = useState<Features>({ ...features })
   const [draftLang, setDraftLang] = useState<Lang>(lang)
   const [draftFy, setDraftFy] = useState(fyStartMonth)
@@ -56,9 +58,9 @@ export default function Settings() {
       <section className="settings-section">
         <h2>{t('settings.profile')}</h2>
         <div className="settings-info">
-          <div className="settings-row"><span className="settings-label">{t('settings.name')}</span><span>Andy Jones</span></div>
-          <div className="settings-row"><span className="settings-label">{t('settings.email')}</span><span>andy.jones@kumonix.com</span></div>
-          <div className="settings-row"><span className="settings-label">{t('settings.role')}</span><span>Administrator</span></div>
+          <div className="settings-row"><span className="settings-label">{t('settings.name')}</span><span>{employeeName}</span></div>
+          <div className="settings-row"><span className="settings-label">{t('settings.email')}</span><span>{employeeEmail}</span></div>
+          <div className="settings-row"><span className="settings-label">{t('settings.role')}</span><span>{companyUser?.role === 'admin' ? 'Administrator' : 'Employee'}</span></div>
         </div>
       </section>
 

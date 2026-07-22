@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 interface Claim {
   id: number
@@ -37,13 +38,11 @@ function formatDateTime(dateStr: string) {
   return `${day}/${month}/${year} ${hours}:${mins}`
 }
 
-const APPROVER_NAME = 'Andy Jones'
-const APPROVER_EMAIL = 'andy.jones@kumonix.com'
-
 export default function ExpenseApproval() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
+  const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL } = useAuth()
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
   const [employee, setEmployee] = useState<Employee | null>(null)

@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
-
-const EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+import { useAuth } from '../context/AuthContext'
 
 function todayStr() {
   const d = new Date()
@@ -18,6 +17,7 @@ function formatDateDisplay(dateStr: string) {
 export default function NewExpenseClaim() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { employeeId: EMPLOYEE_ID, employeeName } = useAuth()
   const [startDate, setStartDate] = useState(todayStr())
   const [endDate, setEndDate] = useState(todayStr())
   const [costCenter, setCostCenter] = useState('External expenses')
@@ -70,7 +70,7 @@ export default function NewExpenseClaim() {
       </header>
 
       <div className="new-claim-profile">
-        <span className="new-claim-name">Andy Jones</span>
+        <span className="new-claim-name">{employeeName}</span>
         <div className="new-claim-avatar">AJ</div>
         <span className="new-claim-role">HR Director</span>
       </div>

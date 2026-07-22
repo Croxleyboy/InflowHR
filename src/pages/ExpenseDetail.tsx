@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 import NewExpenseItem from './NewExpenseItem'
 
 interface Claim {
@@ -32,14 +33,12 @@ function formatDateTime(dateStr: string) {
   return `${day}/${month}/${year} ${hours}:${mins}`
 }
 
-const HARDCODED_EMPLOYEE_NAME = 'Andy Jones'
-const HARDCODED_EMPLOYEE_EMAIL = 'andy.jones@kumonix.com'
-const HARDCODED_MANAGER_EMAIL = 'Andy.Jones@kumonix.com'
-
 export default function ExpenseDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
+  const { employeeName: HARDCODED_EMPLOYEE_NAME, employeeEmail: HARDCODED_EMPLOYEE_EMAIL } = useAuth()
+  const HARDCODED_MANAGER_EMAIL = HARDCODED_EMPLOYEE_EMAIL
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
   const [loading, setLoading] = useState(true)

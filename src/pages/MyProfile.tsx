@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
-
-const EMPLOYEE_EMAIL = 'andy.jones@kumonix.com'
+import { useAuth } from '../context/AuthContext'
 
 interface DeptMember {
   first_name: string
@@ -48,6 +47,7 @@ function formatDate(dateStr: string | null): string {
 export default function MyProfile() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { employeeEmail: EMPLOYEE_EMAIL } = useAuth()
   const [tab, setTab] = useState<'personal' | 'job'>('personal')
   const [profile, setProfile] = useState<OnboardingRecord | null>(null)
   const [loading, setLoading] = useState(true)

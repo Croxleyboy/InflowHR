@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 import { LEAVE_TYPE_KEYS } from '../lib/translations'
 
 function getBenefitLeaveTypes(): { name: string; translationKey: string }[] {
@@ -18,10 +19,6 @@ function getBenefitLeaveTypes(): { name: string; translationKey: string }[] {
   } catch { return [] }
 }
 
-const EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
-const EMPLOYEE_NAME = 'Andy Jones'
-const EMPLOYEE_EMAIL = 'andy.jones@kumonix.com'
-const MANAGER_EMAIL = 'Andy.Jones@kumonix.com'
 
 const LEAVE_TYPE_DB_IDS: Record<string, number> = {
   'Annual Leave': 1,
@@ -123,6 +120,8 @@ const LEAVE_TYPE_COLORS: Record<string, string> = {
 export default function NewLeaveRequest() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL } = useAuth()
+  const MANAGER_EMAIL = EMPLOYEE_EMAIL
   const benefitTypes = useMemo(() => getBenefitLeaveTypes(), [])
   const allLeaveTypes = useMemo(() => [...LEAVE_TYPE_KEYS, ...benefitTypes], [benefitTypes])
   const [leaveType, setLeaveType] = useState(LEAVE_TYPE_KEYS[0].name)

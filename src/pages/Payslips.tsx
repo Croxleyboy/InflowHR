@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-
-const EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 const BENEFITS_KEY = 'inflowhr-benefits'
 const ADMIN_BENEFITS_KEY = 'inflowhr-admin-benefits'
 
@@ -74,6 +73,7 @@ interface PayslipData {
 export default function Payslips() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
+  const { employeeId: EMPLOYEE_ID, employeeName } = useAuth()
   const [payslip, setPayslip] = useState<PayslipData | null>(null)
   const [loading, setLoading] = useState(true)
   const [benefitDeductions] = useState<BenefitDeduction[]>(getBenefitDeductions)
@@ -157,7 +157,7 @@ export default function Payslips() {
               <img src="https://lh3.googleusercontent.com/a/default-user" alt="" className="payslips-employee-img" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.textContent = 'AJ' }} />
             </div>
             <div className="payslips-employee-info">
-              <span className="payslips-employee-name">Andy Jones</span>
+              <span className="payslips-employee-name">{employeeName}</span>
               <span className="payslips-employee-role">CEO — Leadership</span>
             </div>
           </div>

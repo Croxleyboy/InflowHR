@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 interface LeaveRequest {
   id: number
@@ -43,9 +44,6 @@ function formatDateTime(dateStr: string) {
   return `${day}/${month}/${year} ${hours}:${mins}`
 }
 
-const APPROVER_NAME = 'Andy Jones'
-const APPROVER_EMAIL = 'andy.jones@kumonix.com'
-
 const happyLeaveMessages = [
   'Have a wonderful time off! 🌴',
   'Enjoy your well-deserved break! ☀️',
@@ -58,6 +56,7 @@ export default function LeaveApproval() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
+  const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL } = useAuth()
   const [request, setRequest] = useState<LeaveRequest | null>(null)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [leaveType, setLeaveType] = useState<LeaveType | null>(null)

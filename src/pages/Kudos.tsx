@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
-
-const EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+import { useAuth } from '../context/AuthContext'
 
 interface KudosEntry {
   id: number
@@ -80,6 +79,7 @@ function timeAgo(dateStr: string): string {
 export default function Kudos() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { employeeId: EMPLOYEE_ID } = useAuth()
   const [tab, setTab] = useState<'feed' | 'new'>('feed')
   const [entries, setEntries] = useState<KudosEntry[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])

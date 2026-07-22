@@ -2,13 +2,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
-
-const HARDCODED_EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
-const HARDCODED_EMPLOYEE_NAME = 'Andy Jones'
+import { useAuth } from '../context/AuthContext'
 
 export default function CreateNotification() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeName: HARDCODED_EMPLOYEE_NAME } = useAuth()
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)

@@ -2,10 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
-
-const EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
-const EMPLOYEE_NAME = 'Andy Jones'
-const EMPLOYEE_EMAIL = 'andy.jones@kumonix.com'
+import { useAuth } from '../context/AuthContext'
 
 interface LeaveBalance {
   leave_type_id: number
@@ -19,6 +16,7 @@ interface LeaveBalance {
 export default function MyLeave() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL } = useAuth()
   const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading] = useState(true)

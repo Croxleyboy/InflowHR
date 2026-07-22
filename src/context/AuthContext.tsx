@@ -21,6 +21,9 @@ interface AuthState {
   companyUser: CompanyUser | null
   company: Company | null
   loading: boolean
+  employeeId: string | null
+  employeeName: string
+  employeeEmail: string
   signInWithMicrosoft: () => Promise<void>
   signOut: () => Promise<void>
 }
@@ -40,6 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [company, setCompany] = useState<Company | null>(null)
   const [loading, setLoading] = useState(true)
 
+  const [employeeId, setEmployeeId] = useState<string | null>(null)
+
   async function loadCompanyData(userId: string) {
     const { data: cu } = await supabase
       .from('company_users')
@@ -50,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (cu) {
       setCompanyUser(cu as CompanyUser)
+      setEmployeeId(cu.employee_id)
       const { data: co } = await supabase
         .from('companies')
         .select('id, name, domain')
@@ -101,10 +107,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null)
     setCompanyUser(null)
     setCompany(null)
+    setEmployeeId(null)
   }
 
+  const employeeName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
+  const employeeEmail = user?.email || ''
+
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, signInWithMicrosoft, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, employeeName, employeeEmail, signInWithMicrosoft, signOut }}>
       {children}
     </AuthContext.Provider>
   )

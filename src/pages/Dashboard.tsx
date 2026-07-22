@@ -33,18 +33,21 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail } = useAuth()
   const navigate = useNavigate()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   useEffect(() => {
-    supabase.from('onboarding')
-      .select('avatar_url')
-      .eq('user_email', 'andy.jones@kumonix.com')
-      .single()
-      .then(({ data }) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url) })
+    if (employeeEmail) {
+      supabase.from('onboarding')
+        .select('avatar_url')
+        .eq('user_email', employeeEmail)
+        .single()
+        .then(({ data }) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url) })
+    }
 
     supabase.from('announcements')
       .select('title, body')
@@ -53,13 +56,15 @@ export default function Dashboard() {
       .single()
       .then(({ data }) => { if (data) setLatest(data as LatestAnnouncement) })
 
-    const lastSeen = localStorage.getItem('inflowhr-kudos-seen') || '1970-01-01'
-    supabase.from('kudos')
-      .select('id', { count: 'exact', head: true })
-      .eq('to_employee_id', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890')
-      .gt('created_at', lastSeen)
-      .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
-  }, [])
+    if (employeeId) {
+      const lastSeen = localStorage.getItem('inflowhr-kudos-seen') || '1970-01-01'
+      supabase.from('kudos')
+        .select('id', { count: 'exact', head: true })
+        .eq('to_employee_id', employeeId)
+        .gt('created_at', lastSeen)
+        .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
+    }
+  }, [employeeId, employeeEmail])
 
   const h = new Date().getHours()
   const greeting = h < 12 ? t('dashboard.greeting_morning') : h < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening')
@@ -68,9 +73,9 @@ export default function Dashboard() {
     <div className="dashboard">
       <header className="dash-header">
         {avatarUrl ? (
-          <img className="profile-avatar-img" src={avatarUrl} alt="AJ" />
+          <img className="profile-avatar-img" src={avatarUrl} alt={initials} />
         ) : (
-          <div className="profile-avatar">AJ</div>
+          <div className="profile-avatar">{initials}</div>
         )}
         <div className="header-center">
           <p className="header-tagline">{t('dashboard.tagline')}</p>
@@ -82,7 +87,7 @@ export default function Dashboard() {
       </header>
 
       <div className="greeting-row">
-        <h2 className="greeting">{greeting} {'\u{1F44B}'} Andy Jones</h2>
+        <h2 className="greeting">{greeting} {'\u{1F44B}'} {employeeName}</h2>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button className="theme-toggle" onClick={toggle} aria-label="Toggle dark mode">
             {dark ? (
