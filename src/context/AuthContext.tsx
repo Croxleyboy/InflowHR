@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [employeeId, setEmployeeId] = useState<string | null>(null)
 
-  async function loadCompanyData(userId: string) {
+  async function loadCompanyData(userId: string, email: string) {
     const { data: cu } = await supabase
       .from('company_users')
       .select('id, company_id, role, employee_id')
@@ -55,7 +55,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (cu) {
       setCompanyUser(cu as CompanyUser)
-      setEmployeeId(cu.employee_id)
+
+      let empId = cu.employee_id
+      if (!empId && email) {
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('email', email)
+          .single()
+        if (emp) {
+          empId = emp.id
+          await supabase
+            .from('company_users')
+            .update({ employee_id: emp.id })
+            .eq('id', cu.id)
+        }
+      }
+      setEmployeeId(empId)
+
       const { data: co } = await supabase
         .from('companies')
         .select('id, name, domain')
@@ -70,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s)
       setUser(s?.user ?? null)
       if (s?.user) {
-        loadCompanyData(s.user.id).finally(() => setLoading(false))
+        loadCompanyData(s.user.id, s.user.email || '').finally(() => setLoading(false))
       } else {
         setLoading(false)
       }
@@ -80,7 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(s)
       setUser(s?.user ?? null)
       if (s?.user) {
-        loadCompanyData(s.user.id).finally(() => setLoading(false))
+        loadCompanyData(s.user.id, s.user.email || '').finally(() => setLoading(false))
       } else {
         setCompanyUser(null)
         setCompany(null)
