@@ -524,6 +524,12 @@ const en: Translations = {
   'elearning.c_ergo_title': 'Workspace Ergonomics',
   'elearning.c_ergo_desc': 'Set up your desk, chair and monitor correctly whether at home or in the office. Includes a self-assessment checklist and equipment request process.',
 
+  // Login
+  'login.title': 'InflowHR',
+  'login.subtitle': 'Sign in to access your HR portal',
+  'login.sign_in_microsoft': 'Sign in with Microsoft',
+  'login.footer': 'Secure single sign-on powered by Microsoft Entra',
+
   // Common
   'common.loading': 'Loading...',
   'common.error': 'Error',
@@ -1058,6 +1064,12 @@ const de: Translations = {
   'elearning.c_stress_desc': 'Praktische Strategien zur Bewältigung von Arbeitsstress, Aufbau von Resilienz, Erkennung von Burnout-Signalen und Zugang zu unserem Mitarbeiter-Unterstützungsprogramm.',
   'elearning.c_ergo_title': 'Ergonomie am Arbeitsplatz',
   'elearning.c_ergo_desc': 'Richten Sie Ihren Schreibtisch, Stuhl und Monitor korrekt ein, ob zu Hause oder im Büro. Inklusive Selbstbewertungs-Checkliste und Ausrüstungsanforderungsprozess.',
+
+  // Login
+  'login.title': 'InflowHR',
+  'login.subtitle': 'Melden Sie sich an, um auf Ihr HR-Portal zuzugreifen',
+  'login.sign_in_microsoft': 'Mit Microsoft anmelden',
+  'login.footer': 'Sicheres Single Sign-On mit Microsoft Entra',
 
   // Common
   'common.loading': 'Laden...',

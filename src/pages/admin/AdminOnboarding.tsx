@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
+import * as XLSX from 'xlsx'
 
 interface OnboardRecord {
   id: number
@@ -40,7 +41,7 @@ const WORKFLOW_STEPS = [
 export default function AdminOnboarding() {
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow'>('dashboard')
+  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload'>('dashboard')
   const [filterStatus, setFilterStatus] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [workflowStep, setWorkflowStep] = useState(0)
@@ -51,6 +52,91 @@ export default function AdminOnboarding() {
     start_date: '', manager: '', manager_email: '', personal_email: '',
     location: '', telephone: '', employee_number: '', contract_type: 'Full-time',
   })
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadRows, setUploadRows] = useState<Record<string, string>[]>([])
+  const [uploadErrors, setUploadErrors] = useState<string[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState<{ success: number; failed: number } | null>(null)
+
+  const COLUMN_MAP: Record<string, string> = {
+    'first name': 'firstname', 'surname': 'surname', 'work email': 'user_email',
+    'personal email': 'personal_email', 'job title': 'job_title', 'department': 'department',
+    'manager name': 'manager', 'manager email': 'manager_email', 'location': 'location',
+    'phone': 'telephone', 'employee number': 'employee_number', 'start date': 'start_date',
+    'contract type': 'contract_type',
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadErrors([])
+    setUploadResult(null)
+
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      const data = new Uint8Array(evt.target!.result as ArrayBuffer)
+      const workbook = XLSX.read(data, { type: 'array' })
+      const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const raw: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+
+      if (raw.length === 0) {
+        setUploadErrors(['The spreadsheet is empty or has no data rows.'])
+        return
+      }
+
+      const errors: string[] = []
+      const mapped = raw.map((row, i) => {
+        const out: Record<string, string> = { contract_type: 'Full-time' }
+        for (const [excelCol, val] of Object.entries(row)) {
+          const key = COLUMN_MAP[excelCol.toLowerCase().trim()]
+          if (key) {
+            let strVal = String(val).trim()
+            if (key === 'start_date' && typeof val === 'number') {
+              const d = XLSX.SSF.parse_date_code(val)
+              strVal = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+            }
+            out[key] = strVal
+          }
+        }
+        if (!out.firstname) errors.push(`Row ${i + 2}: Missing First Name`)
+        if (!out.surname) errors.push(`Row ${i + 2}: Missing Surname`)
+        if (!out.user_email) errors.push(`Row ${i + 2}: Missing Work Email`)
+        else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.user_email))
+          errors.push(`Row ${i + 2}: Invalid email "${out.user_email}"`)
+        return out
+      })
+
+      setUploadErrors(errors)
+      setUploadRows(mapped)
+    }
+    reader.readAsArrayBuffer(file)
+    e.target.value = ''
+  }
+
+  async function submitUpload() {
+    if (uploadErrors.length > 0 || uploadRows.length === 0) return
+    setUploading(true)
+    let success = 0, failed = 0
+
+    for (const row of uploadRows) {
+      const { error } = await supabase.from('onboarding').insert({
+        ...row, status: 'new', is_complete: false,
+      })
+      if (error) failed++
+      else success++
+    }
+
+    setUploadResult({ success, failed })
+    setUploading(false)
+    if (success > 0) load()
+  }
+
+  function clearUpload() {
+    setUploadRows([])
+    setUploadErrors([])
+    setUploadResult(null)
+  }
 
   useEffect(() => { load() }, [])
 
@@ -195,6 +281,7 @@ export default function AdminOnboarding() {
       <div className="admin-tabs">
         <button className={`admin-tab ${tab === 'dashboard' ? 'admin-tab-active' : ''}`} onClick={() => setTab('dashboard')}>Dashboard</button>
         <button className={`admin-tab ${tab === 'new' ? 'admin-tab-active' : ''}`} onClick={() => setTab('new')}>New Starter</button>
+        <button className={`admin-tab ${tab === 'upload' ? 'admin-tab-active' : ''}`} onClick={() => setTab('upload')}>Bulk Upload</button>
         <button className={`admin-tab ${tab === 'list' ? 'admin-tab-active' : ''}`} onClick={() => setTab('list')}>All Records</button>
         {selectedId && <button className={`admin-tab ${tab === 'workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('workflow')}>Workflow</button>}
       </div>
@@ -241,6 +328,95 @@ export default function AdminOnboarding() {
             </div>
           </div>
           <button className="admin-btn admin-btn-primary" onClick={createStarter}>Create & Start Workflow</button>
+        </div>
+      )}
+
+      {tab === 'upload' && (
+        <div className="admin-add-form">
+          <h3>Bulk Upload New Starters</h3>
+          <p style={{ color: '#666', marginBottom: 16 }}>Upload an Excel file (.xlsx) to create multiple new starter records at once.</p>
+
+          <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+            <a href="/new-starter-template.xlsx" download className="admin-btn admin-btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download Template
+            </a>
+            <button className="admin-btn" style={{ background: '#43a047', color: '#fff' }} onClick={() => fileInputRef.current?.click()}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              Upload Excel File
+            </button>
+            <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleFileSelect} style={{ display: 'none' }} />
+          </div>
+
+          {uploadErrors.length > 0 && (
+            <div style={{ background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+              <strong style={{ color: '#e65100' }}>Validation Errors ({uploadErrors.length})</strong>
+              <ul style={{ margin: '8px 0 0', paddingLeft: 20, color: '#bf360c', fontSize: 13 }}>
+                {uploadErrors.map((err, i) => <li key={i}>{err}</li>)}
+              </ul>
+              <p style={{ fontSize: 13, color: '#e65100', marginTop: 8 }}>Fix these errors in your spreadsheet and re-upload.</p>
+            </div>
+          )}
+
+          {uploadResult && (
+            <div style={{ background: uploadResult.failed > 0 ? '#fff3e0' : '#e8f5e9', border: `1px solid ${uploadResult.failed > 0 ? '#ff9800' : '#43a047'}`, borderRadius: 8, padding: 12, marginBottom: 16 }}>
+              <strong style={{ color: uploadResult.failed > 0 ? '#e65100' : '#2e7d32' }}>
+                Upload Complete: {uploadResult.success} created{uploadResult.failed > 0 ? `, ${uploadResult.failed} failed` : ''}
+              </strong>
+            </div>
+          )}
+
+          {uploadRows.length > 0 && !uploadResult && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <h4 style={{ margin: 0 }}>Preview ({uploadRows.length} row{uploadRows.length !== 1 ? 's' : ''})</h4>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={clearUpload}>Clear</button>
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    onClick={submitUpload}
+                    disabled={uploading || uploadErrors.length > 0}
+                  >
+                    {uploading ? 'Uploading...' : `Create ${uploadRows.length} Starter${uploadRows.length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Name</th><th>Work Email</th><th>Job Title</th>
+                      <th>Department</th><th>Start Date</th><th>Contract</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uploadRows.map((row, i) => {
+                      const hasError = !row.firstname || !row.surname || !row.user_email
+                      return (
+                        <tr key={i} style={hasError ? { background: '#fff3e0' } : undefined}>
+                          <td>{i + 1}</td>
+                          <td><strong>{row.firstname} {row.surname}</strong></td>
+                          <td>{row.user_email}</td>
+                          <td>{row.job_title || '—'}</td>
+                          <td>{row.department || '—'}</td>
+                          <td>{row.start_date || '—'}</td>
+                          <td>{row.contract_type || '—'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {uploadRows.length === 0 && !uploadResult && (
+            <div style={{ border: '2px dashed #ccc', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: '#999', cursor: 'pointer' }} onClick={() => fileInputRef.current?.click()}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5" style={{ marginBottom: 8 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <p style={{ margin: 0, fontSize: 15 }}>Click to select an Excel file or use the button above</p>
+              <p style={{ margin: '4px 0 0', fontSize: 13 }}>Accepts .xlsx files</p>
+            </div>
+          )}
         </div>
       )}
 
