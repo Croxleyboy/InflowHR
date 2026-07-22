@@ -1,0 +1,165 @@
+import { useState, useEffect, useMemo } from 'react'
+import { supabase } from '../../lib/supabase'
+
+interface LeaveRequest {
+  id: number
+  start_date: string
+  end_date: string
+  days_requested: number
+  status: string
+  reason: string | null
+  created_at: string
+  leave_type: { name: string } | null
+  employee: { first_name: string; last_name: string } | null
+}
+
+const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
+
+export default function AdminLeave() {
+  const [requests, setRequests] = useState<LeaveRequest[]>([])
+  const [loading, setLoading] = useState(true)
+  const [filterEmployee, setFilterEmployee] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editForm, setEditForm] = useState<Record<string, any>>({})
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('leave_requests')
+      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name)')
+      .order('created_at', { ascending: false })
+    setRequests((data as LeaveRequest[]) || [])
+    setLoading(false)
+  }
+
+  function startEdit(r: LeaveRequest) {
+    setEditingId(r.id)
+    setEditForm({ status: r.status, days_requested: r.days_requested, start_date: r.start_date, end_date: r.end_date, reason: r.reason || '' })
+  }
+
+  async function saveEdit(id: number) {
+    await supabase.from('leave_requests').update({
+      status: editForm.status,
+      days_requested: editForm.days_requested,
+      start_date: editForm.start_date,
+      end_date: editForm.end_date,
+      reason: editForm.reason || null,
+    }).eq('id', id)
+
+    if (editForm.status === 'approved') {
+      const req = requests.find(r => r.id === id)
+      if (req) {
+        await supabase.from('leave_balances')
+          .update({ used: editForm.days_requested })
+          .eq('employee_id', (req as any).employee_id)
+      }
+    }
+    setEditingId(null)
+    load()
+  }
+
+  async function deleteRequest(id: number) {
+    if (!confirm('Delete this leave request?')) return
+    await supabase.from('leave_requests').delete().eq('id', id)
+    setRequests(prev => prev.filter(r => r.id !== id))
+  }
+
+  const employees = useMemo(() => {
+    const names = new Set<string>()
+    requests.forEach(r => { if (r.employee) names.add(`${r.employee.first_name} ${r.employee.last_name}`) })
+    return Array.from(names).sort()
+  }, [requests])
+
+  const filtered = useMemo(() => {
+    return requests.filter(r => {
+      if (filterStatus && r.status !== filterStatus) return false
+      if (filterEmployee && r.employee && `${r.employee.first_name} ${r.employee.last_name}` !== filterEmployee) return false
+      return true
+    })
+  }, [requests, filterStatus, filterEmployee])
+
+  const stats = useMemo(() => ({
+    total: requests.length,
+    pending: requests.filter(r => r.status === 'pending').length,
+    approved: requests.filter(r => r.status === 'approved').length,
+    rejected: requests.filter(r => r.status === 'rejected').length,
+    totalDays: requests.filter(r => r.status === 'approved').reduce((s, r) => s + Number(r.days_requested), 0),
+  }), [requests])
+
+  return (
+    <div className="admin-section">
+      <div className="admin-page-header">
+        <h2>Leave Management</h2>
+        <p>{requests.length} total requests</p>
+      </div>
+
+      <div className="admin-mini-stats">
+        <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Total</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>{stats.pending}</span><span>Pending</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{stats.approved}</span><span>Approved</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#e53935'}}>{stats.rejected}</span><span>Rejected</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.totalDays}</span><span>Days Used</span></div>
+      </div>
+
+      <div className="admin-filters">
+        <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="admin-select">
+          <option value="">All Employees</option>
+          {employees.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="admin-select">
+          <option value="">All Statuses</option>
+          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+        </select>
+      </div>
+
+      {loading ? <div className="admin-loading">Loading...</div> : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+              {filtered.map(r => (
+                <tr key={r.id}>
+                  <td>{r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '—'}</td>
+                  <td>{r.leave_type?.name || '—'}</td>
+                  <td>{editingId === r.id ? (
+                    <div className="admin-date-inputs">
+                      <input type="date" className="admin-inline-input" value={editForm.start_date} onChange={e => setEditForm(p => ({...p, start_date: e.target.value}))} />
+                      <input type="date" className="admin-inline-input" value={editForm.end_date} onChange={e => setEditForm(p => ({...p, end_date: e.target.value}))} />
+                    </div>
+                  ) : `${new Date(r.start_date).toLocaleDateString('en-GB')} – ${new Date(r.end_date).toLocaleDateString('en-GB')}`}</td>
+                  <td>{editingId === r.id ? <input type="number" step="0.5" className="admin-inline-input admin-inline-sm" value={editForm.days_requested} onChange={e => setEditForm(p => ({...p, days_requested: +e.target.value}))} /> : r.days_requested}</td>
+                  <td>{editingId === r.id ? (
+                    <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(p => ({...p, status: e.target.value}))}>
+                      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  ) : <span className={`admin-badge admin-badge-${r.status}`}>{r.status}</span>}</td>
+                  <td className="admin-actions">
+                    {editingId === r.id ? (
+                      <>
+                        <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(r.id)}>Save</button>
+                        <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="admin-btn-icon" title="Edit" onClick={() => startEdit(r)}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteRequest(r.id)}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filtered.length === 0 && <div className="admin-empty">No leave requests found</div>}
+        </div>
+      )}
+    </div>
+  )
+}

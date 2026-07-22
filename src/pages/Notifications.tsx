@@ -1,0 +1,368 @@
+import { useState, useEffect, useCallback } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
+import { useLanguage } from '../context/LanguageContext'
+
+type Tab = 'company' | 'actions' | 'notifications'
+
+interface WorkflowItem {
+  id: number
+  emp_display_name: string
+  step: number
+  status: string
+  record_type: string
+  action: string
+  employee_email: string
+  assigned_to: string
+  approval_id: number | null
+  task_description: string | null
+  approval_status: string | null
+  created_at: string
+}
+
+interface Announcement {
+  id: string
+  title: string
+  body: string
+  submitted_by_name: string | null
+  published_at: string
+}
+
+const HARDCODED_EMAIL = 'andy.jones@kumonix.com'
+const HARDCODED_EMPLOYEE_ID = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+
+function formatNotifDate(dateStr: string) {
+  const d = new Date(dateStr)
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const day = d.getDate()
+  const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th'
+  return `${days[d.getDay()]}, ${day}${suffix} ${d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase()}`
+}
+
+function NotifIcon({ type, status }: { type: string; status?: string | null }) {
+  if (type === 'Birthday') {
+    return (
+      <div className="notif-icon notif-icon-birthday">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.5">
+          <path d="M2 22h20v-6H2v6zM2 16l2-4h16l2 4" />
+          <path d="M12 2c1 2 1 4 0 6M8 4c.5 1 .5 3 0 4M16 4c.5 1 .5 3 0 4" />
+          <circle cx="12" cy="10" r="1" fill="#fff" />
+          <circle cx="8" cy="10" r="1" fill="#fff" />
+          <circle cx="16" cy="10" r="1" fill="#fff" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Expense' && status === 'Approved') {
+    return (
+      <div className="notif-icon notif-icon-approved">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Expense' && status === 'Declined') {
+    return (
+      <div className="notif-icon notif-icon-declined">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Leave' && status === 'Approved') {
+    return (
+      <div className="notif-icon notif-icon-leave-approved">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+          <path d="M9 14l2 2 4-4" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Leave' && status === 'Declined') {
+    return (
+      <div className="notif-icon notif-icon-leave-declined">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="10" y1="12" x2="14" y2="16" /><line x1="14" y1="12" x2="10" y2="16" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Expense') {
+    return (
+      <div className="notif-icon notif-icon-expense">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 6v12M9 9h6M9 15h6" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Leave') {
+    return (
+      <div className="notif-icon notif-icon-leave">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+      </div>
+    )
+  }
+  return (
+    <div className="notif-icon notif-icon-default">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </svg>
+    </div>
+  )
+}
+
+export default function Notifications() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { t } = useLanguage()
+  const initialTab = (location.state as { tab?: Tab } | null)?.tab || 'actions'
+  const [tab, setTab] = useState<Tab>(initialTab)
+  const [actions, setActions] = useState<WorkflowItem[]>([])
+  const [myNotifs, setMyNotifs] = useState<WorkflowItem[]>([])
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [loading, setLoading] = useState(true)
+  const [canPost, setCanPost] = useState(false)
+
+  const fetchData = useCallback(async () => {
+    setLoading(true)
+    const [actionsRes, notifsRes, announcementsRes, empRes] = await Promise.all([
+      supabase.from('workflow_tracker')
+        .select('*')
+        .ilike('assigned_to', `%${HARDCODED_EMAIL}%`)
+        .eq('status', 'Pending')
+        .order('created_at', { ascending: false }),
+      supabase.from('workflow_tracker')
+        .select('*')
+        .ilike('assigned_to', `%${HARDCODED_EMAIL}%`)
+        .eq('status', 'Complete')
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabase.from('announcements')
+        .select('id, title, body, submitted_by_name, published_at')
+        .order('published_at', { ascending: false })
+        .limit(20),
+      supabase.from('employees')
+        .select('can_post_notifications')
+        .eq('id', HARDCODED_EMPLOYEE_ID)
+        .single(),
+    ])
+    if (actionsRes.data) setActions(actionsRes.data as WorkflowItem[])
+    if (notifsRes.data) setMyNotifs(notifsRes.data as WorkflowItem[])
+    if (announcementsRes.data) setAnnouncements(announcementsRes.data as Announcement[])
+    if (empRes.data) setCanPost(empRes.data.can_post_notifications === true)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const pendingCount = actions.length
+
+  function handleActionClick(item: WorkflowItem) {
+    if (item.record_type === 'Expense' && item.approval_id) {
+      navigate(`/approve/expense/${item.approval_id}`)
+    } else if (item.record_type === 'Leave' && item.approval_id) {
+      navigate(`/approve/leave/${item.approval_id}`)
+    }
+  }
+
+  function getActionTitle(item: WorkflowItem) {
+    if (item.record_type === 'Expense') return t('notifications.expense_review')
+    if (item.record_type === 'Leave') {
+      const desc = item.task_description || ''
+      const leaveType = desc.split(' - ')[0] || 'Leave'
+      return `${leaveType} ${t('notifications.leave_approval')}`
+    }
+    return item.action
+  }
+
+  async function handleDeleteSubmission(item: WorkflowItem) {
+    if (!item.approval_id) return
+    const label = item.record_type === 'Expense' ? 'expense claim' : 'leave request'
+    if (!confirm(`Delete this ${label}? This cannot be undone.`)) return
+
+    if (item.record_type === 'Expense') {
+      await supabase.from('expense_line_items').delete().eq('expense_claim_id', item.approval_id)
+      await supabase.from('workflow_tracker').delete().eq('record_type', 'Expense').eq('approval_id', item.approval_id)
+      await supabase.from('expense_claims').delete().eq('id', item.approval_id)
+    } else if (item.record_type === 'Leave') {
+      await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', item.approval_id)
+      await supabase.from('leave_requests').delete().eq('id', item.approval_id)
+    }
+
+    setMyNotifs(prev => prev.filter(n => !(n.record_type === item.record_type && n.approval_id === item.approval_id)))
+  }
+
+  function getNotifTitle(item: WorkflowItem) {
+    if (item.record_type === 'Birthday') return t('notifications.happy_birthday')
+    if (item.approval_status === 'Approved') {
+      if (item.record_type === 'Expense') return t('notifications.expense_approved')
+      if (item.record_type === 'Leave') return t('notifications.leave_approved')
+    }
+    if (item.approval_status === 'Declined') {
+      if (item.record_type === 'Expense') return t('notifications.expense_declined')
+      if (item.record_type === 'Leave') return t('notifications.leave_declined')
+    }
+    return item.action
+  }
+
+  return (
+    <div className="feature-page notifications-page">
+      <header className="notif-header">
+        {tab === 'company' && canPost && (
+          <button className="notif-add-btn" onClick={() => navigate('/notifications/create')}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="3" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        )}
+        <div className="notif-header-center">
+          <h1 className="notif-title">{tab === 'company' ? t('notifications.company_title') : t('notifications.title')}</h1>
+        </div>
+        <button className="feature-refresh" onClick={fetchData}>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="#3d6b99" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </header>
+
+      <div className="notif-tabs">
+        <button className={`notif-tab ${tab === 'company' ? 'notif-tab-active' : ''}`} onClick={() => setTab('company')}>
+          {t('notifications.company')}
+        </button>
+        <button className={`notif-tab ${tab === 'actions' ? 'notif-tab-active' : ''}`} onClick={() => setTab('actions')}>
+          {t('notifications.my_actions')} {pendingCount > 0 && <span className="notif-tab-badge">{pendingCount}</span>}
+        </button>
+        <button className={`notif-tab ${tab === 'notifications' ? 'notif-tab-active' : ''}`} onClick={() => setTab('notifications')}>
+          {t('notifications.my_notifications')}
+        </button>
+      </div>
+
+      {loading && <p className="claims-empty">{t('common.loading')}</p>}
+
+      {!loading && tab === 'company' && (
+        <div className="notif-list">
+          <div className="notif-upcoming-leave">
+            <div className="upcoming-leave-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#d4a017" strokeWidth="1.5">
+                <rect x="3" y="4" width="18" height="18" rx="2" />
+                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </div>
+            <div className="upcoming-leave-info">
+              <span className="upcoming-leave-title">{t('notifications.upcoming_leave')}</span>
+              <span className="upcoming-leave-sub">{t('notifications.no_upcoming')}</span>
+            </div>
+            <button className="upcoming-leave-btn" onClick={() => navigate('/leave')}>{t('notifications.book_time_off')}</button>
+          </div>
+
+          {announcements.length === 0 && <p className="claims-empty">{t('notifications.no_announcements')}</p>}
+          {announcements.map(a => (
+            <div key={a.id} className="company-notif-card">
+              <div className="company-notif-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="11" fill="#fff3e0" />
+                  <path d="M6 12l6-4v8l-6-4z" fill="#e65100" />
+                  <rect x="12" y="9" width="6" height="6" rx="1" fill="#e65100" />
+                  <line x1="18" y1="8" x2="20" y2="6" stroke="#e65100" strokeWidth="1.5" strokeLinecap="round" />
+                  <line x1="18" y1="12" x2="21" y2="12" stroke="#e65100" strokeWidth="1.5" strokeLinecap="round" />
+                  <line x1="18" y1="16" x2="20" y2="18" stroke="#e65100" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="company-notif-content">
+                <span className="company-notif-title">{a.title}</span>
+                <span className="company-notif-body">{a.body}</span>
+                <div className="company-notif-footer">
+                  <span className="company-notif-by">{t('common.submitted_by')}: &nbsp; <strong>{a.submitted_by_name || 'System'}</strong></span>
+                  <span className="company-notif-date">{formatNotifDate(a.published_at)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && tab === 'actions' && (
+        <div className="notif-list">
+          <div className="notif-upcoming-leave">
+            <div className="upcoming-leave-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#d4a017" strokeWidth="1.5">
+                <rect x="3" y="4" width="18" height="18" rx="2" />
+                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </div>
+            <div className="upcoming-leave-info">
+              <span className="upcoming-leave-title">{t('notifications.upcoming_leave')}</span>
+              <span className="upcoming-leave-sub">{t('notifications.no_upcoming')}</span>
+            </div>
+            <button className="upcoming-leave-btn" onClick={() => navigate('/leave')}>{t('notifications.book_time_off')}</button>
+          </div>
+
+          {actions.length === 0 && <p className="claims-empty">{t('notifications.no_actions')}</p>}
+          {actions.map(item => (
+            <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
+              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : 'bar-grey'}`} />
+              <NotifIcon type={item.record_type} />
+              <div className="notif-action-content">
+                <span className="notif-action-title">{getActionTitle(item)}</span>
+                <div className="notif-action-meta">
+                  <span className="notif-action-label" style={{ color: item.record_type === 'Leave' ? '#e53935' : '#43a047' }}>{t('common.action')}</span>
+                  <span className="notif-action-date">{t('notifications.created')} {formatNotifDate(item.created_at)}</span>
+                </div>
+                <div className="notif-action-detail">
+                  <span className="notif-action-type">{item.record_type === 'Expense' ? t('dashboard.expenses') : item.record_type}</span>
+                  {item.task_description && <span className="notif-action-amount">{item.task_description.split(' - ').pop()}</span>}
+                  <span className="notif-action-for">{t('notifications.for')} {item.emp_display_name}</span>
+                  {item.approval_id && <span className="notif-action-id">{item.approval_id}</span>}
+                </div>
+              </div>
+              <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
+                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#c62828' : '#3d6b99'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!loading && tab === 'notifications' && (
+        <div className="notif-list">
+          {myNotifs.length === 0 && <p className="claims-empty">{t('notifications.no_notifs')}</p>}
+          {myNotifs.map(n => (
+            <div key={n.id} className="notif-card">
+              <NotifIcon type={n.record_type} status={n.approval_status} />
+              <div className="notif-card-content">
+                <span className="notif-card-title">{getNotifTitle(n)}</span>
+                <span className="notif-card-sub">{n.task_description}</span>
+                <span className="notif-card-date">{formatNotifDate(n.created_at)}</span>
+              </div>
+              {(n.record_type === 'Expense' || n.record_type === 'Leave') && n.approval_id && (
+                <button className="notif-delete-btn" onClick={() => handleDeleteSubmission(n)} title={t('common.delete')}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

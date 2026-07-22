@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "appId": "e541709a-2a3f-4b91-bb01-3136bd9bcdab",
+  "appDisplayName": "InflowHRCode",
+  "region": "prod",
+  "appType": "CodeApp",
+  "environmentId": "65333fce-84e7-ecb2-80fa-665dcd346a18",
+  "description": " ",
+  "buildPath": "./dist",
+  "buildEntryPoint": "index.html",
+  "localAppUrl": "http://localhost:3000",
+  "logoPath": "Default",
+  "connectionReferences": {},
+  "databaseReferences": {}
+}
