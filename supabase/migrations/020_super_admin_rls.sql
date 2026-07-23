@@ -97,5 +97,15 @@ CREATE POLICY "Admins can update company users"
 ALTER TABLE leave_types DROP CONSTRAINT IF EXISTS leave_types_name_key;
 ALTER TABLE leave_types ADD CONSTRAINT leave_types_name_company_key UNIQUE (name, company_id);
 
--- 6. app_settings: remove single-row constraint for multi-tenant
-ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_id_check;
+-- 6. app_settings: remove single-row check constraint for multi-tenant
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT conname FROM pg_constraint
+    WHERE conrelid = 'app_settings'::regclass AND contype = 'c'
+  LOOP
+    EXECUTE format('ALTER TABLE app_settings DROP CONSTRAINT %I', r.conname);
+  END LOOP;
+END $$;
