@@ -32,49 +32,46 @@ BEGIN
     'workflow_tracker', 'notifications', 'app_settings'
   ])
   LOOP
-    -- Drop existing SELECT policies (they filter by company_id = get_my_company_id())
+    -- Drop any existing policies (original names + our own from prior runs)
     EXECUTE format('DROP POLICY IF EXISTS "Users can view own company %1$s" ON %1$I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Company data visible to members" ON %I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Enable read access for all users" ON %I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Authenticated users can read" ON %I', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS "Company scoped read" ON %I', tbl);
 
-    -- Create new SELECT policy: own company OR super admin
     EXECUTE format(
       'CREATE POLICY "Company scoped read" ON %I FOR SELECT
        USING (company_id = get_my_company_id() OR is_super_admin())',
       tbl
     );
 
-    -- Drop existing INSERT policies
     EXECUTE format('DROP POLICY IF EXISTS "Users can insert own company %1$s" ON %1$I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Authenticated users can insert" ON %I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Enable insert for authenticated users only" ON %I', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS "Company scoped insert" ON %I', tbl);
 
-    -- Create new INSERT policy: own company OR super admin
     EXECUTE format(
       'CREATE POLICY "Company scoped insert" ON %I FOR INSERT
        WITH CHECK (company_id = get_my_company_id() OR is_super_admin())',
       tbl
     );
 
-    -- Drop existing UPDATE policies
     EXECUTE format('DROP POLICY IF EXISTS "Users can update own company %1$s" ON %1$I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Authenticated users can update" ON %I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Enable update for authenticated users" ON %I', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS "Company scoped update" ON %I', tbl);
 
-    -- Create new UPDATE policy: own company OR super admin
     EXECUTE format(
       'CREATE POLICY "Company scoped update" ON %I FOR UPDATE
        USING (company_id = get_my_company_id() OR is_super_admin())',
       tbl
     );
 
-    -- Drop existing DELETE policies
     EXECUTE format('DROP POLICY IF EXISTS "Users can delete own company %1$s" ON %1$I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Authenticated users can delete" ON %I', tbl);
     EXECUTE format('DROP POLICY IF EXISTS "Enable delete for authenticated users" ON %I', tbl);
+    EXECUTE format('DROP POLICY IF EXISTS "Company scoped delete" ON %I', tbl);
 
-    -- Create new DELETE policy: own company OR super admin
     EXECUTE format(
       'CREATE POLICY "Company scoped delete" ON %I FOR DELETE
        USING (company_id = get_my_company_id() OR is_super_admin())',
