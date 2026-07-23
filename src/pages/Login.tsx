@@ -10,12 +10,8 @@ export default function Login() {
       <div className="login-hero">
         <div className="login-hero-content">
           <div className="login-hero-logo">
-            <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-              <rect width="56" height="56" rx="14" fill="rgba(255,255,255,0.15)" />
-              <text x="28" y="37" textAnchor="middle" fill="#fff" fontSize="26" fontWeight="800" fontFamily="sans-serif">iH</text>
-            </svg>
+            <img src="/inflowhr-logo.avif" alt="InflowHR" className="login-hero-logo-img" />
           </div>
-          <h2 className="login-hero-title">InflowHR</h2>
           <p className="login-hero-tagline">{t('login.hero_tagline')}</p>
           <div className="login-hero-features">
             <div className="login-hero-feature">

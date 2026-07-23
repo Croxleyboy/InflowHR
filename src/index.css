@@ -2924,6 +2924,11 @@ body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smooth
 .login-hero-logo {
   margin-bottom: 32px;
 }
+.login-hero-logo-img {
+  height: 64px;
+  width: auto;
+  border-radius: 12px;
+}
 .login-hero-title {
   font-size: 40px;
   font-weight: 800;
