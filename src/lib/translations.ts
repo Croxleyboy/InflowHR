@@ -526,9 +526,19 @@ const en: Translations = {
 
   // Login
   'login.title': 'InflowHR',
+  'login.welcome': 'Welcome back',
   'login.subtitle': 'Sign in to access your HR portal',
   'login.sign_in_microsoft': 'Sign in with Microsoft',
-  'login.footer': 'Secure single sign-on powered by Microsoft Entra',
+  'login.hero_tagline': 'The modern HR platform for growing teams',
+  'login.feature_directory': 'People directory',
+  'login.feature_payslips': 'Payslips & payroll',
+  'login.feature_leave': 'Leave management',
+  'login.feature_more': 'Expenses, kudos & more',
+  'login.secure_access': 'Secure enterprise access',
+  'login.badge_sso': 'SSO enabled',
+  'login.badge_encrypted': 'Encrypted',
+  'login.badge_gdpr': 'GDPR compliant',
+  'login.footer': 'Powered by Microsoft Entra ID',
 
   // Common
   'common.loading': 'Loading...',
@@ -1067,9 +1077,19 @@ const de: Translations = {
 
   // Login
   'login.title': 'InflowHR',
+  'login.welcome': 'Willkommen zurück',
   'login.subtitle': 'Melden Sie sich an, um auf Ihr HR-Portal zuzugreifen',
   'login.sign_in_microsoft': 'Mit Microsoft anmelden',
-  'login.footer': 'Sicheres Single Sign-On mit Microsoft Entra',
+  'login.hero_tagline': 'Die moderne HR-Plattform für wachsende Teams',
+  'login.feature_directory': 'Mitarbeiterverzeichnis',
+  'login.feature_payslips': 'Gehaltsabrechnungen',
+  'login.feature_leave': 'Urlaubsverwaltung',
+  'login.feature_more': 'Spesen, Kudos & mehr',
+  'login.secure_access': 'Sicherer Unternehmenszugang',
+  'login.badge_sso': 'SSO aktiviert',
+  'login.badge_encrypted': 'Verschlüsselt',
+  'login.badge_gdpr': 'DSGVO-konform',
+  'login.footer': 'Powered by Microsoft Entra ID',
 
   // Common
   'common.loading': 'Laden...',
