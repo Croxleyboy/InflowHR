@@ -606,3 +606,80 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- Also fire on UPDATE (Supabase updates auth.users on each login)
+DROP TRIGGER IF EXISTS on_auth_user_created_sso ON auth.users;
+CREATE TRIGGER on_auth_user_created_sso
+  AFTER INSERT OR UPDATE ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION handle_new_sso_user();
+
+-- ============================================================
+-- RPC for frontend fallback: ensure current user is linked to
+-- their company based on email domain (SECURITY DEFINER bypasses RLS)
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.ensure_company_user()
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid;
+  v_email text;
+  v_domain text;
+  v_company_id uuid;
+  v_employee_id uuid;
+  v_cu_id bigint;
+  v_role text;
+BEGIN
+  v_user_id := auth.uid();
+  IF v_user_id IS NULL THEN
+    RETURN json_build_object('error', 'Not authenticated');
+  END IF;
+
+  SELECT email INTO v_email FROM auth.users WHERE id = v_user_id;
+  v_domain := split_part(v_email, '@', 2);
+
+  -- Check if company_users entry already exists
+  SELECT id, company_id, role, employee_id INTO v_cu_id, v_company_id, v_role, v_employee_id
+  FROM company_users
+  WHERE auth_user_id = v_user_id AND is_active = true
+  LIMIT 1;
+
+  IF v_cu_id IS NOT NULL THEN
+    RETURN json_build_object('id', v_cu_id, 'company_id', v_company_id, 'role', v_role, 'employee_id', v_employee_id);
+  END IF;
+
+  -- Look up company by domain
+  SELECT id INTO v_company_id
+  FROM companies
+  WHERE domain = v_domain AND is_active = true;
+
+  IF v_company_id IS NULL THEN
+    RETURN json_build_object('error', 'No matching company');
+  END IF;
+
+  -- Look up employee by email
+  SELECT id INTO v_employee_id
+  FROM employees
+  WHERE email = v_email AND company_id = v_company_id;
+
+  -- Determine role
+  v_role := 'employee';
+  IF v_employee_id IS NOT NULL THEN
+    SELECT CASE WHEN is_admin THEN 'admin' ELSE 'employee' END INTO v_role
+    FROM employees WHERE id = v_employee_id;
+  END IF;
+
+  -- Create the link
+  INSERT INTO company_users (auth_user_id, company_id, employee_id, role, is_active)
+  VALUES (v_user_id, v_company_id, v_employee_id, v_role, true)
+  ON CONFLICT (auth_user_id, company_id) DO UPDATE SET employee_id = EXCLUDED.employee_id, role = EXCLUDED.role
+  RETURNING id INTO v_cu_id;
+
+  RETURN json_build_object('id', v_cu_id, 'company_id', v_company_id, 'role', v_role, 'employee_id', v_employee_id);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.ensure_company_user() TO authenticated;

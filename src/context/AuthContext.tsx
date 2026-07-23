@@ -60,22 +60,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       : null
 
     if (!cu && email) {
-      const domain = email.split('@')[1]
-      if (domain) {
-        const { data: co } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('domain', domain)
-          .eq('is_active', true)
-          .single()
-        if (co) {
-          const { data: newCu } = await supabase
-            .from('company_users')
-            .insert({ auth_user_id: userId, company_id: co.id, role: 'employee', is_active: true })
-            .select('id, company_id, role, employee_id')
-            .single()
-          if (newCu) cu = newCu
-        }
+      const { data: result } = await (supabase.rpc as any)('ensure_company_user')
+      if (result && !result.error) {
+        cu = result
       }
     }
 
