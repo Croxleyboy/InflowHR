@@ -31,7 +31,7 @@ export default function AdminDemoSeed() {
     <div className="admin-section">
       <div className="admin-page-header">
         <h2>Demo Seed Data</h2>
-        <p>Reset all tables and populate with demo data for 5 employees</p>
+        <p>Reset all tables and populate with demo data for 2 companies and 11 employees</p>
       </div>
 
       <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 8, padding: 16, marginBottom: 24 }}>
@@ -43,20 +43,20 @@ export default function AdminDemoSeed() {
         <h3 style={{ marginBottom: 12 }}>What gets created:</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
           {[
-            '1 Company (Kumonix)',
-            '5 Employees',
-            '5 Leave types + balances',
-            '7 Leave requests',
-            '5 Expense claims + 8 line items',
-            '20 Payslips (4 months)',
-            '6 Kudos entries',
-            '4 Announcements',
+            '2 Companies (Kumonix + Move2Modern)',
+            '11 Employees (5 + 6)',
+            '5 Leave types per company',
+            '13 Leave requests',
+            '10 Expense claims + 14 line items',
+            '44 Payslips (4 months × 11)',
+            '11 Kudos entries',
+            '8 Announcements',
             '5 Benefits + enrolments',
-            '6 eLearning courses + 18 enrolments',
-            '5 Performance reviews',
-            '5 Onboarding records',
-            '8 Workflow actions (5 pending)',
-            '7 Notifications',
+            '6 eLearning courses + 34 enrolments',
+            '9 Performance reviews',
+            '9 Onboarding records',
+            '14 Workflow actions',
+            '14 Notifications',
             'App & user settings',
           ].map(item => (
             <div key={item} style={{ padding: '8px 12px', background: '#f0f4f8', borderRadius: 6, fontSize: 13 }}>

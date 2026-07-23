@@ -80,27 +80,28 @@ BEGIN
   FROM auth.users WHERE id = p_auth_uid;
 
   -- ========== WIPE ALL DATA ==========
-  DELETE FROM workflow_tracker;
-  DELETE FROM notifications;
-  DELETE FROM expense_line_items;
-  DELETE FROM expense_claims;
-  DELETE FROM leave_requests;
-  DELETE FROM leave_balances;
-  DELETE FROM course_enrolments;
-  DELETE FROM employee_benefits;
-  DELETE FROM performance_reviews;
-  DELETE FROM kudos;
-  DELETE FROM payslips;
-  DELETE FROM onboarding;
-  DELETE FROM announcements;
-  DELETE FROM user_settings;
-  DELETE FROM app_settings WHERE true;
-  DELETE FROM company_users;
-  DELETE FROM employees;
-  DELETE FROM leave_types;
-  DELETE FROM benefits;
-  DELETE FROM courses;
-  DELETE FROM companies;
+  -- pg_safeupdate requires a WHERE clause on every DELETE
+  DELETE FROM workflow_tracker  WHERE id IS NOT NULL;
+  DELETE FROM notifications     WHERE id IS NOT NULL;
+  DELETE FROM expense_line_items WHERE id IS NOT NULL;
+  DELETE FROM expense_claims    WHERE id IS NOT NULL;
+  DELETE FROM leave_requests    WHERE id IS NOT NULL;
+  DELETE FROM leave_balances    WHERE id IS NOT NULL;
+  DELETE FROM course_enrolments WHERE id IS NOT NULL;
+  DELETE FROM employee_benefits WHERE id IS NOT NULL;
+  DELETE FROM performance_reviews WHERE id IS NOT NULL;
+  DELETE FROM kudos             WHERE id IS NOT NULL;
+  DELETE FROM payslips          WHERE id IS NOT NULL;
+  DELETE FROM onboarding        WHERE id IS NOT NULL;
+  DELETE FROM announcements     WHERE id IS NOT NULL;
+  DELETE FROM user_settings     WHERE employee_id IS NOT NULL;
+  DELETE FROM app_settings      WHERE id IS NOT NULL;
+  DELETE FROM company_users     WHERE company_id IS NOT NULL;
+  DELETE FROM employees         WHERE id IS NOT NULL;
+  DELETE FROM leave_types       WHERE id IS NOT NULL;
+  DELETE FROM benefits          WHERE id IS NOT NULL;
+  DELETE FROM courses           WHERE id IS NOT NULL;
+  DELETE FROM companies         WHERE id IS NOT NULL;
 
   -- ================================================================
   --  KUMONIX
