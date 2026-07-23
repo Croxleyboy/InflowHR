@@ -38,6 +38,8 @@ export default function Dashboard() {
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [lastExpense, setLastExpense] = useState<number | null>(null)
+  const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   useEffect(() => {
@@ -63,6 +65,22 @@ export default function Dashboard() {
         .eq('to_employee_id', employeeId)
         .gt('created_at', lastSeen)
         .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
+
+      supabase.from('expense_claims')
+        .select('total_amount')
+        .eq('employee_id', employeeId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+        .then(({ data }) => { if (data) setLastExpense(data.total_amount) })
+
+      supabase.from('leave_balances')
+        .select('total_allowance, used')
+        .eq('employee_id', employeeId)
+        .eq('year', new Date().getFullYear())
+        .limit(1)
+        .single()
+        .then(({ data }) => { if (data) setLeaveRemaining(data.total_allowance - data.used) })
     }
   }, [employeeId, employeeEmail])
 
@@ -111,7 +129,7 @@ export default function Dashboard() {
           <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>
             <div className="card-content">
               <span className="card-label">{t('dashboard.expenses')}</span>
-              <span className="card-value">&pound;256.00</span>
+              <span className="card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}</span>
               <span className="card-sub">{t('dashboard.last_claim')}</span>
             </div>
             <Chevron color="#c8e600" />
@@ -121,7 +139,7 @@ export default function Dashboard() {
           <button className="dash-card card-leave" onClick={() => navigate('/leave')}>
             <div className="card-content">
               <span className="card-label">{t('dashboard.leave_remaining')}</span>
-              <span className="card-value card-value-large">31 <span className="card-value-unit">{t('dashboard.days')}</span></span>
+              <span className="card-value card-value-large">{leaveRemaining !== null ? leaveRemaining : '--'} <span className="card-value-unit">{t('dashboard.days')}</span></span>
             </div>
             <Chevron color="#d4e600" />
           </button>

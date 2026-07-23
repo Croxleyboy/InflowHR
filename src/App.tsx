@@ -50,6 +50,14 @@ function AdminGate() {
   return <Outlet />
 }
 
+function SuperAdminGate() {
+  const { isSuperAdmin } = useAuth()
+  if (!isSuperAdmin) {
+    return <Navigate to="/admin" replace />
+  }
+  return <Outlet />
+}
+
 function AuthGate() {
   const { user, loading, companyUser } = useAuth()
 
@@ -81,8 +89,10 @@ function AuthGate() {
           <Route path="onboarding" element={<AdminOnboarding />} />
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="benefits" element={<AdminBenefits />} />
-          <Route path="companies" element={<AdminCompanies />} />
-          <Route path="demo-seed" element={<AdminDemoSeed />} />
+          <Route element={<SuperAdminGate />}>
+            <Route path="companies" element={<AdminCompanies />} />
+            <Route path="demo-seed" element={<AdminDemoSeed />} />
+          </Route>
         </Route>
       </Route>
 

@@ -15,6 +15,8 @@ interface Company {
   domain: string
 }
 
+const SUPER_ADMIN_EMAIL = 'andy.jones@kumonix.com'
+
 interface AuthState {
   user: User | null
   session: Session | null
@@ -24,6 +26,7 @@ interface AuthState {
   employeeId: string | null
   employeeName: string
   employeeEmail: string
+  isSuperAdmin: boolean
   signInWithMicrosoft: () => Promise<void>
   signOut: () => Promise<void>
 }
@@ -152,9 +155,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const employeeName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
   const employeeEmail = user?.email || ''
+  const isSuperAdmin = employeeEmail.toLowerCase() === SUPER_ADMIN_EMAIL
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, employeeName, employeeEmail, signInWithMicrosoft, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, employeeName, employeeEmail, isSuperAdmin, signInWithMicrosoft, signOut }}>
       {children}
     </AuthContext.Provider>
   )

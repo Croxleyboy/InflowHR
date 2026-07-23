@@ -1,7 +1,16 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 
-const MENU_ITEMS = [
+interface MenuItem {
+  path: string
+  label: string
+  icon: string
+  end?: boolean
+  superAdminOnly?: boolean
+}
+
+const MENU_ITEMS: MenuItem[] = [
   { path: '/admin', label: 'Dashboard', icon: '📊', end: true },
   { path: '/admin/expenses', label: 'Expenses', icon: '💰' },
   { path: '/admin/leave', label: 'Leave', icon: '🏖️' },
@@ -13,13 +22,15 @@ const MENU_ITEMS = [
   { path: '/admin/onboarding', label: 'Onboarding', icon: '🚀' },
   { path: '/admin/tickets', label: 'HR Tickets', icon: '🎫' },
   { path: '/admin/benefits', label: 'Benefits', icon: '🎁' },
-  { path: '/admin/companies', label: 'Companies', icon: '🏢' },
-  { path: '/admin/demo-seed', label: 'Demo Seed', icon: '🌱' },
+  { path: '/admin/companies', label: 'Companies', icon: '🏢', superAdminOnly: true },
+  { path: '/admin/demo-seed', label: 'Demo Seed', icon: '🌱', superAdminOnly: true },
 ]
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const navigate = useNavigate()
+  const { isSuperAdmin } = useAuth()
+  const visibleItems = MENU_ITEMS.filter(item => !item.superAdminOnly || isSuperAdmin)
 
   return (
     <div className="admin-shell">
@@ -50,7 +61,7 @@ export default function AdminLayout() {
 
       <aside className={`admin-sidebar ${sidebarOpen ? 'admin-sidebar-open' : ''}`}>
         <nav className="admin-nav">
-          {MENU_ITEMS.map(item => (
+          {visibleItems.map(item => (
             <NavLink
               key={item.path}
               to={item.path}
