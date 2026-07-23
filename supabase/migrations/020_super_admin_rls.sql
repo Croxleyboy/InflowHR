@@ -91,3 +91,8 @@ DROP POLICY IF EXISTS "Admins can update company users" ON company_users;
 CREATE POLICY "Admins can update company users"
   ON company_users FOR UPDATE
   USING (is_company_admin() OR is_super_admin());
+
+-- 5. Fix unique constraints for multi-tenancy
+--    leave_types.name must be unique per company, not globally
+ALTER TABLE leave_types DROP CONSTRAINT IF EXISTS leave_types_name_key;
+ALTER TABLE leave_types ADD CONSTRAINT leave_types_name_company_key UNIQUE (name, company_id);
