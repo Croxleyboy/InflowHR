@@ -170,8 +170,8 @@ export default function Kudos() {
   }, [fetchData])
 
   async function handleLike(entry: KudosEntry) {
-    if (entry.liked_by.includes(EMPLOYEE_ID)) return
-    const newLikedBy = [...entry.liked_by, EMPLOYEE_ID]
+    if (!EMPLOYEE_ID || entry.liked_by.includes(EMPLOYEE_ID)) return
+    const newLikedBy: string[] = [...entry.liked_by, EMPLOYEE_ID]
     await supabase
       .from('kudos')
       .update({ like_count: entry.like_count + 1, liked_by: newLikedBy })
@@ -287,7 +287,7 @@ export default function Kudos() {
             const badgeInfo = getBadgeDisplay(entry.badge)
             const qualityInfo = getQualityDisplay(entry.quality)
             const recInfo = getRecTypeDisplay(entry.recognition_type)
-            const hasLiked = entry.liked_by.includes(EMPLOYEE_ID)
+            const hasLiked = EMPLOYEE_ID ? entry.liked_by.includes(EMPLOYEE_ID) : false
             const canDelete = entry.is_broadcast && entry.from_employee_id === EMPLOYEE_ID
 
             return (
