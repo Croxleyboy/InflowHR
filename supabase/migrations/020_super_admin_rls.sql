@@ -96,3 +96,6 @@ CREATE POLICY "Admins can update company users"
 --    leave_types.name must be unique per company, not globally
 ALTER TABLE leave_types DROP CONSTRAINT IF EXISTS leave_types_name_key;
 ALTER TABLE leave_types ADD CONSTRAINT leave_types_name_company_key UNIQUE (name, company_id);
+
+-- 6. app_settings: remove single-row constraint for multi-tenant
+ALTER TABLE app_settings DROP CONSTRAINT IF EXISTS app_settings_id_check;
