@@ -86,7 +86,7 @@ export default function Payslips() {
   const current = fyMonths[monthIdx]
 
   useEffect(() => {
-    if (!current) return
+    if (!current || !EMPLOYEE_ID) return
     setLoading(true)
     const startOfMonth = `${current.year}-${String(current.month + 1).padStart(2, '0')}-01`
     const endOfMonth = new Date(current.year, current.month + 1, 0)
@@ -103,7 +103,7 @@ export default function Payslips() {
         setPayslip(data as PayslipData | null)
         setLoading(false)
       })
-  }, [monthIdx, current?.year, current?.month])
+  }, [EMPLOYEE_ID, monthIdx, current?.year, current?.month])
 
   const canPrev = monthIdx > 0
   const canNext = monthIdx < fyMonths.length - 1

@@ -64,9 +64,12 @@ export default function MyProfile() {
 
     if (data) setProfile(data as OnboardingRecord)
     setLoading(false)
-  }, [])
+  }, [EMPLOYEE_EMAIL])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    if (!EMPLOYEE_EMAIL) return
+    fetchData()
+  }, [fetchData, EMPLOYEE_EMAIL])
 
   if (loading) return <div className="feature-page"><p className="claims-empty">{t('common.loading')}</p></div>
   if (!profile) return <div className="feature-page"><p className="claims-empty">{t('my_profile.not_found')}</p></div>

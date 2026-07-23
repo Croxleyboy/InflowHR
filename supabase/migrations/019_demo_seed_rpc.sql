@@ -96,8 +96,8 @@ BEGIN
     ('Compassionate',    5, '#607d8b', true, v_company_id),
     ('Work From Home', 999, '#2196f3', true, v_company_id);
 
-  SELECT id INTO v_lt_annual FROM leave_types WHERE name='Annual Leave' AND company_id=v_company_id;
-  SELECT id INTO v_lt_sick FROM leave_types WHERE name='Sick Leave' AND company_id=v_company_id;
+  SELECT id INTO v_lt_annual FROM leave_types WHERE name='Annual Leave' AND company_id=v_company_id LIMIT 1;
+  SELECT id INTO v_lt_sick FROM leave_types WHERE name='Sick Leave' AND company_id=v_company_id LIMIT 1;
 
   -- ========== LEAVE BALANCES ==========
   INSERT INTO leave_balances (employee_id, leave_type_id, year, total_allowance, used, carried_over, company_id) VALUES
@@ -129,14 +129,13 @@ BEGIN
     (v_sarah, 'EXP-2026-002', 'Train to London office',  'Return ticket Kings Cross', 124.00, 'pending',   'Travel',          '2026-07-10T14:00:00Z', '2026-07-10', '2026-07-10', v_company_id),
     (v_james, 'EXP-2026-003', 'Design software licence', 'Figma annual renewal',      168.00, 'submitted', 'Software',        '2026-07-15T09:00:00Z', '2026-07-15', '2026-07-15', v_company_id),
     (v_tom,   'EXP-2026-004', 'Office supplies',         'Stationery & notebooks',     42.99, 'draft',     'Office Supplies', NULL,                    '2026-07-18', '2026-07-18', v_company_id),
-    (v_emma,  'EXP-2026-005', 'Team building dinner',    'Team meal at Nandos',       210.75, 'approved',  'Meals',           '2026-06-20T11:00:00Z', '2026-06-20', '2026-06-20', v_company_id)
-  RETURNING id INTO v_claim1;
+    (v_emma,  'EXP-2026-005', 'Team building dinner',    'Team meal at Nandos',       210.75, 'approved',  'Meals',           '2026-06-20T11:00:00Z', '2026-06-20', '2026-06-20', v_company_id);
 
-  SELECT id INTO v_claim1 FROM expense_claims WHERE reference_number='EXP-2026-001';
-  SELECT id INTO v_claim2 FROM expense_claims WHERE reference_number='EXP-2026-002';
-  SELECT id INTO v_claim3 FROM expense_claims WHERE reference_number='EXP-2026-003';
-  SELECT id INTO v_claim4 FROM expense_claims WHERE reference_number='EXP-2026-004';
-  SELECT id INTO v_claim5 FROM expense_claims WHERE reference_number='EXP-2026-005';
+  SELECT id INTO v_claim1 FROM expense_claims WHERE reference_number='EXP-2026-001' LIMIT 1;
+  SELECT id INTO v_claim2 FROM expense_claims WHERE reference_number='EXP-2026-002' LIMIT 1;
+  SELECT id INTO v_claim3 FROM expense_claims WHERE reference_number='EXP-2026-003' LIMIT 1;
+  SELECT id INTO v_claim4 FROM expense_claims WHERE reference_number='EXP-2026-004' LIMIT 1;
+  SELECT id INTO v_claim5 FROM expense_claims WHERE reference_number='EXP-2026-005' LIMIT 1;
 
   -- ========== EXPENSE LINE ITEMS ==========
   INSERT INTO expense_line_items (expense_claim_id, title, expense_type, description, date_of_purchase, amount, company_id) VALUES
@@ -202,11 +201,11 @@ BEGIN
     ('Gym Membership',           'Discounted corporate rate at PureGym',                    'Health',    'PureGym',     true),
     ('Mental Health Support',    'Access to counselling and wellbeing app',                  'Health',    'Headspace',   true);
 
-  SELECT id INTO v_ben_health  FROM benefits WHERE name='Private Health Insurance';
-  SELECT id INTO v_ben_cycle   FROM benefits WHERE name='Cycle to Work Scheme';
-  SELECT id INTO v_ben_pension FROM benefits WHERE name='Pension';
-  SELECT id INTO v_ben_gym     FROM benefits WHERE name='Gym Membership';
-  SELECT id INTO v_ben_mental  FROM benefits WHERE name='Mental Health Support';
+  SELECT id INTO v_ben_health  FROM benefits WHERE name='Private Health Insurance' LIMIT 1;
+  SELECT id INTO v_ben_cycle   FROM benefits WHERE name='Cycle to Work Scheme' LIMIT 1;
+  SELECT id INTO v_ben_pension FROM benefits WHERE name='Pension' LIMIT 1;
+  SELECT id INTO v_ben_gym     FROM benefits WHERE name='Gym Membership' LIMIT 1;
+  SELECT id INTO v_ben_mental  FROM benefits WHERE name='Mental Health Support' LIMIT 1;
 
   INSERT INTO employee_benefits (employee_id, benefit_id, status) VALUES
     (v_andy,  v_ben_health,  'active'), (v_andy,  v_ben_pension, 'active'),
@@ -224,12 +223,12 @@ BEGIN
     ('Introduction to Agile',    'Scrum, Kanban, and agile ways of working',             'Professional',    40, false, true),
     ('Mental Health First Aid',  'Supporting colleagues with mental health challenges',  'Wellbeing',       90, false, true);
 
-  SELECT id INTO v_c_gdpr      FROM courses WHERE title='Data Protection & GDPR';
-  SELECT id INTO v_c_cyber     FROM courses WHERE title='Cyber Security Awareness';
-  SELECT id INTO v_c_fire      FROM courses WHERE title='Fire Safety';
-  SELECT id INTO v_c_inclusive  FROM courses WHERE title='Inclusive Leadership';
-  SELECT id INTO v_c_agile     FROM courses WHERE title='Introduction to Agile';
-  SELECT id INTO v_c_mhfa      FROM courses WHERE title='Mental Health First Aid';
+  SELECT id INTO v_c_gdpr      FROM courses WHERE title='Data Protection & GDPR' LIMIT 1;
+  SELECT id INTO v_c_cyber     FROM courses WHERE title='Cyber Security Awareness' LIMIT 1;
+  SELECT id INTO v_c_fire      FROM courses WHERE title='Fire Safety' LIMIT 1;
+  SELECT id INTO v_c_inclusive  FROM courses WHERE title='Inclusive Leadership' LIMIT 1;
+  SELECT id INTO v_c_agile     FROM courses WHERE title='Introduction to Agile' LIMIT 1;
+  SELECT id INTO v_c_mhfa      FROM courses WHERE title='Mental Health First Aid' LIMIT 1;
 
   INSERT INTO course_enrolments (employee_id, course_id, status, progress_pct, started_at, completed_at, score) VALUES
     (v_andy,  v_c_gdpr,      'completed',   100, '2026-02-01T10:00:00Z', '2026-02-01T10:45:00Z', 92),

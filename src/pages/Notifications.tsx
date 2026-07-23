@@ -164,9 +164,12 @@ export default function Notifications() {
     if (announcementsRes.data) setAnnouncements(announcementsRes.data as Announcement[])
     if (empRes.data) setCanPost(empRes.data.can_post_notifications === true)
     setLoading(false)
-  }, [])
+  }, [HARDCODED_EMPLOYEE_ID, HARDCODED_EMAIL])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    if (!HARDCODED_EMAIL) return
+    fetchData()
+  }, [fetchData, HARDCODED_EMAIL])
 
   const pendingCount = actions.length
 

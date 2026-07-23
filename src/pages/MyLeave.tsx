@@ -23,6 +23,7 @@ export default function MyLeave() {
   const [imOffState, setImOffState] = useState<'idle' | 'sending' | 'sent'>('idle')
 
   useEffect(() => {
+    if (!EMPLOYEE_ID) return
     async function load() {
       const [balRes, pendRes] = await Promise.all([
         supabase
@@ -59,7 +60,7 @@ export default function MyLeave() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [EMPLOYEE_ID])
 
   const primary = balances.find(b => b.leave_type_name === 'Annual Leave')
   const totalEntitlement = primary ? primary.total_allowance : 0

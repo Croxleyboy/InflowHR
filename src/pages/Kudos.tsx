@@ -162,12 +162,13 @@ export default function Kudos() {
     }
 
     setLoading(false)
-  }, [])
+  }, [EMPLOYEE_ID])
 
   useEffect(() => {
+    if (!EMPLOYEE_ID) return
     fetchData()
     localStorage.setItem('inflowhr-kudos-seen', new Date().toISOString())
-  }, [fetchData])
+  }, [fetchData, EMPLOYEE_ID])
 
   async function handleLike(entry: KudosEntry) {
     if (!EMPLOYEE_ID || entry.liked_by.includes(EMPLOYEE_ID)) return

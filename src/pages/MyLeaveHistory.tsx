@@ -98,9 +98,12 @@ export default function MyLeaveHistory() {
     }
 
     setLoading(false)
-  }, [])
+  }, [EMPLOYEE_ID])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    if (!EMPLOYEE_ID) return
+    fetchData()
+  }, [fetchData, EMPLOYEE_ID])
 
   const filtered = filter === 'all'
     ? requests
