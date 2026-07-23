@@ -46,12 +46,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [employeeId, setEmployeeId] = useState<string | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
-    const { data: cu } = await supabase
+    let { data: cu } = await supabase
       .from('company_users')
       .select('id, company_id, role, employee_id')
       .eq('auth_user_id', userId)
       .eq('is_active', true)
       .single()
+
+    if (!cu && email) {
+      const domain = email.split('@')[1]
+      if (domain) {
+        const { data: co } = await supabase
+          .from('companies')
+          .select('id')
+          .eq('domain', domain)
+          .eq('is_active', true)
+          .single()
+        if (co) {
+          const { data: newCu } = await supabase
+            .from('company_users')
+            .insert({ auth_user_id: userId, company_id: co.id, role: 'employee', is_active: true })
+            .select('id, company_id, role, employee_id')
+            .single()
+          if (newCu) cu = newCu
+        }
+      }
+    }
 
     if (cu) {
       setCompanyUser(cu as CompanyUser)

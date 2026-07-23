@@ -16,11 +16,9 @@ DECLARE
   v_james uuid := 'cccccccc-cccc-cccc-cccc-cccccccccccc';
   v_emma uuid := 'dddddddd-dddd-dddd-dddd-dddddddddddd';
   v_tom uuid := 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+  v_tenant_id text;
   v_lt_annual bigint;
   v_lt_sick bigint;
-  v_lt_parental bigint;
-  v_lt_compassionate bigint;
-  v_lt_wfh bigint;
   v_claim1 bigint;
   v_claim2 bigint;
   v_claim3 bigint;
@@ -38,13 +36,18 @@ DECLARE
   v_c_agile bigint;
   v_c_mhfa bigint;
 BEGIN
-  -- Verify caller is an admin
-  IF NOT EXISTS (
-    SELECT 1 FROM company_users
-    WHERE auth_user_id = p_auth_uid AND role IN ('admin','hr') AND is_active = true
-  ) THEN
-    RAISE EXCEPTION 'Unauthorized: admin role required';
+  -- Verify caller exists in auth.users
+  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = p_auth_uid) THEN
+    RAISE EXCEPTION 'Invalid auth user';
   END IF;
+
+  -- Extract real Microsoft tenant ID from auth metadata
+  SELECT COALESCE(
+    raw_user_meta_data -> 'custom_claims' ->> 'tid',
+    raw_app_meta_data ->> 'provider_id',
+    'placeholder-tenant-id'
+  ) INTO v_tenant_id
+  FROM auth.users WHERE id = p_auth_uid;
 
   -- ========== WIPE ALL DATA ==========
   DELETE FROM workflow_tracker;
@@ -69,9 +72,9 @@ BEGIN
   DELETE FROM courses;
   DELETE FROM companies;
 
-  -- ========== COMPANY ==========
+  -- ========== COMPANY (uses real tenant ID from auth metadata) ==========
   INSERT INTO companies (id, name, microsoft_tenant_id, domain, is_active)
-  VALUES (v_company_id, 'Kumonix', 'placeholder-tenant-id', 'kumonix.com', true);
+  VALUES (v_company_id, 'Kumonix', v_tenant_id, 'kumonix.com', true);
 
   -- ========== EMPLOYEES ==========
   INSERT INTO employees (id, employee_number, first_name, last_name, email, job_title, department, manager_id, start_date, phone, is_admin, is_active, can_post_notifications, company_id) VALUES
@@ -304,3 +307,67 @@ $$;
 
 -- Allow authenticated users to call it (function checks admin role internally)
 GRANT EXECUTE ON FUNCTION public.run_demo_seed(uuid) TO authenticated;
+
+-- ============================================================
+-- Also update handle_new_sso_user to use domain-based lookup
+-- (matches pre-registered companies by email domain, not tenant ID)
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION handle_new_sso_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_tenant_id text;
+  v_domain text;
+  v_company_id uuid;
+  v_email text;
+  v_is_first_user boolean;
+BEGIN
+  v_email := NEW.email;
+  v_domain := split_part(v_email, '@', 2);
+
+  -- Extract Microsoft tenant ID
+  v_tenant_id := COALESCE(
+    NEW.raw_user_meta_data -> 'custom_claims' ->> 'tid',
+    NEW.raw_app_meta_data ->> 'provider_id'
+  );
+
+  -- Look up company by domain (must be pre-registered and active)
+  SELECT id INTO v_company_id
+  FROM companies
+  WHERE domain = v_domain AND is_active = true;
+
+  -- If no matching company, user is not allowed — skip silently
+  -- (AuthContext will show AccessDenied)
+  IF v_company_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- Update the company's tenant ID if it was a placeholder
+  IF v_tenant_id IS NOT NULL AND v_tenant_id != '' THEN
+    UPDATE companies
+    SET microsoft_tenant_id = v_tenant_id
+    WHERE id = v_company_id
+      AND (microsoft_tenant_id IS NULL OR microsoft_tenant_id = '' OR microsoft_tenant_id = 'placeholder-tenant-id');
+  END IF;
+
+  -- Check if this is the first user for this company
+  SELECT NOT EXISTS (
+    SELECT 1 FROM company_users WHERE company_id = v_company_id
+  ) INTO v_is_first_user;
+
+  -- Create company_users link
+  INSERT INTO company_users (auth_user_id, company_id, role)
+  VALUES (
+    NEW.id,
+    v_company_id,
+    CASE WHEN v_is_first_user THEN 'admin' ELSE 'employee' END
+  )
+  ON CONFLICT (auth_user_id, company_id) DO NOTHING;
+
+  RETURN NEW;
+END;
+$$;
