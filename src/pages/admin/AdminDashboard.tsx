@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface DashStats {
   totalEmployees: number
@@ -15,6 +16,7 @@ interface DashStats {
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
+  const { selectedCompanyId, selectedCompany } = useAdminCompany()
   const [stats, setStats] = useState<DashStats>({
     totalEmployees: 0, activeExpenses: 0, pendingLeave: 0,
     payslipsThisMonth: 0, kudosThisMonth: 0, openTickets: 0,
@@ -23,15 +25,18 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!selectedCompanyId) return
     async function load() {
+      setLoading(true)
+      const eq = (q: any) => q.eq('company_id', selectedCompanyId)
       const [emp, exp, leave, pay, kudos, onb, ann] = await Promise.all([
-        supabase.from('employees').select('id', { count: 'exact', head: true }),
-        supabase.from('expense_claims').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('payslips').select('id', { count: 'exact', head: true }),
-        supabase.from('kudos').select('id', { count: 'exact', head: true }),
-        supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('status', 'new'),
-        supabase.from('announcements').select('id', { count: 'exact', head: true }),
+        eq(supabase.from('employees').select('id', { count: 'exact', head: true })),
+        eq(supabase.from('expense_claims').select('id', { count: 'exact', head: true }).eq('status', 'pending')),
+        eq(supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')),
+        eq(supabase.from('payslips').select('id', { count: 'exact', head: true })),
+        eq(supabase.from('kudos').select('id', { count: 'exact', head: true })),
+        eq(supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('status', 'new')),
+        eq(supabase.from('announcements').select('id', { count: 'exact', head: true })),
       ])
       setStats({
         totalEmployees: emp.count ?? 0,
@@ -39,14 +44,14 @@ export default function AdminDashboard() {
         pendingLeave: leave.count ?? 0,
         payslipsThisMonth: pay.count ?? 0,
         kudosThisMonth: kudos.count ?? 0,
-        openTickets: 5,
+        openTickets: 0,
         pendingOnboarding: onb.count ?? 0,
         announcements: ann.count ?? 0,
       })
       setLoading(false)
     }
     load()
-  }, [])
+  }, [selectedCompanyId])
 
   const cards = [
     { label: 'Employees', value: stats.totalEmployees, icon: '👥', color: '#5b9bd5', path: '/admin/employees' },
@@ -63,7 +68,7 @@ export default function AdminDashboard() {
     <div className="admin-dashboard">
       <div className="admin-page-header">
         <h2>Dashboard</h2>
-        <p>Overview of your HR platform</p>
+        <p>{selectedCompany ? selectedCompany.name : 'Overview of your HR platform'}</p>
       </div>
       {loading ? (
         <div className="admin-loading">Loading...</div>

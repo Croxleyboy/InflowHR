@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface Payslip {
   id: number
@@ -33,6 +34,7 @@ interface Employee {
 const PAYROLL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 export default function AdminPayroll() {
+  const { selectedCompanyId } = useAdminCompany()
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,13 +48,13 @@ export default function AdminPayroll() {
   const [empEditId, setEmpEditId] = useState<string | null>(null)
   const [empForm, setEmpForm] = useState<Record<string, any>>({})
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId])
 
   async function loadAll() {
     setLoading(true)
     const [pRes, eRes] = await Promise.all([
-      supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department').eq('is_active', true).order('last_name'),
+      supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).order('payment_date', { ascending: false }),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
     ])
     setPayslips((pRes.data as Payslip[]) || [])
     setEmployees((eRes.data as Employee[]) || [])

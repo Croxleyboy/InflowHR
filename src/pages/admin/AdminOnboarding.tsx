@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 import * as XLSX from 'xlsx'
 
 interface OnboardRecord {
@@ -83,6 +84,7 @@ const SETUP_STEPS = [
 
 export default function AdminOnboarding() {
   const { isSuperAdmin } = useAuth()
+  const { selectedCompanyId } = useAdminCompany()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup'>('dashboard')
@@ -106,7 +108,7 @@ export default function AdminOnboarding() {
   // Company Setup state
   const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [setupStep, setSetupStep] = useState(0)
-  const [selectedCompanyId, setSelectedCompanyId] = useState('')
+  const [setupCompanyId, setSetupCompanyId] = useState('')
   const [setupRows, setSetupRows] = useState<SetupRow[]>([])
   const [setupErrors, setSetupErrors] = useState<string[]>([])
   const [adminEmail, setAdminEmail] = useState('')
@@ -193,11 +195,11 @@ export default function AdminOnboarding() {
     setUploadResult(null)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('onboarding').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase.from('onboarding').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false })
     setRecords((data as OnboardRecord[]) || [])
     setLoading(false)
   }
@@ -373,10 +375,10 @@ export default function AdminOnboarding() {
   }
 
   async function processSetup() {
-    if (setupRows.length === 0 || !selectedCompanyId) return
+    if (setupRows.length === 0 || !setupCompanyId) return
     setProcessing(true)
 
-    const company = companies.find(c => c.id === selectedCompanyId)
+    const company = companies.find(c => c.id === setupCompanyId)
     let onboardCount = 0, empCount = 0, payslipCount = 0
     let assignedAdmin = ''
 
@@ -403,7 +405,7 @@ export default function AdminOnboarding() {
         contract_type: row.contract_type,
         status: 'Onboarded',
         is_complete: true,
-        company_id: selectedCompanyId,
+        company_id: setupCompanyId,
       })
       if (!onbErr) onboardCount++
 
@@ -412,7 +414,7 @@ export default function AdminOnboarding() {
       let employeeId = existing?.id
 
       if (!existing) {
-        const { data: empData, error: empErr } = await supabase.from('employees').insert({
+        const { error: empErr } = await supabase.from('employees').insert({
           employee_number: row.employee_number || `EMP-${Date.now().toString().slice(-6)}`,
           first_name: row.firstname,
           last_name: row.surname,
@@ -423,11 +425,12 @@ export default function AdminOnboarding() {
           phone: row.telephone || '',
           is_admin: row.role === 'admin',
           is_active: true,
-          company_id: selectedCompanyId,
-        }).select('id').single()
-        if (!empErr && empData) {
+          company_id: setupCompanyId,
+        })
+        if (!empErr) {
           empCount++
-          employeeId = empData.id
+          const { data: newEmp } = await supabase.from('employees').select('id').eq('email', row.user_email).maybeSingle()
+          if (newEmp) employeeId = newEmp.id
         }
       }
 
@@ -457,7 +460,7 @@ export default function AdminOnboarding() {
           payroll_id: row.payroll_id || '',
           overtime: 0,
           adjustments: 0,
-          company_id: selectedCompanyId,
+          company_id: setupCompanyId,
         })
         if (!payErr) payslipCount++
       }
@@ -465,7 +468,7 @@ export default function AdminOnboarding() {
       // 4. Create company_users record for admin role
       if (row.user_email === adminEmail && company) {
         await supabase.from('company_users').insert({
-          company_id: selectedCompanyId,
+          company_id: setupCompanyId,
           role: 'admin',
           is_active: true,
           employee_id: employeeId,
@@ -484,7 +487,7 @@ export default function AdminOnboarding() {
             total_allowance: 25,
             used: 0,
             carried_over: 0,
-            company_id: selectedCompanyId,
+            company_id: setupCompanyId,
           })
         }
       }
@@ -497,7 +500,7 @@ export default function AdminOnboarding() {
 
   function resetSetup() {
     setSetupStep(0)
-    setSelectedCompanyId('')
+    setSetupCompanyId('')
     setSetupRows([])
     setSetupErrors([])
     setAdminEmail('')
@@ -526,7 +529,7 @@ export default function AdminOnboarding() {
   }, [records, filterStatus])
 
   const selectedRecord = records.find(r => r.id === selectedId)
-  const selectedCompany = companies.find(c => c.id === selectedCompanyId)
+  const setupCompany = companies.find(c => c.id === setupCompanyId)
 
   return (
     <div className="admin-section">
@@ -824,7 +827,7 @@ export default function AdminOnboarding() {
                 <>
                   <div className="admin-form-field" style={{ maxWidth: 400 }}>
                     <label>Company</label>
-                    <select className="admin-select" value={selectedCompanyId} onChange={e => setSelectedCompanyId(e.target.value)}>
+                    <select className="admin-select" value={setupCompanyId} onChange={e => setSetupCompanyId(e.target.value)}>
                       <option value="">-- Select a company --</option>
                       {companies.map(c => (
                         <option key={c.id} value={c.id}>
@@ -833,14 +836,14 @@ export default function AdminOnboarding() {
                       ))}
                     </select>
                   </div>
-                  {selectedCompanyId && selectedCompany && (
+                  {setupCompanyId && setupCompany && (
                     <div style={{ background: '#f3e5f5', border: '1px solid #ce93d8', borderRadius: 8, padding: 16, marginTop: 16 }}>
                       <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                        <div><strong>Company:</strong> {selectedCompany.name}</div>
-                        <div><strong>Domain:</strong> {selectedCompany.domain}</div>
-                        <div><strong>Status:</strong> <span style={{ color: selectedCompany.is_active ? '#43a047' : '#ff9800' }}>{selectedCompany.is_active ? 'Active' : 'Inactive'}</span></div>
+                        <div><strong>Company:</strong> {setupCompany.name}</div>
+                        <div><strong>Domain:</strong> {setupCompany.domain}</div>
+                        <div><strong>Status:</strong> <span style={{ color: setupCompany.is_active ? '#43a047' : '#ff9800' }}>{setupCompany.is_active ? 'Active' : 'Inactive'}</span></div>
                       </div>
-                      {selectedCompany.is_active && (
+                      {setupCompany.is_active && (
                         <p style={{ color: '#e65100', fontSize: 13, marginTop: 8, marginBottom: 0 }}>
                           This company is currently active. Users with this domain can already log in. Consider disabling it until setup is complete.
                         </p>
@@ -848,7 +851,7 @@ export default function AdminOnboarding() {
                     </div>
                   )}
                   <div style={{ marginTop: 24 }}>
-                    <button className="admin-btn admin-btn-primary" disabled={!selectedCompanyId} onClick={() => setSetupStep(1)}>
+                    <button className="admin-btn admin-btn-primary" disabled={!setupCompanyId} onClick={() => setSetupStep(1)}>
                       Next: Upload Data
                     </button>
                   </div>
@@ -862,7 +865,7 @@ export default function AdminOnboarding() {
             <div>
               <h3>Upload Employee & Salary Data</h3>
               <p style={{ color: '#666', marginBottom: 8 }}>
-                Upload an Excel file with employee details and salary information for <strong>{selectedCompany?.name}</strong>.
+                Upload an Excel file with employee details and salary information for <strong>{setupCompany?.name}</strong>.
               </p>
               <p style={{ color: '#999', fontSize: 13, marginBottom: 16 }}>
                 Required columns: First Name, Surname, Work Email, Annual Salary. Optional: Job Title, Department, Manager Name/Email, Location, Phone, Employee Number, Start Date, Contract Type, Tax Code, Payroll ID, Role (admin/employee/hr).
@@ -921,7 +924,7 @@ export default function AdminOnboarding() {
             <div>
               <h3>Review Data & Assign Admin</h3>
               <p style={{ color: '#666', marginBottom: 16 }}>
-                Review the data below for <strong>{selectedCompany?.name}</strong>. Select which employee will be the company admin.
+                Review the data below for <strong>{setupCompany?.name}</strong>. Select which employee will be the company admin.
               </p>
 
               <div className="admin-form-field" style={{ maxWidth: 400, marginBottom: 20 }}>
@@ -993,7 +996,7 @@ export default function AdminOnboarding() {
                   <h3>Ready to Process</h3>
                   <p style={{ color: '#666', maxWidth: 500, margin: '0 auto 24px' }}>
                     This will create all employee records, onboarding entries, payslips, and leave balances
-                    for <strong>{selectedCompany?.name}</strong>. This action cannot be undone.
+                    for <strong>{setupCompany?.name}</strong>. This action cannot be undone.
                   </p>
                   <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
                     <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => setSetupStep(2)}>Back</button>
@@ -1043,7 +1046,7 @@ export default function AdminOnboarding() {
                     <ol style={{ margin: 0, paddingLeft: 20, color: '#333', fontSize: 14 }}>
                       <li>Review the employee data in the Employees admin page</li>
                       <li>Check payslips in the Payroll admin page and mark as "processed" or "paid"</li>
-                      {selectedCompany && !selectedCompany.is_active && (
+                      {setupCompany && !setupCompany.is_active && (
                         <li><strong>Enable the company domain</strong> in Companies so employees can log in</li>
                       )}
                       <li>Employees will complete their own personal details (DOB, address, emergency contact) on first login</li>

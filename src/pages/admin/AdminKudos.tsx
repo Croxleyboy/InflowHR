@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface Kudo {
   id: number
@@ -14,19 +15,21 @@ interface Kudo {
 const CATEGORIES = ['teamwork', 'innovation', 'leadership', 'customer_focus', 'going_above']
 
 export default function AdminKudos() {
+  const { selectedCompanyId } = useAdminCompany()
   const [kudos, setKudos] = useState<Kudo[]>([])
   const [loading, setLoading] = useState(true)
   const [filterCat, setFilterCat] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
   async function load() {
     setLoading(true)
     const { data } = await supabase
       .from('kudos')
       .select('*, from_emp:employees!kudos_from_employee_id_fkey(first_name, last_name), to_emp:employees!kudos_to_employee_id_fkey(first_name, last_name)')
+      .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
     setKudos((data as Kudo[]) || [])
     setLoading(false)

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface LeaveRequest {
   id: number
@@ -16,6 +17,7 @@ interface LeaveRequest {
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
 
 export default function AdminLeave() {
+  const { selectedCompanyId } = useAdminCompany()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -23,13 +25,14 @@ export default function AdminLeave() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
   async function load() {
     setLoading(true)
     const { data } = await supabase
       .from('leave_requests')
       .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name)')
+      .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
     setRequests((data as LeaveRequest[]) || [])
     setLoading(false)

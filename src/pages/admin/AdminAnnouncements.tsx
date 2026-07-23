@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface Announcement {
   id: number
@@ -12,19 +13,21 @@ interface Announcement {
 }
 
 export default function AdminAnnouncements() {
+  const { selectedCompanyId } = useAdminCompany()
   const [items, setItems] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [search, setSearch] = useState('')
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
   async function load() {
     setLoading(true)
     const { data } = await supabase
       .from('announcements')
       .select('*, author:employees!announcements_author_id_fkey(first_name, last_name)')
+      .eq('company_id', selectedCompanyId)
       .order('published_at', { ascending: false })
     setItems((data as Announcement[]) || [])
     setLoading(false)

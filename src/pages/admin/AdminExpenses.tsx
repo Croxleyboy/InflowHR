@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface Claim {
   id: number
@@ -34,6 +35,7 @@ const EXPENSE_TYPES = [
 const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
 
 export default function AdminExpenses() {
+  const { selectedCompanyId } = useAdminCompany()
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -49,13 +51,14 @@ export default function AdminExpenses() {
   const [newCostCenter, setNewCostCenter] = useState('')
   const [newExpenseType, setNewExpenseType] = useState('')
 
-  useEffect(() => { loadClaims() }, [])
+  useEffect(() => { if (selectedCompanyId) loadClaims() }, [selectedCompanyId])
 
   async function loadClaims() {
     setLoading(true)
     const { data } = await supabase
       .from('expense_claims')
       .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name)')
+      .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
     setClaims((data as Claim[]) || [])
     setLoading(false)

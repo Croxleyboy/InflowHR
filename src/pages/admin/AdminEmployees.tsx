@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface Employee {
   id: string
@@ -17,6 +18,7 @@ interface Employee {
 }
 
 export default function AdminEmployees() {
+  const { selectedCompanyId } = useAdminCompany()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [filterDept, setFilterDept] = useState('')
@@ -27,11 +29,11 @@ export default function AdminEmployees() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploading, setUploading] = useState<string | null>(null)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('employees').select('*').order('last_name')
+    const { data } = await supabase.from('employees').select('*').eq('company_id', selectedCompanyId).order('last_name')
     setEmployees((data as Employee[]) || [])
     setLoading(false)
   }

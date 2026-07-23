@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { AdminCompanyProvider, useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface MenuItem {
   path: string
@@ -26,10 +27,11 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/demo-seed', label: 'Demo Seed', icon: '🌱', superAdminOnly: true },
 ]
 
-export default function AdminLayout() {
+function AdminLayoutInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const navigate = useNavigate()
   const { isSuperAdmin } = useAuth()
+  const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany } = useAdminCompany()
   const visibleItems = MENU_ITEMS.filter(item => !item.superAdminOnly || isSuperAdmin)
 
   return (
@@ -47,6 +49,27 @@ export default function AdminLayout() {
           <span className="admin-topbar-logo">InflowHR</span>
           <span className="admin-topbar-subtitle">Admin Portal</span>
         </h1>
+
+        {isSuperAdmin && companies.length > 1 && (
+          <div className="admin-company-selector">
+            <select
+              value={selectedCompanyId}
+              onChange={e => setSelectedCompanyId(e.target.value)}
+              className="admin-company-select"
+            >
+              {companies.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {!c.is_active ? '(Inactive)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {!isSuperAdmin && selectedCompany && (
+          <span className="admin-company-label">{selectedCompany.name}</span>
+        )}
+
         <button className="admin-topbar-exit" onClick={() => navigate('/')}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -80,5 +103,13 @@ export default function AdminLayout() {
         <Outlet />
       </main>
     </div>
+  )
+}
+
+export default function AdminLayout() {
+  return (
+    <AdminCompanyProvider>
+      <AdminLayoutInner />
+    </AdminCompanyProvider>
   )
 }
