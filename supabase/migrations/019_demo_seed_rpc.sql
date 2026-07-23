@@ -350,12 +350,9 @@ BEGIN
     (v_m2m_tom,   'M2M004', 'Tom',   'Henderson', 'tom.henderson@move2modern.co.uk',   'Project Manager',                'Delivery',   v_m2m_andy,    '2025-01-13', '+44 7700 200004', false, true, false, v_m2m_id),
     (v_m2m_lucy,  'M2M005', 'Lucy',  'Chen',      'lucy.chen@move2modern.co.uk',       'Business Analyst',               'Delivery',   v_m2m_tom,     '2025-04-07', '+44 7700 200005', false, true, false, v_m2m_id);
 
-  -- ========== COMPANY_USERS (andy@move2modern.co.uk is company admin, super admin also linked) ==========
-  INSERT INTO company_users (company_id, employee_id, role, is_active)
-  VALUES (v_m2m_id, v_m2m_andy, 'admin', true);
-
-  INSERT INTO company_users (auth_user_id, company_id, role, is_active)
-  VALUES (p_auth_uid, v_m2m_id, 'admin', true);
+  -- ========== COMPANY_USERS (super admin linked to Move2Modern) ==========
+  INSERT INTO company_users (auth_user_id, company_id, employee_id, role, is_active)
+  VALUES (p_auth_uid, v_m2m_id, v_m2m_andy, 'admin', true);
 
   -- ========== LEAVE TYPES ==========
   INSERT INTO leave_types (name, default_allowance, colour, is_active, company_id) VALUES
