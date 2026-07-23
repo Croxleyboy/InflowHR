@@ -1,8 +1,22 @@
+import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
 export default function Footer() {
   const { t } = useLanguage()
+  const { employeeEmail } = useAuth()
+  const [badgeCount, setBadgeCount] = useState(0)
+
+  useEffect(() => {
+    if (!employeeEmail) return
+    supabase.from('workflow_tracker')
+      .select('id', { count: 'exact', head: true })
+      .ilike('assigned_to', `%${employeeEmail}%`)
+      .eq('status', 'Pending')
+      .then(({ count }) => setBadgeCount(count || 0))
+  }, [employeeEmail])
   return (
     <nav className="footer">
       <NavLink to="/" className={({ isActive }) => `footer-item ${isActive ? 'active' : ''}`} end>
@@ -31,7 +45,7 @@ export default function Footer() {
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
             <path d="M13.73 21a2 2 0 0 1-3.46 0" />
           </svg>
-          <span className="notification-badge">2</span>
+          {badgeCount > 0 && <span className="notification-badge">{badgeCount}</span>}
         </div>
         <span>{t('footer.notifications')}</span>
       </NavLink>
