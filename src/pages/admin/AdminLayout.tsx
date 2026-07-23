@@ -14,6 +14,7 @@ const MENU_ITEMS = [
   { path: '/admin/tickets', label: 'HR Tickets', icon: '🎫' },
   { path: '/admin/benefits', label: 'Benefits', icon: '🎁' },
   { path: '/admin/companies', label: 'Companies', icon: '🏢' },
+  { path: '/admin/demo-seed', label: 'Demo Seed', icon: '🌱' },
 ]
 
 export default function AdminLayout() {

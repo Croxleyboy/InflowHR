@@ -40,6 +40,7 @@ import AdminOnboarding from './pages/admin/AdminOnboarding'
 import AdminTickets from './pages/admin/AdminTickets'
 import AdminBenefits from './pages/admin/AdminBenefits'
 import AdminCompanies from './pages/admin/AdminCompanies'
+import AdminDemoSeed from './pages/admin/AdminDemoSeed'
 
 function AdminGate() {
   const { companyUser } = useAuth()
@@ -81,6 +82,7 @@ function AuthGate() {
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="benefits" element={<AdminBenefits />} />
           <Route path="companies" element={<AdminCompanies />} />
+          <Route path="demo-seed" element={<AdminDemoSeed />} />
         </Route>
       </Route>
 
