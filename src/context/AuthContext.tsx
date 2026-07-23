@@ -49,12 +49,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [employeeId, setEmployeeId] = useState<string | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
-    let { data: cu } = await supabase
+    const { data: rows } = await supabase
       .from('company_users')
       .select('id, company_id, role, employee_id')
       .eq('auth_user_id', userId)
       .eq('is_active', true)
-      .single()
+
+    let cu = rows && rows.length > 0
+      ? rows.find(r => r.role === 'admin') || rows[0]
+      : null
 
     if (!cu && email) {
       const domain = email.split('@')[1]
@@ -85,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .from('employees')
           .select('id')
           .eq('email', email)
-          .single()
+          .maybeSingle()
         if (emp) {
           empId = emp.id
           await supabase
