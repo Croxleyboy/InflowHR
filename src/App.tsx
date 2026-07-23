@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
 import { FeatureProvider } from './context/FeatureContext'
 import { LanguageProvider } from './context/LanguageContext'
@@ -46,7 +46,7 @@ function AdminGate() {
   if (!companyUser || !['admin', 'hr'].includes(companyUser.role)) {
     return <Navigate to="/" replace />
   }
-  return <AdminLayout />
+  return <Outlet />
 }
 
 function AuthGate() {
@@ -68,18 +68,20 @@ function AuthGate() {
     <Routes>
       {/* Admin Portal — locked to admin/hr roles */}
       <Route path="/admin" element={<AdminGate />}>
-        <Route index element={<AdminDashboard />} />
-        <Route path="expenses" element={<AdminExpenses />} />
-        <Route path="leave" element={<AdminLeave />} />
-        <Route path="payroll" element={<AdminPayroll />} />
-        <Route path="employees" element={<AdminEmployees />} />
-        <Route path="kudos" element={<AdminKudos />} />
-        <Route path="elearning" element={<AdminELearning />} />
-        <Route path="announcements" element={<AdminAnnouncements />} />
-        <Route path="onboarding" element={<AdminOnboarding />} />
-        <Route path="tickets" element={<AdminTickets />} />
-        <Route path="benefits" element={<AdminBenefits />} />
-        <Route path="companies" element={<AdminCompanies />} />
+        <Route element={<AdminLayout />}>
+          <Route index element={<AdminDashboard />} />
+          <Route path="expenses" element={<AdminExpenses />} />
+          <Route path="leave" element={<AdminLeave />} />
+          <Route path="payroll" element={<AdminPayroll />} />
+          <Route path="employees" element={<AdminEmployees />} />
+          <Route path="kudos" element={<AdminKudos />} />
+          <Route path="elearning" element={<AdminELearning />} />
+          <Route path="announcements" element={<AdminAnnouncements />} />
+          <Route path="onboarding" element={<AdminOnboarding />} />
+          <Route path="tickets" element={<AdminTickets />} />
+          <Route path="benefits" element={<AdminBenefits />} />
+          <Route path="companies" element={<AdminCompanies />} />
+        </Route>
       </Route>
 
       {/* Employee App */}

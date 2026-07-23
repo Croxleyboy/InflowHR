@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
 
 interface Company {
   id: string
@@ -11,6 +12,7 @@ interface Company {
 }
 
 export default function AdminCompanies() {
+  const { company: myCompany } = useAuth()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -46,11 +48,19 @@ export default function AdminCompanies() {
   }
 
   async function toggleActive(id: string, currentlyActive: boolean) {
+    if (id === myCompany?.id && currentlyActive) {
+      alert('You cannot disable your own company.')
+      return
+    }
     await supabase.from('companies').update({ is_active: !currentlyActive }).eq('id', id)
     load()
   }
 
   async function deleteCompany(id: string) {
+    if (id === myCompany?.id) {
+      alert('You cannot delete your own company.')
+      return
+    }
     if (!confirm('Delete this company? All associated users will lose access.')) return
     await supabase.from('company_users').delete().eq('company_id', id)
     await supabase.from('companies').delete().eq('id', id)
