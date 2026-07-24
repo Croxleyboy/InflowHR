@@ -67,12 +67,12 @@ export default function Dashboard() {
         .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
 
       supabase.from('expense_claims')
-        .select('total_amount')
+        .select('amount')
         .eq('employee_id', employeeId)
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
-        .then(({ data }) => { if (data) setLastExpense(data.total_amount) })
+        .then(({ data }) => { if (data) setLastExpense(data.amount) })
 
       supabase.from('leave_balances')
         .select('total_allowance, used')

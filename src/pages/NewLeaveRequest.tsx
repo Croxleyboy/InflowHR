@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -20,18 +20,6 @@ function getBenefitLeaveTypes(): { name: string; translationKey: string }[] {
 }
 
 
-const LEAVE_TYPE_DB_IDS: Record<string, number> = {
-  'Annual Leave': 1,
-  'Sick Leave': 2,
-  'Compassionate Leave': 3,
-  'Parental Leave': 4,
-  'Jury Duty': 5,
-  'Bereavement': 6,
-  'Exam Leave': 7,
-  'Carers Leave': 8,
-  'Career Break': 9,
-  'Lieu Days': 10,
-}
 
 function todayStr() {
   return new Date().toISOString().split('T')[0]
@@ -131,6 +119,19 @@ export default function NewLeaveRequest() {
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [leaveTypeIds, setLeaveTypeIds] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    supabase.from('leave_types')
+      .select('id, name')
+      .then(({ data }) => {
+        if (data) {
+          const map: Record<string, number> = {}
+          for (const row of data) map[row.name] = row.id
+          setLeaveTypeIds(map)
+        }
+      })
+  }, [])
 
   function translateLeaveType(name: string): string {
     const entry = allLeaveTypes.find(k => k.name === name)
@@ -152,7 +153,12 @@ export default function NewLeaveRequest() {
     setSubmitting(true)
     setError(null)
 
-    const typeId = LEAVE_TYPE_DB_IDS[leaveType] || 1
+    const typeId = leaveTypeIds[leaveType]
+    if (!typeId) {
+      setError('Leave type not found. Please try again.')
+      setSubmitting(false)
+      return
+    }
 
     const { data, error: err } = await supabase
       .from('leave_requests')

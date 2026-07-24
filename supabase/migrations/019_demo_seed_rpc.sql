@@ -51,6 +51,14 @@ DECLARE
   v_m2m_claim4 bigint;
   v_m2m_claim5 bigint;
 
+  -- Leave request IDs (for workflow_tracker approval_id)
+  v_lr_sarah_annual bigint;
+  v_lr_james_annual bigint;
+  v_lr_tom_annual bigint;
+  v_m2m_lr_james bigint;
+  v_m2m_lr_priya bigint;
+  v_m2m_lr_lucy bigint;
+
   -- Benefits
   v_ben_health bigint;
   v_ben_cycle bigint;
@@ -155,6 +163,10 @@ BEGIN
     (v_emma,  v_lt_annual, '2026-12-23', '2026-12-31', 6, 'approved', 'Christmas break',    v_andy, v_company_id),
     (v_tom,   v_lt_annual, '2026-08-18', '2026-08-19', 2, 'pending',  'Moving house',       NULL,   v_company_id),
     (v_andy,  v_lt_sick,   '2026-05-12', '2026-05-12', 1, 'approved', 'Dental appointment', v_emma, v_company_id);
+
+  SELECT id INTO v_lr_sarah_annual FROM leave_requests WHERE employee_id=v_sarah AND start_date='2026-07-28' LIMIT 1;
+  SELECT id INTO v_lr_james_annual FROM leave_requests WHERE employee_id=v_james AND start_date='2026-09-01' LIMIT 1;
+  SELECT id INTO v_lr_tom_annual   FROM leave_requests WHERE employee_id=v_tom   AND start_date='2026-08-18' LIMIT 1;
 
   -- ========== EXPENSE CLAIMS ==========
   INSERT INTO expense_claims (employee_id, reference_number, title, description, amount, status, category, submitted_at, start_date, end_date, company_id)
@@ -293,6 +305,9 @@ BEGIN
     (v_andy,  v_emma, 'H1 2026', 5, 'Visionary leadership, strong technical judgment, excellent team builder',   'Work-life balance - tendency to overcommit',               'Delegate two standing responsibilities; take full leave allocation',      'completed',  '2026-07-05T09:00:00Z');
 
   -- ========== ONBOARDING ==========
+  INSERT INTO onboarding (user_action, status, firstname, surname, start_date, user_email, job_title, department, employee_number, manager, manager_email, contract_type, location, date_of_birth, telephone, personal_email, address_line_1, address_line_2, address_line_3, emergency_contact_number, gender, nationality, company_id) VALUES
+    ('Joiner', 'complete',    'Andy',   'Jones',    '2022-01-10', 'andy.jones@kumonix.com',     'Head of IT',        'IT',          'EMP001', NULL,         NULL,                     'standard persona', 'London', '1985-06-15', '+44 7700 100001', 'andy.personal@gmail.com', '42 Croxley Road', 'Watford', 'WD3 4QY', '+44 7700 200001', 'Male', 'British', v_company_id);
+
   INSERT INTO onboarding (user_action, status, firstname, surname, start_date, user_email, job_title, department, employee_number, manager, manager_email, contract_type, location, company_id) VALUES
     ('Joiner', 'complete',    'Sarah',  'Mitchell', '2023-03-15', 'sarah.mitchell@kumonix.com', 'Software Engineer', 'Engineering', 'EMP002', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', v_company_id),
     ('Joiner', 'complete',    'James',  'Patel',    '2023-06-01', 'james.patel@kumonix.com',    'Product Designer',  'Design',      'EMP003', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', v_company_id),
@@ -301,15 +316,15 @@ BEGIN
     ('Joiner', 'new',         'Rachel', 'Green',    '2026-09-01', 'rachel.green@kumonix.com',   'Marketing Manager', 'Marketing',   'EMP006', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', v_company_id);
 
   -- ========== WORKFLOW TRACKER ==========
-  INSERT INTO workflow_tracker (emp_display_name, step, status, record_type, action, employee_email, assigned_to, task_description, company_id) VALUES
-    ('Sarah Mitchell', 1, 'Pending',  'Leave',   'Approve annual leave',   'sarah.mitchell@kumonix.com', 'andy.jones@kumonix.com', 'Sarah Mitchell has requested 3 days annual leave (28-30 Jul 2026)', v_company_id),
-    ('James Patel',    1, 'Pending',  'Leave',   'Approve annual leave',   'james.patel@kumonix.com',    'andy.jones@kumonix.com', 'James Patel has requested 5 days annual leave (1-5 Sep 2026)',      v_company_id),
-    ('Tom Williams',   1, 'Pending',  'Leave',   'Approve annual leave',   'tom.williams@kumonix.com',   'andy.jones@kumonix.com', 'Tom Williams has requested 2 days annual leave (18-19 Aug 2026)',   v_company_id),
-    ('Sarah Mitchell', 1, 'Pending',  'Expense', 'Approve expense claim',  'sarah.mitchell@kumonix.com', 'andy.jones@kumonix.com', 'Train to London office - £124.00',                                 v_company_id),
-    ('James Patel',    1, 'Pending',  'Expense', 'Approve expense claim',  'james.patel@kumonix.com',    'andy.jones@kumonix.com', 'Design software licence - £168.00',                                v_company_id),
-    ('Andy Jones',     1, 'Complete', 'Expense', 'Expense claim approved', 'andy.jones@kumonix.com',     'andy.jones@kumonix.com', 'Client lunch meeting - £85.50',                                    v_company_id),
-    ('Emma Chen',      1, 'Complete', 'Expense', 'Expense claim approved', 'emma.chen@kumonix.com',      'andy.jones@kumonix.com', 'Team building dinner - £210.75',                                   v_company_id),
-    ('Sarah Mitchell', 1, 'Complete', 'Leave',   'Sick leave approved',    'sarah.mitchell@kumonix.com', 'andy.jones@kumonix.com', '2 days sick leave (16-17 Jun 2026)',                               v_company_id);
+  INSERT INTO workflow_tracker (emp_display_name, step, status, record_type, action, employee_email, assigned_to, task_description, approval_id, company_id) VALUES
+    ('Sarah Mitchell', 1, 'Pending',  'Leave',   'Approve annual leave',   'sarah.mitchell@kumonix.com', 'andy.jones@kumonix.com', 'Annual Leave - 28/07/2026 to 30/07/2026 (3 days)', v_lr_sarah_annual, v_company_id),
+    ('James Patel',    1, 'Pending',  'Leave',   'Approve annual leave',   'james.patel@kumonix.com',    'andy.jones@kumonix.com', 'Annual Leave - 01/09/2026 to 05/09/2026 (5 days)',  v_lr_james_annual, v_company_id),
+    ('Tom Williams',   1, 'Pending',  'Leave',   'Approve annual leave',   'tom.williams@kumonix.com',   'andy.jones@kumonix.com', 'Annual Leave - 18/08/2026 to 19/08/2026 (2 days)',  v_lr_tom_annual,   v_company_id),
+    ('Sarah Mitchell', 1, 'Pending',  'Expense', 'Approve expense claim',  'sarah.mitchell@kumonix.com', 'andy.jones@kumonix.com', 'Train to London office - £124.00',                  v_claim2,          v_company_id),
+    ('James Patel',    1, 'Pending',  'Expense', 'Approve expense claim',  'james.patel@kumonix.com',    'andy.jones@kumonix.com', 'Design software licence - £168.00',                 v_claim3,          v_company_id),
+    ('Andy Jones',     1, 'Complete', 'Expense', 'Expense claim approved', 'andy.jones@kumonix.com',     'andy.jones@kumonix.com', 'Client lunch meeting - £85.50',                     v_claim1,          v_company_id),
+    ('Emma Chen',      1, 'Complete', 'Expense', 'Expense claim approved', 'emma.chen@kumonix.com',      'andy.jones@kumonix.com', 'Team building dinner - £210.75',                    v_claim5,          v_company_id),
+    ('Sarah Mitchell', 1, 'Complete', 'Leave',   'Sick leave approved',    'sarah.mitchell@kumonix.com', 'andy.jones@kumonix.com', '2 days sick leave (16-17 Jun 2026)',                NULL,              v_company_id);
 
   -- ========== NOTIFICATIONS ==========
   INSERT INTO notifications (employee_id, title, message, type, is_read, company_id) VALUES
@@ -388,6 +403,10 @@ BEGIN
     (v_m2m_priya, v_m2m_lt_annual, '2026-10-20', '2026-10-24', 5, 'pending',  'Diwali celebrations',     NULL,          v_m2m_id),
     (v_m2m_tom,   v_m2m_lt_annual, '2026-12-22', '2026-12-31', 7, 'approved', 'Christmas & New Year',    v_m2m_sarah,   v_m2m_id),
     (v_m2m_lucy,  v_m2m_lt_annual, '2026-08-25', '2026-08-26', 2, 'pending',  'Personal appointment',    NULL,          v_m2m_id);
+
+  SELECT id INTO v_m2m_lr_james FROM leave_requests WHERE employee_id=v_m2m_james AND start_date='2026-09-08' LIMIT 1;
+  SELECT id INTO v_m2m_lr_priya FROM leave_requests WHERE employee_id=v_m2m_priya AND start_date='2026-10-20' LIMIT 1;
+  SELECT id INTO v_m2m_lr_lucy  FROM leave_requests WHERE employee_id=v_m2m_lucy  AND start_date='2026-08-25' LIMIT 1;
 
   -- ========== EXPENSE CLAIMS ==========
   INSERT INTO expense_claims (employee_id, reference_number, title, description, amount, status, category, submitted_at, start_date, end_date, company_id)
@@ -504,13 +523,13 @@ BEGIN
     ('Joiner', 'in_progress', 'Lucy',  'Chen',      '2025-04-07', 'lucy.chen@move2modern.co.uk',     'Business Analyst',               'Delivery',   'M2M005', 'Tom Henderson',  'tom.henderson@move2modern.co.uk',  'standard persona', 'London', v_m2m_id);
 
   -- ========== WORKFLOW TRACKER ==========
-  INSERT INTO workflow_tracker (emp_display_name, step, status, record_type, action, employee_email, assigned_to, task_description, company_id) VALUES
-    ('James Cooper',  1, 'Pending',  'Leave',   'Approve annual leave',   'james.cooper@move2modern.co.uk',  'sarah.mitchell@move2modern.co.uk', 'James Cooper has requested 5 days annual leave (8-12 Sep 2026)',    v_m2m_id),
-    ('Priya Patel',   1, 'Pending',  'Leave',   'Approve annual leave',   'priya.patel@move2modern.co.uk',   'sarah.mitchell@move2modern.co.uk', 'Priya Patel has requested 5 days annual leave (20-24 Oct 2026)',    v_m2m_id),
-    ('Lucy Chen',     1, 'Pending',  'Leave',   'Approve annual leave',   'lucy.chen@move2modern.co.uk',     'sarah.mitchell@move2modern.co.uk', 'Lucy Chen has requested 2 days annual leave (25-26 Aug 2026)',      v_m2m_id),
-    ('Priya Patel',   1, 'Pending',  'Expense', 'Approve expense claim',  'priya.patel@move2modern.co.uk',   'sarah.mitchell@move2modern.co.uk', 'Design conference ticket - £450.00',                               v_m2m_id),
-    ('Tom Henderson', 1, 'Pending',  'Expense', 'Approve expense claim',  'tom.henderson@move2modern.co.uk', 'sarah.mitchell@move2modern.co.uk', 'Train to client site - £89.50',                                    v_m2m_id),
-    ('James Cooper',  1, 'Complete', 'Expense', 'Expense claim approved', 'james.cooper@move2modern.co.uk',  'sarah.mitchell@move2modern.co.uk', 'AWS certification exam - £300.00',                                 v_m2m_id);
+  INSERT INTO workflow_tracker (emp_display_name, step, status, record_type, action, employee_email, assigned_to, task_description, approval_id, company_id) VALUES
+    ('James Cooper',  1, 'Pending',  'Leave',   'Approve annual leave',   'james.cooper@move2modern.co.uk',  'sarah.mitchell@move2modern.co.uk', 'Annual Leave - 08/09/2026 to 12/09/2026 (5 days)',  v_m2m_lr_james, v_m2m_id),
+    ('Priya Patel',   1, 'Pending',  'Leave',   'Approve annual leave',   'priya.patel@move2modern.co.uk',   'sarah.mitchell@move2modern.co.uk', 'Annual Leave - 20/10/2026 to 24/10/2026 (5 days)',  v_m2m_lr_priya, v_m2m_id),
+    ('Lucy Chen',     1, 'Pending',  'Leave',   'Approve annual leave',   'lucy.chen@move2modern.co.uk',     'sarah.mitchell@move2modern.co.uk', 'Annual Leave - 25/08/2026 to 26/08/2026 (2 days)',  v_m2m_lr_lucy,  v_m2m_id),
+    ('Priya Patel',   1, 'Pending',  'Expense', 'Approve expense claim',  'priya.patel@move2modern.co.uk',   'sarah.mitchell@move2modern.co.uk', 'Design conference ticket - £450.00',                v_m2m_claim3,   v_m2m_id),
+    ('Tom Henderson', 1, 'Pending',  'Expense', 'Approve expense claim',  'tom.henderson@move2modern.co.uk', 'sarah.mitchell@move2modern.co.uk', 'Train to client site - £89.50',                     v_m2m_claim4,   v_m2m_id),
+    ('James Cooper',  1, 'Complete', 'Expense', 'Expense claim approved', 'james.cooper@move2modern.co.uk',  'sarah.mitchell@move2modern.co.uk', 'AWS certification exam - £300.00',                  v_m2m_claim2,   v_m2m_id);
 
   -- ========== NOTIFICATIONS ==========
   INSERT INTO notifications (employee_id, title, message, type, is_read, company_id) VALUES
