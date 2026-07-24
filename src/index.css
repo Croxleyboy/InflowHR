@@ -2968,6 +2968,75 @@ body {
   .submit-cost-row { flex-wrap: wrap; }
 }
 
+/* ── Initial Setup ── */
+.initial-setup-page {
+  min-height: 100dvh;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #1e1e2d 0%, #2a2a4a 40%, #3a3a6a 100%);
+  padding: 24px 16px;
+}
+.setup-card {
+  width: 100%; max-width: 420px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--bg-card);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+.setup-header {
+  background: linear-gradient(135deg, #e91e63, #9c27b0);
+  padding: 28px 24px 24px;
+  text-align: center;
+  color: #fff;
+}
+.setup-header h1 {
+  font-size: 22px; font-weight: 800; margin: 12px 0 4px;
+}
+.setup-header p {
+  font-size: 13px; opacity: 0.85; margin: 0;
+}
+.setup-body {
+  padding: 20px 24px 28px;
+}
+.setup-avatar-section {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; margin-bottom: 20px; cursor: pointer;
+}
+.setup-avatar-placeholder {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 28px; font-weight: 700;
+  border: 3px dashed rgba(102,126,234,0.5);
+}
+.setup-avatar-img {
+  width: 80px; height: 80px; border-radius: 50%;
+  object-fit: cover; border: 3px solid #9c27b0;
+}
+.setup-avatar-label {
+  font-size: 13px; font-weight: 600; color: #9c27b0;
+}
+.setup-section-label {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  margin: 16px 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #e91e63;
+}
+.setup-submit-btn {
+  display: block; width: 100%;
+  padding: 14px; margin-top: 20px;
+  border: none; border-radius: 12px;
+  background: linear-gradient(135deg, #e91e63, #9c27b0);
+  color: #fff; font-size: 16px; font-weight: 700;
+  cursor: pointer; font-family: var(--sans);
+  transition: opacity 0.15s;
+}
+.setup-submit-btn:active { opacity: 0.85; }
+.setup-submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.setup-hint {
+  text-align: center; font-size: 12px;
+  color: var(--text-muted); margin-top: 12px;
+}
+
 @media (min-width: 481px) {
   .app-shell { border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
 }

@@ -596,6 +596,21 @@ const en: Translations = {
   'timesheets.total_hours': 'Total Hours',
   'timesheets.no_entries': 'No entries this week.',
   'timesheets.unassigned': 'Unassigned',
+
+  // Initial Setup
+  'setup.title': 'Welcome to InflowHR',
+  'setup.subtitle': 'Please complete your profile to get started',
+  'setup.add_photo': 'Tap to add photo',
+  'setup.change_photo': 'Tap to change photo',
+  'setup.date_of_birth': 'Date of Birth',
+  'setup.next_of_kin': 'Next of Kin',
+  'setup.kin_name': 'Full Name',
+  'setup.kin_name_placeholder': 'Next of kin full name',
+  'setup.kin_phone': 'Phone Number',
+  'setup.kin_phone_placeholder': 'Next of kin phone number',
+  'setup.continue': 'Continue',
+  'setup.saving': 'Saving...',
+  'setup.required_hint': 'All fields are required to continue',
 }
 
 const de: Translations = {
@@ -1192,6 +1207,21 @@ const de: Translations = {
   'timesheets.total_hours': 'Gesamtstunden',
   'timesheets.no_entries': 'Keine Einträge diese Woche.',
   'timesheets.unassigned': 'Nicht zugewiesen',
+
+  // Initial Setup
+  'setup.title': 'Willkommen bei InflowHR',
+  'setup.subtitle': 'Bitte vervollständigen Sie Ihr Profil, um zu starten',
+  'setup.add_photo': 'Tippen, um Foto hinzuzufügen',
+  'setup.change_photo': 'Tippen, um Foto zu ändern',
+  'setup.date_of_birth': 'Geburtsdatum',
+  'setup.next_of_kin': 'Nächster Angehöriger',
+  'setup.kin_name': 'Vollständiger Name',
+  'setup.kin_name_placeholder': 'Name des nächsten Angehörigen',
+  'setup.kin_phone': 'Telefonnummer',
+  'setup.kin_phone_placeholder': 'Telefonnummer des nächsten Angehörigen',
+  'setup.continue': 'Weiter',
+  'setup.saving': 'Wird gespeichert...',
+  'setup.required_hint': 'Alle Felder sind erforderlich, um fortzufahren',
 }
 
 const allTranslations: Record<Lang, Translations> = { en, de }

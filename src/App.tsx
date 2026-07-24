@@ -5,6 +5,7 @@ import { LanguageProvider } from './context/LanguageContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Login from './pages/Login'
 import AccessDenied from './pages/AccessDenied'
+import InitialSetup from './pages/InitialSetup'
 import Footer from './components/Footer'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
@@ -64,7 +65,7 @@ function SuperAdminGate() {
 }
 
 function AuthGate() {
-  const { user, loading, companyUser } = useAuth()
+  const { user, loading, companyUser, setupComplete } = useAuth()
 
   if (loading) {
     return <div className="auth-loading">Loading...</div>
@@ -76,6 +77,10 @@ function AuthGate() {
 
   if (!companyUser) {
     return <AccessDenied />
+  }
+
+  if (setupComplete === false) {
+    return <InitialSetup />
   }
 
   return (
