@@ -174,9 +174,13 @@ export default function Notifications() {
   const pendingCount = actions.length
 
   function handleActionClick(item: WorkflowItem) {
-    if (item.record_type === 'Expense' && item.approval_id) {
+    if (!item.approval_id) {
+      alert('This action has no linked record. Please re-seed demo data to fix.')
+      return
+    }
+    if (item.record_type === 'Expense') {
       navigate(`/approve/expense/${item.approval_id}`)
-    } else if (item.record_type === 'Leave' && item.approval_id) {
+    } else if (item.record_type === 'Leave') {
       navigate(`/approve/leave/${item.approval_id}`)
     }
   }
