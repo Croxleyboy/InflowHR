@@ -104,7 +104,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
           />
 
           <div className="form-field">
-            <label className="field-label" style={{ color: '#3d6b99' }}>{t('new_item.expense_type')}</label>
+            <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.expense_type')}</label>
             <div className="select-wrap">
               <select value={expenseType} onChange={e => setExpenseType(e.target.value)} className="form-select">
                 {EXPENSE_TYPE_KEYS.map(tp => <option key={tp} value={tp}>{tExpenseType(tp)}</option>)}
@@ -125,7 +125,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
 
           <div className="date-mileage-row">
             <div className="date-field" style={{ flex: 2 }}>
-              <label className="field-label" style={{ color: '#3d6b99' }}>{t('new_item.date_of_purchase')}</label>
+              <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.date_of_purchase')}</label>
               <div className="date-input-wrap">
                 <span className="date-display">{formatDateDisplay(dateOfPurchase)}</span>
                 <input type="date" value={dateOfPurchase} onChange={e => setDateOfPurchase(e.target.value)} className="date-input-hidden" />
@@ -137,7 +137,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
               </div>
             </div>
             <div style={{ flex: 1 }}>
-              <label className="field-label" style={{ color: '#3d6b99' }}>{t('new_item.mileage_from')}</label>
+              <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.mileage_from')}</label>
               <input
                 type="number"
                 inputMode="numeric"
@@ -175,7 +175,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
 
             <div className="mileage-right">
               <div>
-                <label className="field-label" style={{ color: '#3d6b99' }}>{t('new_item.mileage_to')}</label>
+                <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.mileage_to')}</label>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -186,7 +186,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
                 />
               </div>
               <div>
-                <label className="field-label" style={{ color: '#3d6b99' }}>{t('new_item.total_miles')}</label>
+                <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.total_miles')}</label>
                 <input
                   type="number"
                   inputMode="numeric"

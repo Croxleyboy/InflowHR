@@ -84,8 +84,8 @@ export default function Expenses() {
       <header className="feature-header">
         <button className="feature-back" onClick={() => navigate('/')}>
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="#3d6b99" strokeWidth="2" />
-            <path d="M21 12l-6 6 6 6" stroke="#3d6b99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="18" cy="18" r="17" stroke="#c62828" strokeWidth="2" />
+            <path d="M21 12l-6 6 6 6" stroke="#c62828" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
         <div className="feature-header-center">
@@ -93,7 +93,7 @@ export default function Expenses() {
           <p className="feature-subtitle">{t('expenses.subtitle')}</p>
         </div>
         <button className="expense-graph-btn" onClick={() => setShowGraph(true)} title={t('expenses.graph_title')}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="12" width="4" height="9" rx="1" fill="#4caf50" stroke="none" />
             <rect x="10" y="7" width="4" height="14" rx="1" fill="#2196f3" stroke="none" />
             <rect x="17" y="3" width="4" height="18" rx="1" fill="#f44336" stroke="none" />
@@ -101,9 +101,9 @@ export default function Expenses() {
         </button>
         <button className="feature-refresh" onClick={fetchClaims}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="#3d6b99" strokeWidth="2" />
-            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" />
-            <path d="M22 10v4h-4M10 22v-4h4" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="16" cy="16" r="14" stroke="#c62828" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#c62828" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       </header>
@@ -161,7 +161,7 @@ export default function Expenses() {
               </div>
             </div>
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="claim-arrow">
-              <path d="M12 6l10 10-10 10" stroke="#3d6b99" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M12 6l10 10-10 10" stroke="#c62828" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         ))}

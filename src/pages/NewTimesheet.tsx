@@ -4,8 +4,8 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 
-const LOCATIONS = ['Head Office', 'Home', 'Customer Site', 'Event']
-const ROLES = ['IT', 'Engineering', 'Design', 'HR', 'Finance', 'Marketing', 'Sales', 'Operations', 'Management']
+const LOCATIONS = ['Head Office', 'Home', 'Customer Site', 'Event', 'Unassigned']
+const ROLES = ['IT', 'Engineering', 'Design', 'HR', 'Finance', 'Marketing', 'Sales', 'Operations', 'Management', 'Unassigned']
 
 function todayStr() {
   return new Date().toISOString().split('T')[0]

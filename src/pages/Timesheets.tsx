@@ -77,8 +77,8 @@ export default function Timesheets() {
       <header className="feature-header">
         <button className="feature-back" onClick={() => navigate('/')}>
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="#3d6b99" strokeWidth="2" />
-            <path d="M21 12l-6 6 6 6" stroke="#3d6b99" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="18" cy="18" r="17" stroke="#1565c0" strokeWidth="2" />
+            <path d="M21 12l-6 6 6 6" stroke="#1565c0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
         <div className="feature-header-center">
@@ -87,9 +87,9 @@ export default function Timesheets() {
         </div>
         <button className="feature-refresh" onClick={fetchTimesheets}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="#3d6b99" strokeWidth="2" />
-            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" />
-            <path d="M22 10v4h-4M10 22v-4h4" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="16" cy="16" r="14" stroke="#1565c0" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       </header>
@@ -108,6 +108,10 @@ export default function Timesheets() {
 
       <button className="add-claim-btn" onClick={() => navigate('/timesheets/new')}>
         + {t('timesheets.add_new')}
+      </button>
+
+      <button className="ts-history-btn" onClick={() => navigate('/timesheets/history')}>
+        {t('timesheets.last_4_weeks')}
       </button>
 
       {loading && <p className="claims-empty">{t('common.loading')}</p>}
@@ -133,7 +137,7 @@ export default function Timesheets() {
               </div>
             </div>
             <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="claim-arrow">
-              <path d="M12 6l10 10-10 10" stroke="#3d6b99" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M12 6l10 10-10 10" stroke="#1565c0" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         ))}

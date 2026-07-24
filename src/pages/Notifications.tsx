@@ -346,7 +346,7 @@ export default function Notifications() {
                 </div>
               </div>
               <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
-                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#c62828' : '#3d6b99'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           ))}

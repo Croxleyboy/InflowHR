@@ -29,6 +29,7 @@ import ELearning from './pages/ELearning'
 import Timesheets from './pages/Timesheets'
 import NewTimesheet from './pages/NewTimesheet'
 import TimesheetDetail from './pages/TimesheetDetail'
+import TimesheetHistory from './pages/TimesheetHistory'
 import Placeholder from './pages/Placeholder'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -124,6 +125,7 @@ function AuthGate() {
               <Route path="/leave/:id" element={<LeaveDetail />} />
               <Route path="/timesheets" element={<Timesheets />} />
               <Route path="/timesheets/new" element={<NewTimesheet />} />
+              <Route path="/timesheets/history" element={<TimesheetHistory />} />
               <Route path="/timesheets/:id" element={<TimesheetDetail />} />
               <Route path="/my-profile" element={<MyProfile />} />
               <Route path="/payslips" element={<Payslips />} />

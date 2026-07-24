@@ -171,6 +171,41 @@ body {
 .card-performance { background: linear-gradient(135deg, #ec407a, #c2185b); }
 .card-timesheets { background: linear-gradient(135deg, #42a5f5, #1565c0); }
 
+/* ── Timesheet History ── */
+.ts-history-weeks { display: flex; flex-direction: column; gap: 16px; margin-top: 8px; }
+.ts-week-group {
+  background: var(--bg-card); border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+.ts-week-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #42a5f5, #1565c0);
+  color: #fff;
+}
+.ts-week-range { font-size: 13px; font-weight: 700; }
+.ts-week-total { font-size: 15px; font-weight: 800; }
+.ts-week-group .claims-list { padding: 8px 12px; gap: 4px; }
+.ts-week-total-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 10px 16px; border-top: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.ts-week-total-label { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.ts-week-total-value { font-size: 16px; font-weight: 800; color: #1565c0; }
+
+.ts-history-btn {
+  width: 100%; padding: 12px;
+  border-radius: 10px; border: 2px solid #1565c0;
+  background: transparent;
+  color: #1565c0; font-size: 14px; font-weight: 700;
+  cursor: pointer; font-family: var(--sans);
+  margin: 4px 0 12px;
+  transition: background 0.15s, color 0.15s;
+}
+.ts-history-btn:active { background: #1565c0; color: #fff; }
+
 /* ── Announcements ── */
 .announcements { padding: 8px 16px 24px; }
 .announcements-title { font-size: 16px; font-weight: 600; margin-bottom: 10px; color: var(--text); }
@@ -361,7 +396,9 @@ body {
   font-size: 22px; font-weight: 700; margin: 0;
   color: var(--text);
 }
-.feature-title-accent { color: #3d6b99; font-style: italic; }
+.feature-title-accent { font-style: italic; color: #3d6b99; }
+.expenses-page .feature-title-accent { color: #c62828; }
+.timesheets-page .feature-title-accent { color: #1565c0; }
 .feature-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 
 /* ── Expenses ── */
@@ -401,6 +438,8 @@ body {
   color: #fff;
   border-color: #5b9bd5;
 }
+.expenses-page .filter-active { background: #e53935; border-color: #e53935; }
+.timesheets-page .filter-active { background: #1565c0; border-color: #1565c0; }
 
 .add-claim-btn {
   width: 100%; padding: 14px;
@@ -409,6 +448,9 @@ body {
   color: #fff; font-size: 15px; font-weight: 700;
   cursor: pointer; font-family: var(--sans);
   margin: 8px 0 12px;
+}
+.expenses-page .add-claim-btn { background: linear-gradient(135deg, #e53935, #c62828); }
+.timesheets-page .add-claim-btn { background: linear-gradient(135deg, #42a5f5, #1565c0);
   transition: opacity 0.15s;
 }
 .add-claim-btn:active { opacity: 0.85; }
@@ -443,6 +485,8 @@ body {
 [data-theme="dark"] .claim-date-col { background: #2a3a50; }
 
 .claim-date { font-size: 12px; font-weight: 700; color: #3d6b99; line-height: 1.2; }
+.expenses-page .claim-date { color: #c62828; }
+.timesheets-page .claim-date { color: #1565c0; }
 .claim-id { font-size: 11px; color: var(--text-muted); }
 
 .claim-detail-col {
@@ -470,7 +514,7 @@ body {
 /* ── New Expense Claim ── */
 .new-claim-header {
   display: flex; align-items: center; gap: 12px;
-  background: linear-gradient(135deg, #5b9bd5, #3d6b99);
+  background: linear-gradient(135deg, #e53935, #c62828);
   padding: 16px;
   margin: 0 -16px;
 }
@@ -593,7 +637,7 @@ body {
 
 /* ── Expense Detail (Page 3) ── */
 .detail-title-bar {
-  background: linear-gradient(135deg, #5b9bd5, #3d6b99);
+  background: linear-gradient(135deg, #e53935, #c62828);
   margin: 0 -16px;
   padding: 10px 16px;
   text-align: center;
@@ -627,11 +671,11 @@ body {
   background: none; border: none; border-bottom: 1px solid var(--border);
   cursor: pointer;
   font-family: var(--sans);
-  font-size: 14px; font-weight: 600; color: #3d6b99;
+  font-size: 14px; font-weight: 600; color: #c62828;
 }
 .line-item-total {
   margin-left: auto;
-  font-size: 15px; font-weight: 700; color: #3d6b99;
+  font-size: 15px; font-weight: 700; color: #c62828;
 }
 
 .line-items-list { flex: 1; }
@@ -745,7 +789,7 @@ body {
   display: flex; align-items: center; gap: 6px;
   padding: 10px 14px;
   border-radius: 10px; border: none;
-  background: linear-gradient(135deg, #5b9bd5, #3d6b99);
+  background: linear-gradient(135deg, #e53935, #c62828);
   color: #fff;
   font-size: 13px; font-weight: 700;
   cursor: pointer;
@@ -830,7 +874,7 @@ body {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.notif-icon-expense { background: #3d6b99; }
+.notif-icon-expense { background: #c62828; }
 .notif-icon-leave { background: #2e7d32; }
 .notif-icon-default { background: #d4a017; }
 .notif-icon-company { background: #546e7a; }
@@ -871,7 +915,7 @@ body {
   position: absolute; left: 0; top: 0; bottom: 0;
   width: 4px;
 }
-.bar-blue { background: #3d6b99; }
+.bar-blue { background: #c62828; }
 .bar-red { background: #e53935; }
 .bar-grey { background: #9e9e9e; }
 
@@ -906,14 +950,14 @@ body {
 .exp-approval-header {
   display: flex; align-items: center; gap: 10px;
   padding: 16px; padding-bottom: 28px;
-  background: linear-gradient(135deg, #a8d0e6 0%, #b8d8ea 50%, #d0e8f2 100%);
+  background: linear-gradient(135deg, #ef9a9a 0%, #ef5350 50%, #e53935 100%);
 }
 .exp-approval-back {
   background: none; border: none; cursor: pointer; padding: 0;
 }
 .exp-approval-title {
   flex: 1; text-align: center;
-  font-size: 20px; font-weight: 800; color: #1a1a2e;
+  font-size: 20px; font-weight: 800; color: #fff;
 }
 .exp-approval-refresh {
   background: none; border: none; cursor: pointer; padding: 0;
@@ -957,7 +1001,7 @@ body {
 .exp-approve-btn:disabled, .exp-decline-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .exp-approval-response {
-  flex: 1; border: 2px solid #3d6b99; border-radius: 8px;
+  flex: 1; border: 2px solid #c62828; border-radius: 8px;
   padding: 10px; font-size: 13px; font-family: var(--sans);
   resize: none; background: var(--bg-card); color: var(--text);
   min-height: 90px;
@@ -969,7 +1013,7 @@ body {
   padding: 14px 16px; border-top: 1px solid var(--border);
 }
 .exp-approval-total-label { font-size: 14px; color: var(--text-muted); font-weight: 600; }
-.exp-approval-total-value { font-size: 20px; font-weight: 800; color: #3d6b99; }
+.exp-approval-total-value { font-size: 20px; font-weight: 800; color: #c62828; }
 
 /* ── Leave Approval Page ── */
 .leave-approval-page { padding: 0; }
@@ -1183,7 +1227,7 @@ body {
 .notif-icon-declined { background: #e53935; }
 .notif-icon-leave-approved { background: #2e7d32; }
 .notif-icon-leave-declined { background: #c62828; }
-.notif-icon-expense { background: #3d6b99; }
+.notif-icon-expense { background: #c62828; }
 .notif-icon-leave { background: #ff9800; }
 .notif-icon-default { background: #757575; }
 .notif-icon-company { background: #5c6bc0; }

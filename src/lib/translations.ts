@@ -589,6 +589,13 @@ const en: Translations = {
   'timesheets.delete': 'Delete Timesheet',
   'timesheets.confirm_delete': 'Delete this timesheet? This cannot be undone.',
   'timesheets.not_found': 'Timesheet not found.',
+  'timesheets.last_4_weeks': 'Last 4 Weeks',
+  'timesheets.history_title': 'Last 4 Weeks',
+  'timesheets.history_subtitle': 'Weekly timesheet summary',
+  'timesheets.week_of': 'Week of',
+  'timesheets.total_hours': 'Total Hours',
+  'timesheets.no_entries': 'No entries this week.',
+  'timesheets.unassigned': 'Unassigned',
 }
 
 const de: Translations = {
@@ -1178,6 +1185,13 @@ const de: Translations = {
   'timesheets.delete': 'Zeiterfassung löschen',
   'timesheets.confirm_delete': 'Diese Zeiterfassung löschen? Dies kann nicht rückgängig gemacht werden.',
   'timesheets.not_found': 'Zeiterfassung nicht gefunden.',
+  'timesheets.last_4_weeks': 'Letzte 4 Wochen',
+  'timesheets.history_title': 'Letzte 4 Wochen',
+  'timesheets.history_subtitle': 'Wöchentliche Zeiterfassungsübersicht',
+  'timesheets.week_of': 'Woche vom',
+  'timesheets.total_hours': 'Gesamtstunden',
+  'timesheets.no_entries': 'Keine Einträge diese Woche.',
+  'timesheets.unassigned': 'Nicht zugewiesen',
 }
 
 const allTranslations: Record<Lang, Translations> = { en, de }
