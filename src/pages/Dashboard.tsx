@@ -40,6 +40,7 @@ export default function Dashboard() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [lastExpense, setLastExpense] = useState<number | null>(null)
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
+  const [leavePending, setLeavePending] = useState<number | null>(null)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   useEffect(() => {
@@ -75,12 +76,29 @@ export default function Dashboard() {
         .then(({ data }) => { if (data) setLastExpense(data.amount) })
 
       supabase.from('leave_balances')
-        .select('total_allowance, used')
+        .select('total_allowance')
         .eq('employee_id', employeeId)
         .eq('year', new Date().getFullYear())
         .limit(1)
         .single()
-        .then(({ data }) => { if (data) setLeaveRemaining(data.total_allowance - data.used) })
+        .then(async ({ data: bal }) => {
+          if (!bal) return
+          const allowance = bal.total_allowance
+          const [approvedRes, pendingRes] = await Promise.all([
+            supabase.from('leave_requests')
+              .select('days_requested')
+              .eq('employee_id', employeeId)
+              .eq('status', 'approved'),
+            supabase.from('leave_requests')
+              .select('days_requested')
+              .eq('employee_id', employeeId)
+              .eq('status', 'pending'),
+          ])
+          const approvedDays = (approvedRes.data || []).reduce((s, r) => s + Number(r.days_requested), 0)
+          const pendingDays = (pendingRes.data || []).reduce((s, r) => s + Number(r.days_requested), 0)
+          setLeaveRemaining(allowance - approvedDays)
+          setLeavePending(pendingDays)
+        })
     }
   }, [employeeId, employeeEmail])
 
@@ -140,6 +158,9 @@ export default function Dashboard() {
             <div className="card-content">
               <span className="card-label">{t('dashboard.leave_remaining')}</span>
               <span className="card-value card-value-large">{leaveRemaining !== null ? leaveRemaining : '--'} <span className="card-value-unit">{t('dashboard.days')}</span></span>
+              {leavePending !== null && leavePending > 0 && (
+                <span className="card-sub card-leave-pending">{leavePending} {t('dashboard.days_pending')}</span>
+              )}
             </div>
             <Chevron color="#d4e600" />
           </button>

@@ -25,7 +25,7 @@ export default function MyLeave() {
   useEffect(() => {
     if (!EMPLOYEE_ID) return
     async function load() {
-      const [balRes, pendRes] = await Promise.all([
+      const [balRes, pendReqRes, approvedReqRes] = await Promise.all([
         supabase
           .from('leave_balances')
           .select('leave_type_id, total_allowance, used, carried_over')
@@ -33,10 +33,18 @@ export default function MyLeave() {
           .eq('year', new Date().getFullYear()),
         supabase
           .from('leave_requests')
-          .select('id, days_requested')
+          .select('days_requested')
           .eq('employee_id', EMPLOYEE_ID)
           .eq('status', 'pending'),
+        supabase
+          .from('leave_requests')
+          .select('days_requested')
+          .eq('employee_id', EMPLOYEE_ID)
+          .eq('status', 'approved'),
       ])
+
+      const approvedDays = (approvedReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
+      const pendingDays = (pendReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
 
       if (balRes.data && balRes.data.length > 0) {
         const typeIds = balRes.data.map((b: any) => b.leave_type_id)
@@ -48,14 +56,12 @@ export default function MyLeave() {
         const typeMap = new Map((types || []).map((lt: any) => [lt.id, lt]))
         const merged: LeaveBalance[] = balRes.data.map((b: any) => {
           const lt = typeMap.get(b.leave_type_id) || { name: 'Leave', colour: '#999' }
-          return { ...b, leave_type_name: lt.name, colour: lt.colour }
+          return { ...b, used: lt.name === 'Annual Leave' ? approvedDays : b.used, leave_type_name: lt.name, colour: lt.colour }
         })
         setBalances(merged)
       }
 
-      if (pendRes.data) {
-        setPendingCount(pendRes.data.length)
-      }
+      setPendingCount(pendingDays)
 
       setLoading(false)
     }
@@ -67,6 +73,8 @@ export default function MyLeave() {
   const totalUsed = primary ? primary.used : 0
   const remaining = totalEntitlement - totalUsed
   const usedPct = totalEntitlement > 0 ? (totalUsed / totalEntitlement) * 100 : 0
+  const pendingPct = totalEntitlement > 0 ? (pendingCount / totalEntitlement) * 100 : 0
+  const circumference = 2 * Math.PI * 52
 
   function translateLeaveType(name: string): string {
     const keyMap: Record<string, string> = {
@@ -148,9 +156,21 @@ export default function MyLeave() {
               stroke="#43a047"
               strokeWidth="10"
               strokeLinecap="round"
-              strokeDasharray={`${(usedPct / 100) * 2 * Math.PI * 52} ${2 * Math.PI * 52}`}
+              strokeDasharray={`${(usedPct / 100) * circumference} ${circumference}`}
               transform="rotate(-90 60 60)"
             />
+            {pendingPct > 0 && (
+              <circle
+                cx="60" cy="60" r="52"
+                fill="none"
+                stroke="#ff9800"
+                strokeWidth="10"
+                strokeLinecap="round"
+                strokeDasharray={`${(pendingPct / 100) * circumference} ${circumference}`}
+                strokeDashoffset={`${-(usedPct / 100) * circumference}`}
+                transform="rotate(-90 60 60)"
+              />
+            )}
           </svg>
           <div className="my-leave-ring-center">
             <span className="my-leave-ring-value">{remaining}</span>
@@ -169,7 +189,7 @@ export default function MyLeave() {
           </div>
           <div className="my-leave-stat">
             <span className="my-leave-stat-value my-leave-stat-pending">{pendingCount}</span>
-            <span className="my-leave-stat-label">{t('my_leave.pending')}</span>
+            <span className="my-leave-stat-label">{t('my_leave.pending_days')}</span>
           </div>
         </div>
       </div>

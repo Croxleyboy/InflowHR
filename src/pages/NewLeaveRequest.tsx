@@ -116,6 +116,7 @@ export default function NewLeaveRequest() {
   const [startDate, setStartDate] = useState(todayStr())
   const [endDate, setEndDate] = useState(todayStr())
   const [days, setDays] = useState('1')
+  const [halfDay, setHalfDay] = useState(false)
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -132,6 +133,29 @@ export default function NewLeaveRequest() {
         }
       })
   }, [])
+
+  function handleHalfDayToggle(checked: boolean) {
+    setHalfDay(checked)
+    if (checked) {
+      setEndDate(startDate)
+      setDays('0.5')
+    } else {
+      setDays('1')
+    }
+  }
+
+  function handleStartDateChange(val: string) {
+    setStartDate(val)
+    if (halfDay) {
+      setEndDate(val)
+      setDays('0.5')
+    }
+  }
+
+  function handleEndDateChange(val: string) {
+    if (halfDay) return
+    setEndDate(val)
+  }
 
   function translateLeaveType(name: string): string {
     const entry = allLeaveTypes.find(k => k.name === name)
@@ -152,6 +176,27 @@ export default function NewLeaveRequest() {
 
     setSubmitting(true)
     setError(null)
+
+    const { data: existing } = await supabase
+      .from('leave_requests')
+      .select('id, start_date, end_date, days_requested, status')
+      .eq('employee_id', EMPLOYEE_ID)
+      .in('status', ['pending', 'approved'])
+      .lte('start_date', endDate)
+      .gte('end_date', startDate)
+
+    if (existing && existing.length > 0) {
+      const daysVal = parseFloat(days)
+      const canStack = halfDay && daysVal === 0.5 && existing.every(
+        e => e.days_requested === 0.5 && e.start_date === startDate && e.end_date === endDate
+      )
+      const totalOnDate = existing.reduce((sum, e) => sum + Number(e.days_requested), 0)
+      if (!canStack || totalOnDate + daysVal > 1) {
+        setError(t('new_leave.error_overlap'))
+        setSubmitting(false)
+        return
+      }
+    }
 
     const typeId = leaveTypeIds[leaveType]
     if (!typeId) {
@@ -190,7 +235,7 @@ export default function NewLeaveRequest() {
       assigned_to: MANAGER_EMAIL,
       approval_id: data.id,
       reminder_count: 1,
-      task_description: `${leaveType} - ${formatDate(startDate)} to ${formatDate(endDate)} (${days} days)`,
+      task_description: `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${halfDay ? ' (Half Day)' : ` (${days} days)`}`,
     })
 
     navigate('/leave')
@@ -231,6 +276,18 @@ export default function NewLeaveRequest() {
       </div>
 
       <div className="new-leave-form">
+        <div className="leave-half-day-toggle">
+          <label className="leave-half-day-label">
+            <input
+              type="checkbox"
+              checked={halfDay}
+              onChange={e => handleHalfDayToggle(e.target.checked)}
+              className="leave-half-day-checkbox"
+            />
+            <span className="leave-half-day-text">{t('new_leave.half_day')}</span>
+          </label>
+        </div>
+
         <div className="date-row">
           <div className="date-field">
             <label className="field-label">{t('new_leave.start_date')}</label>
@@ -239,7 +296,7 @@ export default function NewLeaveRequest() {
               <input
                 type="date"
                 value={startDate}
-                onChange={e => setStartDate(e.target.value)}
+                onChange={e => handleStartDateChange(e.target.value)}
                 className="date-input-hidden"
               />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5b9bd5" strokeWidth="2" className="date-icon">
@@ -249,37 +306,47 @@ export default function NewLeaveRequest() {
               </svg>
             </div>
           </div>
-          <div className="date-field">
-            <label className="field-label">{t('new_leave.end_date')}</label>
-            <div className="date-input-wrap">
-              <span className="date-display">{formatDateDisplay(endDate)}</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="date-input-hidden"
-              />
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5b9bd5" strokeWidth="2" className="date-icon">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
+          {!halfDay && (
+            <div className="date-field">
+              <label className="field-label">{t('new_leave.end_date')}</label>
+              <div className="date-input-wrap">
+                <span className="date-display">{formatDateDisplay(endDate)}</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => handleEndDateChange(e.target.value)}
+                  className="date-input-hidden"
+                />
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5b9bd5" strokeWidth="2" className="date-icon">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        <div className="form-field">
-          <label className="field-label">{t('new_leave.days_requested')}</label>
-          <input
-            type="number"
-            step="0.5"
-            min="0.5"
-            value={days}
-            onChange={e => setDays(e.target.value)}
-            className="form-input"
-            placeholder="1"
-          />
-        </div>
+        {!halfDay && (
+          <div className="form-field">
+            <label className="field-label">{t('new_leave.days_requested')}</label>
+            <input
+              type="number"
+              step="0.5"
+              min="0.5"
+              value={days}
+              onChange={e => setDays(e.target.value)}
+              className="form-input"
+              placeholder="1"
+            />
+          </div>
+        )}
+
+        {halfDay && (
+          <div className="leave-half-day-info">
+            <span>{t('new_leave.half_day_info')}</span>
+          </div>
+        )}
 
         <div className="form-field">
           <label className="field-label">{t('new_leave.reason')}</label>

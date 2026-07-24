@@ -1425,6 +1425,28 @@ body {
   padding: 0 16px 16px;
 }
 
+.leave-half-day-toggle {
+  display: flex; align-items: center;
+  margin-bottom: 12px;
+}
+.leave-half-day-label {
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text);
+}
+.leave-half-day-checkbox {
+  width: 20px; height: 20px; accent-color: #43a047; cursor: pointer;
+}
+.leave-half-day-text { user-select: none; }
+.leave-half-day-info {
+  background: #e8f5e9; border-radius: 8px; padding: 10px 14px;
+  font-size: 13px; color: #2e7d32; font-weight: 500; margin-bottom: 12px;
+}
+[data-theme="dark"] .leave-half-day-info { background: #1b3a1b; color: #66bb6a; }
+
+.card-leave-pending {
+  color: #ffe082 !important; font-weight: 600; opacity: 1 !important;
+}
+
 .new-leave-submit-btn {
   display: block;
   width: 100%;

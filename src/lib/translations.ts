@@ -12,6 +12,7 @@ const en: Translations = {
   'dashboard.last_claim': 'last claim',
   'dashboard.leave_remaining': 'Leave Remaining',
   'dashboard.days': 'Days',
+  'dashboard.days_pending': 'days pending',
   'dashboard.my_profile': 'My Profile',
   'dashboard.payslips': 'Payslips',
   'dashboard.kudos': 'Kudos',
@@ -201,6 +202,7 @@ const en: Translations = {
   'my_leave.used': 'Used',
   'my_leave.remaining': 'Remaining',
   'my_leave.pending': 'Pending',
+  'my_leave.pending_days': 'Pending Days',
   'my_leave.days': 'days',
   'my_leave.of': 'of',
   'my_leave.book_leave': 'Book Leave',
@@ -238,6 +240,9 @@ const en: Translations = {
   'new_leave.error_dates': 'End date must be on or after start date',
   'new_leave.error_days': 'Please enter the number of days',
   'new_leave.error_type': 'Please select a leave type',
+  'new_leave.error_overlap': 'You already have leave booked on this date',
+  'new_leave.half_day': 'Half Day',
+  'new_leave.half_day_info': 'Requesting half a day (0.5 days)',
 
   // Leave History
   'leave_history.title': 'My',
@@ -623,6 +628,7 @@ const de: Translations = {
   'dashboard.last_claim': 'letzte',
   'dashboard.leave_remaining': 'Resturlaub',
   'dashboard.days': 'Tage',
+  'dashboard.days_pending': 'Tage ausstehend',
   'dashboard.my_profile': 'Mein Profil',
   'dashboard.payslips': 'Gehaltsübersicht',
   'dashboard.kudos': 'Lob',
@@ -812,6 +818,7 @@ const de: Translations = {
   'my_leave.used': 'Genommen',
   'my_leave.remaining': 'Verbleibend',
   'my_leave.pending': 'Ausstehend',
+  'my_leave.pending_days': 'Ausstehende Tage',
   'my_leave.days': 'Tage',
   'my_leave.of': 'von',
   'my_leave.book_leave': 'Urlaub buchen',
@@ -849,6 +856,9 @@ const de: Translations = {
   'new_leave.error_dates': 'Enddatum muss nach dem Startdatum liegen',
   'new_leave.error_days': 'Bitte Anzahl der Tage eingeben',
   'new_leave.error_type': 'Bitte Urlaubsart wählen',
+  'new_leave.error_overlap': 'Sie haben an diesem Datum bereits Urlaub gebucht',
+  'new_leave.half_day': 'Halber Tag',
+  'new_leave.half_day_info': 'Beantragung eines halben Tages (0,5 Tage)',
 
   // Leave History
   'leave_history.title': 'Mein',
