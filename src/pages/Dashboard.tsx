@@ -193,6 +193,14 @@ export default function Dashboard() {
             <Chevron color="#ad1457" />
           </button>
         )}
+        {features.timesheets && (
+          <button className="dash-card card-timesheets" onClick={() => navigate('/timesheets')}>
+            <div className="card-content">
+              <span className="card-label">{t('dashboard.timesheets')}</span>
+            </div>
+            <Chevron color="#1565c0" />
+          </button>
+        )}
       </div>
 
       {latest && (

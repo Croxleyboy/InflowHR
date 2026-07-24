@@ -91,6 +91,7 @@ BEGIN
   -- pg_safeupdate requires a WHERE clause on every DELETE
   DELETE FROM workflow_tracker  WHERE id IS NOT NULL;
   DELETE FROM notifications     WHERE id IS NOT NULL;
+  DELETE FROM timesheets        WHERE id IS NOT NULL;
   DELETE FROM expense_line_items WHERE id IS NOT NULL;
   DELETE FROM expense_claims    WHERE id IS NOT NULL;
   DELETE FROM leave_requests    WHERE id IS NOT NULL;
@@ -315,6 +316,17 @@ BEGIN
     ('Joiner', 'in_progress', 'Tom',    'Williams', '2024-01-08', 'tom.williams@kumonix.com',   'Finance Analyst',   'Finance',     'EMP005', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', v_company_id),
     ('Joiner', 'new',         'Rachel', 'Green',    '2026-09-01', 'rachel.green@kumonix.com',   'Marketing Manager', 'Marketing',   'EMP006', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', v_company_id);
 
+  -- ========== TIMESHEETS ==========
+  INSERT INTO timesheets (employee_id, location, customer, role, date, start_time, end_time, status, submitted_at, company_id) VALUES
+    (v_andy,  'Head Office', NULL,           'IT',          '2026-07-21', '09:00', '17:30', 'approved',  '2026-07-21T17:30:00Z', v_company_id),
+    (v_andy,  'Home',        'Acme Corp',    'IT',          '2026-07-22', '08:30', '17:00', 'approved',  '2026-07-22T17:00:00Z', v_company_id),
+    (v_andy,  'Customer Site','Acme Corp',   'IT',          '2026-07-23', '09:00', '18:00', 'pending',   '2026-07-23T18:00:00Z', v_company_id),
+    (v_sarah, 'Head Office', NULL,           'Engineering', '2026-07-21', '09:00', '17:00', 'approved',  '2026-07-21T17:00:00Z', v_company_id),
+    (v_sarah, 'Home',        NULL,           'Engineering', '2026-07-22', '09:30', '18:00', 'pending',   '2026-07-22T18:00:00Z', v_company_id),
+    (v_james, 'Head Office', NULL,           'Design',      '2026-07-21', '10:00', '18:30', 'approved',  '2026-07-21T18:30:00Z', v_company_id),
+    (v_james, 'Home',        NULL,           'Design',      '2026-07-22', '09:00', '17:00', 'draft',     NULL,                   v_company_id),
+    (v_tom,   'Head Office', NULL,           'Finance',     '2026-07-21', '08:00', '16:30', 'pending',   '2026-07-21T16:30:00Z', v_company_id);
+
   -- ========== WORKFLOW TRACKER ==========
   INSERT INTO workflow_tracker (emp_display_name, step, status, record_type, action, employee_email, assigned_to, task_description, approval_id, company_id) VALUES
     ('Sarah Mitchell', 1, 'Pending',  'Leave',   'Approve annual leave',   'sarah.mitchell@kumonix.com', 'andy.jones@kumonix.com', 'Annual Leave - 28/07/2026 to 30/07/2026 (3 days)', v_lr_sarah_annual, v_company_id),
@@ -521,6 +533,14 @@ BEGIN
     ('Joiner', 'complete',    'Priya', 'Patel',     '2024-09-01', 'priya.patel@move2modern.co.uk',    'UX Design Lead',                'Design',     'M2M003', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk', 'standard persona', 'London', v_m2m_id),
     ('Joiner', 'complete',    'Tom',   'Henderson', '2025-01-13', 'tom.henderson@move2modern.co.uk',  'Project Manager',                'Delivery',   'M2M004', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk', 'standard persona', 'London', v_m2m_id),
     ('Joiner', 'in_progress', 'Lucy',  'Chen',      '2025-04-07', 'lucy.chen@move2modern.co.uk',     'Business Analyst',               'Delivery',   'M2M005', 'Tom Henderson',  'tom.henderson@move2modern.co.uk',  'standard persona', 'London', v_m2m_id);
+
+  -- ========== TIMESHEETS ==========
+  INSERT INTO timesheets (employee_id, location, customer, role, date, start_time, end_time, status, submitted_at, company_id) VALUES
+    (v_m2m_andy,  'Home',          'Kumonix',       'Management', '2026-07-21', '08:30', '17:30', 'approved', '2026-07-21T17:30:00Z', v_m2m_id),
+    (v_m2m_sarah, 'Head Office',   NULL,            'Engineering','2026-07-21', '09:00', '17:00', 'approved', '2026-07-21T17:00:00Z', v_m2m_id),
+    (v_m2m_james, 'Customer Site', 'DataFlow Inc',  'Engineering','2026-07-22', '09:00', '18:00', 'pending',  '2026-07-22T18:00:00Z', v_m2m_id),
+    (v_m2m_priya, 'Head Office',   NULL,            'Design',     '2026-07-21', '10:00', '18:00', 'approved', '2026-07-21T18:00:00Z', v_m2m_id),
+    (v_m2m_tom,   'Customer Site', 'Acme Corp',     'Delivery',   '2026-07-22', '08:00', '17:00', 'pending',  '2026-07-22T17:00:00Z', v_m2m_id);
 
   -- ========== WORKFLOW TRACKER ==========
   INSERT INTO workflow_tracker (emp_display_name, step, status, record_type, action, employee_email, assigned_to, task_description, approval_id, company_id) VALUES

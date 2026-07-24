@@ -182,6 +182,8 @@ export default function Notifications() {
       navigate(`/approve/expense/${item.approval_id}`)
     } else if (item.record_type === 'Leave') {
       navigate(`/approve/leave/${item.approval_id}`)
+    } else if (item.record_type === 'Timesheet') {
+      navigate(`/timesheets/${item.approval_id}`)
     }
   }
 
@@ -192,6 +194,7 @@ export default function Notifications() {
       const leaveType = desc.split(' - ')[0] || 'Leave'
       return `${leaveType} ${t('notifications.leave_approval')}`
     }
+    if (item.record_type === 'Timesheet') return t('notifications.timesheet_review')
     return item.action
   }
 
@@ -207,6 +210,9 @@ export default function Notifications() {
     } else if (item.record_type === 'Leave') {
       await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', item.approval_id)
       await supabase.from('leave_requests').delete().eq('id', item.approval_id)
+    } else if (item.record_type === 'Timesheet') {
+      await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', item.approval_id)
+      await supabase.from('timesheets').delete().eq('id', item.approval_id)
     }
 
     setMyNotifs(prev => prev.filter(n => !(n.record_type === item.record_type && n.approval_id === item.approval_id)))

@@ -9,6 +9,7 @@ export interface Features {
   benefits: boolean
   elearning: boolean
   performance: boolean
+  timesheets: boolean
 }
 
 const defaultFeatures: Features = {
@@ -20,6 +21,7 @@ const defaultFeatures: Features = {
   benefits: true,
   elearning: true,
   performance: true,
+  timesheets: true,
 }
 
 interface FeatureContextType {

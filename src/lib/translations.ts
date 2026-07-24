@@ -95,6 +95,7 @@ const en: Translations = {
   'notifications.happy_birthday': 'Happy Birthday! 🎂',
   'notifications.for': 'For:',
   'notifications.created': 'Created',
+  'notifications.timesheet_review': 'A timesheet requires your review',
 
   // Approval shared
   'approval.expense_title': 'Expense Approval',
@@ -551,6 +552,43 @@ const en: Translations = {
   'common.back': 'Back',
   'common.coming_soon': 'This section is coming soon.',
   'common.status': 'Status',
+
+  // Dashboard - Timesheets
+  'dashboard.timesheets': 'Timesheets',
+
+  // Timesheets
+  'timesheets.title': 'My',
+  'timesheets.title_accent': 'Timesheets',
+  'timesheets.subtitle': 'Track and submit your working hours',
+  'timesheets.all': 'All',
+  'timesheets.approved': 'Approved',
+  'timesheets.pending': 'Pending',
+  'timesheets.add_new': 'New Timesheet',
+  'timesheets.no_timesheets': 'No timesheets found.',
+  'timesheets.new_title': 'New Timesheet',
+  'timesheets.location': 'Location',
+  'timesheets.custom': 'Custom',
+  'timesheets.custom_location_placeholder': 'Enter custom location...',
+  'timesheets.customer': 'Customer',
+  'timesheets.customer_placeholder': 'Customer name (optional)',
+  'timesheets.role': 'Role',
+  'timesheets.custom_role_placeholder': 'Enter custom role...',
+  'timesheets.date': 'Date',
+  'timesheets.start_time': 'Start Time',
+  'timesheets.end_time': 'End Time',
+  'timesheets.hours': 'Hours',
+  'timesheets.save_draft': 'Save Draft',
+  'timesheets.submit': 'Submit',
+  'timesheets.submitting': 'Submitting...',
+  'timesheets.saving': 'Saving...',
+  'timesheets.error_location': 'Please enter a location',
+  'timesheets.error_role': 'Please select a role',
+  'timesheets.error_times': 'End time must be after start time',
+  'timesheets.detail_title': 'Timesheet Details',
+  'timesheets.detail_subtitle': 'View timesheet entry',
+  'timesheets.delete': 'Delete Timesheet',
+  'timesheets.confirm_delete': 'Delete this timesheet? This cannot be undone.',
+  'timesheets.not_found': 'Timesheet not found.',
 }
 
 const de: Translations = {
@@ -646,6 +684,7 @@ const de: Translations = {
   'notifications.happy_birthday': 'Alles Gute zum Geburtstag! 🎂',
   'notifications.for': 'Für:',
   'notifications.created': 'Erstellt',
+  'notifications.timesheet_review': 'Ein Zeiterfassungseintrag erfordert Ihre Prüfung',
 
   // Approval shared
   'approval.expense_title': 'Spesenprüfung',
@@ -1102,6 +1141,43 @@ const de: Translations = {
   'common.back': 'Zurück',
   'common.coming_soon': 'Dieser Bereich folgt in Kürze.',
   'common.status': 'Status',
+
+  // Dashboard - Timesheets
+  'dashboard.timesheets': 'Zeiterfassung',
+
+  // Timesheets
+  'timesheets.title': 'Meine',
+  'timesheets.title_accent': 'Zeiterfassung',
+  'timesheets.subtitle': 'Arbeitszeiten erfassen und einreichen',
+  'timesheets.all': 'Alle',
+  'timesheets.approved': 'Genehmigt',
+  'timesheets.pending': 'Ausstehend',
+  'timesheets.add_new': 'Neue Zeiterfassung',
+  'timesheets.no_timesheets': 'Keine Zeiterfassungen gefunden.',
+  'timesheets.new_title': 'Neue Zeiterfassung',
+  'timesheets.location': 'Standort',
+  'timesheets.custom': 'Benutzerdefiniert',
+  'timesheets.custom_location_placeholder': 'Standort eingeben...',
+  'timesheets.customer': 'Kunde',
+  'timesheets.customer_placeholder': 'Kundenname (optional)',
+  'timesheets.role': 'Rolle',
+  'timesheets.custom_role_placeholder': 'Rolle eingeben...',
+  'timesheets.date': 'Datum',
+  'timesheets.start_time': 'Startzeit',
+  'timesheets.end_time': 'Endzeit',
+  'timesheets.hours': 'Stunden',
+  'timesheets.save_draft': 'Entwurf speichern',
+  'timesheets.submit': 'Einreichen',
+  'timesheets.submitting': 'Wird eingereicht...',
+  'timesheets.saving': 'Wird gespeichert...',
+  'timesheets.error_location': 'Bitte Standort eingeben',
+  'timesheets.error_role': 'Bitte Rolle auswählen',
+  'timesheets.error_times': 'Endzeit muss nach der Startzeit liegen',
+  'timesheets.detail_title': 'Zeiterfassungsdetails',
+  'timesheets.detail_subtitle': 'Zeiterfassungseintrag anzeigen',
+  'timesheets.delete': 'Zeiterfassung löschen',
+  'timesheets.confirm_delete': 'Diese Zeiterfassung löschen? Dies kann nicht rückgängig gemacht werden.',
+  'timesheets.not_found': 'Zeiterfassung nicht gefunden.',
 }
 
 const allTranslations: Record<Lang, Translations> = { en, de }

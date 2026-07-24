@@ -26,6 +26,9 @@ import Kudos from './pages/Kudos'
 import Payslips from './pages/Payslips'
 import Benefits from './pages/Benefits'
 import ELearning from './pages/ELearning'
+import Timesheets from './pages/Timesheets'
+import NewTimesheet from './pages/NewTimesheet'
+import TimesheetDetail from './pages/TimesheetDetail'
 import Placeholder from './pages/Placeholder'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -40,6 +43,7 @@ import AdminOnboarding from './pages/admin/AdminOnboarding'
 import AdminTickets from './pages/admin/AdminTickets'
 import AdminBenefits from './pages/admin/AdminBenefits'
 import AdminCompanies from './pages/admin/AdminCompanies'
+import AdminTimesheets from './pages/admin/AdminTimesheets'
 import AdminDemoSeed from './pages/admin/AdminDemoSeed'
 
 function AdminGate() {
@@ -89,6 +93,7 @@ function AuthGate() {
           <Route path="onboarding" element={<AdminOnboarding />} />
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="benefits" element={<AdminBenefits />} />
+          <Route path="timesheets" element={<AdminTimesheets />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="demo-seed" element={<AdminDemoSeed />} />
@@ -117,6 +122,9 @@ function AuthGate() {
               <Route path="/leave/calendar" element={<LeaveCalendar />} />
               <Route path="/leave/new" element={<NewLeaveRequest />} />
               <Route path="/leave/:id" element={<LeaveDetail />} />
+              <Route path="/timesheets" element={<Timesheets />} />
+              <Route path="/timesheets/new" element={<NewTimesheet />} />
+              <Route path="/timesheets/:id" element={<TimesheetDetail />} />
               <Route path="/my-profile" element={<MyProfile />} />
               <Route path="/payslips" element={<Payslips />} />
               <Route path="/kudos" element={<Kudos />} />

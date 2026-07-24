@@ -168,6 +168,7 @@ body {
 .card-benefits { background: linear-gradient(135deg, #b2ebf2, #80deea); color: #00695c; }
 .card-elearning { background: linear-gradient(135deg, #fdd835, #f9a825); color: #333; }
 .card-performance { background: linear-gradient(135deg, #ec407a, #c2185b); }
+.card-timesheets { background: linear-gradient(135deg, #42a5f5, #1565c0); }
 
 /* ── Announcements ── */
 .announcements { padding: 8px 16px 24px; }
