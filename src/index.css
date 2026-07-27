@@ -3389,3 +3389,327 @@ body {
   font-size: 16px;
   color: #666;
 }
+
+/* ══════════════════════════════════════════════════════════
+   DESKTOP LAYOUT — sidebar + content shell (≥769px)
+   ══════════════════════════════════════════════════════════ */
+
+.desktop-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ── Sidebar ── */
+.desktop-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  color: #ccc;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+[data-theme="dark"] .desktop-sidebar {
+  background: linear-gradient(180deg, #111122 0%, #0d1117 100%);
+}
+
+.desktop-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 20px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.desktop-brand-logo {
+  height: 32px;
+  max-width: 100px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.desktop-brand-text {
+  font-size: 20px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #e91e63, #ff9800, #4caf50, #2196f3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.desktop-brand-company {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Sidebar profile */
+.desktop-sidebar-profile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.desktop-profile-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px;
+  flex-shrink: 0;
+}
+.desktop-profile-avatar-img {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid #764ba2;
+}
+.desktop-profile-info {
+  display: flex; flex-direction: column;
+  min-width: 0;
+}
+.desktop-profile-name {
+  font-size: 14px; font-weight: 700; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.desktop-profile-email {
+  font-size: 11px; color: rgba(255,255,255,0.45);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Sidebar nav */
+.desktop-nav {
+  flex: 1;
+  padding: 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.desktop-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: rgba(255,255,255,0.65);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+}
+.desktop-nav-item:hover {
+  background: rgba(255,255,255,0.08);
+  color: #fff;
+}
+.desktop-nav-active {
+  background: rgba(255,255,255,0.12) !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+.desktop-nav-active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #d4a017;
+}
+.desktop-nav-icon {
+  width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.desktop-nav-active .desktop-nav-icon { opacity: 1; }
+.desktop-nav-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.desktop-nav-badge {
+  background: #e53935;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px; height: 18px;
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 5px;
+}
+
+/* Sidebar footer */
+.desktop-sidebar-footer {
+  padding: 12px 14px 16px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.desktop-admin-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.05);
+  color: #d4a017;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: background 0.15s;
+  width: 100%;
+}
+.desktop-admin-btn:hover { background: rgba(255,255,255,0.1); }
+.desktop-sidebar-actions {
+  display: flex;
+  gap: 8px;
+}
+.desktop-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: background 0.15s, color 0.15s;
+}
+.desktop-action-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.desktop-signout-btn { flex: 1; }
+
+/* ── Main content area ── */
+.desktop-main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg);
+}
+.desktop-content {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 32px 48px;
+  min-height: 100%;
+}
+
+/* ── Desktop overrides for mobile page styles ── */
+@media (min-width: 769px) {
+  html, body, #root { overflow: auto; }
+
+  .app-shell { max-width: none; }
+
+  .desktop-content .feature-page { padding-bottom: 24px; }
+  .desktop-content .dashboard { border-radius: 16px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+
+  .desktop-content .dash-header { border-radius: 16px 16px 0 0; }
+
+  .desktop-content .card-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    padding: 12px 20px;
+  }
+  .desktop-content .dash-card {
+    min-height: 80px;
+    padding: 16px;
+  }
+
+  .desktop-content .greeting-row { padding: 14px 20px 8px; }
+  .desktop-content .announcements { padding: 8px 20px 20px; }
+
+  .desktop-content .claims-list,
+  .desktop-content .directory-list,
+  .desktop-content .kudos-feed {
+    max-width: 100%;
+  }
+
+  .desktop-content .directory-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+
+  .desktop-content .kudos-feed {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    align-items: start;
+  }
+  .desktop-content .kudos-colleagues-filter {
+    grid-column: 1 / -1;
+  }
+
+  .desktop-content .my-leave-summary {
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .desktop-content .my-leave-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .desktop-content .settings-page {
+    padding: 20px 0;
+  }
+
+  .desktop-content .footer { display: none; }
+
+  .desktop-content .feature-page {
+    background: var(--bg-card);
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    overflow: hidden;
+  }
+
+  .desktop-content .kudos-page,
+  .desktop-content .directory-page,
+  .desktop-content .expenses-page,
+  .desktop-content .timesheets-page,
+  .desktop-content .my-leave-page {
+    padding-bottom: 24px;
+  }
+
+  .desktop-content .elearning-page {
+    padding-bottom: 24px;
+  }
+
+  .desktop-content .claims-list {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .desktop-content .benefits-page {
+    padding-bottom: 24px;
+  }
+
+  .desktop-content .my-leave-im-off-btn {
+    max-width: 300px;
+    margin: 16px auto 0;
+  }
+  .desktop-content .my-leave-im-off-hint {
+    text-align: center;
+  }
+
+  .desktop-content .ts-history-weeks {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+}
