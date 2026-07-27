@@ -33,7 +33,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, company } = useAuth()
   const navigate = useNavigate()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
@@ -118,7 +118,11 @@ export default function Dashboard() {
           <p className="header-date">{getDateString(lang)}</p>
         </div>
         <div className="header-logo">
-          <span className="logo-text">InflowHR</span>
+          {company?.logo_url ? (
+            <img className="company-logo-img" src={company.logo_url} alt={company.name} />
+          ) : (
+            <span className="logo-text">InflowHR</span>
+          )}
         </div>
       </header>
 

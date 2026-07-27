@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 
@@ -9,6 +9,7 @@ interface Company {
   microsoft_tenant_id: string | null
   is_active: boolean
   created_at: string
+  logo_url: string | null
 }
 
 interface Employee {
@@ -24,17 +25,33 @@ interface CompanyAdmin {
   employee: { first_name: string; last_name: string; email: string } | null
 }
 
+async function uploadCompanyLogo(companyId: string, file: File): Promise<string | null> {
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
+  const path = `${companyId}.${ext}`
+  const { error } = await supabase.storage
+    .from('company-logos')
+    .upload(path, file, { upsert: true })
+  if (error) return null
+  const { data } = supabase.storage.from('company-logos').getPublicUrl(path)
+  return data.publicUrl + '?t=' + Date.now()
+}
+
 export default function AdminCompanies() {
   const { company: myCompany } = useAuth()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', domain: '' })
+  const [logoFile, setLogoFile] = useState<File | null>(null)
+  const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [admins, setAdmins] = useState<Record<string, CompanyAdmin>>({})
   const [employees, setEmployees] = useState<Record<string, Employee[]>>({})
   const [editingAdmin, setEditingAdmin] = useState<string | null>(null)
   const [savingAdmin, setSavingAdmin] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState<string | null>(null)
+  const logoInputRef = useRef<HTMLInputElement>(null)
+  const editLogoRef = useRef<HTMLInputElement>(null)
 
   async function load() {
     setLoading(true)
@@ -75,19 +92,53 @@ export default function AdminCompanies() {
 
   useEffect(() => { load() }, [])
 
+  function handleLogoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLogoFile(file)
+    const reader = new FileReader()
+    reader.onload = ev => setLogoPreview(ev.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+
   async function addCompany() {
     if (!form.name.trim() || !form.domain.trim()) return
     setSaving(true)
     const domain = form.domain.trim().toLowerCase().replace(/^@/, '')
-    await supabase.from('companies').insert({
+    const { data: newCo } = await supabase.from('companies').insert({
       name: form.name.trim(),
       domain,
       microsoft_tenant_id: '',
       is_active: true,
-    })
+    }).select('id').single()
+
+    if (newCo && logoFile) {
+      const logoUrl = await uploadCompanyLogo(newCo.id, logoFile)
+      if (logoUrl) {
+        await supabase.from('companies').update({ logo_url: logoUrl }).eq('id', newCo.id)
+      }
+    }
+
     setForm({ name: '', domain: '' })
+    setLogoFile(null)
+    setLogoPreview(null)
     setShowForm(false)
     setSaving(false)
+    load()
+  }
+
+  async function handleEditLogo(companyId: string, file: File) {
+    setUploadingLogo(companyId)
+    const logoUrl = await uploadCompanyLogo(companyId, file)
+    if (logoUrl) {
+      await supabase.from('companies').update({ logo_url: logoUrl }).eq('id', companyId)
+    }
+    setUploadingLogo(null)
+    load()
+  }
+
+  async function removeLogo(companyId: string) {
+    await supabase.from('companies').update({ logo_url: null }).eq('id', companyId)
     load()
   }
 
@@ -119,27 +170,23 @@ export default function AdminCompanies() {
   async function changeAdmin(companyId: string, newEmployeeId: string) {
     setSavingAdmin(true)
 
-    // Remove admin role from current admin(s) for this company
     await supabase
       .from('company_users')
       .update({ role: 'employee' })
       .eq('company_id', companyId)
       .eq('role', 'admin')
 
-    // Also update employees table: unset current admin
     await supabase
       .from('employees')
       .update({ is_admin: false })
       .eq('company_id', companyId)
       .eq('is_admin', true)
 
-    // Set new admin on employees table
     await supabase
       .from('employees')
       .update({ is_admin: true })
       .eq('id', newEmployeeId)
 
-    // Check if new admin has a company_users row
     const { data: existingCu } = await supabase
       .from('company_users')
       .select('id')
@@ -201,12 +248,43 @@ export default function AdminCompanies() {
                   onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
                 />
               </div>
+              <div className="admin-form-field">
+                <label>Company Logo</label>
+                <div className="admin-logo-upload">
+                  {logoPreview ? (
+                    <div className="admin-logo-preview-wrap">
+                      <img src={logoPreview} alt="Logo preview" className="admin-logo-preview" />
+                      <button className="admin-logo-remove" onClick={() => { setLogoFile(null); setLogoPreview(null) }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  ) : (
+                    <button className="admin-logo-upload-btn" onClick={() => logoInputRef.current?.click()}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" />
+                        <polyline points="21 15 16 10 5 21" />
+                      </svg>
+                      <span>Upload logo</span>
+                    </button>
+                  )}
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={handleLogoSelect}
+                  />
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button className="admin-btn admin-btn-primary" onClick={addCompany} disabled={saving}>
                 {saving ? 'Saving...' : 'Register Company'}
               </button>
-              <button className="admin-btn" onClick={() => setShowForm(false)}>Cancel</button>
+              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null) }}>Cancel</button>
             </div>
           </div>
         )}
@@ -217,6 +295,7 @@ export default function AdminCompanies() {
           <table className="admin-table">
             <thead>
               <tr>
+                <th>Logo</th>
                 <th>Company</th>
                 <th>Domain</th>
                 <th>Company Admin</th>
@@ -232,6 +311,55 @@ export default function AdminCompanies() {
                 const emps = employees[c.id] || []
                 return (
                   <tr key={c.id}>
+                    <td>
+                      <div className="admin-logo-cell">
+                        {c.logo_url ? (
+                          <div className="admin-logo-cell-wrap">
+                            <img src={c.logo_url} alt={c.name} className="admin-logo-thumb" />
+                            <div className="admin-logo-cell-actions">
+                              <button
+                                className="admin-btn-icon"
+                                title="Change logo"
+                                onClick={() => {
+                                  const input = editLogoRef.current
+                                  if (input) {
+                                    input.setAttribute('data-company-id', c.id)
+                                    input.click()
+                                  }
+                                }}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="admin-btn-icon admin-btn-danger"
+                                title="Remove logo"
+                                onClick={() => removeLogo(c.id)}
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            className="admin-logo-upload-sm"
+                            onClick={() => {
+                              const input = editLogoRef.current
+                              if (input) {
+                                input.setAttribute('data-company-id', c.id)
+                                input.click()
+                              }
+                            }}
+                          >
+                            {uploadingLogo === c.id ? '...' : '+'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td><strong>{c.name}</strong></td>
                     <td>{c.domain}</td>
                     <td>
@@ -305,6 +433,19 @@ export default function AdminCompanies() {
           {companies.length === 0 && <div className="admin-empty">No companies registered</div>}
         </div>
       )}
+
+      <input
+        ref={editLogoRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={e => {
+          const file = e.target.files?.[0]
+          const companyId = e.target.getAttribute('data-company-id')
+          if (file && companyId) handleEditLogo(companyId, file)
+          e.target.value = ''
+        }}
+      />
     </div>
   )
 }

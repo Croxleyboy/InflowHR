@@ -448,3 +448,64 @@
 }
 .admin-table-nested th { font-size: 11px; }
 .admin-table-nested td { padding: 6px 10px; }
+
+/* ── Company Logo ── */
+.admin-logo-upload {
+  display: flex; align-items: center; gap: 12px;
+}
+.admin-logo-upload-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  border: 2px dashed #d0d5dd;
+  border-radius: 10px;
+  background: #fafbfc;
+  cursor: pointer;
+  font-size: 13px; color: #666;
+  font-family: var(--sans);
+  transition: border-color 0.2s;
+}
+.admin-logo-upload-btn:hover { border-color: #4f46e5; color: #4f46e5; }
+.admin-logo-preview-wrap {
+  position: relative; display: inline-block;
+}
+.admin-logo-preview {
+  height: 48px; max-width: 120px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+.admin-logo-remove {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: #e53935;
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+.admin-logo-cell {
+  display: flex; align-items: center; justify-content: center;
+  min-width: 50px;
+}
+.admin-logo-cell-wrap {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+}
+.admin-logo-thumb {
+  height: 32px; max-width: 60px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+.admin-logo-cell-actions {
+  display: flex; gap: 2px;
+}
+.admin-logo-upload-sm {
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  border: 2px dashed #d0d5dd;
+  background: #fafbfc;
+  cursor: pointer;
+  font-size: 16px; color: #999;
+  font-family: var(--sans);
+  display: flex; align-items: center; justify-content: center;
+}
+.admin-logo-upload-sm:hover { border-color: #4f46e5; color: #4f46e5; }

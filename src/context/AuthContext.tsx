@@ -13,6 +13,7 @@ interface Company {
   id: string
   name: string
   domain: string
+  logo_url: string | null
 }
 
 const SUPER_ADMIN_EMAIL = 'andy.jones@kumonix.com'
@@ -91,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: co } = await supabase
         .from('companies')
-        .select('id, name, domain')
+        .select('id, name, domain, logo_url')
         .eq('id', cu.company_id)
         .single()
       if (co) setCompany(co as Company)
