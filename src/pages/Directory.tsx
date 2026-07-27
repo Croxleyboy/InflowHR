@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 interface DirectoryEntry {
   id: number
@@ -15,23 +16,52 @@ interface DirectoryEntry {
   avatar_url: string | null
 }
 
+const WATCHLIST_KEY = 'inflowhr-kudos-watchlist'
+const COLLEAGUES_ONLY_KEY = 'inflowhr-kudos-colleagues-only'
+
+function getWatchlist(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]')
+  } catch { return [] }
+}
+
 export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { employeeId: EMPLOYEE_ID } = useAuth()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<DirectoryEntry | null>(null)
+  const [onLeaveIds, setOnLeaveIds] = useState<Set<string>>(new Set())
+  const [watchlist, setWatchlist] = useState<string[]>(getWatchlist)
+  const [showWatchlistPrompt, setShowWatchlistPrompt] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('onboarding')
-      .select('id, firstname, surname, display_name, job_title, user_email, telephone, department, avatar_url')
-      .eq('appstatus', 'active')
-      .order('firstname')
 
-    setEntries((data || []) as DirectoryEntry[])
+    const today = new Date().toISOString().split('T')[0]
+
+    const [dirRes, leaveRes] = await Promise.all([
+      supabase
+        .from('onboarding')
+        .select('id, firstname, surname, display_name, job_title, user_email, telephone, department, avatar_url')
+        .eq('appstatus', 'active')
+        .order('firstname'),
+      supabase
+        .from('leave_requests')
+        .select('employee_id')
+        .eq('status', 'approved')
+        .lte('start_date', today)
+        .gte('end_date', today),
+    ])
+
+    setEntries((dirRes.data || []) as DirectoryEntry[])
+
+    const leaveSet = new Set<string>()
+    ;(leaveRes.data || []).forEach((r: any) => leaveSet.add(r.employee_id))
+    setOnLeaveIds(leaveSet)
+
     setLoading(false)
   }, [])
 
@@ -47,6 +77,35 @@ export default function Directory() {
 
   function getInitials(e: DirectoryEntry): string {
     return `${(e.firstname || '')[0] || ''}${(e.surname || '')[0] || ''}`
+  }
+
+  function isOnLeave(entry: DirectoryEntry): boolean {
+    return onLeaveIds.has(String(entry.id))
+  }
+
+  function isOnWatchlist(entryId: number): boolean {
+    return watchlist.includes(String(entryId))
+  }
+
+  function toggleWatchlist(entryId: number) {
+    const id = String(entryId)
+    let updated: string[]
+    if (watchlist.includes(id)) {
+      updated = watchlist.filter(w => w !== id)
+    } else {
+      updated = [...watchlist, id]
+      const colleaguesOnly = localStorage.getItem(COLLEAGUES_ONLY_KEY) === 'true'
+      if (!colleaguesOnly) {
+        setShowWatchlistPrompt(true)
+      }
+    }
+    setWatchlist(updated)
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(updated))
+  }
+
+  function enableColleaguesOnly() {
+    localStorage.setItem(COLLEAGUES_ONLY_KEY, 'true')
+    setShowWatchlistPrompt(false)
   }
 
   return (
@@ -96,17 +155,31 @@ export default function Directory() {
         {filtered.map(entry => (
           <div key={entry.id} className="directory-card">
             <div className="directory-card-top">
-              <button className="directory-card-avatar-btn" onClick={() => setSelected(entry)}>
-                {entry.avatar_url ? (
-                  <img className="directory-card-avatar-img" src={entry.avatar_url} alt={`${entry.firstname} ${entry.surname}`} />
-                ) : (
-                  <div className="directory-card-avatar">{getInitials(entry)}</div>
+              <div className="directory-card-avatar-wrap">
+                <button className="directory-card-avatar-btn" onClick={() => setSelected(entry)}>
+                  {entry.avatar_url ? (
+                    <img className="directory-card-avatar-img" src={entry.avatar_url} alt={`${entry.firstname} ${entry.surname}`} />
+                  ) : (
+                    <div className="directory-card-avatar">{getInitials(entry)}</div>
+                  )}
+                </button>
+                {isOnLeave(entry) && (
+                  <span className="directory-leave-badge">{t('directory.on_leave')}</span>
                 )}
-              </button>
+              </div>
               <div className="directory-card-info">
                 <span className="directory-card-name">{entry.firstname} {entry.surname}</span>
                 <span className="directory-card-email">{entry.user_email}</span>
               </div>
+              <button
+                className={`directory-watchlist-btn ${isOnWatchlist(entry.id) ? 'directory-watchlist-active' : ''}`}
+                onClick={() => toggleWatchlist(entry.id)}
+                title={isOnWatchlist(entry.id) ? t('directory.remove_watchlist') : t('directory.add_watchlist')}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill={isOnWatchlist(entry.id) ? '#e8a000' : 'none'} stroke="#e8a000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+              </button>
               <a className="directory-card-phone" href={`tel:${entry.telephone || ''}`}>
                 <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
                   <circle cx="20" cy="20" r="19" fill="#1a1a2e" stroke="#1a1a2e" strokeWidth="2" />
@@ -145,6 +218,9 @@ export default function Directory() {
               <div className="directory-modal-name-wrap">
                 <span className="directory-modal-name">{selected.firstname} {selected.surname}</span>
                 <span className="directory-modal-role">{selected.job_title}</span>
+                {isOnLeave(selected) && (
+                  <span className="directory-leave-badge-modal">{t('directory.on_leave')}</span>
+                )}
               </div>
             </div>
 
@@ -197,6 +273,28 @@ export default function Directory() {
                   <text x="20" y="25" textAnchor="middle" fill="#fff" fontSize="16" fontWeight="800" fontFamily="sans-serif">O</text>
                 </svg>
               </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWatchlistPrompt && (
+        <div className="directory-modal-overlay" onClick={() => setShowWatchlistPrompt(false)}>
+          <div className="directory-watchlist-prompt" onClick={e => e.stopPropagation()}>
+            <div className="directory-watchlist-prompt-icon">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="#e8a000" stroke="#e8a000" strokeWidth="1.5">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+            </div>
+            <p className="directory-watchlist-prompt-title">{t('directory.watchlist_prompt_title')}</p>
+            <p className="directory-watchlist-prompt-text">{t('directory.watchlist_prompt_text')}</p>
+            <div className="directory-watchlist-prompt-actions">
+              <button className="directory-watchlist-prompt-yes" onClick={enableColleaguesOnly}>
+                {t('directory.watchlist_enable')}
+              </button>
+              <button className="directory-watchlist-prompt-no" onClick={() => setShowWatchlistPrompt(false)}>
+                {t('directory.watchlist_later')}
+              </button>
             </div>
           </div>
         </div>

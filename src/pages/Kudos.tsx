@@ -66,6 +66,9 @@ const QUALITIES = [
   { value: 'good_luck', key: 'kudos.quality_good_luck' },
 ]
 
+const WATCHLIST_KEY = 'inflowhr-kudos-watchlist'
+const COLLEAGUES_ONLY_KEY = 'inflowhr-kudos-colleagues-only'
+
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60000)
@@ -95,6 +98,28 @@ export default function Kudos() {
   const [sendState, setSendState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   const [leaderboard, setLeaderboard] = useState<{ name: string; points: number }[]>([])
+
+  // Colleague watchlist filter
+  const [colleaguesOnly, setColleaguesOnly] = useState(() =>
+    localStorage.getItem(COLLEAGUES_ONLY_KEY) === 'true'
+  )
+  const [watchlist, setWatchlist] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]') }
+    catch { return [] }
+  })
+
+  useEffect(() => {
+    const stored = localStorage.getItem(WATCHLIST_KEY)
+    if (stored) {
+      try { setWatchlist(JSON.parse(stored)) } catch {}
+    }
+  }, [tab])
+
+  function toggleColleaguesOnly() {
+    const next = !colleaguesOnly
+    setColleaguesOnly(next)
+    localStorage.setItem(COLLEAGUES_ONLY_KEY, String(next))
+  }
 
   async function openLeaderboard() {
     const { data } = await supabase
@@ -169,6 +194,10 @@ export default function Kudos() {
     fetchData()
     localStorage.setItem('inflowhr-kudos-seen', new Date().toISOString())
   }, [fetchData, EMPLOYEE_ID])
+
+  const displayEntries = colleaguesOnly && watchlist.length > 0
+    ? entries.filter(e => watchlist.includes(e.from_employee_id))
+    : entries
 
   async function handleLike(entry: KudosEntry) {
     if (!EMPLOYEE_ID || entry.liked_by.includes(EMPLOYEE_ID)) return
@@ -282,9 +311,33 @@ export default function Kudos() {
 
       {tab === 'feed' && (
         <div className="kudos-feed">
+          <div className="kudos-colleagues-filter">
+            <div className="kudos-colleagues-label">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill={colleaguesOnly ? '#e8a000' : 'none'} stroke="#e8a000" strokeWidth="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <span>{t('kudos.colleagues_only')}</span>
+              {colleaguesOnly && watchlist.length > 0 && (
+                <span className="kudos-colleagues-count">{watchlist.length}</span>
+              )}
+            </div>
+            <button
+              className={`kudos-toggle ${colleaguesOnly ? 'kudos-toggle-on' : ''}`}
+              onClick={toggleColleaguesOnly}
+            >
+              <div className="kudos-toggle-dot" />
+            </button>
+          </div>
+
           {loading && <p className="claims-empty">{t('common.loading')}</p>}
-          {!loading && entries.length === 0 && <p className="claims-empty">{t('kudos.no_kudos')}</p>}
-          {entries.map(entry => {
+          {!loading && displayEntries.length === 0 && (
+            <p className="claims-empty">
+              {colleaguesOnly && watchlist.length === 0
+                ? t('kudos.no_watchlist_hint')
+                : t('kudos.no_kudos')}
+            </p>
+          )}
+          {displayEntries.map(entry => {
             const badgeInfo = getBadgeDisplay(entry.badge)
             const qualityInfo = getQualityDisplay(entry.quality)
             const recInfo = getRecTypeDisplay(entry.recognition_type)

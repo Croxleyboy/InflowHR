@@ -329,6 +329,13 @@ const en: Translations = {
   'directory.contact_details': 'Contact Details',
   'directory.close': 'Close',
   'directory.no_results': 'No employees found',
+  'directory.on_leave': 'On Leave',
+  'directory.add_watchlist': 'Add to Kudos Watchlist',
+  'directory.remove_watchlist': 'Remove from Watchlist',
+  'directory.watchlist_prompt_title': 'Enable Colleague Updates?',
+  'directory.watchlist_prompt_text': 'You added a colleague to your watchlist. Enable colleague-only mode on the Kudos page to only see updates from your chosen colleagues.',
+  'directory.watchlist_enable': 'Yes, enable',
+  'directory.watchlist_later': 'Not now',
 
   // Kudos
   'kudos.title': 'Kudos',
@@ -377,6 +384,8 @@ const en: Translations = {
   'kudos.quality_professional': 'Total Professional',
   'kudos.quality_creative': 'Creative Being',
   'kudos.quality_good_luck': 'Good Luck for the Future',
+  'kudos.colleagues_only': 'Colleagues Only',
+  'kudos.no_watchlist_hint': 'Add colleagues from the Directory to see their updates here',
 
   // Payslips
   'payslips.title': 'My',
@@ -945,6 +954,13 @@ const de: Translations = {
   'directory.contact_details': 'Kontaktdaten',
   'directory.close': 'Schließen',
   'directory.no_results': 'Keine Mitarbeiter gefunden',
+  'directory.on_leave': 'Im Urlaub',
+  'directory.add_watchlist': 'Zur Kudos-Watchlist hinzufugen',
+  'directory.remove_watchlist': 'Von Watchlist entfernen',
+  'directory.watchlist_prompt_title': 'Kollegen-Updates aktivieren?',
+  'directory.watchlist_prompt_text': 'Sie haben einen Kollegen zur Watchlist hinzugefugt. Aktivieren Sie den Kollegen-Modus auf der Kudos-Seite, um nur Updates von Ihren ausgewahlten Kollegen zu sehen.',
+  'directory.watchlist_enable': 'Ja, aktivieren',
+  'directory.watchlist_later': 'Nicht jetzt',
 
   // Kudos
   'kudos.title': 'Kudos',
@@ -993,6 +1009,8 @@ const de: Translations = {
   'kudos.quality_professional': 'Totaler Profi',
   'kudos.quality_creative': 'Kreatives Wesen',
   'kudos.quality_good_luck': 'Alles Gute für die Zukunft',
+  'kudos.colleagues_only': 'Nur Kollegen',
+  'kudos.no_watchlist_hint': 'Fügen Sie Kollegen aus dem Verzeichnis hinzu, um deren Updates hier zu sehen',
 
   // Payslips
   'payslips.title': 'Meine',

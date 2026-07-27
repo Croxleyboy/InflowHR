@@ -1980,6 +1980,29 @@ body {
 }
 .kudos-tab-active { background: #00897b; color: #fff; }
 
+.kudos-colleagues-filter {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  margin: 0 16px 8px;
+  background: var(--bg-card);
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+[data-theme="dark"] .kudos-colleagues-filter { background: #2a2a40; }
+.kudos-colleagues-label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 700; color: var(--text);
+}
+.kudos-colleagues-count {
+  background: #e8a000;
+  color: #fff;
+  font-size: 11px; font-weight: 800;
+  min-width: 20px; height: 20px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 6px;
+}
+
 .kudos-feed {
   padding: 12px 16px;
   display: flex; flex-direction: column; gap: 14px;
@@ -2333,6 +2356,87 @@ body {
   font-size: 13px; color: #fff; font-weight: 600;
 }
 .directory-card-bottom strong { font-weight: 800; }
+
+.directory-card-avatar-wrap {
+  position: relative; flex-shrink: 0;
+}
+.directory-leave-badge {
+  position: absolute;
+  bottom: -4px; left: 50%;
+  transform: translateX(-50%);
+  background: #43a047;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.directory-leave-badge-modal {
+  display: inline-block;
+  background: #43a047;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 10px;
+  margin-top: 4px;
+}
+
+.directory-watchlist-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.directory-watchlist-btn:active { transform: scale(0.85); }
+.directory-watchlist-active { animation: dir-star-pop 0.3s ease; }
+@keyframes dir-star-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+/* ── Directory Watchlist Prompt ── */
+.directory-watchlist-prompt {
+  background: var(--bg-card);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 340px;
+  padding: 24px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.directory-watchlist-prompt-icon { margin-bottom: 12px; }
+.directory-watchlist-prompt-title {
+  font-size: 17px; font-weight: 800; color: var(--text);
+  margin-bottom: 8px;
+}
+.directory-watchlist-prompt-text {
+  font-size: 13px; color: var(--text-muted);
+  line-height: 1.5; margin-bottom: 20px;
+}
+.directory-watchlist-prompt-actions {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.directory-watchlist-prompt-yes {
+  padding: 12px;
+  border: none; border-radius: 10px;
+  background: linear-gradient(135deg, #00897b, #00695c);
+  color: #fff; font-size: 15px; font-weight: 700;
+  font-family: var(--sans); cursor: pointer;
+}
+.directory-watchlist-prompt-no {
+  padding: 10px;
+  border: none; border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted); font-size: 14px; font-weight: 600;
+  font-family: var(--sans); cursor: pointer;
+}
 
 /* ── Directory Contact Modal ── */
 .directory-modal-overlay {
