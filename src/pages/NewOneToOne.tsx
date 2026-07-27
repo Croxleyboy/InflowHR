@@ -15,7 +15,7 @@ export default function NewOneToOne() {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useLanguage()
-  const { employeeId, employeeName, employeeEmail, companyUser } = useAuth()
+  const { employeeId, employeeName, companyUser } = useAuth()
   const preselect = (location.state as { employeeId?: string; employeeName?: string } | null)
 
   const [reports, setReports] = useState<DirectReport[]>([])
@@ -82,7 +82,6 @@ export default function NewOneToOne() {
   }
 
   const today = new Date().toISOString().split('T')[0]
-  const selectedReport = reports.find(r => r.id === selectedEmployee)
 
   return (
     <div className="feature-page">

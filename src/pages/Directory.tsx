@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
-import { useAuth } from '../context/AuthContext'
 
 interface DirectoryEntry {
   id: number
@@ -28,7 +27,6 @@ function getWatchlist(): string[] {
 export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: EMPLOYEE_ID } = useAuth()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)

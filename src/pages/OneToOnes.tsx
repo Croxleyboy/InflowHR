@@ -38,7 +38,7 @@ function formatDate(dateStr: string) {
 export default function OneToOnes() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId, companyUser } = useAuth()
+  const { employeeId } = useAuth()
   const [tab, setTab] = useState<Tab>('upcoming')
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [directReports, setDirectReports] = useState<DirectReport[]>([])
