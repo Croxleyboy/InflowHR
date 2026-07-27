@@ -10,7 +10,7 @@ export default function Login() {
       <div className="login-hero">
         <div className="login-hero-content">
           <div className="login-hero-logo">
-            <img src="/inflowhr-logo.avif" alt="InflowHR" className="login-hero-logo-img" />
+            <img src="/inflowhr-logo-alt.svg" alt="InflowHR" className="login-hero-logo-img" />
           </div>
           <p className="login-hero-tagline">{t('login.hero_tagline')}</p>
           <div className="login-hero-features">
