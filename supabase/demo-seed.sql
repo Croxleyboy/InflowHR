@@ -5,6 +5,8 @@
 -- ============================================================
 
 -- Step 1: Delete all data (order matters for FK constraints)
+DELETE FROM one_to_one_comments;
+DELETE FROM one_to_one_meetings;
 DELETE FROM workflow_tracker;
 DELETE FROM notifications;
 DELETE FROM expense_line_items;

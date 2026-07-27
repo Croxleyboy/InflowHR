@@ -150,7 +150,7 @@ export default function ExpenseApproval() {
   if (loading) return <div className="feature-page"><p className="claims-empty">{t('common.loading')}</p></div>
   if (!claim) return <div className="feature-page"><p className="claims-empty">{t('approval.claim_not_found')}</p></div>
 
-  const isActionable = claim.status === 'submitted'
+  const isActionable = claim.status === 'submitted' || claim.status === 'pending'
 
   return (
     <div className="feature-page exp-approval-page">

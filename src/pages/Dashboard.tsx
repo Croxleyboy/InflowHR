@@ -41,6 +41,7 @@ export default function Dashboard() {
   const [lastExpense, setLastExpense] = useState<number | null>(null)
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const [leavePending, setLeavePending] = useState<number | null>(null)
+  const [isManager, setIsManager] = useState(false)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   useEffect(() => {
@@ -74,6 +75,12 @@ export default function Dashboard() {
         .limit(1)
         .single()
         .then(({ data }) => { if (data) setLastExpense(data.amount) })
+
+      supabase.from('employees')
+        .select('id', { count: 'exact', head: true })
+        .eq('manager_id', employeeId)
+        .eq('is_active', true)
+        .then(({ count }) => setIsManager((count || 0) > 0))
 
       supabase.from('leave_balances')
         .select('total_allowance')
@@ -210,10 +217,10 @@ export default function Dashboard() {
             <Chevron color="#c62828" />
           </button>
         )}
-        {features.performance && (
-          <button className="dash-card card-performance" onClick={() => navigate('/performance')}>
+        {features.performance && isManager && (
+          <button className="dash-card card-performance" onClick={() => navigate('/one-to-ones')}>
             <div className="card-content">
-              <span className="card-label">{t('dashboard.performance')}</span>
+              <span className="card-label">{t('one_to_one.nav_label')}</span>
             </div>
             <Chevron color="#ad1457" />
           </button>

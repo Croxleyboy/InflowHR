@@ -509,3 +509,93 @@
   display: flex; align-items: center; justify-content: center;
 }
 .admin-logo-upload-sm:hover { border-color: #4f46e5; color: #4f46e5; }
+
+/* ===== Admin Performance ===== */
+.admin-perf-manager-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.admin-perf-manager-row:hover {
+  background: rgba(124,58,237,0.06);
+}
+.admin-perf-report-row {
+  background: rgba(128,128,128,0.03);
+}
+.admin-perf-report-name {
+  font-weight: 600;
+}
+.admin-perf-reassign-btn {
+  padding: 4px 12px;
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.admin-perf-reassign-btn:hover {
+  background: #6d28d9;
+}
+.admin-perf-meeting-row {
+  background: rgba(128,128,128,0.02);
+  font-size: 0.9em;
+}
+.admin-perf-meeting-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.8em;
+  font-weight: 600;
+  margin-right: 8px;
+  text-transform: capitalize;
+}
+.admin-perf-status-completed { background: #e0e7ff; color: #3730a3; }
+.admin-perf-status-pending { background: #fef3c7; color: #92400e; }
+.admin-perf-status-accepted { background: #d1fae5; color: #065f46; }
+.admin-perf-status-cancelled { background: #f3f4f6; color: #6b7280; }
+.admin-perf-status-declined { background: #fee2e2; color: #991b1b; }
+.admin-perf-meeting-date {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+.admin-perf-summary-toggle {
+  padding: 3px 10px;
+  background: rgba(124,58,237,0.1);
+  color: #7c3aed;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.82em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.admin-perf-summary-text {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(124,58,237,0.05);
+  border-radius: 8px;
+  font-size: 0.88em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.admin-modal {
+  background: var(--card-bg, #fff);
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.admin-modal h2 {
+  margin: 0 0 4px;
+  font-size: 1.1em;
+}

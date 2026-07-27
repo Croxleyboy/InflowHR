@@ -113,6 +113,16 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'Meeting') {
+    return (
+      <div className="notif-icon notif-icon-meeting">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      </div>
+    )
+  }
   return (
     <div className="notif-icon notif-icon-default">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
@@ -174,6 +184,14 @@ export default function Notifications() {
   const pendingCount = actions.length
 
   function handleActionClick(item: WorkflowItem) {
+    if (item.record_type === 'Meeting') {
+      if (item.approval_id) {
+        navigate(`/one-to-ones/${item.approval_id}`)
+      } else {
+        navigate('/one-to-ones')
+      }
+      return
+    }
     if (!item.approval_id) {
       alert('This action has no linked record. Please re-seed demo data to fix.')
       return
@@ -183,7 +201,7 @@ export default function Notifications() {
     } else if (item.record_type === 'Leave') {
       navigate(`/approve/leave/${item.approval_id}`)
     } else if (item.record_type === 'Timesheet') {
-      navigate(`/timesheets/${item.approval_id}`)
+      navigate(`/approve/timesheet/${item.approval_id}`)
     }
   }
 
@@ -195,6 +213,7 @@ export default function Notifications() {
       return `${leaveType} ${t('notifications.leave_approval')}`
     }
     if (item.record_type === 'Timesheet') return t('notifications.timesheet_review')
+    if (item.record_type === 'Meeting') return t('notifications.meeting_scheduled')
     return item.action
   }
 
@@ -330,7 +349,7 @@ export default function Notifications() {
           {actions.length === 0 && <p className="claims-empty">{t('notifications.no_actions')}</p>}
           {actions.map(item => (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
-              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : 'bar-grey'}`} />
+              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' ? 'bar-purple' : 'bar-grey'}`} />
               <NotifIcon type={item.record_type} />
               <div className="notif-action-content">
                 <span className="notif-action-title">{getActionTitle(item)}</span>
@@ -339,14 +358,14 @@ export default function Notifications() {
                   <span className="notif-action-date">{t('notifications.created')} {formatNotifDate(item.created_at)}</span>
                 </div>
                 <div className="notif-action-detail">
-                  <span className="notif-action-type">{item.record_type === 'Expense' ? t('dashboard.expenses') : item.record_type}</span>
+                  <span className="notif-action-type">{item.record_type === 'Expense' ? t('dashboard.expenses') : item.record_type === 'Meeting' ? t('one_to_one.page_subtitle') : item.record_type}</span>
                   {item.task_description && <span className="notif-action-amount">{item.task_description.split(' - ').pop()}</span>}
                   <span className="notif-action-for">{t('notifications.for')} {item.emp_display_name}</span>
                   {item.approval_id && <span className="notif-action-id">{item.approval_id}</span>}
                 </div>
               </div>
               <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
-                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' ? '#7c3aed' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           ))}

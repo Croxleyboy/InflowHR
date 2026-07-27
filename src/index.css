@@ -882,6 +882,7 @@ body {
 }
 .notif-icon-expense { background: #c62828; }
 .notif-icon-leave { background: #2e7d32; }
+.notif-icon-meeting { background: #7c3aed; }
 .notif-icon-default { background: #d4a017; }
 .notif-icon-company { background: #546e7a; }
 
@@ -923,6 +924,7 @@ body {
 }
 .bar-blue { background: #c62828; }
 .bar-red { background: #e53935; }
+.bar-purple { background: #7c3aed; }
 .bar-grey { background: #9e9e9e; }
 
 .notif-action-content { flex: 1; display: flex; flex-direction: column; gap: 4px; padding-left: 4px; }
@@ -3712,4 +3714,374 @@ body {
     grid-template-columns: repeat(2, 1fr);
     gap: 14px;
   }
+}
+
+/* ===== 1:1 Meetings ===== */
+.oto-schedule-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 4px;
+  padding: 12px 20px;
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.95em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.oto-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.oto-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--card-bg, #fff);
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.oto-card:active { transform: scale(0.98); }
+.oto-card-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+.oto-card-content {
+  flex: 1;
+  min-width: 0;
+}
+.oto-card-name {
+  display: block;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+.oto-card-date {
+  display: block;
+  font-size: 0.82em;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+.oto-card-status {
+  display: inline-block;
+  font-size: 0.75em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+.oto-status-pending { background: #fef3c7; color: #92400e; }
+.oto-status-accepted { background: #d1fae5; color: #065f46; }
+.oto-status-completed { background: #e0e7ff; color: #3730a3; }
+.oto-status-cancelled { background: #f3f4f6; color: #6b7280; }
+.oto-status-declined { background: #fee2e2; color: #991b1b; }
+.oto-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.oto-accept-btn, .oto-decline-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.oto-accept-btn { background: #059669; }
+.oto-decline-btn { background: #dc2626; }
+.oto-card-arrow { flex-shrink: 0; opacity: 0.3; }
+.oto-has-notes { flex-shrink: 0; margin-right: 4px; }
+
+/* Direct reports tab */
+.oto-report-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--card-bg, #fff);
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.oto-report-info {
+  flex: 1;
+  min-width: 0;
+}
+.oto-report-name {
+  display: block;
+  font-weight: 600;
+  font-size: 0.95em;
+}
+.oto-report-role {
+  display: block;
+  font-size: 0.82em;
+  opacity: 0.6;
+  margin-top: 2px;
+}
+.oto-report-last {
+  display: block;
+  font-size: 0.78em;
+  opacity: 0.5;
+  margin-top: 2px;
+}
+.oto-report-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.oto-report-schedule {
+  padding: 6px 14px;
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.oto-report-count {
+  font-size: 0.75em;
+  opacity: 0.5;
+}
+
+/* Meeting detail: summary + comments */
+.oto-summary-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(128,128,128,0.15);
+}
+.oto-summary-label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.9em;
+  margin-bottom: 8px;
+}
+.oto-summary-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(128,128,128,0.25);
+  border-radius: 10px;
+  font-size: 0.9em;
+  font-family: inherit;
+  resize: vertical;
+  background: var(--card-bg, #fff);
+  color: inherit;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+.oto-summary-readonly {
+  padding: 12px;
+  background: rgba(124,58,237,0.06);
+  border-radius: 10px;
+  font-size: 0.9em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.oto-comments-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(128,128,128,0.15);
+}
+.oto-comment {
+  padding: 10px 12px;
+  background: rgba(128,128,128,0.06);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.oto-comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.oto-comment-author {
+  font-weight: 600;
+  font-size: 0.85em;
+}
+.oto-comment-date {
+  font-size: 0.75em;
+  opacity: 0.5;
+}
+.oto-comment-body {
+  font-size: 0.88em;
+  line-height: 1.4;
+  margin: 0;
+  white-space: pre-wrap;
+}
+.oto-add-comment {
+  margin-top: 10px;
+}
+.oto-comment-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(128,128,128,0.25);
+  border-radius: 10px;
+  font-size: 0.88em;
+  font-family: inherit;
+  resize: vertical;
+  background: var(--card-bg, #fff);
+  color: inherit;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+.oto-comment-submit {
+  padding: 8px 16px;
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.85em;
+  font-weight: 600;
+  cursor: pointer;
+}
+.oto-comment-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Notifications subtitle */
+.notif-subtitle {
+  font-size: 0.82em;
+  opacity: 0.6;
+  margin: 2px 0 0;
+  font-weight: 400;
+}
+
+/* Schedule 1:1 form */
+.oto-schedule-form {
+  padding: 16px;
+}
+.oto-form-section {
+  margin-bottom: 18px;
+}
+.oto-form-label {
+  display: block;
+  font-weight: 700;
+  font-size: 0.85em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+}
+.oto-employee-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.oto-employee-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--card-bg, #fff);
+  border: 2px solid transparent;
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+.oto-employee-option:hover {
+  border-color: rgba(124,58,237,0.3);
+}
+.oto-employee-selected {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.15);
+}
+.oto-employee-option-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8em;
+  flex-shrink: 0;
+}
+.oto-employee-option-info {
+  flex: 1;
+}
+.oto-employee-option-name {
+  display: block;
+  font-weight: 600;
+  font-size: 0.93em;
+}
+.oto-employee-option-role {
+  display: block;
+  font-size: 0.78em;
+  opacity: 0.55;
+  margin-top: 1px;
+}
+.oto-form-row {
+  display: flex;
+  gap: 12px;
+}
+.oto-form-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid rgba(128,128,128,0.2);
+  border-radius: 12px;
+  font-size: 0.95em;
+  font-family: inherit;
+  background: var(--card-bg, #fff);
+  color: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.oto-form-input:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.12);
+}
+.oto-form-error {
+  color: #dc2626;
+  font-size: 0.85em;
+  font-weight: 600;
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border-radius: 10px;
+}
+.oto-form-submit {
+  width: 100%;
+  padding: 14px;
+  background: #7c3aed;
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 1em;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: background 0.15s;
+}
+.oto-form-submit:hover { background: #6d28d9; }
+.oto-form-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

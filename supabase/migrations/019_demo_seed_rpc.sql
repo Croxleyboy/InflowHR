@@ -66,6 +66,15 @@ DECLARE
   v_ben_gym bigint;
   v_ben_mental bigint;
 
+  -- 1:1 Meetings
+  v_mtg1 bigint;
+  v_mtg2 bigint;
+  v_mtg3 bigint;
+  v_mtg4 bigint;
+  v_mtg5 bigint;
+  v_mtg6 bigint;
+  v_mtg7 bigint;
+
   -- Courses
   v_c_gdpr bigint;
   v_c_cyber bigint;
@@ -88,7 +97,13 @@ BEGIN
   FROM auth.users WHERE id = p_auth_uid;
 
   -- ========== WIPE ALL DATA ==========
+  -- Temporarily bypass RLS so cross-company deletes succeed
+  ALTER TABLE one_to_one_comments DISABLE ROW LEVEL SECURITY;
+  ALTER TABLE one_to_one_meetings DISABLE ROW LEVEL SECURITY;
+
   -- pg_safeupdate requires a WHERE clause on every DELETE
+  DELETE FROM one_to_one_comments WHERE id IS NOT NULL;
+  DELETE FROM one_to_one_meetings WHERE id IS NOT NULL;
   DELETE FROM workflow_tracker  WHERE id IS NOT NULL;
   DELETE FROM notifications     WHERE id IS NOT NULL;
   DELETE FROM timesheets        WHERE id IS NOT NULL;
@@ -111,6 +126,10 @@ BEGIN
   DELETE FROM benefits          WHERE id IS NOT NULL;
   DELETE FROM courses           WHERE id IS NOT NULL;
   DELETE FROM companies         WHERE id IS NOT NULL;
+
+  -- Re-enable RLS
+  ALTER TABLE one_to_one_meetings ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE one_to_one_comments ENABLE ROW LEVEL SECURITY;
 
   -- ================================================================
   --  KUMONIX
@@ -348,6 +367,56 @@ BEGIN
     (v_james, 'Mandatory training due','Cyber Security Awareness course is overdue - please complete ASAP',       'alert',  false, v_company_id),
     (v_tom,   'Welcome to Kumonix!',   'Complete your onboarding checklist to get started',                       'info',   true,  v_company_id);
 
+  -- ========== 1:1 MEETINGS ==========
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
+    (v_andy, v_sarah, '2026-06-15', '10:00', 'completed', 'Discussed progress on API refactor. Sarah is ahead of schedule. Agreed to extend scope to include auth endpoints. Career goal: Sarah wants to move into tech lead role by year end.', '2026-06-15 11:00:00+00', v_company_id)
+  RETURNING id INTO v_mtg1;
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
+    (v_andy, v_sarah, '2026-07-13', '10:00', 'completed', 'Reviewed Q2 objectives — all on track. Talked about conference attendance in Sept. Sarah to prepare a talk proposal for internal tech day.', '2026-07-13 11:00:00+00', v_company_id)
+  RETURNING id INTO v_mtg2;
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
+    (v_andy, v_james, '2026-06-20', '14:00', 'completed', 'James demoed new design system components. Great progress. Discussed workload balance — agreed to defer the mobile redesign to Q4.', '2026-06-20 15:00:00+00', v_company_id)
+  RETURNING id INTO v_mtg3;
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
+    (v_andy, v_emma,  '2026-07-01', '09:30', 'completed', 'Reviewed onboarding improvements. Emma proposed automating the offer letter flow. Approved budget for HR software evaluation.', '2026-07-01 10:30:00+00', v_company_id),
+    (v_andy, v_tom,   '2026-07-20', '11:00', 'completed', 'Tom settling in well. Discussed finance reporting requirements. Agreed to shadow payroll process next month.', '2026-07-20 12:00:00+00', v_company_id),
+    (v_andy, v_sarah, '2026-08-03', '10:00', 'pending',   NULL, NULL, v_company_id),
+    (v_andy, v_james, '2026-08-05', '14:00', 'pending',   NULL, NULL, v_company_id);
+
+  INSERT INTO one_to_one_comments (meeting_id, author_id, body, company_id) VALUES
+    (v_mtg1, v_sarah, 'Thanks for the feedback on the auth endpoint scope. I''ll update the sprint plan accordingly.', v_company_id),
+    (v_mtg2, v_sarah, 'Conference talk proposal submitted — fingers crossed!', v_company_id),
+    (v_mtg3, v_james, 'Agreed on deferring mobile redesign. Will focus on component library documentation instead.', v_company_id);
+
+  -- Set Andy's manager to Emma (after all employees exist)
+  UPDATE employees SET manager_id = v_emma WHERE id = v_andy;
+
+  -- 1:1 meetings where Andy is the EMPLOYEE (Emma as his manager for HR/performance reviews)
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
+    (v_emma, v_andy, '2026-06-10', '09:00', 'completed', 'Quarterly performance review. Andy is managing team growth well. Discussed succession planning for IT dept. Agreed to formalise the mentoring programme by Q3.', '2026-06-10 10:00:00+00', v_company_id)
+  RETURNING id INTO v_mtg4;
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
+    (v_emma, v_andy, '2026-07-08', '09:00', 'completed', 'Mid-year review. Headcount approved for two new hires in Engineering. Andy to draft JDs by end of month. Discussed budget reallocation for cloud infrastructure.', '2026-07-08 10:00:00+00', v_company_id)
+  RETURNING id INTO v_mtg5;
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
+    (v_emma, v_andy, '2026-07-22', '09:00', 'completed', 'Catch-up on hiring pipeline. Three strong candidates shortlisted for Senior Engineer role. Andy raised concern about on-call rota coverage during August holidays.', '2026-07-22 10:00:00+00', v_company_id)
+  RETURNING id INTO v_mtg6;
+  -- Pending meeting for Andy (shows in notifications)
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, company_id) VALUES
+    (v_emma, v_andy, '2026-08-12', '09:00', 'pending', v_company_id)
+  RETURNING id INTO v_mtg7;
+
+  INSERT INTO one_to_one_comments (meeting_id, author_id, body, company_id) VALUES
+    (v_mtg4, v_emma, 'Great discussion. Let me know when the mentoring programme doc is ready for review.', v_company_id),
+    (v_mtg4, v_andy, 'Will have the mentoring framework drafted by end of June.', v_company_id),
+    (v_mtg5, v_emma, 'JD templates shared in the HR folder — feel free to adapt for the Engineering roles.', v_company_id),
+    (v_mtg5, v_andy, 'Thanks Emma, JDs drafted and shared for your review.', v_company_id),
+    (v_mtg6, v_emma, 'Good point on on-call coverage. I''ll flag this with the wider leadership team.', v_company_id);
+
+  -- Workflow tracker notification for Andy's pending meeting
+  INSERT INTO workflow_tracker (emp_display_name, step, status, record_type, action, employee_email, assigned_to, task_description, approval_id, company_id) VALUES
+    ('Andy Jones', 1, 'Pending', 'Meeting', '1:1 meeting scheduled', 'andy.jones@kumonix.com', 'andy.jones@kumonix.com', 'Emma Chen has scheduled a 1:1 meeting with you on Tue, 12 Aug 2026 at 09:00', v_mtg7, v_company_id);
+
   -- ========== APP SETTINGS ==========
   INSERT INTO app_settings (id, language, financial_year_start_month, country_code, company_id)
   VALUES (1, 'en', 4, 'GB', v_company_id)
@@ -560,6 +629,16 @@ BEGIN
     (v_m2m_james, 'New kudos received',     'Sarah Mitchell sent you a kudos - great work on the AWS migration!',    'info',   false, v_m2m_id),
     (v_m2m_priya, 'Mandatory training due', 'Fire Safety course is not yet started - please complete soon',          'alert',  false, v_m2m_id),
     (v_m2m_lucy,  'Welcome to Move2Modern!','Complete your onboarding checklist to get started',                      'info',   true,  v_m2m_id);
+
+  -- ========== 1:1 MEETINGS (Move2Modern) ==========
+  INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
+    (v_m2m_andy,  v_m2m_sarah, '2026-07-10', '10:00', 'completed', 'Reviewed digital transformation roadmap. Sarah is leading the cloud migration well. Discussed hiring plan for Q4.', '2026-07-10 11:00:00+00', v_m2m_id),
+    (v_m2m_andy,  v_m2m_tom,   '2026-07-15', '14:00', 'completed', 'Tom presented the delivery timeline for Project Atlas. On track. Discussed Lucy''s progress and onboarding.', '2026-07-15 15:00:00+00', v_m2m_id),
+    (v_m2m_sarah, v_m2m_james, '2026-07-18', '11:00', 'completed', 'James completed AWS migration ahead of schedule. Discussed certification path — will support SA Pro exam prep.', '2026-07-18 12:00:00+00', v_m2m_id),
+    (v_m2m_sarah, v_m2m_priya, '2026-07-22', '10:00', 'completed', 'Priya''s UX research findings are excellent. Discussed expanding the design system. Career goal: Priya to attend UX London.', '2026-07-22 11:00:00+00', v_m2m_id),
+    (v_m2m_tom,   v_m2m_lucy,  '2026-07-25', '09:30', 'completed', 'Lucy is settling in well. Reviewed business analysis deliverables. Agreed on mentoring sessions with Sarah.', '2026-07-25 10:30:00+00', v_m2m_id),
+    (v_m2m_andy,  v_m2m_sarah, '2026-08-07', '10:00', 'pending',   NULL, NULL, v_m2m_id),
+    (v_m2m_sarah, v_m2m_james, '2026-08-08', '11:00', 'accepted',  NULL, NULL, v_m2m_id);
 
   -- ========== APP SETTINGS (Move2Modern) ==========
   INSERT INTO app_settings (id, language, financial_year_start_month, country_code, company_id)

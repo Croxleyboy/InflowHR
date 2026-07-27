@@ -33,6 +33,10 @@ import Timesheets from './pages/Timesheets'
 import NewTimesheet from './pages/NewTimesheet'
 import TimesheetDetail from './pages/TimesheetDetail'
 import TimesheetHistory from './pages/TimesheetHistory'
+import TimesheetApproval from './pages/TimesheetApproval'
+import OneToOnes from './pages/OneToOnes'
+import NewOneToOne from './pages/NewOneToOne'
+import OneToOneDetail from './pages/OneToOneDetail'
 import Placeholder from './pages/Placeholder'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -48,6 +52,7 @@ import AdminTickets from './pages/admin/AdminTickets'
 import AdminBenefits from './pages/admin/AdminBenefits'
 import AdminCompanies from './pages/admin/AdminCompanies'
 import AdminTimesheets from './pages/admin/AdminTimesheets'
+import AdminPerformance from './pages/admin/AdminPerformance'
 import AdminDemoSeed from './pages/admin/AdminDemoSeed'
 
 function AdminGate() {
@@ -80,6 +85,7 @@ function EmployeeRoutes() {
       <Route path="/expenses/:id" element={<ExpenseDetail />} />
       <Route path="/approve/expense/:id" element={<ExpenseApproval />} />
       <Route path="/approve/leave/:id" element={<LeaveApproval />} />
+      <Route path="/approve/timesheet/:id" element={<TimesheetApproval />} />
       <Route path="/leave" element={<MyLeave />} />
       <Route path="/leave/history" element={<MyLeaveHistory />} />
       <Route path="/leave/calendar" element={<LeaveCalendar />} />
@@ -94,7 +100,10 @@ function EmployeeRoutes() {
       <Route path="/kudos" element={<Kudos />} />
       <Route path="/benefits" element={<Benefits />} />
       <Route path="/elearning" element={<ELearning />} />
-      <Route path="/performance" element={<Placeholder title="Performance" />} />
+      <Route path="/one-to-ones" element={<OneToOnes />} />
+      <Route path="/one-to-ones/new" element={<NewOneToOne />} />
+      <Route path="/one-to-ones/:id" element={<OneToOneDetail />} />
+      <Route path="/performance" element={<OneToOnes />} />
       <Route path="/announcements" element={<Placeholder title="Company Announcements" />} />
     </Routes>
   )
@@ -137,6 +146,7 @@ function AuthGate() {
             <Route path="tickets" element={<AdminTickets />} />
             <Route path="benefits" element={<AdminBenefits />} />
             <Route path="timesheets" element={<AdminTimesheets />} />
+            <Route path="performance" element={<AdminPerformance />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="demo-seed" element={<AdminDemoSeed />} />
