@@ -410,6 +410,8 @@
   .admin-bar-chart { gap: 4px; }
   .admin-workflow-timeline { padding-left: 16px; }
   .admin-wf-step { padding-left: 20px; }
+  .admin-edit-admin-cell { flex-direction: column; align-items: flex-start; }
+  .admin-admin-select { max-width: 100%; width: 100%; }
 }
 
 /* Toggle Switch */
@@ -509,6 +511,21 @@
   display: flex; align-items: center; justify-content: center;
 }
 .admin-logo-upload-sm:hover { border-color: #4f46e5; color: #4f46e5; }
+
+/* Company admin cell */
+.admin-edit-admin-cell {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.admin-admin-select {
+  max-width: 240px; min-width: 140px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.admin-view-admin-cell {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.admin-no-admin {
+  color: #999; font-style: italic;
+}
 
 /* ===== Admin Performance ===== */
 .admin-perf-manager-row {

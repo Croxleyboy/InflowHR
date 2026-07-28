@@ -379,9 +379,9 @@ export default function AdminCompanies() {
                     <td>{c.domain}</td>
                     <td>
                       {isEditing ? (
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <div className="admin-edit-admin-cell">
                           <select
-                            className="admin-inline-select"
+                            className="admin-inline-select admin-admin-select"
                             defaultValue={admin?.employee_id || ''}
                             onChange={e => { if (e.target.value) changeAdmin(c.id, e.target.value) }}
                             disabled={savingAdmin}
@@ -398,11 +398,11 @@ export default function AdminCompanies() {
                           </button>
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <div className="admin-view-admin-cell">
                           {admin?.employee ? (
                             <span>{admin.employee.first_name} {admin.employee.last_name}</span>
                           ) : (
-                            <span style={{ color: '#999', fontStyle: 'italic' }}>No admin assigned</span>
+                            <span className="admin-no-admin">No admin assigned</span>
                           )}
                           <button
                             className="admin-btn-icon"
