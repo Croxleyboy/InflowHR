@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 import ExpenseGraph from '../components/ExpenseGraph'
 
 type ClaimStatus = 'draft' | 'pending' | 'submitted' | 'approved' | 'rejected'
@@ -41,6 +42,7 @@ function formatAmount(n: number) {
 export default function Expenses() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
+  const { companyUser } = useAuth()
   const [filter, setFilter] = useState<Filter>('all')
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,11 +50,13 @@ export default function Expenses() {
   const [showGraph, setShowGraph] = useState(false)
 
   const fetchClaims = useCallback(async () => {
+    if (!companyUser?.company_id) return
     setLoading(true)
     setError(null)
     const { data, error: err } = await supabase
       .from('expense_claims')
       .select('id, reference_number, title, description, amount, status, created_at')
+      .eq('company_id', companyUser.company_id)
       .order('created_at', { ascending: false })
 
     if (err) {
@@ -61,7 +65,7 @@ export default function Expenses() {
       setClaims(data as Claim[])
     }
     setLoading(false)
-  }, [])
+  }, [companyUser?.company_id])
 
   useEffect(() => { fetchClaims() }, [fetchClaims])
 

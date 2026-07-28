@@ -42,11 +42,13 @@ export default function Settings() {
     setLang(draftLang)
     setFyStartMonth(draftFy)
 
-    await supabase.from('app_settings').update({
-      language: draftLang,
-      financial_year_start_month: draftFy,
-      updated_at: new Date().toISOString(),
-    }).eq('id', 1)
+    if (companyUser?.company_id) {
+      await supabase.from('app_settings').update({
+        language: draftLang,
+        financial_year_start_month: draftFy,
+        updated_at: new Date().toISOString(),
+      }).eq('company_id', companyUser.company_id)
+    }
 
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)

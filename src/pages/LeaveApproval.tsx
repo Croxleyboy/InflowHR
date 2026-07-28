@@ -57,7 +57,7 @@ export default function LeaveApproval() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL } = useAuth()
+  const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL, companyUser } = useAuth()
   const [request, setRequest] = useState<LeaveRequest | null>(null)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [leaveType, setLeaveType] = useState<LeaveType | null>(null)
@@ -130,6 +130,7 @@ export default function LeaveApproval() {
         ? `Your ${typeName} from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been approved. ${happyMsg}`
         : `Your ${typeName} request from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been declined. Please contact your manager.`,
       approval_status: approved ? 'Approved' : 'Declined',
+      company_id: companyUser?.company_id,
     })
 
     await supabase.from('workflow_tracker').insert({
@@ -144,6 +145,7 @@ export default function LeaveApproval() {
       reminder_count: 1,
       task_description: `You ${approved ? 'approved' : 'declined'} ${typeName} for ${empName} - ${formatDate(request.start_date)} to ${formatDate(request.end_date)}`,
       approval_status: approved ? 'Approved' : 'Declined',
+      company_id: companyUser?.company_id,
     })
 
     navigate('/notifications')

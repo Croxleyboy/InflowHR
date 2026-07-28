@@ -33,7 +33,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser } = useAuth()
   const navigate = useNavigate()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
@@ -44,12 +44,15 @@ export default function Dashboard() {
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   useEffect(() => {
-    supabase.from('announcements')
-      .select('title, body')
-      .order('published_at', { ascending: false })
-      .limit(1)
-      .single()
-      .then(({ data }) => { if (data) setLatest(data as LatestAnnouncement) })
+    if (companyUser?.company_id) {
+      supabase.from('announcements')
+        .select('title, body')
+        .eq('company_id', companyUser.company_id)
+        .order('published_at', { ascending: false })
+        .limit(1)
+        .single()
+        .then(({ data }) => { if (data) setLatest(data as LatestAnnouncement) })
+    }
 
     if (employeeId) {
       const lastSeen = localStorage.getItem('inflowhr-kudos-seen') || '1970-01-01'
@@ -98,7 +101,7 @@ export default function Dashboard() {
           setLeavePending(pendingDays)
         })
     }
-  }, [employeeId, employeeEmail])
+  }, [employeeId, employeeEmail, companyUser?.company_id])
 
   const h = new Date().getHours()
   const greeting = h < 12 ? t('dashboard.greeting_morning') : h < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening')

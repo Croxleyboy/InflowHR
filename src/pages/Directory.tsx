@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 interface DirectoryEntry {
   id: number
@@ -27,6 +28,7 @@ function getWatchlist(): string[] {
 export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { companyUser } = useAuth()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -36,6 +38,7 @@ export default function Directory() {
   const [showWatchlistPrompt, setShowWatchlistPrompt] = useState(false)
 
   const fetchData = useCallback(async () => {
+    if (!companyUser?.company_id) return
     setLoading(true)
 
     const today = new Date().toISOString().split('T')[0]
@@ -44,11 +47,13 @@ export default function Directory() {
       supabase
         .from('onboarding')
         .select('id, firstname, surname, display_name, job_title, user_email, telephone, department, avatar_url')
+        .eq('company_id', companyUser.company_id)
         .eq('appstatus', 'active')
         .order('firstname'),
       supabase
         .from('leave_requests')
         .select('employee_id')
+        .eq('company_id', companyUser.company_id)
         .eq('status', 'approved')
         .lte('start_date', today)
         .gte('end_date', today),
@@ -61,7 +66,7 @@ export default function Directory() {
     setOnLeaveIds(leaveSet)
 
     setLoading(false)
-  }, [])
+  }, [companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

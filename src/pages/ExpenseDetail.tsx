@@ -37,7 +37,7 @@ export default function ExpenseDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
-  const { employeeName: HARDCODED_EMPLOYEE_NAME, employeeEmail: HARDCODED_EMPLOYEE_EMAIL } = useAuth()
+  const { employeeName: HARDCODED_EMPLOYEE_NAME, employeeEmail: HARDCODED_EMPLOYEE_EMAIL, companyUser } = useAuth()
   const HARDCODED_MANAGER_EMAIL = HARDCODED_EMPLOYEE_EMAIL
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
@@ -104,6 +104,7 @@ export default function ExpenseDetail() {
       approval_id: claim.id,
       reminder_count: 1,
       task_description: `Expense claim ${claim.reference_number} - ${claim.title} - £${totalAmount.toFixed(2)}`,
+      company_id: companyUser?.company_id,
     })
 
     navigate('/expenses')

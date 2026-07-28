@@ -108,7 +108,7 @@ const LEAVE_TYPE_COLORS: Record<string, string> = {
 export default function NewLeaveRequest() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
   const MANAGER_EMAIL = EMPLOYEE_EMAIL
   const benefitTypes = useMemo(() => getBenefitLeaveTypes(), [])
   const allLeaveTypes = useMemo(() => [...LEAVE_TYPE_KEYS, ...benefitTypes], [benefitTypes])
@@ -123,8 +123,10 @@ export default function NewLeaveRequest() {
   const [leaveTypeIds, setLeaveTypeIds] = useState<Record<string, number>>({})
 
   useEffect(() => {
+    if (!companyUser?.company_id) return
     supabase.from('leave_types')
       .select('id, name')
+      .eq('company_id', companyUser.company_id)
       .then(({ data }) => {
         if (data) {
           const map: Record<string, number> = {}
@@ -132,7 +134,7 @@ export default function NewLeaveRequest() {
           setLeaveTypeIds(map)
         }
       })
-  }, [])
+  }, [companyUser?.company_id])
 
   function handleHalfDayToggle(checked: boolean) {
     setHalfDay(checked)
@@ -215,6 +217,7 @@ export default function NewLeaveRequest() {
         days_requested: parseFloat(days),
         status: 'pending',
         reason: reason.trim() || null,
+        company_id: companyUser?.company_id,
       })
       .select('id')
       .single()
@@ -236,6 +239,7 @@ export default function NewLeaveRequest() {
       approval_id: data.id,
       reminder_count: 1,
       task_description: `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${halfDay ? ' (Half Day)' : ` (${days} days)`}`,
+      company_id: companyUser?.company_id,
     })
 
     navigate('/leave')

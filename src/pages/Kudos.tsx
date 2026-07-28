@@ -28,6 +28,7 @@ interface Employee {
   first_name: string
   last_name: string
   avatar_url: string | null
+  department: string | null
 }
 
 const RECOGNITION_TYPES = [
@@ -82,7 +83,7 @@ function timeAgo(dateStr: string): string {
 export default function Kudos() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: EMPLOYEE_ID } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName: currentUserName, companyUser } = useAuth()
   const [tab, setTab] = useState<'feed' | 'new'>('feed')
   const [entries, setEntries] = useState<KudosEntry[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -122,9 +123,11 @@ export default function Kudos() {
   }
 
   async function openLeaderboard() {
+    if (!companyUser?.company_id) return
     const { data } = await supabase
       .from('kudos')
       .select('to_employee_id')
+      .eq('company_id', companyUser.company_id)
       .not('to_employee_id', 'is', null)
 
     if (data && data.length > 0) {
@@ -145,25 +148,29 @@ export default function Kudos() {
   }
 
   const fetchData = useCallback(async () => {
+    if (!companyUser?.company_id) return
     setLoading(true)
 
     const empRes = await supabase
       .from('employees')
-      .select('id, first_name, last_name, avatar_url')
+      .select('id, first_name, last_name, avatar_url, department')
+      .eq('company_id', companyUser.company_id)
       .eq('is_active', true)
       .order('first_name')
 
     let kudosRes = await supabase
       .from('kudos')
       .select('*')
-      .or(`to_employee_id.eq.${EMPLOYEE_ID},is_broadcast.eq.true`)
+      .eq('company_id', companyUser.company_id)
+      .or(`to_employee_id.eq.${EMPLOYEE_ID},from_employee_id.eq.${EMPLOYEE_ID},is_broadcast.eq.true`)
       .order('created_at', { ascending: false })
 
     if (!kudosRes.data || kudosRes.error) {
       kudosRes = await supabase
         .from('kudos')
         .select('*')
-        .or(`to_employee_id.eq.${EMPLOYEE_ID},to_employee_id.is.null`)
+        .eq('company_id', companyUser.company_id)
+        .or(`to_employee_id.eq.${EMPLOYEE_ID},from_employee_id.eq.${EMPLOYEE_ID},to_employee_id.is.null`)
         .order('created_at', { ascending: false })
     }
 
@@ -187,7 +194,7 @@ export default function Kudos() {
     }
 
     setLoading(false)
-  }, [EMPLOYEE_ID])
+  }, [EMPLOYEE_ID, companyUser?.company_id])
 
   useEffect(() => {
     if (!EMPLOYEE_ID) return
@@ -222,7 +229,7 @@ export default function Kudos() {
     if (!isBroadcast && !recipientId) return
 
     setSendState('sending')
-    await supabase.from('kudos').insert({
+    const { data: insertedKudos } = await supabase.from('kudos').insert({
       from_employee_id: EMPLOYEE_ID,
       to_employee_id: isBroadcast ? null : recipientId,
       message: message.trim(),
@@ -234,7 +241,35 @@ export default function Kudos() {
       is_public: isPublic,
       like_count: 0,
       liked_by: [],
-    })
+      company_id: companyUser?.company_id,
+    }).select('id').single()
+
+    if (!isBroadcast && recipientId) {
+      const recipient = employees.find(e => e.id === recipientId)
+      if (recipient) {
+        const recipientName = `${recipient.first_name} ${recipient.last_name}`
+        const recInfo = RECOGNITION_TYPES.find(r => r.value === recType)
+        const typeLabel = recInfo ? t(recInfo.key) : recType
+        const { data: recipientEmp } = await supabase.from('employees')
+          .select('email').eq('id', recipientId).single()
+        if (recipientEmp) {
+          await supabase.from('workflow_tracker').insert({
+            emp_display_name: recipientName,
+            step: 1,
+            status: 'Complete',
+            record_type: 'Kudos',
+            action: 'Kudos received',
+            employee_email: recipientEmp.email,
+            assigned_to: recipientEmp.email,
+            approval_id: insertedKudos?.id || null,
+            reminder_count: 1,
+            task_description: `${currentUserName} sent you ${typeLabel}: "${message.trim().slice(0, 80)}"`,
+            approval_status: 'Approved',
+            company_id: companyUser?.company_id,
+          })
+        }
+      }
+    }
 
     setSendState('sent')
     setMessage('')
@@ -438,7 +473,7 @@ export default function Kudos() {
               >
                 <option value="">{t('kudos.select_recipient')}</option>
                 {employees.filter(e => e.id !== EMPLOYEE_ID).map(e => (
-                  <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
+                  <option key={e.id} value={e.id}>{e.first_name} {e.last_name}{e.department ? ` — ${e.department}` : ''}</option>
                 ))}
               </select>
             </div>

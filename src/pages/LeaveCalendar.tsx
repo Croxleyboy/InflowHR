@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 interface CalendarLeave {
   id: number
@@ -37,6 +38,7 @@ function addDays(d: Date, n: number): Date {
 export default function LeaveCalendar() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
+  const { companyUser } = useAuth()
   const [leaves, setLeaves] = useState<CalendarLeave[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -49,10 +51,12 @@ export default function LeaveCalendar() {
   const dayKeys = ['leave_calendar.mon', 'leave_calendar.tue', 'leave_calendar.wed', 'leave_calendar.thu', 'leave_calendar.fri', 'leave_calendar.sat', 'leave_calendar.sun']
 
   const fetchData = useCallback(async () => {
+    if (!companyUser?.company_id) return
     setLoading(true)
     const { data: reqs } = await supabase
       .from('leave_requests')
       .select('id, employee_id, start_date, end_date')
+      .eq('company_id', companyUser.company_id)
       .eq('status', 'approved')
       .lte('start_date', rangeEnd)
       .gte('end_date', rangeStart)
@@ -73,7 +77,7 @@ export default function LeaveCalendar() {
     }
 
     setLoading(false)
-  }, [rangeStart, rangeEnd])
+  }, [rangeStart, rangeEnd, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

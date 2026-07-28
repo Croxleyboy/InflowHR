@@ -17,7 +17,7 @@ function formatDateDisplay(dateStr: string) {
 export default function NewExpenseClaim() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl, companyUser } = useAuth()
   const [startDate, setStartDate] = useState(todayStr())
   const [endDate, setEndDate] = useState(todayStr())
   const [costCenter, setCostCenter] = useState('External expenses')
@@ -46,6 +46,7 @@ export default function NewExpenseClaim() {
         cost_center: costCenter,
         start_date: startDate,
         end_date: endDate,
+        company_id: companyUser?.company_id,
       })
       .select('id')
       .single()

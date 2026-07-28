@@ -137,7 +137,7 @@ export default function Notifications() {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useLanguage()
-  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL } = useAuth()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser } = useAuth()
   const initialTab = (location.state as { tab?: Tab } | null)?.tab || 'actions'
   const [tab, setTab] = useState<Tab>(initialTab)
   const [actions, setActions] = useState<WorkflowItem[]>([])
@@ -162,6 +162,7 @@ export default function Notifications() {
         .limit(20),
       supabase.from('announcements')
         .select('id, title, body, submitted_by_name, published_at')
+        .eq('company_id', companyUser?.company_id || '')
         .order('published_at', { ascending: false })
         .limit(20),
       supabase.from('employees')

@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext'
 export default function CreateNotification() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeName: HARDCODED_EMPLOYEE_NAME } = useAuth()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeName: HARDCODED_EMPLOYEE_NAME, companyUser } = useAuth()
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -24,6 +24,7 @@ export default function CreateNotification() {
       author_id: HARDCODED_EMPLOYEE_ID,
       submitted_by_name: HARDCODED_EMPLOYEE_NAME,
       is_pinned: false,
+      company_id: companyUser?.company_id,
     })
 
     navigate('/notifications')

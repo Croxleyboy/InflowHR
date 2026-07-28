@@ -16,7 +16,7 @@ interface LeaveBalance {
 export default function MyLeave() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
   const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -107,6 +107,7 @@ export default function MyLeave() {
       reminder_count: 0,
       task_description: `${EMPLOYEE_NAME} is now off and away from the office.`,
       approval_status: null,
+      company_id: companyUser?.company_id,
     })
 
     await supabase.from('notifications').insert({
@@ -116,6 +117,7 @@ export default function MyLeave() {
       type: 'info',
       link: '/leave',
       is_read: false,
+      company_id: companyUser?.company_id,
     })
 
     setImOffState('sent')

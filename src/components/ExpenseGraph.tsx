@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 interface MonthlyStat {
   month: string
@@ -22,6 +23,7 @@ const COLORS = {
 
 export default function ExpenseGraph({ onClose }: { onClose: () => void }) {
   const { t, fyStartMonth } = useLanguage()
+  const { companyUser } = useAuth()
   const [stats, setStats] = useState<MonthlyStat[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -34,8 +36,10 @@ export default function ExpenseGraph({ onClose }: { onClose: () => void }) {
       const endYear = fyStartMonth === 1 ? fyYear : fyYear + 1
       const endDate = `${endYear}-${String(endMonth).padStart(2, '0')}-31`
 
+      if (!companyUser?.company_id) return
       const { data } = await supabase.from('expense_claims')
         .select('status, amount, created_at')
+        .eq('company_id', companyUser.company_id)
         .gte('created_at', startDate)
         .lte('created_at', endDate)
 

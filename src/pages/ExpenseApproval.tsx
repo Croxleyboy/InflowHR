@@ -42,7 +42,7 @@ export default function ExpenseApproval() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
-  const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL } = useAuth()
+  const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL, companyUser } = useAuth()
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
   const [employee, setEmployee] = useState<Employee | null>(null)
@@ -118,6 +118,7 @@ export default function ExpenseApproval() {
         ? `${happyMessages[Math.floor(Math.random() * happyMessages.length)]} Your expense claim ${claim.reference_number} for £${totalAmount.toFixed(2)} has been approved${responseNote}`
         : `Your expense claim ${claim.reference_number} has been declined. Please contact your manager for details.${responseNote}`,
       approval_status: approved ? 'Approved' : 'Declined',
+      company_id: companyUser?.company_id,
     })
 
     await supabase.from('workflow_tracker').insert({
@@ -132,6 +133,7 @@ export default function ExpenseApproval() {
       reminder_count: 1,
       task_description: `You ${approved ? 'approved' : 'declined'} expense claim ${claim.reference_number} from ${empName} - £${totalAmount.toFixed(2)}`,
       approval_status: approved ? 'Approved' : 'Declined',
+      company_id: companyUser?.company_id,
     })
 
     navigate('/notifications')
