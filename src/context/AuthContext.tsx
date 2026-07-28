@@ -30,6 +30,7 @@ interface AuthState {
   employeeEmail: string
   isSuperAdmin: boolean
   avatarUrl: string | null
+  updateAvatarUrl: (url: string) => void
   setupComplete: boolean | null
   markSetupComplete: () => void
   signInWithMicrosoft: () => Promise<void>
@@ -142,6 +143,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSetupComplete(true)
   }
 
+  function updateAvatarUrl(url: string) {
+    setAvatarUrl(url)
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s)
@@ -195,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = employeeEmail.toLowerCase() === SUPER_ADMIN_EMAIL
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, employeeName, employeeEmail, isSuperAdmin, setupComplete, markSetupComplete, signInWithMicrosoft, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, setupComplete, markSetupComplete, signInWithMicrosoft, signOut }}>
       {children}
     </AuthContext.Provider>
   )

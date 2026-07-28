@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -47,12 +47,14 @@ function formatDate(dateStr: string | null): string {
 export default function MyProfile() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeEmail: EMPLOYEE_EMAIL } = useAuth()
+  const { employeeEmail: EMPLOYEE_EMAIL, employeeId, updateAvatarUrl } = useAuth()
   const [tab, setTab] = useState<'personal' | 'job'>('personal')
   const [profile, setProfile] = useState<OnboardingRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [showMembers, setShowMembers] = useState(false)
   const [members, setMembers] = useState<DeptMember[]>([])
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -70,6 +72,29 @@ export default function MyProfile() {
     if (!EMPLOYEE_EMAIL) return
     fetchData()
   }, [fetchData, EMPLOYEE_EMAIL])
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !employeeId) return
+    setAvatarUploading(true)
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+    const path = `${employeeId}.${ext}`
+    const { error: uploadErr } = await supabase.storage
+      .from('avatars')
+      .upload(path, file, { upsert: true })
+    if (uploadErr) {
+      setAvatarUploading(false)
+      return
+    }
+    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+    const newUrl = urlData.publicUrl + '?t=' + Date.now()
+    await supabase.from('employees').update({ avatar_url: newUrl }).eq('id', employeeId)
+    await supabase.from('onboarding').update({ avatar_url: newUrl }).eq('user_email', EMPLOYEE_EMAIL)
+    setProfile(prev => prev ? { ...prev, avatar_url: newUrl } : prev)
+    updateAvatarUrl(newUrl)
+    setAvatarUploading(false)
+    if (avatarInputRef.current) avatarInputRef.current.value = ''
+  }
 
   if (loading) return <div className="feature-page"><p className="claims-empty">{t('common.loading')}</p></div>
   if (!profile) return <div className="feature-page"><p className="claims-empty">{t('my_profile.not_found')}</p></div>
@@ -130,11 +155,30 @@ export default function MyProfile() {
 
       <div className="my-profile-card">
         <div className="my-profile-emp-row">
-          {profile.avatar_url ? (
-            <img className="my-profile-avatar-img" src={profile.avatar_url} alt={fullName} />
-          ) : (
-            <div className="my-profile-avatar">{initials}</div>
-          )}
+          <div className="my-profile-avatar-wrap" onClick={() => avatarInputRef.current?.click()}>
+            {profile.avatar_url ? (
+              <img className="my-profile-avatar-img" src={profile.avatar_url} alt={fullName} />
+            ) : (
+              <div className="my-profile-avatar">{initials}</div>
+            )}
+            <div className="my-profile-avatar-overlay">
+              {avatarUploading ? (
+                <span className="my-profile-avatar-spinner" />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+              )}
+            </div>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarChange}
+              style={{ display: 'none' }}
+            />
+          </div>
           <div className="my-profile-emp-info">
             <span className="my-profile-emp-name">{fullName}</span>
             <span className="my-profile-emp-role">{profile.job_title}</span>

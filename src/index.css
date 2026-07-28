@@ -53,7 +53,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px));
 }
 .dashboard { background: #fff; overflow-x: hidden; }
 [data-theme="dark"] .dashboard { background: var(--bg); }
@@ -238,14 +238,14 @@ body {
 
 /* ── Footer ── */
 .footer {
-  position: fixed; bottom: max(8px, env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
-  width: calc(100% - 32px); max-width: 448px;
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 480px;
   background: var(--footer-bg);
   display: flex; align-items: stretch; justify-content: space-around;
-  padding: 6px 0;
+  padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px));
   z-index: 100;
-  border-radius: 28px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  border-radius: 0;
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
 }
 
 .footer-item {
@@ -1841,6 +1841,27 @@ body {
   object-fit: cover; flex-shrink: 0;
   border: 2px solid #764ba2;
 }
+.my-profile-avatar-wrap {
+  position: relative; cursor: pointer; flex-shrink: 0;
+  width: 48px; height: 48px; border-radius: 50%;
+}
+.my-profile-avatar-overlay {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: rgba(0,0,0,0.45); display: flex;
+  align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.2s;
+}
+.my-profile-avatar-wrap:hover .my-profile-avatar-overlay,
+.my-profile-avatar-wrap:active .my-profile-avatar-overlay { opacity: 1; }
+@media (hover: none) {
+  .my-profile-avatar-overlay { opacity: 1; background: rgba(0,0,0,0.3); }
+}
+.my-profile-avatar-spinner {
+  width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff; border-radius: 50%;
+  animation: avatar-spin 0.6s linear infinite;
+}
+@keyframes avatar-spin { to { transform: rotate(360deg); } }
 .my-profile-emp-info { flex: 1; display: flex; flex-direction: column; }
 .my-profile-emp-name { font-size: 18px; font-weight: 800; color: var(--text); }
 .my-profile-emp-role { font-size: 13px; color: var(--text-muted); margin-top: 1px; }
