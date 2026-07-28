@@ -6,17 +6,18 @@ import { supabase } from '../lib/supabase'
 
 export default function Footer() {
   const { t } = useLanguage()
-  const { employeeEmail } = useAuth()
+  const { employeeEmail, companyUser } = useAuth()
   const [badgeCount, setBadgeCount] = useState(0)
 
   useEffect(() => {
-    if (!employeeEmail) return
+    if (!employeeEmail || !companyUser?.company_id) return
     supabase.from('workflow_tracker')
       .select('id', { count: 'exact', head: true })
       .ilike('assigned_to', `%${employeeEmail}%`)
       .eq('status', 'Pending')
+      .eq('company_id', companyUser.company_id)
       .then(({ count }) => setBadgeCount(count || 0))
-  }, [employeeEmail])
+  }, [employeeEmail, companyUser?.company_id])
   return (
     <nav className="footer">
       <NavLink to="/" className={({ isActive }) => `footer-item ${isActive ? 'active' : ''}`} end>

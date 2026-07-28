@@ -16,21 +16,23 @@ export default function DesktopLayout() {
   const isAdmin = companyUser && ['admin', 'hr'].includes(companyUser.role)
 
   useEffect(() => {
-    if (employeeEmail) {
+    if (employeeEmail && companyUser?.company_id) {
       supabase.from('workflow_tracker')
         .select('id', { count: 'exact', head: true })
         .ilike('assigned_to', `%${employeeEmail}%`)
         .eq('status', 'Pending')
+        .eq('company_id', companyUser.company_id)
         .then(({ count }) => setBadgeCount(count || 0))
     }
-    if (employeeId) {
+    if (employeeId && companyUser?.company_id) {
       supabase.from('employees')
         .select('id', { count: 'exact', head: true })
         .eq('manager_id', employeeId)
         .eq('is_active', true)
+        .eq('company_id', companyUser.company_id)
         .then(({ count }) => setIsManager((count || 0) > 0))
     }
-  }, [employeeEmail, employeeId])
+  }, [employeeEmail, employeeId, companyUser?.company_id])
 
   const navItems = [
     { to: '/', icon: 'home', label: t('footer.dashboard'), end: true },

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 import { EXPENSE_TYPE_KEYS } from '../lib/translations'
 
 interface Props {
@@ -21,6 +22,7 @@ function formatDateDisplay(dateStr: string) {
 
 export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: Props) {
   const { t, tExpenseType } = useLanguage()
+  const { companyUser } = useAuth()
   const [title, setTitle] = useState('')
   const [expenseType, setExpenseType] = useState(EXPENSE_TYPE_KEYS[0])
   const [description, setDescription] = useState('')
@@ -68,6 +70,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
       mileage_to: mileageTo.trim() || null,
       total_miles: totalMiles ? parseFloat(totalMiles) : null,
       receipt_url: receiptData,
+      company_id: companyUser?.company_id,
     })
 
     if (err) {
