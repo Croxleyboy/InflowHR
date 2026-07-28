@@ -3302,16 +3302,22 @@ body {
 /* ── Initial Setup ── */
 .initial-setup-page {
   min-height: 100dvh;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
   background: linear-gradient(135deg, #1e1e2d 0%, #2a2a4a 40%, #3a3a6a 100%);
   padding: 24px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@media (min-height: 640px) {
+  .initial-setup-page { align-items: center; }
 }
 .setup-card {
   width: 100%; max-width: 420px;
   border-radius: 20px;
-  overflow: hidden;
+  overflow: visible;
   background: var(--bg-card);
   box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  flex-shrink: 0;
 }
 .setup-header {
   background: linear-gradient(135deg, #e91e63, #9c27b0);
