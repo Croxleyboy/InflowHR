@@ -202,6 +202,7 @@ const en: Translations = {
   'settings.saved': 'Saved!',
   'settings.app_settings': 'App Settings',
   'settings.financial_year': 'Financial Year Start',
+  'settings.admin_portal': 'Admin Portal',
 
   // Footer
   'footer.dashboard': 'Dashboard',
@@ -962,6 +963,7 @@ const de: Translations = {
   'settings.saved': 'Gespeichert!',
   'settings.app_settings': 'App-Einstellungen',
   'settings.financial_year': 'Geschäftsjahresbeginn',
+  'settings.admin_portal': 'Admin-Portal',
 
   // Footer
   'footer.dashboard': 'Start',

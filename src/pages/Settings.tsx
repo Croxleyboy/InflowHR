@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useFeatures, type Features } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
@@ -26,11 +27,12 @@ export default function Settings() {
   const { features, setFeatures } = useFeatures()
   const { lang, setLang, t, fyStartMonth, setFyStartMonth } = useLanguage()
   const { employeeName, employeeEmail, companyUser } = useAuth()
+  const navigate = useNavigate()
   const [draft, setDraft] = useState<Features>({ ...features })
   const [draftLang, setDraftLang] = useState<Lang>(lang)
   const [draftFy, setDraftFy] = useState(fyStartMonth)
   const [saved, setSaved] = useState(false)
-  const isAdmin = true
+  const isAdmin = companyUser && ['admin', 'hr'].includes(companyUser.role)
 
   function handleToggle(key: keyof Features) {
     setDraft(d => ({ ...d, [key]: !d[key] }))
@@ -133,6 +135,17 @@ export default function Settings() {
       <button className="save-btn" onClick={handleSave}>
         {saved ? t('settings.saved') : t('settings.save')}
       </button>
+
+      {isAdmin && (
+        <section className="settings-section settings-admin-section">
+          <button className="settings-admin-btn" onClick={() => navigate('/admin')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            {t('settings.admin_portal')}
+          </button>
+        </section>
+      )}
     </div>
   )
 }

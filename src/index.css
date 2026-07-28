@@ -370,6 +370,17 @@ body {
 }
 .save-btn:active { opacity: 0.85; }
 
+.settings-admin-section { margin-top: 8px; }
+.settings-admin-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 14px; border: none; border-radius: 12px;
+  background: linear-gradient(135deg, #1e1e2d, #2a2a4a);
+  color: #fff; font-size: 15px; font-weight: 700;
+  cursor: pointer; font-family: var(--sans);
+  transition: opacity 0.15s;
+}
+.settings-admin-btn:active { opacity: 0.85; }
+
 /* ── Placeholder ── */
 .placeholder-page { padding: 20px 16px 100px; }
 .placeholder-page h1 { font-size: 24px; font-weight: 700; margin: 12px 0 8px; }

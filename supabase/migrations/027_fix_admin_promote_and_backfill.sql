@@ -120,11 +120,11 @@ FROM companies c
 WHERE a.company_id IS NULL
   AND c.is_active = true;
 
--- notifications: get company_id from employee email
+-- notifications: get company_id from employee
 UPDATE notifications n
 SET company_id = e.company_id
 FROM employees e
-WHERE n.employee_email = e.email
+WHERE n.employee_id = e.id
   AND n.company_id IS NULL
   AND e.company_id IS NOT NULL;
 

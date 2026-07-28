@@ -54,7 +54,7 @@ export default function Dashboard() {
         .then(({ data }) => { if (data) setLatest(data as LatestAnnouncement) })
     }
 
-    if (employeeId) {
+    if (employeeId && companyUser?.company_id) {
       const lastSeen = localStorage.getItem('inflowhr-kudos-seen') || '1970-01-01'
       supabase.from('kudos')
         .select('id', { count: 'exact', head: true })
@@ -65,7 +65,7 @@ export default function Dashboard() {
       supabase.from('expense_claims')
         .select('amount')
         .eq('employee_id', employeeId)
-        .eq('company_id', companyUser?.company_id || '')
+        .eq('company_id', companyUser.company_id)
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
