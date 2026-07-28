@@ -616,3 +616,29 @@
   margin: 0 0 4px;
   font-size: 1.1em;
 }
+
+/* ===== E-Learning Admin Table ===== */
+.admin-el-table { table-layout: auto; }
+.admin-el-title-cell { min-width: 200px; max-width: 320px; }
+.admin-el-tag-picker { max-width: 220px; }
+
+.admin-el-edit-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px; padding: 8px 0;
+}
+.admin-el-edit-field { display: flex; flex-direction: column; gap: 4px; }
+.admin-el-edit-field label { font-size: 12px; font-weight: 600; color: #8b8fa3; text-transform: uppercase; }
+.admin-el-edit-field .admin-inline-input,
+.admin-el-edit-field .admin-inline-select { width: 100%; }
+
+@media (max-width: 1024px) {
+  .admin-el-hide-tablet { display: none; }
+}
+@media (max-width: 768px) {
+  .admin-el-hide-mobile { display: none; }
+  .admin-el-title-cell { min-width: 140px; max-width: none; }
+  .admin-el-edit-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+  .admin-el-edit-grid { grid-template-columns: 1fr; }
+}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 
 type ContentType = 'video' | 'article' | 'quiz' | 'faq' | 'document' | 'how-to'
 
@@ -277,14 +277,15 @@ export default function AdminELearning() {
       )}
 
       <div className="admin-table-wrap">
-        <table className="admin-table">
+        <table className="admin-table admin-el-table">
           <thead><tr>
             <th className="admin-th-check"><input type="checkbox" checked={allVisibleSelected} ref={el => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected }} onChange={toggleSelectAll} /></th>
-            <th>Type</th><th>Title</th><th>Duration</th><th>Industry</th><th>External URL</th><th>Tags</th><th>Mandatory</th><th>Annual</th><th>Active</th><th>Actions</th>
+            <th>Type</th><th>Title</th><th className="admin-el-hide-mobile">Duration</th><th className="admin-el-hide-mobile">Industry</th><th className="admin-el-hide-mobile">URL</th><th className="admin-el-hide-mobile">Tags</th><th className="admin-el-hide-tablet">Mand.</th><th className="admin-el-hide-tablet">Annual</th><th>Active</th><th>Actions</th>
           </tr></thead>
           <tbody>
             {visibleItems.map(item => (
-              <tr key={item.id} className={!item.active ? 'admin-row-inactive' : ''}>
+              <Fragment key={item.id}>
+              <tr className={`${!item.active ? 'admin-row-inactive' : ''} ${editingId === item.id ? 'admin-row-active' : ''}`}>
                 <td className="admin-td-check"><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggleSelect(item.id)} /></td>
                 <td><span className="admin-type-icon">{TYPE_ICONS[item.type]}</span> {editingId === item.id ? (
                   <select className="admin-inline-select" value={editForm.type} onChange={e => setEditForm(f => ({...f, type: e.target.value}))}>
@@ -292,7 +293,7 @@ export default function AdminELearning() {
                     <option value="faq">FAQ</option><option value="document">Document</option><option value="how-to">How-To</option>
                   </select>
                 ) : item.type}</td>
-                <td>{editingId === item.id ? (
+                <td className="admin-el-title-cell">{editingId === item.id ? (
                   <div>
                     <input className="admin-inline-input" value={editForm.title} onChange={e => setEditForm(f => ({...f, title: e.target.value}))} />
                     <textarea className="admin-inline-textarea" value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} />
@@ -300,19 +301,19 @@ export default function AdminELearning() {
                 ) : (
                   <div><strong>{item.title}</strong><br/><span className="admin-td-desc">{item.description}</span></div>
                 )}</td>
-                <td>{editingId === item.id ? <input className="admin-inline-input admin-inline-sm" value={editForm.duration} onChange={e => setEditForm(f => ({...f, duration: e.target.value}))} /> : item.duration}</td>
-                <td>{editingId === item.id ? (
+                <td className="admin-el-hide-mobile">{editingId === item.id ? <input className="admin-inline-input admin-inline-sm" value={editForm.duration} onChange={e => setEditForm(f => ({...f, duration: e.target.value}))} /> : item.duration}</td>
+                <td className="admin-el-hide-mobile">{editingId === item.id ? (
                   <select className="admin-inline-select" value={editForm.industry || ''} onChange={e => setEditForm(f => ({...f, industry: e.target.value}))}>
                     {INDUSTRY_OPTIONS.map(i => <option key={i} value={i}>{INDUSTRY_LABELS[i] || 'Common'}</option>)}
                   </select>
                 ) : (item.industry ? <span className="admin-tag-mini">{item.industry}</span> : <span style={{ opacity: 0.4 }}>—</span>)}</td>
-                <td>{editingId === item.id ? (
+                <td className="admin-el-hide-mobile">{editingId === item.id ? (
                   <input className="admin-inline-input" placeholder="https://..." value={editForm.externalUrl || ''} onChange={e => setEditForm(f => ({...f, externalUrl: e.target.value}))} />
                 ) : (item.externalUrl ? <a href={item.externalUrl} target="_blank" rel="noopener noreferrer" className="admin-external-link" title={item.externalUrl}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                 </a> : <span style={{ opacity: 0.4, fontSize: 11 }}>Built-in</span>)}</td>
-                <td>{editingId === item.id ? (
-                  <div className="admin-tag-picker admin-tag-picker-sm">
+                <td className="admin-el-hide-mobile">{editingId === item.id ? (
+                  <div className="admin-tag-picker admin-tag-picker-sm admin-el-tag-picker">
                     {PERSONA_TAGS.map(tag => (
                       <button key={tag} className={`admin-tag-pick admin-tag-pick-sm ${(editForm.tags as string[]).includes(tag) ? 'admin-tag-pick-active' : ''}`} onClick={() => toggleTag(tag)}>
                         {tag.replace('-', ' ')}
@@ -322,8 +323,8 @@ export default function AdminELearning() {
                 ) : (
                   <div className="admin-tag-list-inline">{item.tags.map(t => <span key={t} className="admin-tag-mini">{t.replace('-', ' ')}</span>)}</div>
                 )}</td>
-                <td>{editingId === item.id ? <label className="admin-toggle-label"><input type="checkbox" checked={editForm.mandatory} onChange={e => setEditForm(f => ({...f, mandatory: e.target.checked}))} /></label> : (item.mandatory ? '✓' : '—')}</td>
-                <td>{editingId === item.id ? <label className="admin-toggle-label"><input type="checkbox" checked={editForm.annualReminder} onChange={e => setEditForm(f => ({...f, annualReminder: e.target.checked}))} /></label> : (item.annualReminder ? '🔔' : '—')}</td>
+                <td className="admin-el-hide-tablet">{editingId === item.id ? <label className="admin-toggle-label"><input type="checkbox" checked={editForm.mandatory} onChange={e => setEditForm(f => ({...f, mandatory: e.target.checked}))} /></label> : (item.mandatory ? '✓' : '—')}</td>
+                <td className="admin-el-hide-tablet">{editingId === item.id ? <label className="admin-toggle-label"><input type="checkbox" checked={editForm.annualReminder} onChange={e => setEditForm(f => ({...f, annualReminder: e.target.checked}))} /></label> : (item.annualReminder ? '🔔' : '—')}</td>
                 <td><label className="admin-toggle-switch"><input type="checkbox" checked={item.active} onChange={() => toggleActive(item.id)} /><span className="admin-toggle-slider" /></label></td>
                 <td className="admin-actions">
                   {editingId === item.id ? (
@@ -343,6 +344,45 @@ export default function AdminELearning() {
                   )}
                 </td>
               </tr>
+              {editingId === item.id && (
+                <tr className="admin-expanded-row admin-el-edit-extras">
+                  <td colSpan={11}>
+                    <div className="admin-el-edit-grid">
+                      <div className="admin-el-edit-field">
+                        <label>Duration</label>
+                        <input className="admin-inline-input" value={editForm.duration} onChange={e => setEditForm(f => ({...f, duration: e.target.value}))} />
+                      </div>
+                      <div className="admin-el-edit-field">
+                        <label>Industry</label>
+                        <select className="admin-inline-select" value={editForm.industry || ''} onChange={e => setEditForm(f => ({...f, industry: e.target.value}))}>
+                          {INDUSTRY_OPTIONS.map(i => <option key={i} value={i}>{INDUSTRY_LABELS[i] || 'Common'}</option>)}
+                        </select>
+                      </div>
+                      <div className="admin-el-edit-field">
+                        <label>External URL</label>
+                        <input className="admin-inline-input" placeholder="https://..." value={editForm.externalUrl || ''} onChange={e => setEditForm(f => ({...f, externalUrl: e.target.value}))} />
+                      </div>
+                      <div className="admin-el-edit-field">
+                        <label className="admin-toggle-label"><input type="checkbox" checked={editForm.mandatory} onChange={e => setEditForm(f => ({...f, mandatory: e.target.checked}))} /> Mandatory</label>
+                      </div>
+                      <div className="admin-el-edit-field">
+                        <label className="admin-toggle-label"><input type="checkbox" checked={editForm.annualReminder} onChange={e => setEditForm(f => ({...f, annualReminder: e.target.checked}))} /> Annual Renewal</label>
+                      </div>
+                      <div className="admin-el-edit-field admin-form-field-full">
+                        <label>Persona Tags</label>
+                        <div className="admin-tag-picker admin-tag-picker-sm">
+                          {PERSONA_TAGS.map(tag => (
+                            <button key={tag} className={`admin-tag-pick admin-tag-pick-sm ${(editForm.tags as string[]).includes(tag) ? 'admin-tag-pick-active' : ''}`} onClick={() => toggleTag(tag)}>
+                              {tag.replace('-', ' ')}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
