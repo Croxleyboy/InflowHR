@@ -14,6 +14,7 @@ interface Company {
   name: string
   domain: string
   logo_url: string | null
+  login_disabled: boolean
 }
 
 const SUPER_ADMIN_EMAIL = 'andy.jones@kumonix.com'
@@ -92,10 +93,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: co } = await supabase
         .from('companies')
-        .select('id, name, domain, logo_url')
+        .select('id, name, domain, logo_url, login_disabled')
         .eq('id', cu.company_id)
         .single()
-      if (co) setCompany(co as Company)
+      if (co) {
+        if (co.login_disabled) {
+          setCompanyUser(null)
+          setCompany(co as Company)
+          setSetupComplete(null)
+          return
+        }
+        setCompany(co as Company)
+      }
 
       const { data: onb } = await supabase
         .from('onboarding')

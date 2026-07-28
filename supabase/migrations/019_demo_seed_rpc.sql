@@ -25,7 +25,8 @@ DECLARE
   v_m2m_james uuid := 'ff000002-0000-0000-0000-000000000002';
   v_m2m_priya uuid := 'ff000003-0000-0000-0000-000000000003';
   v_m2m_tom   uuid := 'ff000004-0000-0000-0000-000000000004';
-  v_m2m_lucy  uuid := 'ff000005-0000-0000-0000-000000000005';
+  v_m2m_lucy    uuid := 'ff000005-0000-0000-0000-000000000005';
+  v_m2m_daniel  uuid := 'ff000006-0000-0000-0000-000000000006';
 
   v_tenant_id text;
 
@@ -96,38 +97,37 @@ BEGIN
   ) INTO v_tenant_id
   FROM auth.users WHERE id = p_auth_uid;
 
-  -- ========== WIPE ALL DATA ==========
-  -- Temporarily bypass RLS so cross-company deletes succeed
+  -- ========== WIPE DEMO COMPANY DATA ONLY ==========
+  -- Only deletes data for Kumonix and Move2Modern; other companies are untouched
   ALTER TABLE one_to_one_comments DISABLE ROW LEVEL SECURITY;
   ALTER TABLE one_to_one_meetings DISABLE ROW LEVEL SECURITY;
 
-  -- pg_safeupdate requires a WHERE clause on every DELETE
-  DELETE FROM one_to_one_comments WHERE id IS NOT NULL;
-  DELETE FROM one_to_one_meetings WHERE id IS NOT NULL;
-  DELETE FROM workflow_tracker  WHERE id IS NOT NULL;
-  DELETE FROM notifications     WHERE id IS NOT NULL;
-  DELETE FROM timesheets        WHERE id IS NOT NULL;
-  DELETE FROM expense_line_items WHERE id IS NOT NULL;
-  DELETE FROM expense_claims    WHERE id IS NOT NULL;
-  DELETE FROM leave_requests    WHERE id IS NOT NULL;
-  DELETE FROM leave_balances    WHERE id IS NOT NULL;
-  DELETE FROM course_enrolments WHERE id IS NOT NULL;
-  DELETE FROM employee_benefits WHERE id IS NOT NULL;
-  DELETE FROM performance_reviews WHERE id IS NOT NULL;
-  DELETE FROM kudos             WHERE id IS NOT NULL;
-  DELETE FROM payslips          WHERE id IS NOT NULL;
-  DELETE FROM onboarding        WHERE id IS NOT NULL;
-  DELETE FROM announcements     WHERE id IS NOT NULL;
-  DELETE FROM user_settings     WHERE employee_id IS NOT NULL;
-  DELETE FROM app_settings      WHERE id IS NOT NULL;
-  DELETE FROM company_users     WHERE company_id IS NOT NULL;
-  DELETE FROM employees         WHERE id IS NOT NULL;
-  DELETE FROM leave_types       WHERE id IS NOT NULL;
-  DELETE FROM benefits          WHERE id IS NOT NULL;
-  DELETE FROM courses           WHERE id IS NOT NULL;
-  DELETE FROM companies         WHERE id IS NOT NULL;
+  DELETE FROM one_to_one_comments WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM one_to_one_meetings WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM workflow_tracker    WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM notifications       WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM timesheets          WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM expense_line_items  WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM expense_claims      WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM leave_requests      WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM leave_balances      WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM course_enrolments   WHERE employee_id IN (SELECT id FROM employees WHERE company_id IN (v_company_id, v_m2m_id));
+  DELETE FROM employee_benefits   WHERE employee_id IN (SELECT id FROM employees WHERE company_id IN (v_company_id, v_m2m_id));
+  DELETE FROM performance_reviews WHERE employee_id IN (SELECT id FROM employees WHERE company_id IN (v_company_id, v_m2m_id));
+  DELETE FROM kudos               WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM payslips            WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM onboarding          WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM announcements       WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM user_settings       WHERE employee_id IN (SELECT id FROM employees WHERE company_id IN (v_company_id, v_m2m_id));
+  DELETE FROM app_settings        WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM company_users       WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM employees           WHERE company_id IN (v_company_id, v_m2m_id);
+  DELETE FROM leave_types         WHERE company_id IN (v_company_id, v_m2m_id);
+  -- Shared tables: only delete if no other companies reference them
+  DELETE FROM benefits WHERE id NOT IN (SELECT DISTINCT benefit_id FROM employee_benefits);
+  DELETE FROM courses  WHERE id NOT IN (SELECT DISTINCT course_id FROM course_enrolments);
+  DELETE FROM companies WHERE id IN (v_company_id, v_m2m_id);
 
-  -- Re-enable RLS
   ALTER TABLE one_to_one_meetings ENABLE ROW LEVEL SECURITY;
   ALTER TABLE one_to_one_comments ENABLE ROW LEVEL SECURITY;
 
@@ -325,15 +325,17 @@ BEGIN
     (v_andy,  v_emma, 'H1 2026', 5, 'Visionary leadership, strong technical judgment, excellent team builder',   'Work-life balance - tendency to overcommit',               'Delegate two standing responsibilities; take full leave allocation',      'completed',  '2026-07-05T09:00:00Z');
 
   -- ========== ONBOARDING ==========
-  INSERT INTO onboarding (user_action, status, firstname, surname, start_date, user_email, job_title, department, employee_number, manager, manager_email, contract_type, location, date_of_birth, telephone, personal_email, address_line_1, address_line_2, address_line_3, emergency_contact_number, gender, nationality, is_complete, first_day, first_week, first_month, feedback, three_month, elearning, completed_on, employee_id, company_id) VALUES
-    ('Joiner', 'complete', 'Andy', 'Jones', '2022-01-10', 'andy.jones@kumonix.com', 'Head of IT', 'IT', 'EMP001', NULL, NULL, 'standard persona', 'London', '1985-06-15', '+44 7700 100001', 'andy.personal@gmail.com', '42 Croxley Road', 'Watford', 'WD3 4QY', '+44 7700 200001', 'Male', 'British', true, true, true, true, true, true, true, '2022-04-10', v_andy, v_company_id);
+  INSERT INTO onboarding (user_action, status, firstname, surname, start_date, user_email, job_title, department, employee_number, manager, manager_email, contract_type, location, date_of_birth, telephone, personal_email, address_line_1, address_line_2, address_line_3, emergency_contact_number, gender, nationality, is_complete, first_day, first_week, first_month, feedback, three_month, elearning, completed_on, employee_id, company_id, appstatus, initial_setup_complete) VALUES
+    ('Joiner', 'Onboarded', 'Andy', 'Jones', '2022-01-10', 'andy.jones@kumonix.com', 'Head of IT', 'IT', 'EMP001', NULL, NULL, 'standard persona', 'London', '1985-06-15', '+44 7700 100001', 'andy.personal@gmail.com', '42 Croxley Road', 'Watford', 'WD3 4QY', '+44 7700 200001', 'Male', 'British', true, true, true, true, true, true, true, '2022-04-10', v_andy, v_company_id, 'active', true);
 
-  INSERT INTO onboarding (user_action, status, firstname, surname, start_date, user_email, job_title, department, employee_number, manager, manager_email, contract_type, location, is_complete, first_day, first_week, first_month, feedback, three_month, elearning, completed_on, employee_id, company_id) VALUES
-    ('Joiner', 'complete', 'Sarah',  'Mitchell', '2023-03-15', 'sarah.mitchell@kumonix.com', 'Software Engineer', 'Engineering', 'EMP002', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', true, true, true, true, true, true, true, '2023-06-15', v_sarah, v_company_id),
-    ('Joiner', 'complete', 'James',  'Patel',    '2023-06-01', 'james.patel@kumonix.com',    'Product Designer',  'Design',      'EMP003', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', true, true, true, true, true, true, true, '2023-09-01', v_james, v_company_id),
-    ('Joiner', 'complete', 'Emma',   'Chen',     '2022-09-01', 'emma.chen@kumonix.com',      'HR Manager',        'HR',          'EMP004', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', true, true, true, true, true, true, true, '2022-12-01', v_emma,  v_company_id),
-    ('Joiner', 'complete', 'Tom',    'Williams', '2024-01-08', 'tom.williams@kumonix.com',   'Finance Analyst',   'Finance',     'EMP005', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', true, true, true, true, true, true, true, '2024-04-08', v_tom,   v_company_id),
-    ('Joiner', 'new',      'Rachel', 'Green',    '2026-09-01', 'rachel.green@kumonix.com',   'Marketing Manager', 'Marketing',   'EMP006', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', false, false, false, false, false, false, false, NULL, NULL, v_company_id);
+  INSERT INTO onboarding (user_action, status, firstname, surname, start_date, user_email, job_title, department, employee_number, manager, manager_email, contract_type, location, is_complete, first_day, first_week, first_month, feedback, three_month, elearning, completed_on, employee_id, company_id, appstatus, initial_setup_complete, equipment_order, skipped_steps) VALUES
+    ('Joiner', 'Onboarded',    'Sarah',  'Mitchell', '2023-03-15', 'sarah.mitchell@kumonix.com', 'Software Engineer', 'Engineering', 'EMP002', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2023-06-15', v_sarah, v_company_id, 'active', true, 'Y', '{}'),
+    ('Joiner', 'Onboarded',    'James',  'Patel',    '2023-06-01', 'james.patel@kumonix.com',    'Product Designer',  'Design',      'EMP003', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2023-09-01', v_james, v_company_id, 'active', true, 'Y', '{}'),
+    ('Joiner', 'Onboarded',    'Emma',   'Chen',     '2022-09-01', 'emma.chen@kumonix.com',      'HR Manager',        'HR',          'EMP004', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2022-12-01', v_emma,  v_company_id, 'active', true, 'Y', '{}'),
+    ('Joiner', 'Onboarded',    'Tom',    'Williams', '2024-01-08', 'tom.williams@kumonix.com',   'Finance Analyst',   'Finance',     'EMP005', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2024-04-08', v_tom,   v_company_id, 'active', true, 'Y', '{}'),
+    ('Joiner', 'in-progress',  'Marcus', 'Taylor',   '2026-07-14', 'marcus.taylor@kumonix.com',  'DevOps Engineer',   'Engineering', 'EMP006', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', false, true,  true,  false, false, false, false, NULL,         NULL,    v_company_id, 'inactive', false, 'Y', '{}'),
+    ('Joiner', 'in-progress',  'Olivia', 'Brown',    '2026-08-18', 'olivia.brown@kumonix.com',   'Data Analyst',      'Finance',     'EMP007', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', false, false, false, false, false, false, false, NULL,         NULL,    v_company_id, 'inactive', false, 'Y', '{}'),
+    ('Joiner', 'new',          'Rachel', 'Green',    '2026-09-01', 'rachel.green@kumonix.com',   'Marketing Manager', 'Marketing',   'EMP008', 'Andy Jones', 'andy.jones@kumonix.com', 'standard persona', 'London', false, false, false, false, false, false, false, NULL,         NULL,    v_company_id, 'inactive', false, 'N', '{}');
 
   -- ========== TIMESHEETS ==========
   INSERT INTO timesheets (employee_id, location, customer, role, date, start_time, end_time, status, submitted_at, company_id) VALUES
@@ -444,7 +446,8 @@ BEGIN
     (v_m2m_james, 'M2M002', 'James', 'Cooper',    'james.cooper@move2modern.co.uk',    'Senior Cloud Engineer',          'Technology', v_m2m_sarah,   '2024-06-15', '+44 7700 200002', false, true, false, v_m2m_id),
     (v_m2m_priya, 'M2M003', 'Priya', 'Patel',     'priya.patel@move2modern.co.uk',     'UX Design Lead',                'Design',     v_m2m_sarah,   '2024-09-01', '+44 7700 200003', false, true, false, v_m2m_id),
     (v_m2m_tom,   'M2M004', 'Tom',   'Henderson', 'tom.henderson@move2modern.co.uk',   'Project Manager',                'Delivery',   v_m2m_andy,    '2025-01-13', '+44 7700 200004', false, true, false, v_m2m_id),
-    (v_m2m_lucy,  'M2M005', 'Lucy',  'Chen',      'lucy.chen@move2modern.co.uk',       'Business Analyst',               'Delivery',   v_m2m_tom,     '2025-04-07', '+44 7700 200005', false, true, false, v_m2m_id);
+    (v_m2m_lucy,   'M2M005', 'Lucy',   'Chen',      'lucy.chen@move2modern.co.uk',       'Business Analyst',               'Delivery',   v_m2m_tom,     '2025-04-07', '+44 7700 200005', false, true,  false, v_m2m_id),
+    (v_m2m_daniel, 'M2M006', 'Daniel', 'Kim',       'daniel.kim@move2modern.co.uk',      'Solutions Architect',            'Technology', v_m2m_sarah,   '2026-07-21', '+44 7700 200006', false, false, false, v_m2m_id);
 
   -- ========== COMPANY_USERS (super admin linked to Move2Modern) ==========
   INSERT INTO company_users (auth_user_id, company_id, employee_id, role, is_active)
@@ -597,13 +600,15 @@ BEGIN
     (v_m2m_lucy,  v_m2m_tom,   'H1 2026', 3, 'Good analytical skills, picks up domain knowledge quickly',             'Still new to consultancy environment, building confidence','Complete all mandatory training; shadow 2 client workshops',                     'in_progress', NULL);
 
   -- ========== ONBOARDING ==========
-  INSERT INTO onboarding (user_action, status, firstname, surname, start_date, user_email, job_title, department, employee_number, manager, manager_email, contract_type, location, is_complete, first_day, first_week, first_month, feedback, three_month, elearning, completed_on, employee_id, company_id) VALUES
-    ('Joiner', 'complete', 'Andy',  'Jones',     '2024-01-15', 'andy@move2modern.co.uk',            'Managing Director',              'Leadership', 'M2M000', NULL,             NULL,                                'standard persona', 'London', true, true, true, true, true, true, true, '2024-04-15', v_m2m_andy,  v_m2m_id),
-    ('Joiner', 'complete', 'Sarah', 'Mitchell',  '2024-03-01', 'sarah.mitchell@move2modern.co.uk',  'Head of Digital Transformation', 'Technology', 'M2M001', 'Andy Jones',     'andy@move2modern.co.uk',            'standard persona', 'London', true, true, true, true, true, true, true, '2024-06-01', v_m2m_sarah, v_m2m_id),
-    ('Joiner', 'complete', 'James', 'Cooper',    '2024-06-15', 'james.cooper@move2modern.co.uk',    'Senior Cloud Engineer',          'Technology', 'M2M002', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk',  'standard persona', 'London', true, true, true, true, true, true, true, '2024-09-15', v_m2m_james, v_m2m_id),
-    ('Joiner', 'complete', 'Priya', 'Patel',     '2024-09-01', 'priya.patel@move2modern.co.uk',     'UX Design Lead',                'Design',     'M2M003', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk',  'standard persona', 'London', true, true, true, true, true, true, true, '2024-12-01', v_m2m_priya, v_m2m_id),
-    ('Joiner', 'complete', 'Tom',   'Henderson', '2025-01-13', 'tom.henderson@move2modern.co.uk',   'Project Manager',                'Delivery',   'M2M004', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk',  'standard persona', 'London', true, true, true, true, true, true, true, '2025-04-13', v_m2m_tom,   v_m2m_id),
-    ('Joiner', 'complete', 'Lucy',  'Chen',      '2025-04-07', 'lucy.chen@move2modern.co.uk',       'Business Analyst',               'Delivery',   'M2M005', 'Tom Henderson',  'tom.henderson@move2modern.co.uk',   'standard persona', 'London', true, true, true, true, true, true, true, '2025-07-07', v_m2m_lucy,  v_m2m_id);
+  INSERT INTO onboarding (user_action, status, firstname, surname, start_date, user_email, job_title, department, employee_number, manager, manager_email, contract_type, location, is_complete, first_day, first_week, first_month, feedback, three_month, elearning, completed_on, employee_id, company_id, appstatus, initial_setup_complete, equipment_order, skipped_steps) VALUES
+    ('Joiner', 'Onboarded',   'Andy',   'Jones',     '2024-01-15', 'andy@move2modern.co.uk',            'Managing Director',              'Leadership', 'M2M000', NULL,             NULL,                                'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2024-04-15', v_m2m_andy,   v_m2m_id, 'active',   true,  'Y', '{}'),
+    ('Joiner', 'Onboarded',   'Sarah',  'Mitchell',  '2024-03-01', 'sarah.mitchell@move2modern.co.uk',  'Head of Digital Transformation', 'Technology', 'M2M001', 'Andy Jones',     'andy@move2modern.co.uk',            'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2024-06-01', v_m2m_sarah,  v_m2m_id, 'active',   true,  'Y', '{}'),
+    ('Joiner', 'Onboarded',   'James',  'Cooper',    '2024-06-15', 'james.cooper@move2modern.co.uk',    'Senior Cloud Engineer',          'Technology', 'M2M002', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk',  'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2024-09-15', v_m2m_james,  v_m2m_id, 'active',   true,  'Y', '{}'),
+    ('Joiner', 'Onboarded',   'Priya',  'Patel',     '2024-09-01', 'priya.patel@move2modern.co.uk',     'UX Design Lead',                'Design',     'M2M003', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk',  'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2024-12-01', v_m2m_priya,  v_m2m_id, 'active',   true,  'Y', '{}'),
+    ('Joiner', 'Onboarded',   'Tom',    'Henderson', '2025-01-13', 'tom.henderson@move2modern.co.uk',   'Project Manager',                'Delivery',   'M2M004', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk',  'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2025-04-13', v_m2m_tom,    v_m2m_id, 'active',   true,  'Y', '{}'),
+    ('Joiner', 'Onboarded',   'Lucy',   'Chen',      '2025-04-07', 'lucy.chen@move2modern.co.uk',       'Business Analyst',               'Delivery',   'M2M005', 'Tom Henderson',  'tom.henderson@move2modern.co.uk',   'standard persona', 'London', true,  true,  true,  true,  true,  true,  true,  '2025-07-07', v_m2m_lucy,   v_m2m_id, 'active',   true,  'Y', '{}'),
+    ('Joiner', 'in-progress', 'Daniel', 'Kim',       '2026-07-21', 'daniel.kim@move2modern.co.uk',      'Solutions Architect',            'Technology', 'M2M006', 'Sarah Mitchell', 'sarah.mitchell@move2modern.co.uk',  'standard persona', 'London', false, true,  true,  false, false, false, true,  NULL,         v_m2m_daniel, v_m2m_id, 'inactive', false, 'Y', '{}'),
+    ('Joiner', 'new',         'Maya',   'Singh',     '2026-10-06', 'maya.singh@move2modern.co.uk',       'Change Manager',                'Delivery',   'M2M007', 'Tom Henderson',  'tom.henderson@move2modern.co.uk',   'standard persona', 'London', false, false, false, false, false, false, false, NULL,         NULL,         v_m2m_id, 'inactive', false, 'N', '{}');
 
   -- ========== TIMESHEETS ==========
   INSERT INTO timesheets (employee_id, location, customer, role, date, start_time, end_time, status, submitted_at, company_id) VALUES
@@ -630,7 +635,8 @@ BEGIN
     (v_m2m_james, 'Leave approved',         'Your sick leave (23 Jun) has been approved by Sarah Mitchell',           'info',   true,  v_m2m_id),
     (v_m2m_james, 'New kudos received',     'Sarah Mitchell sent you a kudos - great work on the AWS migration!',    'info',   false, v_m2m_id),
     (v_m2m_priya, 'Mandatory training due', 'Fire Safety course is not yet started - please complete soon',          'alert',  false, v_m2m_id),
-    (v_m2m_lucy,  'Onboarding complete',    'All onboarding steps have been completed. Welcome to the team!',         'info',   true,  v_m2m_id);
+    (v_m2m_lucy,   'Onboarding complete',    'All onboarding steps have been completed. Welcome to the team!',         'info',   true,  v_m2m_id),
+    (v_m2m_daniel, 'Onboarding in progress', 'Accounts created — day 1 access verification pending. Start date: 21 Jul 2026.', 'action', false, v_m2m_id);
 
   -- ========== 1:1 MEETINGS (Move2Modern) ==========
   INSERT INTO one_to_one_meetings (manager_id, employee_id, scheduled_date, scheduled_time, status, summary, completed_at, company_id) VALUES
@@ -654,9 +660,10 @@ BEGIN
     (v_m2m_james, 'en', '{"expenses":true,"leave":true,"profile":true,"payslips":true,"kudos":true,"benefits":true,"elearning":true,"performance":true}'),
     (v_m2m_priya, 'en', '{"expenses":true,"leave":true,"profile":true,"payslips":true,"kudos":true,"benefits":true,"elearning":true,"performance":true}'),
     (v_m2m_tom,   'en', '{"expenses":true,"leave":true,"profile":true,"payslips":true,"kudos":true,"benefits":true,"elearning":true,"performance":true}'),
-    (v_m2m_lucy,  'en', '{"expenses":true,"leave":true,"profile":true,"payslips":true,"kudos":true,"benefits":true,"elearning":true,"performance":true}');
+    (v_m2m_lucy,   'en', '{"expenses":true,"leave":true,"profile":true,"payslips":true,"kudos":true,"benefits":true,"elearning":true,"performance":true}'),
+    (v_m2m_daniel, 'en', '{"expenses":true,"leave":true,"profile":true,"payslips":true,"kudos":true,"benefits":true,"elearning":true,"performance":true}');
 
-  RETURN 'Demo seed complete: 2 companies (Kumonix + Move2Modern), 11 employees, all features populated';
+  RETURN 'Demo seed complete: 2 companies (Kumonix + Move2Modern), 13 employees, all features populated';
 END;
 $$;
 

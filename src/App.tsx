@@ -29,6 +29,7 @@ import Kudos from './pages/Kudos'
 import Payslips from './pages/Payslips'
 import Benefits from './pages/Benefits'
 import ELearning from './pages/ELearning'
+import CourseContent from './pages/CourseContent'
 import Timesheets from './pages/Timesheets'
 import NewTimesheet from './pages/NewTimesheet'
 import TimesheetDetail from './pages/TimesheetDetail'
@@ -100,6 +101,7 @@ function EmployeeRoutes() {
       <Route path="/kudos" element={<Kudos />} />
       <Route path="/benefits" element={<Benefits />} />
       <Route path="/elearning" element={<ELearning />} />
+      <Route path="/elearning/:courseId" element={<CourseContent />} />
       <Route path="/one-to-ones" element={<OneToOnes />} />
       <Route path="/one-to-ones/new" element={<NewOneToOne />} />
       <Route path="/one-to-ones/:id" element={<OneToOneDetail />} />

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useLanguage } from '../../context/LanguageContext'
 import * as XLSX from 'xlsx'
 
 interface OnboardRecord {
@@ -85,6 +86,7 @@ const SETUP_STEPS = [
 export default function AdminOnboarding() {
   const { isSuperAdmin } = useAuth()
   const { selectedCompanyId } = useAdminCompany()
+  const { fyStartMonth } = useLanguage()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup'>('dashboard')
@@ -509,17 +511,60 @@ export default function AdminOnboarding() {
 
   const stats = useMemo(() => {
     const now = new Date()
-    const thisMonth = now.getMonth()
-    const thisYear = now.getFullYear()
+    const today = now.toISOString().split('T')[0]
+
+    const fyStart = new Date(now.getFullYear(), fyStartMonth - 1, 1)
+    if (fyStart > now) fyStart.setFullYear(fyStart.getFullYear() - 1)
+    const fyEnd = new Date(fyStart.getFullYear() + 1, fyStart.getMonth(), 0)
+
+    const fyRecords = records.filter(r => {
+      if (!r.start_date) return false
+      return r.start_date >= fyStart.toISOString().split('T')[0] && r.start_date <= fyEnd.toISOString().split('T')[0]
+    })
+
+    const monthNames = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
+    const monthlyBreakdown = monthNames.map((label, i) => {
+      const m = (fyStartMonth - 1 + i) % 12
+      const y = m < fyStartMonth - 1 ? fyStart.getFullYear() + 1 : fyStart.getFullYear()
+      const count = fyRecords.filter(r => {
+        const d = new Date(r.start_date)
+        return d.getMonth() === m && d.getFullYear() === y
+      }).length
+      return { label, count }
+    })
+
+    const overdue = records.filter(r => !r.is_complete && r.start_date && r.start_date < today).length
+
+    const stageMap: Record<string, number> = {}
+    WORKFLOW_STEPS.forEach(s => { stageMap[s.key] = 0 })
+    stageMap['complete'] = 0
+    records.filter(r => !r.is_complete).forEach(r => {
+      if (r.status === 'new') { stageMap['details'] = (stageMap['details'] || 0) + 1; return }
+      const checks: Record<string, boolean> = {
+        details: true, equipment: r.equipment_order === 'Y',
+        meeting: r.first_day, notify_manager: r.first_day, plan_day1: r.first_day,
+        inform_starter: r.first_week, accounts: r.elearning, day1_access: r.is_complete,
+      }
+      const skipped = (r as any).skipped_steps
+      const doneCount = WORKFLOW_STEPS.filter(s => checks[s.key] || (skipped && skipped[s.key])).length
+      const currentIdx = Math.min(doneCount, WORKFLOW_STEPS.length - 1)
+      const stepKey = WORKFLOW_STEPS[currentIdx].key
+      stageMap[stepKey] = (stageMap[stepKey] || 0) + 1
+    })
+    stageMap['complete'] = records.filter(r => r.is_complete).length
+
     return {
       total: records.length,
-      thisMonth: records.filter(r => { const d = new Date(r.created_at); return d.getMonth() === thisMonth && d.getFullYear() === thisYear }).length,
-      thisYear: records.filter(r => new Date(r.created_at).getFullYear() === thisYear).length,
+      fyTotal: fyRecords.length,
       pending: records.filter(r => !r.is_complete).length,
-      dueJoining: records.filter(r => !r.is_complete && r.start_date && new Date(r.start_date) > now).length,
+      dueJoining: records.filter(r => !r.is_complete && r.start_date && r.start_date > today).length,
+      overdue,
       completed: records.filter(r => r.is_complete).length,
+      monthlyBreakdown,
+      stageMap,
+      fyLabel: `${fyStart.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${fyEnd.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`,
     }
-  }, [records])
+  }, [records, fyStartMonth])
 
   const filtered = useMemo(() => {
     if (!filterStatus) return records
@@ -555,12 +600,72 @@ export default function AdminOnboarding() {
         <div className="admin-onboard-dash">
           <div className="admin-mini-stats">
             <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Total</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#e91e63'}}>{stats.thisMonth}</span><span>This Month</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.thisYear}</span><span>This Year</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>{stats.pending}</span><span>Pending</span></div>
+            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.fyTotal}</span><span>This FY</span></div>
+            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>{stats.pending}</span><span>In Progress</span></div>
             <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#7b1fa2'}}>{stats.dueJoining}</span><span>Due to Join</span></div>
+            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color: stats.overdue > 0 ? '#c62828' : '#43a047'}}>{stats.overdue}</span><span>Overdue</span></div>
             <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{stats.completed}</span><span>Completed</span></div>
           </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 24 }}>
+            <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 20, border: '1px solid var(--admin-border, #e0e0e0)' }}>
+              <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600 }}>Onboarders per Month</h4>
+              <p style={{ margin: '0 0 16px', fontSize: 12, color: '#888' }}>{stats.fyLabel}</p>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 120 }}>
+                {stats.monthlyBreakdown.map((m, i) => {
+                  const max = Math.max(...stats.monthlyBreakdown.map(x => x.count), 1)
+                  const h = m.count > 0 ? Math.max((m.count / max) * 100, 12) : 4
+                  return (
+                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      {m.count > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: '#1565c0' }}>{m.count}</span>}
+                      <div style={{ width: '100%', height: h, background: m.count > 0 ? '#1565c0' : '#e0e0e0', borderRadius: 4 }} />
+                      <span style={{ fontSize: 10, color: '#888' }}>{m.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 20, border: '1px solid var(--admin-border, #e0e0e0)' }}>
+              <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600 }}>Onboarding Pipeline</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {WORKFLOW_STEPS.map((step, i) => {
+                  const count = stats.stageMap[step.key] || 0
+                  return (
+                    <div key={step.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      <span style={{ width: 24, textAlign: 'center' }}>{step.icon}</span>
+                      <span style={{ flex: 1, color: count > 0 ? '#333' : '#bbb' }}>{step.label}</span>
+                      <span style={{ fontWeight: 600, minWidth: 20, textAlign: 'right', color: count > 0 ? '#1565c0' : '#ccc' }}>{count}</span>
+                    </div>
+                  )
+                })}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, borderTop: '1px solid #e0e0e0', paddingTop: 6, marginTop: 2 }}>
+                  <span style={{ width: 24, textAlign: 'center' }}>✅</span>
+                  <span style={{ flex: 1, fontWeight: 600 }}>Completed</span>
+                  <span style={{ fontWeight: 600, minWidth: 20, textAlign: 'right', color: '#43a047' }}>{stats.stageMap['complete'] || 0}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {stats.overdue > 0 && (
+            <div style={{ marginTop: 20, background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 12, padding: 16 }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#e65100' }}>Overdue Onboarding ({stats.overdue})</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {records.filter(r => !r.is_complete && r.start_date && r.start_date < new Date().toISOString().split('T')[0]).map(r => {
+                  const daysOver = Math.floor((Date.now() - new Date(r.start_date).getTime()) / 86400000)
+                  return (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, padding: '6px 0', borderBottom: '1px solid #ffe0b2' }}>
+                      <span style={{ fontWeight: 600 }}>{r.firstname} {r.surname}</span>
+                      <span style={{ color: '#666' }}>{r.job_title}</span>
+                      <span style={{ marginLeft: 'auto', color: '#c62828', fontWeight: 600 }}>{daysOver} day{daysOver !== 1 ? 's' : ''} overdue</span>
+                      <button className="admin-btn-sm admin-btn-save" onClick={() => openWorkflow(r)}>View</button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

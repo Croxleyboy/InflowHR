@@ -8,6 +8,7 @@ interface Company {
   domain: string
   microsoft_tenant_id: string | null
   is_active: boolean
+  login_disabled: boolean
   created_at: string
   logo_url: string | null
 }
@@ -156,9 +157,22 @@ export default function AdminCompanies() {
       alert('You cannot delete your own company.')
       return
     }
-    if (!confirm('Delete this company? All associated users will lose access.')) return
-    await supabase.from('company_users').delete().eq('company_id', id)
-    await supabase.from('companies').delete().eq('id', id)
+    const company = companies.find(c => c.id === id)
+    if (!confirm(`Delete "${company?.name || 'this company'}" and ALL its data? This cannot be undone.`)) return
+    const { error } = await (supabase.rpc as any)('delete_company_data', { p_company_id: id })
+    if (error) {
+      alert('Error deleting company: ' + error.message)
+      return
+    }
+    load()
+  }
+
+  async function toggleLoginDisabled(id: string, currentlyDisabled: boolean) {
+    if (id === myCompany?.id && !currentlyDisabled) {
+      alert('You cannot disable login for your own company.')
+      return
+    }
+    await supabase.from('companies').update({ login_disabled: !currentlyDisabled }).eq('id', id)
     load()
   }
 
@@ -300,6 +314,7 @@ export default function AdminCompanies() {
                 <th>Domain</th>
                 <th>Company Admin</th>
                 <th>Status</th>
+                <th>Login</th>
                 <th>Registered</th>
                 <th>Actions</th>
               </tr>
@@ -406,6 +421,12 @@ export default function AdminCompanies() {
                       <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
                         {c.is_active ? 'Active' : 'Disabled'}
                       </span>
+                    </td>
+                    <td>
+                      <label className="admin-toggle-switch">
+                        <input type="checkbox" checked={!c.login_disabled} onChange={() => toggleLoginDisabled(c.id, c.login_disabled)} />
+                        <span className="admin-toggle-slider" />
+                      </label>
                     </td>
                     <td>{new Date(c.created_at).toLocaleDateString('en-GB')}</td>
                     <td className="admin-actions">

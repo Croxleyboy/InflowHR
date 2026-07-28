@@ -1,7 +1,9 @@
 import { useAuth } from '../context/AuthContext'
 
 export default function AccessDenied() {
-  const { signOut, employeeEmail } = useAuth()
+  const { signOut, employeeEmail, company } = useAuth()
+
+  const isLoginDisabled = company?.login_disabled === true
 
   return (
     <div className="login-page">
@@ -12,13 +14,28 @@ export default function AccessDenied() {
             <text x="24" y="32" textAnchor="middle" fill="#fff" fontSize="24" fontWeight="800" fontFamily="sans-serif">!</text>
           </svg>
         </div>
-        <h1 className="login-title" style={{ color: '#c62828' }}>Access Denied</h1>
-        <p className="login-subtitle">
-          Your organisation (<strong>{employeeEmail.split('@')[1]}</strong>) has not been registered for InflowHR.
-        </p>
-        <p className="login-subtitle" style={{ fontSize: 13 }}>
-          Please contact your HR administrator to request access.
-        </p>
+        <h1 className="login-title" style={{ color: '#c62828' }}>
+          {isLoginDisabled ? 'Login Disabled' : 'Access Denied'}
+        </h1>
+        {isLoginDisabled ? (
+          <>
+            <p className="login-subtitle">
+              Login for <strong>{company?.name || employeeEmail.split('@')[1]}</strong> has been temporarily disabled by your administrator.
+            </p>
+            <p className="login-subtitle" style={{ fontSize: 13 }}>
+              Please contact your HR administrator for more information.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="login-subtitle">
+              Your organisation (<strong>{employeeEmail.split('@')[1]}</strong>) has not been registered for InflowHR.
+            </p>
+            <p className="login-subtitle" style={{ fontSize: 13 }}>
+              Please contact your HR administrator to request access.
+            </p>
+          </>
+        )}
         <button className="login-microsoft-btn" onClick={signOut}>
           Sign out and try a different account
         </button>
