@@ -35,6 +35,12 @@ body {
 
 @media all and (display-mode: standalone) {
   body { -webkit-user-select: none; user-select: text; }
+  .footer {
+    bottom: env(safe-area-inset-bottom, 0px);
+    border-radius: 28px 28px 0 0;
+    width: 100%;
+    max-width: 480px;
+  }
 }
 
 /* ── App Shell ── */
