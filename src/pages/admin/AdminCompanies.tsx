@@ -211,12 +211,13 @@ export default function AdminCompanies() {
     if (existingCu) {
       await supabase
         .from('company_users')
-        .update({ role: 'admin' })
+        .update({ role: 'admin', employee_id: newEmployeeId })
         .eq('id', existingCu.id)
     } else {
-      await supabase
-        .from('company_users')
-        .insert({ company_id: companyId, employee_id: newEmployeeId, role: 'admin', is_active: true })
+      await (supabase.rpc as any)('promote_employee_to_admin', {
+        p_company_id: companyId,
+        p_employee_id: newEmployeeId,
+      })
     }
 
     setEditingAdmin(null)

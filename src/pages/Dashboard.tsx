@@ -65,6 +65,7 @@ export default function Dashboard() {
       supabase.from('expense_claims')
         .select('amount')
         .eq('employee_id', employeeId)
+        .eq('company_id', companyUser?.company_id || '')
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
