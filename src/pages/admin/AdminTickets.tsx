@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
+import { useAuth } from '../../context/AuthContext'
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 type TicketStatus = 'open' | 'in-progress' | 'resolved' | 'closed'
@@ -18,6 +19,17 @@ interface Ticket {
   updatedAt: string
 }
 
+const CATEGORY_OPTIONS: { value: TicketCategory; label: string }[] = [
+  { value: 'hr-query', label: 'HR Query' },
+  { value: 'payroll', label: 'Payroll' },
+  { value: 'leave', label: 'Leave' },
+  { value: 'onboarding', label: 'Onboarding' },
+  { value: 'offboarding', label: 'Offboarding' },
+  { value: 'system-access', label: 'System Access' },
+  { value: 'benefits', label: 'Benefits' },
+  { value: 'other', label: 'Other' },
+]
+
 const INITIAL_TICKETS: Ticket[] = [
   { id: '1', ref: 'HR-001', title: 'Unable to access payslip for June', description: 'Employee reports payslip for June 2026 not showing in the app. Verified the payslip exists in the database but not rendering on the employee view.', category: 'payroll', priority: 'medium', status: 'open', submittedBy: 'Sarah Thompson', assignedTo: 'HR Team', createdAt: '2026-07-18', updatedAt: '2026-07-18' },
   { id: '2', ref: 'HR-002', title: 'New starter equipment not received', description: 'James Wilson joining on 28th July has not received laptop and monitor. Equipment order was raised 10 days ago. Need urgent chase with procurement.', category: 'onboarding', priority: 'high', status: 'in-progress', submittedBy: 'Lisa Chen', assignedTo: 'IT Support', createdAt: '2026-07-15', updatedAt: '2026-07-19' },
@@ -31,7 +43,10 @@ const INITIAL_TICKETS: Ticket[] = [
 const PRIORITY_COLORS: Record<Priority, string> = { low: '#43a047', medium: '#ff9800', high: '#e53935', urgent: '#b71c1c' }
 const STATUS_COLORS: Record<TicketStatus, string> = { open: '#ff9800', 'in-progress': '#5b9bd5', resolved: '#43a047', closed: '#78909c' }
 
+const EMPTY_NEW_TICKET = { title: '', description: '', category: 'hr-query' as TicketCategory, priority: 'medium' as Priority, assignedTo: 'HR Team' }
+
 export default function AdminTickets() {
+  const { employeeName } = useAuth()
   const [tickets, setTickets] = useState<Ticket[]>(INITIAL_TICKETS)
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
@@ -39,6 +54,37 @@ export default function AdminTickets() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
+  const [showRaiseForm, setShowRaiseForm] = useState(false)
+  const [newTicket, setNewTicket] = useState(EMPTY_NEW_TICKET)
+
+  function nextRef() {
+    const maxNum = tickets.reduce((max, t) => {
+      const num = parseInt(t.ref.replace('HR-', ''), 10)
+      return num > max ? num : max
+    }, 0)
+    return `HR-${String(maxNum + 1).padStart(3, '0')}`
+  }
+
+  function raiseTicket() {
+    if (!newTicket.title.trim()) return
+    const today = new Date().toISOString().split('T')[0]
+    const ticket: Ticket = {
+      id: String(Date.now()),
+      ref: nextRef(),
+      title: newTicket.title.trim(),
+      description: newTicket.description.trim(),
+      category: newTicket.category,
+      priority: newTicket.priority,
+      status: 'open',
+      submittedBy: employeeName || 'Admin',
+      assignedTo: newTicket.assignedTo || 'HR Team',
+      createdAt: today,
+      updatedAt: today,
+    }
+    setTickets(prev => [ticket, ...prev])
+    setNewTicket(EMPTY_NEW_TICKET)
+    setShowRaiseForm(false)
+  }
 
   function startEdit(t: Ticket) {
     setEditingId(t.id)
@@ -94,30 +140,76 @@ export default function AdminTickets() {
         </select>
         <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="admin-select">
           <option value="">All Categories</option>
-          <option value="hr-query">HR Query</option><option value="payroll">Payroll</option><option value="leave">Leave</option>
-          <option value="onboarding">Onboarding</option><option value="offboarding">Offboarding</option>
-          <option value="system-access">System Access</option><option value="benefits">Benefits</option><option value="other">Other</option>
+          {CATEGORY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
         <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} className="admin-select">
           <option value="">All Priorities</option>
           <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
         </select>
+        <button className="admin-btn admin-btn-primary" onClick={() => setShowRaiseForm(!showRaiseForm)}>
+          {showRaiseForm ? 'Cancel' : '+ Raise Ticket'}
+        </button>
       </div>
+
+      {showRaiseForm && (
+        <div className="admin-add-form">
+          <h3>Raise New HR Ticket</h3>
+          <div className="admin-form-grid">
+            <div className="admin-form-field admin-form-field-full">
+              <label>Title</label>
+              <input className="admin-input" placeholder="Brief summary of the issue" value={newTicket.title} onChange={e => setNewTicket(f => ({...f, title: e.target.value}))} />
+            </div>
+            <div className="admin-form-field admin-form-field-full">
+              <label>Description</label>
+              <textarea className="admin-textarea" placeholder="Provide details including any employee names, dates, and what action is needed..." value={newTicket.description} onChange={e => setNewTicket(f => ({...f, description: e.target.value}))} />
+            </div>
+            <div className="admin-form-field">
+              <label>Category</label>
+              <select className="admin-select" value={newTicket.category} onChange={e => setNewTicket(f => ({...f, category: e.target.value as TicketCategory}))}>
+                {CATEGORY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+            <div className="admin-form-field">
+              <label>Priority</label>
+              <select className="admin-select" value={newTicket.priority} onChange={e => setNewTicket(f => ({...f, priority: e.target.value as Priority}))}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+            <div className="admin-form-field">
+              <label>Assign To</label>
+              <input className="admin-input" placeholder="e.g. HR Team, IT Support" value={newTicket.assignedTo} onChange={e => setNewTicket(f => ({...f, assignedTo: e.target.value}))} />
+            </div>
+            <div className="admin-form-field">
+              <label>Submitted By</label>
+              <input className="admin-input" value={employeeName || 'Admin'} disabled style={{ opacity: 0.7 }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button className="admin-btn admin-btn-primary" onClick={raiseTicket} disabled={!newTicket.title.trim()}>
+              Raise Ticket
+            </button>
+            <button className="admin-btn" style={{ background: '#e5e7eb', color: '#4a4a68' }} onClick={() => { setNewTicket(EMPTY_NEW_TICKET); setShowRaiseForm(false) }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="admin-table-wrap">
         <table className="admin-table">
-          <thead><tr><th>Ref</th><th>Title</th><th>Category</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Ref</th><th>Title</th><th className="admin-ticket-hide-mobile">Category</th><th>Priority</th><th>Status</th><th className="admin-ticket-hide-mobile">Assigned</th><th>Actions</th></tr></thead>
           <tbody>
             {filtered.map(t => (
-              <>
-                <tr key={t.id} className={expandedId === t.id ? 'admin-row-active' : ''}>
+              <Fragment key={t.id}>
+                <tr className={expandedId === t.id ? 'admin-row-active' : ''}>
                   <td className="admin-td-mono">{t.ref}</td>
                   <td>{editingId === t.id ? <input className="admin-inline-input" value={editForm.title} onChange={e => setEditForm(f => ({...f, title: e.target.value}))} /> : t.title}</td>
-                  <td>{editingId === t.id ? (
+                  <td className="admin-ticket-hide-mobile">{editingId === t.id ? (
                     <select className="admin-inline-select" value={editForm.category} onChange={e => setEditForm(f => ({...f, category: e.target.value}))}>
-                      <option value="hr-query">HR Query</option><option value="payroll">Payroll</option><option value="leave">Leave</option>
-                      <option value="onboarding">Onboarding</option><option value="offboarding">Offboarding</option>
-                      <option value="system-access">System Access</option><option value="benefits">Benefits</option><option value="other">Other</option>
+                      {CATEGORY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                     </select>
                   ) : <span className="admin-badge admin-badge-info">{t.category.replace('-', ' ')}</span>}</td>
                   <td>{editingId === t.id ? (
@@ -130,7 +222,7 @@ export default function AdminTickets() {
                       <option value="open">Open</option><option value="in-progress">In Progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option>
                     </select>
                   ) : <span className="admin-badge" style={{background: STATUS_COLORS[t.status], color: '#fff'}}>{t.status}</span>}</td>
-                  <td>{editingId === t.id ? <input className="admin-inline-input" value={editForm.assignedTo} onChange={e => setEditForm(f => ({...f, assignedTo: e.target.value}))} /> : t.assignedTo}</td>
+                  <td className="admin-ticket-hide-mobile">{editingId === t.id ? <input className="admin-inline-input" value={editForm.assignedTo} onChange={e => setEditForm(f => ({...f, assignedTo: e.target.value}))} /> : t.assignedTo}</td>
                   <td className="admin-actions">
                     {editingId === t.id ? (
                       <>
@@ -153,12 +245,14 @@ export default function AdminTickets() {
                   </td>
                 </tr>
                 {expandedId === t.id && (
-                  <tr key={`exp-${t.id}`} className="admin-expanded-row">
+                  <tr className="admin-expanded-row">
                     <td colSpan={7}>
                       <div className="admin-expanded-content">
                         <p><strong>Description:</strong> {editingId === t.id ? <textarea className="admin-inline-textarea" value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} /> : t.description}</p>
                         <div className="admin-detail-grid">
+                          <div><strong>Category:</strong> <span className="admin-badge admin-badge-info">{t.category.replace('-', ' ')}</span></div>
                           <div><strong>Submitted by:</strong> {t.submittedBy}</div>
+                          <div><strong>Assigned to:</strong> {t.assignedTo}</div>
                           <div><strong>Created:</strong> {new Date(t.createdAt).toLocaleDateString('en-GB')}</div>
                           <div><strong>Updated:</strong> {new Date(t.updatedAt).toLocaleDateString('en-GB')}</div>
                         </div>
@@ -166,7 +260,7 @@ export default function AdminTickets() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>

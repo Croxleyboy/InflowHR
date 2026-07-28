@@ -642,3 +642,8 @@
 @media (max-width: 480px) {
   .admin-el-edit-grid { grid-template-columns: 1fr; }
 }
+
+/* ===== HR Tickets responsive ===== */
+@media (max-width: 768px) {
+  .admin-ticket-hide-mobile { display: none; }
+}
