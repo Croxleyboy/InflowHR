@@ -74,8 +74,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     if (cu) {
-      setCompanyUser(cu as CompanyUser)
-
       let empId = cu.employee_id
       if (!empId && email) {
         const { data: emp } = await supabase
@@ -91,6 +89,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .eq('id', cu.id)
         }
       }
+
+      if (empId) {
+        const { data: empRow } = await supabase
+          .from('employees')
+          .select('is_admin')
+          .eq('id', empId)
+          .single()
+        if (empRow) {
+          const expectedRole = empRow.is_admin ? 'admin' : cu.role
+          if (expectedRole !== cu.role) {
+            cu = { ...cu, role: expectedRole }
+            await supabase
+              .from('company_users')
+              .update({ role: expectedRole })
+              .eq('id', cu.id)
+          }
+        }
+      }
+
+      setCompanyUser(cu as CompanyUser)
       setEmployeeId(empId)
 
       const { data: co } = await supabase
