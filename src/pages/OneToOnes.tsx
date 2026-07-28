@@ -17,6 +17,8 @@ interface Meeting {
   created_at: string
   manager_name?: string
   employee_name?: string
+  manager_avatar?: string | null
+  employee_avatar?: string | null
 }
 
 interface DirectReport {
@@ -26,6 +28,7 @@ interface DirectReport {
   job_title: string | null
   department: string | null
   email: string
+  avatar_url: string | null
 }
 
 function formatDate(dateStr: string) {
@@ -50,7 +53,7 @@ export default function OneToOnes() {
     setLoading(true)
 
     const { data: reports } = await supabase.from('employees')
-      .select('id, first_name, last_name, job_title, department, email')
+      .select('id, first_name, last_name, job_title, department, email, avatar_url')
       .eq('manager_id', employeeId)
       .eq('is_active', true)
     const dr = (reports || []) as DirectReport[]
@@ -66,16 +69,20 @@ export default function OneToOnes() {
       const empIds = new Set<string>()
       allMeetings.forEach((m: Meeting) => { empIds.add(m.manager_id); empIds.add(m.employee_id) })
       const { data: empData } = await supabase.from('employees')
-        .select('id, first_name, last_name')
+        .select('id, first_name, last_name, avatar_url')
         .in('id', Array.from(empIds))
       const nameMap: Record<string, string> = {}
-      ;(empData || []).forEach((e: { id: string; first_name: string; last_name: string }) => {
+      const avatarMap: Record<string, string | null> = {}
+      ;(empData || []).forEach((e: { id: string; first_name: string; last_name: string; avatar_url: string | null }) => {
         nameMap[e.id] = `${e.first_name} ${e.last_name}`
+        avatarMap[e.id] = e.avatar_url
       })
       const enriched = allMeetings.map((m: Meeting) => ({
         ...m,
         manager_name: nameMap[m.manager_id] || '',
         employee_name: nameMap[m.employee_id] || '',
+        manager_avatar: avatarMap[m.manager_id] || null,
+        employee_avatar: avatarMap[m.employee_id] || null,
       }))
       setMeetings(enriched)
     } else {
@@ -154,10 +161,11 @@ export default function OneToOnes() {
           {upcoming.map(m => {
             const iAmManager = m.manager_id === employeeId
             const otherName = iAmManager ? m.employee_name : m.manager_name
+            const otherAvatar = iAmManager ? m.employee_avatar : m.manager_avatar
             const initials = (otherName || '').split(' ').map(n => n[0]).join('').toUpperCase()
             return (
               <div key={m.id} className="oto-card" onClick={() => navigate(`/one-to-ones/${m.id}`)}>
-                <div className="oto-card-avatar">{initials}</div>
+                {otherAvatar ? <img className="oto-card-avatar-img" src={otherAvatar} alt={otherName} /> : <div className="oto-card-avatar">{initials}</div>}
                 <div className="oto-card-content">
                   <span className="oto-card-name">{otherName}</span>
                   <span className="oto-card-date">{formatDate(m.scheduled_date)} &middot; {m.scheduled_time.slice(0, 5)}</span>
@@ -191,10 +199,11 @@ export default function OneToOnes() {
           {history.map(m => {
             const iAmManager = m.manager_id === employeeId
             const otherName = iAmManager ? m.employee_name : m.manager_name
+            const otherAvatar = iAmManager ? m.employee_avatar : m.manager_avatar
             const initials = (otherName || '').split(' ').map(n => n[0]).join('').toUpperCase()
             return (
               <div key={m.id} className="oto-card" onClick={() => navigate(`/one-to-ones/${m.id}`)}>
-                <div className="oto-card-avatar">{initials}</div>
+                {otherAvatar ? <img className="oto-card-avatar-img" src={otherAvatar} alt={otherName} /> : <div className="oto-card-avatar">{initials}</div>}
                 <div className="oto-card-content">
                   <span className="oto-card-name">{otherName}</span>
                   <span className="oto-card-date">{formatDate(m.scheduled_date)}</span>
@@ -228,7 +237,7 @@ export default function OneToOnes() {
             const lastMeeting = reportMeetings[0]
             return (
               <div key={dr.id} className="oto-report-card">
-                <div className="oto-card-avatar">{initials}</div>
+                {dr.avatar_url ? <img className="oto-card-avatar-img" src={dr.avatar_url} alt={`${dr.first_name} ${dr.last_name}`} /> : <div className="oto-card-avatar">{initials}</div>}
                 <div className="oto-report-info">
                   <span className="oto-report-name">{dr.first_name} {dr.last_name}</span>
                   <span className="oto-report-role">{dr.job_title} &middot; {dr.department}</span>

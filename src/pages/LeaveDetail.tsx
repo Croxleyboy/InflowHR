@@ -18,6 +18,7 @@ interface LeaveRequest {
 interface Employee {
   first_name: string
   last_name: string
+  avatar_url: string | null
 }
 
 interface LeaveType {
@@ -73,7 +74,7 @@ export default function LeaveDetail() {
       const r = req as LeaveRequest
       setRequest(r)
       const [empRes, typeRes] = await Promise.all([
-        supabase.from('employees').select('first_name, last_name').eq('id', r.employee_id).single(),
+        supabase.from('employees').select('first_name, last_name, avatar_url').eq('id', r.employee_id).single(),
         supabase.from('leave_types').select('name').eq('id', r.leave_type_id).single(),
       ])
       if (empRes.data) setEmployee(empRes.data as Employee)
@@ -114,7 +115,7 @@ export default function LeaveDetail() {
 
       <div className="leave-detail-card">
         <div className="leave-detail-emp-row">
-          <div className="leave-detail-emp-avatar">{empInitials}</div>
+          {employee?.avatar_url ? <img className="emp-avatar-img" src={employee.avatar_url} alt={empName} /> : <div className="leave-detail-emp-avatar">{empInitials}</div>}
           <div className="leave-detail-emp-info">
             <span className="leave-detail-emp-name">{empName}</span>
             <span className="leave-detail-emp-ref">{t('leave_detail.request_id')} &nbsp; {request.id}</span>

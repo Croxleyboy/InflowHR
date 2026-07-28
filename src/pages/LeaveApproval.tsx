@@ -20,6 +20,7 @@ interface Employee {
   first_name: string
   last_name: string
   email: string
+  avatar_url: string | null
 }
 
 interface LeaveType {
@@ -75,7 +76,7 @@ export default function LeaveApproval() {
       const r = req as LeaveRequest
       setRequest(r)
       const [empRes, typeRes] = await Promise.all([
-        supabase.from('employees').select('first_name, last_name, email').eq('id', r.employee_id).single(),
+        supabase.from('employees').select('first_name, last_name, email, avatar_url').eq('id', r.employee_id).single(),
         supabase.from('leave_types').select('name').eq('id', r.leave_type_id).single(),
       ])
       if (empRes.data) setEmployee(empRes.data as Employee)
@@ -185,7 +186,7 @@ export default function LeaveApproval() {
 
       <div className="leave-approval-card">
         <div className="leave-approval-emp-row">
-          <div className="leave-approval-emp-avatar">{empInitials}</div>
+          {employee?.avatar_url ? <img className="emp-avatar-img" src={employee.avatar_url} alt={empName} /> : <div className="leave-approval-emp-avatar">{empInitials}</div>}
           <div className="leave-approval-emp-info">
             <span className="leave-approval-emp-name">{empName}</span>
             <span className="leave-approval-emp-ref">{t('approval.request_id')} &nbsp; {request.id}</span>

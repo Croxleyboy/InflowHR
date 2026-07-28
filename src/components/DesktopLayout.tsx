@@ -7,10 +7,9 @@ import { supabase } from '../lib/supabase'
 
 export default function DesktopLayout() {
   const { t } = useLanguage()
-  const { signOut, employeeName, employeeEmail, employeeId, company, companyUser } = useAuth()
+  const { signOut, employeeName, employeeEmail, employeeId, company, companyUser, avatarUrl } = useAuth()
   const { dark, toggle } = useTheme()
   const navigate = useNavigate()
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [badgeCount, setBadgeCount] = useState(0)
   const [isManager, setIsManager] = useState(false)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
@@ -18,12 +17,6 @@ export default function DesktopLayout() {
 
   useEffect(() => {
     if (employeeEmail) {
-      supabase.from('onboarding')
-        .select('avatar_url')
-        .eq('user_email', employeeEmail)
-        .single()
-        .then(({ data }) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url) })
-
       supabase.from('workflow_tracker')
         .select('id', { count: 'exact', head: true })
         .ilike('assigned_to', `%${employeeEmail}%`)

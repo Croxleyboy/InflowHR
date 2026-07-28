@@ -9,6 +9,7 @@ interface DirectReport {
   first_name: string
   last_name: string
   job_title: string | null
+  avatar_url: string | null
 }
 
 export default function NewOneToOne() {
@@ -28,7 +29,7 @@ export default function NewOneToOne() {
   useEffect(() => {
     if (!employeeId) return
     supabase.from('employees')
-      .select('id, first_name, last_name, job_title')
+      .select('id, first_name, last_name, job_title, avatar_url')
       .eq('manager_id', employeeId)
       .eq('is_active', true)
       .order('first_name')
@@ -109,9 +110,9 @@ export default function NewOneToOne() {
                 className={`oto-employee-option ${selectedEmployee === r.id ? 'oto-employee-selected' : ''}`}
                 onClick={() => setSelectedEmployee(r.id)}
               >
-                <div className="oto-employee-option-avatar">
+                {r.avatar_url ? <img className="oto-employee-option-avatar-img" src={r.avatar_url} alt={`${r.first_name} ${r.last_name}`} /> : <div className="oto-employee-option-avatar">
                   {r.first_name[0]}{r.last_name[0]}
-                </div>
+                </div>}
                 <div className="oto-employee-option-info">
                   <span className="oto-employee-option-name">{r.first_name} {r.last_name}</span>
                   <span className="oto-employee-option-role">{r.job_title || ''}</span>

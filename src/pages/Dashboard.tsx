@@ -33,11 +33,10 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, company } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl } = useAuth()
   const navigate = useNavigate()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [lastExpense, setLastExpense] = useState<number | null>(null)
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const [leavePending, setLeavePending] = useState<number | null>(null)
@@ -45,14 +44,6 @@ export default function Dashboard() {
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   useEffect(() => {
-    if (employeeEmail) {
-      supabase.from('onboarding')
-        .select('avatar_url')
-        .eq('user_email', employeeEmail)
-        .single()
-        .then(({ data }) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url) })
-    }
-
     supabase.from('announcements')
       .select('title, body')
       .order('published_at', { ascending: false })

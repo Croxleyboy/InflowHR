@@ -73,7 +73,7 @@ interface PayslipData {
 export default function Payslips() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl } = useAuth()
   const [payslip, setPayslip] = useState<PayslipData | null>(null)
   const [loading, setLoading] = useState(true)
   const [benefitDeductions] = useState<BenefitDeduction[]>(getBenefitDeductions)
@@ -154,7 +154,11 @@ export default function Payslips() {
 
           <div className="payslips-employee-row">
             <div className="payslips-employee-avatar">
-              <img src="https://lh3.googleusercontent.com/a/default-user" alt="" className="payslips-employee-img" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).parentElement!.textContent = 'AJ' }} />
+              {avatarUrl ? (
+                <img src={avatarUrl} alt={employeeName} className="payslips-employee-img" />
+              ) : (
+                <span>{employeeName.split(' ').map(n => n[0]).join('').toUpperCase()}</span>
+              )}
             </div>
             <div className="payslips-employee-info">
               <span className="payslips-employee-name">{employeeName}</span>

@@ -17,7 +17,7 @@ function formatDateDisplay(dateStr: string) {
 export default function NewExpenseClaim() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl } = useAuth()
   const [startDate, setStartDate] = useState(todayStr())
   const [endDate, setEndDate] = useState(todayStr())
   const [costCenter, setCostCenter] = useState('External expenses')
@@ -71,7 +71,7 @@ export default function NewExpenseClaim() {
 
       <div className="new-claim-profile">
         <span className="new-claim-name">{employeeName}</span>
-        <div className="new-claim-avatar">AJ</div>
+        {avatarUrl ? <img className="new-claim-avatar-img" src={avatarUrl} alt={employeeName} /> : <div className="new-claim-avatar">{employeeName.split(' ').map(n => n[0]).join('').toUpperCase()}</div>}
         <span className="new-claim-role">HR Director</span>
       </div>
 

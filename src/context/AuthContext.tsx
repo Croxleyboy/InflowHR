@@ -29,6 +29,7 @@ interface AuthState {
   employeeName: string
   employeeEmail: string
   isSuperAdmin: boolean
+  avatarUrl: string | null
   setupComplete: boolean | null
   markSetupComplete: () => void
   signInWithMicrosoft: () => Promise<void>
@@ -51,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const [employeeId, setEmployeeId] = useState<string | null>(null)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
@@ -108,10 +110,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: onb } = await supabase
         .from('onboarding')
-        .select('initial_setup_complete')
+        .select('initial_setup_complete, avatar_url')
         .eq('user_email', email)
         .maybeSingle()
       setSetupComplete(onb?.initial_setup_complete === true)
+      setAvatarUrl(onb?.avatar_url || null)
     } else {
       setSetupComplete(null)
     }
@@ -174,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = employeeEmail.toLowerCase() === SUPER_ADMIN_EMAIL
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, employeeName, employeeEmail, isSuperAdmin, setupComplete, markSetupComplete, signInWithMicrosoft, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, employeeName, employeeEmail, isSuperAdmin, setupComplete, markSetupComplete, signInWithMicrosoft, signOut }}>
       {children}
     </AuthContext.Provider>
   )

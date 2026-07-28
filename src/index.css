@@ -4282,3 +4282,36 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.oto-card-avatar-img {
+  width: 44px; height: 44px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+}
+.emp-avatar-img {
+  width: 44px; height: 44px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+  border: 2px solid #3d6b99;
+}
+.new-claim-avatar-img {
+  width: 56px; height: 56px; border-radius: 50%;
+  object-fit: cover;
+}
+.leave-calendar-person-avatar-img {
+  width: 32px; height: 32px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+}
+.oto-employee-option-avatar-img {
+  width: 40px; height: 40px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+}
+.oto-comment-avatar-img {
+  width: 28px; height: 28px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+}
+.oto-comment-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff; font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}

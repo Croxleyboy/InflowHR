@@ -9,6 +9,7 @@ interface CalendarLeave {
   start_date: string
   end_date: string
   emp_name: string
+  emp_avatar: string | null
 }
 
 const EN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -60,13 +61,14 @@ export default function LeaveCalendar() {
       const empIds = [...new Set(reqs.map((r: any) => r.employee_id))]
       const { data: emps } = await supabase
         .from('employees')
-        .select('id, first_name, last_name')
+        .select('id, first_name, last_name, avatar_url')
         .in('id', empIds)
 
-      const empMap = new Map((emps || []).map((e: any) => [e.id, `${e.first_name} ${e.last_name}`]))
+      const empMap = new Map((emps || []).map((e: any) => [e.id, { name: `${e.first_name} ${e.last_name}`, avatar: e.avatar_url }]))
       setLeaves(reqs.map((r: any) => ({
         ...r,
-        emp_name: empMap.get(r.employee_id) || 'Unknown',
+        emp_name: empMap.get(r.employee_id)?.name || 'Unknown',
+        emp_avatar: empMap.get(r.employee_id)?.avatar || null,
       })))
     }
 
@@ -163,9 +165,9 @@ export default function LeaveCalendar() {
 
             {weekLeaves.map(l => (
               <div key={l.id} className="leave-calendar-person-row">
-                <div className="leave-calendar-person-avatar">
+                {l.emp_avatar ? <img className="leave-calendar-person-avatar-img" src={l.emp_avatar} alt={l.emp_name} /> : <div className="leave-calendar-person-avatar">
                   {l.emp_name.split(' ').map(n => n[0]).join('')}
-                </div>
+                </div>}
                 <span className="leave-calendar-person-name">{l.emp_name}</span>
                 <div className="leave-calendar-person-days">
                   {days.map(day => (

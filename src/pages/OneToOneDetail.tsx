@@ -45,6 +45,9 @@ export default function OneToOneDetail() {
   const [comments, setComments] = useState<Comment[]>([])
   const [managerName, setManagerName] = useState('')
   const [employeeName, setEmployeeName] = useState('')
+  const [managerAvatar, setManagerAvatar] = useState<string | null>(null)
+  const [employeeAvatar, setEmployeeAvatar] = useState<string | null>(null)
+  const [commentAvatars, setCommentAvatars] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
   const [summary, setSummary] = useState('')
   const [newComment, setNewComment] = useState('')
@@ -62,24 +65,31 @@ export default function OneToOneDetail() {
 
     const empIds = [mtg.manager_id, mtg.employee_id]
     const { data: empData } = await supabase.from('employees')
-      .select('id, first_name, last_name').in('id', empIds)
+      .select('id, first_name, last_name, avatar_url').in('id', empIds)
     const nameMap: Record<string, string> = {}
-    ;(empData || []).forEach((e: { id: string; first_name: string; last_name: string }) => {
+    const avatarMap: Record<string, string | null> = {}
+    ;(empData || []).forEach((e: { id: string; first_name: string; last_name: string; avatar_url: string | null }) => {
       nameMap[e.id] = `${e.first_name} ${e.last_name}`
+      avatarMap[e.id] = e.avatar_url
     })
     setManagerName(nameMap[mtg.manager_id] || '')
     setEmployeeName(nameMap[mtg.employee_id] || '')
+    setManagerAvatar(avatarMap[mtg.manager_id] || null)
+    setEmployeeAvatar(avatarMap[mtg.employee_id] || null)
 
     const { data: cmts } = await supabase.from('one_to_one_comments')
       .select('*').eq('meeting_id', id).order('created_at', { ascending: true })
     if (cmts && cmts.length > 0) {
       const authorIds = new Set((cmts as Comment[]).map(c => c.author_id))
       const { data: authors } = await supabase.from('employees')
-        .select('id, first_name, last_name').in('id', Array.from(authorIds))
+        .select('id, first_name, last_name, avatar_url').in('id', Array.from(authorIds))
       const aMap: Record<string, string> = {}
-      ;(authors || []).forEach((a: { id: string; first_name: string; last_name: string }) => {
+      const aAvatarMap: Record<string, string | null> = {}
+      ;(authors || []).forEach((a: { id: string; first_name: string; last_name: string; avatar_url: string | null }) => {
         aMap[a.id] = `${a.first_name} ${a.last_name}`
+        aAvatarMap[a.id] = a.avatar_url
       })
+      setCommentAvatars(aAvatarMap)
       setComments((cmts as Comment[]).map(c => ({ ...c, author_name: aMap[c.author_id] || '' })))
     } else {
       setComments([])
@@ -91,6 +101,7 @@ export default function OneToOneDetail() {
 
   const iAmManager = meeting?.manager_id === employeeId
   const otherName = iAmManager ? employeeName : managerName
+  const otherAvatar = iAmManager ? employeeAvatar : managerAvatar
   const otherInitials = (otherName || '').split(' ').map(n => n[0]).join('').toUpperCase()
 
   async function handleSaveSummary() {
@@ -186,7 +197,7 @@ export default function OneToOneDetail() {
 
       <div className="leave-approval-card">
         <div className="leave-approval-emp-row">
-          <div className="leave-approval-emp-avatar">{otherInitials}</div>
+          {otherAvatar ? <img className="emp-avatar-img" src={otherAvatar} alt={otherName} /> : <div className="leave-approval-emp-avatar">{otherInitials}</div>}
           <div className="leave-approval-emp-info">
             <span className="leave-approval-emp-name">{otherName}</span>
             <span className="leave-approval-emp-ref">
@@ -254,15 +265,20 @@ export default function OneToOneDetail() {
         {isCompleted && (
           <div className="oto-comments-section">
             <label className="oto-summary-label">{t('one_to_one.comments')} ({comments.length})</label>
-            {comments.map(c => (
+            {comments.map(c => {
+              const cAvatar = commentAvatars[c.author_id]
+              const cInitials = (c.author_name || '').split(' ').map(n => n[0]).join('').toUpperCase()
+              return (
               <div key={c.id} className="oto-comment">
                 <div className="oto-comment-header">
+                  {cAvatar ? <img className="oto-comment-avatar-img" src={cAvatar} alt={c.author_name} /> : <div className="oto-comment-avatar">{cInitials}</div>}
                   <span className="oto-comment-author">{c.author_name}</span>
                   <span className="oto-comment-date">{formatDateTime(c.created_at)}</span>
                 </div>
                 <p className="oto-comment-body">{c.body}</p>
               </div>
-            ))}
+              )
+            })}
             <div className="oto-add-comment">
               <textarea
                 className="oto-comment-input"
