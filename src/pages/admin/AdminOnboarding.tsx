@@ -629,7 +629,7 @@ export default function AdminOnboarding() {
             <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 20, border: '1px solid var(--admin-border, #e0e0e0)' }}>
               <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600 }}>Onboarding Pipeline</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {WORKFLOW_STEPS.map((step, i) => {
+                {WORKFLOW_STEPS.map((step) => {
                   const count = stats.stageMap[step.key] || 0
                   return (
                     <div key={step.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>

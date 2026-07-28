@@ -32,7 +32,7 @@ function saveProgress(p: any) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(p))
 }
 
-function generateSections(title: string, description: string, type: CourseType): Section[] {
+function generateSections(_title: string, description: string, type: CourseType): Section[] {
   if (type === 'quiz') return []
 
   return [

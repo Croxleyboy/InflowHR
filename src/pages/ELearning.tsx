@@ -222,12 +222,6 @@ export default function ELearning() {
     navigate(`/elearning/${course.id}?type=${course.type}&title=${encodeURIComponent(t(course.titleKey))}&desc=${encodeURIComponent(t(course.descKey))}&duration=${encodeURIComponent(course.duration)}`)
   }
 
-  function startCourse(id: string) {
-    const course = COURSES.find(c => c.id === id)
-    if (!course || progress.completed.includes(id)) return
-    openCourse(course)
-  }
-
   function completeCourse(id: string) {
     setShowComplete(id)
     setTimeout(() => {
