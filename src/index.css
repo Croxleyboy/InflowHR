@@ -35,11 +35,17 @@ body {
 
 @media all and (display-mode: standalone) {
   body { -webkit-user-select: none; user-select: text; }
+  .app-shell {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
   .footer {
-    bottom: env(safe-area-inset-bottom, 0px);
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    transform: none;
     border-radius: 28px 28px 0 0;
     width: 100%;
-    max-width: 480px;
+    max-width: none;
   }
 }
 
