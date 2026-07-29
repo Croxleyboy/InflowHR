@@ -5,6 +5,8 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const DAY_ICONS = ['briefcase', 'briefcase', 'briefcase', 'briefcase', 'briefcase', 'sun', 'sun']
 
 interface DayAvailability {
   day_of_week: number
@@ -17,11 +19,19 @@ interface DayAvailability {
 function defaultDays(): DayAvailability[] {
   return DAY_NAMES.map((_, i) => ({
     day_of_week: i,
-    is_available: true,
+    is_available: i < 5,
     available_from: '09:00',
     available_to: '17:00',
     recurring: true,
   }))
+}
+
+function calcHours(from: string, to: string): string {
+  const [fh, fm] = from.split(':').map(Number)
+  const [th, tm] = to.split(':').map(Number)
+  let h = th - fh + (tm - fm) / 60
+  if (h < 0) h += 24
+  return h.toFixed(1)
 }
 
 export default function Availability() {
@@ -32,14 +42,14 @@ export default function Availability() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [expandedDay, setExpandedDay] = useState<number | null>(null)
 
   const fetchAvailability = useCallback(async () => {
     if (!employeeId || !companyUser?.company_id) return
     setLoading(true)
-
     const { data } = await supabase
       .from('employee_availability')
-      .select('day_of_week, is_available, available_from, available_to, recurring')
+      .select('day_of_week, is_available, start_time, end_time, recurring')
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
       .order('day_of_week', { ascending: true })
@@ -51,15 +61,14 @@ export default function Availability() {
           ? {
               day_of_week: existing.day_of_week,
               is_available: existing.is_available,
-              available_from: (existing.available_from || '09:00').slice(0, 5),
-              available_to: (existing.available_to || '17:00').slice(0, 5),
+              available_from: (existing.start_time || '09:00').slice(0, 5),
+              available_to: (existing.end_time || '17:00').slice(0, 5),
               recurring: existing.recurring ?? true,
             }
           : d
       })
       setDays(merged)
     }
-
     setLoading(false)
   }, [employeeId, companyUser?.company_id])
 
@@ -70,28 +79,54 @@ export default function Availability() {
     setSaved(false)
   }
 
+  function toggleDay(index: number) {
+    updateDay(index, { is_available: !days[index].is_available })
+  }
+
   async function handleSave() {
     if (!employeeId || !companyUser?.company_id) return
     setSaving(true)
 
-    const rows = days.map(d => ({
-      employee_id: employeeId,
-      company_id: companyUser.company_id,
-      day_of_week: d.day_of_week,
-      is_available: d.is_available,
-      available_from: d.available_from,
-      available_to: d.available_to,
-      recurring: d.recurring,
-    }))
+    for (const d of days) {
+      const row = {
+        employee_id: employeeId,
+        company_id: companyUser.company_id,
+        day_of_week: d.day_of_week,
+        is_available: d.is_available,
+        start_time: d.available_from,
+        end_time: d.available_to,
+        recurring: d.recurring,
+      }
 
-    await supabase
-      .from('employee_availability')
-      .upsert(rows, { onConflict: 'employee_id,day_of_week' })
+      const { data: existing } = await supabase
+        .from('employee_availability')
+        .select('id')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .eq('day_of_week', d.day_of_week)
+        .maybeSingle()
+
+      if (existing) {
+        await supabase
+          .from('employee_availability')
+          .update({ is_available: row.is_available, start_time: row.start_time, end_time: row.end_time, recurring: row.recurring })
+          .eq('id', existing.id)
+      } else {
+        await supabase
+          .from('employee_availability')
+          .insert(row)
+      }
+    }
 
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
   }
+
+  const availCount = days.filter(d => d.is_available).length
+  const totalHours = days
+    .filter(d => d.is_available)
+    .reduce((sum, d) => sum + parseFloat(calcHours(d.available_from, d.available_to)), 0)
 
   if (loading) {
     return (
@@ -102,8 +137,9 @@ export default function Availability() {
   }
 
   return (
-    <div className="feature-page">
-      <header className="feature-header">
+    <div className="avail-page">
+      {/* Header */}
+      <header className="schedule-header">
         <button className="feature-back" onClick={() => navigate('/shifts')}>
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
             <circle cx="18" cy="18" r="17" stroke="#c62828" strokeWidth="2" />
@@ -122,77 +158,121 @@ export default function Availability() {
         </button>
       </header>
 
-      <div className="claims-list">
-        {days.map((d, i) => (
-          <div key={d.day_of_week} className="claim-card" style={{ borderLeft: `4px solid ${d.is_available ? '#4caf50' : '#9e9e9e'}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <strong style={{ fontSize: 15 }}>{DAY_NAMES[i]}</strong>
-              <button
-                onClick={() => updateDay(i, { is_available: !d.is_available })}
-                style={{
-                  padding: '4px 14px',
-                  borderRadius: 20,
-                  border: 'none',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: '#fff',
-                  background: d.is_available ? '#4caf50' : '#9e9e9e',
-                  cursor: 'pointer',
-                }}
-              >
-                {d.is_available ? t('shifts.available') : t('shifts.unavailable')}
-              </button>
-            </div>
+      {/* Summary Cards */}
+      <div className="avail-summary">
+        <div className="avail-stat">
+          <div className="avail-stat-value avail-stat-green">{availCount}</div>
+          <div className="avail-stat-label">Days available</div>
+        </div>
+        <div className="avail-stat">
+          <div className="avail-stat-value avail-stat-blue">{totalHours.toFixed(0)}h</div>
+          <div className="avail-stat-label">Weekly hours</div>
+        </div>
+        <div className="avail-stat">
+          <div className="avail-stat-value avail-stat-orange">{7 - availCount}</div>
+          <div className="avail-stat-label">Days off</div>
+        </div>
+      </div>
 
-            {d.is_available && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>{t('shifts.from')}</label>
-                  <input
-                    type="time"
-                    value={d.available_from}
-                    onChange={e => updateDay(i, { available_from: e.target.value })}
-                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border-color, #ddd)', fontSize: 14 }}
-                  />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <label style={{ fontSize: 13, color: 'var(--text-muted)' }}>{t('shifts.to')}</label>
-                  <input
-                    type="time"
-                    value={d.available_to}
-                    onChange={e => updateDay(i, { available_to: e.target.value })}
-                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border-color, #ddd)', fontSize: 14 }}
-                  />
-                </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text-muted)', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={d.recurring}
-                    onChange={e => updateDay(i, { recurring: e.target.checked })}
-                  />
-                  {t('shifts.recurring')}
-                </label>
-              </div>
-            )}
-          </div>
+      {/* Week Overview Strip */}
+      <div className="avail-week-strip">
+        {days.map((d, i) => (
+          <button
+            key={i}
+            className={`avail-week-day ${d.is_available ? 'avail-week-on' : 'avail-week-off'}`}
+            onClick={() => toggleDay(i)}
+          >
+            <span className="avail-week-letter">{DAY_SHORT[i]}</span>
+            <span className={`avail-week-dot ${d.is_available ? 'dot-on' : 'dot-off'}`} />
+          </button>
         ))}
       </div>
 
+      {/* Day Cards */}
+      <div className="avail-days">
+        {days.map((d, i) => {
+          const isExpanded = expandedDay === i
+          const isWeekend = i >= 5
+          return (
+            <div
+              key={i}
+              className={`avail-card ${d.is_available ? 'avail-card-on' : 'avail-card-off'}`}
+            >
+              <div className="avail-card-header" onClick={() => setExpandedDay(isExpanded ? null : i)}>
+                <div className="avail-card-left">
+                  <div className={`avail-card-icon ${d.is_available ? 'icon-on' : 'icon-off'}`}>
+                    {isWeekend ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                    )}
+                  </div>
+                  <div>
+                    <div className="avail-card-name">{DAY_NAMES[i]}</div>
+                    {d.is_available && (
+                      <div className="avail-card-hours">{d.available_from} – {d.available_to} ({calcHours(d.available_from, d.available_to)}h)</div>
+                    )}
+                  </div>
+                </div>
+                <div className="avail-card-right">
+                  <button
+                    className={`avail-pill ${d.is_available ? 'avail-pill-on' : 'avail-pill-off'}`}
+                    onClick={e => { e.stopPropagation(); toggleDay(i) }}
+                  >
+                    {d.is_available ? t('shifts.available') : t('shifts.unavailable')}
+                  </button>
+                  <svg
+                    width="16" height="16" viewBox="0 0 16 16" fill="none"
+                    className={`avail-chevron ${isExpanded ? 'avail-chevron-open' : ''}`}
+                  >
+                    <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </div>
+
+              {isExpanded && d.is_available && (
+                <div className="avail-card-body">
+                  <div className="avail-time-row">
+                    <div className="avail-time-field">
+                      <label>{t('shifts.from')}</label>
+                      <input
+                        type="time"
+                        value={d.available_from}
+                        onChange={e => updateDay(i, { available_from: e.target.value })}
+                      />
+                    </div>
+                    <div className="avail-time-sep">
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 10h12M12 6l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </div>
+                    <div className="avail-time-field">
+                      <label>{t('shifts.to')}</label>
+                      <input
+                        type="time"
+                        value={d.available_to}
+                        onChange={e => updateDay(i, { available_to: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <label className="avail-recurring">
+                    <input
+                      type="checkbox"
+                      checked={d.recurring}
+                      onChange={e => updateDay(i, { recurring: e.target.checked })}
+                    />
+                    <span>{t('shifts.recurring')}</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Save Button */}
       <button
+        className={`avail-save ${saved ? 'avail-save-done' : ''}`}
         onClick={handleSave}
         disabled={saving}
-        style={{
-          width: '100%',
-          marginTop: 20,
-          padding: 14,
-          borderRadius: 12,
-          border: 'none',
-          background: saved ? '#4caf50' : '#c62828',
-          color: '#fff',
-          fontWeight: 700,
-          fontSize: 16,
-          cursor: saving ? 'not-allowed' : 'pointer',
-        }}
       >
         {saving ? t('shifts.saving') : saved ? t('shifts.saved') : t('shifts.save_availability')}
       </button>

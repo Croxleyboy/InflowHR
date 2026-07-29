@@ -661,35 +661,150 @@
 
 .admin-colour-swatch { width: 16px; height: 16px; border-radius: 50%; display: inline-block; vertical-align: middle; border: 1px solid rgba(0,0,0,0.15); }
 
-/* Rota Grid */
-.rota-grid-wrap { overflow-x: auto; margin-top: 16px; border: 1px solid #e0e0e0; border-radius: 8px; }
-.rota-grid { min-width: 800px; border-collapse: collapse; width: 100%; }
-.rota-grid th { background: #f5f5f5; padding: 8px 12px; font-size: 12px; font-weight: 600; text-align: center; border-bottom: 2px solid #e0e0e0; white-space: nowrap; }
-.rota-grid th:first-child { text-align: left; min-width: 150px; position: sticky; left: 0; background: #f5f5f5; z-index: 2; }
-.rota-grid td { padding: 4px; border: 1px solid #eee; text-align: center; vertical-align: middle; min-width: 100px; height: 48px; }
-.rota-grid td:first-child { text-align: left; padding: 8px 12px; font-weight: 500; font-size: 13px; position: sticky; left: 0; background: #fff; z-index: 1; }
-.rota-grid tr:hover td { background: #fafafa; }
-.rota-grid tr:hover td:first-child { background: #f5f5f5; }
+/* Rota Cards (List View) */
+.rota-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin-top: 16px; }
+.rota-card { background: #fff; border-radius: 14px; padding: 0; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; transition: transform 0.15s, box-shadow 0.15s; }
+.rota-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+.rota-card-border { width: 5px; flex-shrink: 0; }
+.rota-card-border.draft { background: #ff9800; }
+.rota-card-border.published { background: #43a047; }
+.rota-card-content { flex: 1; padding: 16px 18px; }
+.rota-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; }
+.rota-card-name { font-size: 16px; font-weight: 700; color: #1e1e2d; }
+.rota-card-dates { font-size: 12px; color: #8b8fa3; margin-top: 2px; }
+.rota-card-dept { display: inline-block; background: #e3f2fd; color: #1565c0; font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 10px; margin-top: 4px; }
+.rota-card-status { padding: 3px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.rota-card-status.draft, .rota-status-draft { background: #fff3e0; color: #e65100; padding: 3px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+.rota-card-status.published, .rota-status-published { background: #e8f5e9; color: #2e7d32; padding: 3px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+.rota-card-stats { display: flex; gap: 16px; margin: 10px 0; font-size: 12px; color: #8b8fa3; }
+.rota-card-stats span { display: flex; align-items: center; gap: 4px; }
+.rota-card-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; margin: 8px 0; }
+.rota-card-toggle input { accent-color: #1565c0; }
+.rota-card-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.rota-card-actions button { border: none; border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
+.rota-card-btn-open { background: linear-gradient(135deg, #42a5f5, #1565c0); color: #fff; }
+.rota-card-btn-edit { background: #f5f5f5; color: #333; }
+.rota-card-btn-publish { background: #43a047; color: #fff; }
+.rota-card-btn-delete { background: #ffebee; color: #c62828; }
 
-.rota-cell-empty { cursor: pointer; border-radius: 4px; }
-.rota-cell-empty:hover { background: #e3f2fd !important; }
-.rota-cell-shift { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; cursor: pointer; white-space: nowrap; }
-.rota-cell-shift:hover { opacity: 0.85; }
-.rota-cell-conflict { position: relative; }
-.rota-cell-conflict::after { content: '⚠️'; position: absolute; top: 2px; right: 2px; font-size: 10px; }
+/* Rota Modal */
+.rota-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; display: flex; align-items: center; justify-content: center; }
+.rota-modal { background: #fff; border-radius: 16px; padding: 28px; width: 90%; max-width: 520px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+.rota-modal h3 { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+.rota-modal-field { margin-bottom: 14px; }
+.rota-modal-field label { display: block; font-size: 12px; font-weight: 600; color: #666; margin-bottom: 4px; }
+.rota-modal-field input,
+.rota-modal-field select { width: 100%; padding: 8px 12px; border: 1.5px solid #e0e0e0; border-radius: 8px; font-size: 14px; }
+.rota-modal-actions { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+.rota-modal-actions button { padding: 8px 22px; border-radius: 8px; font-weight: 600; font-size: 14px; border: none; cursor: pointer; }
 
-.rota-week-nav { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
-.rota-week-nav button { background: #1565c0; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-.rota-week-nav button:hover { background: #0d47a1; }
-.rota-week-nav span { font-weight: 600; font-size: 14px; }
+/* Rota Grid View (Colorful) */
+/* ===== Rota Grid V2 (rg-*) ===== */
+.rg-topbar { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 20px; }
+.rg-back { background: none; border: 1px solid #e5e7eb; border-radius: 10px; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #555; transition: all 0.15s; flex-shrink: 0; }
+.rg-back:hover { background: #f5f6fa; border-color: #ccc; }
+.rg-topbar-info { flex: 1; }
+.rg-title { font-size: 20px; font-weight: 800; color: #1e1e2d; margin: 0 0 6px; }
+.rg-topbar-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rg-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.3px; }
+.rg-badge-green { background: #e8f5e9; color: #2e7d32; }
+.rg-badge-orange { background: #fff3e0; color: #e65100; }
+.rg-badge-blue { background: #e3f2fd; color: #1565c0; }
+.rg-badge-grey { background: #f5f5f5; color: #888; }
+.rg-toggle-label { display: flex; align-items: center; cursor: pointer; }
+.rg-toggle-label input { cursor: pointer; }
 
-.rota-cell-dropdown { position: absolute; z-index: 10; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 4px 0; min-width: 150px; }
-.rota-cell-dropdown button { display: block; width: 100%; text-align: left; padding: 6px 12px; border: none; background: none; font-size: 12px; cursor: pointer; }
-.rota-cell-dropdown button:hover { background: #f0f0f0; }
+.rg-stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.rg-stat-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; }
+.rg-stat-card svg { flex-shrink: 0; }
+.rg-stat-val { font-size: 20px; font-weight: 800; line-height: 1.1; }
+.rg-stat-lbl { font-size: 11px; color: #8b8fa3; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+.rg-stat-blue { border-left: 3px solid #1565c0; }
+.rg-stat-blue svg { color: #1565c0; }
+.rg-stat-blue .rg-stat-val { color: #1565c0; }
+.rg-stat-purple { border-left: 3px solid #7b1fa2; }
+.rg-stat-purple svg { color: #7b1fa2; }
+.rg-stat-purple .rg-stat-val { color: #7b1fa2; }
+.rg-stat-green { border-left: 3px solid #2e7d32; }
+.rg-stat-green svg { color: #2e7d32; }
+.rg-stat-green .rg-stat-val { color: #2e7d32; }
+.rg-stat-orange { border-left: 3px solid #e65100; }
+.rg-stat-orange svg { color: #e65100; }
+.rg-stat-orange .rg-stat-val { color: #e65100; }
 
-.rota-publish-bar { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 12px; background: #fff3e0; border-radius: 8px; }
-.rota-publish-bar button { background: #43a047; color: #fff; border: none; border-radius: 6px; padding: 8px 20px; font-weight: 600; cursor: pointer; }
-.rota-publish-bar button:hover { background: #388e3c; }
+.rg-week-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.rg-week-nav > button { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #555; transition: all 0.15s; }
+.rg-week-nav > button:hover { background: #f5f6fa; border-color: #bbb; }
+.rg-week-label { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 14px; color: #1e1e2d; padding: 0 4px; }
+.rg-week-label svg { color: #888; }
+.rg-today-btn { background: #e3f2fd !important; border-color: #90caf9 !important; color: #1565c0 !important; font-size: 12px !important; font-weight: 600 !important; padding: 0 12px !important; width: auto !important; height: 34px !important; border-radius: 8px !important; }
+.rg-today-btn:hover { background: #bbdefb !important; }
+
+.rg-grid-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; }
+.rg-table { min-width: 1000px; border-collapse: collapse; width: 100%; }
+.rg-th-emp { text-align: left; min-width: 190px; position: sticky; left: 0; background: #f8f9fc; z-index: 2; padding: 10px 14px; font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 2px solid #e5e7eb; }
+.rg-th-day { background: #f8f9fc; padding: 8px 6px 6px; text-align: center; border-bottom: 2px solid #e5e7eb; min-width: 110px; }
+.rg-th-day-name { font-size: 11px; font-weight: 700; color: #999; text-transform: uppercase; letter-spacing: 0.5px; }
+.rg-th-day-num { font-size: 20px; font-weight: 800; color: #1e1e2d; line-height: 1.3; }
+.rg-th-day-count { font-size: 10px; color: #bbb; font-weight: 500; }
+.rg-th-today { background: #eef5ff; }
+.rg-th-today-num { color: #1565c0; }
+.rg-th-total { background: #f8f9fc; padding: 10px 12px; text-align: center; font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 2px solid #e5e7eb; min-width: 60px; }
+
+.rg-td-emp { text-align: left; padding: 10px 14px; position: sticky; left: 0; background: #fff; z-index: 1; border-right: 2px solid #f0f0f0; border-bottom: 1px solid #f5f5f5; }
+.rg-emp-row { display: flex; align-items: center; gap: 10px; }
+.rg-emp-avatar { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.rg-emp-name { font-weight: 600; font-size: 13px; color: #1e1e2d; white-space: nowrap; }
+.rg-emp-avail { display: flex; gap: 3px; margin-top: 3px; }
+.rg-dot { width: 6px; height: 6px; border-radius: 50%; }
+.rg-dot-on { background: #43a047; }
+.rg-dot-off { background: #e53935; }
+.rg-dot-na { background: #ddd; }
+
+.rg-td-cell { padding: 4px; border-bottom: 1px solid #f5f5f5; border-right: 1px solid #f8f8f8; vertical-align: top; position: relative; min-height: 58px; }
+.rg-td-today { background: #f9fbff; }
+.rg-td-total { text-align: center; font-size: 14px; font-weight: 800; color: #1565c0; padding: 10px 8px; border-bottom: 1px solid #f5f5f5; vertical-align: middle; }
+
+.rg-table tr:hover .rg-td-emp { background: #fafbff; }
+.rg-table tr:hover .rg-td-cell { background: #fcfcff; }
+.rg-table tr:hover .rg-td-today { background: #f4f8ff; }
+
+.rg-shift { border-left: 4px solid; border-radius: 8px; padding: 6px 8px; cursor: pointer; text-align: left; transition: transform 0.1s, box-shadow 0.15s; min-height: 52px; position: relative; overflow: hidden; }
+.rg-shift:hover { transform: scale(1.03); box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.rg-shift-leave-tag { position: absolute; top: 2px; right: 4px; font-size: 9px; font-weight: 700; color: #e65100; background: #fff3e0; padding: 1px 5px; border-radius: 4px; }
+.rg-shift-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rg-shift-time { font-size: 11px; color: #777; margin-top: 2px; }
+.rg-shift-hrs { font-size: 10px; color: #aaa; margin-top: 1px; font-weight: 600; }
+
+.rg-empty { cursor: pointer; border-radius: 8px; border: 1.5px dashed #eaeaea; min-height: 52px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+.rg-empty:hover { border-color: #1565c0; background: #e3f2fd; }
+.rg-plus { font-size: 18px; color: #ddd; transition: color 0.15s; }
+.rg-empty:hover .rg-plus { color: #1565c0; }
+.rg-empty-leave { background: repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,183,77,0.08) 5px, rgba(255,183,77,0.08) 10px); border-color: #ffcc80; }
+.rg-leave-pill { font-size: 10px; font-weight: 600; color: #e65100; background: #fff3e0; padding: 2px 8px; border-radius: 6px; }
+
+.rg-dd-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+
+.rg-publish-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; padding: 14px 20px; background: linear-gradient(135deg, #fff8e1, #fff3e0); border-radius: 12px; border: 1px solid #ffe0b2; }
+.rg-publish-info { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #e65100; font-weight: 500; }
+.rg-publish-bar button { display: flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #66bb6a, #2e7d32); color: #fff; border: none; border-radius: 10px; padding: 10px 22px; font-weight: 700; font-size: 13px; cursor: pointer; transition: opacity 0.15s, transform 0.1s; }
+.rg-publish-bar button:hover { opacity: 0.9; transform: translateY(-1px); }
+
+@media (max-width: 768px) {
+  .rg-stats-row { grid-template-columns: repeat(2, 1fr); }
+  .rg-topbar { flex-wrap: wrap; }
+}
+.rota-edit-badge { font-size: 11px; padding: 3px 10px; border-radius: 10px; font-weight: 600; }
+.rota-edit-badge.on { background: #e8f5e9; color: #2e7d32; }
+.rota-edit-badge.off { background: #f5f5f5; color: #999; }
+
+/* (old rota-grid classes removed — rg-* classes above replace them) */
+
+.rota-cell-dropdown { position: absolute; z-index: 10; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 6px 0; min-width: 180px; left: 50%; transform: translateX(-50%); top: 100%; }
+.rota-cell-dropdown button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 14px; border: none; background: none; font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.1s; }
+.rota-cell-dropdown button:hover { background: #f5f6fa; }
+
+/* (old rota-avail-dots / footer / publish bar removed — rg-* classes above replace them) */
 
 /* ===== Billing ===== */
 .billing-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-bottom: 24px; }

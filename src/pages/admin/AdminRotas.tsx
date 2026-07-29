@@ -10,6 +10,7 @@ interface Rota {
   end_date: string
   department: string | null
   status: string
+  allow_employee_edit: boolean
   created_at: string
 }
 
@@ -35,6 +36,7 @@ interface ShiftTemplate {
   colour: string
   start_time: string
   end_time: string
+  break_minutes: number
 }
 
 interface LeaveConflict {
@@ -43,7 +45,20 @@ interface LeaveConflict {
   end_date: string
 }
 
-const EMPTY_ROTA = { name: '', start_date: '', end_date: '', department: '', status: 'draft' }
+interface EmployeeAvailability {
+  employee_id: string
+  day_of_week: number
+  start_time: string
+  end_time: string
+  is_available: boolean
+}
+
+interface RotaCounts {
+  employee_count: number
+  assignment_count: number
+}
+
+const EMPTY_ROTA = { name: '', start_date: '', end_date: '', department: '', status: 'draft', allow_employee_edit: false }
 
 function getMonday(d: Date): Date {
   const dt = new Date(d)
@@ -68,15 +83,37 @@ function isDateInRange(date: string, start: string, end: string): boolean {
   return date >= start && date <= end
 }
 
+function parseTime(t: string): number {
+  const [h, m] = t.split(':').map(Number)
+  return h + (m || 0) / 60
+}
+
+function calcShiftHours(template: ShiftTemplate): number {
+  let hours = parseTime(template.end_time) - parseTime(template.start_time)
+  if (hours < 0) hours += 24
+  hours -= (template.break_minutes || 0) / 60
+  return Math.max(0, hours)
+}
+
+function formatTimeShort(t: string): string {
+  return t.substring(0, 5)
+}
+
+// Map day_of_week (0=Sun..6=Sat) to grid column index (0=Mon..6=Sun)
+function dayOfWeekToGridIndex(dow: number): number {
+  return dow === 0 ? 6 : dow - 1
+}
+
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function AdminRotas() {
   const { selectedCompanyId } = useAdminCompany()
   const [rotas, setRotas] = useState<Rota[]>([])
   const [loading, setLoading] = useState(true)
-  const [showAdd, setShowAdd] = useState(false)
+  const [showModal, setShowModal] = useState(false)
   const [addForm, setAddForm] = useState({ ...EMPTY_ROTA })
   const [editingRotaId, setEditingRotaId] = useState<string | null>(null)
+  const [rotaCounts, setRotaCounts] = useState<Record<string, RotaCounts>>({})
 
   // Grid state
   const [selectedRota, setSelectedRota] = useState<Rota | null>(null)
@@ -84,6 +121,7 @@ export default function AdminRotas() {
   const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplate[]>([])
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([])
   const [leaveConflicts, setLeaveConflicts] = useState<LeaveConflict[]>([])
+  const [availability, setAvailability] = useState<EmployeeAvailability[]>([])
   const [weekStart, setWeekStart] = useState<Date>(getMonday(new Date()))
   const [activeCell, setActiveCell] = useState<{ employeeId: string; date: string } | null>(null)
   const [editFormRota, setEditFormRota] = useState<Record<string, any>>({})
@@ -97,8 +135,29 @@ export default function AdminRotas() {
       .select('*')
       .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
-    setRotas((data as Rota[]) || [])
+    const rotaList = (data as Rota[]) || []
+    setRotas(rotaList)
     setLoading(false)
+    // Load counts for each rota
+    if (rotaList.length > 0) {
+      const rotaIds = rotaList.map(r => r.id)
+      const { data: assignData } = await supabase
+        .from('shift_assignments')
+        .select('rota_id, employee_id')
+        .in('rota_id', rotaIds)
+      const counts: Record<string, RotaCounts> = {}
+      rotaIds.forEach(id => { counts[id] = { employee_count: 0, assignment_count: 0 } })
+      if (assignData) {
+        const empSets: Record<string, Set<string>> = {}
+        rotaIds.forEach(id => { empSets[id] = new Set() })
+        assignData.forEach((a: any) => {
+          counts[a.rota_id].assignment_count++
+          empSets[a.rota_id].add(a.employee_id)
+        })
+        rotaIds.forEach(id => { counts[id].employee_count = empSets[id].size })
+      }
+      setRotaCounts(counts)
+    }
   }
 
   async function createRota() {
@@ -110,9 +169,10 @@ export default function AdminRotas() {
       end_date: addForm.end_date,
       department: addForm.department || null,
       status: addForm.status,
+      allow_employee_edit: addForm.allow_employee_edit,
     })
     setAddForm({ ...EMPTY_ROTA })
-    setShowAdd(false)
+    setShowModal(false)
     loadRotas()
   }
 
@@ -124,7 +184,9 @@ export default function AdminRotas() {
       end_date: r.end_date,
       department: r.department || '',
       status: r.status,
+      allow_employee_edit: r.allow_employee_edit ?? false,
     })
+    setShowModal(true)
   }
 
   async function saveEditRota(id: string) {
@@ -134,8 +196,10 @@ export default function AdminRotas() {
       end_date: editFormRota.end_date,
       department: editFormRota.department || null,
       status: editFormRota.status,
+      allow_employee_edit: editFormRota.allow_employee_edit ?? false,
     }).eq('id', id)
     setEditingRotaId(null)
+    setShowModal(false)
     loadRotas()
   }
 
@@ -155,18 +219,29 @@ export default function AdminRotas() {
     }
   }
 
+  async function toggleAllowEdit(r: Rota) {
+    const newVal = !r.allow_employee_edit
+    await supabase.from('rotas').update({ allow_employee_edit: newVal }).eq('id', r.id)
+    setRotas(prev => prev.map(x => x.id === r.id ? { ...x, allow_employee_edit: newVal } : x))
+    if (selectedRota && selectedRota.id === r.id) {
+      setSelectedRota(prev => prev ? { ...prev, allow_employee_edit: newVal } : null)
+    }
+  }
+
   // --- Grid data loading ---
   const loadGridData = useCallback(async (rota: Rota) => {
-    const [empRes, tmplRes, assignRes, leaveRes] = await Promise.all([
+    const [empRes, tmplRes, assignRes, leaveRes, availRes] = await Promise.all([
       supabase.from('employees').select('id, first_name, last_name').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
-      supabase.from('shift_templates').select('id, name, colour, start_time, end_time').eq('company_id', selectedCompanyId).eq('is_active', true),
+      supabase.from('shift_templates').select('id, name, colour, start_time, end_time, break_minutes').eq('company_id', selectedCompanyId).eq('is_active', true),
       supabase.from('shift_assignments').select('*').eq('rota_id', rota.id),
       supabase.from('leave_requests').select('employee_id, start_date, end_date').eq('company_id', selectedCompanyId).in('status', ['pending', 'approved']),
+      supabase.from('employee_availability').select('employee_id, day_of_week, start_time, end_time, is_available').eq('company_id', selectedCompanyId),
     ])
     setEmployees((empRes.data as Employee[]) || [])
     setShiftTemplates((tmplRes.data as ShiftTemplate[]) || [])
     setAssignments((assignRes.data as ShiftAssignment[]) || [])
     setLeaveConflicts((leaveRes.data as LeaveConflict[]) || [])
+    setAvailability((availRes.data as EmployeeAvailability[]) || [])
   }, [selectedCompanyId])
 
   function openRota(rota: Rota) {
@@ -185,13 +260,20 @@ export default function AdminRotas() {
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = addDays(weekStart, i)
-      return { date: formatDate(d), label: DAY_LABELS[i], dayNum: d.getDate(), month: d.toLocaleDateString('en-GB', { month: 'short' }) }
+      return { date: formatDate(d), label: DAY_LABELS[i], dayNum: d.getDate(), month: d.toLocaleDateString('en-GB', { month: 'short' }), dayOfWeek: d.getDay() }
     })
   }, [weekStart])
 
   // Check if employee has leave on date
   function hasLeave(employeeId: string, date: string): boolean {
     return leaveConflicts.some(l => l.employee_id === employeeId && isDateInRange(date, l.start_date, l.end_date))
+  }
+
+  // Get availability for employee on a given day of week
+  function getAvailability(employeeId: string, dayOfWeek: number): 'available' | 'unavailable' | 'unset' {
+    const rec = availability.find(a => a.employee_id === employeeId && a.day_of_week === dayOfWeek)
+    if (!rec) return 'unset'
+    return rec.is_available ? 'available' : 'unavailable'
   }
 
   // Get assignment for employee + date
@@ -218,7 +300,6 @@ export default function AdminRotas() {
       })
     }
     setActiveCell(null)
-    // Reload assignments
     const { data } = await supabase.from('shift_assignments').select('*').eq('rota_id', selectedRota!.id)
     setAssignments((data as ShiftAssignment[]) || [])
   }
@@ -231,219 +312,425 @@ export default function AdminRotas() {
     setActiveCell(null)
   }
 
-  // Assignment count per rota
-  const assignmentCounts = useMemo(() => {
-    const counts: Record<string, number> = {}
-    // We don't preload all assignment counts; show '—' until grid is open
-    return counts
-  }, [])
-
   const stats = useMemo(() => ({
     total: rotas.length,
     draft: rotas.filter(r => r.status === 'draft').length,
     published: rotas.filter(r => r.status === 'published').length,
   }), [rotas])
 
+  // Grid summary stats
+  const gridStats = useMemo(() => {
+    if (!selectedRota) return { totalHours: 0, employeeCount: 0, coverage: 0, unassigned: 0 }
+    // Only count assignments in the current week
+    const weekDates = Array.from({ length: 7 }, (_, i) => formatDate(addDays(weekStart, i)))
+    const weekAssignments = assignments.filter(a => weekDates.includes(a.date))
+    let totalHours = 0
+    const employeesWithShifts = new Set<string>()
+    weekAssignments.forEach(a => {
+      const tmpl = getTemplate(a.shift_template_id)
+      if (tmpl) totalHours += calcShiftHours(tmpl)
+      employeesWithShifts.add(a.employee_id)
+    })
+    const totalSlots = employees.length * 7
+    const filledSlots = weekAssignments.length
+    const coverage = totalSlots > 0 ? Math.round((filledSlots / totalSlots) * 100) : 0
+    return {
+      totalHours: Math.round(totalHours * 10) / 10,
+      employeeCount: employeesWithShifts.size,
+      coverage,
+      unassigned: totalSlots - filledSlots,
+    }
+  }, [assignments, employees, shiftTemplates, weekStart, selectedRota])
+
+  // Format week range label
+  const weekRangeLabel = useMemo(() => {
+    const start = weekDays[0]
+    const end = weekDays[6]
+    return `${start.label} ${start.dayNum} ${start.month} – ${end.label} ${end.dayNum} ${end.month}`
+  }, [weekDays])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!activeCell) return
+    function handleClick(e: MouseEvent) {
+      const target = e.target as HTMLElement
+      if (!target.closest('.rota-cell-dropdown') && !target.closest('.rota-shift-block') && !target.closest('.rota-cell-add') && !target.closest('.rota-cell-empty')) {
+        setActiveCell(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [activeCell])
+
+  // --- MODAL for create / edit ---
+  function renderModal() {
+    if (!showModal) return null
+    const isEdit = !!editingRotaId
+    const form = isEdit ? editFormRota : addForm
+    const setForm = isEdit
+      ? (fn: (prev: any) => any) => setEditFormRota(fn)
+      : (fn: (prev: any) => any) => setAddForm(fn)
+    return (
+      <div className="rota-modal-overlay" onClick={() => { setShowModal(false); setEditingRotaId(null) }}>
+        <div className="rota-modal" onClick={e => e.stopPropagation()}>
+          <h3 style={{ margin: '0 0 20px', fontSize: 18, fontWeight: 700 }}>{isEdit ? 'Edit Rota' : 'Create New Rota'}</h3>
+          <div className="rota-modal-field">
+            <label>Name</label>
+            <input value={form.name} onChange={e => setForm((p: any) => ({ ...p, name: e.target.value }))} placeholder="e.g. Week 31 Rota" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="rota-modal-field">
+              <label>Start Date</label>
+              <input type="date" value={form.start_date} onChange={e => setForm((p: any) => ({ ...p, start_date: e.target.value }))} />
+            </div>
+            <div className="rota-modal-field">
+              <label>End Date</label>
+              <input type="date" value={form.end_date} onChange={e => setForm((p: any) => ({ ...p, end_date: e.target.value }))} />
+            </div>
+          </div>
+          <div className="rota-modal-field">
+            <label>Department</label>
+            <input value={form.department} onChange={e => setForm((p: any) => ({ ...p, department: e.target.value }))} placeholder="Optional" />
+          </div>
+          <div className="rota-modal-field">
+            <label>Status</label>
+            <select value={form.status} onChange={e => setForm((p: any) => ({ ...p, status: e.target.value }))}>
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+            </select>
+          </div>
+          <div className="rota-modal-field">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.allow_employee_edit ?? false} onChange={e => setForm((p: any) => ({ ...p, allow_employee_edit: e.target.checked }))} />
+              Allow employee self-editing
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+            <button className="admin-btn-sm admin-btn-cancel" onClick={() => { setShowModal(false); setEditingRotaId(null) }}>Cancel</button>
+            <button className="admin-btn-sm admin-btn-save" onClick={() => isEdit ? saveEditRota(editingRotaId!) : createRota()}>
+              {isEdit ? 'Save Changes' : 'Create Rota'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // --- ROTA LIST VIEW ---
   if (!selectedRota) {
     return (
       <div className="admin-section">
         <div className="admin-page-header">
-          <h2>Rota Management</h2>
-          <p>{rotas.length} rotas</p>
+          <h2>Job Schedule</h2>
+          <p>Manage rotas and shift assignments</p>
         </div>
 
         <div className="admin-mini-stats">
-          <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Total</span></div>
-          <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>{stats.draft}</span><span>Draft</span></div>
-          <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{stats.published}</span><span>Published</span></div>
+          <div className="admin-mini-stat" style={{ borderLeft: '4px solid #5c6bc0' }}>
+            <span className="admin-mini-value">{stats.total}</span><span>Total Rotas</span>
+          </div>
+          <div className="admin-mini-stat" style={{ borderLeft: '4px solid #ff9800' }}>
+            <span className="admin-mini-value" style={{ color: '#ff9800' }}>{stats.draft}</span><span>Draft</span>
+          </div>
+          <div className="admin-mini-stat" style={{ borderLeft: '4px solid #43a047' }}>
+            <span className="admin-mini-value" style={{ color: '#43a047' }}>{stats.published}</span><span>Published</span>
+          </div>
         </div>
 
         <div className="admin-filters">
-          <button className="admin-btn-sm admin-btn-save" onClick={() => setShowAdd(!showAdd)}>
-            {showAdd ? 'Cancel' : '+ Create Rota'}
+          <button className="admin-btn-sm admin-btn-save" onClick={() => { setEditingRotaId(null); setAddForm({ ...EMPTY_ROTA }); setShowModal(true) }}>
+            + Create Rota
           </button>
         </div>
 
-        {showAdd && (
-          <div className="admin-table-wrap" style={{ marginBottom: 16, padding: 16 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</label>
-                <input className="admin-inline-input" value={addForm.name} onChange={e => setAddForm(p => ({...p, name: e.target.value}))} placeholder="e.g. Week 31 Rota" />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Date</label>
-                <input type="date" className="admin-inline-input" value={addForm.start_date} onChange={e => setAddForm(p => ({...p, start_date: e.target.value}))} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>End Date</label>
-                <input type="date" className="admin-inline-input" value={addForm.end_date} onChange={e => setAddForm(p => ({...p, end_date: e.target.value}))} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Department</label>
-                <input className="admin-inline-input" value={addForm.department} onChange={e => setAddForm(p => ({...p, department: e.target.value}))} placeholder="Optional" />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</label>
-                <select className="admin-inline-select" value={addForm.status} onChange={e => setAddForm(p => ({...p, status: e.target.value}))}>
-                  <option value="draft">Draft</option>
-                  <option value="published">Published</option>
-                </select>
-              </div>
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <button className="admin-btn-sm admin-btn-save" onClick={createRota}>Create Rota</button>
-            </div>
-          </div>
-        )}
+        {renderModal()}
 
         {loading ? <div className="admin-loading">Loading...</div> : (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr><th>Name</th><th>Date Range</th><th>Department</th><th>Status</th><th>Actions</th></tr>
-              </thead>
-              <tbody>
-                {rotas.map(r => (
-                  <tr key={r.id}>
-                    <td>{editingRotaId === r.id ? <input className="admin-inline-input" value={editFormRota.name} onChange={e => setEditFormRota(p => ({...p, name: e.target.value}))} /> : r.name}</td>
-                    <td>{editingRotaId === r.id ? (
-                      <div className="admin-date-inputs">
-                        <input type="date" className="admin-inline-input" value={editFormRota.start_date} onChange={e => setEditFormRota(p => ({...p, start_date: e.target.value}))} />
-                        <input type="date" className="admin-inline-input" value={editFormRota.end_date} onChange={e => setEditFormRota(p => ({...p, end_date: e.target.value}))} />
+          <div className="rota-cards">
+            {rotas.map(r => {
+              const borderColor = r.status === 'published' ? '#43a047' : '#ff9800'
+              const counts = rotaCounts[r.id] || { employee_count: 0, assignment_count: 0 }
+              return (
+                <div key={r.id} className="rota-card">
+                  <div className="rota-card-border" style={{ backgroundColor: borderColor }} />
+                  <div style={{ flex: 1, padding: '16px 16px 16px 0' }}>
+                    <div className="rota-card-header">
+                      <div>
+                        <div className="rota-card-name">{r.name}</div>
+                        <div className="rota-card-dates">
+                          {new Date(r.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} {'–'} {new Date(r.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
                       </div>
-                    ) : `${new Date(r.start_date).toLocaleDateString('en-GB')} – ${new Date(r.end_date).toLocaleDateString('en-GB')}`}</td>
-                    <td>{editingRotaId === r.id ? <input className="admin-inline-input" value={editFormRota.department} onChange={e => setEditFormRota(p => ({...p, department: e.target.value}))} /> : (r.department || '—')}</td>
-                    <td>{editingRotaId === r.id ? (
-                      <select className="admin-inline-select" value={editFormRota.status} onChange={e => setEditFormRota(p => ({...p, status: e.target.value}))}>
-                        <option value="draft">Draft</option>
-                        <option value="published">Published</option>
-                      </select>
-                    ) : <span className={`admin-badge ${r.status === 'published' ? 'admin-badge-approved' : 'admin-badge-pending'}`}>{r.status}</span>}</td>
-                    <td className="admin-actions">
-                      {editingRotaId === r.id ? (
-                        <>
-                          <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditRota(r.id)}>Save</button>
-                          <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingRotaId(null)}>Cancel</button>
-                        </>
-                      ) : (
-                        <>
-                          <button className="admin-btn-icon" title="Edit Grid" onClick={() => openRota(r)}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-                          </button>
-                          <button className="admin-btn-icon" title="Edit Details" onClick={() => startEditRota(r)}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                          </button>
-                          {r.status === 'draft' && (
-                            <button className="admin-btn-icon" title="Publish" onClick={() => publishRota(r.id)} style={{ color: '#43a047' }}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                            </button>
-                          )}
-                          <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteRota(r.id)}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                          </button>
-                        </>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        {r.department && <span className="rota-card-dept">{r.department}</span>}
+                        <span className={`rota-card-status ${r.status === 'published' ? 'rota-status-published' : 'rota-status-draft'}`}>
+                          {r.status === 'published' ? 'Published' : 'Draft'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="rota-card-stats">
+                      <span title="Employees">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        {' '}{counts.employee_count} employees
+                      </span>
+                      <span title="Assignments">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        {' '}{counts.assignment_count} shifts
+                      </span>
+                    </div>
+
+                    <div className="rota-card-toggle">
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', color: '#666' }}>
+                        <input type="checkbox" checked={r.allow_employee_edit ?? false} onChange={() => toggleAllowEdit(r)} />
+                        Employee self-edit
+                      </label>
+                    </div>
+
+                    <div className="rota-card-actions">
+                      <button className="admin-btn-sm admin-btn-save" onClick={() => openRota(r)} title="Open Grid">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+                        {' '}Open Grid
+                      </button>
+                      <button className="admin-btn-sm" onClick={() => startEditRota(r)} title="Edit">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        {' '}Edit
+                      </button>
+                      {r.status === 'draft' && (
+                        <button className="admin-btn-sm" onClick={() => publishRota(r.id)} title="Publish" style={{ color: '#43a047' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                          {' '}Publish
+                        </button>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {rotas.length === 0 && <div className="admin-empty">No rotas found</div>}
+                      <button className="admin-btn-sm admin-btn-danger" onClick={() => deleteRota(r.id)} title="Delete">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        {' '}Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            {rotas.length === 0 && <div className="admin-empty">No rotas found. Create one to get started.</div>}
           </div>
         )}
       </div>
     )
   }
 
+  // Per-employee weekly hours
+  function empWeekHours(empId: string): number {
+    let h = 0
+    for (const a of assignments) {
+      if (a.employee_id !== empId) continue
+      const wd = weekDays.map(d => d.date)
+      if (!wd.includes(a.date)) continue
+      const tmpl = getTemplate(a.shift_template_id)
+      if (tmpl) h += calcShiftHours(tmpl)
+    }
+    return Math.round(h * 10) / 10
+  }
+
+  // Per-day column totals
+  const dayColumnHours = useMemo(() => {
+    return weekDays.map(d => {
+      let h = 0
+      assignments.filter(a => a.date === d.date).forEach(a => {
+        const tmpl = getTemplate(a.shift_template_id)
+        if (tmpl) h += calcShiftHours(tmpl)
+      })
+      return Math.round(h * 10) / 10
+    })
+  }, [assignments, weekDays, shiftTemplates])
+
+  const dayColumnCount = useMemo(() => {
+    return weekDays.map(d => assignments.filter(a => a.date === d.date).length)
+  }, [assignments, weekDays])
+
+  const todayStr = formatDate(new Date())
+
   // --- ROTA GRID VIEW ---
   return (
     <div className="admin-section">
-      <div className="admin-page-header">
-        <button className="admin-btn-sm admin-btn-cancel" onClick={backToList} style={{ marginRight: 12 }}>&larr; Back</button>
-        <div>
-          <h2 style={{ display: 'inline' }}>{selectedRota.name}</h2>
-          <span style={{ marginLeft: 12 }} className={`admin-badge ${selectedRota.status === 'published' ? 'admin-badge-approved' : 'admin-badge-pending'}`}>{selectedRota.status}</span>
+      {renderModal()}
+
+      {/* Top Bar */}
+      <div className="rg-topbar">
+        <button className="rg-back" onClick={backToList}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </button>
+        <div className="rg-topbar-info">
+          <h2 className="rg-title">{selectedRota.name}</h2>
+          <div className="rg-topbar-meta">
+            <span className={`rg-badge ${selectedRota.status === 'published' ? 'rg-badge-green' : 'rg-badge-orange'}`}>
+              {selectedRota.status === 'published' ? 'Published' : 'Draft'}
+            </span>
+            {selectedRota.department && <span className="rg-badge rg-badge-blue">{selectedRota.department}</span>}
+            <span className={`rg-badge ${selectedRota.allow_employee_edit ? 'rg-badge-green' : 'rg-badge-grey'}`}>
+              Self-edit: {selectedRota.allow_employee_edit ? 'ON' : 'OFF'}
+            </span>
+            <label className="rg-toggle-label">
+              <input type="checkbox" checked={selectedRota.allow_employee_edit ?? false} onChange={() => toggleAllowEdit(selectedRota)} />
+            </label>
+          </div>
         </div>
-        <p>{new Date(selectedRota.start_date).toLocaleDateString('en-GB')} – {new Date(selectedRota.end_date).toLocaleDateString('en-GB')}{selectedRota.department ? ` · ${selectedRota.department}` : ''}</p>
       </div>
 
-      <div className="rota-week-nav">
-        <button onClick={() => setWeekStart(addDays(weekStart, -7))}>&larr; Prev Week</button>
-        <span>{weekDays[0].dayNum} {weekDays[0].month} – {weekDays[6].dayNum} {weekDays[6].month}</span>
-        <button onClick={() => setWeekStart(addDays(weekStart, 7))}>Next Week &rarr;</button>
+      {/* Stats Row */}
+      <div className="rg-stats-row">
+        <div className="rg-stat-card rg-stat-blue">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <div>
+            <div className="rg-stat-val">{gridStats.totalHours}h</div>
+            <div className="rg-stat-lbl">Scheduled</div>
+          </div>
+        </div>
+        <div className="rg-stat-card rg-stat-purple">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <div>
+            <div className="rg-stat-val">{gridStats.employeeCount}/{employees.length}</div>
+            <div className="rg-stat-lbl">Staffed</div>
+          </div>
+        </div>
+        <div className="rg-stat-card rg-stat-green">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          <div>
+            <div className="rg-stat-val">{gridStats.coverage}%</div>
+            <div className="rg-stat-lbl">Coverage</div>
+          </div>
+        </div>
+        <div className="rg-stat-card rg-stat-orange">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <div>
+            <div className="rg-stat-val">{gridStats.unassigned}</div>
+            <div className="rg-stat-lbl">Open slots</div>
+          </div>
+        </div>
       </div>
 
-      <div className="rota-grid-wrap">
-        <table className="rota-grid">
+      {/* Week Navigation */}
+      <div className="rg-week-nav">
+        <button onClick={() => setWeekStart(addDays(weekStart, -7))}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+        <div className="rg-week-label">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span>{weekRangeLabel}</span>
+        </div>
+        <button onClick={() => setWeekStart(addDays(weekStart, 7))}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+        <button className="rg-today-btn" onClick={() => setWeekStart(getMonday(new Date()))}>Today</button>
+      </div>
+
+      {/* Grid */}
+      <div className="rg-grid-wrap">
+        <table className="rg-table">
           <thead>
             <tr>
-              <th>Employee</th>
-              {weekDays.map(d => (
-                <th key={d.date}>{d.label}<br /><small>{d.dayNum}</small></th>
-              ))}
+              <th className="rg-th-emp">Employee</th>
+              {weekDays.map((d, i) => {
+                const isToday = d.date === todayStr
+                return (
+                  <th key={d.date} className={`rg-th-day ${isToday ? 'rg-th-today' : ''}`}>
+                    <div className="rg-th-day-name">{d.label}</div>
+                    <div className={`rg-th-day-num ${isToday ? 'rg-th-today-num' : ''}`}>{d.dayNum}</div>
+                    <div className="rg-th-day-count">{dayColumnCount[i]} shifts &middot; {dayColumnHours[i]}h</div>
+                  </th>
+                )
+              })}
+              <th className="rg-th-total">Hours</th>
             </tr>
           </thead>
           <tbody>
-            {employees.map(emp => (
-              <tr key={emp.id}>
-                <td>{emp.first_name} {emp.last_name}</td>
-                {weekDays.map(d => {
-                  const assignment = getAssignment(emp.id, d.date)
-                  const template = assignment ? getTemplate(assignment.shift_template_id) : undefined
-                  const onLeave = hasLeave(emp.id, d.date)
-                  const isActive = activeCell?.employeeId === emp.id && activeCell?.date === d.date
-
-                  return (
-                    <td key={d.date} className={onLeave && assignment ? 'rota-cell-conflict' : ''} style={{ position: 'relative' }}>
-                      {assignment && template ? (
-                        <span
-                          className="rota-cell-shift"
-                          style={{ backgroundColor: template.colour }}
-                          onClick={() => setActiveCell(isActive ? null : { employeeId: emp.id, date: d.date })}
-                        >
-                          {template.name}
-                        </span>
-                      ) : (
-                        <span
-                          className="rota-cell-empty"
-                          style={{ display: 'block', width: '100%', height: '100%' }}
-                          onClick={() => setActiveCell(isActive ? null : { employeeId: emp.id, date: d.date })}
-                        >
-                          {onLeave ? '🏖️' : ''}
-                        </span>
-                      )}
-
-                      {isActive && (
-                        <div className="rota-cell-dropdown">
-                          {shiftTemplates.map(t => (
-                            <button key={t.id} onClick={() => assignShift(emp.id, d.date, t.id)}>
-                              <span className="admin-colour-swatch" style={{ backgroundColor: t.colour, marginRight: 6 }} />
-                              {t.name} ({t.start_time}–{t.end_time})
-                            </button>
-                          ))}
-                          {assignment && (
-                            <button onClick={() => removeAssignment(emp.id, d.date)} style={{ color: '#e53935', borderTop: '1px solid #eee' }}>
-                              Remove shift
-                            </button>
-                          )}
+            {employees.map(emp => {
+              const initials = `${emp.first_name.charAt(0)}${emp.last_name.charAt(0)}`.toUpperCase()
+              const wh = empWeekHours(emp.id)
+              return (
+                <tr key={emp.id}>
+                  <td className="rg-td-emp">
+                    <div className="rg-emp-row">
+                      <div className="rg-emp-avatar">{initials}</div>
+                      <div>
+                        <div className="rg-emp-name">{emp.first_name} {emp.last_name}</div>
+                        <div className="rg-emp-avail">
+                          {weekDays.map(d => {
+                            const avail = getAvailability(emp.id, d.dayOfWeek)
+                            return <span key={d.date} className={`rg-dot rg-dot-${avail === 'available' ? 'on' : avail === 'unavailable' ? 'off' : 'na'}`} title={`${d.label}: ${avail}`} />
+                          })}
                         </div>
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            ))}
+                      </div>
+                    </div>
+                  </td>
+                  {weekDays.map(d => {
+                    const assignment = getAssignment(emp.id, d.date)
+                    const template = assignment ? getTemplate(assignment.shift_template_id) : undefined
+                    const onLeave = hasLeave(emp.id, d.date)
+                    const isActive = activeCell?.employeeId === emp.id && activeCell?.date === d.date
+                    const isToday = d.date === todayStr
+
+                    return (
+                      <td key={d.date} className={`rg-td-cell ${isToday ? 'rg-td-today' : ''}`}>
+                        {assignment && template ? (
+                          <div
+                            className="rg-shift"
+                            style={{ borderLeftColor: template.colour, background: `${template.colour}1A` }}
+                            onClick={() => setActiveCell(isActive ? null : { employeeId: emp.id, date: d.date })}
+                          >
+                            {onLeave && <div className="rg-shift-leave-tag">On Leave</div>}
+                            <div className="rg-shift-name" style={{ color: template.colour }}>{template.name}</div>
+                            <div className="rg-shift-time">{formatTimeShort(template.start_time)}{'–'}{formatTimeShort(template.end_time)}</div>
+                            <div className="rg-shift-hrs">{calcShiftHours(template).toFixed(1)}h</div>
+                          </div>
+                        ) : (
+                          <div
+                            className={`rg-empty ${onLeave ? 'rg-empty-leave' : ''}`}
+                            onClick={() => setActiveCell(isActive ? null : { employeeId: emp.id, date: d.date })}
+                          >
+                            {onLeave ? <span className="rg-leave-pill">Leave</span> : <span className="rg-plus">+</span>}
+                          </div>
+                        )}
+
+                        {isActive && (
+                          <div className="rota-cell-dropdown">
+                            <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }}>Assign Shift</div>
+                            {shiftTemplates.map(t => (
+                              <button key={t.id} onClick={() => assignShift(emp.id, d.date, t.id)}>
+                                <span className="rg-dd-swatch" style={{ backgroundColor: t.colour }} />
+                                <span style={{ flex: 1 }}>{t.name}</span>
+                                <span style={{ fontSize: 11, color: '#aaa' }}>{formatTimeShort(t.start_time)}{'–'}{formatTimeShort(t.end_time)}</span>
+                              </button>
+                            ))}
+                            {assignment && (
+                              <button onClick={() => removeAssignment(emp.id, d.date)} style={{ color: '#e53935', borderTop: '1px solid #f0f0f0' }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    )
+                  })}
+                  <td className="rg-td-total">{wh}h</td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
-        {employees.length === 0 && <div className="admin-empty">No active employees found</div>}
+        {employees.length === 0 && <div className="admin-empty" style={{ padding: 40 }}>No active employees found</div>}
       </div>
 
       {selectedRota.status === 'draft' && (
-        <div className="rota-publish-bar">
-          <span style={{ fontSize: 13 }}>This rota is in draft. Publish to notify employees.</span>
-          <button onClick={() => publishRota(selectedRota.id)}>Publish Rota</button>
+        <div className="rg-publish-bar">
+          <div className="rg-publish-info">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>This rota is in draft. Publish to notify employees.</span>
+          </div>
+          <button onClick={() => publishRota(selectedRota.id)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            Publish Rota
+          </button>
         </div>
       )}
     </div>
