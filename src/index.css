@@ -48,7 +48,6 @@ body {
   position: relative;
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .app-content {
@@ -56,7 +55,7 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 8px;
+  padding-bottom: 72px;
   background: var(--bg);
 }
 .dashboard { background: #fff; overflow-x: hidden; }
@@ -242,13 +241,18 @@ body {
 
 /* ── Footer ── */
 .footer {
-  flex-shrink: 0;
-  width: 100%;
+  position: fixed;
+  bottom: env(safe-area-inset-bottom, 0px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 448px;
   background: var(--footer-bg);
   display: flex; align-items: stretch; justify-content: space-around;
   padding: 6px 0;
   z-index: 100;
-  box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+  border-radius: 28px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.25);
 }
 
 .footer-item {
