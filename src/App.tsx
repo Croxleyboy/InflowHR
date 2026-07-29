@@ -38,6 +38,9 @@ import TimesheetApproval from './pages/TimesheetApproval'
 import OneToOnes from './pages/OneToOnes'
 import NewOneToOne from './pages/NewOneToOne'
 import OneToOneDetail from './pages/OneToOneDetail'
+import MyShifts from './pages/MyShifts'
+import ShiftSwap from './pages/ShiftSwap'
+import Availability from './pages/Availability'
 import Placeholder from './pages/Placeholder'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -55,6 +58,8 @@ import AdminCompanies from './pages/admin/AdminCompanies'
 import AdminTimesheets from './pages/admin/AdminTimesheets'
 import AdminPerformance from './pages/admin/AdminPerformance'
 import AdminDemoSeed from './pages/admin/AdminDemoSeed'
+import AdminShifts from './pages/admin/AdminShifts'
+import AdminRotas from './pages/admin/AdminRotas'
 
 function AdminGate() {
   const { companyUser } = useAuth()
@@ -106,6 +111,9 @@ function EmployeeRoutes() {
       <Route path="/one-to-ones/new" element={<NewOneToOne />} />
       <Route path="/one-to-ones/:id" element={<OneToOneDetail />} />
       <Route path="/performance" element={<OneToOnes />} />
+      <Route path="/shifts" element={<MyShifts />} />
+      <Route path="/shifts/swap" element={<ShiftSwap />} />
+      <Route path="/shifts/availability" element={<Availability />} />
       <Route path="/announcements" element={<Placeholder title="Company Announcements" />} />
     </Routes>
   )
@@ -149,6 +157,8 @@ function AuthGate() {
             <Route path="benefits" element={<AdminBenefits />} />
             <Route path="timesheets" element={<AdminTimesheets />} />
             <Route path="performance" element={<AdminPerformance />} />
+            <Route path="shifts" element={<AdminShifts />} />
+            <Route path="rotas" element={<AdminRotas />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="demo-seed" element={<AdminDemoSeed />} />
@@ -180,6 +190,8 @@ function AuthGate() {
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="benefits" element={<AdminBenefits />} />
           <Route path="timesheets" element={<AdminTimesheets />} />
+          <Route path="shifts" element={<AdminShifts />} />
+          <Route path="rotas" element={<AdminRotas />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="demo-seed" element={<AdminDemoSeed />} />

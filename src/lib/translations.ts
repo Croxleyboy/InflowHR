@@ -709,6 +709,38 @@ const en: Translations = {
   // Dashboard - Timesheets
   'dashboard.timesheets': 'Timesheets',
 
+  // Dashboard - Shifts
+  'dashboard.shifts': 'Shifts & Rota',
+
+  // Shifts & Rota
+  'shifts.title': 'My Shifts',
+  'shifts.upcoming': 'Upcoming',
+  'shifts.history': 'History',
+  'shifts.no_upcoming': 'No upcoming shifts',
+  'shifts.no_history': 'No shift history',
+  'shifts.break_label': 'Break',
+  'shifts.mins': 'mins',
+  'shifts.swap_title': 'Shift Swap',
+  'shifts.request_swap': 'Request Swap',
+  'shifts.swap_with': 'Swap with',
+  'shifts.swap_reason': 'Reason',
+  'shifts.swap_submit': 'Submit Request',
+  'shifts.swap_submitting': 'Submitting...',
+  'shifts.my_swap_requests': 'My Swap Requests',
+  'shifts.no_swaps': 'No swap requests',
+  'shifts.swap_pending': 'Pending',
+  'shifts.swap_approved': 'Approved',
+  'shifts.swap_rejected': 'Rejected',
+  'shifts.availability_title': 'My Availability',
+  'shifts.available': 'Available',
+  'shifts.unavailable': 'Unavailable',
+  'shifts.from': 'From',
+  'shifts.to': 'To',
+  'shifts.recurring': 'Recurring',
+  'shifts.save_availability': 'Save Availability',
+  'shifts.saving': 'Saving...',
+  'shifts.saved': 'Saved successfully',
+
   // Timesheets
   'timesheets.title': 'My',
   'timesheets.title_accent': 'Timesheets',
@@ -1472,6 +1504,38 @@ const de: Translations = {
 
   // Dashboard - Timesheets
   'dashboard.timesheets': 'Zeiterfassung',
+
+  // Dashboard - Shifts
+  'dashboard.shifts': 'Schichten & Dienstplan',
+
+  // Shifts & Rota
+  'shifts.title': 'Meine Schichten',
+  'shifts.upcoming': 'Bevorstehend',
+  'shifts.history': 'Verlauf',
+  'shifts.no_upcoming': 'Keine bevorstehenden Schichten',
+  'shifts.no_history': 'Kein Schichtverlauf',
+  'shifts.break_label': 'Pause',
+  'shifts.mins': 'Min.',
+  'shifts.swap_title': 'Schichttausch',
+  'shifts.request_swap': 'Tausch anfragen',
+  'shifts.swap_with': 'Tauschen mit',
+  'shifts.swap_reason': 'Grund',
+  'shifts.swap_submit': 'Anfrage senden',
+  'shifts.swap_submitting': 'Wird gesendet...',
+  'shifts.my_swap_requests': 'Meine Tauschanfragen',
+  'shifts.no_swaps': 'Keine Tauschanfragen',
+  'shifts.swap_pending': 'Ausstehend',
+  'shifts.swap_approved': 'Genehmigt',
+  'shifts.swap_rejected': 'Abgelehnt',
+  'shifts.availability_title': 'Meine Verfügbarkeit',
+  'shifts.available': 'Verfügbar',
+  'shifts.unavailable': 'Nicht verfügbar',
+  'shifts.from': 'Von',
+  'shifts.to': 'Bis',
+  'shifts.recurring': 'Wiederkehrend',
+  'shifts.save_availability': 'Verfügbarkeit speichern',
+  'shifts.saving': 'Wird gespeichert...',
+  'shifts.saved': 'Erfolgreich gespeichert',
 
   // Timesheets
   'timesheets.title': 'Meine',

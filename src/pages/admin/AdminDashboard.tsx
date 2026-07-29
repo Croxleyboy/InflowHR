@@ -62,6 +62,8 @@ export default function AdminDashboard() {
     { label: 'Onboarding', value: stats.pendingOnboarding, icon: '🚀', color: '#e91e63', path: '/admin/onboarding' },
     { label: 'Announcements', value: stats.announcements, icon: '📢', color: '#7b1fa2', path: '/admin/announcements' },
     { label: 'HR Tickets', value: stats.openTickets, icon: '🎫', color: '#00897b', path: '/admin/tickets' },
+    { label: 'Shift Templates', value: 0, icon: '🔄', color: '#e65100', path: '/admin/shifts' },
+    { label: 'Rotas', value: 0, icon: '📅', color: '#bf360c', path: '/admin/rotas' },
   ]
 
   return (

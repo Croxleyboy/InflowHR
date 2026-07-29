@@ -228,6 +228,14 @@ export default function Dashboard() {
             <Chevron color="#1565c0" />
           </button>
         )}
+        {features.shifts && (
+          <button className="dash-card card-shifts" onClick={() => navigate('/shifts')}>
+            <div className="card-content">
+              <span className="card-label">{t('dashboard.shifts')}</span>
+            </div>
+            <Chevron color="#e65100" />
+          </button>
+        )}
       </div>
 
       {latest && (

@@ -179,6 +179,50 @@ body {
 .card-elearning { background: linear-gradient(135deg, #fdd835, #f9a825); color: #333; }
 .card-performance { background: linear-gradient(135deg, #ec407a, #c2185b); }
 .card-timesheets { background: linear-gradient(135deg, #42a5f5, #1565c0); }
+.card-shifts { background: linear-gradient(135deg, #ff8a65, #e65100); }
+
+/* ── Shifts & Rota ── */
+.shifts-tabs { display: flex; gap: 0; margin: 0 16px; border-bottom: 2px solid var(--border); }
+.shifts-tab { flex: 1; padding: 10px; text-align: center; font-weight: 600; font-size: 14px; background: none; border: none; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.shifts-tab-active { color: #e65100; border-bottom-color: #e65100; }
+.shift-card { background: var(--bg-card); border-radius: 12px; padding: 14px 16px; margin: 8px 16px; display: flex; gap: 12px; align-items: flex-start; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.shift-card-colour { width: 6px; border-radius: 3px; align-self: stretch; flex-shrink: 0; }
+.shift-card-body { flex: 1; }
+.shift-card-date { font-weight: 700; font-size: 14px; color: var(--text); }
+.shift-card-day { font-size: 12px; color: var(--text-muted); margin-left: 6px; }
+.shift-card-name { font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text); }
+.shift-card-time { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.shift-card-break { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.shift-card-rota { font-size: 11px; color: #888; margin-top: 4px; font-style: italic; }
+.shift-card-actions { display: flex; align-items: center; }
+.shift-swap-btn { background: #e65100; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; font-size: 11px; font-weight: 600; cursor: pointer; }
+.shift-swap-btn:hover { background: #bf360c; }
+
+.swap-form { background: var(--bg-card); border-radius: 12px; padding: 16px; margin: 8px 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.swap-form .form-field { margin-bottom: 12px; }
+.swap-requests { padding: 0 16px; }
+.swap-request-card { background: var(--bg-card); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.swap-request-info { font-size: 13px; color: var(--text); }
+.swap-badge { padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.swap-badge-pending { background: #fff3e0; color: #e65100; }
+.swap-badge-approved { background: #e8f5e9; color: #2e7d32; }
+.swap-badge-rejected { background: #ffebee; color: #c62828; }
+
+.availability-grid { padding: 0 16px; }
+.availability-day { background: var(--bg-card); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.availability-day-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.availability-day-name { font-weight: 600; font-size: 14px; color: var(--text); }
+.availability-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+.availability-toggle input { accent-color: #e65100; }
+.availability-times { display: flex; gap: 12px; align-items: center; }
+.availability-times label { font-size: 12px; color: var(--text-muted); }
+.availability-times input[type="time"] { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 13px; background: var(--bg); color: var(--text); }
+.availability-recurring { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.availability-recurring input { accent-color: #e65100; }
+.availability-save { display: block; width: calc(100% - 32px); margin: 16px auto; padding: 12px; background: #e65100; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+.availability-save:hover { background: #bf360c; }
+.availability-save:disabled { opacity: 0.6; cursor: not-allowed; }
+.availability-success { text-align: center; color: #2e7d32; font-size: 13px; margin-top: 8px; }
 
 /* ── Timesheet History ── */
 .ts-history-weeks { display: flex; flex-direction: column; gap: 16px; margin-top: 8px; }

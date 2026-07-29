@@ -25,6 +25,8 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/benefits', label: 'Benefits', icon: '🎁' },
   { path: '/admin/timesheets', label: 'Timesheets', icon: '⏱️' },
   { path: '/admin/performance', label: 'Performance', icon: '🎯' },
+  { path: '/admin/shifts', label: 'Shifts', icon: '🔄' },
+  { path: '/admin/rotas', label: 'Rotas', icon: '📅' },
   { path: '/admin/companies', label: 'Companies', icon: '🏢', superAdminOnly: true },
   { path: '/admin/demo-seed', label: 'Demo Seed', icon: '🌱', superAdminOnly: true },
 ]
