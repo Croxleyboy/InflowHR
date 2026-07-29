@@ -22,9 +22,9 @@
   --border: #3a3a55;
 }
 
-html { height: 100%; overflow: hidden; font: 16px/1.4 var(--sans); }
+html { height: 100dvh; overflow: hidden; font: 16px/1.4 var(--sans); }
 body {
-  height: 100%;
+  height: 100dvh;
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -35,19 +35,20 @@ body {
 #root { height: 100%; overflow: hidden; }
 
 @media all and (display-mode: standalone) {
-  body { -webkit-user-select: none; user-select: text; }
+  body { background: var(--footer-bg); -webkit-user-select: none; user-select: text; }
 }
 
 /* ── App Shell ── */
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100dvh;
   max-width: 480px;
   margin: 0 auto;
   position: relative;
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .app-content {
@@ -56,6 +57,7 @@ body {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 8px;
+  background: var(--bg);
 }
 .dashboard { background: #fff; overflow-x: hidden; }
 [data-theme="dark"] .dashboard { background: var(--bg); }
@@ -247,7 +249,6 @@ body {
   padding: 6px 0;
   z-index: 100;
   box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .footer-item {
