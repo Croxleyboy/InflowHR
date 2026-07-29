@@ -286,7 +286,18 @@ export default function AdminRotas() {
     return shiftTemplates.find(t => t.id === id)
   }
 
+  function isDateInRotaRange(date: string): boolean {
+    if (!selectedRota) return false
+    return date >= selectedRota.start_date && date <= selectedRota.end_date
+  }
+
   async function assignShift(employeeId: string, date: string, templateId: string) {
+    if (!isDateInRotaRange(date)) {
+      alert(`Cannot assign shifts outside rota dates (${selectedRota!.start_date} to ${selectedRota!.end_date})`)
+      setActiveCell(null)
+      return
+    }
+
     const existing = getAssignment(employeeId, date)
 
     if (!existing) {
@@ -485,6 +496,86 @@ export default function AdminRotas() {
 
         {renderModal()}
 
+        {/* Timeline Chart */}
+        {rotas.length > 0 && (() => {
+          const allDates = rotas.flatMap(r => [r.start_date, r.end_date])
+          const minDate = new Date(allDates.reduce((a, b) => a < b ? a : b) + 'T00:00:00')
+          const maxDate = new Date(allDates.reduce((a, b) => a > b ? a : b) + 'T00:00:00')
+          const pad = 7
+          const chartStart = addDays(minDate, -pad)
+          const chartEnd = addDays(maxDate, pad)
+          const totalDays = Math.max(1, Math.round((chartEnd.getTime() - chartStart.getTime()) / 86400000))
+          const todayDate = formatDate(new Date())
+          const todayOffset = Math.round((new Date().getTime() - chartStart.getTime()) / 86400000)
+          const todayPct = Math.max(0, Math.min(100, (todayOffset / totalDays) * 100))
+
+          const monthMarkers: { label: string; pct: number }[] = []
+          const cursor = new Date(chartStart)
+          cursor.setDate(1)
+          if (cursor < chartStart) cursor.setMonth(cursor.getMonth() + 1)
+          while (cursor <= chartEnd) {
+            const offset = Math.round((cursor.getTime() - chartStart.getTime()) / 86400000)
+            monthMarkers.push({ label: cursor.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }), pct: (offset / totalDays) * 100 })
+            cursor.setMonth(cursor.getMonth() + 1)
+          }
+
+          const COLORS = ['#5c6bc0', '#26a69a', '#ef5350', '#ffa726', '#66bb6a', '#ab47bc', '#42a5f5', '#ec407a']
+
+          return (
+            <div className="rt-timeline">
+              <div className="rt-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <span>Rota Timeline</span>
+              </div>
+              <div className="rt-chart">
+                {/* Month markers */}
+                <div className="rt-months">
+                  {monthMarkers.map((m, i) => (
+                    <div key={i} className="rt-month" style={{ left: `${m.pct}%` }}>
+                      <div className="rt-month-line" />
+                      <span>{m.label}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* Today marker */}
+                {todayPct > 0 && todayPct < 100 && (
+                  <div className="rt-today-line" style={{ left: `${todayPct}%` }}>
+                    <span>Today</span>
+                  </div>
+                )}
+                {/* Rota bars */}
+                <div className="rt-bars">
+                  {rotas.map((r, idx) => {
+                    const startOff = Math.round((new Date(r.start_date + 'T00:00:00').getTime() - chartStart.getTime()) / 86400000)
+                    const endOff = Math.round((new Date(r.end_date + 'T00:00:00').getTime() - chartStart.getTime()) / 86400000)
+                    const leftPct = (startOff / totalDays) * 100
+                    const widthPct = Math.max(0.5, ((endOff - startOff + 1) / totalDays) * 100)
+                    const colour = COLORS[idx % COLORS.length]
+                    const isPublished = r.status === 'published'
+                    return (
+                      <div key={r.id} className="rt-row">
+                        <div className="rt-row-label">{r.name}</div>
+                        <div className="rt-row-track">
+                          <div
+                            className={`rt-bar ${isPublished ? '' : 'rt-bar-draft'}`}
+                            style={{ left: `${leftPct}%`, width: `${widthPct}%`, backgroundColor: colour }}
+                            title={`${r.name}: ${new Date(r.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${new Date(r.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
+                            onClick={() => openRota(r)}
+                          >
+                            <span className="rt-bar-label">
+                              {new Date(r.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {new Date(r.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
         {loading ? <div className="admin-loading">Loading...</div> : (
           <div className="rc-list">
             {rotas.map(r => {
@@ -647,11 +738,15 @@ export default function AdminRotas() {
               <th className="rg-th-emp">Employee</th>
               {weekDays.map((d, i) => {
                 const isToday = d.date === todayStr
+                const inRange = isDateInRotaRange(d.date)
                 return (
-                  <th key={d.date} className={`rg-th-day ${isToday ? 'rg-th-today' : ''}`}>
+                  <th key={d.date} className={`rg-th-day ${isToday ? 'rg-th-today' : ''} ${!inRange ? 'rg-th-out' : ''}`}>
                     <div className="rg-th-day-name">{d.label}</div>
                     <div className={`rg-th-day-num ${isToday ? 'rg-th-today-num' : ''}`}>{d.dayNum}</div>
-                    <div className="rg-th-day-count">{dayColumnCount[i]} shifts &middot; {dayColumnHours[i]}h</div>
+                    {inRange
+                      ? <div className="rg-th-day-count">{dayColumnCount[i]} shifts &middot; {dayColumnHours[i]}h</div>
+                      : <div className="rg-th-day-count" style={{ color: '#ccc' }}>out of range</div>
+                    }
                   </th>
                 )
               })}
@@ -679,11 +774,20 @@ export default function AdminRotas() {
                     </div>
                   </td>
                   {weekDays.map(d => {
+                    const inRange = isDateInRotaRange(d.date)
                     const assignment = getAssignment(emp.id, d.date)
                     const template = assignment ? getTemplate(assignment.shift_template_id) : undefined
                     const onLeave = hasLeave(emp.id, d.date)
                     const isActive = activeCell?.employeeId === emp.id && activeCell?.date === d.date
                     const isToday = d.date === todayStr
+
+                    if (!inRange) {
+                      return (
+                        <td key={d.date} className="rg-td-cell rg-td-out">
+                          <div className="rg-out-cell" />
+                        </td>
+                      )
+                    }
 
                     return (
                       <td key={d.date} className={`rg-td-cell ${isToday ? 'rg-td-today' : ''}`}>
