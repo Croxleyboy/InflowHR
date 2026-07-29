@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -7,7 +7,11 @@ import { useAuth } from '../context/AuthContext'
 interface ShiftAssignment {
   id: string
   date: string
+  employee_id: string
+  shift_template_id: string
+  rota_id: string
   shift_template: {
+    id: string
     name: string
     start_time: string
     end_time: string
@@ -23,57 +27,87 @@ interface Employee {
   id: string
   first_name: string
   last_name: string
+  avatar_url?: string | null
 }
 
 interface SwapRequest {
   id: string
   shift_assignment_id: string
+  requesting_employee_id: string
   target_employee_id: string
   status: string
   reason: string | null
   created_at: string
-  shift_assignment: {
+  requester?: Employee | null
+  target?: Employee | null
+  shift_assignment?: {
+    id: string
     date: string
-    shift_template: {
-      name: string
-    } | null
-  } | null
-  target_employee: {
-    first_name: string
-    last_name: string
+    shift_template_id: string
+    rota_id: string
+    shift_template: { name: string; colour: string; start_time: string; end_time: string } | null
+    rota: { name: string } | null
   } | null
 }
+
+type SwapTab = 'request' | 'incoming' | 'sent'
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yyyy = d.getFullYear()
-  return `${dd}/${mm}/${yyyy}`
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 function formatTime(time: string): string {
-  return time?.slice(0, 5) || ''
+  if (!time) return ''
+  const [hh, mm] = time.split(':').map(Number)
+  const ampm = hh >= 12 ? 'pm' : 'am'
+  const h = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
+  return mm === 0 ? `${h}${ampm}` : `${h}:${String(mm).padStart(2, '0')}${ampm}`
 }
 
-const statusColor: Record<string, string> = {
-  pending: '#ff9800',
-  approved: '#4caf50',
-  rejected: '#f44336',
+function timeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+function getInitials(first: string, last: string): string {
+  return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase()
+}
+
+const AVATAR_COLORS = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#30cfd0']
+function avatarColor(name: string): string {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h)
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
 }
 
 export default function ShiftSwap() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId, companyUser } = useAuth()
+  const { employeeId, companyUser, employeeEmail } = useAuth()
+  const [tab, setTab] = useState<SwapTab>('request')
   const [shifts, setShifts] = useState<ShiftAssignment[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
-  const [swapRequests, setSwapRequests] = useState<SwapRequest[]>([])
+  const [sentRequests, setSentRequests] = useState<SwapRequest[]>([])
+  const [incomingRequests, setIncomingRequests] = useState<SwapRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const [targetEmployeeId, setTargetEmployeeId] = useState('')
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [actioningId, setActioningId] = useState<string | null>(null)
+
+  const employeeMap = useMemo(() => {
+    const map: Record<string, Employee> = {}
+    employees.forEach(e => { map[e.id] = e })
+    return map
+  }, [employees])
 
   const fetchData = useCallback(async () => {
     if (!employeeId || !companyUser?.company_id) return
@@ -81,30 +115,38 @@ export default function ShiftSwap() {
 
     const today = new Date().toISOString().split('T')[0]
 
-    const [shiftsRes, employeesRes, swapsRes] = await Promise.all([
+    const [shiftsRes, employeesRes, sentRes, incomingRes] = await Promise.all([
       supabase
         .from('shift_assignments')
-        .select('*, shift_template:shift_templates(name, start_time, end_time, colour), rota:rotas(name, status)')
+        .select('*, shift_template:shift_templates(id, name, start_time, end_time, colour), rota:rotas(name, status)')
         .eq('employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
         .gte('date', today),
       supabase
         .from('employees')
-        .select('id, first_name, last_name')
+        .select('id, first_name, last_name, avatar_url')
         .eq('company_id', companyUser.company_id)
-        .neq('id', employeeId),
+        .eq('is_active', true),
       supabase
         .from('shift_swap_requests')
-        .select('*, shift_assignment:shift_assignments(date, shift_template:shift_templates(name)), target_employee:employees!shift_swap_requests_target_employee_id_fkey(first_name, last_name)')
+        .select('*, shift_assignment:shift_assignments(id, date, shift_template_id, rota_id, shift_template:shift_templates(name, colour, start_time, end_time), rota:rotas(name))')
         .eq('requesting_employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('shift_swap_requests')
+        .select('*, shift_assignment:shift_assignments(id, date, shift_template_id, rota_id, shift_template:shift_templates(name, colour, start_time, end_time), rota:rotas(name))')
+        .eq('target_employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false }),
     ])
 
-    const published = (shiftsRes.data || []).filter((s: any) => s.rota?.status === 'published')
+    const published = (shiftsRes.data || []).filter((s: any) => s.rota?.status === 'published' || s.rota?.status === 'draft')
     setShifts(published as ShiftAssignment[])
     setEmployees((employeesRes.data || []) as Employee[])
-    setSwapRequests((swapsRes.data || []) as SwapRequest[])
+    setSentRequests((sentRes.data || []) as SwapRequest[])
+    setIncomingRequests((incomingRes.data || []) as SwapRequest[])
     setLoading(false)
   }, [employeeId, companyUser?.company_id])
 
@@ -114,7 +156,7 @@ export default function ShiftSwap() {
     if (!selectedShiftId || !targetEmployeeId || !companyUser?.company_id) return
     setSubmitting(true)
 
-    await supabase.from('shift_swap_requests').insert({
+    const { error } = await supabase.from('shift_swap_requests').insert({
       company_id: companyUser.company_id,
       shift_assignment_id: selectedShiftId,
       requesting_employee_id: employeeId,
@@ -123,11 +165,61 @@ export default function ShiftSwap() {
       reason: reason || null,
     })
 
-    setSelectedShiftId(null)
-    setTargetEmployeeId('')
-    setReason('')
+    if (error) {
+      console.error('[ShiftSwap] insert error:', error)
+      alert('Failed to submit swap request')
+    } else {
+      setSelectedShiftId(null)
+      setTargetEmployeeId('')
+      setReason('')
+      setTab('sent')
+    }
     setSubmitting(false)
     fetchData()
+  }
+
+  async function handleAcceptSwap(request: SwapRequest) {
+    if (!request.shift_assignment || !companyUser?.company_id) return
+    setActioningId(request.id)
+
+    const origAssignment = request.shift_assignment
+    const targetShiftOnDate = shifts.find(s => s.date === origAssignment.date)
+
+    await supabase.from('shift_swap_requests').update({ status: 'approved' }).eq('id', request.id)
+
+    await supabase.from('shift_assignments')
+      .update({ employee_id: employeeId })
+      .eq('id', origAssignment.id)
+
+    if (targetShiftOnDate) {
+      await supabase.from('shift_assignments')
+        .update({ employee_id: request.requesting_employee_id })
+        .eq('id', targetShiftOnDate.id)
+    }
+
+    setActioningId(null)
+    fetchData()
+  }
+
+  async function handleDeclineSwap(requestId: string) {
+    setActioningId(requestId)
+    await supabase.from('shift_swap_requests').update({ status: 'rejected' }).eq('id', requestId)
+    setActioningId(null)
+    fetchData()
+  }
+
+  async function handleCancelSwap(requestId: string) {
+    setActioningId(requestId)
+    await supabase.from('shift_swap_requests').delete().eq('id', requestId)
+    setActioningId(null)
+    fetchData()
+  }
+
+  const pendingIncomingCount = incomingRequests.length
+
+  function empName(id: string): string {
+    const e = employeeMap[id]
+    return e ? `${e.first_name} ${e.last_name}` : '—'
   }
 
   if (loading) {
@@ -139,8 +231,9 @@ export default function ShiftSwap() {
   }
 
   return (
-    <div className="feature-page">
-      <header className="feature-header">
+    <div className="swap-page">
+      {/* Header */}
+      <header className="schedule-header">
         <button className="feature-back" onClick={() => navigate('/shifts')}>
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
             <circle cx="18" cy="18" r="17" stroke="#c62828" strokeWidth="2" />
@@ -149,6 +242,7 @@ export default function ShiftSwap() {
         </button>
         <div className="feature-header-center">
           <h1 className="feature-title">{t('shifts.swap_title')}</h1>
+          <p className="feature-subtitle">Schichttausch</p>
         </div>
         <button className="feature-refresh" onClick={fetchData}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -159,131 +253,250 @@ export default function ShiftSwap() {
         </button>
       </header>
 
-      <div className="claims-list">
-        {shifts.length === 0 ? (
-          <p className="claims-empty">{t('shifts.no_upcoming')}</p>
-        ) : (
-          shifts
-            .sort((a, b) => a.date.localeCompare(b.date))
-            .map(s => (
-              <div key={s.id} className="claim-card" style={{ borderLeft: `4px solid ${s.shift_template?.colour || '#999'}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong>{s.shift_template?.name || 'Shift'}</strong>
-                    <p style={{ margin: '2px 0', fontSize: 14, color: 'var(--text-secondary)' }}>
-                      {formatDate(s.date)} &middot; {formatTime(s.shift_template?.start_time || '')} &ndash; {formatTime(s.shift_template?.end_time || '')}
-                    </p>
-                    {s.rota?.name && (
-                      <p style={{ margin: '2px 0', fontSize: 12, color: 'var(--text-muted)' }}>{s.rota.name}</p>
-                    )}
-                  </div>
-                  <button
-                    className="claim-action-btn"
-                    style={{ background: '#c62828', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}
-                    onClick={() => setSelectedShiftId(selectedShiftId === s.id ? null : s.id)}
-                  >
-                    {t('shifts.request_swap')}
-                  </button>
-                </div>
-
-                {selectedShiftId === s.id && (
-                  <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-secondary, #f5f5f5)', borderRadius: 8 }}>
-                    <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 600 }}>
-                      {t('shifts.swap_with')}
-                    </label>
-                    <select
-                      value={targetEmployeeId}
-                      onChange={e => setTargetEmployeeId(e.target.value)}
-                      style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border-color, #ddd)', fontSize: 14, marginBottom: 10 }}
-                    >
-                      <option value="">--</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.first_name} {emp.last_name}
-                        </option>
-                      ))}
-                    </select>
-
-                    <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 600 }}>
-                      {t('shifts.swap_reason')}
-                    </label>
-                    <textarea
-                      value={reason}
-                      onChange={e => setReason(e.target.value)}
-                      rows={3}
-                      style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border-color, #ddd)', fontSize: 14, resize: 'vertical', marginBottom: 10 }}
-                    />
-
-                    <button
-                      onClick={handleSubmitSwap}
-                      disabled={!targetEmployeeId || submitting}
-                      style={{
-                        width: '100%',
-                        padding: 12,
-                        borderRadius: 10,
-                        border: 'none',
-                        background: !targetEmployeeId ? '#ccc' : '#c62828',
-                        color: '#fff',
-                        fontWeight: 700,
-                        fontSize: 15,
-                        cursor: !targetEmployeeId ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      {submitting ? t('shifts.swap_submitting') : t('shifts.swap_submit')}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))
-        )}
+      {/* Tabs */}
+      <div className="swap-tabs">
+        <button className={`swap-tab ${tab === 'request' ? 'swap-tab-active' : ''}`} onClick={() => setTab('request')}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          {t('shifts.request_swap')}
+        </button>
+        <button className={`swap-tab ${tab === 'incoming' ? 'swap-tab-active' : ''}`} onClick={() => setTab('incoming')}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          Incoming
+          {pendingIncomingCount > 0 && <span className="swap-badge">{pendingIncomingCount}</span>}
+        </button>
+        <button className={`swap-tab ${tab === 'sent' ? 'swap-tab-active' : ''}`} onClick={() => setTab('sent')}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          {t('shifts.my_swap_requests')}
+        </button>
       </div>
 
-      <div style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 17, fontWeight: 700, marginBottom: 12 }}>{t('shifts.my_swap_requests')}</h2>
-        {swapRequests.length === 0 ? (
-          <p className="claims-empty">{t('shifts.no_swaps')}</p>
-        ) : (
-          <div className="claims-list">
-            {swapRequests.map(sr => (
-              <div key={sr.id} className="claim-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong>{sr.shift_assignment?.shift_template?.name || 'Shift'}</strong>
-                    {sr.shift_assignment?.date && (
-                      <p style={{ margin: '2px 0', fontSize: 14, color: 'var(--text-secondary)' }}>
-                        {formatDate(sr.shift_assignment.date)}
-                      </p>
+      {/* REQUEST TAB */}
+      {tab === 'request' && (
+        <div className="swap-content">
+          {shifts.length === 0 ? (
+            <div className="swap-empty">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <p>{t('shifts.no_upcoming')}</p>
+            </div>
+          ) : (
+            <div className="swap-shifts">
+              <p className="swap-hint">Select a shift you'd like to swap / Wähle eine Schicht zum Tauschen</p>
+              {shifts
+                .sort((a, b) => a.date.localeCompare(b.date))
+                .map(s => {
+                  const colour = s.shift_template?.colour || '#999'
+                  const isSelected = selectedShiftId === s.id
+                  return (
+                    <div key={s.id}>
+                      <button
+                        className={`swap-shift-card ${isSelected ? 'swap-shift-selected' : ''}`}
+                        style={{ borderLeftColor: colour }}
+                        onClick={() => { setSelectedShiftId(isSelected ? null : s.id); setTargetEmployeeId(''); setReason('') }}
+                      >
+                        <div className="swap-shift-info">
+                          <span className="swap-shift-name" style={{ color: colour }}>{s.shift_template?.name || 'Shift'}</span>
+                          <span className="swap-shift-date">{formatDate(s.date)}</span>
+                        </div>
+                        <div className="swap-shift-time">
+                          {formatTime(s.shift_template?.start_time || '')} – {formatTime(s.shift_template?.end_time || '')}
+                        </div>
+                        {s.rota?.name && <span className="swap-shift-rota">{s.rota.name}</span>}
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className={`swap-shift-chevron ${isSelected ? 'open' : ''}`}>
+                          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+
+                      {isSelected && (
+                        <div className="swap-form">
+                          <div className="swap-form-field">
+                            <label>{t('shifts.swap_with')} / Tauschen mit</label>
+                            <select value={targetEmployeeId} onChange={e => setTargetEmployeeId(e.target.value)}>
+                              <option value="">Select colleague...</option>
+                              {employees.filter(e => e.id !== employeeId).map(emp => (
+                                <option key={emp.id} value={emp.id}>
+                                  {emp.first_name} {emp.last_name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="swap-form-field">
+                            <label>{t('shifts.swap_reason')} / Grund (optional)</label>
+                            <textarea
+                              value={reason}
+                              onChange={e => setReason(e.target.value)}
+                              rows={2}
+                              placeholder="Why do you want to swap? / Warum möchtest du tauschen?"
+                            />
+                          </div>
+                          <button
+                            className="swap-submit-btn"
+                            onClick={handleSubmitSwap}
+                            disabled={!targetEmployeeId || submitting}
+                          >
+                            {submitting ? t('shifts.swap_submitting') : (
+                              <>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                                {t('shifts.swap_submit')}
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* INCOMING TAB */}
+      {tab === 'incoming' && (
+        <div className="swap-content">
+          {incomingRequests.length === 0 ? (
+            <div className="swap-empty">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+              <p>No incoming swap requests / Keine eingehenden Tauschanfragen</p>
+            </div>
+          ) : (
+            <div className="swap-incoming-list">
+              {incomingRequests.map(req => {
+                const sa = req.shift_assignment
+                const requester = employeeMap[req.requesting_employee_id]
+                const colour = sa?.shift_template?.colour || '#999'
+                const isActioning = actioningId === req.id
+                const requesterName = requester ? `${requester.first_name} ${requester.last_name}` : '—'
+
+                return (
+                  <div key={req.id} className="swap-incoming-card">
+                    <div className="swap-incoming-header">
+                      <div className="swap-incoming-avatar" style={{ backgroundColor: avatarColor(requesterName) }}>
+                        {requester?.avatar_url
+                          ? <img src={requester.avatar_url} alt="" className="swap-avatar-img" />
+                          : requester ? getInitials(requester.first_name, requester.last_name) : '?'
+                        }
+                      </div>
+                      <div className="swap-incoming-who">
+                        <span className="swap-incoming-name">{requesterName}</span>
+                        <span className="swap-incoming-ago">{timeAgo(req.created_at)}</span>
+                      </div>
+                    </div>
+
+                    <div className="swap-incoming-detail" style={{ borderLeftColor: colour }}>
+                      <div className="swap-incoming-shift">
+                        <span className="swap-shift-name" style={{ color: colour }}>{sa?.shift_template?.name || 'Shift'}</span>
+                        <span className="swap-shift-date">{sa?.date ? formatDate(sa.date) : ''}</span>
+                      </div>
+                      <div className="swap-shift-time">
+                        {formatTime(sa?.shift_template?.start_time || '')} – {formatTime(sa?.shift_template?.end_time || '')}
+                      </div>
+                      {sa?.rota?.name && <span className="swap-shift-rota">{sa.rota.name}</span>}
+                    </div>
+
+                    {req.reason && (
+                      <div className="swap-incoming-reason">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        "{req.reason}"
+                      </div>
                     )}
-                    {sr.target_employee && (
-                      <p style={{ margin: '2px 0', fontSize: 13, color: 'var(--text-muted)' }}>
-                        {t('shifts.swap_with')}: {sr.target_employee.first_name} {sr.target_employee.last_name}
-                      </p>
+
+                    <div className="swap-incoming-actions">
+                      <button
+                        className="swap-action-accept"
+                        onClick={() => handleAcceptSwap(req)}
+                        disabled={isActioning}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                        {isActioning ? '...' : 'Accept / Annehmen'}
+                      </button>
+                      <button
+                        className="swap-action-decline"
+                        onClick={() => handleDeclineSwap(req.id)}
+                        disabled={isActioning}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        {isActioning ? '...' : 'Decline / Ablehnen'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SENT TAB */}
+      {tab === 'sent' && (
+        <div className="swap-content">
+          {sentRequests.length === 0 ? (
+            <div className="swap-empty">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+              <p>{t('shifts.no_swaps')} / Keine Tauschanfragen</p>
+            </div>
+          ) : (
+            <div className="swap-sent-list">
+              {sentRequests.map(req => {
+                const sa = req.shift_assignment
+                const target = employeeMap[req.target_employee_id]
+                const colour = sa?.shift_template?.colour || '#999'
+                const isPending = req.status === 'pending'
+                const isApproved = req.status === 'approved'
+                const isRejected = req.status === 'rejected'
+                const isActioning = actioningId === req.id
+                const targetName = target ? `${target.first_name} ${target.last_name}` : '—'
+
+                return (
+                  <div key={req.id} className="swap-sent-card">
+                    <div className="swap-sent-top">
+                      <div className="swap-sent-shift" style={{ borderLeftColor: colour }}>
+                        <span className="swap-shift-name" style={{ color: colour }}>{sa?.shift_template?.name || 'Shift'}</span>
+                        <span className="swap-shift-date">{sa?.date ? formatDate(sa.date) : ''}</span>
+                        <span className="swap-shift-time">
+                          {formatTime(sa?.shift_template?.start_time || '')} – {formatTime(sa?.shift_template?.end_time || '')}
+                        </span>
+                      </div>
+                      <span className={`swap-status swap-status-${req.status}`}>
+                        {isPending && t('shifts.swap_pending')}
+                        {isApproved && t('shifts.swap_approved')}
+                        {isRejected && t('shifts.swap_rejected')}
+                      </span>
+                    </div>
+
+                    <div className="swap-sent-target">
+                      <div className="swap-incoming-avatar swap-avatar-sm" style={{ backgroundColor: avatarColor(targetName) }}>
+                        {target?.avatar_url
+                          ? <img src={target.avatar_url} alt="" className="swap-avatar-img" />
+                          : target ? getInitials(target.first_name, target.last_name) : '?'
+                        }
+                      </div>
+                      <span>Sent to <strong>{targetName}</strong></span>
+                      <span className="swap-sent-ago">{timeAgo(req.created_at)}</span>
+                    </div>
+
+                    {req.reason && (
+                      <div className="swap-incoming-reason">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        "{req.reason}"
+                      </div>
                     )}
-                    {sr.reason && (
-                      <p style={{ margin: '2px 0', fontSize: 12, color: 'var(--text-muted)' }}>{sr.reason}</p>
+
+                    {isPending && (
+                      <button
+                        className="swap-cancel-btn"
+                        onClick={() => handleCancelSwap(req.id)}
+                        disabled={isActioning}
+                      >
+                        {isActioning ? '...' : 'Cancel request / Anfrage abbrechen'}
+                      </button>
                     )}
                   </div>
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '4px 12px',
-                      borderRadius: 20,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: '#fff',
-                      background: statusColor[sr.status] || '#999',
-                    }}
-                  >
-                    {sr.status === 'pending' && t('shifts.swap_pending')}
-                    {sr.status === 'approved' && t('shifts.swap_approved')}
-                    {sr.status === 'rejected' && t('shifts.swap_rejected')}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
