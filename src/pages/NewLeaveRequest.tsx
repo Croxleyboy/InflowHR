@@ -160,7 +160,9 @@ export default function NewLeaveRequest() {
   }
 
   function handleStartDateChange(val: string) {
+    if (val < todayStr()) return
     setStartDate(val)
+    if (endDate < val) setEndDate(val)
     if (halfDay) {
       setEndDate(val)
       setDays('0.5')
@@ -169,6 +171,7 @@ export default function NewLeaveRequest() {
 
   function handleEndDateChange(val: string) {
     if (halfDay) return
+    if (val < todayStr()) return
     setEndDate(val)
   }
 
@@ -180,6 +183,10 @@ export default function NewLeaveRequest() {
   }
 
   async function handleSubmit() {
+    if (startDate < todayStr()) {
+      setError(t('new_leave.error_past'))
+      return
+    }
     if (endDate < startDate) {
       setError(t('new_leave.error_dates'))
       return
@@ -313,6 +320,7 @@ export default function NewLeaveRequest() {
               <input
                 type="date"
                 value={startDate}
+                min={todayStr()}
                 onChange={e => handleStartDateChange(e.target.value)}
                 className="date-input-hidden"
               />
@@ -331,6 +339,7 @@ export default function NewLeaveRequest() {
                 <input
                   type="date"
                   value={endDate}
+                  min={todayStr()}
                   onChange={e => handleEndDateChange(e.target.value)}
                   className="date-input-hidden"
                 />
