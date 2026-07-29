@@ -662,30 +662,31 @@
 .admin-colour-swatch { width: 16px; height: 16px; border-radius: 50%; display: inline-block; vertical-align: middle; border: 1px solid rgba(0,0,0,0.15); }
 
 /* Rota Cards (List View) */
-.rota-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; margin-top: 16px; }
-.rota-card { background: #fff; border-radius: 14px; padding: 0; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); display: flex; transition: transform 0.15s, box-shadow 0.15s; }
-.rota-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
-.rota-card-border { width: 5px; flex-shrink: 0; }
-.rota-card-border.draft { background: #ff9800; }
-.rota-card-border.published { background: #43a047; }
-.rota-card-content { flex: 1; padding: 16px 18px; }
-.rota-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 8px; }
-.rota-card-name { font-size: 16px; font-weight: 700; color: #1e1e2d; }
-.rota-card-dates { font-size: 12px; color: #8b8fa3; margin-top: 2px; }
-.rota-card-dept { display: inline-block; background: #e3f2fd; color: #1565c0; font-size: 11px; font-weight: 600; padding: 2px 10px; border-radius: 10px; margin-top: 4px; }
-.rota-card-status { padding: 3px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
-.rota-card-status.draft, .rota-status-draft { background: #fff3e0; color: #e65100; padding: 3px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; }
-.rota-card-status.published, .rota-status-published { background: #e8f5e9; color: #2e7d32; padding: 3px 12px; border-radius: 12px; font-size: 11px; font-weight: 700; }
-.rota-card-stats { display: flex; gap: 16px; margin: 10px 0; font-size: 12px; color: #8b8fa3; }
-.rota-card-stats span { display: flex; align-items: center; gap: 4px; }
-.rota-card-toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; margin: 8px 0; }
-.rota-card-toggle input { accent-color: #1565c0; }
-.rota-card-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
-.rota-card-actions button { border: none; border-radius: 8px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; }
-.rota-card-btn-open { background: linear-gradient(135deg, #42a5f5, #1565c0); color: #fff; }
-.rota-card-btn-edit { background: #f5f5f5; color: #333; }
-.rota-card-btn-publish { background: #43a047; color: #fff; }
-.rota-card-btn-delete { background: #ffebee; color: #c62828; }
+/* Rota list cards (rc-*) */
+.rc-list { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+.rc-card { background: #fff; border-radius: 12px; display: flex; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #f0f0f0; cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; }
+.rc-card:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,0.09); }
+.rc-indicator { width: 4px; flex-shrink: 0; }
+.rc-ind-green { background: #43a047; }
+.rc-ind-orange { background: #ff9800; }
+.rc-body { flex: 1; padding: 12px 16px; }
+.rc-row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.rc-name { font-size: 15px; font-weight: 700; color: #1e1e2d; }
+.rc-badges { display: flex; gap: 5px; flex-shrink: 0; }
+.rc-row2 { display: flex; align-items: center; gap: 14px; font-size: 12px; color: #8b8fa3; margin-bottom: 8px; }
+.rc-dates { display: flex; align-items: center; gap: 4px; }
+.rc-metric { display: flex; align-items: center; gap: 3px; }
+.rc-row3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rc-toggle { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; cursor: pointer; }
+.rc-toggle input { accent-color: #1565c0; cursor: pointer; }
+.rc-actions { display: flex; gap: 4px; }
+.rc-btn { display: flex; align-items: center; gap: 4px; background: #f5f6fa; border: none; border-radius: 7px; padding: 5px 10px; font-size: 11px; font-weight: 600; color: #555; cursor: pointer; transition: background 0.12s; }
+.rc-btn:hover { background: #eaecf2; }
+.rc-btn-primary { background: linear-gradient(135deg, #42a5f5, #1565c0); color: #fff; }
+.rc-btn-primary:hover { opacity: 0.9; }
+.rc-btn-publish { color: #2e7d32; }
+.rc-btn-danger { color: #c62828; }
+.rc-btn-danger:hover { background: #ffebee; }
 
 /* Rota Modal */
 .rota-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; display: flex; align-items: center; justify-content: center; }

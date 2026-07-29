@@ -214,23 +214,23 @@ body {
 .schedule-day-badge { background: #1565c0; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; }
 
 /* Colorful shift blocks */
-.sc-block { border-left: 5px solid; border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; transition: transform 0.1s; }
+.sc-block { border-left: 4px solid; border-radius: 10px; padding: 7px 10px; margin-bottom: 5px; transition: transform 0.1s; }
 .sc-block:hover { transform: translateY(-1px); }
-.sc-block-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
-.sc-block-info { flex: 1; }
-.sc-block-name { font-size: 15px; font-weight: 800; }
-.sc-block-time { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-top: 2px; }
-.sc-block-meta { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
-.sc-block-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
-.sc-block-count { font-size: 12px; font-weight: 600; color: var(--text-muted); }
-.sc-block-actions { display: flex; gap: 6px; align-items: center; }
-.sc-block-swap { background: rgba(0,0,0,0.08); color: var(--text); border: none; border-radius: 8px; padding: 5px 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+.sc-block-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sc-block-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.sc-block-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-block-time { font-size: 12px; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
+.sc-block-meta { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.sc-block-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 3px; }
+.sc-block-count { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.sc-block-actions { display: flex; gap: 4px; align-items: center; }
+.sc-block-swap { background: rgba(0,0,0,0.08); color: var(--text); border: none; border-radius: 6px; padding: 3px 8px; font-size: 10px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
 .sc-block-swap:hover { background: rgba(0,0,0,0.14); }
-.sc-block-edit { background: none; border: 1.5px solid var(--border); border-radius: 8px; padding: 5px 12px; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
+.sc-block-edit { background: none; border: 1.5px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 10px; font-weight: 600; color: var(--text-muted); cursor: pointer; }
 
 /* Overlapping avatars */
 .sc-avatars { display: flex; align-items: center; cursor: pointer; flex-shrink: 0; }
-.sc-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; border: 2px solid #fff; position: relative; }
+.sc-avatar { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; border: 2px solid #fff; position: relative; }
 .sc-avatar-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .sc-avatar-more { background: #e0e0e0; color: #555; font-size: 10px; font-weight: 800; }
 

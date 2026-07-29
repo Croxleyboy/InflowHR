@@ -163,13 +163,19 @@ export default function MyShifts() {
   const fetchMyShifts = useCallback(async () => {
     if (!employeeId || !companyUser?.company_id) return
     setLoading(true)
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('shift_assignments')
       .select('*, shift_template:shift_templates(id, name, start_time, end_time, break_minutes, colour), rota:rotas(id, name, status)')
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
 
+    if (error) console.error('[MyShifts] fetch error:', error)
+    console.log('[MyShifts] raw data count:', data?.length, 'employeeId:', employeeId)
+    if (data) {
+      console.log('[MyShifts] all dates:', data.map((s: any) => `${s.date} rota=${s.rota?.name}(${s.rota?.status}) tpl=${s.shift_template?.name}`))
+    }
     const published = (data || []).filter((s: any) => s.rota?.status === 'published' || s.rota?.status === 'draft')
+    console.log('[MyShifts] after rota filter:', published.length, 'dates:', published.map((s: any) => s.date))
     setShifts(published as ShiftAssignment[])
     setLoading(false)
   }, [employeeId, companyUser?.company_id])
@@ -435,11 +441,11 @@ export default function MyShifts() {
                             )}
                           </div>
                         </div>
-                        {g.template.break_minutes != null && g.template.break_minutes > 0 && (
-                          <div className="sc-block-meta">{t('shifts.break_label')}: {g.template.break_minutes} {t('shifts.mins')}</div>
-                        )}
                         <div className="sc-block-footer">
-                          <span className="sc-block-count">{g.employees.length} assigned</span>
+                          <span className="sc-block-count">
+                            {g.employees.length} assigned
+                            {g.template.break_minutes != null && g.template.break_minutes > 0 && ` · ${g.template.break_minutes}m break`}
+                          </span>
                           <button className="sc-block-swap" onClick={() => navigate('/shifts/swap')}>{t('shifts.request_swap')}</button>
                         </div>
                       </div>
@@ -474,10 +480,11 @@ export default function MyShifts() {
                             )}
                           </div>
                         </div>
-                        {s.shift_template?.break_minutes != null && s.shift_template.break_minutes > 0 && (
-                          <div className="sc-block-meta">{t('shifts.break_label')}: {s.shift_template.break_minutes} {t('shifts.mins')}</div>
+                        {(s.shift_template?.break_minutes || s.rota?.name) && (
+                          <div className="sc-block-meta">
+                            {s.rota?.name}{s.rota?.name && s.shift_template?.break_minutes ? ' · ' : ''}{s.shift_template?.break_minutes ? `${s.shift_template.break_minutes}m break` : ''}
+                          </div>
                         )}
-                        {s.rota?.name && <div className="sc-block-meta">{s.rota.name}</div>}
 
                         {isEditing && (
                           <div className="schedule-edit-dropdown">
