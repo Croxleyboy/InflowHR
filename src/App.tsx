@@ -189,14 +189,12 @@ function AuthGate() {
 
       {/* Employee App */}
       <Route path="*" element={
-        <>
-          <div className="app-shell">
-            <div className="app-content">
-              <EmployeeRoutes />
-            </div>
+        <div className="app-shell">
+          <div className="app-content">
+            <EmployeeRoutes />
           </div>
           <Footer />
-        </>
+        </div>
       } />
     </Routes>
   )
