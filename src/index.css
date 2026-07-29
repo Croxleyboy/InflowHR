@@ -240,6 +240,7 @@ body {
 .announcement-arrow { flex-shrink: 0; margin-left: 12px; }
 
 /* ── Footer ── */
+/* footer pill */
 .footer {
   position: fixed;
   bottom: env(safe-area-inset-bottom, 0px);
