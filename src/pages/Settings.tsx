@@ -16,6 +16,7 @@ const featureLabels: { key: keyof Features; tKey: string }[] = [
   { key: 'elearning', tKey: 'dashboard.elearning' },
   { key: 'performance', tKey: 'dashboard.performance' },
   { key: 'timesheets', tKey: 'dashboard.timesheets' },
+  { key: 'shifts', tKey: 'dashboard.shifts' },
 ]
 
 const monthLabels = [

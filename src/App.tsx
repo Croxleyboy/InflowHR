@@ -1,9 +1,11 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
 import { FeatureProvider } from './context/FeatureContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { useMediaQuery } from './hooks/useMediaQuery'
+import { useFeatures } from './context/FeatureContext'
 import Login from './pages/Login'
 import AccessDenied from './pages/AccessDenied'
 import InitialSetup from './pages/InitialSetup'
@@ -60,6 +62,8 @@ import AdminPerformance from './pages/admin/AdminPerformance'
 import AdminDemoSeed from './pages/admin/AdminDemoSeed'
 import AdminShifts from './pages/admin/AdminShifts'
 import AdminRotas from './pages/admin/AdminRotas'
+import AdminSubscriptions from './pages/admin/AdminSubscriptions'
+import AdminBilling from './pages/admin/AdminBilling'
 
 function AdminGate() {
   const { companyUser } = useAuth()
@@ -119,6 +123,15 @@ function EmployeeRoutes() {
   )
 }
 
+function FeatureLoader() {
+  const { companyUser } = useAuth()
+  const { loadCompanyFeatures } = useFeatures()
+  useEffect(() => {
+    if (companyUser?.company_id) loadCompanyFeatures(companyUser.company_id)
+  }, [companyUser?.company_id, loadCompanyFeatures])
+  return null
+}
+
 function AuthGate() {
   const { user, loading, companyUser, setupComplete } = useAuth()
   const isDesktop = useMediaQuery('(min-width: 769px)')
@@ -141,6 +154,8 @@ function AuthGate() {
 
   if (isDesktop) {
     return (
+      <>
+      <FeatureLoader />
       <Routes>
         <Route path="/admin" element={<AdminGate />}>
           <Route element={<AdminLayout />}>
@@ -159,8 +174,10 @@ function AuthGate() {
             <Route path="performance" element={<AdminPerformance />} />
             <Route path="shifts" element={<AdminShifts />} />
             <Route path="rotas" element={<AdminRotas />} />
+            <Route path="billing" element={<AdminBilling />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
+              <Route path="subscriptions" element={<AdminSubscriptions />} />
               <Route path="demo-seed" element={<AdminDemoSeed />} />
             </Route>
           </Route>
@@ -170,10 +187,13 @@ function AuthGate() {
           <Route path="*" element={<EmployeeRoutes />} />
         </Route>
       </Routes>
+      </>
     )
   }
 
   return (
+    <>
+    <FeatureLoader />
     <Routes>
       {/* Admin Portal — locked to admin/hr roles */}
       <Route path="/admin" element={<AdminGate />}>
@@ -192,8 +212,10 @@ function AuthGate() {
           <Route path="timesheets" element={<AdminTimesheets />} />
           <Route path="shifts" element={<AdminShifts />} />
           <Route path="rotas" element={<AdminRotas />} />
+          <Route path="billing" element={<AdminBilling />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
+            <Route path="subscriptions" element={<AdminSubscriptions />} />
             <Route path="demo-seed" element={<AdminDemoSeed />} />
           </Route>
         </Route>
@@ -211,6 +233,7 @@ function AuthGate() {
         </>
       } />
     </Routes>
+    </>
   )
 }
 
