@@ -294,6 +294,8 @@ const en: Translations = {
   'new_leave.error_overlap': 'You already have leave booked on this date',
   'new_leave.half_day': 'Half Day',
   'new_leave.half_day_info': 'Requesting half a day (0.5 days)',
+  'new_leave.days_hint': 'Auto-calculated: excludes weekends & UK bank holidays',
+  'new_leave.days_hint_holidays': 'Auto-calculated: excludes UK bank holidays',
 
   // Leave History
   'leave_history.title': 'My',
@@ -1055,6 +1057,8 @@ const de: Translations = {
   'new_leave.error_overlap': 'Sie haben an diesem Datum bereits Urlaub gebucht',
   'new_leave.half_day': 'Halber Tag',
   'new_leave.half_day_info': 'Beantragung eines halben Tages (0,5 Tage)',
+  'new_leave.days_hint': 'Automatisch berechnet: ohne Wochenenden & britische Feiertage',
+  'new_leave.days_hint_holidays': 'Automatisch berechnet: ohne britische Feiertage',
 
   // Leave History
   'leave_history.title': 'Mein',

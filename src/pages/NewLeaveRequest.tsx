@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { LEAVE_TYPE_KEYS } from '../lib/translations'
+import { countWorkingDays } from '../lib/workingDays'
 
 function getBenefitLeaveTypes(): { name: string; translationKey: string }[] {
   try {
@@ -121,6 +122,7 @@ export default function NewLeaveRequest() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [leaveTypeIds, setLeaveTypeIds] = useState<Record<string, number>>({})
+  const [weekendsAsWorkdays, setWeekendsAsWorkdays] = useState(false)
 
   useEffect(() => {
     if (!companyUser?.company_id) return
@@ -134,15 +136,26 @@ export default function NewLeaveRequest() {
           setLeaveTypeIds(map)
         }
       })
+    supabase.from('companies')
+      .select('weekends_as_workdays')
+      .eq('id', companyUser.company_id)
+      .single()
+      .then(({ data }) => {
+        if (data?.weekends_as_workdays) setWeekendsAsWorkdays(true)
+      })
   }, [companyUser?.company_id])
+
+  useEffect(() => {
+    if (halfDay) return
+    const working = countWorkingDays(startDate, endDate, weekendsAsWorkdays)
+    setDays(String(working || 1))
+  }, [startDate, endDate, weekendsAsWorkdays, halfDay])
 
   function handleHalfDayToggle(checked: boolean) {
     setHalfDay(checked)
     if (checked) {
       setEndDate(startDate)
       setDays('0.5')
-    } else {
-      setDays('1')
     }
   }
 
@@ -339,10 +352,11 @@ export default function NewLeaveRequest() {
               step="0.5"
               min="0.5"
               value={days}
-              onChange={e => setDays(e.target.value)}
+              readOnly
               className="form-input"
-              placeholder="1"
+              style={{ background: '#f5f5f5', cursor: 'default' }}
             />
+            <span className="leave-days-hint">{t(weekendsAsWorkdays ? 'new_leave.days_hint_holidays' : 'new_leave.days_hint')}</span>
           </div>
         )}
 

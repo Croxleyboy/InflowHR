@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 
@@ -24,8 +24,29 @@ export default function AdminLeave() {
   const [filterStatus, setFilterStatus] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
+  const [weekendsAsWorkdays, setWeekendsAsWorkdays] = useState(false)
+  const [savingWeekend, setSavingWeekend] = useState(false)
 
-  useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
+  const loadWeekendSetting = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase
+      .from('companies')
+      .select('weekends_as_workdays')
+      .eq('id', selectedCompanyId)
+      .single()
+    setWeekendsAsWorkdays(data?.weekends_as_workdays === true)
+  }, [selectedCompanyId])
+
+  async function toggleWeekends() {
+    if (!selectedCompanyId) return
+    setSavingWeekend(true)
+    const newVal = !weekendsAsWorkdays
+    await supabase.from('companies').update({ weekends_as_workdays: newVal }).eq('id', selectedCompanyId)
+    setWeekendsAsWorkdays(newVal)
+    setSavingWeekend(false)
+  }
+
+  useEffect(() => { if (selectedCompanyId) { load(); loadWeekendSetting() } }, [selectedCompanyId, loadWeekendSetting])
 
   async function load() {
     setLoading(true)
@@ -105,6 +126,23 @@ export default function AdminLeave() {
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{stats.approved}</span><span>Approved</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#e53935'}}>{stats.rejected}</span><span>Rejected</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.totalDays}</span><span>Days Used</span></div>
+      </div>
+
+      <div className="admin-weekend-toggle">
+        <label className="admin-toggle-label">
+          <input
+            type="checkbox"
+            checked={weekendsAsWorkdays}
+            onChange={toggleWeekends}
+            disabled={savingWeekend}
+          />
+          <span>Count weekends as working days</span>
+        </label>
+        <span className="admin-toggle-hint">
+          {weekendsAsWorkdays
+            ? 'Weekends will be included when employees request leave'
+            : 'Weekends are excluded from leave day calculations (UK bank holidays always excluded)'}
+        </span>
       </div>
 
       <div className="admin-filters">
