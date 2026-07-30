@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
-import { COURSES, type Course, type CourseType } from '../ELearning'
+import { COURSES, type CourseType } from '../ELearning'
 
 const TYPE_ICONS: Record<CourseType, string> = {
   video: '🎬', article: '📄', quiz: '❓', policy: '🛡️',
