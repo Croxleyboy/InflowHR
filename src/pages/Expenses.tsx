@@ -42,7 +42,7 @@ function formatAmount(n: number) {
 export default function Expenses() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { companyUser } = useAuth()
+  const { companyUser, employeeId } = useAuth()
   const [filter, setFilter] = useState<Filter>('all')
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
@@ -50,13 +50,14 @@ export default function Expenses() {
   const [showGraph, setShowGraph] = useState(false)
 
   const fetchClaims = useCallback(async () => {
-    if (!companyUser?.company_id) return
+    if (!companyUser?.company_id || !employeeId) return
     setLoading(true)
     setError(null)
     const { data, error: err } = await supabase
       .from('expense_claims')
       .select('id, reference_number, title, description, amount, status, created_at')
       .eq('company_id', companyUser.company_id)
+      .eq('employee_id', employeeId)
       .order('created_at', { ascending: false })
 
     if (err) {
@@ -65,7 +66,7 @@ export default function Expenses() {
       setClaims(data as Claim[])
     }
     setLoading(false)
-  }, [companyUser?.company_id])
+  }, [companyUser?.company_id, employeeId])
 
   useEffect(() => { fetchClaims() }, [fetchClaims])
 
