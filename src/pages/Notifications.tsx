@@ -158,16 +158,19 @@ export default function Notifications() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+    const companyId = companyUser?.company_id || ''
     const [actionsRes, notifsRes, announcementsRes, empRes] = await Promise.all([
       supabase.from('workflow_tracker')
         .select('*')
         .ilike('assigned_to', `%${HARDCODED_EMAIL}%`)
         .eq('status', 'Pending')
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false }),
       supabase.from('workflow_tracker')
         .select('*')
         .ilike('assigned_to', `%${HARDCODED_EMAIL}%`)
         .eq('status', 'Complete')
+        .eq('company_id', companyId)
         .order('created_at', { ascending: false })
         .limit(20),
       supabase.from('announcements')
@@ -215,7 +218,7 @@ export default function Notifications() {
     }
 
     setLoading(false)
-  }, [HARDCODED_EMPLOYEE_ID, HARDCODED_EMAIL])
+  }, [HARDCODED_EMPLOYEE_ID, HARDCODED_EMAIL, companyUser?.company_id])
 
   useEffect(() => {
     if (!HARDCODED_EMAIL) return
