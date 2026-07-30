@@ -388,13 +388,56 @@ export default function AdminOnboarding() {
     XLSX.writeFile(wb, 'company-setup-template.xlsx')
   }
 
+  async function ensureCompanyFoundation(companyId: string) {
+    const { data: existingTypes } = await supabase
+      .from('leave_types')
+      .select('id')
+      .eq('company_id', companyId)
+      .limit(1)
+
+    if (!existingTypes || existingTypes.length === 0) {
+      const defaultLeaveTypes = [
+        { name: 'Annual Leave', company_id: companyId },
+        { name: 'Sick Leave', company_id: companyId },
+        { name: 'Compassionate Leave', company_id: companyId },
+        { name: 'Parental Leave', company_id: companyId },
+        { name: 'Unpaid Leave', company_id: companyId },
+      ]
+      await supabase.from('leave_types').insert(defaultLeaveTypes)
+    }
+
+    const { data: existingFeatures } = await supabase
+      .from('company_features')
+      .select('id')
+      .eq('company_id', companyId)
+      .limit(1)
+
+    if (!existingFeatures || existingFeatures.length === 0) {
+      const standardFeatures = [
+        { company_id: companyId, feature_key: 'expenses', is_enabled: true },
+        { company_id: companyId, feature_key: 'leave', is_enabled: true },
+        { company_id: companyId, feature_key: 'kudos', is_enabled: true },
+        { company_id: companyId, feature_key: 'payroll', is_enabled: true },
+        { company_id: companyId, feature_key: 'timesheets', is_enabled: false },
+        { company_id: companyId, feature_key: 'performance', is_enabled: false },
+        { company_id: companyId, feature_key: 'shifts', is_enabled: false },
+        { company_id: companyId, feature_key: 'elearning', is_enabled: false },
+        { company_id: companyId, feature_key: 'benefits', is_enabled: false },
+        { company_id: companyId, feature_key: 'legal_timesheets', is_enabled: false },
+      ]
+      await supabase.from('company_features').insert(standardFeatures)
+    }
+  }
+
   async function processSetup() {
-    if (setupRows.length === 0 || !setupCompanyId) return
+    if (!setupCompanyId) return
     setProcessing(true)
 
     const company = companies.find(c => c.id === setupCompanyId)
     let onboardCount = 0, empCount = 0, payslipCount = 0
     let assignedAdmin = ''
+
+    await ensureCompanyFoundation(setupCompanyId)
 
     const now = new Date()
     const periodStart = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -490,19 +533,21 @@ export default function AdminOnboarding() {
         assignedAdmin = `${row.firstname} ${row.surname} (${row.user_email})`
       }
 
-      // 5. Create leave balances
+      // 5. Create leave balances for each leave type
       if (employeeId) {
-        const { data: leaveTypes } = await supabase.from('leave_types').select('id').limit(1)
+        const { data: leaveTypes } = await supabase.from('leave_types').select('id').eq('company_id', setupCompanyId)
         if (leaveTypes && leaveTypes.length > 0) {
-          await supabase.from('leave_balances').insert({
-            employee_id: employeeId,
-            leave_type_id: leaveTypes[0].id,
-            year: now.getFullYear(),
-            total_allowance: 25,
-            used: 0,
-            carried_over: 0,
-            company_id: setupCompanyId,
-          })
+          for (const lt of leaveTypes) {
+            await supabase.from('leave_balances').insert({
+              employee_id: employeeId,
+              leave_type_id: lt.id,
+              year: now.getFullYear(),
+              total_allowance: 25,
+              used: 0,
+              carried_over: 0,
+              company_id: setupCompanyId,
+            })
+          }
         }
       }
     }
@@ -967,9 +1012,12 @@ export default function AdminOnboarding() {
                       )}
                     </div>
                   )}
-                  <div style={{ marginTop: 24 }}>
+                  <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                     <button className="admin-btn admin-btn-primary" disabled={!setupCompanyId} onClick={() => setSetupStep(1)}>
                       Next: Upload Data
+                    </button>
+                    <button className="admin-btn" disabled={!setupCompanyId} style={{ background: '#ff9800', color: '#fff' }} onClick={() => { setSetupRows([]); setSetupStep(3) }}>
+                      Skip to Foundation Only
                     </button>
                   </div>
                 </>
@@ -1029,6 +1077,9 @@ export default function AdminOnboarding() {
 
               <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                 <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => { setSetupStep(0); setSetupRows([]); setSetupErrors([]) }}>Back</button>
+                <button className="admin-btn" style={{ background: '#ff9800', color: '#fff' }} onClick={() => { setSetupRows([]); setSetupStep(3) }}>
+                  Skip — Foundation Only
+                </button>
                 <button className="admin-btn admin-btn-primary" disabled={setupRows.length === 0 || setupErrors.length > 0} onClick={() => setSetupStep(2)}>
                   Next: Review Data
                 </button>
@@ -1097,6 +1148,9 @@ export default function AdminOnboarding() {
 
               <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                 <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => setSetupStep(1)}>Back</button>
+                <button className="admin-btn" style={{ background: '#ff9800', color: '#fff' }} onClick={() => { setAdminEmail(''); setSetupStep(3) }}>
+                  Skip Admin — Process Employees Only
+                </button>
                 <button className="admin-btn admin-btn-primary" disabled={!adminEmail} onClick={() => setSetupStep(3)} style={{ background: '#43a047' }}>
                   Process {setupRows.length} Employees
                 </button>
@@ -1109,16 +1163,29 @@ export default function AdminOnboarding() {
             <div>
               {!processResult && !processing && (
                 <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                  <div style={{ fontSize: 48, marginBottom: 16 }}>🚀</div>
-                  <h3>Ready to Process</h3>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>{setupRows.length > 0 ? '🚀' : '🏗️'}</div>
+                  <h3>{setupRows.length > 0 ? 'Ready to Process' : 'Create Company Foundation'}</h3>
                   <p style={{ color: '#666', maxWidth: 500, margin: '0 auto 24px' }}>
-                    This will create all employee records, onboarding entries, payslips, and leave balances
-                    for <strong>{setupCompany?.name}</strong>. This action cannot be undone.
+                    {setupRows.length > 0
+                      ? <>This will create all employee records, onboarding entries, payslips, and leave balances for <strong>{setupCompany?.name}</strong>. This action cannot be undone.</>
+                      : <>This will create the foundation records for <strong>{setupCompany?.name}</strong> — leave types (Annual, Sick, Compassionate, Parental, Unpaid) and company feature toggles. Employees can then be added later via onboarding and will be able to use expenses, leave, notifications etc. without RLS errors.</>
+                    }
                   </p>
+
+                  {setupRows.length === 0 && (
+                    <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 8, padding: 16, maxWidth: 500, margin: '0 auto 24px', textAlign: 'left' }}>
+                      <h4 style={{ margin: '0 0 8px', color: '#2e7d32' }}>What will be created / Was erstellt wird:</h4>
+                      <ul style={{ margin: 0, paddingLeft: 20, color: '#333', fontSize: 14 }}>
+                        <li><strong>5</strong> leave types / Urlaubsarten (Annual, Sick, Compassionate, Parental, Unpaid)</li>
+                        <li><strong>10</strong> company feature toggles / Funktionsschalter (standard features enabled)</li>
+                      </ul>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-                    <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => setSetupStep(2)}>Back</button>
+                    <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => setSetupStep(setupRows.length > 0 ? 2 : 1)}>Back</button>
                     <button className="admin-btn admin-btn-primary" onClick={processSetup} style={{ background: '#43a047', padding: '12px 32px', fontSize: 16 }}>
-                      Confirm & Process
+                      {setupRows.length > 0 ? 'Confirm & Process' : 'Create Foundation Records'}
                     </button>
                   </div>
                 </div>
@@ -1135,34 +1202,55 @@ export default function AdminOnboarding() {
               {processResult && (
                 <div style={{ textAlign: 'center', padding: '40px 20px' }}>
                   <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-                  <h3 style={{ color: '#2e7d32' }}>Company Setup Complete</h3>
+                  <h3 style={{ color: '#2e7d32' }}>Company Setup Complete / Unternehmens-Setup abgeschlossen</h3>
 
                   <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 12, padding: 24, maxWidth: 500, margin: '24px auto', textAlign: 'left' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    {processResult.onboarding === 0 && processResult.employees === 0 ? (
                       <div>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: '#2e7d32' }}>{processResult.onboarding}</div>
-                        <div style={{ fontSize: 13, color: '#666' }}>Onboarding Records</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: '#2e7d32', marginBottom: 8 }}>Foundation records created / Grunddaten erstellt</div>
+                        <ul style={{ margin: 0, paddingLeft: 20, color: '#333', fontSize: 14 }}>
+                          <li>5 leave types created / Urlaubsarten erstellt (Annual, Sick, Compassionate, Parental, Unpaid)</li>
+                          <li>Company features configured / Unternehmensfunktionen konfiguriert</li>
+                        </ul>
                       </div>
-                      <div>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: '#1565c0' }}>{processResult.employees}</div>
-                        <div style={{ fontSize: 13, color: '#666' }}>Employee Records</div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                        <div>
+                          <div style={{ fontSize: 28, fontWeight: 700, color: '#2e7d32' }}>{processResult.onboarding}</div>
+                          <div style={{ fontSize: 13, color: '#666' }}>Onboarding Records</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 28, fontWeight: 700, color: '#1565c0' }}>{processResult.employees}</div>
+                          <div style={{ fontSize: 13, color: '#666' }}>Employee Records</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 28, fontWeight: 700, color: '#7b1fa2' }}>{processResult.payslips}</div>
+                          <div style={{ fontSize: 13, color: '#666' }}>Payslips Created</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: '#e65100' }}>{processResult.admin || 'None'}</div>
+                          <div style={{ fontSize: 13, color: '#666' }}>Company Admin</div>
+                        </div>
                       </div>
-                      <div>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: '#7b1fa2' }}>{processResult.payslips}</div>
-                        <div style={{ fontSize: 13, color: '#666' }}>Payslips Created</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#e65100' }}>{processResult.admin || 'None'}</div>
-                        <div style={{ fontSize: 13, color: '#666' }}>Company Admin</div>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   <div style={{ background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, padding: 16, maxWidth: 500, margin: '16px auto', textAlign: 'left' }}>
-                    <h4 style={{ margin: '0 0 8px', color: '#e65100' }}>Next Steps</h4>
+                    <h4 style={{ margin: '0 0 8px', color: '#e65100' }}>Next Steps / Nächste Schritte</h4>
                     <ol style={{ margin: 0, paddingLeft: 20, color: '#333', fontSize: 14 }}>
-                      <li>Review the employee data in the Employees admin page</li>
-                      <li>Check payslips in the Payroll admin page and mark as "processed" or "paid"</li>
+                      {processResult.employees > 0 && (
+                        <>
+                          <li>Review the employee data in the Employees admin page</li>
+                          <li>Check payslips in the Payroll admin page and mark as "processed" or "paid"</li>
+                        </>
+                      )}
+                      {processResult.employees === 0 && (
+                        <>
+                          <li>Add employees via Onboarding — New Starter or Bulk Upload</li>
+                          <li>Assign a company admin in Subscriptions &gt; Companies</li>
+                        </>
+                      )}
+                      <li>Configure feature toggles in Subscriptions &gt; Company Features</li>
                       {setupCompany && !setupCompany.is_active && (
                         <li><strong>Enable the company domain</strong> in Companies so employees can log in</li>
                       )}

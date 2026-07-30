@@ -113,11 +113,34 @@ export default function AdminCompanies() {
       is_active: true,
     }).select('id').single()
 
-    if (newCo && logoFile) {
-      const logoUrl = await uploadCompanyLogo(newCo.id, logoFile)
-      if (logoUrl) {
-        await supabase.from('companies').update({ logo_url: logoUrl }).eq('id', newCo.id)
+    if (newCo) {
+      if (logoFile) {
+        const logoUrl = await uploadCompanyLogo(newCo.id, logoFile)
+        if (logoUrl) {
+          await supabase.from('companies').update({ logo_url: logoUrl }).eq('id', newCo.id)
+        }
       }
+
+      await supabase.from('leave_types').insert([
+        { name: 'Annual Leave', company_id: newCo.id },
+        { name: 'Sick Leave', company_id: newCo.id },
+        { name: 'Compassionate Leave', company_id: newCo.id },
+        { name: 'Parental Leave', company_id: newCo.id },
+        { name: 'Unpaid Leave', company_id: newCo.id },
+      ])
+
+      await supabase.from('company_features').insert([
+        { company_id: newCo.id, feature_key: 'expenses', is_enabled: true },
+        { company_id: newCo.id, feature_key: 'leave', is_enabled: true },
+        { company_id: newCo.id, feature_key: 'kudos', is_enabled: true },
+        { company_id: newCo.id, feature_key: 'payroll', is_enabled: true },
+        { company_id: newCo.id, feature_key: 'timesheets', is_enabled: false },
+        { company_id: newCo.id, feature_key: 'performance', is_enabled: false },
+        { company_id: newCo.id, feature_key: 'shifts', is_enabled: false },
+        { company_id: newCo.id, feature_key: 'elearning', is_enabled: false },
+        { company_id: newCo.id, feature_key: 'benefits', is_enabled: false },
+        { company_id: newCo.id, feature_key: 'legal_timesheets', is_enabled: false },
+      ])
     }
 
     setForm({ name: '', domain: '' })
