@@ -1,12 +1,28 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
 // ── Types ──
+interface LegalClient {
+  id: string
+  name: string
+}
+
+interface LegalMatter {
+  id: string
+  client_id: string
+  name: string
+  allowed_codes: string[] | null
+}
+
 interface TimerState {
   id: string
-  client: string
-  matter: string
+  clientId: string
+  clientName: string
+  matterId: string
+  matterName: string
   taskCode: string
   elapsed: number
   running: boolean
@@ -16,8 +32,10 @@ interface TimerState {
 interface TimesheetEntry {
   id: string
   date: string
-  client: string
-  matter: string
+  client_id: string
+  clientName: string
+  matter_id: string
+  matterName: string
   taskCode: string
   taskLabel: string
   durationHrs: number
@@ -62,56 +80,11 @@ const NARRATIVE_TEMPLATES = [
   'Engaged in negotiations concerning',
 ]
 
-const DEMO_CLIENTS = [
-  { id: 'c1', name: 'Acme Corp' },
-  { id: 'c2', name: 'Sterling & Partners' },
-  { id: 'c3', name: 'Greenfield Holdings' },
-  { id: 'c4', name: 'Nexus Financial' },
-  { id: 'c5', name: 'BlueChip Industries' },
-]
-
-const DEMO_MATTERS: Record<string, { id: string; name: string }[]> = {
-  c1: [
-    { id: 'm1', name: 'Breach of Contract' },
-    { id: 'm2', name: 'IP Dispute' },
-    { id: 'm3', name: 'Employment Tribunal' },
-  ],
-  c2: [
-    { id: 'm4', name: 'Merger Acquisition' },
-    { id: 'm5', name: 'Regulatory Compliance' },
-  ],
-  c3: [
-    { id: 'm6', name: 'Property Lease' },
-    { id: 'm7', name: 'Planning Permission' },
-  ],
-  c4: [
-    { id: 'm8', name: 'FCA Review' },
-    { id: 'm9', name: 'Client Onboarding' },
-  ],
-  c5: [
-    { id: 'm10', name: 'Board Advisory' },
-    { id: 'm11', name: 'Shareholder Agreement' },
-  ],
-}
-
 const STATUS_COLORS: Record<string, string> = {
   draft: '#78909c',
   submitted: '#ff9800',
   approved: '#43a047',
   rejected: '#e53935',
-}
-
-const STORAGE_KEY = 'inflowhr-legal-ts'
-
-function loadEntries(): TimesheetEntry[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
-}
-
-function saveEntries(entries: TimesheetEntry[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
 }
 
 function roundToTenth(hrs: number): number {
@@ -162,7 +135,16 @@ function getWeekDates(): string[] {
 export default function LegalTimesheets() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const [entries, setEntries] = useState<TimesheetEntry[]>(loadEntries)
+  const { employeeId, companyUser } = useAuth()
+  const companyId = companyUser?.company_id
+
+  // ── Supabase-backed state ──
+  const [clients, setClients] = useState<LegalClient[]>([])
+  const [matters, setMatters] = useState<LegalMatter[]>([])
+  const [entries, setEntries] = useState<TimesheetEntry[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // ── Timer state (ephemeral, React-only) ──
   const [timers, setTimers] = useState<TimerState[]>([])
   const [showModal, setShowModal] = useState(false)
   const [expandedEntry, setExpandedEntry] = useState<string | null>(null)
@@ -184,13 +166,73 @@ export default function LegalTimesheets() {
   const [matterSearch, setMatterSearch] = useState('')
   const [showTemplates, setShowTemplates] = useState(false)
 
-  useEffect(() => { saveEntries(entries) }, [entries])
+  // ── Load clients, matters, entries from Supabase ──
+  const loadData = useCallback(async () => {
+    if (!companyId || !employeeId) return
+    setLoading(true)
+
+    const [clientsRes, mattersRes, entriesRes] = await Promise.all([
+      supabase
+        .from('legal_clients')
+        .select('id, name')
+        .eq('company_id', companyId)
+        .eq('status', 'active')
+        .order('name'),
+      supabase
+        .from('legal_matters')
+        .select('id, client_id, name, allowed_codes')
+        .eq('company_id', companyId)
+        .eq('status', 'active')
+        .contains('assigned_employees', [employeeId])
+        .order('name'),
+      supabase
+        .from('legal_timesheet_entries')
+        .select('id, date, client_id, matter_id, task_code, duration_hrs, narrative, status, created_at')
+        .eq('company_id', companyId)
+        .eq('employee_id', employeeId)
+        .order('created_at', { ascending: false }),
+    ])
+
+    if (clientsRes.data) setClients(clientsRes.data)
+    if (mattersRes.data) setMatters(mattersRes.data)
+
+    if (entriesRes.data) {
+      // Build lookup maps for client/matter names
+      const clientMap: Record<string, string> = {}
+      if (clientsRes.data) clientsRes.data.forEach(c => { clientMap[c.id] = c.name })
+      const matterMap: Record<string, string> = {}
+      if (mattersRes.data) mattersRes.data.forEach(m => { matterMap[m.id] = m.name })
+
+      const mapped: TimesheetEntry[] = entriesRes.data.map(row => {
+        const task = TASK_CODES.find(tc => tc.code === row.task_code)
+        return {
+          id: row.id,
+          date: row.date,
+          client_id: row.client_id,
+          clientName: clientMap[row.client_id] || 'Unknown',
+          matter_id: row.matter_id,
+          matterName: matterMap[row.matter_id] || 'Unknown',
+          taskCode: row.task_code || '',
+          taskLabel: task?.label || '',
+          durationHrs: Number(row.duration_hrs),
+          narrative: row.narrative || '',
+          status: row.status as TimesheetEntry['status'],
+          createdAt: row.created_at,
+        }
+      })
+      setEntries(mapped)
+    }
+
+    setLoading(false)
+  }, [companyId, employeeId])
+
+  useEffect(() => { loadData() }, [loadData])
 
   // Timer tick
   useEffect(() => {
-    const hasRunning = timers.some(t => t.running)
+    const hasRunning = timers.some(tmr => tmr.running)
     if (hasRunning && !timerRef.current) {
-      timerRef.current = setInterval(() => setTick(t => t + 1), 1000)
+      timerRef.current = setInterval(() => setTick(n => n + 1), 1000)
     }
     if (!hasRunning && timerRef.current) {
       clearInterval(timerRef.current)
@@ -199,33 +241,48 @@ export default function LegalTimesheets() {
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [timers])
 
+  // ── Guard: if auth not ready, show loading ──
+  if (!companyId || !employeeId) {
+    return <div className="lt-page"><div className="lt-empty"><p>Loading...</p></div></div>
+  }
+
   function getTimerElapsed(timer: TimerState): number {
     if (!timer.running || !timer.startedAt) return timer.elapsed
     return timer.elapsed + Math.floor((Date.now() - timer.startedAt) / 1000)
   }
 
   function startTimer(clientId: string, matterId: string) {
-    const client = DEMO_CLIENTS.find(c => c.id === clientId)
-    const matters = DEMO_MATTERS[clientId] || []
+    const client = clients.find(c => c.id === clientId)
     const matter = matters.find(m => m.id === matterId)
     if (!client || !matter) return
 
     setTimers(prev => {
-      const paused = prev.map(t => t.running
-        ? { ...t, running: false, elapsed: getTimerElapsed(t), startedAt: null }
-        : t
-      )
-      const existing = paused.find(t => t.client === client.name && t.matter === matter.name)
-      if (existing) {
-        return paused.map(t => t.id === existing.id
-          ? { ...t, running: true, startedAt: Date.now() }
-          : t
-        )
+      // Check for duplicate client+matter timer
+      const duplicate = prev.find(tmr => tmr.clientId === clientId && tmr.matterId === matterId)
+      if (duplicate) {
+        // Resume the existing one, pause others
+        return prev.map(tmr => {
+          if (tmr.id === duplicate.id) {
+            return { ...tmr, running: true, startedAt: Date.now() }
+          }
+          if (tmr.running) {
+            return { ...tmr, running: false, elapsed: getTimerElapsed(tmr), startedAt: null }
+          }
+          return tmr
+        })
       }
+
+      // Pause all running timers, add new one
+      const paused = prev.map(tmr => tmr.running
+        ? { ...tmr, running: false, elapsed: getTimerElapsed(tmr), startedAt: null }
+        : tmr
+      )
       return [...paused, {
         id: `timer-${Date.now()}`,
-        client: client.name,
-        matter: matter.name,
+        clientId,
+        clientName: client.name,
+        matterId,
+        matterName: matter.name,
         taskCode: 'L110',
         elapsed: 0,
         running: true,
@@ -235,46 +292,66 @@ export default function LegalTimesheets() {
   }
 
   function toggleTimer(id: string) {
-    setTimers(prev => prev.map(t => {
-      if (t.id === id) {
-        if (t.running) {
-          return { ...t, running: false, elapsed: getTimerElapsed(t), startedAt: null }
+    setTimers(prev => prev.map(tmr => {
+      if (tmr.id === id) {
+        if (tmr.running) {
+          // Pause this timer
+          return { ...tmr, running: false, elapsed: getTimerElapsed(tmr), startedAt: null }
         }
-        const othersP = prev.map(o => o.id !== id && o.running
-          ? { ...o, running: false, elapsed: getTimerElapsed(o), startedAt: null }
-          : o
-        )
-        void othersP
-        return { ...t, running: true, startedAt: Date.now() }
+        // Resume this timer
+        return { ...tmr, running: true, startedAt: Date.now() }
       }
-      if (t.running) {
-        return { ...t, running: false, elapsed: getTimerElapsed(t), startedAt: null }
+      // Auto-pause any other running timer
+      if (tmr.running) {
+        return { ...tmr, running: false, elapsed: getTimerElapsed(tmr), startedAt: null }
       }
-      return t
+      return tmr
     }))
   }
 
   function stopTimer(id: string) {
-    setTimers(prev => prev.filter(t => t.id !== id))
+    setTimers(prev => prev.filter(tmr => tmr.id !== id))
   }
 
-  function logTimerAsEntry(timer: TimerState) {
+  async function logTimerAsEntry(timer: TimerState) {
     const elapsed = getTimerElapsed(timer)
     const hrs = formAutoRound ? roundToTenth(elapsed / 3600) : parseFloat((elapsed / 3600).toFixed(2))
+    if (hrs <= 0) return
     const task = TASK_CODES.find(tc => tc.code === timer.taskCode)
-    const entry: TimesheetEntry = {
-      id: `entry-${Date.now()}`,
-      date: todayStr(),
-      client: timer.client,
-      matter: timer.matter,
-      taskCode: timer.taskCode,
-      taskLabel: task?.label || '',
-      durationHrs: hrs,
-      narrative: '',
-      status: 'draft',
-      createdAt: new Date().toISOString(),
+
+    const { data, error } = await supabase
+      .from('legal_timesheet_entries')
+      .insert({
+        company_id: companyId,
+        employee_id: employeeId,
+        date: todayStr(),
+        client_id: timer.clientId,
+        matter_id: timer.matterId,
+        task_code: timer.taskCode,
+        duration_hrs: hrs,
+        narrative: '',
+        status: 'draft',
+      })
+      .select('id, date, client_id, matter_id, task_code, duration_hrs, narrative, status, created_at')
+      .single()
+
+    if (!error && data) {
+      const entry: TimesheetEntry = {
+        id: data.id,
+        date: data.date,
+        client_id: data.client_id,
+        clientName: timer.clientName,
+        matter_id: data.matter_id,
+        matterName: timer.matterName,
+        taskCode: data.task_code || '',
+        taskLabel: task?.label || '',
+        durationHrs: Number(data.duration_hrs),
+        narrative: data.narrative || '',
+        status: data.status as TimesheetEntry['status'],
+        createdAt: data.created_at,
+      }
+      setEntries(prev => [entry, ...prev])
     }
-    setEntries(prev => [entry, ...prev])
     stopTimer(timer.id)
   }
 
@@ -282,37 +359,36 @@ export default function LegalTimesheets() {
   const today = todayStr()
   const todayEntries = entries.filter(e => e.date === today)
   const todayLogged = todayEntries.reduce((s, e) => s + e.durationHrs, 0)
-  const weekDates = useMemo(() => getWeekDates(), [])
+  const weekDates = getWeekDates()
   const weekLogged = entries
     .filter(e => weekDates.includes(e.date))
     .reduce((s, e) => s + e.durationHrs, 0)
   const progressPct = Math.min(100, (todayLogged / BILLABLE_TARGET) * 100)
 
-  const groupedByDate = useMemo(() => {
+  const groupedByDate = (() => {
     const map: Record<string, TimesheetEntry[]> = {}
     for (const e of entries) {
       if (!map[e.date]) map[e.date] = []
       map[e.date].push(e)
     }
     return Object.entries(map).sort(([a], [b]) => b.localeCompare(a))
-  }, [entries])
+  })()
 
-  const recentMatters = useMemo(() => {
+  const recentMatters = (() => {
     const seen = new Set<string>()
     const recent: { clientId: string; clientName: string; matterId: string; matterName: string }[] = []
     for (const e of entries) {
-      const key = `${e.client}|${e.matter}`
+      const key = `${e.client_id}|${e.matter_id}`
       if (seen.has(key)) continue
       seen.add(key)
-      const cl = DEMO_CLIENTS.find(c => c.name === e.client)
-      if (cl) {
-        const mt = (DEMO_MATTERS[cl.id] || []).find(m => m.name === e.matter)
-        if (mt) recent.push({ clientId: cl.id, clientName: cl.name, matterId: mt.id, matterName: mt.name })
-      }
+      recent.push({ clientId: e.client_id, clientName: e.clientName, matterId: e.matter_id, matterName: e.matterName })
       if (recent.length >= 5) break
     }
     return recent
-  }, [entries])
+  })()
+
+  // Matters filtered by selected client
+  const mattersForClient = matters.filter(m => m.client_id === formClient)
 
   // Form helpers
   function getFormDuration(): number {
@@ -329,7 +405,7 @@ export default function LegalTimesheets() {
       return formAutoRound ? roundToTenth(hrs) : parseFloat(hrs.toFixed(2))
     }
     if (formDurationMode === 'timer' && formTimerId) {
-      const timer = timers.find(t => t.id === formTimerId)
+      const timer = timers.find(tmr => tmr.id === formTimerId)
       if (timer) {
         const secs = getTimerElapsed(timer)
         return formAutoRound ? roundToTenth(secs / 3600) : parseFloat((secs / 3600).toFixed(2))
@@ -338,29 +414,49 @@ export default function LegalTimesheets() {
     return 0
   }
 
-  function handleSubmitEntry() {
-    const client = DEMO_CLIENTS.find(c => c.id === formClient)
-    const matters = DEMO_MATTERS[formClient] || []
-    const matter = matters.find(m => m.id === formMatter)
+  async function handleSubmitEntry() {
+    const client = clients.find(c => c.id === formClient)
+    const matter = mattersForClient.find(m => m.id === formMatter)
     if (!client || !matter) return
 
     const dur = getFormDuration()
     if (dur <= 0) return
 
     const task = TASK_CODES.find(tc => tc.code === formTaskCode)
-    const entry: TimesheetEntry = {
-      id: `entry-${Date.now()}`,
-      date: todayStr(),
-      client: client.name,
-      matter: matter.name,
-      taskCode: formTaskCode,
-      taskLabel: task?.label || '',
-      durationHrs: dur,
-      narrative: formNarrative,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
+
+    const { data, error } = await supabase
+      .from('legal_timesheet_entries')
+      .insert({
+        company_id: companyId,
+        employee_id: employeeId,
+        date: todayStr(),
+        client_id: formClient,
+        matter_id: formMatter,
+        task_code: formTaskCode,
+        duration_hrs: dur,
+        narrative: formNarrative,
+        status: 'draft',
+      })
+      .select('id, date, client_id, matter_id, task_code, duration_hrs, narrative, status, created_at')
+      .single()
+
+    if (!error && data) {
+      const entry: TimesheetEntry = {
+        id: data.id,
+        date: data.date,
+        client_id: data.client_id,
+        clientName: client.name,
+        matter_id: data.matter_id,
+        matterName: matter.name,
+        taskCode: data.task_code || '',
+        taskLabel: task?.label || '',
+        durationHrs: Number(data.duration_hrs),
+        narrative: data.narrative || '',
+        status: data.status as TimesheetEntry['status'],
+        createdAt: data.created_at,
+      }
+      setEntries(prev => [entry, ...prev])
     }
-    setEntries(prev => [entry, ...prev])
 
     if (formDurationMode === 'timer' && formTimerId) {
       stopTimer(formTimerId)
@@ -385,23 +481,34 @@ export default function LegalTimesheets() {
     setShowTemplates(false)
   }
 
-  function deleteEntry(id: string) {
+  async function deleteEntry(id: string) {
+    await supabase.from('legal_timesheet_entries').delete().eq('id', id)
     setEntries(prev => prev.filter(e => e.id !== id))
   }
 
-  function submitEntry(id: string) {
-    setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'submitted' } : e))
+  async function submitEntry(id: string) {
+    const { error } = await supabase
+      .from('legal_timesheet_entries')
+      .update({ status: 'submitted', submitted_at: new Date().toISOString() })
+      .eq('id', id)
+    if (!error) {
+      setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'submitted' } : e))
+    }
   }
 
-  const filteredClients = DEMO_CLIENTS.filter(c =>
+  const filteredClients = clients.filter(c =>
     !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase())
   )
-  const filteredMatters = (DEMO_MATTERS[formClient] || []).filter(m =>
+  const filteredMatters = mattersForClient.filter(m =>
     !matterSearch || m.name.toLowerCase().includes(matterSearch.toLowerCase())
   )
 
   const formDuration = getFormDuration()
   const wouldExceedMax = (todayLogged + formDuration) > MAX_DAILY_HRS && formDuration > 0
+
+  if (loading) {
+    return <div className="lt-page"><div className="lt-empty"><p>Loading...</p></div></div>
+  }
 
   return (
     <div className="lt-page">
@@ -448,8 +555,8 @@ export default function LegalTimesheets() {
             return (
               <div key={timer.id} className={`lt-timer-card ${timer.running ? 'lt-timer-running' : ''}`}>
                 <div className="lt-timer-info">
-                  <span className="lt-timer-client">{timer.client}</span>
-                  <span className="lt-timer-matter">{timer.matter}</span>
+                  <span className="lt-timer-client">{timer.clientName}</span>
+                  <span className="lt-timer-matter">{timer.matterName}</span>
                 </div>
                 <div className="lt-timer-display">
                   <span className="lt-timer-time">{formatElapsed(elapsed)}</span>
@@ -517,8 +624,8 @@ export default function LegalTimesheets() {
                     <div key={entry.id} className="lt-entry-card">
                       <div className="lt-entry-top" onClick={() => setExpandedEntry(isExpanded ? null : entry.id)}>
                         <div className="lt-entry-left">
-                          <div className="lt-entry-client">{entry.client}</div>
-                          <div className="lt-entry-matter">{entry.matter}</div>
+                          <div className="lt-entry-client">{entry.clientName}</div>
+                          <div className="lt-entry-matter">{entry.matterName}</div>
                           <div className="lt-entry-meta">
                             <span className="lt-entry-task-badge">{entry.taskCode} - {entry.taskLabel}</span>
                           </div>
@@ -660,7 +767,7 @@ export default function LegalTimesheets() {
                             className={`lt-dur-timer-opt ${formTimerId === timer.id ? 'lt-dur-timer-selected' : ''}`}
                             onClick={() => setFormTimerId(timer.id)}
                           >
-                            <span>{timer.client} - {timer.matter}</span>
+                            <span>{timer.clientName} - {timer.matterName}</span>
                             <span className="lt-dur-timer-elapsed">{formatElapsed(getTimerElapsed(timer))} ({elapsedToHrs(getTimerElapsed(timer))}h)</span>
                           </button>
                         ))}

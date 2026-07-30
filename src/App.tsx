@@ -65,6 +65,7 @@ import AdminShifts from './pages/admin/AdminShifts'
 import AdminRotas from './pages/admin/AdminRotas'
 import AdminSubscriptions from './pages/admin/AdminSubscriptions'
 import AdminBilling from './pages/admin/AdminBilling'
+import AdminLegalTimesheets from './pages/admin/AdminLegalTimesheets'
 
 function AdminGate() {
   const { companyUser } = useAuth()
@@ -177,6 +178,7 @@ function AuthGate() {
             <Route path="shifts" element={<AdminShifts />} />
             <Route path="rotas" element={<AdminRotas />} />
             <Route path="billing" element={<AdminBilling />} />
+            <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
@@ -215,6 +217,7 @@ function AuthGate() {
           <Route path="shifts" element={<AdminShifts />} />
           <Route path="rotas" element={<AdminRotas />} />
           <Route path="billing" element={<AdminBilling />} />
+          <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />
