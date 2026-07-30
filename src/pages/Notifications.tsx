@@ -168,7 +168,7 @@ export default function Notifications() {
         .order('created_at', { ascending: false }),
       supabase.from('workflow_tracker')
         .select('*')
-        .ilike('assigned_to', `%${HARDCODED_EMAIL}%`)
+        .or(`assigned_to.ilike.%${HARDCODED_EMAIL}%,employee_email.ilike.%${HARDCODED_EMAIL}%`)
         .eq('status', 'Complete')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })

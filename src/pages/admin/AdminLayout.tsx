@@ -30,6 +30,7 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/performance', label: 'Performance', icon: '🎯', feature: 'performance' },
   { path: '/admin/shifts', label: 'Shifts & Rotas', icon: '🔄', feature: 'shifts' },
   { path: '/admin/legal-timesheets', label: 'Legal Timesheets', icon: '⚖️', feature: 'legal_timesheets' },
+  { path: '/admin/notifications', label: 'Notifications', icon: '🔔' },
   { path: '/admin/billing', label: 'Billing', icon: '💳' },
 ]
 
