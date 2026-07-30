@@ -42,6 +42,7 @@ const defaultFeatures: Features = {
 
 interface FeatureContextType {
   features: Features
+  companyFeatures: Features
   setFeatures: (f: Features) => void
   loadCompanyFeatures: (companyId: string) => Promise<void>
   featuresLoaded: boolean
@@ -49,6 +50,7 @@ interface FeatureContextType {
 
 const FeatureContext = createContext<FeatureContextType>({
   features: defaultFeatures,
+  companyFeatures: defaultFeatures,
   setFeatures: () => {},
   loadCompanyFeatures: async () => {},
   featuresLoaded: false,
@@ -56,22 +58,24 @@ const FeatureContext = createContext<FeatureContextType>({
 
 export function FeatureProvider({ children }: { children: ReactNode }) {
   const [features, setFeaturesState] = useState<Features>(defaultFeatures)
+  const [companyFeatures, setCompanyFeatures] = useState<Features>(defaultFeatures)
   const [featuresLoaded, setFeaturesLoaded] = useState(false)
 
   const loadCompanyFeatures = useCallback(async (companyId: string) => {
-    const { data: companyFeatures } = await supabase
+    const { data: companyFeaturesData } = await supabase
       .from('company_features')
       .select('feature_key, is_enabled')
       .eq('company_id', companyId)
 
-    if (!companyFeatures || companyFeatures.length === 0) {
+    if (!companyFeaturesData || companyFeaturesData.length === 0) {
       setFeaturesState(defaultFeatures)
+      setCompanyFeatures(defaultFeatures)
       setFeaturesLoaded(true)
       return
     }
 
     const enabledAddons = new Set(
-      companyFeatures.filter(f => f.is_enabled).map(f => f.feature_key)
+      companyFeaturesData.filter(f => f.is_enabled).map(f => f.feature_key)
     )
 
     const newFeatures: Features = { ...defaultFeatures }
@@ -82,6 +86,7 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
       newFeatures[featureKey] = enabledAddons.has(dbKey)
     }
 
+    setCompanyFeatures({ ...newFeatures })
     setFeaturesState(newFeatures)
     setFeaturesLoaded(true)
   }, [])
@@ -91,7 +96,7 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <FeatureContext.Provider value={{ features, setFeatures, loadCompanyFeatures, featuresLoaded }}>
+    <FeatureContext.Provider value={{ features, companyFeatures, setFeatures, loadCompanyFeatures, featuresLoaded }}>
       {children}
     </FeatureContext.Provider>
   )

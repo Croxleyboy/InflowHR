@@ -144,8 +144,15 @@ export default function LegalTimesheets() {
   const [entries, setEntries] = useState<TimesheetEntry[]>([])
   const [loading, setLoading] = useState(true)
 
-  // ── Timer state (ephemeral, React-only) ──
-  const [timers, setTimers] = useState<TimerState[]>([])
+  // ── Timer state (persisted to localStorage) ──
+  const TIMER_STORAGE_KEY = `lt-timers-${companyId}-${employeeId}`
+  const [timers, setTimers] = useState<TimerState[]>(() => {
+    try {
+      const saved = localStorage.getItem(`lt-timers-${companyId}-${employeeId}`)
+      if (saved) return JSON.parse(saved) as TimerState[]
+    } catch { /* ignore */ }
+    return []
+  })
   const [showModal, setShowModal] = useState(false)
   const [expandedEntry, setExpandedEntry] = useState<string | null>(null)
   const [, setTick] = useState(0)
@@ -227,6 +234,13 @@ export default function LegalTimesheets() {
   }, [companyId, employeeId])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Persist timers to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(timers))
+    } catch { /* ignore */ }
+  }, [timers, TIMER_STORAGE_KEY])
 
   // Timer tick
   useEffect(() => {
@@ -548,7 +562,12 @@ export default function LegalTimesheets() {
       {/* Active Timers Tray */}
       {timers.length > 0 && (
         <div className="lt-timer-tray">
-          <div className="lt-timer-tray-label">{t('legal_ts.active_timers')}</div>
+          <div className="lt-timer-tray-header">
+            <div className="lt-timer-tray-label">{t('legal_ts.active_timers')}</div>
+            <button className="lt-timer-add-btn" onClick={() => { resetForm(); setFormDurationMode('timer'); setShowModal(true) }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            </button>
+          </div>
           {timers.map(timer => {
             const elapsed = getTimerElapsed(timer)
             const hrs = elapsedToHrs(elapsed)
@@ -757,9 +776,7 @@ export default function LegalTimesheets() {
 
                 {formDurationMode === 'timer' && (
                   <div className="lt-dur-timer-pick">
-                    {timers.length === 0 ? (
-                      <p className="lt-dur-no-timer">{t('legal_ts.no_active_timers')}</p>
-                    ) : (
+                    {timers.length > 0 && (
                       <div className="lt-dur-timer-list">
                         {timers.map(timer => (
                           <button
@@ -773,7 +790,10 @@ export default function LegalTimesheets() {
                         ))}
                       </div>
                     )}
-                    {formClient && formMatter && timers.length === 0 && (
+                    {timers.length === 0 && !formClient && (
+                      <p className="lt-dur-no-timer">{t('legal_ts.no_active_timers')}</p>
+                    )}
+                    {formClient && formMatter && !timers.find(tmr => tmr.clientId === formClient && tmr.matterId === formMatter) && (
                       <button className="lt-start-timer-btn" onClick={() => {
                         startTimer(formClient, formMatter)
                         setShowModal(false)

@@ -26,7 +26,7 @@ const monthLabels = [
 ]
 
 export default function Settings() {
-  const { features, setFeatures } = useFeatures()
+  const { features, companyFeatures, setFeatures } = useFeatures()
   const { lang, setLang, t, fyStartMonth, setFyStartMonth } = useLanguage()
   const { employeeName, employeeEmail, companyUser } = useAuth()
   const navigate = useNavigate()
@@ -117,7 +117,7 @@ export default function Settings() {
           <h2>{t('settings.features')}</h2>
           <p className="settings-hint">{t('settings.features_hint')}</p>
           <div className="feature-toggles">
-            {featureLabels.filter(({ key }) => features[key]).map(({ key, tKey }) => (
+            {featureLabels.filter(({ key }) => companyFeatures[key]).map(({ key, tKey }) => (
               <div className="toggle-row" key={key}>
                 <span>{t(tKey)}</span>
                 <button

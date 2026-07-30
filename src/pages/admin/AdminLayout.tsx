@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useFeatures, type Features } from '../../context/FeatureContext'
 import { AdminCompanyProvider, useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface MenuItem {
@@ -9,26 +10,27 @@ interface MenuItem {
   icon: string
   end?: boolean
   superAdminOnly?: boolean
+  feature?: keyof Features
 }
 
 const MENU_ITEMS: MenuItem[] = [
   { path: '/admin', label: 'Dashboard', icon: '📊', end: true },
   { path: '/admin/subscriptions', label: 'Subscriptions', icon: '📋', superAdminOnly: true },
-  { path: '/admin/expenses', label: 'Expenses', icon: '💰' },
-  { path: '/admin/leave', label: 'Leave', icon: '🏖️' },
-  { path: '/admin/payroll', label: 'Payroll', icon: '💷' },
+  { path: '/admin/expenses', label: 'Expenses', icon: '💰', feature: 'expenses' },
+  { path: '/admin/leave', label: 'Leave', icon: '🏖️', feature: 'leave' },
+  { path: '/admin/payroll', label: 'Payroll', icon: '💷', feature: 'payslips' },
   { path: '/admin/employees', label: 'Employees', icon: '👥' },
-  { path: '/admin/kudos', label: 'Kudos', icon: '⭐' },
-  { path: '/admin/elearning', label: 'E-Learning', icon: '📚' },
+  { path: '/admin/kudos', label: 'Kudos', icon: '⭐', feature: 'kudos' },
+  { path: '/admin/elearning', label: 'E-Learning', icon: '📚', feature: 'elearning' },
   { path: '/admin/announcements', label: 'Announcements', icon: '📢' },
   { path: '/admin/onboarding', label: 'Onboarding', icon: '🚀' },
   { path: '/admin/tickets', label: 'HR Tickets', icon: '🎫' },
-  { path: '/admin/benefits', label: 'Benefits', icon: '🎁' },
-  { path: '/admin/timesheets', label: 'Timesheets', icon: '⏱️' },
-  { path: '/admin/performance', label: 'Performance', icon: '🎯' },
-  { path: '/admin/shifts', label: 'Shifts', icon: '🔄' },
-  { path: '/admin/rotas', label: 'Rotas', icon: '📅' },
-  { path: '/admin/legal-timesheets', label: 'Legal Timesheets', icon: '⚖️' },
+  { path: '/admin/benefits', label: 'Benefits', icon: '🎁', feature: 'benefits' },
+  { path: '/admin/timesheets', label: 'Timesheets', icon: '⏱️', feature: 'timesheets' },
+  { path: '/admin/performance', label: 'Performance', icon: '🎯', feature: 'performance' },
+  { path: '/admin/shifts', label: 'Shifts', icon: '🔄', feature: 'shifts' },
+  { path: '/admin/rotas', label: 'Rotas', icon: '📅', feature: 'shifts' },
+  { path: '/admin/legal-timesheets', label: 'Legal Timesheets', icon: '⚖️', feature: 'legal_timesheets' },
   { path: '/admin/billing', label: 'Billing', icon: '💳' },
 ]
 
@@ -36,8 +38,12 @@ function AdminLayoutInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const navigate = useNavigate()
   const { isSuperAdmin } = useAuth()
+  const { features } = useFeatures()
   const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany } = useAdminCompany()
-  const visibleItems = MENU_ITEMS.filter(item => !item.superAdminOnly || isSuperAdmin)
+  const visibleItems = MENU_ITEMS.filter(item =>
+    (!item.superAdminOnly || isSuperAdmin) &&
+    (!item.feature || features[item.feature])
+  )
 
   return (
     <div className="admin-shell">

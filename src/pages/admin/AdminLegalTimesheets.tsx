@@ -42,7 +42,7 @@ interface TimesheetEntry {
   task_code: string
   duration_hrs: number
   narrative: string
-  status: 'pending' | 'approved' | 'rejected' | 'billed'
+  status: 'draft' | 'submitted' | 'pending' | 'approved' | 'rejected' | 'billed'
   submitted_at: string
   audit_log: AuditEntry[]
   created_at: string
@@ -75,7 +75,7 @@ interface LeaveRequest {
 }
 
 type Tab = 'overview' | 'review' | 'matters' | 'compliance'
-type ReviewFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'billed'
+type ReviewFilter = 'all' | 'draft' | 'submitted' | 'pending' | 'approved' | 'rejected' | 'billed'
 
 // ── Constants ──
 const TASK_CODES = [
@@ -101,6 +101,8 @@ const DEPARTMENTS = ['Corporate', 'Litigation', 'Employment', 'Property', 'Tax',
 const RATE_CARDS = ['Partner', 'Senior Associate', 'Associate', 'Trainee', 'Paralegal']
 
 const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
+  draft: { bg: '#f5f5f5', text: '#666' },
+  submitted: { bg: '#fff3e0', text: '#e65100' },
   pending: { bg: '#fff3e0', text: '#e65100' },
   approved: { bg: '#e8f5e9', text: '#2e7d32' },
   rejected: { bg: '#ffebee', text: '#c62828' },
@@ -108,6 +110,7 @@ const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
   active: { bg: '#e8f5e9', text: '#2e7d32' },
   archived: { bg: '#f5f5f5', text: '#888' },
 }
+const DEFAULT_STATUS_COLOR = { bg: '#f5f5f5', text: '#666' }
 
 // ── Helpers ──
 function fmtDate(d: string): string {
@@ -392,7 +395,7 @@ export default function AdminLegalTimesheets() {
     const auditEntry: AuditEntry = { action: 'approved', by: 'Admin', at: new Date().toISOString() }
     for (const id of ids) {
       const entry = entries.find(e => e.id === id)
-      if (!entry || entry.status !== 'pending') continue
+      if (!entry || !['submitted', 'pending'].includes(entry.status)) continue
       const newLog = [...(entry.audit_log || []), auditEntry]
       await supabase.from('legal_timesheet_entries').update({ status: 'approved', audit_log: newLog }).eq('id', id)
     }
@@ -406,7 +409,7 @@ export default function AdminLegalTimesheets() {
     const auditEntry: AuditEntry = { action: 'rejected', by: 'Admin', at: new Date().toISOString(), reason: rejectReason }
     for (const id of ids) {
       const entry = entries.find(e => e.id === id)
-      if (!entry || entry.status !== 'pending') continue
+      if (!entry || !['submitted', 'pending'].includes(entry.status)) continue
       const newLog = [...(entry.audit_log || []), auditEntry]
       await supabase.from('legal_timesheet_entries').update({ status: 'rejected', audit_log: newLog }).eq('id', id)
     }
@@ -671,6 +674,8 @@ export default function AdminLegalTimesheets() {
             <input className="admin-input admin-search" placeholder="Search all..." value={search} onChange={e => setSearch(e.target.value)} />
             <select className="admin-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value as ReviewFilter)}>
               <option value="all">All Statuses</option>
+              <option value="draft">Draft</option>
+              <option value="submitted">Submitted</option>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
@@ -706,7 +711,7 @@ export default function AdminLegalTimesheets() {
                     <td><span className="alt-code-badge">{e.task_code}</span></td>
                     <td style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{Number(e.duration_hrs).toFixed(1)}</td>
                     <td className="admin-td-wrap" style={{ maxWidth: 220, fontSize: 12, color: '#666' }}>{e.narrative.slice(0, 60)}{e.narrative.length > 60 ? '...' : ''}</td>
-                    <td><span className="admin-badge" style={{ background: STATUS_COLOR[e.status].bg, color: STATUS_COLOR[e.status].text }}>{e.status}</span></td>
+                    <td><span className="admin-badge" style={{ background: (STATUS_COLOR[e.status] || DEFAULT_STATUS_COLOR).bg, color: (STATUS_COLOR[e.status] || DEFAULT_STATUS_COLOR).text }}>{e.status}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -846,7 +851,7 @@ export default function AdminLegalTimesheets() {
                                 </>
                               ) : <span style={{ fontSize: 12, color: '#555', lineHeight: 1.4, display: 'block' }}>{e.narrative}</span>}
                             </td>
-                            <td><span className="admin-badge" style={{ background: STATUS_COLOR[e.status].bg, color: STATUS_COLOR[e.status].text }}>{e.status}</span></td>
+                            <td><span className="admin-badge" style={{ background: (STATUS_COLOR[e.status] || DEFAULT_STATUS_COLOR).bg, color: (STATUS_COLOR[e.status] || DEFAULT_STATUS_COLOR).text }}>{e.status}</span></td>
                             <td className="admin-actions">
                               {editingId === e.id ? (
                                 <>

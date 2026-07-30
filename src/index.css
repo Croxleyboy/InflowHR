@@ -4645,10 +4645,19 @@ body {
   border-radius: 14px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
+.lt-timer-tray-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
 .lt-timer-tray-label {
   font-size: 11px; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: 0.5px;
-  margin-bottom: 8px;
+}
+.lt-timer-add-btn {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: #FF6600; color: #fff; border: none;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
 }
 .lt-timer-card {
   display: flex; align-items: center; gap: 10px;

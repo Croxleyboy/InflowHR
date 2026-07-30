@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
+import { useFeatures, type Features } from '../context/FeatureContext'
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 
@@ -9,6 +10,7 @@ export default function DesktopLayout() {
   const { t } = useLanguage()
   const { signOut, employeeName, employeeEmail, employeeId, company, companyUser, avatarUrl } = useAuth()
   const { dark, toggle } = useTheme()
+  const { features } = useFeatures()
   const navigate = useNavigate()
   const [badgeCount, setBadgeCount] = useState(0)
   const [isManager, setIsManager] = useState(false)
@@ -34,22 +36,24 @@ export default function DesktopLayout() {
     }
   }, [employeeEmail, employeeId, companyUser?.company_id])
 
-  const navItems = [
+  const allNavItems: { to: string; icon: string; label: string; end?: boolean; badge?: number; feature?: keyof Features }[] = [
     { to: '/', icon: 'home', label: t('footer.dashboard'), end: true },
-    { to: '/expenses', icon: 'expenses', label: t('dashboard.expenses') },
-    { to: '/leave', icon: 'leave', label: t('footer.time_off') },
-    { to: '/timesheets', icon: 'timesheets', label: t('dashboard.timesheets') },
-    { to: '/payslips', icon: 'payslips', label: t('dashboard.payslips') },
-    { to: '/kudos', icon: 'kudos', label: t('dashboard.kudos') },
-    { to: '/benefits', icon: 'benefits', label: t('dashboard.benefits') },
-    { to: '/elearning', icon: 'elearning', label: t('dashboard.elearning') },
-    { to: '/shifts', icon: 'shifts', label: t('dashboard.shifts') },
-    { to: '/my-profile', icon: 'profile', label: t('dashboard.my_profile') },
+    { to: '/expenses', icon: 'expenses', label: t('dashboard.expenses'), feature: 'expenses' },
+    { to: '/leave', icon: 'leave', label: t('footer.time_off'), feature: 'leave' },
+    { to: '/timesheets', icon: 'timesheets', label: t('dashboard.timesheets'), feature: 'timesheets' },
+    { to: '/payslips', icon: 'payslips', label: t('dashboard.payslips'), feature: 'payslips' },
+    { to: '/kudos', icon: 'kudos', label: t('dashboard.kudos'), feature: 'kudos' },
+    { to: '/benefits', icon: 'benefits', label: t('dashboard.benefits'), feature: 'benefits' },
+    { to: '/elearning', icon: 'elearning', label: t('dashboard.elearning'), feature: 'elearning' },
+    { to: '/shifts', icon: 'shifts', label: t('dashboard.shifts'), feature: 'shifts' },
+    { to: '/legal-timesheets', icon: 'timesheets', label: t('dashboard.legal_timesheets'), feature: 'legal_timesheets' },
+    { to: '/my-profile', icon: 'profile', label: t('dashboard.my_profile'), feature: 'profile' },
     { to: '/directory', icon: 'directory', label: `${t('directory.title')} ${t('directory.title_accent')}` },
-    ...(isManager ? [{ to: '/one-to-ones', icon: 'one-to-ones', label: t('one_to_one.nav_label') }] : []),
+    ...(isManager ? [{ to: '/one-to-ones', icon: 'one-to-ones', label: t('one_to_one.nav_label'), feature: 'performance' as keyof Features }] : []),
     { to: '/notifications', icon: 'notifications', label: t('footer.notifications'), badge: badgeCount },
     { to: '/settings', icon: 'settings', label: t('footer.settings') },
   ]
+  const navItems = allNavItems.filter(item => !item.feature || features[item.feature])
 
   function renderIcon(icon: string) {
     switch (icon) {
