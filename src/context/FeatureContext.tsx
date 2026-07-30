@@ -12,6 +12,7 @@ export interface Features {
   performance: boolean
   timesheets: boolean
   shifts: boolean
+  legal_timesheets: boolean
 }
 
 const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos']
@@ -22,6 +23,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   payroll: 'payslips',
   elearning: 'elearning',
   benefits: 'benefits',
+  legal_timesheets: 'legal_timesheets',
 }
 
 const defaultFeatures: Features = {
@@ -35,6 +37,7 @@ const defaultFeatures: Features = {
   performance: true,
   timesheets: true,
   shifts: true,
+  legal_timesheets: true,
 }
 
 interface FeatureContextType {

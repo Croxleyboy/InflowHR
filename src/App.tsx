@@ -43,6 +43,7 @@ import OneToOneDetail from './pages/OneToOneDetail'
 import MyShifts from './pages/MyShifts'
 import ShiftSwap from './pages/ShiftSwap'
 import Availability from './pages/Availability'
+import LegalTimesheets from './pages/LegalTimesheets'
 import Placeholder from './pages/Placeholder'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -118,6 +119,7 @@ function EmployeeRoutes() {
       <Route path="/shifts" element={<MyShifts />} />
       <Route path="/shifts/swap" element={<ShiftSwap />} />
       <Route path="/shifts/availability" element={<Availability />} />
+      <Route path="/legal-timesheets" element={<LegalTimesheets />} />
       <Route path="/announcements" element={<Placeholder title="Company Announcements" />} />
     </Routes>
   )

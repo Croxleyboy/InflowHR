@@ -236,6 +236,14 @@ export default function Dashboard() {
             <Chevron color="#e65100" />
           </button>
         )}
+        {features.legal_timesheets && (
+          <button className="dash-card card-legal-ts" onClick={() => navigate('/legal-timesheets')}>
+            <div className="card-content">
+              <span className="card-label">{t('dashboard.legal_timesheets')}</span>
+            </div>
+            <Chevron color="#cc5200" />
+          </button>
+        )}
       </div>
 
       {latest && (
