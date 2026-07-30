@@ -180,7 +180,7 @@ export default function AdminOnboarding() {
 
     for (const row of uploadRows) {
       const { error } = await supabase.from('onboarding').insert({
-        ...row, status: 'new', is_complete: false,
+        ...row, status: 'new', is_complete: false, company_id: selectedCompanyId,
       })
       if (error) failed++
       else success++
@@ -212,9 +212,9 @@ export default function AdminOnboarding() {
   }
 
   async function createStarter() {
-    if (!newForm.firstname || !newForm.surname || !newForm.user_email) return
+    if (!newForm.firstname || !newForm.surname || !newForm.user_email || !selectedCompanyId) return
     const { data } = await supabase.from('onboarding').insert({
-      ...newForm, status: 'new', is_complete: false,
+      ...newForm, status: 'new', is_complete: false, company_id: selectedCompanyId,
     }).select().single()
     if (data) {
       setSelectedId(data.id)
@@ -266,12 +266,18 @@ export default function AdminOnboarding() {
     if (stepKey === 'plan_day1' || stepKey === 'meeting' || stepKey === 'notify_manager') updates.first_day = true
     if (stepKey === 'inform_starter') updates.first_week = true
     if (stepKey === 'accounts') {
+      const created = await createEmployeeFromOnboard(record)
+      if (!created) return
       updates.elearning = true
-      await createEmployeeFromOnboard(record)
     }
     if (stepKey === 'day1_access') {
       updates.is_complete = true; updates.status = 'Onboarded'; updates.appstatus = 'active'
-      await supabase.from('employees').update({ is_active: true }).eq('email', record.user_email)
+      const { data: emp } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
+      if (!emp) {
+        const created = await createEmployeeFromOnboard(record)
+        if (!created) return
+      }
+      await supabase.from('employees').update({ is_active: true }).eq('email', record.user_email).eq('company_id', selectedCompanyId)
     }
     if (!updates.status) updates.status = 'in-progress'
     const newSkips = { ...stepSkips, [stepKey]: false }
@@ -294,11 +300,11 @@ export default function AdminOnboarding() {
     setStepSkips(prev => ({ ...prev, [stepKey]: false }))
   }
 
-  async function createEmployeeFromOnboard(record: OnboardRecord) {
-    const { data: existing } = await supabase.from('employees').select('id').eq('email', record.user_email).maybeSingle()
-    if (existing) return
+  async function createEmployeeFromOnboard(record: OnboardRecord): Promise<boolean> {
+    const { data: existing } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
+    if (existing) return true
     const empNum = record.employee_number || `EMP-${Date.now().toString().slice(-6)}`
-    await supabase.from('employees').insert({
+    const { error } = await supabase.from('employees').insert({
       employee_number: empNum,
       first_name: record.firstname,
       last_name: record.surname,
@@ -309,7 +315,13 @@ export default function AdminOnboarding() {
       phone: record.telephone || '',
       is_admin: false,
       is_active: false,
+      company_id: selectedCompanyId,
     })
+    if (error) {
+      alert(`Failed to create employee record: ${error.message}`)
+      return false
+    }
+    return true
   }
 
   // --- Company Setup functions ---
@@ -412,7 +424,7 @@ export default function AdminOnboarding() {
       if (!onbErr) onboardCount++
 
       // 2. Create employee record
-      const { data: existing } = await supabase.from('employees').select('id').eq('email', row.user_email).maybeSingle()
+      const { data: existing } = await supabase.from('employees').select('id').eq('email', row.user_email).eq('company_id', setupCompanyId).maybeSingle()
       let employeeId = existing?.id
 
       if (!existing) {
