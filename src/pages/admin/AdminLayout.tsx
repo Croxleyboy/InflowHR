@@ -13,6 +13,7 @@ interface MenuItem {
 
 const MENU_ITEMS: MenuItem[] = [
   { path: '/admin', label: 'Dashboard', icon: '📊', end: true },
+  { path: '/admin/subscriptions', label: 'Subscriptions', icon: '📋', superAdminOnly: true },
   { path: '/admin/expenses', label: 'Expenses', icon: '💰' },
   { path: '/admin/leave', label: 'Leave', icon: '🏖️' },
   { path: '/admin/payroll', label: 'Payroll', icon: '💷' },
@@ -28,9 +29,6 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/shifts', label: 'Shifts', icon: '🔄' },
   { path: '/admin/rotas', label: 'Rotas', icon: '📅' },
   { path: '/admin/billing', label: 'Billing', icon: '💳' },
-  { path: '/admin/subscriptions', label: 'Subscriptions', icon: '📋', superAdminOnly: true },
-  { path: '/admin/companies', label: 'Companies', icon: '🏢', superAdminOnly: true },
-  { path: '/admin/demo-seed', label: 'Demo Seed', icon: '🌱', superAdminOnly: true },
 ]
 
 function AdminLayoutInner() {

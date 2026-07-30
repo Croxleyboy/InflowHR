@@ -500,7 +500,6 @@ export default function AdminRotas() {
           const chartStart = addDays(minDate, -pad)
           const chartEnd = addDays(maxDate, pad)
           const totalDays = Math.max(1, Math.round((chartEnd.getTime() - chartStart.getTime()) / 86400000))
-          const todayDate = formatDate(new Date())
           const todayOffset = Math.round((new Date().getTime() - chartStart.getTime()) / 86400000)
           const todayPct = Math.max(0, Math.min(100, (todayOffset / totalDays) * 100))
 

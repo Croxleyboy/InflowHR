@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import AdminCompanies from './AdminCompanies'
+import AdminDemoSeed from './AdminDemoSeed'
 
 interface PricingItem {
   id: string
@@ -28,7 +30,7 @@ interface CompanyFeature {
 
 export default function AdminSubscriptions() {
   const { isSuperAdmin } = useAuth()
-  const [tab, setTab] = useState<'pricing' | 'features'>('pricing')
+  const [tab, setTab] = useState<'pricing' | 'features' | 'companies' | 'demo-seed'>('pricing')
 
   // Pricing state
   const [pricing, setPricing] = useState<PricingItem[]>([])
@@ -245,6 +247,38 @@ export default function AdminSubscriptions() {
         >
           Company Features
         </button>
+        <button
+          onClick={() => setTab('companies')}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            background: 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            borderBottom: tab === 'companies' ? '3px solid #1565c0' : '3px solid transparent',
+            color: tab === 'companies' ? '#1565c0' : '#8b8fa3',
+            marginBottom: -2,
+          }}
+        >
+          Companies
+        </button>
+        <button
+          onClick={() => setTab('demo-seed')}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            background: 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            borderBottom: tab === 'demo-seed' ? '3px solid #1565c0' : '3px solid transparent',
+            color: tab === 'demo-seed' ? '#1565c0' : '#8b8fa3',
+            marginBottom: -2,
+          }}
+        >
+          Demo Seed
+        </button>
       </div>
 
       {/* Pricing Tab */}
@@ -415,6 +449,12 @@ export default function AdminSubscriptions() {
           )}
         </>
       )}
+
+      {/* Companies Tab */}
+      {tab === 'companies' && <AdminCompanies />}
+
+      {/* Demo Seed Tab */}
+      {tab === 'demo-seed' && <AdminDemoSeed />}
     </div>
   )
 }
