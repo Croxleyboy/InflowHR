@@ -61,8 +61,7 @@ import AdminCompanies from './pages/admin/AdminCompanies'
 import AdminTimesheets from './pages/admin/AdminTimesheets'
 import AdminPerformance from './pages/admin/AdminPerformance'
 import AdminDemoSeed from './pages/admin/AdminDemoSeed'
-import AdminShifts from './pages/admin/AdminShifts'
-import AdminRotas from './pages/admin/AdminRotas'
+import AdminShiftsRotas from './pages/admin/AdminShiftsRotas'
 import AdminSubscriptions from './pages/admin/AdminSubscriptions'
 import AdminBilling from './pages/admin/AdminBilling'
 import AdminLegalTimesheets from './pages/admin/AdminLegalTimesheets'
@@ -175,8 +174,7 @@ function AuthGate() {
             <Route path="benefits" element={<AdminBenefits />} />
             <Route path="timesheets" element={<AdminTimesheets />} />
             <Route path="performance" element={<AdminPerformance />} />
-            <Route path="shifts" element={<AdminShifts />} />
-            <Route path="rotas" element={<AdminRotas />} />
+            <Route path="shifts" element={<AdminShiftsRotas />} />
             <Route path="billing" element={<AdminBilling />} />
             <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
             <Route element={<SuperAdminGate />}>
@@ -214,8 +212,7 @@ function AuthGate() {
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="benefits" element={<AdminBenefits />} />
           <Route path="timesheets" element={<AdminTimesheets />} />
-          <Route path="shifts" element={<AdminShifts />} />
-          <Route path="rotas" element={<AdminRotas />} />
+          <Route path="shifts" element={<AdminShiftsRotas />} />
           <Route path="billing" element={<AdminBilling />} />
           <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
           <Route element={<SuperAdminGate />}>

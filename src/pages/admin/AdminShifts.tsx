@@ -116,12 +116,7 @@ export default function AdminShifts() {
   }), [templates])
 
   return (
-    <div className="admin-section">
-      <div className="admin-page-header">
-        <h2>Shift Templates</h2>
-        <p>{templates.length} templates</p>
-      </div>
-
+    <>
       <div className="admin-mini-stats">
         <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Total</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{stats.active}</span><span>Active</span></div>
@@ -226,6 +221,6 @@ export default function AdminShifts() {
           {filtered.length === 0 && <div className="admin-empty">No shift templates found</div>}
         </div>
       )}
-    </div>
+    </>
   )
 }

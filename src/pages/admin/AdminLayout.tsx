@@ -28,8 +28,7 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/benefits', label: 'Benefits', icon: '🎁', feature: 'benefits' },
   { path: '/admin/timesheets', label: 'Timesheets', icon: '⏱️', feature: 'timesheets' },
   { path: '/admin/performance', label: 'Performance', icon: '🎯', feature: 'performance' },
-  { path: '/admin/shifts', label: 'Shifts', icon: '🔄', feature: 'shifts' },
-  { path: '/admin/rotas', label: 'Rotas', icon: '📅', feature: 'shifts' },
+  { path: '/admin/shifts', label: 'Shifts & Rotas', icon: '🔄', feature: 'shifts' },
   { path: '/admin/legal-timesheets', label: 'Legal Timesheets', icon: '⚖️', feature: 'legal_timesheets' },
   { path: '/admin/billing', label: 'Billing', icon: '💳' },
 ]

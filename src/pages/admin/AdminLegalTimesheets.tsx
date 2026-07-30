@@ -576,7 +576,7 @@ export default function AdminLegalTimesheets() {
     <div className="admin-section alt-section">
       <div className="admin-page-header">
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ color: '#FF6600' }}>⚖️</span> Legal Timesheet Management
+          <span style={{ color: '#00897b' }}>⚖️</span> Legal Timesheet Management
         </h2>
         <p>Review, approve, and manage employee legal time entries, clients, and matters</p>
       </div>
@@ -606,7 +606,7 @@ export default function AdminLegalTimesheets() {
           <div className="alt-kpi-grid">
             <div className="alt-kpi alt-kpi-orange">
               <div className="alt-kpi-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FF6600" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
               </div>
               <div>
                 <div className="alt-kpi-value">{weekHrs.toFixed(1)}h</div>

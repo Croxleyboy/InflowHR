@@ -465,12 +465,7 @@ export default function AdminRotas() {
   // --- ROTA LIST VIEW ---
   if (!selectedRota) {
     return (
-      <div className="admin-section">
-        <div className="admin-page-header">
-          <h2>Job Schedule</h2>
-          <p>Manage rotas and shift assignments</p>
-        </div>
-
+      <>
         <div className="admin-mini-stats">
           <div className="admin-mini-stat" style={{ borderLeft: '4px solid #5c6bc0' }}>
             <span className="admin-mini-value">{stats.total}</span><span>Total Rotas</span>
@@ -634,7 +629,7 @@ export default function AdminRotas() {
             {rotas.length === 0 && <div className="admin-empty">No rotas found. Create one to get started.</div>}
           </div>
         )}
-      </div>
+      </>
     )
   }
 
@@ -652,7 +647,7 @@ export default function AdminRotas() {
 
   // --- ROTA GRID VIEW ---
   return (
-    <div className="admin-section">
+    <>
       {renderModal()}
 
       {/* Top Bar */}
@@ -847,6 +842,6 @@ export default function AdminRotas() {
           </button>
         </div>
       )}
-    </div>
+    </>
   )
 }
