@@ -1110,6 +1110,7 @@ body {
 .notif-icon-meeting { background: #7c3aed; }
 .notif-icon-default { background: #d4a017; }
 .notif-icon-company { background: #546e7a; }
+.notif-icon-swap { background: #e65100; }
 
 .notif-upcoming-leave {
   display: flex; align-items: center; gap: 12px;
@@ -1151,6 +1152,7 @@ body {
 .bar-red { background: #e53935; }
 .bar-purple { background: #7c3aed; }
 .bar-grey { background: #9e9e9e; }
+.bar-orange { background: #e65100; }
 
 .notif-action-content { flex: 1; display: flex; flex-direction: column; gap: 4px; padding-left: 4px; }
 .notif-action-title { font-size: 14px; font-weight: 700; color: var(--text); }
@@ -3164,14 +3166,15 @@ body {
 
 /* Filter Tabs */
 .elearning-filters {
-  display: flex; flex-wrap: wrap; gap: 6px; padding: 16px 16px 8px;
+  display: flex; gap: 6px; padding: 16px 16px 8px; overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .elearning-filter-chip {
-  flex: 1 1 0; min-width: 0;
-  padding: 7px 6px; border-radius: 20px;
+  flex: 0 0 auto;
+  padding: 7px 14px; border-radius: 20px;
   border: 1.5px solid var(--border);
   background: var(--card-bg); color: var(--text-muted);
-  font-size: 11.5px; font-weight: 600; cursor: pointer;
+  font-size: 12px; font-weight: 600; cursor: pointer;
   text-align: center; transition: all 0.2s;
   white-space: nowrap;
 }
@@ -3182,6 +3185,7 @@ body {
 /* Category Chips */
 .elearning-categories {
   display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px 4px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
 }
 .elearning-cat-chip {
   display: flex; align-items: center; gap: 4px;

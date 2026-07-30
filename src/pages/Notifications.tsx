@@ -29,6 +29,15 @@ interface Announcement {
   published_at: string
 }
 
+interface SwapAction {
+  id: string
+  requesting_employee_id: string
+  requester_name: string
+  shift_date: string
+  shift_name: string
+  created_at: string
+}
+
 
 function formatNotifDate(dateStr: string) {
   const d = new Date(dateStr)
@@ -145,6 +154,7 @@ export default function Notifications() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
   const [canPost, setCanPost] = useState(false)
+  const [swapActions, setSwapActions] = useState<SwapAction[]>([])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -174,6 +184,36 @@ export default function Notifications() {
     if (notifsRes.data) setMyNotifs(notifsRes.data as WorkflowItem[])
     if (announcementsRes.data) setAnnouncements(announcementsRes.data as Announcement[])
     if (empRes.data) setCanPost(empRes.data.can_post_notifications === true)
+
+    if (HARDCODED_EMPLOYEE_ID && companyUser?.company_id) {
+      const { data: swapData } = await supabase
+        .from('shift_swap_requests')
+        .select('id, requesting_employee_id, created_at, shift_assignment:shift_assignments(date, shift_template:shift_templates(name))')
+        .eq('target_employee_id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+
+      if (swapData) {
+        const empIds = [...new Set(swapData.map((s: any) => s.requesting_employee_id))]
+        const { data: empNames } = await supabase
+          .from('employees')
+          .select('id, first_name, last_name')
+          .in('id', empIds)
+        const nameMap: Record<string, string> = {}
+        ;(empNames || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
+
+        setSwapActions(swapData.map((s: any) => ({
+          id: s.id,
+          requesting_employee_id: s.requesting_employee_id,
+          requester_name: nameMap[s.requesting_employee_id] || '—',
+          shift_date: s.shift_assignment?.date || '',
+          shift_name: s.shift_assignment?.shift_template?.name || 'Shift',
+          created_at: s.created_at,
+        })))
+      }
+    }
+
     setLoading(false)
   }, [HARDCODED_EMPLOYEE_ID, HARDCODED_EMAIL])
 
@@ -182,7 +222,7 @@ export default function Notifications() {
     fetchData()
   }, [fetchData, HARDCODED_EMAIL])
 
-  const pendingCount = actions.length
+  const pendingCount = actions.length + swapActions.length
 
   function handleActionClick(item: WorkflowItem) {
     if (item.record_type === 'Meeting') {
@@ -347,7 +387,32 @@ export default function Notifications() {
             <button className="upcoming-leave-btn" onClick={() => navigate('/leave')}>{t('notifications.book_time_off')}</button>
           </div>
 
-          {actions.length === 0 && <p className="claims-empty">{t('notifications.no_actions')}</p>}
+          {actions.length === 0 && swapActions.length === 0 && <p className="claims-empty">{t('notifications.no_actions')}</p>}
+          {swapActions.map(swap => (
+            <button key={`swap-${swap.id}`} className="notif-action-card" onClick={() => navigate('/shifts/swap', { state: { tab: 'incoming' } })}>
+              <div className="notif-action-bar bar-orange" />
+              <div className="notif-icon notif-icon-swap">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+                  <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                  <path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                </svg>
+              </div>
+              <div className="notif-action-content">
+                <span className="notif-action-title">{t('shifts.swap_request_received')}</span>
+                <div className="notif-action-meta">
+                  <span className="notif-action-label" style={{ color: '#e65100' }}>{t('common.action')}</span>
+                  <span className="notif-action-date">{t('notifications.created')} {formatNotifDate(swap.created_at)}</span>
+                </div>
+                <div className="notif-action-detail">
+                  <span className="notif-action-type">{swap.shift_name} — {swap.shift_date}</span>
+                  <span className="notif-action-for">{t('notifications.swap_action')} {swap.requester_name}</span>
+                </div>
+              </div>
+              <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
+                <path d="M12 6l10 10-10 10" stroke="#e65100" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          ))}
           {actions.map(item => (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
               <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' ? 'bar-purple' : 'bar-grey'}`} />

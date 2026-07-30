@@ -33,7 +33,7 @@ export default function Settings() {
   const [draftLang, setDraftLang] = useState<Lang>(lang)
   const [draftFy, setDraftFy] = useState(fyStartMonth)
   const [saved, setSaved] = useState(false)
-  const isAdmin = companyUser && ['admin', 'hr'].includes(companyUser.role)
+  const isCompanyAdmin = companyUser?.role === 'admin'
 
   function handleToggle(key: keyof Features) {
     setDraft(d => ({ ...d, [key]: !d[key] }))
@@ -78,7 +78,7 @@ export default function Settings() {
         </div>
       </section>
 
-      {isAdmin && (
+      {isCompanyAdmin && (
         <section className="settings-section">
           <h2>{t('settings.app_settings')}</h2>
           <div className="settings-info">
@@ -111,12 +111,12 @@ export default function Settings() {
         </section>
       )}
 
-      {isAdmin && (
+      {isCompanyAdmin && (
         <section className="settings-section">
           <h2>{t('settings.features')}</h2>
           <p className="settings-hint">{t('settings.features_hint')}</p>
           <div className="feature-toggles">
-            {featureLabels.map(({ key, tKey }) => (
+            {featureLabels.filter(({ key }) => features[key]).map(({ key, tKey }) => (
               <div className="toggle-row" key={key}>
                 <span>{t(tKey)}</span>
                 <button
@@ -137,7 +137,7 @@ export default function Settings() {
         {saved ? t('settings.saved') : t('settings.save')}
       </button>
 
-      {isAdmin && (
+      {isCompanyAdmin && (
         <section className="settings-section settings-admin-section">
           <button className="settings-admin-btn" onClick={() => navigate('/admin')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

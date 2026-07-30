@@ -59,17 +59,27 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
-const PASTEL_MAP: Record<string, { bg: string; text: string }> = {}
-function getPastel(colour: string): { bg: string; text: string } {
-  if (PASTEL_MAP[colour]) return PASTEL_MAP[colour]
-  const hex = colour.replace('#', '')
-  const r = parseInt(hex.substring(0, 2), 16)
-  const g = parseInt(hex.substring(2, 4), 16)
-  const b = parseInt(hex.substring(4, 6), 16)
-  const bg = `rgba(${r}, ${g}, ${b}, 0.18)`
-  const text = `rgb(${Math.max(0, r - 40)}, ${Math.max(0, g - 40)}, ${Math.max(0, b - 40)})`
-  PASTEL_MAP[colour] = { bg, text }
-  return PASTEL_MAP[colour]
+const CARD_BG_PALETTE = [
+  { bg: '#e8f5e9', text: '#2e7d32', border: '#43a047' },
+  { bg: '#e3f2fd', text: '#1565c0', border: '#1e88e5' },
+  { bg: '#fff3e0', text: '#e65100', border: '#fb8c00' },
+  { bg: '#f3e5f5', text: '#7b1fa2', border: '#ab47bc' },
+  { bg: '#e0f7fa', text: '#00695c', border: '#00897b' },
+  { bg: '#fce4ec', text: '#c62828', border: '#ef5350' },
+  { bg: '#fff8e1', text: '#f57f17', border: '#fdd835' },
+  { bg: '#ede7f6', text: '#4527a0', border: '#7e57c2' },
+  { bg: '#e8eaf6', text: '#283593', border: '#5c6bc0' },
+  { bg: '#efebe9', text: '#4e342e', border: '#8d6e63' },
+]
+
+const TEMPLATE_COLOR_MAP: Record<string, typeof CARD_BG_PALETTE[0]> = {}
+let templateColorIndex = 0
+
+function getCardColor(templateId: string): { bg: string; text: string; border: string } {
+  if (TEMPLATE_COLOR_MAP[templateId]) return TEMPLATE_COLOR_MAP[templateId]
+  TEMPLATE_COLOR_MAP[templateId] = CARD_BG_PALETTE[templateColorIndex % CARD_BG_PALETTE.length]
+  templateColorIndex++
+  return TEMPLATE_COLOR_MAP[templateId]
 }
 
 function getWeekStart(date: Date): Date {
@@ -414,8 +424,7 @@ export default function MyShifts() {
                   <div className="schedule-no-shift">No shift</div>
                 ) : filter === 'everyone' ? (
                   groups.map(g => {
-                    const colour = g.template.colour || '#999'
-                    const pastel = getPastel(colour)
+                    const cardColor = getCardColor(g.templateId)
                     const showCount = Math.min(g.employees.length, 3)
                     const extra = g.employees.length - showCount
 
@@ -423,11 +432,11 @@ export default function MyShifts() {
                       <div
                         key={`${g.date}-${g.templateId}`}
                         className="sc-block"
-                        style={{ background: pastel.bg, borderLeftColor: colour }}
+                        style={{ background: cardColor.bg, borderLeftColor: cardColor.border }}
                       >
                         <div className="sc-block-top">
                           <div className="sc-block-info">
-                            <div className="sc-block-name" style={{ color: pastel.text }}>{g.template.name}</div>
+                            <div className="sc-block-name" style={{ color: cardColor.text }}>{g.template.name}</div>
                             <div className="sc-block-time">{formatTimeShort(g.template.start_time)} - {formatTimeShort(g.template.end_time)}</div>
                           </div>
                           <div className="sc-avatars" onClick={() => setPopupShift(g)}>
@@ -460,8 +469,7 @@ export default function MyShifts() {
                   })
                 ) : (
                   myShiftsForDay.map(s => {
-                    const colour = s.shift_template?.colour || '#999'
-                    const pastel = getPastel(colour)
+                    const cardColor = getCardColor(s.shift_template?.id || s.id)
                     const canEdit = s.rota?.status === 'draft'
                     const isEditing = editingId === s.id
 
@@ -469,11 +477,11 @@ export default function MyShifts() {
                       <div
                         key={s.id}
                         className="sc-block"
-                        style={{ background: pastel.bg, borderLeftColor: colour }}
+                        style={{ background: cardColor.bg, borderLeftColor: cardColor.border }}
                       >
                         <div className="sc-block-top">
                           <div className="sc-block-info">
-                            <div className="sc-block-name" style={{ color: pastel.text }}>{s.shift_template?.name || 'Shift'}</div>
+                            <div className="sc-block-name" style={{ color: cardColor.text }}>{s.shift_template?.name || 'Shift'}</div>
                             <div className="sc-block-time">
                               {formatTimeShort(s.shift_template?.start_time || '')} - {formatTimeShort(s.shift_template?.end_time || '')}
                             </div>

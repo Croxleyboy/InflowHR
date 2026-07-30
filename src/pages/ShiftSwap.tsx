@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
@@ -89,9 +89,11 @@ function avatarColor(name: string): string {
 
 export default function ShiftSwap() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { t } = useLanguage()
   const { employeeId, companyUser } = useAuth()
-  const [tab, setTab] = useState<SwapTab>('request')
+  const initialTab = (location.state as { tab?: SwapTab } | null)?.tab || 'request'
+  const [tab, setTab] = useState<SwapTab>(initialTab)
   const [shifts, setShifts] = useState<ShiftAssignment[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [sentRequests, setSentRequests] = useState<SwapRequest[]>([])
@@ -167,7 +169,7 @@ export default function ShiftSwap() {
 
     if (error) {
       console.error('[ShiftSwap] insert error:', error)
-      alert('Failed to submit swap request')
+      alert(t('shifts.swap_failed'))
     } else {
       setSelectedShiftId(null)
       setTargetEmployeeId('')
@@ -237,7 +239,7 @@ export default function ShiftSwap() {
         </button>
         <div className="feature-header-center">
           <h1 className="feature-title">{t('shifts.swap_title')}</h1>
-          <p className="feature-subtitle">Schichttausch</p>
+          <p className="feature-subtitle">{t('shifts.request_swap')}</p>
         </div>
         <button className="feature-refresh" onClick={fetchData}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -256,7 +258,7 @@ export default function ShiftSwap() {
         </button>
         <button className={`swap-tab ${tab === 'incoming' ? 'swap-tab-active' : ''}`} onClick={() => setTab('incoming')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-          Incoming
+          {t('shifts.incoming')}
           {pendingIncomingCount > 0 && <span className="swap-badge">{pendingIncomingCount}</span>}
         </button>
         <button className={`swap-tab ${tab === 'sent' ? 'swap-tab-active' : ''}`} onClick={() => setTab('sent')}>
@@ -275,7 +277,7 @@ export default function ShiftSwap() {
             </div>
           ) : (
             <div className="swap-shifts">
-              <p className="swap-hint">Select a shift you'd like to swap / Wähle eine Schicht zum Tauschen</p>
+              <p className="swap-hint">{t('shifts.select_shift_hint')}</p>
               {shifts
                 .sort((a, b) => a.date.localeCompare(b.date))
                 .map(s => {
@@ -304,9 +306,9 @@ export default function ShiftSwap() {
                       {isSelected && (
                         <div className="swap-form">
                           <div className="swap-form-field">
-                            <label>{t('shifts.swap_with')} / Tauschen mit</label>
+                            <label>{t('shifts.swap_with')}</label>
                             <select value={targetEmployeeId} onChange={e => setTargetEmployeeId(e.target.value)}>
-                              <option value="">Select colleague...</option>
+                              <option value="">{t('shifts.select_colleague')}</option>
                               {employees.filter(e => e.id !== employeeId).map(emp => (
                                 <option key={emp.id} value={emp.id}>
                                   {emp.first_name} {emp.last_name}
@@ -315,12 +317,12 @@ export default function ShiftSwap() {
                             </select>
                           </div>
                           <div className="swap-form-field">
-                            <label>{t('shifts.swap_reason')} / Grund (optional)</label>
+                            <label>{t('shifts.swap_reason')}</label>
                             <textarea
                               value={reason}
                               onChange={e => setReason(e.target.value)}
                               rows={2}
-                              placeholder="Why do you want to swap? / Warum möchtest du tauschen?"
+                              placeholder={t('shifts.swap_reason_placeholder')}
                             />
                           </div>
                           <button
@@ -351,7 +353,7 @@ export default function ShiftSwap() {
           {incomingRequests.length === 0 ? (
             <div className="swap-empty">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-              <p>No incoming swap requests / Keine eingehenden Tauschanfragen</p>
+              <p>{t('shifts.no_incoming')}</p>
             </div>
           ) : (
             <div className="swap-incoming-list">
@@ -402,7 +404,7 @@ export default function ShiftSwap() {
                         disabled={isActioning}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                        {isActioning ? '...' : 'Accept / Annehmen'}
+                        {isActioning ? '...' : t('shifts.swap_accept')}
                       </button>
                       <button
                         className="swap-action-decline"
@@ -410,7 +412,7 @@ export default function ShiftSwap() {
                         disabled={isActioning}
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        {isActioning ? '...' : 'Decline / Ablehnen'}
+                        {isActioning ? '...' : t('shifts.swap_decline')}
                       </button>
                     </div>
                   </div>
@@ -427,7 +429,7 @@ export default function ShiftSwap() {
           {sentRequests.length === 0 ? (
             <div className="swap-empty">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-              <p>{t('shifts.no_swaps')} / Keine Tauschanfragen</p>
+              <p>{t('shifts.no_swaps')}</p>
             </div>
           ) : (
             <div className="swap-sent-list">
@@ -465,7 +467,7 @@ export default function ShiftSwap() {
                           : target ? getInitials(target.first_name, target.last_name) : '?'
                         }
                       </div>
-                      <span>Sent to <strong>{targetName}</strong></span>
+                      <span>{t('shifts.swap_sent_to')} <strong>{targetName}</strong></span>
                       <span className="swap-sent-ago">{timeAgo(req.created_at)}</span>
                     </div>
 
@@ -482,7 +484,7 @@ export default function ShiftSwap() {
                         onClick={() => handleCancelSwap(req.id)}
                         disabled={isActioning}
                       >
-                        {isActioning ? '...' : 'Cancel request / Anfrage abbrechen'}
+                        {isActioning ? '...' : t('shifts.swap_cancel')}
                       </button>
                     )}
                   </div>
