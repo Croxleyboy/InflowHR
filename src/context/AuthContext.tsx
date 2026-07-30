@@ -64,7 +64,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('is_active', true)
 
     let cu = rows && rows.length > 0
-      ? rows.find(r => r.role === 'admin') || rows[0]
+      ? rows.find(r => r.role === 'admin' && r.employee_id)
+        || rows.find(r => r.employee_id != null)
+        || rows.find(r => r.role === 'admin')
+        || rows[0]
       : null
 
     if (!cu && email) {

@@ -2594,13 +2594,14 @@ body {
   object-fit: cover; flex-shrink: 0;
 }
 .directory-card-info {
-  flex: 1; display: flex; flex-direction: column; gap: 2px;
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
 }
 .directory-card-name {
   font-size: 16px; font-weight: 800; color: var(--text);
 }
 .directory-card-email {
   font-size: 12px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .directory-card-phone {
   flex-shrink: 0;
