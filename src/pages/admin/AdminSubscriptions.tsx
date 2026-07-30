@@ -136,7 +136,7 @@ export default function AdminSubscriptions() {
     if (!selectedCompanyId) return
     setSavingFeature(featureKey)
     const customPrice = customPrices[featureKey]
-    await supabase
+    const { error } = await supabase
       .from('company_features')
       .upsert(
         {
@@ -147,6 +147,7 @@ export default function AdminSubscriptions() {
         },
         { onConflict: 'company_id,feature_key' }
       )
+    if (error) alert('Failed to update feature: ' + error.message)
     await loadCompanyFeatures(selectedCompanyId)
     setSavingFeature(null)
   }

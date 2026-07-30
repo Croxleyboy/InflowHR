@@ -37,12 +37,12 @@ const MENU_ITEMS: MenuItem[] = [
 function AdminLayoutInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const navigate = useNavigate()
-  const { isSuperAdmin } = useAuth()
+  const { isSuperAdmin, employeeEmail, companyUser } = useAuth()
   const { features } = useFeatures()
   const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany } = useAdminCompany()
   const visibleItems = MENU_ITEMS.filter(item =>
     (!item.superAdminOnly || isSuperAdmin) &&
-    (!item.feature || features[item.feature])
+    (!item.feature || isSuperAdmin || features[item.feature])
   )
 
   return (
@@ -80,6 +80,11 @@ function AdminLayoutInner() {
         {!isSuperAdmin && selectedCompany && (
           <span className="admin-company-label">{selectedCompany.name}</span>
         )}
+
+        <div className="admin-topbar-user">
+          <span className="admin-topbar-role">{isSuperAdmin ? 'Super Admin' : companyUser?.role === 'admin' ? 'Company Admin' : 'Admin'}</span>
+          <span className="admin-topbar-email">{employeeEmail}</span>
+        </div>
 
         <button className="admin-topbar-exit" onClick={() => navigate('/')}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

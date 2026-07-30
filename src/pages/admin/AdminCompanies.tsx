@@ -201,23 +201,33 @@ export default function AdminCompanies() {
       .update({ is_admin: true })
       .eq('id', newEmployeeId)
 
-    const { data: existingCu } = await supabase
+    const { data: emp } = await supabase
+      .from('employees')
+      .select('email')
+      .eq('id', newEmployeeId)
+      .single()
+
+    const { data: cuByEmp } = await supabase
       .from('company_users')
       .select('id')
       .eq('company_id', companyId)
       .eq('employee_id', newEmployeeId)
       .maybeSingle()
 
-    if (existingCu) {
+    if (cuByEmp) {
       await supabase
         .from('company_users')
-        .update({ role: 'admin', employee_id: newEmployeeId })
-        .eq('id', existingCu.id)
-    } else {
-      await (supabase.rpc as any)('promote_employee_to_admin', {
+        .update({ role: 'admin' })
+        .eq('id', cuByEmp.id)
+    } else if (emp?.email) {
+      const { error } = await (supabase.rpc as any)('link_and_promote_admin', {
         p_company_id: companyId,
         p_employee_id: newEmployeeId,
+        p_email: emp.email,
       })
+      if (error) {
+        alert('Failed to assign admin: ' + error.message)
+      }
     }
 
     setEditingAdmin(null)

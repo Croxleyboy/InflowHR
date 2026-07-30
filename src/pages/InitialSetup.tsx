@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 
 export default function InitialSetup() {
   const { t } = useLanguage()
-  const { employeeEmail, employeeName, employeeId, markSetupComplete } = useAuth()
+  const { employeeEmail, employeeName, employeeId, companyUser, markSetupComplete } = useAuth()
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   const [dob, setDob] = useState('')
@@ -53,15 +53,16 @@ export default function InitialSetup() {
         .eq('id', employeeId)
     }
 
-    const { error: updErr } = await supabase.from('onboarding')
-      .update({
-        date_of_birth: dob,
-        avatar_url: avatarUrl || undefined,
-        next_of_kin_name: nextOfKinName.trim(),
-        emergency_contact_number: nextOfKinPhone.trim(),
-        initial_setup_complete: true,
-      })
-      .eq('user_email', employeeEmail)
+    const onbUpdate: Record<string, any> = {
+      date_of_birth: dob,
+      next_of_kin_name: nextOfKinName.trim(),
+      emergency_contact_number: nextOfKinPhone.trim(),
+      initial_setup_complete: true,
+    }
+    if (avatarUrl) onbUpdate.avatar_url = avatarUrl
+    let q = supabase.from('onboarding').update(onbUpdate).eq('user_email', employeeEmail)
+    if (companyUser?.company_id) q = q.eq('company_id', companyUser.company_id)
+    const { error: updErr } = await q
 
     if (updErr) {
       setError(updErr.message)

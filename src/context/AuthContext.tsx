@@ -81,6 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .from('employees')
           .select('id')
           .eq('email', email)
+          .eq('company_id', cu.company_id)
           .maybeSingle()
         if (emp) {
           empId = emp.id
@@ -131,8 +132,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .from('onboarding')
         .select('initial_setup_complete, avatar_url')
         .eq('user_email', email)
+        .eq('company_id', cu.company_id)
         .maybeSingle()
-      setSetupComplete(onb?.initial_setup_complete === true)
+      setSetupComplete(onb ? onb.initial_setup_complete === true : true)
       setAvatarUrl(onb?.avatar_url || null)
     } else {
       setSetupComplete(null)
