@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 const STORAGE_KEY = 'inflowhr-elearning'
 
@@ -26,10 +28,10 @@ function saveProgress(p: CourseProgress) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(p))
 }
 
-type CourseType = 'video' | 'article' | 'quiz' | 'policy'
+export type CourseType = 'video' | 'article' | 'quiz' | 'policy'
 type Category = 'all' | 'required' | 'recommended' | 'bookmarked'
 
-interface Course {
+export interface Course {
   id: string
   titleKey: string
   descKey: string
@@ -44,7 +46,7 @@ interface Course {
   externalUrl?: string
 }
 
-const COURSES: Course[] = [
+export const COURSES: Course[] = [
   // ── Onboarding ──
   { id: 'onb-welcome', titleKey: 'elearning.c_welcome_title', descKey: 'elearning.c_welcome_desc', category: 'onboarding', type: 'video', duration: '12 min', required: true, deadline: '2026-08-01', tags: ['new-starter'] },
   { id: 'onb-systems', titleKey: 'elearning.c_systems_title', descKey: 'elearning.c_systems_desc', category: 'onboarding', type: 'article', duration: '8 min', required: true, deadline: '2026-08-01', tags: ['new-starter'] },
@@ -150,16 +152,35 @@ function isRenewalDue(courseId: string, completedDates: Record<string, string>):
 export default function ELearning() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { companyUser } = useAuth()
   const [progress, setProgress] = useState<CourseProgress>(loadProgress)
   const [filter, setFilter] = useState<Category>('all')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [industryFilter, setIndustryFilter] = useState('')
   const [expandedCourse, setExpandedCourse] = useState<string | null>(null)
   const [showComplete, setShowComplete] = useState<string | null>(null)
+  const [enabledCourseIds, setEnabledCourseIds] = useState<Set<string> | null>(null)
 
+  const fetchEnabledCourses = useCallback(async () => {
+    if (!companyUser?.company_id) return
+    const { data } = await supabase
+      .from('company_elearning_courses')
+      .select('course_id')
+      .eq('company_id', companyUser.company_id)
+      .eq('is_enabled', true)
+    if (data) {
+      setEnabledCourseIds(new Set(data.map((r: any) => r.course_id)))
+    }
+  }, [companyUser?.company_id])
+
+  useEffect(() => { fetchEnabledCourses() }, [fetchEnabledCourses])
   useEffect(() => { saveProgress(progress) }, [progress])
 
-  const visibleCourses = COURSES.filter(c => !c.industry || c.industry === industryFilter || industryFilter === '')
+  const companyCourses = enabledCourseIds !== null
+    ? COURSES.filter(c => enabledCourseIds.has(c.id))
+    : COURSES
+
+  const visibleCourses = companyCourses.filter(c => !c.industry || c.industry === industryFilter || industryFilter === '')
 
   const completedCount = progress.completed.filter(id => visibleCourses.some(c => c.id === id)).length
   const totalHours = visibleCourses.reduce((sum, c) => {
