@@ -6,7 +6,6 @@ import { useAuth } from '../context/AuthContext'
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const DAY_ICONS = ['briefcase', 'briefcase', 'briefcase', 'briefcase', 'briefcase', 'sun', 'sun']
 
 interface DayAvailability {
   day_of_week: number

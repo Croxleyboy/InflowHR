@@ -99,11 +99,6 @@ function formatTimeShort(t: string): string {
   return t.substring(0, 5)
 }
 
-// Map day_of_week (0=Sun..6=Sat) to grid column index (0=Mon..6=Sun)
-function dayOfWeekToGridIndex(dow: number): number {
-  return dow === 0 ? 6 : dow - 1
-}
-
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function AdminRotas() {

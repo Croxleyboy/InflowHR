@@ -90,7 +90,7 @@ function avatarColor(name: string): string {
 export default function ShiftSwap() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId, companyUser, employeeEmail } = useAuth()
+  const { employeeId, companyUser } = useAuth()
   const [tab, setTab] = useState<SwapTab>('request')
   const [shifts, setShifts] = useState<ShiftAssignment[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -216,11 +216,6 @@ export default function ShiftSwap() {
   }
 
   const pendingIncomingCount = incomingRequests.length
-
-  function empName(id: string): string {
-    const e = employeeMap[id]
-    return e ? `${e.first_name} ${e.last_name}` : '—'
-  }
 
   if (loading) {
     return (
