@@ -756,7 +756,7 @@ const en: Translations = {
 
   // Legal Timesheets
   'legal_ts.title': 'Legal Timesheets',
-  'legal_ts.subtitle': 'Rechtsanwalt Zeiterfassung',
+  'legal_ts.subtitle': 'Track and submit your billable hours',
   'legal_ts.today': 'Today',
   'legal_ts.this_week': 'This Week',
   'legal_ts.daily_target': '% of daily target',
