@@ -3,33 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-const BENEFITS_KEY = 'inflowhr-benefits'
-const ADMIN_BENEFITS_KEY = 'inflowhr-admin-benefits'
-
-interface BenefitDeduction {
-  name: string
-  amount: number
-}
-
-function getBenefitDeductions(): BenefitDeduction[] {
-  try {
-    const enrollRaw = localStorage.getItem(BENEFITS_KEY)
-    const adminRaw = localStorage.getItem(ADMIN_BENEFITS_KEY)
-    if (!enrollRaw || !adminRaw) return []
-    const enrollments = JSON.parse(enrollRaw)
-    const adminBenefits = JSON.parse(adminRaw)
-    const deductions: BenefitDeduction[] = []
-    const keyToId: Record<string, string> = { health_insurance: 'health', car_insurance: 'car', cycle_scheme: 'cycle' }
-    for (const [key, id] of Object.entries(keyToId)) {
-      if (!enrollments[key]) continue
-      const b = adminBenefits.find((x: any) => x.id === id)
-      if (b && (b.monthlyCost ?? 0) > 0) {
-        deductions.push({ name: b.title || id, amount: b.monthlyCost })
-      }
-    }
-    return deductions
-  } catch { return [] }
-}
 
 const MONTH_NAMES_EN = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTH_NAMES_DE = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
@@ -73,11 +46,10 @@ interface PayslipData {
 export default function Payslips() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl, company } = useAuth()
   const [payslip, setPayslip] = useState<PayslipData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [benefitDeductions] = useState<BenefitDeduction[]>(getBenefitDeductions)
-  const totalBenefitDeductions = benefitDeductions.reduce((s, d) => s + d.amount, 0)
+  const [employeeRole, setEmployeeRole] = useState('')
   const monthNames = lang === 'de' ? MONTH_NAMES_DE : MONTH_NAMES_EN
 
   const fyMonths = getFYMonths()
@@ -105,13 +77,27 @@ export default function Payslips() {
 
   useEffect(() => { loadPayslip() }, [loadPayslip])
 
+  useEffect(() => {
+    if (!EMPLOYEE_ID) return
+    supabase.from('employees')
+      .select('job_title, department')
+      .eq('id', EMPLOYEE_ID)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          const parts = [data.job_title, data.department].filter(Boolean)
+          setEmployeeRole(parts.join(' — '))
+        }
+      })
+  }, [EMPLOYEE_ID])
+
   const canPrev = monthIdx > 0
   const canNext = monthIdx < fyMonths.length - 1
 
   const fmt = (n: number) => n?.toFixed(2) ?? '0.00'
 
   const totalDeductions = payslip
-    ? payslip.tax + payslip.national_insurance + payslip.pension + payslip.other_deductions + (payslip.monthly_deductions || 0) + totalBenefitDeductions
+    ? payslip.tax + payslip.national_insurance + payslip.pension + payslip.other_deductions + (payslip.monthly_deductions || 0)
     : 0
 
   return (
@@ -153,7 +139,7 @@ export default function Payslips() {
         <div className="payslips-content">
           <div className="payslips-company-banner">
             <div className="payslips-company-top">
-              <span className="payslips-company-name">Kumonix Ltd</span>
+              <span className="payslips-company-name">{company?.name || ''}</span>
               <span className="payslips-company-addr">{payslip.payroll_office || ''}</span>
             </div>
           </div>
@@ -168,7 +154,7 @@ export default function Payslips() {
             </div>
             <div className="payslips-employee-info">
               <span className="payslips-employee-name">{employeeName}</span>
-              <span className="payslips-employee-role">CEO — Leadership</span>
+              {employeeRole && <span className="payslips-employee-role">{employeeRole}</span>}
             </div>
           </div>
 
@@ -180,10 +166,6 @@ export default function Payslips() {
             <div className="payslips-info-item">
               <span className="payslips-info-label">{t('payslips.tax_code')}</span>
               <span className="payslips-info-value">{payslip.tax_code || '-'}</span>
-            </div>
-            <div className="payslips-info-item">
-              <span className="payslips-info-label">{t('payslips.ni_number')}</span>
-              <span className="payslips-info-value">AB 12 34 56 C</span>
             </div>
             <div className="payslips-info-item">
               <span className="payslips-info-label">{t('payslips.pay_period')}</span>
@@ -235,12 +217,6 @@ export default function Payslips() {
                 <span>&pound;{fmt(payslip.other_deductions)}</span>
               </div>
             )}
-            {benefitDeductions.map(d => (
-              <div key={d.name} className="payslips-row payslips-row-benefit">
-                <span>{t('payslips.benefit_deduction')}: {d.name}</span>
-                <span>&pound;{fmt(d.amount)}</span>
-              </div>
-            ))}
             <div className="payslips-row payslips-row-total">
               <span>{t('payslips.total_deductions')}</span>
               <span>&pound;{fmt(totalDeductions)}</span>
@@ -249,7 +225,7 @@ export default function Payslips() {
 
           <div className="payslips-net-pay">
             <span>{t('payslips.net_pay')}</span>
-            <span>&pound;{fmt(payslip.net_pay - totalBenefitDeductions)}</span>
+            <span>&pound;{fmt(payslip.net_pay)}</span>
           </div>
 
           <div className="payslips-footer-info">

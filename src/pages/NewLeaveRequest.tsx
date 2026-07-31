@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -6,18 +6,11 @@ import { useAuth } from '../context/AuthContext'
 import { LEAVE_TYPE_KEYS } from '../lib/translations'
 import { countWorkingDays } from '../lib/workingDays'
 
-function getBenefitLeaveTypes(): { name: string; translationKey: string }[] {
-  try {
-    const raw = localStorage.getItem('inflowhr-benefits')
-    if (!raw) return []
-    const data = JSON.parse(raw)
-    const extras: { name: string; translationKey: string }[] = []
-    if (data.vacation_options?.includes('buy_leave')) extras.push({ name: 'Buy Additional Leave', translationKey: 'buy_leave' })
-    if (data.vacation_options?.includes('sell_leave')) extras.push({ name: 'Sell Unused Leave', translationKey: 'sell_leave' })
-    if (data.vacation_options?.includes('carry_over')) extras.push({ name: 'Carry Over Leave', translationKey: 'carry_over' })
-    if (data.vacation_options?.includes('compressed_hours')) extras.push({ name: 'Compressed Hours', translationKey: 'compressed_hours' })
-    return extras
-  } catch { return [] }
+const VACATION_OPTION_LEAVE_TYPES: Record<string, { name: string; translationKey: string }> = {
+  buy_leave: { name: 'Buy Additional Leave', translationKey: 'buy_leave' },
+  sell_leave: { name: 'Sell Unused Leave', translationKey: 'sell_leave' },
+  carry_over: { name: 'Carry Over Leave', translationKey: 'carry_over' },
+  compressed_hours: { name: 'Compressed Hours', translationKey: 'compressed_hours' },
 }
 
 
@@ -111,8 +104,8 @@ export default function NewLeaveRequest() {
   const { t } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
   const MANAGER_EMAIL = EMPLOYEE_EMAIL
-  const benefitTypes = useMemo(() => getBenefitLeaveTypes(), [])
-  const allLeaveTypes = useMemo(() => [...LEAVE_TYPE_KEYS, ...benefitTypes], [benefitTypes])
+  const [benefitLeaveTypes, setBenefitLeaveTypes] = useState<{ name: string; translationKey: string }[]>([])
+  const allLeaveTypes = [...LEAVE_TYPE_KEYS, ...benefitLeaveTypes]
   const [leaveType, setLeaveType] = useState(LEAVE_TYPE_KEYS[0].name)
   const [startDate, setStartDate] = useState(todayStr())
   const [endDate, setEndDate] = useState(todayStr())
@@ -143,7 +136,35 @@ export default function NewLeaveRequest() {
       .then(({ data }) => {
         if (data?.weekends_as_workdays) setWeekendsAsWorkdays(true)
       })
-  }, [companyUser?.company_id])
+    if (EMPLOYEE_ID) {
+      supabase.from('benefit_types')
+        .select('id')
+        .eq('company_id', companyUser.company_id)
+        .eq('benefit_key', 'vacation')
+        .eq('is_enabled', true)
+        .maybeSingle()
+        .then(({ data: vacType }) => {
+          if (!vacType) return
+          supabase.from('benefit_enrollments')
+            .select('option_id, benefit_options!inner(option_key)')
+            .eq('company_id', companyUser!.company_id)
+            .eq('employee_id', EMPLOYEE_ID!)
+            .eq('benefit_type_id', vacType.id)
+            .not('option_id', 'is', null)
+            .then(({ data: enrolled }) => {
+              if (!enrolled) return
+              const extras: { name: string; translationKey: string }[] = []
+              for (const row of enrolled) {
+                const optKey = (row as any).benefit_options?.option_key
+                if (optKey && VACATION_OPTION_LEAVE_TYPES[optKey]) {
+                  extras.push(VACATION_OPTION_LEAVE_TYPES[optKey])
+                }
+              }
+              setBenefitLeaveTypes(extras)
+            })
+        })
+    }
+  }, [companyUser?.company_id, EMPLOYEE_ID])
 
   useEffect(() => {
     if (halfDay) return
