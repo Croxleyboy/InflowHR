@@ -221,31 +221,27 @@ export default function ShiftSwap() {
 
   if (loading) {
     return (
-      <div className="feature-page">
+      <div className="shifts-page">
         <p className="claims-empty">{t('common.loading')}</p>
       </div>
     )
   }
 
   return (
-    <div className="swap-page">
+    <div className="shifts-page">
       {/* Header */}
-      <header className="schedule-header">
-        <button className="feature-back" onClick={() => navigate('/shifts')}>
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="#c62828" strokeWidth="2" />
-            <path d="M21 12l-6 6 6 6" stroke="#c62828" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+      <header className="shifts-header">
+        <button className="shifts-header-back" onClick={() => navigate('/shifts')}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <div className="feature-header-center">
-          <h1 className="feature-title">{t('shifts.swap_title')}</h1>
-          <p className="feature-subtitle">{t('shifts.request_swap')}</p>
+        <div className="shifts-header-center">
+          <h1 className="shifts-header-title">{t('shifts.swap_title')}</h1>
+          <p className="shifts-header-subtitle">{t('shifts.request_swap')}</p>
         </div>
-        <button className="feature-refresh" onClick={fetchData}>
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="#c62828" strokeWidth="2" />
-            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#c62828" strokeWidth="2" strokeLinecap="round" />
-            <path d="M22 10v4h-4M10 22v-4h4" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <button className="shifts-header-refresh" onClick={fetchData}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
+            <path d="M21 12a9 9 0 0 1-15.36 6.36" /><path d="M3 12a9 9 0 0 1 15.36-6.36" />
+            <polyline points="21 3 21 9 15 9" /><polyline points="3 21 3 15 9 15" />
           </svg>
         </button>
       </header>
