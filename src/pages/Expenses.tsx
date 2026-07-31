@@ -48,6 +48,7 @@ export default function Expenses() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showGraph, setShowGraph] = useState(false)
+  const [claimsWithReceipts, setClaimsWithReceipts] = useState<Set<number>>(new Set())
 
   const fetchClaims = useCallback(async () => {
     if (!companyUser?.company_id || !employeeId) return
@@ -63,7 +64,17 @@ export default function Expenses() {
     if (err) {
       setError(err.message)
     } else {
-      setClaims(data as Claim[])
+      const rows = data as Claim[]
+      setClaims(rows)
+      const ids = rows.map(c => c.id)
+      if (ids.length > 0) {
+        const { data: receiptRows } = await supabase
+          .from('expense_line_items')
+          .select('expense_claim_id')
+          .in('expense_claim_id', ids)
+          .not('receipt_url', 'is', null)
+        if (receiptRows) setClaimsWithReceipts(new Set(receiptRows.map((r: { expense_claim_id: number }) => r.expense_claim_id)))
+      }
     }
     setLoading(false)
   }, [companyUser?.company_id, employeeId])
@@ -159,6 +170,14 @@ export default function Expenses() {
               <span className="claim-desc">{claim.title}</span>
               <div className="claim-amount-row">
                 <span className="claim-amount">{formatAmount(claim.amount)}</span>
+                {claimsWithReceipts.has(claim.id) && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                  </svg>
+                )}
                 <span className="claim-status">
                   <span className="status-dot" style={{ background: statusColor[claim.status] }} />
                   {tStatus(claim.status)}

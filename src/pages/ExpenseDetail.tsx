@@ -21,6 +21,7 @@ interface LineItem {
   amount: number
   date_of_purchase: string
   description: string | null
+  receipt_url: string | null
 }
 
 function formatDateTime(dateStr: string) {
@@ -51,7 +52,7 @@ export default function ExpenseDetail() {
     setLoading(true)
     const [claimRes, itemsRes] = await Promise.all([
       supabase.from('expense_claims').select('id, reference_number, title, status, amount, created_at').eq('id', id).single(),
-      supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description').eq('expense_claim_id', id).order('created_at', { ascending: true }),
+      supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description, receipt_url').eq('expense_claim_id', id).order('created_at', { ascending: true }),
     ])
     if (claimRes.data) setClaim(claimRes.data as Claim)
     if (itemsRes.data) setItems(itemsRes.data as LineItem[])
@@ -112,7 +113,7 @@ export default function ExpenseDetail() {
 
   async function handleItemAdded() {
     setShowNewItem(false)
-    const { data } = await supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description').eq('expense_claim_id', id).order('created_at', { ascending: true })
+    const { data } = await supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description, receipt_url').eq('expense_claim_id', id).order('created_at', { ascending: true })
     if (data) setItems(data as LineItem[])
     const newTotal = (data as LineItem[] || []).reduce((s, i) => s + i.amount, 0)
     await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id)
@@ -195,6 +196,16 @@ export default function ExpenseDetail() {
               <span className="line-item-title">{item.title}</span>
               <span className="line-item-type">{tExpenseType(item.expense_type)}</span>
             </div>
+            {item.receipt_url && (
+              <a href={item.receipt_url} target="_blank" rel="noopener noreferrer" className="line-item-receipt" title="View receipt / Beleg anzeigen">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+              </a>
+            )}
             <span className="line-item-amount">£{item.amount.toFixed(2)}</span>
             {isEditable && (
               <button className="line-item-delete" onClick={() => handleDeleteItem(item.id)}>

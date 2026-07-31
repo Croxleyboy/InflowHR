@@ -38,6 +38,7 @@ export default function Dashboard() {
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
   const [lastExpense, setLastExpense] = useState<number | null>(null)
+  const [lastExpenseHasReceipt, setLastExpenseHasReceipt] = useState(false)
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const [leavePending, setLeavePending] = useState<number | null>(null)
   const [isManager, setIsManager] = useState(false)
@@ -63,13 +64,22 @@ export default function Dashboard() {
         .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
 
       supabase.from('expense_claims')
-        .select('amount')
+        .select('id, amount')
         .eq('employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
-        .then(({ data }) => { if (data) setLastExpense(data.amount) })
+        .then(({ data }) => {
+          if (data) {
+            setLastExpense(data.amount)
+            supabase.from('expense_line_items')
+              .select('id', { count: 'exact', head: true })
+              .eq('expense_claim_id', data.id)
+              .not('receipt_url', 'is', null)
+              .then(({ count }) => setLastExpenseHasReceipt((count || 0) > 0))
+          }
+        })
 
       supabase.from('employees')
         .select('id', { count: 'exact', head: true })
@@ -153,7 +163,7 @@ export default function Dashboard() {
           <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>
             <div className="card-content">
               <span className="card-label">{t('dashboard.expenses')}</span>
-              <span className="card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}</span>
+              <span className="card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}{lastExpenseHasReceipt && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 4, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>}</span>
               <span className="card-sub">{t('dashboard.last_claim')}</span>
             </div>
             <Chevron color="#c8e600" />
