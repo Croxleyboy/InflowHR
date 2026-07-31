@@ -4179,42 +4179,94 @@ body {
 }
 
 /* ===== 1:1 Meetings ===== */
+/* ── 1:1 Performance page (Benefits-style) ── */
+.oto-page { padding: 0 0 100px; }
+
+.oto-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px;
+  background: linear-gradient(135deg, #9333ea, #7c3aed);
+  color: #fff;
+}
+.oto-header-back { background: none; border: none; cursor: pointer; padding: 0; }
+.oto-header-refresh { background: none; border: none; cursor: pointer; padding: 0; }
+.oto-header-center { flex: 1; text-align: center; }
+.oto-header-title { font-size: 22px; font-weight: 800; margin: 0; color: #fff; }
+.oto-header-subtitle { font-size: 13px; color: rgba(255,255,255,0.8); margin: 2px 0 0; font-weight: 400; }
+
+.oto-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 16px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+.oto-tab {
+  flex: 1;
+  padding: 12px 8px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  font-size: 0.88em;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: inherit;
+}
+.oto-tab-active {
+  color: #7c3aed;
+  border-bottom-color: #7c3aed;
+}
+.oto-tab-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  background: #7c3aed; color: #fff; border-radius: 10px;
+  font-size: 0.75em; font-weight: 700; margin-left: 6px;
+}
+
 .oto-schedule-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin: 12px 16px 4px;
-  padding: 12px 20px;
+  margin: 16px;
+  padding: 14px 20px;
   background: #7c3aed;
   color: #fff;
   border: none;
-  border-radius: 12px;
-  font-size: 0.95em;
-  font-weight: 600;
+  border-radius: 14px;
+  font-size: 1em;
+  font-weight: 700;
   cursor: pointer;
+  width: calc(100% - 32px);
+  box-sizing: border-box;
+  transition: background 0.15s;
 }
+.oto-schedule-btn:hover { background: #6d28d9; }
+
 .oto-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 12px;
+  padding: 16px;
 }
 .oto-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 14px;
+  padding: 16px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid #d8b4fe;
   border-radius: 14px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   cursor: pointer;
-  transition: transform 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s;
 }
-.oto-card:active { transform: scale(0.98); }
+.oto-card:active { transform: scale(0.98); box-shadow: 0 4px 14px rgba(0,0,0,0.12); }
 .oto-card-avatar {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   background: linear-gradient(135deg, #7c3aed, #a855f7);
   color: #fff;
@@ -4222,7 +4274,7 @@ body {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 0.85em;
+  font-size: 0.9em;
   flex-shrink: 0;
 }
 .oto-card-content {
@@ -4231,7 +4283,7 @@ body {
 }
 .oto-card-name {
   display: block;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.95em;
   color: var(--text);
 }
@@ -4239,15 +4291,15 @@ body {
   display: block;
   font-size: 0.82em;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 .oto-card-status {
   display: inline-block;
   font-size: 0.75em;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 3px 10px;
   border-radius: 8px;
-  margin-top: 4px;
+  margin-top: 5px;
 }
 .oto-status-pending { background: #fef3c7; color: #92400e; }
 .oto-status-accepted { background: #d1fae5; color: #065f46; }
@@ -4283,12 +4335,12 @@ body {
 .oto-report-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 14px;
+  padding: 16px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 2px solid #d8b4fe;
   border-radius: 14px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 .oto-report-info {
   flex: 1;
@@ -4296,7 +4348,7 @@ body {
 }
 .oto-report-name {
   display: block;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 0.95em;
   color: var(--text);
 }
@@ -4319,18 +4371,98 @@ body {
   gap: 4px;
 }
 .oto-report-schedule {
-  padding: 6px 14px;
+  padding: 8px 16px;
   background: #7c3aed;
   color: #fff;
   border: none;
-  border-radius: 8px;
-  font-size: 0.8em;
+  border-radius: 10px;
+  font-size: 0.82em;
   font-weight: 600;
   cursor: pointer;
 }
 .oto-report-count {
   font-size: 0.75em;
   color: var(--text-muted);
+}
+
+/* ── Meeting detail page ── */
+.oto-detail-card {
+  margin: 16px;
+  padding: 20px;
+  background: var(--bg-card);
+  border: 2px solid #d8b4fe;
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.oto-detail-person {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+.oto-detail-avatar {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 0.9em; flex-shrink: 0;
+}
+.oto-detail-avatar-img {
+  width: 48px; height: 48px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+  border: 2px solid #7c3aed;
+}
+.oto-detail-person-info { flex: 1; min-width: 0; }
+.oto-detail-person-name { display: block; font-weight: 700; font-size: 1em; color: var(--text); }
+.oto-detail-person-role { display: block; font-size: 0.82em; color: var(--text-muted); margin-top: 2px; }
+.oto-detail-badge {
+  font-size: 0.78em; font-weight: 600; padding: 4px 12px;
+  border-radius: 10px; flex-shrink: 0;
+}
+.oto-detail-info {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.oto-detail-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0 4px;
+}
+.oto-detail-label {
+  font-size: 0.85em; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.oto-detail-value {
+  font-size: 0.92em; font-weight: 600; color: var(--text);
+}
+.oto-detail-actions {
+  display: flex; gap: 10px; margin-top: 20px;
+}
+.oto-detail-accept {
+  flex: 1; padding: 12px; background: #059669; color: #fff;
+  border: none; border-radius: 12px; font-size: 0.95em; font-weight: 700;
+  cursor: pointer;
+}
+.oto-detail-decline {
+  flex: 1; padding: 12px; background: #dc2626; color: #fff;
+  border: none; border-radius: 12px; font-size: 0.95em; font-weight: 700;
+  cursor: pointer;
+}
+.oto-detail-save-btn {
+  width: 100%; padding: 12px; background: #7c3aed; color: #fff;
+  border: none; border-radius: 12px; font-size: 0.95em; font-weight: 700;
+  cursor: pointer; margin-top: 4px; transition: background 0.15s;
+}
+.oto-detail-save-btn:hover { background: #6d28d9; }
+.oto-detail-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.oto-detail-cancel-section {
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);
+  text-align: center;
+}
+.oto-detail-cancel-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 24px; background: #dc2626; color: #fff;
+  border: none; border-radius: 12px; font-size: 0.88em; font-weight: 600;
+  cursor: pointer;
 }
 
 /* Meeting detail: summary + comments */
@@ -4344,25 +4476,30 @@ body {
   font-weight: 700;
   font-size: 0.9em;
   color: var(--text);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .oto-summary-textarea {
   width: 100%;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  padding: 14px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
   font-size: 0.9em;
   font-family: inherit;
   resize: vertical;
   background: var(--bg-card);
   color: var(--text);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.oto-summary-textarea:focus {
+  outline: none; border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.12);
 }
 .oto-summary-readonly {
-  padding: 12px;
+  padding: 14px;
   background: rgba(124,58,237,0.08);
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 0.9em;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -4377,10 +4514,10 @@ body {
   border-top: 1px solid var(--border);
 }
 .oto-comment {
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: rgba(128,128,128,0.06);
-  border-radius: 10px;
-  margin-bottom: 8px;
+  border-radius: 12px;
+  margin-bottom: 10px;
 }
 [data-theme="dark"] .oto-comment {
   background: rgba(255,255,255,0.05);
@@ -4389,7 +4526,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .oto-comment-author {
   font-weight: 600;
@@ -4408,28 +4545,33 @@ body {
   color: var(--text);
 }
 .oto-add-comment {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .oto-comment-input {
   width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  padding: 12px 14px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
   font-size: 0.88em;
   font-family: inherit;
   resize: vertical;
   background: var(--bg-card);
   color: var(--text);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.oto-comment-input:focus {
+  outline: none; border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.12);
 }
 .oto-comment-submit {
-  padding: 8px 16px;
+  padding: 10px 20px;
   background: #7c3aed;
   color: #fff;
   border: none;
-  border-radius: 8px;
-  font-size: 0.85em;
+  border-radius: 10px;
+  font-size: 0.88em;
   font-weight: 600;
   cursor: pointer;
 }
@@ -4448,16 +4590,16 @@ body {
 
 /* Schedule 1:1 form */
 .oto-schedule-form {
-  padding: 16px;
+  padding: 20px 16px;
 }
 .oto-form-section {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 .oto-form-label {
   display: block;
   font-weight: 700;
   font-size: 0.85em;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
@@ -4465,13 +4607,13 @@ body {
 .oto-employee-grid {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .oto-employee-option {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   background: var(--bg-card);
   border: 2px solid var(--border);
   border-radius: 14px;
@@ -4492,8 +4634,8 @@ body {
   box-shadow: 0 0 0 3px rgba(124,58,237,0.15);
 }
 .oto-employee-option-avatar {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   background: linear-gradient(135deg, #7c3aed, #a855f7);
   color: #fff;
@@ -4525,7 +4667,7 @@ body {
 }
 .oto-form-input {
   width: 100%;
-  padding: 12px 14px;
+  padding: 14px;
   border: 2px solid var(--border);
   border-radius: 12px;
   font-size: 0.95em;
@@ -4563,7 +4705,7 @@ body {
   font-size: 1em;
   font-weight: 700;
   cursor: pointer;
-  margin-top: 8px;
+  margin-top: 10px;
   transition: background 0.15s;
 }
 .oto-form-submit:hover { background: #6d28d9; }
@@ -4573,7 +4715,7 @@ body {
 }
 
 .oto-card-avatar-img {
-  width: 44px; height: 44px; border-radius: 50%;
+  width: 48px; height: 48px; border-radius: 50%;
   object-fit: cover; flex-shrink: 0;
 }
 .emp-avatar-img {

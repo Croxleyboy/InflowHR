@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useFeatures } from '../../context/FeatureContext'
 
 const ADMIN_BENEFITS_KEY = 'inflowhr-admin-benefits'
 
@@ -109,6 +110,8 @@ function saveBenefits(benefits: BenefitType[]) {
 }
 
 export default function AdminBenefits() {
+  const { features } = useFeatures()
+  const payrollEnabled = features.payslips
   const [benefits, setBenefits] = useState<BenefitType[]>(loadBenefits)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -134,6 +137,7 @@ export default function AdminBenefits() {
 
   function startEditBenefit(b: BenefitType) {
     setEditingId(b.id)
+    setExpandedId(b.id)
     setEditForm({ title: b.title, description: b.description, icon: b.icon, color: b.color, intro: b.intro, eligibility: b.eligibility, cost: b.cost, monthlyCost: b.monthlyCost ?? 0, lockPeriod: b.lockPeriod ?? 'none' })
   }
 
@@ -213,8 +217,8 @@ export default function AdminBenefits() {
             <div className="admin-form-field"><label>Colour</label><input type="color" className="admin-input" value={newBenefit.color} onChange={e => setNewBenefit(p => ({...p, color: e.target.value}))} style={{height:'40px',padding:'2px'}} /></div>
             <div className="admin-form-field" style={{gridColumn:'1/-1'}}><label>Introduction Text</label><textarea className="admin-input" rows={2} value={newBenefit.intro} onChange={e => setNewBenefit(p => ({...p, intro: e.target.value}))} /></div>
             <div className="admin-form-field"><label>Eligibility</label><input className="admin-input" value={newBenefit.eligibility} onChange={e => setNewBenefit(p => ({...p, eligibility: e.target.value}))} /></div>
-            <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={newBenefit.cost} onChange={e => setNewBenefit(p => ({...p, cost: e.target.value}))} /></div>
-            <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={newBenefit.monthlyCost} onChange={e => setNewBenefit(p => ({...p, monthlyCost: parseFloat(e.target.value) || 0}))} /></div>
+            <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={newBenefit.cost} onChange={e => setNewBenefit(p => ({...p, cost: e.target.value}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
+            <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={newBenefit.monthlyCost} onChange={e => setNewBenefit(p => ({...p, monthlyCost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
             <div className="admin-form-field"><label>Lock Period</label>
               <select className="admin-input" value={newBenefit.lockPeriod} onChange={e => setNewBenefit(p => ({...p, lockPeriod: e.target.value as 'none' | 'month' | 'year'}))}>
                 <option value="none">None</option>
@@ -280,15 +284,17 @@ export default function AdminBenefits() {
                   <tr key={`exp-${b.id}`} className="admin-expanded-row">
                     <td colSpan={6}>
                       <div className="admin-expanded-content">
-                        {editingId === b.id && (
+                        {editingId === b.id ? (
                           <div className="admin-benefit-edit-extras">
                             <div className="admin-form-grid">
+                              <div className="admin-form-field"><label>Title</label><input className="admin-input" value={editForm.title} onChange={e => setEditForm(f => ({...f, title: e.target.value}))} /></div>
+                              <div className="admin-form-field"><label>Description</label><input className="admin-input" value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} /></div>
                               <div className="admin-form-field"><label>Icon</label><input className="admin-input" value={editForm.icon} onChange={e => setEditForm(f => ({...f, icon: e.target.value}))} /></div>
                               <div className="admin-form-field"><label>Colour</label><input type="color" className="admin-input" value={editForm.color} onChange={e => setEditForm(f => ({...f, color: e.target.value}))} style={{height:'40px',padding:'2px'}} /></div>
                               <div className="admin-form-field" style={{gridColumn:'1/-1'}}><label>Introduction</label><textarea className="admin-input" rows={2} value={editForm.intro} onChange={e => setEditForm(f => ({...f, intro: e.target.value}))} /></div>
                               <div className="admin-form-field"><label>Eligibility</label><input className="admin-input" value={editForm.eligibility} onChange={e => setEditForm(f => ({...f, eligibility: e.target.value}))} /></div>
-                              <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={editForm.cost} onChange={e => setEditForm(f => ({...f, cost: e.target.value}))} /></div>
-                              <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={editForm.monthlyCost ?? 0} onChange={e => setEditForm(f => ({...f, monthlyCost: parseFloat(e.target.value) || 0}))} /></div>
+                              <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={editForm.cost} onChange={e => setEditForm(f => ({...f, cost: e.target.value}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
+                              <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={editForm.monthlyCost ?? 0} onChange={e => setEditForm(f => ({...f, monthlyCost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
                               <div className="admin-form-field"><label>Lock Period</label>
                                 <select className="admin-input" value={editForm.lockPeriod ?? 'none'} onChange={e => setEditForm(f => ({...f, lockPeriod: e.target.value}))}>
                                   <option value="none">None</option>
@@ -297,15 +303,16 @@ export default function AdminBenefits() {
                                 </select>
                               </div>
                             </div>
+                            {!payrollEnabled && <p style={{color:'#e53935', fontSize:'12px', margin:'8px 0 0'}}>Payroll feature is disabled — cost fields are read-only</p>}
+                          </div>
+                        ) : (
+                          <div className="admin-benefit-meta">
+                            <div><strong>Eligibility:</strong> {b.eligibility}</div>
+                            <div><strong>Cost:</strong> {b.cost}</div>
+                            <div><strong>Monthly Cost:</strong> £{(b.monthlyCost ?? 0).toFixed(2)}</div>
+                            <div><strong>Lock Period:</strong> {(b.lockPeriod ?? 'none') === 'none' ? 'None' : b.lockPeriod === 'month' ? 'Monthly' : 'Financial Year'}</div>
                           </div>
                         )}
-
-                        <div className="admin-benefit-meta">
-                          <div><strong>Eligibility:</strong> {b.eligibility}</div>
-                          <div><strong>Cost:</strong> {b.cost}</div>
-                          <div><strong>Monthly Cost:</strong> £{(b.monthlyCost ?? 0).toFixed(2)}</div>
-                          <div><strong>Lock Period:</strong> {(b.lockPeriod ?? 'none') === 'none' ? 'None' : b.lockPeriod === 'month' ? 'Monthly' : 'Financial Year'}</div>
-                        </div>
 
                         <div className="admin-benefit-options-header">
                           <h4>Options ({b.options.length})</h4>

@@ -115,30 +115,26 @@ export default function OneToOnes() {
   const history = meetings.filter(m => m.status === 'completed' || m.scheduled_date < today)
 
   return (
-    <div className="feature-page">
-      <header className="notif-header">
-        <div className="notif-header-center">
-          <h1 className="notif-title">{t('one_to_one.title')}</h1>
-          <p className="notif-subtitle">{t('one_to_one.page_subtitle')}</p>
+    <div className="oto-page">
+      <header className="oto-header">
+        <div className="oto-header-center">
+          <h1 className="oto-header-title">{t('one_to_one.title')}</h1>
+          <p className="oto-header-subtitle">{t('one_to_one.page_subtitle')}</p>
         </div>
-        <button className="feature-refresh" onClick={fetchData}>
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="#3d6b99" strokeWidth="2" />
-            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" />
-            <path d="M22 10v4h-4M10 22v-4h4" stroke="#3d6b99" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+        <button className="oto-header-refresh" onClick={fetchData}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         </button>
       </header>
 
-      <div className="notif-tabs">
-        <button className={`notif-tab ${tab === 'upcoming' ? 'notif-tab-active' : ''}`} onClick={() => setTab('upcoming')}>
-          {t('one_to_one.upcoming')} {upcoming.length > 0 && <span className="notif-tab-badge">{upcoming.length}</span>}
+      <div className="oto-tabs">
+        <button className={`oto-tab ${tab === 'upcoming' ? 'oto-tab-active' : ''}`} onClick={() => setTab('upcoming')}>
+          {t('one_to_one.upcoming')} {upcoming.length > 0 && <span className="oto-tab-badge">{upcoming.length}</span>}
         </button>
-        <button className={`notif-tab ${tab === 'history' ? 'notif-tab-active' : ''}`} onClick={() => setTab('history')}>
+        <button className={`oto-tab ${tab === 'history' ? 'oto-tab-active' : ''}`} onClick={() => setTab('history')}>
           {t('one_to_one.history')}
         </button>
         {isManager && (
-          <button className={`notif-tab ${tab === 'reports' ? 'notif-tab-active' : ''}`} onClick={() => setTab('reports')}>
+          <button className={`oto-tab ${tab === 'reports' ? 'oto-tab-active' : ''}`} onClick={() => setTab('reports')}>
             {t('one_to_one.direct_reports')}
           </button>
         )}

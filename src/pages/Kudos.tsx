@@ -203,7 +203,7 @@ export default function Kudos() {
   }, [fetchData, EMPLOYEE_ID])
 
   const displayEntries = colleaguesOnly && watchlist.length > 0
-    ? entries.filter(e => watchlist.includes(e.from_employee_id))
+    ? entries.filter(e => e.is_broadcast || watchlist.includes(e.from_employee_id))
     : entries
 
   async function handleLike(entry: KudosEntry) {

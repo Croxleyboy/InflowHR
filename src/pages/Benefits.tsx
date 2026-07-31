@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
+import { useFeatures } from '../context/FeatureContext'
 
 const STORAGE_KEY = 'inflowhr-benefits'
 const ADMIN_BENEFITS_KEY = 'inflowhr-admin-benefits'
@@ -87,6 +88,8 @@ const VACATION_OPTIONS = [
 export default function Benefits() {
   const navigate = useNavigate()
   const { t } = useLanguage()
+  const { features } = useFeatures()
+  const payrollEnabled = features.payslips
   const [enrollments, setEnrollments] = useState<BenefitEnrollments>(loadEnrollments)
   const [openModal, setOpenModal] = useState<string | null>(null)
   const [adminCfg] = useState<AdminBenefitType[] | null>(loadAdminConfig)
@@ -286,7 +289,7 @@ export default function Benefits() {
                 ))}
               </div>
               <p className="benefits-modal-eligibility">{t('benefits.health_eligibility')}</p>
-              <p className="benefits-modal-cost">{t('benefits.health_cost')}</p>
+              {payrollEnabled && <p className="benefits-modal-cost">{t('benefits.health_cost')}</p>}
               {(() => { const lock = isLocked(adminCfg, 'health', enrollments.enrollDates); return (
                 <>
                   <button className={`benefits-signup-btn ${enrollments.health_insurance ? 'benefits-signup-active' : ''} ${lock.locked && enrollments.health_insurance ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBool('health_insurance')} disabled={lock.locked && enrollments.health_insurance}>
@@ -331,7 +334,7 @@ export default function Benefits() {
                 ))}
               </div>
               <p className="benefits-modal-eligibility">{t('benefits.car_eligibility')}</p>
-              <p className="benefits-modal-cost">{t('benefits.car_cost')}</p>
+              {payrollEnabled && <p className="benefits-modal-cost">{t('benefits.car_cost')}</p>}
               {(() => { const lock = isLocked(adminCfg, 'car', enrollments.enrollDates); return (
                 <>
                   <button className={`benefits-signup-btn ${enrollments.car_insurance ? 'benefits-signup-active' : ''} ${lock.locked && enrollments.car_insurance ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBool('car_insurance')} disabled={lock.locked && enrollments.car_insurance}>
@@ -376,7 +379,7 @@ export default function Benefits() {
                 ))}
               </div>
               <p className="benefits-modal-eligibility">{t('benefits.cycle_eligibility')}</p>
-              <p className="benefits-modal-cost">{t('benefits.cycle_cost')}</p>
+              {payrollEnabled && <p className="benefits-modal-cost">{t('benefits.cycle_cost')}</p>}
               {(() => { const lock = isLocked(adminCfg, 'cycle', enrollments.enrollDates); return (
                 <>
                   <button className={`benefits-signup-btn ${enrollments.cycle_scheme ? 'benefits-signup-active' : ''} ${lock.locked && enrollments.cycle_scheme ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBool('cycle_scheme')} disabled={lock.locked && enrollments.cycle_scheme}>

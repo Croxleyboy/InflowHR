@@ -167,44 +167,35 @@ export default function OneToOneDetail() {
     navigate('/one-to-ones')
   }
 
-  if (loading) return <div className="feature-page"><p className="claims-empty">{t('common.loading')}</p></div>
-  if (!meeting) return <div className="feature-page"><p className="claims-empty">{t('one_to_one.not_found')}</p></div>
+  if (loading) return <div className="oto-page"><p className="claims-empty">{t('common.loading')}</p></div>
+  if (!meeting) return <div className="oto-page"><p className="claims-empty">{t('one_to_one.not_found')}</p></div>
 
   const canComplete = iAmManager && ['pending', 'accepted'].includes(meeting.status)
   const canEditSummary = iAmManager && meeting.status === 'completed'
   const isCompleted = meeting.status === 'completed'
 
   return (
-    <div className="feature-page leave-approval-page">
-      <header className="leave-approval-header">
-        <div className="leave-approval-avatar">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="1.5">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
-        </div>
-        <div className="leave-approval-header-center">
-          <h1 className="leave-approval-title">{t('one_to_one.detail_title')}</h1>
-          <p className="leave-approval-subtitle">{formatDate(meeting.scheduled_date)}</p>
-        </div>
-        <button className="leave-approval-back" onClick={() => navigate('/one-to-ones')}>
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="#7c3aed" strokeWidth="2" />
-            <path d="M21 12l-6 6 6 6" stroke="#7c3aed" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+    <div className="oto-page">
+      <header className="oto-header">
+        <button className="oto-header-back" onClick={() => navigate('/one-to-ones')}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
+        <div className="oto-header-center">
+          <h1 className="oto-header-title">{t('one_to_one.detail_title')}</h1>
+          <p className="oto-header-subtitle">{formatDate(meeting.scheduled_date)}</p>
+        </div>
       </header>
 
-      <div className="leave-approval-card">
-        <div className="leave-approval-emp-row">
-          {otherAvatar ? <img className="emp-avatar-img" src={otherAvatar} alt={otherName} /> : <div className="leave-approval-emp-avatar">{otherInitials}</div>}
-          <div className="leave-approval-emp-info">
-            <span className="leave-approval-emp-name">{otherName}</span>
-            <span className="leave-approval-emp-ref">
+      <div className="oto-detail-card">
+        <div className="oto-detail-person">
+          {otherAvatar ? <img className="oto-detail-avatar-img" src={otherAvatar} alt={otherName} /> : <div className="oto-detail-avatar">{otherInitials}</div>}
+          <div className="oto-detail-person-info">
+            <span className="oto-detail-person-name">{otherName}</span>
+            <span className="oto-detail-person-role">
               {iAmManager ? t('one_to_one.your_report') : t('one_to_one.your_manager')}
             </span>
           </div>
-          <span className={`leave-approval-badge oto-status-${meeting.status}`}>
+          <span className={`oto-detail-badge oto-status-${meeting.status}`}>
             {meeting.status === 'pending' ? t('one_to_one.awaiting_response') :
              meeting.status === 'accepted' ? t('one_to_one.confirmed') :
              meeting.status === 'completed' ? t('one_to_one.completed') :
@@ -213,29 +204,29 @@ export default function OneToOneDetail() {
           </span>
         </div>
 
-        <div className="leave-approval-details">
-          <div className="leave-detail-row">
-            <span className="leave-detail-label">{t('one_to_one.manager')}</span>
-            <span className="leave-detail-value">{managerName}</span>
+        <div className="oto-detail-info">
+          <div className="oto-detail-row">
+            <span className="oto-detail-label">{t('one_to_one.manager')}</span>
+            <span className="oto-detail-value">{managerName}</span>
           </div>
-          <div className="leave-detail-row">
-            <span className="leave-detail-label">{t('one_to_one.employee')}</span>
-            <span className="leave-detail-value">{employeeName}</span>
+          <div className="oto-detail-row">
+            <span className="oto-detail-label">{t('one_to_one.employee')}</span>
+            <span className="oto-detail-value">{employeeName}</span>
           </div>
-          <div className="leave-detail-row">
-            <span className="leave-detail-label">{t('one_to_one.meeting_date')}</span>
-            <span className="leave-detail-value">{formatDate(meeting.scheduled_date)}</span>
+          <div className="oto-detail-row">
+            <span className="oto-detail-label">{t('one_to_one.meeting_date')}</span>
+            <span className="oto-detail-value">{formatDate(meeting.scheduled_date)}</span>
           </div>
-          <div className="leave-detail-row">
-            <span className="leave-detail-label">{t('one_to_one.meeting_time')}</span>
-            <span className="leave-detail-value">{meeting.scheduled_time.slice(0, 5)}</span>
+          <div className="oto-detail-row">
+            <span className="oto-detail-label">{t('one_to_one.meeting_time')}</span>
+            <span className="oto-detail-value">{meeting.scheduled_time.slice(0, 5)}</span>
           </div>
         </div>
 
         {!iAmManager && meeting.status === 'pending' && (
-          <div className="leave-approval-actions">
-            <button className="leave-approve-btn" onClick={handleAccept}>{t('one_to_one.accept')}</button>
-            <button className="leave-decline-btn" onClick={handleDecline}>{t('one_to_one.decline_btn')}</button>
+          <div className="oto-detail-actions">
+            <button className="oto-detail-accept" onClick={handleAccept}>{t('one_to_one.accept')}</button>
+            <button className="oto-detail-decline" onClick={handleDecline}>{t('one_to_one.decline_btn')}</button>
           </div>
         )}
 
@@ -249,7 +240,7 @@ export default function OneToOneDetail() {
               placeholder={t('one_to_one.summary_placeholder')}
               rows={5}
             />
-            <button className="leave-approve-btn" onClick={handleSaveSummary} disabled={saving || !summary.trim()}>
+            <button className="oto-detail-save-btn" onClick={handleSaveSummary} disabled={saving || !summary.trim()}>
               {saving ? t('common.saving') : (canComplete ? t('one_to_one.complete_meeting') : t('one_to_one.update_summary'))}
             </button>
           </div>
@@ -295,8 +286,8 @@ export default function OneToOneDetail() {
         )}
 
         {['pending', 'accepted'].includes(meeting.status) && (
-          <div className="manager-delete-section">
-            <button className="manager-delete-btn" onClick={handleCancel}>
+          <div className="oto-detail-cancel-section">
+            <button className="oto-detail-cancel-btn" onClick={handleCancel}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
               </svg>

@@ -85,17 +85,14 @@ export default function NewOneToOne() {
   const today = new Date().toISOString().split('T')[0]
 
   return (
-    <div className="feature-page">
-      <header className="notif-header">
-        <button className="leave-approval-back" onClick={() => navigate('/one-to-ones')} style={{ position: 'absolute', right: 16 }}>
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="#7c3aed" strokeWidth="2" />
-            <path d="M21 12l-6 6 6 6" stroke="#7c3aed" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+    <div className="oto-page">
+      <header className="oto-header">
+        <button className="oto-header-back" onClick={() => navigate('/one-to-ones')}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <div className="notif-header-center">
-          <h1 className="notif-title">{t('one_to_one.new_title')}</h1>
-          <p className="notif-subtitle">{t('one_to_one.new_subtitle')}</p>
+        <div className="oto-header-center">
+          <h1 className="oto-header-title">{t('one_to_one.new_title')}</h1>
+          <p className="oto-header-subtitle">{t('one_to_one.new_subtitle')}</p>
         </div>
       </header>
 
