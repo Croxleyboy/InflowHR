@@ -72,7 +72,21 @@ export default function NewTimesheet() {
     }
 
     if (!asDraft && data) {
-      const managerEmail = employeeEmail
+      let managerEmail = employeeEmail
+      const { data: empRow } = await supabase
+        .from('employees')
+        .select('manager_id')
+        .eq('id', employeeId)
+        .single()
+      if (empRow?.manager_id) {
+        const { data: mgr } = await supabase
+          .from('employees')
+          .select('email')
+          .eq('id', empRow.manager_id)
+          .single()
+        if (mgr?.email) managerEmail = mgr.email
+      }
+
       await supabase.from('workflow_tracker').insert({
         emp_display_name: employeeName,
         step: 1,
@@ -84,6 +98,21 @@ export default function NewTimesheet() {
         approval_id: data.id,
         reminder_count: 1,
         task_description: `Timesheet - ${date} ${startTime}-${endTime} (${effectiveRole})`,
+        company_id: companyUser?.company_id,
+      })
+
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: employeeName,
+        step: 1,
+        status: 'Complete',
+        record_type: 'Timesheet',
+        action: 'Timesheet submitted',
+        employee_email: employeeEmail,
+        assigned_to: employeeEmail,
+        approval_id: data.id,
+        reminder_count: 1,
+        task_description: `${t('timesheets.submitted_notification')} ${date} ${startTime}-${endTime} (${effectiveRole})`,
+        approval_status: 'Submitted',
         company_id: companyUser?.company_id,
       })
     }
@@ -188,18 +217,16 @@ export default function NewTimesheet() {
 
         {error && <p className="form-error">{error}</p>}
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+        <div className="ts-submit-row">
           <button
-            className="new-leave-submit-btn"
-            style={{ background: '#9e9e9e', flex: 1 }}
+            className="new-leave-submit-btn ts-draft-btn"
             onClick={() => handleSave(true)}
             disabled={submitting}
           >
             {submitting ? t('timesheets.saving') : t('timesheets.save_draft')}
           </button>
           <button
-            className="new-leave-submit-btn"
-            style={{ background: 'linear-gradient(135deg, #1565c0, #1565c0dd)', flex: 1 }}
+            className="new-leave-submit-btn ts-submit-btn"
             onClick={() => handleSave(false)}
             disabled={submitting}
           >

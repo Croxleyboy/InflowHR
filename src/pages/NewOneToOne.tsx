@@ -115,7 +115,7 @@ export default function NewOneToOne() {
                   <span className="oto-employee-option-role">{r.job_title || ''}</span>
                 </div>
                 {selectedEmployee === r.id && (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ec407a" strokeWidth="3"><path d="M20 6L9 17l-5-5" /></svg>
                 )}
               </button>
             ))}
