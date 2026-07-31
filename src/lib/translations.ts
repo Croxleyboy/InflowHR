@@ -724,6 +724,10 @@ const en: Translations = {
 
   // Shifts & Rota
   'shifts.title': 'My Shifts',
+  'shifts.only_me': 'Only Me',
+  'shifts.everyone': 'Everyone',
+  'shifts.availability': 'Availability',
+  'shifts.replacements': 'Replacements',
   'shifts.upcoming': 'Upcoming',
   'shifts.history': 'History',
   'shifts.no_upcoming': 'No upcoming shifts',
@@ -1614,6 +1618,10 @@ const de: Translations = {
 
   // Shifts & Rota
   'shifts.title': 'Meine Schichten',
+  'shifts.only_me': 'Nur ich',
+  'shifts.everyone': 'Alle',
+  'shifts.availability': 'Verfügbarkeit',
+  'shifts.replacements': 'Vertretungen',
   'shifts.upcoming': 'Bevorstehend',
   'shifts.history': 'Verlauf',
   'shifts.no_upcoming': 'Keine bevorstehenden Schichten',

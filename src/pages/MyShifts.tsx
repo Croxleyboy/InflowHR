@@ -317,29 +317,25 @@ export default function MyShifts() {
 
   if (loading) {
     return (
-      <div className="my-schedule">
+      <div className="shifts-page">
         <p className="claims-empty">{t('common.loading')}</p>
       </div>
     )
   }
 
   return (
-    <div className="my-schedule">
-      <header className="schedule-header">
-        <button className="feature-back" onClick={() => navigate('/')}>
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="#c62828" strokeWidth="2" />
-            <path d="M21 12l-6 6 6 6" stroke="#c62828" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+    <div className="shifts-page">
+      <header className="shifts-header">
+        <button className="shifts-header-back" onClick={() => navigate('/')}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <div className="feature-header-center">
-          <h1 className="feature-title">{t('shifts.title')}</h1>
+        <div className="shifts-header-center">
+          <h1 className="shifts-header-title">{t('shifts.title')}</h1>
         </div>
-        <button className="feature-refresh" onClick={handleRefresh}>
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="#c62828" strokeWidth="2" />
-            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#c62828" strokeWidth="2" strokeLinecap="round" />
-            <path d="M22 10v4h-4M10 22v-4h4" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <button className="shifts-header-refresh" onClick={handleRefresh}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
+            <path d="M21 12a9 9 0 0 1-15.36 6.36" /><path d="M3 12a9 9 0 0 1 15.36-6.36" />
+            <polyline points="21 3 21 9 15 9" /><polyline points="3 21 3 15 9 15" />
           </svg>
         </button>
       </header>
@@ -372,16 +368,16 @@ export default function MyShifts() {
       </div>
 
       {/* Filter Tabs */}
-      <div className="schedule-filters">
+      <div className="shifts-tabs">
         {([
-          { key: 'only_me' as FilterTab, label: 'Only me' },
-          { key: 'everyone' as FilterTab, label: 'Everyone' },
-          { key: 'availability' as FilterTab, label: 'Availability' },
-          { key: 'replacements' as FilterTab, label: 'Replacements' },
+          { key: 'only_me' as FilterTab, label: t('shifts.only_me') },
+          { key: 'everyone' as FilterTab, label: t('shifts.everyone') },
+          { key: 'availability' as FilterTab, label: t('shifts.availability') },
+          { key: 'replacements' as FilterTab, label: t('shifts.replacements') },
         ]).map(f => (
           <button
             key={f.key}
-            className={`schedule-filter-btn${filter === f.key ? ' schedule-filter-active' : ''}`}
+            className={`shifts-tab${filter === f.key ? ' shifts-tab-active' : ''}`}
             onClick={() => { setFilter(f.key); if (f.key === 'availability') navigate('/shifts/availability'); if (f.key === 'replacements') navigate('/shifts/swap') }}
           >
             {f.label}

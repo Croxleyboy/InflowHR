@@ -253,6 +253,62 @@ body {
 
 .schedule-no-shift { background: var(--bg-card); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; color: var(--text-muted); font-size: 13px; text-align: center; border: 1.5px dashed var(--border); }
 
+/* ── Shifts page header + responsive tabs ── */
+.shifts-page { padding-bottom: 90px; overflow-y: auto; height: 100%; }
+.shifts-header {
+  background: linear-gradient(135deg, #ff8a65, #e65100);
+  padding: 18px 16px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.shifts-header-back {
+  background: none; border: none; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  flex-shrink: 0;
+}
+.shifts-header-center { flex: 1; min-width: 0; }
+.shifts-header-title { font-size: 20px; font-weight: 800; color: #fff; margin: 0; }
+.shifts-header-refresh {
+  background: rgba(255,255,255,0.18); border: none; cursor: pointer;
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.shifts-tabs {
+  display: flex;
+  padding: 12px 16px 6px;
+  gap: 0;
+}
+.shifts-tab {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  padding: 8px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  text-align: center;
+}
+.shifts-tab:first-child { border-radius: 10px 0 0 10px; }
+.shifts-tab:last-child { border-radius: 0 10px 10px 0; }
+.shifts-tab:not(:first-child) { border-left: none; }
+.shifts-tab:hover { color: #e65100; border-color: #e65100; }
+.shifts-tab-active {
+  background: #e65100;
+  color: #fff;
+  border-color: #e65100;
+}
+.shifts-tab-active:hover { background: #bf360c; border-color: #bf360c; color: #fff; }
+
 /* ── Shift Swap Page ── */
 .swap-page { padding: 0 16px 100px; overflow-y: auto; height: 100%; }
 .swap-tabs { display: flex; gap: 4px; margin: 12px 0; background: var(--bg-card); border-radius: 12px; padding: 4px; border: 1px solid var(--border); }
