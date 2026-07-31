@@ -119,7 +119,7 @@ export default function LeaveApproval() {
     }
 
     const deductNote = leaveType?.deducts_from_allowance === false
-      ? ' (does not reduce annual leave / reduziert den Jahresurlaub nicht)'
+      ? ` ${t('approval.does_not_reduce')}`
       : ''
 
     await supabase.from('workflow_tracker')

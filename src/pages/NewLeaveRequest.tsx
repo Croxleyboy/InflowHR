@@ -234,7 +234,7 @@ export default function NewLeaveRequest() {
       }
     }
     if (!typeId) {
-      setError('Leave type not found. Please try again. / Urlaubsart nicht gefunden. Bitte versuchen Sie es erneut.')
+      setError(t('leave.type_not_found'))
       setSubmitting(false)
       return
     }
@@ -276,7 +276,7 @@ export default function NewLeaveRequest() {
       return
     }
 
-    const flagNote = careerBreakFlag ? ' ⚠️ Days exceed remaining allowance — conversation required with employee / Tage überschreiten den verbleibenden Urlaub — Gespräch mit dem Mitarbeiter erforderlich' : ''
+    const flagNote = careerBreakFlag ? ` ⚠️ ${t('leave.career_break_flag')}` : ''
 
     await supabase.from('workflow_tracker').insert({
       emp_display_name: EMPLOYEE_NAME,

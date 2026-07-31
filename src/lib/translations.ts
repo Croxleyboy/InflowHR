@@ -130,6 +130,15 @@ const en: Translations = {
   'approval.timesheet_title': 'Timesheet Approval',
   'approval.timesheet_subtitle': 'Employee Timesheet Review',
   'approval.timesheet_id': 'Timesheet ID:',
+  'approval.does_not_reduce': '(does not reduce annual leave)',
+  'leave.type_not_found': 'Leave type not found. Please try again.',
+  'leave.career_break_flag': 'Days exceed remaining allowance — conversation required with employee',
+  'leave.deductions_title': 'Leave Allowance Deductions',
+  'leave.deductions_hint': 'Choose which leave types deduct from annual leave allowance. Sick Leave, Jury Duty and Lieu Days never deduct.',
+  'leave.deducts_from_allowance': 'Deducts from allowance',
+  'leave.does_not_deduct': 'Does not deduct',
+  'common.view_receipt': 'View receipt',
+  'common.has_receipts': 'Has receipts',
 
   // 1:1 Meetings
   'one_to_one.title': 'Performance',
@@ -850,6 +859,36 @@ const en: Translations = {
   'setup.continue': 'Continue',
   'setup.saving': 'Saving...',
   'setup.required_hint': 'All fields are required to continue',
+
+  // Admin Notifications
+  'admin_notif.title': 'Notifications',
+  'admin_notif.subtitle': 'All employee workflow notifications for the selected company',
+  'admin_notif.total': 'Total',
+  'admin_notif.pending': 'Pending',
+  'admin_notif.complete': 'Complete',
+  'admin_notif.from': 'From',
+  'admin_notif.to': 'To',
+  'admin_notif.all_statuses': 'All Statuses',
+  'admin_notif.all_types': 'All Types',
+  'admin_notif.search_employee': 'Search employee...',
+  'admin_notif.apply': 'Apply',
+  'admin_notif.date': 'Date',
+  'admin_notif.employee': 'Employee',
+  'admin_notif.type': 'Type',
+  'admin_notif.action': 'Action',
+  'admin_notif.assigned_to': 'Assigned To',
+  'admin_notif.description': 'Description',
+  'admin_notif.approval': 'Approval',
+  'admin_notif.no_results': 'No notifications found for this period',
+
+  // Admin Onboarding
+  'admin_onboard.what_created': 'What will be created:',
+  'admin_onboard.leave_types_count': 'leave types',
+  'admin_onboard.feature_toggles_count': 'company feature toggles (standard features enabled)',
+  'admin_onboard.setup_complete': 'Company Setup Complete',
+  'admin_onboard.foundation_created': 'Foundation records created',
+  'admin_onboard.leave_types_created': 'leave types created (Annual, Sick, Jury Duty, Bereavement, Exam Leave, Carers Leave, Career Break, Lieu Days)',
+  'admin_onboard.features_configured': 'Company features configured',
 }
 
 const de: Translations = {
@@ -980,6 +1019,15 @@ const de: Translations = {
   'approval.timesheet_title': 'Zeiterfassungsgenehmigung',
   'approval.timesheet_subtitle': 'Zeiterfassung prüfen',
   'approval.timesheet_id': 'Zeiterfassungs-ID:',
+  'approval.does_not_reduce': '(reduziert den Jahresurlaub nicht)',
+  'leave.type_not_found': 'Urlaubsart nicht gefunden. Bitte versuchen Sie es erneut.',
+  'leave.career_break_flag': 'Tage überschreiten den verbleibenden Urlaub — Gespräch mit dem Mitarbeiter erforderlich',
+  'leave.deductions_title': 'Urlaubsanspruch-Abzüge',
+  'leave.deductions_hint': 'Wählen Sie, welche Urlaubsarten vom Jahresurlaub abgezogen werden. Krankheit, Geschworenenpflicht und Freizeitausgleich werden nie abgezogen.',
+  'leave.deducts_from_allowance': 'Wird vom Urlaub abgezogen',
+  'leave.does_not_deduct': 'Wird nicht abgezogen',
+  'common.view_receipt': 'Beleg anzeigen',
+  'common.has_receipts': 'Hat Belege',
 
   // 1:1 Meetings
   'one_to_one.title': 'Leistung',
@@ -1700,6 +1748,36 @@ const de: Translations = {
   'setup.continue': 'Weiter',
   'setup.saving': 'Wird gespeichert...',
   'setup.required_hint': 'Alle Felder sind erforderlich, um fortzufahren',
+
+  // Admin Notifications
+  'admin_notif.title': 'Benachrichtigungen',
+  'admin_notif.subtitle': 'Alle Mitarbeiter-Benachrichtigungen für das ausgewählte Unternehmen',
+  'admin_notif.total': 'Gesamt',
+  'admin_notif.pending': 'Ausstehend',
+  'admin_notif.complete': 'Abgeschlossen',
+  'admin_notif.from': 'Von',
+  'admin_notif.to': 'Bis',
+  'admin_notif.all_statuses': 'Alle Status',
+  'admin_notif.all_types': 'Alle Typen',
+  'admin_notif.search_employee': 'Mitarbeiter suchen...',
+  'admin_notif.apply': 'Anwenden',
+  'admin_notif.date': 'Datum',
+  'admin_notif.employee': 'Mitarbeiter',
+  'admin_notif.type': 'Typ',
+  'admin_notif.action': 'Aktion',
+  'admin_notif.assigned_to': 'Zugewiesen an',
+  'admin_notif.description': 'Beschreibung',
+  'admin_notif.approval': 'Genehmigung',
+  'admin_notif.no_results': 'Keine Benachrichtigungen für diesen Zeitraum gefunden',
+
+  // Admin Onboarding
+  'admin_onboard.what_created': 'Was erstellt wird:',
+  'admin_onboard.leave_types_count': 'Urlaubsarten',
+  'admin_onboard.feature_toggles_count': 'Funktionsschalter (Standardfunktionen aktiviert)',
+  'admin_onboard.setup_complete': 'Unternehmens-Setup abgeschlossen',
+  'admin_onboard.foundation_created': 'Grunddaten erstellt',
+  'admin_onboard.leave_types_created': 'Urlaubsarten erstellt (Annual, Sick, Jury Duty, Bereavement, Exam Leave, Carers Leave, Career Break, Lieu Days)',
+  'admin_onboard.features_configured': 'Unternehmensfunktionen konfiguriert',
 }
 
 const allTranslations: Record<Lang, Translations> = { en, de }

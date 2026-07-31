@@ -445,7 +445,7 @@ export default function Notifications() {
                   <span className="notif-action-type">{item.record_type === 'Expense' ? t('dashboard.expenses') : item.record_type === 'Meeting' ? t('one_to_one.page_subtitle') : item.record_type}</span>
                   {item.task_description && <span className="notif-action-amount">{item.task_description.split(' - ').pop()}</span>}
                   {item.record_type === 'Expense' && item.approval_id && expenseReceipts.has(item.approval_id) && (
-                    <span className="notif-receipt-indicator" title="Has receipts / Hat Belege">
+                    <span className="notif-receipt-indicator" title={t('common.has_receipts')}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
                     </span>
                   )}

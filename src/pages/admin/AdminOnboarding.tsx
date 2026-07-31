@@ -86,7 +86,7 @@ const SETUP_STEPS = [
 export default function AdminOnboarding() {
   const { isSuperAdmin } = useAuth()
   const { selectedCompanyId } = useAdminCompany()
-  const { fyStartMonth } = useLanguage()
+  const { t, fyStartMonth } = useLanguage()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup'>('dashboard')
@@ -1177,10 +1177,10 @@ export default function AdminOnboarding() {
 
                   {setupRows.length === 0 && (
                     <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 8, padding: 16, maxWidth: 500, margin: '0 auto 24px', textAlign: 'left' }}>
-                      <h4 style={{ margin: '0 0 8px', color: '#2e7d32' }}>What will be created / Was erstellt wird:</h4>
+                      <h4 style={{ margin: '0 0 8px', color: '#2e7d32' }}>{t('admin_onboard.what_created')}</h4>
                       <ul style={{ margin: 0, paddingLeft: 20, color: '#333', fontSize: 14 }}>
-                        <li><strong>5</strong> leave types / Urlaubsarten (Annual, Sick, Compassionate, Parental, Unpaid)</li>
-                        <li><strong>10</strong> company feature toggles / Funktionsschalter (standard features enabled)</li>
+                        <li><strong>8</strong> {t('admin_onboard.leave_types_count')}</li>
+                        <li><strong>10</strong> {t('admin_onboard.feature_toggles_count')}</li>
                       </ul>
                     </div>
                   )}
@@ -1205,15 +1205,15 @@ export default function AdminOnboarding() {
               {processResult && (
                 <div style={{ textAlign: 'center', padding: '40px 20px' }}>
                   <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
-                  <h3 style={{ color: '#2e7d32' }}>Company Setup Complete / Unternehmens-Setup abgeschlossen</h3>
+                  <h3 style={{ color: '#2e7d32' }}>{t('admin_onboard.setup_complete')}</h3>
 
                   <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 12, padding: 24, maxWidth: 500, margin: '24px auto', textAlign: 'left' }}>
                     {processResult.onboarding === 0 && processResult.employees === 0 ? (
                       <div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: '#2e7d32', marginBottom: 8 }}>Foundation records created / Grunddaten erstellt</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: '#2e7d32', marginBottom: 8 }}>{t('admin_onboard.foundation_created')}</div>
                         <ul style={{ margin: 0, paddingLeft: 20, color: '#333', fontSize: 14 }}>
-                          <li>5 leave types created / Urlaubsarten erstellt (Annual, Sick, Compassionate, Parental, Unpaid)</li>
-                          <li>Company features configured / Unternehmensfunktionen konfiguriert</li>
+                          <li>8 {t('admin_onboard.leave_types_created')}</li>
+                          <li>{t('admin_onboard.features_configured')}</li>
                         </ul>
                       </div>
                     ) : (

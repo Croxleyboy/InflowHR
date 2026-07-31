@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useLanguage } from '../../context/LanguageContext'
 
 interface LeaveRequest {
   id: number
@@ -18,6 +19,7 @@ const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
 
 export default function AdminLeave() {
   const { selectedCompanyId } = useAdminCompany()
+  const { t } = useLanguage()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -179,24 +181,21 @@ export default function AdminLeave() {
 
       {leaveTypeSettings.length > 0 && (
         <div className="admin-weekend-toggle" style={{ marginTop: 12 }}>
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Leave Allowance Deductions / Urlaubsanspruch-Abzüge</h4>
-          <span className="admin-toggle-hint" style={{ marginBottom: 8, display: 'block' }}>
-            Choose which leave types deduct from annual leave allowance. Sick Leave, Jury Duty and Lieu Days never deduct.
-          </span>
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>{t('leave.deductions_title')}</h4>
           <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
-            Wählen Sie, welche Urlaubsarten vom Jahresurlaub abgezogen werden. Krankheit, Geschworenenpflicht und Freizeitausgleich werden nie abgezogen.
+            {t('leave.deductions_hint')}
           </span>
           {leaveTypeSettings
-            .filter(t => ['Bereavement', 'Exam Leave', 'Carers Leave'].includes(t.name))
-            .map(t => (
-              <label key={t.id} className="admin-toggle-label" style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+            .filter(lt => ['Bereavement', 'Exam Leave', 'Carers Leave'].includes(lt.name))
+            .map(lt => (
+              <label key={lt.id} className="admin-toggle-label" style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
                 <input
                   type="checkbox"
-                  checked={t.deducts_from_allowance}
-                  onChange={() => toggleDeductsFromAllowance(t.id, t.deducts_from_allowance)}
-                  disabled={savingDeduct === t.id}
+                  checked={lt.deducts_from_allowance}
+                  onChange={() => toggleDeductsFromAllowance(lt.id, lt.deducts_from_allowance)}
+                  disabled={savingDeduct === lt.id}
                 />
-                <span>{t.name} — {t.deducts_from_allowance ? 'Deducts from allowance / Wird vom Urlaub abgezogen' : 'Does not deduct / Wird nicht abgezogen'}</span>
+                <span>{lt.name} — {lt.deducts_from_allowance ? t('leave.deducts_from_allowance') : t('leave.does_not_deduct')}</span>
               </label>
             ))}
         </div>

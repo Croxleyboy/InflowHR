@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useLanguage } from '../../context/LanguageContext'
 
 interface WorkflowRow {
   id: number
@@ -36,6 +37,7 @@ function defaultTo() {
 
 export default function AdminNotifications() {
   const { selectedCompanyId } = useAdminCompany()
+  const { t } = useLanguage()
   const [rows, setRows] = useState<WorkflowRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('')
@@ -106,42 +108,42 @@ export default function AdminNotifications() {
   return (
     <div className="admin-section">
       <div className="admin-section-header">
-        <h2>Notifications / Benachrichtigungen</h2>
-        <p className="admin-section-subtitle">All employee workflow notifications for the selected company / Alle Mitarbeiter-Benachrichtigungen für das ausgewählte Unternehmen</p>
+        <h2>{t('admin_notif.title')}</h2>
+        <p className="admin-section-subtitle">{t('admin_notif.subtitle')}</p>
       </div>
 
       <div className="admin-mini-stats">
-        <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Total / Gesamt</span></div>
-        <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#e65100' }}>{stats.pending}</span><span>Pending / Ausstehend</span></div>
-        <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#43a047' }}>{stats.complete}</span><span>Complete / Abgeschlossen</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>{t('admin_notif.total')}</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#e65100' }}>{stats.pending}</span><span>{t('admin_notif.pending')}</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#43a047' }}>{stats.complete}</span><span>{t('admin_notif.complete')}</span></div>
       </div>
 
       <div className="admin-filters">
         <div className="admin-filter-group">
-          <label className="admin-filter-label">From / Von</label>
+          <label className="admin-filter-label">{t('admin_notif.from')}</label>
           <input type="date" className="admin-select" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
         </div>
         <div className="admin-filter-group">
-          <label className="admin-filter-label">To / Bis</label>
+          <label className="admin-filter-label">{t('admin_notif.to')}</label>
           <input type="date" className="admin-select" value={dateTo} onChange={e => setDateTo(e.target.value)} />
         </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="admin-select">
-          <option value="">All Statuses / Alle Status</option>
+          <option value="">{t('admin_notif.all_statuses')}</option>
           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={filterType} onChange={e => setFilterType(e.target.value)} className="admin-select">
-          <option value="">All Types / Alle Typen</option>
+          <option value="">{t('admin_notif.all_types')}</option>
           {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <input
           type="text"
-          placeholder="Search employee... / Mitarbeiter suchen..."
+          placeholder={t('admin_notif.search_employee')}
           value={filterEmployee}
           onChange={e => setFilterEmployee(e.target.value)}
           className="admin-select"
           style={{ minWidth: 200 }}
         />
-        <button className="admin-btn-sm admin-btn-save" onClick={load}>Apply / Anwenden</button>
+        <button className="admin-btn-sm admin-btn-save" onClick={load}>{t('admin_notif.apply')}</button>
       </div>
 
       {loading ? <div className="admin-loading">Loading...</div> : (
@@ -149,14 +151,14 @@ export default function AdminNotifications() {
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Date / Datum</th>
-                <th>Employee / Mitarbeiter</th>
-                <th>Type / Typ</th>
+                <th>{t('admin_notif.date')}</th>
+                <th>{t('admin_notif.employee')}</th>
+                <th>{t('admin_notif.type')}</th>
                 <th>Status</th>
-                <th>Action / Aktion</th>
-                <th>Assigned To / Zugewiesen an</th>
-                <th>Description / Beschreibung</th>
-                <th>Approval / Genehmigung</th>
+                <th>{t('admin_notif.action')}</th>
+                <th>{t('admin_notif.assigned_to')}</th>
+                <th>{t('admin_notif.description')}</th>
+                <th>{t('admin_notif.approval')}</th>
               </tr>
             </thead>
             <tbody>
@@ -190,7 +192,7 @@ export default function AdminNotifications() {
               })}
             </tbody>
           </table>
-          {filtered.length === 0 && <div className="admin-empty">No notifications found for this period / Keine Benachrichtigungen für diesen Zeitraum gefunden</div>}
+          {filtered.length === 0 && <div className="admin-empty">{t('admin_notif.no_results')}</div>}
         </div>
       )}
     </div>
