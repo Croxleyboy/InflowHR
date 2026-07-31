@@ -1,159 +1,321 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useFeatures } from '../context/FeatureContext'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
-const STORAGE_KEY = 'inflowhr-benefits'
-const ADMIN_BENEFITS_KEY = 'inflowhr-admin-benefits'
-
-interface AdminBenefitOption { id: string; enabled: boolean }
-interface AdminBenefitType { id: string; enabled: boolean; options: AdminBenefitOption[]; monthlyCost?: number; lockPeriod?: 'none' | 'month' | 'year'; title?: string }
-
-function loadAdminConfig(): AdminBenefitType[] | null {
-  try {
-    const raw = localStorage.getItem(ADMIN_BENEFITS_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch { return null }
+interface BenefitOption {
+  id: number
+  option_key: string
+  icon: string
+  title: string
+  description: string
+  is_enabled: boolean
 }
 
-function isBenefitEnabled(adminCfg: AdminBenefitType[] | null, id: string): boolean {
-  if (!adminCfg) return true
-  const b = adminCfg.find(x => x.id === id)
-  return b ? b.enabled : true
+interface BenefitType {
+  id: number
+  benefit_key: string
+  title: string
+  icon: string
+  color: string
+  intro: string
+  eligibility: string
+  cost_description: string
+  monthly_cost: number
+  lock_period: 'none' | 'month' | 'year'
+  is_enabled: boolean
+  options: BenefitOption[]
 }
 
-function isOptionEnabled(adminCfg: AdminBenefitType[] | null, benefitId: string, optionId: string): boolean {
-  if (!adminCfg) return true
-  const b = adminCfg.find(x => x.id === benefitId)
-  if (!b) return true
-  const o = b.options.find(x => x.id === optionId)
-  return o ? o.enabled : true
+interface Enrollment {
+  id: number
+  benefit_type_id: number
+  option_id: number | null
+  enrolled_at: string
 }
 
-interface BenefitEnrollments {
-  vacation_options: string[]
-  health_insurance: boolean
-  car_insurance: boolean
-  cycle_scheme: boolean
-  enrollDates?: Record<string, string>
+const VACATION_OPTION_KEYS = ['buy_leave', 'sell_leave', 'carry_over', 'sabbatical', 'compressed_hours']
+
+const BENEFIT_TITLE_KEYS: Record<string, string> = {
+  vacation: 'benefits.vacation_title',
+  health: 'benefits.health_title',
+  car: 'benefits.car_title',
+  cycle: 'benefits.cycle_title',
 }
 
-const DEFAULT: BenefitEnrollments = {
-  vacation_options: [],
-  health_insurance: false,
-  car_insurance: false,
-  cycle_scheme: false,
-  enrollDates: {},
+const BENEFIT_DESC_KEYS: Record<string, string> = {
+  vacation: 'benefits.vacation_desc',
+  health: 'benefits.health_desc',
+  car: 'benefits.car_desc',
+  cycle: 'benefits.cycle_desc',
 }
 
-function loadEnrollments(): BenefitEnrollments {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? { ...DEFAULT, ...JSON.parse(raw) } : DEFAULT
-  } catch { return DEFAULT }
+const BENEFIT_INTRO_KEYS: Record<string, string> = {
+  vacation: 'benefits.vacation_intro',
+  health: 'benefits.health_intro',
+  car: 'benefits.car_intro',
+  cycle: 'benefits.cycle_intro',
 }
 
-function isLocked(adminCfg: AdminBenefitType[] | null, benefitId: string, enrollDates?: Record<string, string>): { locked: boolean; until: string } {
-  if (!adminCfg || !enrollDates) return { locked: false, until: '' }
-  const b = adminCfg.find(x => x.id === benefitId)
-  if (!b || !b.lockPeriod || b.lockPeriod === 'none' || (b.monthlyCost ?? 0) === 0) return { locked: false, until: '' }
-  const enrollDate = enrollDates[benefitId]
-  if (!enrollDate) return { locked: false, until: '' }
+const BENEFIT_ELIG_KEYS: Record<string, string> = {
+  vacation: 'benefits.vacation_eligibility',
+  health: 'benefits.health_eligibility',
+  car: 'benefits.car_eligibility',
+  cycle: 'benefits.cycle_eligibility',
+}
+
+const BENEFIT_COST_KEYS: Record<string, string> = {
+  health: 'benefits.health_cost',
+  car: 'benefits.car_cost',
+  cycle: 'benefits.cycle_cost',
+}
+
+const VACATION_OPTION_TITLE_KEYS: Record<string, string> = {
+  buy_leave: 'benefits.vac_buy_leave',
+  sell_leave: 'benefits.vac_sell_leave',
+  carry_over: 'benefits.vac_carry_over',
+  sabbatical: 'benefits.vac_sabbatical',
+  compressed_hours: 'benefits.vac_compressed',
+}
+
+const VACATION_OPTION_DESC_KEYS: Record<string, string> = {
+  buy_leave: 'benefits.vac_buy_leave_desc',
+  sell_leave: 'benefits.vac_sell_leave_desc',
+  carry_over: 'benefits.vac_carry_over_desc',
+  sabbatical: 'benefits.vac_sabbatical_desc',
+  compressed_hours: 'benefits.vac_compressed_desc',
+}
+
+const VACATION_OPTION_ICONS: Record<string, string> = {
+  buy_leave: '🛒', sell_leave: '💷', carry_over: '📦', sabbatical: '🌍', compressed_hours: '⏰',
+}
+
+const HEALTH_DETAIL_KEYS: Record<string, string> = {
+  hospital: 'benefits.health_detail_1', gp: 'benefits.health_detail_2', dental: 'benefits.health_detail_3',
+  optical: 'benefits.health_detail_4', prescriptions: 'benefits.health_detail_5', wellness: 'benefits.health_detail_6', family: 'benefits.health_detail_7',
+}
+const HEALTH_DETAIL_ICONS: Record<string, string> = {
+  hospital: '🏥', gp: '👨‍⚕️', dental: '🦷', optical: '👁️', prescriptions: '💊', wellness: '🏆', family: '👨‍👩‍👧',
+}
+
+const CAR_DETAIL_KEYS: Record<string, string> = {
+  comprehensive: 'benefits.car_detail_1', breakdown: 'benefits.car_detail_2', windscreen: 'benefits.car_detail_3',
+  discount: 'benefits.car_detail_4', legal: 'benefits.car_detail_5', courtesy: 'benefits.car_detail_6',
+}
+const CAR_DETAIL_ICONS: Record<string, string> = {
+  comprehensive: '🚗', breakdown: '🛡️', windscreen: '🔧', discount: '💰', legal: '⚖️', courtesy: '🚙',
+}
+
+const CYCLE_DETAIL_KEYS: Record<string, string> = {
+  bike: 'benefits.cycle_detail_1', tax_free: 'benefits.cycle_detail_2', green: 'benefits.cycle_detail_3',
+  accessories: 'benefits.cycle_detail_4', insurance: 'benefits.cycle_detail_5', maintenance: 'benefits.cycle_detail_6',
+}
+const CYCLE_DETAIL_ICONS: Record<string, string> = {
+  bike: '🚲', tax_free: '💷', green: '🌱', accessories: '🔄', insurance: '🛡️', maintenance: '📋',
+}
+
+function isLocked(benefit: BenefitType, enrolledAt: string | null): { locked: boolean; until: string } {
+  if (!enrolledAt || !benefit.lock_period || benefit.lock_period === 'none' || benefit.monthly_cost === 0) return { locked: false, until: '' }
   const now = new Date()
-  if (b.lockPeriod === 'month') {
+  if (benefit.lock_period === 'month') {
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    if (new Date(enrollDate) <= endOfMonth) {
-      const d = endOfMonth
-      return { locked: now < d, until: `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}` }
+    if (new Date(enrolledAt) <= endOfMonth) {
+      return { locked: now < endOfMonth, until: `${endOfMonth.getDate()}/${endOfMonth.getMonth() + 1}/${endOfMonth.getFullYear()}` }
     }
   }
-  if (b.lockPeriod === 'year') {
+  if (benefit.lock_period === 'year') {
     const fyEndYear = now.getMonth() >= 3 ? now.getFullYear() + 1 : now.getFullYear()
     const fyEnd = new Date(fyEndYear, 3, 5)
-    if (new Date(enrollDate) <= fyEnd) {
+    if (new Date(enrolledAt) <= fyEnd) {
       return { locked: now < fyEnd, until: `5/4/${fyEndYear}` }
     }
   }
   return { locked: false, until: '' }
 }
 
-const VACATION_OPTIONS = [
-  { id: 'buy_leave', icon: '🛒', titleKey: 'benefits.vac_buy_leave', descKey: 'benefits.vac_buy_leave_desc' },
-  { id: 'sell_leave', icon: '💷', titleKey: 'benefits.vac_sell_leave', descKey: 'benefits.vac_sell_leave_desc' },
-  { id: 'carry_over', icon: '📦', titleKey: 'benefits.vac_carry_over', descKey: 'benefits.vac_carry_over_desc' },
-  { id: 'sabbatical', icon: '🌍', titleKey: 'benefits.vac_sabbatical', descKey: 'benefits.vac_sabbatical_desc' },
-  { id: 'compressed_hours', icon: '⏰', titleKey: 'benefits.vac_compressed', descKey: 'benefits.vac_compressed_desc' },
-]
+function getLockUntilDate(lockPeriod: string): string {
+  const now = new Date()
+  if (lockPeriod === 'month') {
+    const d = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
+  }
+  if (lockPeriod === 'year') {
+    const fyEndYear = now.getMonth() >= 3 ? now.getFullYear() + 1 : now.getFullYear()
+    return `5/4/${fyEndYear}`
+  }
+  return ''
+}
 
 export default function Benefits() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { features } = useFeatures()
+  const { employeeId, companyUser } = useAuth()
+  const companyId = companyUser?.company_id
   const payrollEnabled = features.payslips
-  const [enrollments, setEnrollments] = useState<BenefitEnrollments>(loadEnrollments)
+
+  const [benefitTypes, setBenefitTypes] = useState<BenefitType[]>([])
+  const [enrollments, setEnrollments] = useState<Enrollment[]>([])
+  const [loading, setLoading] = useState(true)
   const [openModal, setOpenModal] = useState<string | null>(null)
-  const [adminCfg] = useState<AdminBenefitType[] | null>(loadAdminConfig)
+  const [confirmEnroll, setConfirmEnroll] = useState<{ benefitType: BenefitType; title: string; cost: number; until: string } | null>(null)
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(enrollments))
-  }, [enrollments])
+  const loadData = useCallback(async () => {
+    if (!companyId || !employeeId) return
+    setLoading(true)
 
-  const toggleVacOption = (id: string) => {
-    setEnrollments(prev => ({
-      ...prev,
-      vacation_options: prev.vacation_options.includes(id)
-        ? prev.vacation_options.filter(v => v !== id)
-        : [...prev.vacation_options, id],
-    }))
-  }
+    const [typesRes, enrollRes] = await Promise.all([
+      supabase.from('benefit_types').select('*').eq('company_id', companyId).eq('is_enabled', true).order('sort_order'),
+      supabase.from('benefit_enrollments').select('*').eq('company_id', companyId).eq('employee_id', employeeId),
+    ])
 
-  const benefitKeyToId: Record<string, string> = { health_insurance: 'health', car_insurance: 'car', cycle_scheme: 'cycle' }
-  const [confirmEnroll, setConfirmEnroll] = useState<{ key: 'health_insurance' | 'car_insurance' | 'cycle_scheme'; title: string; cost: number; until: string } | null>(null)
+    const types = (typesRes.data || []) as BenefitType[]
+    const typeIds = types.map(t => t.id)
 
-  function getLockUntilDate(lockPeriod: string): string {
-    const now = new Date()
-    if (lockPeriod === 'month') {
-      const d = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
-    }
-    if (lockPeriod === 'year') {
-      const fyEndYear = now.getMonth() >= 3 ? now.getFullYear() + 1 : now.getFullYear()
-      return `5/4/${fyEndYear}`
-    }
-    return ''
-  }
+    if (typeIds.length > 0) {
+      const { data: opts } = await supabase
+        .from('benefit_options')
+        .select('*')
+        .eq('company_id', companyId)
+        .in('benefit_type_id', typeIds)
+        .eq('is_enabled', true)
+        .order('sort_order')
 
-  const toggleBool = (key: 'health_insurance' | 'car_insurance' | 'cycle_scheme') => {
-    const bId = benefitKeyToId[key]
-    const lock = isLocked(adminCfg, bId, enrollments.enrollDates)
-    if (lock.locked && enrollments[key]) return
-
-    if (!enrollments[key] && adminCfg) {
-      const b = adminCfg.find(x => x.id === bId)
-      if (b && (b.monthlyCost ?? 0) > 0 && b.lockPeriod && b.lockPeriod !== 'none') {
-        setConfirmEnroll({ key, title: b.title || bId, cost: b.monthlyCost!, until: getLockUntilDate(b.lockPeriod) })
-        return
+      const optMap = new Map<number, BenefitOption[]>()
+      for (const o of (opts || [])) {
+        const list = optMap.get(o.benefit_type_id) || []
+        list.push(o as BenefitOption)
+        optMap.set(o.benefit_type_id, list)
       }
+      for (const t of types) {
+        t.options = optMap.get(t.id) || []
+      }
+    } else {
+      for (const t of types) t.options = []
     }
 
-    doEnroll(key)
+    setBenefitTypes(types)
+    setEnrollments((enrollRes.data || []) as Enrollment[])
+    setLoading(false)
+  }, [companyId, employeeId])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  function isEnrolledInType(typeId: number): boolean {
+    return enrollments.some(e => e.benefit_type_id === typeId && e.option_id === null)
   }
 
-  const doEnroll = (key: 'health_insurance' | 'car_insurance' | 'cycle_scheme') => {
-    const bId = benefitKeyToId[key]
-    setEnrollments(prev => {
-      const newVal = !prev[key]
-      const dates = { ...(prev.enrollDates || {}) }
-      if (newVal) {
-        dates[bId] = new Date().toISOString()
-      } else {
-        delete dates[bId]
-      }
-      return { ...prev, [key]: newVal, enrollDates: dates }
-    })
+  function isEnrolledInOption(optionId: number): boolean {
+    return enrollments.some(e => e.option_id === optionId)
   }
 
-  const vacEnrolled = enrollments.vacation_options.length > 0
+  function getEnrollDate(typeId: number): string | null {
+    const e = enrollments.find(x => x.benefit_type_id === typeId && x.option_id === null)
+    return e ? e.enrolled_at : null
+  }
+
+  async function toggleVacOption(optionId: number) {
+    if (!companyId || !employeeId) return
+    const vacType = benefitTypes.find(b => b.benefit_key === 'vacation')
+    if (!vacType) return
+
+    if (isEnrolledInOption(optionId)) {
+      await supabase.from('benefit_enrollments').delete()
+        .eq('company_id', companyId).eq('employee_id', employeeId).eq('option_id', optionId)
+      setEnrollments(prev => prev.filter(e => e.option_id !== optionId))
+    } else {
+      const { data } = await supabase.from('benefit_enrollments').insert({
+        company_id: companyId, employee_id: employeeId,
+        benefit_type_id: vacType.id, option_id: optionId,
+      }).select('*').single()
+      if (data) setEnrollments(prev => [...prev, data as Enrollment])
+    }
+  }
+
+  async function toggleBenefitEnrollment(bt: BenefitType) {
+    if (!companyId || !employeeId) return
+    const enrolled = isEnrolledInType(bt.id)
+    const lock = isLocked(bt, getEnrollDate(bt.id))
+    if (lock.locked && enrolled) return
+
+    if (!enrolled && bt.monthly_cost > 0 && bt.lock_period !== 'none') {
+      setConfirmEnroll({ benefitType: bt, title: bt.title, cost: bt.monthly_cost, until: getLockUntilDate(bt.lock_period) })
+      return
+    }
+
+    await doEnroll(bt)
+  }
+
+  async function doEnroll(bt: BenefitType) {
+    if (!companyId || !employeeId) return
+    const enrolled = isEnrolledInType(bt.id)
+
+    if (enrolled) {
+      await supabase.from('benefit_enrollments').delete()
+        .eq('company_id', companyId).eq('employee_id', employeeId)
+        .eq('benefit_type_id', bt.id).is('option_id', null)
+      setEnrollments(prev => prev.filter(e => !(e.benefit_type_id === bt.id && e.option_id === null)))
+    } else {
+      const { data } = await supabase.from('benefit_enrollments').insert({
+        company_id: companyId, employee_id: employeeId,
+        benefit_type_id: bt.id, option_id: null,
+      }).select('*').single()
+      if (data) setEnrollments(prev => [...prev, data as Enrollment])
+    }
+  }
+
+  if (loading) return <div className="benefits-page"><p style={{ textAlign: 'center', padding: 40 }}>{t('common.loading')}</p></div>
+
+  const vacType = benefitTypes.find(b => b.benefit_key === 'vacation')
+  const healthType = benefitTypes.find(b => b.benefit_key === 'health')
+  const carType = benefitTypes.find(b => b.benefit_key === 'car')
+  const cycleType = benefitTypes.find(b => b.benefit_key === 'cycle')
+  const customTypes = benefitTypes.filter(b => !['vacation', 'health', 'car', 'cycle'].includes(b.benefit_key))
+
+  const vacEnrolled = vacType ? vacType.options.some(o => isEnrolledInOption(o.id)) : false
+
+  function renderDetailModal(bt: BenefitType, detailKeys: Record<string, string>, detailIcons: Record<string, string>, headerClass: string) {
+    const enrolled = isEnrolledInType(bt.id)
+    const lock = isLocked(bt, getEnrollDate(bt.id))
+    return (
+      <div className="benefits-modal-overlay" onClick={() => setOpenModal(null)}>
+        <div className="benefits-modal" onClick={e => e.stopPropagation()}>
+          <div className={`benefits-modal-header ${headerClass}`}>
+            <h2>{t(BENEFIT_TITLE_KEYS[bt.benefit_key] || '') || bt.title}</h2>
+            <button className="benefits-modal-close" onClick={() => setOpenModal(null)}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div className="benefits-modal-body">
+            <p className="benefits-modal-intro">{t(BENEFIT_INTRO_KEYS[bt.benefit_key] || '') || bt.intro}</p>
+            <div className="benefits-modal-details">
+              {bt.options.map(opt => {
+                const tKey = detailKeys[opt.option_key]
+                const icon = detailIcons[opt.option_key] || opt.icon
+                return (
+                  <div key={opt.id} className="benefits-detail-row">
+                    <span className="benefits-detail-icon">{icon}</span>
+                    <span>{tKey ? t(tKey) : opt.title}</span>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="benefits-modal-eligibility">{t(BENEFIT_ELIG_KEYS[bt.benefit_key] || '') || bt.eligibility}</p>
+            {payrollEnabled && BENEFIT_COST_KEYS[bt.benefit_key] && <p className="benefits-modal-cost">{t(BENEFIT_COST_KEYS[bt.benefit_key])}</p>}
+            <button className={`benefits-signup-btn ${enrolled ? 'benefits-signup-active' : ''} ${lock.locked && enrolled ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBenefitEnrollment(bt)} disabled={lock.locked && enrolled}>
+              <div className={`benefits-checkbox ${enrolled ? 'benefits-checkbox-on' : ''}`}>
+                {enrolled && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+              </div>
+              <span>{lock.locked && enrolled ? t('benefits.locked') : enrolled ? t('benefits.enrolled_label') : t('benefits.sign_up')}</span>
+            </button>
+            {lock.locked && enrolled && <p className="benefits-lock-notice">{t('benefits.locked_until')} {lock.until}</p>}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="benefits-page">
@@ -164,63 +326,85 @@ export default function Benefits() {
         <div className="benefits-header-center">
           <h1 className="benefits-title">{t('benefits.title')} <span className="benefits-title-accent">{t('benefits.title_accent')}</span></h1>
         </div>
-        <button className="benefits-refresh" onClick={() => window.location.reload()}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <button className="feature-refresh" onClick={loadData}>
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       </div>
 
       <div className="benefits-list">
-        {/* 1 - Vacation / Salary Sacrifice */}
-        {isBenefitEnabled(adminCfg, 'vacation') && <button className="benefits-card" onClick={() => setOpenModal('vacation')}>
-          <div className="benefits-card-icon benefits-icon-vacation">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-          </div>
-          <div className="benefits-card-text">
-            <span className="benefits-card-title">{t('benefits.vacation_title')}</span>
-            <span className="benefits-card-desc">{t('benefits.vacation_desc')}</span>
-          </div>
-          {vacEnrolled && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
-        </button>}
+        {vacType && (
+          <button className="benefits-card" onClick={() => setOpenModal('vacation')}>
+            <div className="benefits-card-icon benefits-icon-vacation">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            </div>
+            <div className="benefits-card-text">
+              <span className="benefits-card-title">{t('benefits.vacation_title')}</span>
+              <span className="benefits-card-desc">{t('benefits.vacation_desc')}</span>
+            </div>
+            {vacEnrolled && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        )}
 
-        {/* 2 - Health Insurance */}
-        {isBenefitEnabled(adminCfg, 'health') && <button className="benefits-card" onClick={() => setOpenModal('health')}>
-          <div className="benefits-card-icon benefits-icon-health">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-          </div>
-          <div className="benefits-card-text">
-            <span className="benefits-card-title">{t('benefits.health_title')}</span>
-            <span className="benefits-card-desc">{t('benefits.health_desc')}</span>
-          </div>
-          {enrollments.health_insurance && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
-        </button>}
+        {healthType && (
+          <button className="benefits-card" onClick={() => setOpenModal('health')}>
+            <div className="benefits-card-icon benefits-icon-health">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <div className="benefits-card-text">
+              <span className="benefits-card-title">{t('benefits.health_title')}</span>
+              <span className="benefits-card-desc">{t('benefits.health_desc')}</span>
+            </div>
+            {isEnrolledInType(healthType.id) && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        )}
 
-        {/* 3 - Car Insurance */}
-        {isBenefitEnabled(adminCfg, 'car') && <button className="benefits-card" onClick={() => setOpenModal('car')}>
-          <div className="benefits-card-icon benefits-icon-car">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v5h-3"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-          </div>
-          <div className="benefits-card-text">
-            <span className="benefits-card-title">{t('benefits.car_title')}</span>
-            <span className="benefits-card-desc">{t('benefits.car_desc')}</span>
-          </div>
-          {enrollments.car_insurance && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
-        </button>}
+        {carType && (
+          <button className="benefits-card" onClick={() => setOpenModal('car')}>
+            <div className="benefits-card-icon benefits-icon-car">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 5v5h-3"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            </div>
+            <div className="benefits-card-text">
+              <span className="benefits-card-title">{t('benefits.car_title')}</span>
+              <span className="benefits-card-desc">{t('benefits.car_desc')}</span>
+            </div>
+            {isEnrolledInType(carType.id) && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        )}
 
-        {/* 4 - Cycle Scheme */}
-        {isBenefitEnabled(adminCfg, 'cycle') && <button className="benefits-card" onClick={() => setOpenModal('cycle')}>
-          <div className="benefits-card-icon benefits-icon-cycle">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="#fff"/><path d="M12 17.5V14l-3-3 4-3 2 3h3"/></svg>
-          </div>
-          <div className="benefits-card-text">
-            <span className="benefits-card-title">{t('benefits.cycle_title')}</span>
-            <span className="benefits-card-desc">{t('benefits.cycle_desc')}</span>
-          </div>
-          {enrollments.cycle_scheme && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
-        </button>}
+        {cycleType && (
+          <button className="benefits-card" onClick={() => setOpenModal('cycle')}>
+            <div className="benefits-card-icon benefits-icon-cycle">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="#fff"/><path d="M12 17.5V14l-3-3 4-3 2 3h3"/></svg>
+            </div>
+            <div className="benefits-card-text">
+              <span className="benefits-card-title">{t('benefits.cycle_title')}</span>
+              <span className="benefits-card-desc">{t('benefits.cycle_desc')}</span>
+            </div>
+            {isEnrolledInType(cycleType.id) && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        )}
+
+        {customTypes.map(ct => (
+          <button key={ct.id} className="benefits-card" onClick={() => setOpenModal(ct.benefit_key)}>
+            <div className="benefits-card-icon" style={{ background: ct.color }}>
+              <span style={{ fontSize: 28 }}>{ct.icon}</span>
+            </div>
+            <div className="benefits-card-text">
+              <span className="benefits-card-title">{ct.title}</span>
+              <span className="benefits-card-desc">{ct.description}</span>
+            </div>
+            {isEnrolledInType(ct.id) && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        ))}
       </div>
 
       <div className="benefits-footer-text">
@@ -228,7 +412,7 @@ export default function Benefits() {
       </div>
 
       {/* Vacation Options Modal */}
-      {openModal === 'vacation' && (
+      {openModal === 'vacation' && vacType && (
         <div className="benefits-modal-overlay" onClick={() => setOpenModal(null)}>
           <div className="benefits-modal" onClick={e => e.stopPropagation()}>
             <div className="benefits-modal-header benefits-modal-header-vacation">
@@ -240,14 +424,18 @@ export default function Benefits() {
             <p className="benefits-modal-intro">{t('benefits.vacation_intro')}</p>
             <p className="benefits-modal-eligibility">{t('benefits.vacation_eligibility')}</p>
             <div className="benefits-modal-options">
-              {VACATION_OPTIONS.filter(opt => isOptionEnabled(adminCfg, 'vacation', opt.id)).map(opt => {
-                const checked = enrollments.vacation_options.includes(opt.id)
+              {vacType.options.map(opt => {
+                const checked = isEnrolledInOption(opt.id)
+                const isKnown = VACATION_OPTION_KEYS.includes(opt.option_key)
+                const icon = isKnown ? VACATION_OPTION_ICONS[opt.option_key] : opt.icon
+                const titleText = isKnown ? t(VACATION_OPTION_TITLE_KEYS[opt.option_key]) : opt.title
+                const descText = isKnown ? t(VACATION_OPTION_DESC_KEYS[opt.option_key]) : opt.description
                 return (
                   <button key={opt.id} className={`benefits-option-row ${checked ? 'benefits-option-active' : ''}`} onClick={() => toggleVacOption(opt.id)}>
-                    <span className="benefits-option-icon">{opt.icon}</span>
+                    <span className="benefits-option-icon">{icon}</span>
                     <div className="benefits-option-text">
-                      <span className="benefits-option-title">{t(opt.titleKey)}</span>
-                      <span className="benefits-option-desc">{t(opt.descKey)}</span>
+                      <span className="benefits-option-title">{titleText}</span>
+                      <span className="benefits-option-desc">{descText}</span>
                     </div>
                     <div className={`benefits-checkbox ${checked ? 'benefits-checkbox-on' : ''}`}>
                       {checked && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
@@ -261,140 +449,55 @@ export default function Benefits() {
       )}
 
       {/* Health Insurance Modal */}
-      {openModal === 'health' && (
-        <div className="benefits-modal-overlay" onClick={() => setOpenModal(null)}>
-          <div className="benefits-modal" onClick={e => e.stopPropagation()}>
-            <div className="benefits-modal-header benefits-modal-header-health">
-              <h2>{t('benefits.health_title')}</h2>
-              <button className="benefits-modal-close" onClick={() => setOpenModal(null)}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            <div className="benefits-modal-body">
-              <p className="benefits-modal-intro">{t('benefits.health_intro')}</p>
-              <div className="benefits-modal-details">
-                {[
-                  { id: 'hospital', icon: '🏥', key: 'benefits.health_detail_1' },
-                  { id: 'gp', icon: '👨‍⚕️', key: 'benefits.health_detail_2' },
-                  { id: 'dental', icon: '🦷', key: 'benefits.health_detail_3' },
-                  { id: 'optical', icon: '👁️', key: 'benefits.health_detail_4' },
-                  { id: 'prescriptions', icon: '💊', key: 'benefits.health_detail_5' },
-                  { id: 'wellness', icon: '🏆', key: 'benefits.health_detail_6' },
-                  { id: 'family', icon: '👨‍👩‍👧', key: 'benefits.health_detail_7' },
-                ].filter(r => isOptionEnabled(adminCfg, 'health', r.id)).map(r => (
-                  <div key={r.id} className="benefits-detail-row">
-                    <span className="benefits-detail-icon">{r.icon}</span>
-                    <span>{t(r.key)}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="benefits-modal-eligibility">{t('benefits.health_eligibility')}</p>
-              {payrollEnabled && <p className="benefits-modal-cost">{t('benefits.health_cost')}</p>}
-              {(() => { const lock = isLocked(adminCfg, 'health', enrollments.enrollDates); return (
-                <>
-                  <button className={`benefits-signup-btn ${enrollments.health_insurance ? 'benefits-signup-active' : ''} ${lock.locked && enrollments.health_insurance ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBool('health_insurance')} disabled={lock.locked && enrollments.health_insurance}>
-                    <div className={`benefits-checkbox ${enrollments.health_insurance ? 'benefits-checkbox-on' : ''}`}>
-                      {enrollments.health_insurance && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                    </div>
-                    <span>{lock.locked && enrollments.health_insurance ? t('benefits.locked') : enrollments.health_insurance ? t('benefits.enrolled_label') : t('benefits.sign_up')}</span>
-                  </button>
-                  {lock.locked && enrollments.health_insurance && <p className="benefits-lock-notice">{t('benefits.locked_until')} {lock.until}</p>}
-                </>
-              ); })()}
-            </div>
-          </div>
-        </div>
-      )}
+      {openModal === 'health' && healthType && renderDetailModal(healthType, HEALTH_DETAIL_KEYS, HEALTH_DETAIL_ICONS, 'benefits-modal-header-health')}
 
       {/* Car Insurance Modal */}
-      {openModal === 'car' && (
-        <div className="benefits-modal-overlay" onClick={() => setOpenModal(null)}>
-          <div className="benefits-modal" onClick={e => e.stopPropagation()}>
-            <div className="benefits-modal-header benefits-modal-header-car">
-              <h2>{t('benefits.car_title')}</h2>
-              <button className="benefits-modal-close" onClick={() => setOpenModal(null)}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            <div className="benefits-modal-body">
-              <p className="benefits-modal-intro">{t('benefits.car_intro')}</p>
-              <div className="benefits-modal-details">
-                {[
-                  { id: 'comprehensive', icon: '🚗', key: 'benefits.car_detail_1' },
-                  { id: 'breakdown', icon: '🛡️', key: 'benefits.car_detail_2' },
-                  { id: 'windscreen', icon: '🔧', key: 'benefits.car_detail_3' },
-                  { id: 'discount', icon: '💰', key: 'benefits.car_detail_4' },
-                  { id: 'legal', icon: '⚖️', key: 'benefits.car_detail_5' },
-                  { id: 'courtesy', icon: '🚙', key: 'benefits.car_detail_6' },
-                ].filter(r => isOptionEnabled(adminCfg, 'car', r.id)).map(r => (
-                  <div key={r.id} className="benefits-detail-row">
-                    <span className="benefits-detail-icon">{r.icon}</span>
-                    <span>{t(r.key)}</span>
-                  </div>
-                ))}
-              </div>
-              <p className="benefits-modal-eligibility">{t('benefits.car_eligibility')}</p>
-              {payrollEnabled && <p className="benefits-modal-cost">{t('benefits.car_cost')}</p>}
-              {(() => { const lock = isLocked(adminCfg, 'car', enrollments.enrollDates); return (
-                <>
-                  <button className={`benefits-signup-btn ${enrollments.car_insurance ? 'benefits-signup-active' : ''} ${lock.locked && enrollments.car_insurance ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBool('car_insurance')} disabled={lock.locked && enrollments.car_insurance}>
-                    <div className={`benefits-checkbox ${enrollments.car_insurance ? 'benefits-checkbox-on' : ''}`}>
-                      {enrollments.car_insurance && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                    </div>
-                    <span>{lock.locked && enrollments.car_insurance ? t('benefits.locked') : enrollments.car_insurance ? t('benefits.enrolled_label') : t('benefits.sign_up')}</span>
-                  </button>
-                  {lock.locked && enrollments.car_insurance && <p className="benefits-lock-notice">{t('benefits.locked_until')} {lock.until}</p>}
-                </>
-              ); })()}
-            </div>
-          </div>
-        </div>
-      )}
+      {openModal === 'car' && carType && renderDetailModal(carType, CAR_DETAIL_KEYS, CAR_DETAIL_ICONS, 'benefits-modal-header-car')}
 
       {/* Cycle Scheme Modal */}
-      {openModal === 'cycle' && (
-        <div className="benefits-modal-overlay" onClick={() => setOpenModal(null)}>
+      {openModal === 'cycle' && cycleType && renderDetailModal(cycleType, CYCLE_DETAIL_KEYS, CYCLE_DETAIL_ICONS, 'benefits-modal-header-cycle')}
+
+      {/* Custom benefit modals */}
+      {customTypes.map(ct => openModal === ct.benefit_key ? (
+        <div key={ct.id} className="benefits-modal-overlay" onClick={() => setOpenModal(null)}>
           <div className="benefits-modal" onClick={e => e.stopPropagation()}>
-            <div className="benefits-modal-header benefits-modal-header-cycle">
-              <h2>{t('benefits.cycle_title')}</h2>
+            <div className="benefits-modal-header" style={{ background: ct.color }}>
+              <h2>{ct.title}</h2>
               <button className="benefits-modal-close" onClick={() => setOpenModal(null)}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
             <div className="benefits-modal-body">
-              <p className="benefits-modal-intro">{t('benefits.cycle_intro')}</p>
+              <p className="benefits-modal-intro">{ct.intro}</p>
               <div className="benefits-modal-details">
-                {[
-                  { id: 'bike', icon: '🚲', key: 'benefits.cycle_detail_1' },
-                  { id: 'tax_free', icon: '💷', key: 'benefits.cycle_detail_2' },
-                  { id: 'green', icon: '🌱', key: 'benefits.cycle_detail_3' },
-                  { id: 'accessories', icon: '🔄', key: 'benefits.cycle_detail_4' },
-                  { id: 'insurance', icon: '🛡️', key: 'benefits.cycle_detail_5' },
-                  { id: 'maintenance', icon: '📋', key: 'benefits.cycle_detail_6' },
-                ].filter(r => isOptionEnabled(adminCfg, 'cycle', r.id)).map(r => (
-                  <div key={r.id} className="benefits-detail-row">
-                    <span className="benefits-detail-icon">{r.icon}</span>
-                    <span>{t(r.key)}</span>
+                {ct.options.map(opt => (
+                  <div key={opt.id} className="benefits-detail-row">
+                    <span className="benefits-detail-icon">{opt.icon}</span>
+                    <span>{opt.title}</span>
                   </div>
                 ))}
               </div>
-              <p className="benefits-modal-eligibility">{t('benefits.cycle_eligibility')}</p>
-              {payrollEnabled && <p className="benefits-modal-cost">{t('benefits.cycle_cost')}</p>}
-              {(() => { const lock = isLocked(adminCfg, 'cycle', enrollments.enrollDates); return (
-                <>
-                  <button className={`benefits-signup-btn ${enrollments.cycle_scheme ? 'benefits-signup-active' : ''} ${lock.locked && enrollments.cycle_scheme ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBool('cycle_scheme')} disabled={lock.locked && enrollments.cycle_scheme}>
-                    <div className={`benefits-checkbox ${enrollments.cycle_scheme ? 'benefits-checkbox-on' : ''}`}>
-                      {enrollments.cycle_scheme && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
-                    </div>
-                    <span>{lock.locked && enrollments.cycle_scheme ? t('benefits.locked') : enrollments.cycle_scheme ? t('benefits.enrolled_label') : t('benefits.sign_up')}</span>
-                  </button>
-                  {lock.locked && enrollments.cycle_scheme && <p className="benefits-lock-notice">{t('benefits.locked_until')} {lock.until}</p>}
-                </>
-              ); })()}
+              <p className="benefits-modal-eligibility">{ct.eligibility}</p>
+              {payrollEnabled && ct.cost_description && <p className="benefits-modal-cost">{ct.cost_description}</p>}
+              {(() => {
+                const enrolled = isEnrolledInType(ct.id)
+                const lock = isLocked(ct, getEnrollDate(ct.id))
+                return (
+                  <>
+                    <button className={`benefits-signup-btn ${enrolled ? 'benefits-signup-active' : ''} ${lock.locked && enrolled ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBenefitEnrollment(ct)} disabled={lock.locked && enrolled}>
+                      <div className={`benefits-checkbox ${enrolled ? 'benefits-checkbox-on' : ''}`}>
+                        {enrolled && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                      </div>
+                      <span>{lock.locked && enrolled ? t('benefits.locked') : enrolled ? t('benefits.enrolled_label') : t('benefits.sign_up')}</span>
+                    </button>
+                    {lock.locked && enrolled && <p className="benefits-lock-notice">{t('benefits.locked_until')} {lock.until}</p>}
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>
-      )}
+      ) : null)}
 
       {/* Enrollment Confirmation Modal */}
       {confirmEnroll && (
@@ -409,7 +512,7 @@ export default function Benefits() {
               {t('benefits.confirm_lock')} <strong>{confirmEnroll.until}</strong>.
             </p>
             <div className="benefits-confirm-actions">
-              <button className="benefits-confirm-btn benefits-confirm-yes" onClick={() => { doEnroll(confirmEnroll.key); setConfirmEnroll(null) }}>
+              <button className="benefits-confirm-btn benefits-confirm-yes" onClick={() => { doEnroll(confirmEnroll.benefitType); setConfirmEnroll(null) }}>
                 {t('benefits.confirm_yes')}
               </button>
               <button className="benefits-confirm-btn benefits-confirm-no" onClick={() => setConfirmEnroll(null)}>

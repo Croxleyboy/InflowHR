@@ -1,153 +1,227 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useFeatures } from '../../context/FeatureContext'
-
-const ADMIN_BENEFITS_KEY = 'inflowhr-admin-benefits'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
 
 interface BenefitOption {
-  id: string
+  id: number
+  option_key: string
   icon: string
   title: string
   description: string
-  enabled: boolean
+  is_enabled: boolean
+  sort_order: number
 }
 
 interface BenefitType {
-  id: string
+  id: number
+  benefit_key: string
   title: string
   description: string
   icon: string
   color: string
   intro: string
   eligibility: string
-  cost: string
-  monthlyCost: number
-  lockPeriod: 'none' | 'month' | 'year'
-  enabled: boolean
+  cost_description: string
+  monthly_cost: number
+  lock_period: 'none' | 'month' | 'year'
+  is_enabled: boolean
+  sort_order: number
   options: BenefitOption[]
 }
 
-const DEFAULT_BENEFITS: BenefitType[] = [
+const DEFAULT_BENEFITS: Omit<BenefitType, 'id'>[] = [
   {
-    id: 'vacation', title: 'Vacation / Salary Sacrifice', description: 'Flexible leave options and salary sacrifice schemes',
+    benefit_key: 'vacation', title: 'Vacation / Salary Sacrifice', description: 'Flexible leave options and salary sacrifice schemes',
     icon: '📦', color: '#7b1fa2', intro: 'Take control of your work-life balance with our flexible vacation and salary sacrifice options.',
-    eligibility: 'Available to all permanent employees who have completed their probation period (typically 6 months).', cost: 'Costs vary by option — see individual items below.',
-    monthlyCost: 0, lockPeriod: 'none',
-    enabled: true,
+    eligibility: 'Available to all permanent employees who have completed their probation period (typically 6 months).', cost_description: 'Costs vary by option — see individual items below.',
+    monthly_cost: 0, lock_period: 'none', is_enabled: true, sort_order: 0,
     options: [
-      { id: 'buy_leave', icon: '🛒', title: 'Buy Additional Leave', description: 'Purchase up to 5 extra days annual leave per year via salary sacrifice', enabled: true },
-      { id: 'sell_leave', icon: '💷', title: 'Sell Leave', description: 'Sell up to 3 days unused annual leave back for extra pay', enabled: true },
-      { id: 'carry_over', icon: '📦', title: 'Carry Over', description: 'Carry up to 5 unused days into the next holiday year', enabled: true },
-      { id: 'sabbatical', icon: '🌍', title: 'Sabbatical Programme', description: 'Apply for 1–3 months unpaid sabbatical after 3 years service', enabled: true },
-      { id: 'compressed_hours', icon: '⏰', title: 'Compressed Hours', description: 'Work your weekly hours across 4 days instead of 5', enabled: true },
+      { id: 0, option_key: 'buy_leave', icon: '🛒', title: 'Buy Additional Leave', description: 'Purchase up to 5 extra days annual leave per year via salary sacrifice', is_enabled: true, sort_order: 0 },
+      { id: 0, option_key: 'sell_leave', icon: '💷', title: 'Sell Leave', description: 'Sell up to 3 days unused annual leave back for extra pay', is_enabled: true, sort_order: 1 },
+      { id: 0, option_key: 'carry_over', icon: '📦', title: 'Carry Over', description: 'Carry up to 5 unused days into the next holiday year', is_enabled: true, sort_order: 2 },
+      { id: 0, option_key: 'sabbatical', icon: '🌍', title: 'Sabbatical Programme', description: 'Apply for 1–3 months unpaid sabbatical after 3 years service', is_enabled: true, sort_order: 3 },
+      { id: 0, option_key: 'compressed_hours', icon: '⏰', title: 'Compressed Hours', description: 'Work your weekly hours across 4 days instead of 5', is_enabled: true, sort_order: 4 },
     ],
   },
   {
-    id: 'health', title: 'Health Insurance', description: 'Comprehensive private medical cover for you and your family',
+    benefit_key: 'health', title: 'Health Insurance', description: 'Comprehensive private medical cover for you and your family',
     icon: '🏥', color: '#e53935', intro: 'Comprehensive private medical insurance provided through our partnership with leading UK health insurers.',
-    eligibility: 'Available to all permanent employees from day one. Family cover available after probation.', cost: 'Employer-funded for individual cover. Family add-on: £45/month via salary sacrifice.',
-    monthlyCost: 45, lockPeriod: 'year',
-    enabled: true,
+    eligibility: 'Available to all permanent employees from day one. Family cover available after probation.', cost_description: 'Employer-funded for individual cover. Family add-on: £45/month via salary sacrifice.',
+    monthly_cost: 45, lock_period: 'year', is_enabled: true, sort_order: 1,
     options: [
-      { id: 'hospital', icon: '🏥', title: 'Private Hospital Treatment', description: 'Access to private hospitals and specialists with no NHS waiting lists', enabled: true },
-      { id: 'gp', icon: '👨‍⚕️', title: '24/7 GP Access', description: 'Round-the-clock access to a GP via phone or video consultation', enabled: true },
-      { id: 'dental', icon: '🦷', title: 'Dental Cover', description: 'Routine and emergency dental treatment covered', enabled: true },
-      { id: 'optical', icon: '👁️', title: 'Optical Cover', description: 'Eye tests and contribution towards glasses or contact lenses', enabled: true },
-      { id: 'prescriptions', icon: '💊', title: 'Prescription Cover', description: 'Outpatient prescription costs fully covered', enabled: true },
-      { id: 'wellness', icon: '🏆', title: 'Wellness Programme', description: 'Access to gym discounts, mental health support and wellbeing resources', enabled: true },
-      { id: 'family', icon: '👨‍👩‍👧', title: 'Family Cover', description: 'Extend cover to partner and dependants at reduced rates', enabled: true },
+      { id: 0, option_key: 'hospital', icon: '🏥', title: 'Private Hospital Treatment', description: 'Access to private hospitals and specialists with no NHS waiting lists', is_enabled: true, sort_order: 0 },
+      { id: 0, option_key: 'gp', icon: '👨‍⚕️', title: '24/7 GP Access', description: 'Round-the-clock access to a GP via phone or video consultation', is_enabled: true, sort_order: 1 },
+      { id: 0, option_key: 'dental', icon: '🦷', title: 'Dental Cover', description: 'Routine and emergency dental treatment covered', is_enabled: true, sort_order: 2 },
+      { id: 0, option_key: 'optical', icon: '👁️', title: 'Optical Cover', description: 'Eye tests and contribution towards glasses or contact lenses', is_enabled: true, sort_order: 3 },
+      { id: 0, option_key: 'prescriptions', icon: '💊', title: 'Prescription Cover', description: 'Outpatient prescription costs fully covered', is_enabled: true, sort_order: 4 },
+      { id: 0, option_key: 'wellness', icon: '🏆', title: 'Wellness Programme', description: 'Access to gym discounts, mental health support and wellbeing resources', is_enabled: true, sort_order: 5 },
+      { id: 0, option_key: 'family', icon: '👨‍👩‍👧', title: 'Family Cover', description: 'Extend cover to partner and dependants at reduced rates', is_enabled: true, sort_order: 6 },
     ],
   },
   {
-    id: 'car', title: 'Car Insurance', description: 'Discounted group car insurance through salary sacrifice',
+    benefit_key: 'car', title: 'Car Insurance', description: 'Discounted group car insurance through salary sacrifice',
     icon: '🚗', color: '#1565c0', intro: 'Take advantage of our corporate group car insurance scheme offering competitive rates and comprehensive cover.',
-    eligibility: 'Available to all permanent employees after 3 months of service. Must hold a valid UK driving licence.', cost: 'From £35/month via salary sacrifice — exact rate based on vehicle and driving history.',
-    monthlyCost: 35, lockPeriod: 'year',
-    enabled: true,
+    eligibility: 'Available to all permanent employees after 3 months of service. Must hold a valid UK driving licence.', cost_description: 'From £35/month via salary sacrifice — exact rate based on vehicle and driving history.',
+    monthly_cost: 35, lock_period: 'year', is_enabled: true, sort_order: 2,
     options: [
-      { id: 'comprehensive', icon: '🚗', title: 'Fully Comprehensive Cover', description: 'Full cover for damage, theft, third party and fire', enabled: true },
-      { id: 'breakdown', icon: '🛡️', title: 'Breakdown Assistance', description: 'Roadside recovery and home start included as standard', enabled: true },
-      { id: 'windscreen', icon: '🔧', title: 'Windscreen & Glass', description: 'Windscreen repair and replacement without affecting no-claims', enabled: true },
-      { id: 'discount', icon: '💰', title: 'Group Discount Rate', description: 'Up to 20% discount vs individual policies through group scheme', enabled: true },
-      { id: 'legal', icon: '⚖️', title: 'Legal Expenses Cover', description: 'Motor legal protection up to £100,000 included', enabled: true },
-      { id: 'courtesy', icon: '🚙', title: 'Courtesy Car', description: 'Replacement vehicle provided while yours is being repaired', enabled: true },
+      { id: 0, option_key: 'comprehensive', icon: '🚗', title: 'Fully Comprehensive Cover', description: 'Full cover for damage, theft, third party and fire', is_enabled: true, sort_order: 0 },
+      { id: 0, option_key: 'breakdown', icon: '🛡️', title: 'Breakdown Assistance', description: 'Roadside recovery and home start included as standard', is_enabled: true, sort_order: 1 },
+      { id: 0, option_key: 'windscreen', icon: '🔧', title: 'Windscreen & Glass', description: 'Windscreen repair and replacement without affecting no-claims', is_enabled: true, sort_order: 2 },
+      { id: 0, option_key: 'discount', icon: '💰', title: 'Group Discount Rate', description: 'Up to 20% discount vs individual policies through group scheme', is_enabled: true, sort_order: 3 },
+      { id: 0, option_key: 'legal', icon: '⚖️', title: 'Legal Expenses Cover', description: 'Motor legal protection up to £100,000 included', is_enabled: true, sort_order: 4 },
+      { id: 0, option_key: 'courtesy', icon: '🚙', title: 'Courtesy Car', description: 'Replacement vehicle provided while yours is being repaired', is_enabled: true, sort_order: 5 },
     ],
   },
   {
-    id: 'cycle', title: 'Cycle to Work Scheme', description: 'Save on a new bike and accessories through salary sacrifice',
+    benefit_key: 'cycle', title: 'Cycle to Work Scheme', description: 'Save on a new bike and accessories through salary sacrifice',
     icon: '🚲', color: '#43a047', intro: 'Save up to 42% on a new bicycle and cycling accessories through the government-backed Cycle to Work scheme.',
-    eligibility: 'Open to all employees on PAYE. You must use the bike primarily for commuting to work.', cost: 'Tax-free salary sacrifice over 12 months. Typical saving: 32–42% vs retail.',
-    monthlyCost: 48, lockPeriod: 'month',
-    enabled: true,
+    eligibility: 'Open to all employees on PAYE. You must use the bike primarily for commuting to work.', cost_description: 'Tax-free salary sacrifice over 12 months. Typical saving: 32–42% vs retail.',
+    monthly_cost: 48, lock_period: 'month', is_enabled: true, sort_order: 3,
     options: [
-      { id: 'bike', icon: '🚲', title: 'Bicycle Purchase', description: 'Any bike up to £1,000 (standard) or £5,000 (enhanced scheme)', enabled: true },
-      { id: 'tax_free', icon: '💷', title: 'Tax-Free Saving', description: 'Save on Income Tax and National Insurance contributions', enabled: true },
-      { id: 'green', icon: '🌱', title: 'Eco-Friendly Commute', description: 'Reduce your carbon footprint and improve your health', enabled: true },
-      { id: 'accessories', icon: '🔄', title: 'Accessories Included', description: 'Helmets, locks, lights, panniers and clothing can be included', enabled: true },
-      { id: 'insurance', icon: '🛡️', title: 'Cycle Insurance', description: 'Theft and damage cover available as an add-on', enabled: true },
-      { id: 'maintenance', icon: '📋', title: 'Servicing Package', description: 'Optional annual service plan included in salary sacrifice', enabled: true },
+      { id: 0, option_key: 'bike', icon: '🚲', title: 'Bicycle Purchase', description: 'Any bike up to £1,000 (standard) or £5,000 (enhanced scheme)', is_enabled: true, sort_order: 0 },
+      { id: 0, option_key: 'tax_free', icon: '💷', title: 'Tax-Free Saving', description: 'Save on Income Tax and National Insurance contributions', is_enabled: true, sort_order: 1 },
+      { id: 0, option_key: 'green', icon: '🌱', title: 'Eco-Friendly Commute', description: 'Reduce your carbon footprint and improve your health', is_enabled: true, sort_order: 2 },
+      { id: 0, option_key: 'accessories', icon: '🔄', title: 'Accessories Included', description: 'Helmets, locks, lights, panniers and clothing can be included', is_enabled: true, sort_order: 3 },
+      { id: 0, option_key: 'insurance', icon: '🛡️', title: 'Cycle Insurance', description: 'Theft and damage cover available as an add-on', is_enabled: true, sort_order: 4 },
+      { id: 0, option_key: 'maintenance', icon: '📋', title: 'Servicing Package', description: 'Optional annual service plan included in salary sacrifice', is_enabled: true, sort_order: 5 },
     ],
   },
 ]
 
-function loadBenefits(): BenefitType[] {
-  try {
-    const raw = localStorage.getItem(ADMIN_BENEFITS_KEY)
-    if (!raw) return DEFAULT_BENEFITS
-    const stored: BenefitType[] = JSON.parse(raw)
-    return stored.map(b => {
-      const def = DEFAULT_BENEFITS.find(d => d.id === b.id)
-      return {
-        ...b,
-        monthlyCost: b.monthlyCost ?? def?.monthlyCost ?? 0,
-        lockPeriod: b.lockPeriod ?? def?.lockPeriod ?? 'none',
-      }
-    })
-  } catch { return DEFAULT_BENEFITS }
-}
-
-function saveBenefits(benefits: BenefitType[]) {
-  localStorage.setItem(ADMIN_BENEFITS_KEY, JSON.stringify(benefits))
-}
-
 export default function AdminBenefits() {
   const { features } = useFeatures()
+  const { companyUser } = useAuth()
+  const companyId = companyUser?.company_id
   const payrollEnabled = features.payslips
-  const [benefits, setBenefits] = useState<BenefitType[]>(loadBenefits)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [benefits, setBenefits] = useState<BenefitType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
-  const [editingOptionId, setEditingOptionId] = useState<string | null>(null)
+  const [editingOptionId, setEditingOptionId] = useState<number | null>(null)
   const [optionForm, setOptionForm] = useState<Record<string, any>>({})
   const [showNewBenefit, setShowNewBenefit] = useState(false)
-  const [newBenefit, setNewBenefit] = useState({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost: '£0', monthlyCost: 0, lockPeriod: 'none' as 'none' | 'month' | 'year' })
-  const [showNewOption, setShowNewOption] = useState<string | null>(null)
+  const [newBenefit, setNewBenefit] = useState({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: '£0', monthly_cost: 0, lock_period: 'none' as 'none' | 'month' | 'year' })
+  const [showNewOption, setShowNewOption] = useState<number | null>(null)
   const [newOption, setNewOption] = useState({ icon: '✨', title: '', description: '' })
 
-  useEffect(() => { saveBenefits(benefits) }, [benefits])
+  const loadBenefits = useCallback(async () => {
+    if (!companyId) return
+    setLoading(true)
 
-  function toggleBenefitEnabled(id: string) {
-    setBenefits(prev => prev.map(b => b.id === id ? { ...b, enabled: !b.enabled } : b))
+    const { data: types } = await supabase
+      .from('benefit_types')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('sort_order')
+
+    if (!types || types.length === 0) {
+      // Seed defaults for this company
+      for (const def of DEFAULT_BENEFITS) {
+        const { options, ...typeData } = def
+        const { data: inserted } = await supabase
+          .from('benefit_types')
+          .insert({ ...typeData, company_id: companyId })
+          .select('id')
+          .single()
+        if (inserted) {
+          for (const opt of options) {
+            const { id: _id, ...optData } = opt
+            await supabase.from('benefit_options').insert({
+              ...optData,
+              benefit_type_id: inserted.id,
+              company_id: companyId,
+            })
+          }
+        }
+      }
+      // Re-fetch after seeding
+      const { data: seeded } = await supabase
+        .from('benefit_types')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('sort_order')
+
+      if (seeded) {
+        const withOptions = await attachOptions(seeded, companyId)
+        setBenefits(withOptions)
+      }
+    } else {
+      const withOptions = await attachOptions(types, companyId)
+      setBenefits(withOptions)
+    }
+    setLoading(false)
+  }, [companyId])
+
+  useEffect(() => { loadBenefits() }, [loadBenefits])
+
+  async function attachOptions(types: any[], cId: string): Promise<BenefitType[]> {
+    const typeIds = types.map((t: any) => t.id)
+    const { data: opts } = await supabase
+      .from('benefit_options')
+      .select('*')
+      .eq('company_id', cId)
+      .in('benefit_type_id', typeIds)
+      .order('sort_order')
+
+    const optMap = new Map<number, BenefitOption[]>()
+    for (const o of (opts || [])) {
+      const list = optMap.get(o.benefit_type_id) || []
+      list.push(o as BenefitOption)
+      optMap.set(o.benefit_type_id, list)
+    }
+
+    return types.map((t: any) => ({
+      ...t,
+      options: optMap.get(t.id) || [],
+    }))
   }
 
-  function toggleOptionEnabled(benefitId: string, optionId: string) {
-    setBenefits(prev => prev.map(b => b.id === benefitId ? {
-      ...b, options: b.options.map(o => o.id === optionId ? { ...o, enabled: !o.enabled } : o)
-    } : b))
+  async function toggleBenefitEnabled(id: number) {
+    const b = benefits.find(x => x.id === id)
+    if (!b) return
+    await supabase.from('benefit_types').update({ is_enabled: !b.is_enabled }).eq('id', id)
+    setBenefits(prev => prev.map(x => x.id === id ? { ...x, is_enabled: !x.is_enabled } : x))
+  }
+
+  async function toggleOptionEnabled(benefitId: number, optionId: number) {
+    const b = benefits.find(x => x.id === benefitId)
+    const opt = b?.options.find(o => o.id === optionId)
+    if (!opt) return
+    await supabase.from('benefit_options').update({ is_enabled: !opt.is_enabled }).eq('id', optionId)
+    setBenefits(prev => prev.map(x => x.id === benefitId ? {
+      ...x, options: x.options.map(o => o.id === optionId ? { ...o, is_enabled: !o.is_enabled } : o)
+    } : x))
   }
 
   function startEditBenefit(b: BenefitType) {
     setEditingId(b.id)
     setExpandedId(b.id)
-    setEditForm({ title: b.title, description: b.description, icon: b.icon, color: b.color, intro: b.intro, eligibility: b.eligibility, cost: b.cost, monthlyCost: b.monthlyCost ?? 0, lockPeriod: b.lockPeriod ?? 'none' })
+    setEditForm({ title: b.title, description: b.description, icon: b.icon, color: b.color, intro: b.intro, eligibility: b.eligibility, cost_description: b.cost_description, monthly_cost: b.monthly_cost ?? 0, lock_period: b.lock_period ?? 'none' })
   }
 
-  function saveEditBenefit(id: string) {
+  async function saveEditBenefit(id: number) {
+    await supabase.from('benefit_types').update({
+      title: editForm.title,
+      description: editForm.description,
+      icon: editForm.icon,
+      color: editForm.color,
+      intro: editForm.intro,
+      eligibility: editForm.eligibility,
+      cost_description: editForm.cost_description,
+      monthly_cost: editForm.monthly_cost,
+      lock_period: editForm.lock_period,
+    }).eq('id', id)
     setBenefits(prev => prev.map(b => b.id === id ? { ...b, ...editForm } : b))
     setEditingId(null)
   }
 
-  function deleteBenefit(id: string) {
+  async function deleteBenefit(id: number) {
     if (!confirm('Delete this benefit type and all its options?')) return
+    await supabase.from('benefit_options').delete().eq('benefit_type_id', id)
+    await supabase.from('benefit_enrollments').delete().eq('benefit_type_id', id)
+    await supabase.from('benefit_types').delete().eq('id', id)
     setBenefits(prev => prev.filter(b => b.id !== id))
     if (expandedId === id) setExpandedId(null)
   }
@@ -157,37 +231,80 @@ export default function AdminBenefits() {
     setOptionForm({ icon: opt.icon, title: opt.title, description: opt.description })
   }
 
-  function saveEditOption(benefitId: string, optionId: string) {
-    setBenefits(prev => prev.map(b => b.id === benefitId ? {
+  async function saveEditOption(optionId: number) {
+    await supabase.from('benefit_options').update({
+      icon: optionForm.icon,
+      title: optionForm.title,
+      description: optionForm.description,
+    }).eq('id', optionId)
+    setBenefits(prev => prev.map(b => ({
       ...b, options: b.options.map(o => o.id === optionId ? { ...o, ...optionForm } : o)
-    } : b))
+    })))
     setEditingOptionId(null)
   }
 
-  function deleteOption(benefitId: string, optionId: string) {
+  async function deleteOption(benefitId: number, optionId: number) {
     if (!confirm('Delete this option?')) return
+    await supabase.from('benefit_enrollments').delete().eq('option_id', optionId)
+    await supabase.from('benefit_options').delete().eq('id', optionId)
     setBenefits(prev => prev.map(b => b.id === benefitId ? {
       ...b, options: b.options.filter(o => o.id !== optionId)
     } : b))
   }
 
-  function addNewBenefit() {
-    if (!newBenefit.title) return
-    const id = newBenefit.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')
-    setBenefits(prev => [...prev, { ...newBenefit, id, enabled: true, options: [] }])
-    setNewBenefit({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost: '£0', monthlyCost: 0, lockPeriod: 'none' })
+  async function addNewBenefit() {
+    if (!newBenefit.title || !companyId) return
+    const key = newBenefit.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+    const nextSort = benefits.length
+    const { data: inserted } = await supabase.from('benefit_types').insert({
+      company_id: companyId,
+      benefit_key: key,
+      title: newBenefit.title,
+      description: newBenefit.description,
+      icon: newBenefit.icon,
+      color: newBenefit.color,
+      intro: newBenefit.intro,
+      eligibility: newBenefit.eligibility,
+      cost_description: newBenefit.cost_description,
+      monthly_cost: newBenefit.monthly_cost,
+      lock_period: newBenefit.lock_period,
+      is_enabled: true,
+      sort_order: nextSort,
+    }).select('*').single()
+
+    if (inserted) {
+      setBenefits(prev => [...prev, { ...inserted, options: [] } as BenefitType])
+    }
+    setNewBenefit({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: '£0', monthly_cost: 0, lock_period: 'none' })
     setShowNewBenefit(false)
   }
 
-  function addNewOption(benefitId: string) {
-    if (!newOption.title) return
-    const id = newOption.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')
-    setBenefits(prev => prev.map(b => b.id === benefitId ? {
-      ...b, options: [...b.options, { ...newOption, id, enabled: true }]
-    } : b))
+  async function addNewOption(benefitId: number) {
+    if (!newOption.title || !companyId) return
+    const key = newOption.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+    const b = benefits.find(x => x.id === benefitId)
+    const nextSort = b ? b.options.length : 0
+    const { data: inserted } = await supabase.from('benefit_options').insert({
+      company_id: companyId,
+      benefit_type_id: benefitId,
+      option_key: key,
+      icon: newOption.icon,
+      title: newOption.title,
+      description: newOption.description,
+      is_enabled: true,
+      sort_order: nextSort,
+    }).select('*').single()
+
+    if (inserted) {
+      setBenefits(prev => prev.map(x => x.id === benefitId ? {
+        ...x, options: [...x.options, inserted as BenefitOption]
+      } : x))
+    }
     setNewOption({ icon: '✨', title: '', description: '' })
     setShowNewOption(null)
   }
+
+  if (loading) return <div className="admin-section"><p>Loading benefits...</p></div>
 
   return (
     <div className="admin-section">
@@ -198,8 +315,8 @@ export default function AdminBenefits() {
 
       <div className="admin-mini-stats">
         <div className="admin-mini-stat"><span className="admin-mini-value">{benefits.length}</span><span>Types</span></div>
-        <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{benefits.filter(b => b.enabled).length}</span><span>Active</span></div>
-        <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#e53935'}}>{benefits.filter(b => !b.enabled).length}</span><span>Disabled</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{benefits.filter(b => b.is_enabled).length}</span><span>Active</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#e53935'}}>{benefits.filter(b => !b.is_enabled).length}</span><span>Disabled</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{benefits.reduce((s, b) => s + b.options.length, 0)}</span><span>Options</span></div>
       </div>
 
@@ -217,10 +334,10 @@ export default function AdminBenefits() {
             <div className="admin-form-field"><label>Colour</label><input type="color" className="admin-input" value={newBenefit.color} onChange={e => setNewBenefit(p => ({...p, color: e.target.value}))} style={{height:'40px',padding:'2px'}} /></div>
             <div className="admin-form-field" style={{gridColumn:'1/-1'}}><label>Introduction Text</label><textarea className="admin-input" rows={2} value={newBenefit.intro} onChange={e => setNewBenefit(p => ({...p, intro: e.target.value}))} /></div>
             <div className="admin-form-field"><label>Eligibility</label><input className="admin-input" value={newBenefit.eligibility} onChange={e => setNewBenefit(p => ({...p, eligibility: e.target.value}))} /></div>
-            <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={newBenefit.cost} onChange={e => setNewBenefit(p => ({...p, cost: e.target.value}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
-            <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={newBenefit.monthlyCost} onChange={e => setNewBenefit(p => ({...p, monthlyCost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
+            <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={newBenefit.cost_description} onChange={e => setNewBenefit(p => ({...p, cost_description: e.target.value}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
+            <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={newBenefit.monthly_cost} onChange={e => setNewBenefit(p => ({...p, monthly_cost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
             <div className="admin-form-field"><label>Lock Period</label>
-              <select className="admin-input" value={newBenefit.lockPeriod} onChange={e => setNewBenefit(p => ({...p, lockPeriod: e.target.value as 'none' | 'month' | 'year'}))}>
+              <select className="admin-input" value={newBenefit.lock_period} onChange={e => setNewBenefit(p => ({...p, lock_period: e.target.value as 'none' | 'month' | 'year'}))}>
                 <option value="none">None</option>
                 <option value="month">Monthly (until end of month)</option>
                 <option value="year">Yearly (until end of financial year)</option>
@@ -252,10 +369,10 @@ export default function AdminBenefits() {
                       ? <input className="admin-inline-input" value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} />
                       : b.description}
                   </td>
-                  <td>{b.options.length} ({b.options.filter(o => o.enabled).length} active)</td>
+                  <td>{b.options.length} ({b.options.filter(o => o.is_enabled).length} active)</td>
                   <td>
                     <label className="admin-toggle">
-                      <input type="checkbox" checked={b.enabled} onChange={() => toggleBenefitEnabled(b.id)} />
+                      <input type="checkbox" checked={b.is_enabled} onChange={() => toggleBenefitEnabled(b.id)} />
                       <span className="admin-toggle-slider" />
                     </label>
                   </td>
@@ -293,10 +410,10 @@ export default function AdminBenefits() {
                               <div className="admin-form-field"><label>Colour</label><input type="color" className="admin-input" value={editForm.color} onChange={e => setEditForm(f => ({...f, color: e.target.value}))} style={{height:'40px',padding:'2px'}} /></div>
                               <div className="admin-form-field" style={{gridColumn:'1/-1'}}><label>Introduction</label><textarea className="admin-input" rows={2} value={editForm.intro} onChange={e => setEditForm(f => ({...f, intro: e.target.value}))} /></div>
                               <div className="admin-form-field"><label>Eligibility</label><input className="admin-input" value={editForm.eligibility} onChange={e => setEditForm(f => ({...f, eligibility: e.target.value}))} /></div>
-                              <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={editForm.cost} onChange={e => setEditForm(f => ({...f, cost: e.target.value}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
-                              <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={editForm.monthlyCost ?? 0} onChange={e => setEditForm(f => ({...f, monthlyCost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
+                              <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={editForm.cost_description} onChange={e => setEditForm(f => ({...f, cost_description: e.target.value}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
+                              <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={editForm.monthly_cost ?? 0} onChange={e => setEditForm(f => ({...f, monthly_cost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
                               <div className="admin-form-field"><label>Lock Period</label>
-                                <select className="admin-input" value={editForm.lockPeriod ?? 'none'} onChange={e => setEditForm(f => ({...f, lockPeriod: e.target.value}))}>
+                                <select className="admin-input" value={editForm.lock_period ?? 'none'} onChange={e => setEditForm(f => ({...f, lock_period: e.target.value}))}>
                                   <option value="none">None</option>
                                   <option value="month">Monthly (until end of month)</option>
                                   <option value="year">Yearly (until end of financial year)</option>
@@ -308,9 +425,9 @@ export default function AdminBenefits() {
                         ) : (
                           <div className="admin-benefit-meta">
                             <div><strong>Eligibility:</strong> {b.eligibility}</div>
-                            <div><strong>Cost:</strong> {b.cost}</div>
-                            <div><strong>Monthly Cost:</strong> £{(b.monthlyCost ?? 0).toFixed(2)}</div>
-                            <div><strong>Lock Period:</strong> {(b.lockPeriod ?? 'none') === 'none' ? 'None' : b.lockPeriod === 'month' ? 'Monthly' : 'Financial Year'}</div>
+                            <div><strong>Cost:</strong> {b.cost_description}</div>
+                            <div><strong>Monthly Cost:</strong> £{(b.monthly_cost ?? 0).toFixed(2)}</div>
+                            <div><strong>Lock Period:</strong> {(b.lock_period ?? 'none') === 'none' ? 'None' : b.lock_period === 'month' ? 'Monthly' : 'Financial Year'}</div>
                           </div>
                         )}
 
@@ -333,20 +450,20 @@ export default function AdminBenefits() {
                           <thead><tr><th style={{width:'36px'}}></th><th>Option</th><th>Description</th><th>Visible</th><th>Actions</th></tr></thead>
                           <tbody>
                             {b.options.map(opt => (
-                              <tr key={opt.id} style={{opacity: opt.enabled ? 1 : 0.5}}>
+                              <tr key={opt.id} style={{opacity: opt.is_enabled ? 1 : 0.5}}>
                                 <td><span style={{fontSize:'16px'}}>{editingOptionId === opt.id ? <input className="admin-inline-input" value={optionForm.icon} onChange={e => setOptionForm(f => ({...f, icon: e.target.value}))} style={{width:'40px',textAlign:'center'}} /> : opt.icon}</span></td>
                                 <td>{editingOptionId === opt.id ? <input className="admin-inline-input" value={optionForm.title} onChange={e => setOptionForm(f => ({...f, title: e.target.value}))} /> : opt.title}</td>
                                 <td>{editingOptionId === opt.id ? <input className="admin-inline-input" value={optionForm.description} onChange={e => setOptionForm(f => ({...f, description: e.target.value}))} /> : opt.description}</td>
                                 <td>
                                   <label className="admin-toggle">
-                                    <input type="checkbox" checked={opt.enabled} onChange={() => toggleOptionEnabled(b.id, opt.id)} />
+                                    <input type="checkbox" checked={opt.is_enabled} onChange={() => toggleOptionEnabled(b.id, opt.id)} />
                                     <span className="admin-toggle-slider" />
                                   </label>
                                 </td>
                                 <td className="admin-actions">
                                   {editingOptionId === opt.id ? (
                                     <>
-                                      <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditOption(b.id, opt.id)}>Save</button>
+                                      <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditOption(opt.id)}>Save</button>
                                       <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingOptionId(null)}>Cancel</button>
                                     </>
                                   ) : (
