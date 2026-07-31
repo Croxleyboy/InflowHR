@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -22,51 +22,50 @@ export default function MyLeave() {
   const [loading, setLoading] = useState(true)
   const [imOffState, setImOffState] = useState<'idle' | 'sending' | 'sent'>('idle')
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!EMPLOYEE_ID) return
-    async function load() {
-      const [balRes, pendReqRes, approvedReqRes] = await Promise.all([
-        supabase
-          .from('leave_balances')
-          .select('leave_type_id, total_allowance, used, carried_over')
-          .eq('employee_id', EMPLOYEE_ID)
-          .eq('year', new Date().getFullYear()),
-        supabase
-          .from('leave_requests')
-          .select('days_requested')
-          .eq('employee_id', EMPLOYEE_ID)
-          .eq('status', 'pending'),
-        supabase
-          .from('leave_requests')
-          .select('days_requested')
-          .eq('employee_id', EMPLOYEE_ID)
-          .eq('status', 'approved'),
-      ])
+    setLoading(true)
+    const [balRes, pendReqRes, approvedReqRes] = await Promise.all([
+      supabase
+        .from('leave_balances')
+        .select('leave_type_id, total_allowance, used, carried_over')
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('year', new Date().getFullYear()),
+      supabase
+        .from('leave_requests')
+        .select('days_requested')
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('status', 'pending'),
+      supabase
+        .from('leave_requests')
+        .select('days_requested')
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('status', 'approved'),
+    ])
 
-      const approvedDays = (approvedReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
-      const pendingDays = (pendReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
+    const approvedDays = (approvedReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
+    const pendingDays = (pendReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
 
-      if (balRes.data && balRes.data.length > 0) {
-        const typeIds = balRes.data.map((b: any) => b.leave_type_id)
-        const { data: types } = await supabase
-          .from('leave_types')
-          .select('id, name, colour')
-          .in('id', typeIds)
+    if (balRes.data && balRes.data.length > 0) {
+      const typeIds = balRes.data.map((b: any) => b.leave_type_id)
+      const { data: types } = await supabase
+        .from('leave_types')
+        .select('id, name, colour')
+        .in('id', typeIds)
 
-        const typeMap = new Map((types || []).map((lt: any) => [lt.id, lt]))
-        const merged: LeaveBalance[] = balRes.data.map((b: any) => {
-          const lt = typeMap.get(b.leave_type_id) || { name: 'Leave', colour: '#999' }
-          return { ...b, used: lt.name === 'Annual Leave' ? approvedDays : b.used, leave_type_name: lt.name, colour: lt.colour }
-        })
-        setBalances(merged)
-      }
-
-      setPendingCount(pendingDays)
-
-      setLoading(false)
+      const typeMap = new Map((types || []).map((lt: any) => [lt.id, lt]))
+      const merged: LeaveBalance[] = balRes.data.map((b: any) => {
+        const lt = typeMap.get(b.leave_type_id) || { name: 'Leave', colour: '#999' }
+        return { ...b, used: lt.name === 'Annual Leave' ? approvedDays : b.used, leave_type_name: lt.name, colour: lt.colour }
+      })
+      setBalances(merged)
     }
-    load()
+
+    setPendingCount(pendingDays)
+    setLoading(false)
   }, [EMPLOYEE_ID])
+
+  useEffect(() => { loadData() }, [loadData])
 
   const primary = balances.find(b => b.leave_type_name === 'Annual Leave')
   const totalEntitlement = primary ? primary.total_allowance : 0
@@ -141,11 +140,20 @@ export default function MyLeave() {
           </svg>
         </button>
         <h1 className="new-claim-title">{t('my_leave.title')}</h1>
-        <button className="my-leave-add-btn" onClick={() => navigate('/leave/new')}>
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-        </button>
+        <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+          <button className="feature-refresh" onClick={loadData}>
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
+              <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+              <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button className="my-leave-add-btn" onClick={() => navigate('/leave/new')}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <div className="my-leave-summary">

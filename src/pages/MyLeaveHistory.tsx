@@ -45,7 +45,7 @@ function formatDate(dateStr: string) {
 export default function MyLeaveHistory() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { employeeId: EMPLOYEE_ID } = useAuth()
+  const { employeeId: EMPLOYEE_ID, companyUser } = useAuth()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [typeMap, setTypeMap] = useState<Map<number, LeaveType>>(new Map())
   const [filter, setFilter] = useState<StatusFilter>('all')
@@ -88,6 +88,7 @@ export default function MyLeaveHistory() {
     const { data: offData } = await supabase
       .from('leave_requests')
       .select('id, employee_id')
+      .eq('company_id', companyUser?.company_id)
       .eq('status', 'approved')
       .lte('start_date', we)
       .gte('end_date', ws)
@@ -98,7 +99,7 @@ export default function MyLeaveHistory() {
     }
 
     setLoading(false)
-  }, [EMPLOYEE_ID])
+  }, [EMPLOYEE_ID, companyUser?.company_id])
 
   useEffect(() => {
     if (!EMPLOYEE_ID) return

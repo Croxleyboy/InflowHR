@@ -56,18 +56,18 @@ export default function ExpenseApproval() {
     if (!id) return
     setLoading(true)
     const [claimRes, itemsRes] = await Promise.all([
-      supabase.from('expense_claims').select('id, reference_number, title, status, amount, created_at, submitted_at, employee_id').eq('id', id).single(),
-      supabase.from('expense_line_items').select('id, title, expense_type, amount, receipt_url').eq('expense_claim_id', id).order('created_at', { ascending: true }),
+      supabase.from('expense_claims').select('id, reference_number, title, status, amount, created_at, submitted_at, employee_id').eq('id', id).eq('company_id', companyUser?.company_id).single(),
+      supabase.from('expense_line_items').select('id, title, expense_type, amount, receipt_url').eq('expense_claim_id', id).eq('company_id', companyUser?.company_id).order('created_at', { ascending: true }),
     ])
     if (claimRes.data) {
       const c = claimRes.data as Claim
       setClaim(c)
-      const { data: emp } = await supabase.from('employees').select('first_name, last_name, email').eq('id', c.employee_id).single()
+      const { data: emp } = await supabase.from('employees').select('first_name, last_name, email').eq('id', c.employee_id).eq('company_id', companyUser?.company_id).single()
       if (emp) setEmployee(emp as Employee)
     }
     if (itemsRes.data) setItems(itemsRes.data as LineItem[])
     setLoading(false)
-  }, [id])
+  }, [id, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

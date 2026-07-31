@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
@@ -85,25 +85,25 @@ export default function Payslips() {
 
   const current = fyMonths[monthIdx]
 
-  useEffect(() => {
+  const loadPayslip = useCallback(async () => {
     if (!current || !EMPLOYEE_ID) return
     setLoading(true)
     const startOfMonth = `${current.year}-${String(current.month + 1).padStart(2, '0')}-01`
     const endOfMonth = new Date(current.year, current.month + 1, 0)
     const endStr = `${current.year}-${String(current.month + 1).padStart(2, '0')}-${String(endOfMonth.getDate()).padStart(2, '0')}`
 
-    supabase.from('payslips')
+    const { data } = await supabase.from('payslips')
       .select('*')
       .eq('employee_id', EMPLOYEE_ID)
       .gte('pay_period_start', startOfMonth)
       .lte('pay_period_start', endStr)
       .limit(1)
       .single()
-      .then(({ data }) => {
-        setPayslip(data as PayslipData | null)
-        setLoading(false)
-      })
-  }, [EMPLOYEE_ID, monthIdx, current?.year, current?.month])
+    setPayslip(data as PayslipData | null)
+    setLoading(false)
+  }, [EMPLOYEE_ID, current?.year, current?.month])
+
+  useEffect(() => { loadPayslip() }, [loadPayslip])
 
   const canPrev = monthIdx > 0
   const canNext = monthIdx < fyMonths.length - 1
@@ -124,7 +124,13 @@ export default function Payslips() {
           <h1 className="payslips-title">{t('payslips.title')} <span className="payslips-title-accent">{t('payslips.title_accent')}</span></h1>
           <p className="payslips-header-sub">{t('payslips.subtitle')}</p>
         </div>
-        <div style={{ width: 28 }} />
+        <button className="feature-refresh" onClick={loadPayslip}>
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
       </div>
 
       <div className="payslips-month-nav">

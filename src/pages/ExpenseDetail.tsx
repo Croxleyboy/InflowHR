@@ -51,13 +51,13 @@ export default function ExpenseDetail() {
     if (!id) return
     setLoading(true)
     const [claimRes, itemsRes] = await Promise.all([
-      supabase.from('expense_claims').select('id, reference_number, title, status, amount, created_at').eq('id', id).single(),
-      supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description, receipt_url').eq('expense_claim_id', id).order('created_at', { ascending: true }),
+      supabase.from('expense_claims').select('id, reference_number, title, status, amount, created_at').eq('id', id).eq('company_id', companyUser?.company_id).single(),
+      supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description, receipt_url').eq('expense_claim_id', id).eq('company_id', companyUser?.company_id).order('created_at', { ascending: true }),
     ])
     if (claimRes.data) setClaim(claimRes.data as Claim)
     if (itemsRes.data) setItems(itemsRes.data as LineItem[])
     setLoading(false)
-  }, [id])
+  }, [id, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

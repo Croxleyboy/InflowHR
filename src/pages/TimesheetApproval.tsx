@@ -56,18 +56,22 @@ export default function TimesheetApproval() {
     setLoading(true)
     const { data } = await supabase.from('timesheets')
       .select('id, employee_id, location, customer, role, date, start_time, end_time, hours, status, created_at')
-      .eq('id', id).single()
+      .eq('id', id)
+      .eq('company_id', companyUser?.company_id)
+      .single()
 
     if (data) {
       const rec = data as TimesheetRecord
       setTs(rec)
       const { data: emp } = await supabase.from('employees')
         .select('first_name, last_name, email, avatar_url')
-        .eq('id', rec.employee_id).single()
+        .eq('id', rec.employee_id)
+        .eq('company_id', companyUser?.company_id)
+        .single()
       if (emp) setEmployee(emp as Employee)
     }
     setLoading(false)
-  }, [id])
+  }, [id, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

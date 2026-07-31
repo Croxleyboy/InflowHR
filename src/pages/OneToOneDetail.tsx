@@ -57,7 +57,7 @@ export default function OneToOneDetail() {
     if (!id) return
     setLoading(true)
     const { data: m } = await supabase.from('one_to_one_meetings')
-      .select('*').eq('id', id).single()
+      .select('*').eq('id', id).eq('company_id', companyUser?.company_id).single()
     if (!m) { setLoading(false); return }
     const mtg = m as Meeting
     setMeeting(mtg)
@@ -65,7 +65,7 @@ export default function OneToOneDetail() {
 
     const empIds = [mtg.manager_id, mtg.employee_id]
     const { data: empData } = await supabase.from('employees')
-      .select('id, first_name, last_name, avatar_url').in('id', empIds)
+      .select('id, first_name, last_name, avatar_url').in('id', empIds).eq('company_id', companyUser?.company_id)
     const nameMap: Record<string, string> = {}
     const avatarMap: Record<string, string | null> = {}
     ;(empData || []).forEach((e: { id: string; first_name: string; last_name: string; avatar_url: string | null }) => {
@@ -78,11 +78,11 @@ export default function OneToOneDetail() {
     setEmployeeAvatar(avatarMap[mtg.employee_id] || null)
 
     const { data: cmts } = await supabase.from('one_to_one_comments')
-      .select('*').eq('meeting_id', id).order('created_at', { ascending: true })
+      .select('*').eq('meeting_id', id).eq('company_id', companyUser?.company_id).order('created_at', { ascending: true })
     if (cmts && cmts.length > 0) {
       const authorIds = new Set((cmts as Comment[]).map(c => c.author_id))
       const { data: authors } = await supabase.from('employees')
-        .select('id, first_name, last_name, avatar_url').in('id', Array.from(authorIds))
+        .select('id, first_name, last_name, avatar_url').in('id', Array.from(authorIds)).eq('company_id', companyUser?.company_id)
       const aMap: Record<string, string> = {}
       const aAvatarMap: Record<string, string | null> = {}
       ;(authors || []).forEach((a: { id: string; first_name: string; last_name: string; avatar_url: string | null }) => {
@@ -95,7 +95,7 @@ export default function OneToOneDetail() {
       setComments([])
     }
     setLoading(false)
-  }, [id])
+  }, [id, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

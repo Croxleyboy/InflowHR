@@ -36,10 +36,12 @@ export default function TimesheetDetail() {
     setLoading(true)
     const { data } = await supabase.from('timesheets')
       .select('id, location, customer, role, date, start_time, end_time, hours, status, created_at')
-      .eq('id', id).single()
+      .eq('id', id)
+      .eq('company_id', companyUser?.company_id)
+      .single()
     if (data) setTs(data as TimesheetRecord)
     setLoading(false)
-  }, [id])
+  }, [id, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

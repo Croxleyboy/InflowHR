@@ -549,6 +549,13 @@ export default function LegalTimesheets() {
           <h1>{t('legal_ts.title')}</h1>
           <p>{t('legal_ts.subtitle')}</p>
         </div>
+        <button className="feature-refresh" onClick={loadData} style={{ marginLeft: 'auto' }}>
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
       </header>
 
       {/* Summary Bar */}

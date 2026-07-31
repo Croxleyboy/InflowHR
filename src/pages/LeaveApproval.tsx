@@ -71,20 +71,22 @@ export default function LeaveApproval() {
     setLoading(true)
     const { data: req } = await supabase.from('leave_requests')
       .select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status, reason, created_at')
-      .eq('id', id).single()
+      .eq('id', id)
+      .eq('company_id', companyUser?.company_id)
+      .single()
 
     if (req) {
       const r = req as LeaveRequest
       setRequest(r)
       const [empRes, typeRes] = await Promise.all([
-        supabase.from('employees').select('first_name, last_name, email, avatar_url').eq('id', r.employee_id).single(),
-        supabase.from('leave_types').select('name, deducts_from_allowance').eq('id', r.leave_type_id).single(),
+        supabase.from('employees').select('first_name, last_name, email, avatar_url').eq('id', r.employee_id).eq('company_id', companyUser?.company_id).single(),
+        supabase.from('leave_types').select('name, deducts_from_allowance').eq('id', r.leave_type_id).eq('company_id', companyUser?.company_id).single(),
       ])
       if (empRes.data) setEmployee(empRes.data as Employee)
       if (typeRes.data) setLeaveType(typeRes.data as LeaveType)
     }
     setLoading(false)
-  }, [id])
+  }, [id, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 interface LeaveRequest {
   id: number
@@ -52,6 +53,7 @@ export default function LeaveDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
+  const { companyUser } = useAuth()
   const [request, setRequest] = useState<LeaveRequest | null>(null)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [leaveType, setLeaveType] = useState<LeaveType | null>(null)
@@ -68,20 +70,21 @@ export default function LeaveDetail() {
       .from('leave_requests')
       .select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status, reason, created_at')
       .eq('id', id)
+      .eq('company_id', companyUser?.company_id)
       .single()
 
     if (req) {
       const r = req as LeaveRequest
       setRequest(r)
       const [empRes, typeRes] = await Promise.all([
-        supabase.from('employees').select('first_name, last_name, avatar_url').eq('id', r.employee_id).single(),
-        supabase.from('leave_types').select('name').eq('id', r.leave_type_id).single(),
+        supabase.from('employees').select('first_name, last_name, avatar_url').eq('id', r.employee_id).eq('company_id', companyUser?.company_id).single(),
+        supabase.from('leave_types').select('name').eq('id', r.leave_type_id).eq('company_id', companyUser?.company_id).single(),
       ])
       if (empRes.data) setEmployee(empRes.data as Employee)
       if (typeRes.data) setLeaveType(typeRes.data as LeaveType)
     }
     setLoading(false)
-  }, [id])
+  }, [id, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 

@@ -291,6 +291,13 @@ export default function ELearning() {
           </svg>
         </button>
         <h1>{t('elearning.title')} <span className="elearning-title-accent">{t('elearning.title_accent')}</span></h1>
+        <button className="feature-refresh" onClick={fetchEnabledCourses} style={{ marginLeft: 'auto' }}>
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
       </header>
 
       {/* Stats Bar */}
