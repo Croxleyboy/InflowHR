@@ -137,12 +137,12 @@ export default function SpaceBooking() {
     const spaceIds = spaces.map(s => s.id)
     if (!spaceIds.length) { setBookings([]); return }
     const { data } = await supabase.from('space_bookings')
-      .select('id, space_id, employee_id, booking_date, start_time, end_time, status')
+      .select('id, space_id, employee_id, booking_date, start_time, end_time, title, attendees, guests, status, checked_in_at, created_at')
       .eq('company_id', companyId)
       .eq('booking_date', selectedDate)
       .in('space_id', spaceIds)
       .neq('status', 'cancelled')
-    setBookings(data || [])
+    setBookings((data as Booking[]) || [])
   }, [companyId, spaces, selectedDate])
 
   const loadMyBookings = useCallback(async () => {
