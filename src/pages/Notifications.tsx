@@ -146,7 +146,7 @@ export default function Notifications() {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useLanguage()
-  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser } = useAuth()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser, isSuperAdmin } = useAuth()
   const initialTab = (location.state as { tab?: Tab } | null)?.tab || 'actions'
   const [tab, setTab] = useState<Tab>(initialTab)
   const [actions, setActions] = useState<WorkflowItem[]>([])
@@ -312,7 +312,7 @@ export default function Notifications() {
   return (
     <div className="feature-page notifications-page">
       <header className="notif-header">
-        {tab === 'company' && canPost && (
+        {tab === 'company' && (isSuperAdmin || companyUser?.role === 'admin' || canPost) && (
           <button className="notif-add-btn" onClick={() => navigate('/notifications/create')}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="3" strokeLinecap="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />

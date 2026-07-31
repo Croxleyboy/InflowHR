@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -7,27 +7,51 @@ import { useAuth } from '../context/AuthContext'
 export default function CreateNotification() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeName: HARDCODED_EMPLOYEE_NAME, companyUser } = useAuth()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeName: HARDCODED_EMPLOYEE_NAME, companyUser, isSuperAdmin } = useAuth()
+
+  useEffect(() => {
+    if (isSuperAdmin || companyUser?.role === 'admin') return
+    if (!HARDCODED_EMPLOYEE_ID) return
+    supabase.from('employees')
+      .select('can_post_notifications')
+      .eq('id', HARDCODED_EMPLOYEE_ID)
+      .single()
+      .then(({ data }) => {
+        if (!data?.can_post_notifications) navigate('/notifications', { replace: true })
+      })
+  }, [HARDCODED_EMPLOYEE_ID, isSuperAdmin, companyUser?.role, navigate])
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const canSubmit = title.trim().length > 0 && message.trim().length > 0
 
+  const [error, setError] = useState<string | null>(null)
+
   async function handleSubmit() {
     if (!canSubmit) return
     setSubmitting(true)
+    setError(null)
 
-    await supabase.from('announcements').insert({
+    const row: Record<string, any> = {
       title: title.trim(),
       body: message.trim(),
-      author_id: HARDCODED_EMPLOYEE_ID,
       submitted_by_name: HARDCODED_EMPLOYEE_NAME,
       is_pinned: false,
       company_id: companyUser?.company_id,
-    })
+      published_at: new Date().toISOString(),
+    }
+    if (HARDCODED_EMPLOYEE_ID) row.author_id = HARDCODED_EMPLOYEE_ID
 
-    navigate('/notifications')
+    const { error: insertErr } = await supabase.from('announcements').insert(row)
+
+    if (insertErr) {
+      setError(insertErr.message)
+      setSubmitting(false)
+      return
+    }
+
+    navigate('/notifications', { state: { tab: 'company' } })
   }
 
   return (
@@ -89,6 +113,8 @@ export default function CreateNotification() {
         />
 
         <p className="create-notif-hint">{t('create_notif.hint')}</p>
+
+        {error && <p className="form-error" style={{ color: '#c62828', marginBottom: 12 }}>{error}</p>}
 
         <button
           className="create-notif-submit"
