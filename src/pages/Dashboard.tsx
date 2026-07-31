@@ -166,7 +166,7 @@ export default function Dashboard() {
               <span className="card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}{lastExpenseHasReceipt && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 4, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>}</span>
               <span className="card-sub">{t('dashboard.last_claim')}</span>
             </div>
-            <Chevron color="#c8e600" />
+            <Chevron color="#c62828" />
           </button>
         )}
         {features.leave && (
@@ -178,7 +178,7 @@ export default function Dashboard() {
                 <span className="card-sub card-leave-pending">{leavePending} {t('dashboard.days_pending')}</span>
               )}
             </div>
-            <Chevron color="#d4e600" />
+            <Chevron color="#2e7d32" />
           </button>
         )}
         {features.profile && (
@@ -186,7 +186,7 @@ export default function Dashboard() {
             <div className="card-content">
               <span className="card-label">{t('dashboard.my_profile')}</span>
             </div>
-            <Chevron color="#00bcd4" />
+            <Chevron color="#7b1fa2" />
           </button>
         )}
         {features.payslips && (
@@ -203,7 +203,7 @@ export default function Dashboard() {
               <span className="card-label">{t('dashboard.kudos')}</span>
             </div>
             {kudosUnread > 0 && <span className="kudos-unread-badge">{kudosUnread}</span>}
-            <Chevron color="#00897b" />
+            <Chevron color="#546e7a" />
           </button>
         )}
         {features.benefits && (
@@ -211,7 +211,7 @@ export default function Dashboard() {
             <div className="card-content">
               <span className="card-label">{t('dashboard.benefits')}</span>
             </div>
-            <Chevron color="#00897b" />
+            <Chevron color="#80deea" />
           </button>
         )}
         {features.elearning && (
@@ -219,7 +219,7 @@ export default function Dashboard() {
             <div className="card-content">
               <span className="card-label">{t('dashboard.elearning')}</span>
             </div>
-            <Chevron color="#c62828" />
+            <Chevron color="#f9a825" />
           </button>
         )}
         {features.performance && isManager && (
@@ -251,7 +251,7 @@ export default function Dashboard() {
             <div className="card-content">
               <span className="card-label">{t('dashboard.legal_timesheets')}</span>
             </div>
-            <Chevron color="#cc5200" />
+            <Chevron color="#00695c" />
           </button>
         )}
       </div>
