@@ -687,6 +687,7 @@ body {
 .feature-title-accent { font-style: italic; color: #3d6b99; }
 .expenses-page .feature-title-accent { color: #c62828; }
 .timesheets-page .feature-title-accent { color: #1565c0; }
+.space-booking-page .feature-title-accent { color: #263238; }
 .feature-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
 
 /* ── Expenses ── */
@@ -5222,4 +5223,130 @@ body {
   .lt-feed { padding: 0 20px; }
   .lt-modal { border-radius: 20px; max-height: 85dvh; margin: auto; }
   .lt-modal-overlay { align-items: center; }
+}
+
+/* ============================================================
+   Space Booking — Employee
+   ============================================================ */
+.space-booking-page { padding: 0 0 100px; }
+
+.space-tabs { display: flex; gap: 0; margin: 0 16px 12px; border-bottom: 2px solid #e0e0e0; }
+.space-tab { flex: 1; padding: 10px 0; text-align: center; font-weight: 600; font-size: 14px; background: none; border: none; color: #999; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color .2s, border-color .2s; }
+.space-tab-active { color: #263238; border-bottom-color: #263238; }
+
+.space-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px 12px; }
+.space-filter-row { display: flex; flex-direction: column; gap: 2px; }
+.space-filter-label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .5px; }
+.space-filter-select { padding: 8px 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; background: var(--bg, #fff); color: var(--text, #333); }
+
+.space-grid { display: flex; flex-direction: column; gap: 8px; padding: 0 16px; }
+
+.space-card { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 12px; border: 1px solid #e0e0e0; background: var(--bg, #fff); }
+.space-card-available { border-left: 4px solid #43a047; }
+.space-card-booked { border-left: 4px solid #ef5350; opacity: .7; }
+
+.space-card-icon { width: 40px; height: 40px; border-radius: 10px; background: #cfd8dc; display: flex; align-items: center; justify-content: center; color: #263238; flex-shrink: 0; }
+.space-card-booked .space-card-icon { background: #ffebee; color: #ef5350; }
+
+.space-card-info { flex: 1; min-width: 0; }
+.space-card-name { display: block; font-weight: 600; font-size: 14px; color: var(--text, #333); }
+.space-card-meta { display: block; font-size: 12px; color: #888; margin-top: 2px; }
+.space-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.space-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #e8eaf6; color: #3949ab; }
+
+.space-card-slots { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.space-slot-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #ffebee; color: #c62828; font-weight: 600; }
+
+.space-card-action { flex-shrink: 0; }
+.space-book-btn { padding: 8px 14px; border-radius: 8px; border: none; background: #37474f; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.space-book-btn:active { background: #263238; }
+
+.space-status-badge { display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+.space-booked-badge { background: #ffebee; color: #ef5350; }
+.space-status-confirmed { background: #e8f5e9; color: #2e7d32; }
+.space-status-checked_in { background: #e3f2fd; color: #1565c0; }
+.space-status-cancelled { background: #fafafa; color: #999; }
+.space-status-no_show { background: #fff3e0; color: #e65100; }
+
+.space-empty { text-align: center; color: #999; padding: 40px 16px; font-size: 14px; }
+
+/* My Bookings */
+.space-my-bookings { padding: 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.space-booking-card { padding: 14px; border-radius: 12px; border: 1px solid #e0e0e0; background: var(--bg, #fff); }
+.space-booking-cancelled { opacity: .5; }
+.space-booking-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.space-booking-name { font-weight: 600; font-size: 14px; }
+.space-booking-details { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; color: #666; }
+.space-booking-title { font-style: italic; }
+.space-booking-type { text-transform: capitalize; }
+.space-booking-actions { display: flex; gap: 8px; margin-top: 10px; }
+.space-checkin-btn { padding: 6px 14px; border-radius: 6px; border: none; background: #43a047; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.space-cancel-btn { padding: 6px 14px; border-radius: 6px; border: none; background: #ef5350; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+
+/* Booking Modal */
+.space-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; align-items: flex-end; }
+.space-modal { background: var(--bg, #fff); border-radius: 20px 20px 0 0; width: 100%; max-height: 85dvh; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom); }
+.space-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px 8px; }
+.space-modal-header h2 { font-size: 18px; font-weight: 700; color: var(--text, #333); }
+.space-modal-close { background: none; border: none; font-size: 28px; color: #999; cursor: pointer; line-height: 1; }
+.space-modal-body { padding: 0 20px 16px; }
+.space-modal-space-name { font-size: 14px; color: #666; margin-bottom: 16px; }
+.space-modal-field { margin-bottom: 14px; }
+.space-modal-label { display: block; font-size: 12px; font-weight: 600; color: #888; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
+.space-modal-input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; box-sizing: border-box; background: var(--bg, #fff); color: var(--text, #333); }
+.space-modal-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.space-modal-time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.space-modal-error { color: #c62828; font-size: 13px; margin-top: 8px; }
+.space-modal-success { color: #2e7d32; font-size: 13px; margin-top: 8px; font-weight: 600; }
+.space-modal-footer { padding: 0 20px 20px; }
+.space-confirm-btn { width: 100%; padding: 14px; border-radius: 10px; border: none; background: #37474f; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; }
+.space-confirm-btn:disabled { opacity: .5; }
+
+/* Dashboard card */
+.card-space-booking { background: linear-gradient(135deg, #455a64, #263238); }
+
+/* ============================================================
+   Admin Space Management — shared admin styles
+   ============================================================ */
+.admin-sub-tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; }
+.admin-sub-tab { padding: 10px 20px; font-weight: 600; font-size: 14px; background: none; border: none; color: #999; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color .2s, border-color .2s; }
+.admin-sub-tab-active { color: #1976d2; border-bottom-color: #1976d2; }
+
+.admin-section { margin-bottom: 32px; }
+.admin-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.admin-section-header h2 { font-size: 16px; font-weight: 700; }
+
+.admin-add-btn { padding: 8px 16px; border-radius: 8px; border: none; background: #1976d2; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.admin-add-btn:hover { background: #1565c0; }
+
+.admin-inline-form { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid #e0e0e0; background: #fafafa; margin-bottom: 12px; align-items: flex-end; }
+.admin-inline-form .admin-input { flex: 1; min-width: 140px; }
+.admin-input { padding: 8px 10px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px; }
+
+.admin-form-actions { display: flex; gap: 6px; }
+.admin-save-btn { padding: 8px 16px; border-radius: 6px; border: none; background: #43a047; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+.admin-cancel-btn { padding: 8px 16px; border-radius: 6px; border: none; background: #999; color: #fff; font-size: 13px; cursor: pointer; }
+.admin-action-btn { padding: 4px 10px; border-radius: 4px; border: 1px solid #ddd; background: #fff; font-size: 12px; cursor: pointer; margin-right: 4px; }
+.admin-delete-btn { color: #c62828; border-color: #ffcdd2; }
+
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.admin-table th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #666; font-size: 12px; text-transform: uppercase; }
+.admin-table td { padding: 10px; border-bottom: 1px solid #f0f0f0; }
+.admin-table tr:hover { background: rgba(0,0,0,.02); }
+
+.admin-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
+.admin-badge-desk { background: #e8f5e9; color: #2e7d32; }
+.admin-badge-room { background: #e3f2fd; color: #1565c0; }
+.admin-badge-draft { background: #fff3e0; color: #e65100; }
+.admin-badge-active { background: #e8f5e9; color: #2e7d32; }
+.admin-badge-maintenance { background: #fce4ec; color: #c62828; }
+
+.admin-settings-grid { display: flex; flex-direction: column; gap: 14px; max-width: 400px; }
+.admin-setting-row { display: flex; flex-direction: column; gap: 4px; }
+.admin-setting-row label { font-size: 14px; color: #555; }
+
+@media (min-width: 600px) {
+  .space-modal-overlay { align-items: center; }
+  .space-modal { border-radius: 20px; max-width: 480px; margin: auto; }
+  .space-filters { grid-template-columns: repeat(5, 1fr); }
 }

@@ -246,6 +246,14 @@ export default function Dashboard() {
             <Chevron color="#e65100" />
           </button>
         )}
+        {features.space_booking && (
+          <button className="dash-card card-space-booking" onClick={() => navigate('/space-booking')}>
+            <div className="card-content">
+              <span className="card-label">{t('dashboard.space_booking')}</span>
+            </div>
+            <Chevron color="#263238" />
+          </button>
+        )}
         {features.legal_timesheets && (
           <button className="dash-card card-legal-ts" onClick={() => navigate('/legal-timesheets')}>
             <div className="card-content">

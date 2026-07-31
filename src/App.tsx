@@ -44,6 +44,7 @@ import MyShifts from './pages/MyShifts'
 import ShiftSwap from './pages/ShiftSwap'
 import Availability from './pages/Availability'
 import LegalTimesheets from './pages/LegalTimesheets'
+import SpaceBooking from './pages/SpaceBooking'
 import Placeholder from './pages/Placeholder'
 import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
@@ -66,6 +67,7 @@ import AdminShiftsRotas from './pages/admin/AdminShiftsRotas'
 import AdminSubscriptions from './pages/admin/AdminSubscriptions'
 import AdminBilling from './pages/admin/AdminBilling'
 import AdminLegalTimesheets from './pages/admin/AdminLegalTimesheets'
+import AdminSpaceManagement from './pages/admin/AdminSpaceManagement'
 
 function AdminGate() {
   const { companyUser } = useAuth()
@@ -121,6 +123,7 @@ function EmployeeRoutes() {
       <Route path="/shifts/swap" element={<ShiftSwap />} />
       <Route path="/shifts/availability" element={<Availability />} />
       <Route path="/legal-timesheets" element={<LegalTimesheets />} />
+      <Route path="/space-booking" element={<SpaceBooking />} />
       <Route path="/announcements" element={<Placeholder title="Company Announcements" />} />
     </Routes>
   )
@@ -179,6 +182,7 @@ function AuthGate() {
             <Route path="notifications" element={<AdminNotifications />} />
             <Route path="billing" element={<AdminBilling />} />
             <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
+            <Route path="space-management" element={<AdminSpaceManagement />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />

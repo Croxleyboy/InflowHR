@@ -427,6 +427,7 @@ export default function AdminOnboarding() {
         { company_id: companyId, feature_key: 'elearning', is_enabled: false },
         { company_id: companyId, feature_key: 'benefits', is_enabled: false },
         { company_id: companyId, feature_key: 'legal_timesheets', is_enabled: false },
+        { company_id: companyId, feature_key: 'space_booking', is_enabled: false },
       ]
       await supabase.from('company_features').insert(standardFeatures)
     }
