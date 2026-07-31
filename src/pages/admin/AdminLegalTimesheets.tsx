@@ -74,7 +74,7 @@ interface LeaveRequest {
   employee?: { first_name: string; last_name: string } | null
 }
 
-type Tab = 'overview' | 'review' | 'matters' | 'compliance'
+type Tab = 'overview' | 'review' | 'matters' | 'compliance' | 'settings'
 type ReviewFilter = 'all' | 'draft' | 'submitted' | 'pending' | 'approved' | 'rejected' | 'billed'
 
 // ── Constants ──
@@ -178,7 +178,45 @@ export default function AdminLegalTimesheets() {
   const [showMatterForm, setShowMatterForm] = useState(false)
   const [matterClientId, setMatterClientId] = useState('')
 
+  // Settings state
+  const ROUNDING_OPTIONS = [
+    { value: 1, label: '1 minute (no rounding)' },
+    { value: 6, label: '6 minutes (UK standard)' },
+    { value: 10, label: '10 minutes' },
+    { value: 15, label: '15 minutes (quarter hour)' },
+    { value: 30, label: '30 minutes (half hour)' },
+  ]
+  const [roundingMinutes, setRoundingMinutes] = useState(6)
+  const [roundingLoaded, setRoundingLoaded] = useState(false)
+  const [roundingSaving, setRoundingSaving] = useState(false)
+
   // ── Data loading ──
+  const loadRoundingSetting = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase
+      .from('companies')
+      .select('legal_ts_rounding_minutes')
+      .eq('id', selectedCompanyId)
+      .single()
+    if (data?.legal_ts_rounding_minutes != null) {
+      setRoundingMinutes(data.legal_ts_rounding_minutes)
+    } else {
+      setRoundingMinutes(6)
+    }
+    setRoundingLoaded(true)
+  }, [selectedCompanyId])
+
+  async function saveRoundingSetting(val: number) {
+    if (!selectedCompanyId) return
+    setRoundingSaving(true)
+    await supabase
+      .from('companies')
+      .update({ legal_ts_rounding_minutes: val })
+      .eq('id', selectedCompanyId)
+    setRoundingMinutes(val)
+    setRoundingSaving(false)
+  }
+
   const loadEmployees = useCallback(async () => {
     if (!selectedCompanyId) return
     const { data } = await supabase
@@ -298,9 +336,9 @@ export default function AdminLegalTimesheets() {
   useEffect(() => {
     if (!selectedCompanyId) return
     setLoading(true)
-    Promise.all([loadEmployees(), loadClients(), loadMatters(), loadEntries(), loadComplianceAlerts()])
+    Promise.all([loadEmployees(), loadClients(), loadMatters(), loadEntries(), loadComplianceAlerts(), loadRoundingSetting()])
       .finally(() => setLoading(false))
-  }, [selectedCompanyId, loadEmployees, loadClients, loadMatters, loadEntries, loadComplianceAlerts])
+  }, [selectedCompanyId, loadEmployees, loadClients, loadMatters, loadEntries, loadComplianceAlerts, loadRoundingSetting])
 
   // ── Derived data ──
   const filtered = useMemo(() => {
@@ -583,16 +621,18 @@ export default function AdminLegalTimesheets() {
 
       {/* Tabs */}
       <div className="alt-tabs">
-        {(['overview', 'review', 'matters', 'compliance'] as Tab[]).map(t => (
+        {(['overview', 'review', 'matters', 'compliance', 'settings'] as Tab[]).map(t => (
           <button key={t} className={`alt-tab ${tab === t ? 'alt-tab-active' : ''}`} onClick={() => setTab(t)}>
             {t === 'overview' && '📊 '}
             {t === 'review' && '✅ '}
             {t === 'matters' && '📁 '}
             {t === 'compliance' && '🛡️ '}
+            {t === 'settings' && '⚙️ '}
             {t === 'overview' && 'Overview'}
             {t === 'review' && 'Review & Approve'}
             {t === 'matters' && 'Clients & Matters'}
             {t === 'compliance' && 'Compliance'}
+            {t === 'settings' && 'Settings'}
             {t === 'review' && pendingCount > 0 && <span className="alt-tab-badge">{pendingCount}</span>}
             {t === 'compliance' && overtimeAlerts > 0 && <span className="alt-tab-badge alt-tab-badge-red">{overtimeAlerts}</span>}
           </button>
@@ -1192,6 +1232,52 @@ export default function AdminLegalTimesheets() {
                 Sync to Payroll
               </button>
             </div>
+          </div>
+        </>
+      )}
+
+      {/* ── SETTINGS TAB ── */}
+      {tab === 'settings' && (
+        <>
+          <div className="alt-compliance-section">
+            <h3 className="alt-section-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+              Time Rounding
+            </h3>
+            <p style={{ fontSize: 13, color: '#8b8fa3', marginBottom: 16 }}>
+              Set the billing increment for auto-rounding time entries. The UK legal industry standard is 6 minutes (1/10th of an hour). All durations are rounded <strong>up</strong> to the nearest increment.
+            </p>
+
+            {!roundingLoaded ? (
+              <div className="admin-empty">Loading settings...</div>
+            ) : (
+              <div style={{ maxWidth: 400 }}>
+                <label className="admin-form-label" style={{ fontWeight: 600, marginBottom: 8, display: 'block' }}>Auto-round up increment</label>
+                <select
+                  className="admin-select"
+                  value={roundingMinutes}
+                  onChange={e => saveRoundingSetting(Number(e.target.value))}
+                  disabled={roundingSaving}
+                  style={{ width: '100%', padding: '10px 12px', fontSize: 14 }}
+                >
+                  {ROUNDING_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                {roundingSaving && <p style={{ fontSize: 12, color: '#8b8fa3', marginTop: 8 }}>Saving...</p>}
+
+                <div style={{ marginTop: 20, padding: 16, background: '#f5f5f5', borderRadius: 10, fontSize: 13 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>How it works</div>
+                  <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8, color: '#555' }}>
+                    <li>Time is always rounded <strong>up</strong> to the next {roundingMinutes}-minute unit — partial units are never rounded down</li>
+                    <li>Example: 7 minutes of work → {roundingMinutes === 1 ? '7 mins' : `${Math.ceil(7 / roundingMinutes) * roundingMinutes} mins`} charged ({roundingMinutes === 1 ? '0.12' : (Math.ceil(7 / roundingMinutes) * roundingMinutes / 60).toFixed(2)}h)</li>
+                    <li>Example: 13 minutes of work → {roundingMinutes === 1 ? '13 mins' : `${Math.ceil(13 / roundingMinutes) * roundingMinutes} mins`} charged ({roundingMinutes === 1 ? '0.22' : (Math.ceil(13 / roundingMinutes) * roundingMinutes / 60).toFixed(2)}h)</li>
+                    <li>Employees can still disable auto-rounding per entry if needed</li>
+                    <li>This setting applies to all employees in this company</li>
+                  </ul>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

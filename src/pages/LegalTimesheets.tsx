@@ -87,8 +87,10 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: '#e53935',
 }
 
-function roundToTenth(hrs: number): number {
-  return Math.ceil(hrs * 10) / 10
+function roundUp(hrs: number, incrementMins: number): number {
+  if (incrementMins <= 1) return parseFloat(hrs.toFixed(2))
+  const units = incrementMins / 60
+  return Math.ceil(hrs / units) * units
 }
 
 function hrsToMins(hrs: number): number {
@@ -101,8 +103,8 @@ function formatElapsed(seconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function elapsedToHrs(seconds: number): number {
-  return roundToTenth(seconds / 3600)
+function elapsedToHrs(seconds: number, incrementMins: number): number {
+  return roundUp(seconds / 3600, incrementMins)
 }
 
 function todayStr(): string {
@@ -137,6 +139,9 @@ export default function LegalTimesheets() {
   const { t } = useLanguage()
   const { employeeId, companyUser } = useAuth()
   const companyId = companyUser?.company_id
+
+  // ── Rounding setting (from company config) ──
+  const [roundingMins, setRoundingMins] = useState(6)
 
   // ── Supabase-backed state ──
   const [clients, setClients] = useState<LegalClient[]>([])
@@ -178,7 +183,7 @@ export default function LegalTimesheets() {
     if (!companyId || !employeeId) return
     setLoading(true)
 
-    const [clientsRes, mattersRes, entriesRes] = await Promise.all([
+    const [clientsRes, mattersRes, entriesRes, companyRes] = await Promise.all([
       supabase
         .from('legal_clients')
         .select('id, name')
@@ -198,7 +203,16 @@ export default function LegalTimesheets() {
         .eq('company_id', companyId)
         .eq('employee_id', employeeId)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('companies')
+        .select('legal_ts_rounding_minutes')
+        .eq('id', companyId)
+        .single(),
     ])
+
+    if (companyRes.data?.legal_ts_rounding_minutes != null) {
+      setRoundingMins(companyRes.data.legal_ts_rounding_minutes)
+    }
 
     if (clientsRes.data) setClients(clientsRes.data)
     if (mattersRes.data) setMatters(mattersRes.data)
@@ -329,7 +343,7 @@ export default function LegalTimesheets() {
 
   async function logTimerAsEntry(timer: TimerState) {
     const elapsed = getTimerElapsed(timer)
-    const hrs = formAutoRound ? roundToTenth(elapsed / 3600) : parseFloat((elapsed / 3600).toFixed(2))
+    const hrs = formAutoRound ? roundUp(elapsed / 3600, roundingMins) : parseFloat((elapsed / 3600).toFixed(2))
     if (hrs <= 0) return
     const task = TASK_CODES.find(tc => tc.code === timer.taskCode)
 
@@ -408,7 +422,7 @@ export default function LegalTimesheets() {
   function getFormDuration(): number {
     if (formDurationMode === 'manual') {
       const v = parseFloat(formManualHrs)
-      return isNaN(v) ? 0 : (formAutoRound ? roundToTenth(v) : v)
+      return isNaN(v) ? 0 : (formAutoRound ? roundUp(v, roundingMins) : v)
     }
     if (formDurationMode === 'startend') {
       const [sh, sm] = formStartTime.split(':').map(Number)
@@ -416,13 +430,13 @@ export default function LegalTimesheets() {
       let mins = (eh * 60 + em) - (sh * 60 + sm)
       if (mins < 0) mins += 1440
       const hrs = mins / 60
-      return formAutoRound ? roundToTenth(hrs) : parseFloat(hrs.toFixed(2))
+      return formAutoRound ? roundUp(hrs, roundingMins) : parseFloat(hrs.toFixed(2))
     }
     if (formDurationMode === 'timer' && formTimerId) {
       const timer = timers.find(tmr => tmr.id === formTimerId)
       if (timer) {
         const secs = getTimerElapsed(timer)
-        return formAutoRound ? roundToTenth(secs / 3600) : parseFloat((secs / 3600).toFixed(2))
+        return formAutoRound ? roundUp(secs / 3600, roundingMins) : parseFloat((secs / 3600).toFixed(2))
       }
     }
     return 0
@@ -570,7 +584,7 @@ export default function LegalTimesheets() {
           </div>
           {timers.map(timer => {
             const elapsed = getTimerElapsed(timer)
-            const hrs = elapsedToHrs(elapsed)
+            const hrs = elapsedToHrs(elapsed, roundingMins)
             return (
               <div key={timer.id} className={`lt-timer-card ${timer.running ? 'lt-timer-running' : ''}`}>
                 <div className="lt-timer-info">
@@ -785,7 +799,7 @@ export default function LegalTimesheets() {
                             onClick={() => setFormTimerId(timer.id)}
                           >
                             <span>{timer.clientName} - {timer.matterName}</span>
-                            <span className="lt-dur-timer-elapsed">{formatElapsed(getTimerElapsed(timer))} ({elapsedToHrs(getTimerElapsed(timer))}h)</span>
+                            <span className="lt-dur-timer-elapsed">{formatElapsed(getTimerElapsed(timer))} ({elapsedToHrs(getTimerElapsed(timer), roundingMins)}h)</span>
                           </button>
                         ))}
                       </div>
@@ -807,7 +821,7 @@ export default function LegalTimesheets() {
                 {formDuration > 0 && (
                   <div className="lt-dur-preview">
                     <span>{formDuration.toFixed(1)} hrs / {hrsToMins(formDuration)} mins</span>
-                    {formAutoRound && <span className="lt-dur-rounded">auto-rounded to nearest 0.1h</span>}
+                    {formAutoRound && <span className="lt-dur-rounded">auto-rounded to nearest {roundingMins} mins</span>}
                   </div>
                 )}
 
@@ -834,9 +848,6 @@ export default function LegalTimesheets() {
                   <div className="lt-narrative-tools">
                     <button className="lt-template-toggle" onClick={() => setShowTemplates(!showTemplates)} title="Insert template">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                    </button>
-                    <button className="lt-dictate-btn" title="Dictation (placeholder)">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>
                     </button>
                   </div>
                 </div>

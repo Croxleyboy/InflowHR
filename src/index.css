@@ -5128,13 +5128,13 @@ body {
 
 /* Narrative tools */
 .lt-narrative-tools { display: flex; gap: 8px; }
-.lt-template-toggle, .lt-dictate-btn {
+.lt-template-toggle {
   width: 32px; height: 32px; border: none; border-radius: 8px;
   background: var(--bg); color: var(--text-muted);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
 }
-.lt-template-toggle:active, .lt-dictate-btn:active { background: var(--border); }
+.lt-template-toggle:active { background: var(--border); }
 .lt-templates {
   display: flex; flex-wrap: wrap; gap: 6px;
   margin-bottom: 8px;
