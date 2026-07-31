@@ -4,6 +4,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { seedBenefitDefaults } from '../lib/benefitDefaults'
 
 interface BenefitOption {
   id: number
@@ -18,6 +19,7 @@ interface BenefitType {
   id: number
   benefit_key: string
   title: string
+  description: string
   icon: string
   color: string
   intro: string
@@ -43,13 +45,6 @@ const BENEFIT_TITLE_KEYS: Record<string, string> = {
   health: 'benefits.health_title',
   car: 'benefits.car_title',
   cycle: 'benefits.cycle_title',
-}
-
-const BENEFIT_DESC_KEYS: Record<string, string> = {
-  vacation: 'benefits.vacation_desc',
-  health: 'benefits.health_desc',
-  car: 'benefits.car_desc',
-  cycle: 'benefits.cycle_desc',
 }
 
 const BENEFIT_INTRO_KEYS: Record<string, string> = {
@@ -166,10 +161,14 @@ export default function Benefits() {
     if (!companyId || !employeeId) return
     setLoading(true)
 
-    const [typesRes, enrollRes] = await Promise.all([
-      supabase.from('benefit_types').select('*').eq('company_id', companyId).eq('is_enabled', true).order('sort_order'),
-      supabase.from('benefit_enrollments').select('*').eq('company_id', companyId).eq('employee_id', employeeId),
-    ])
+    let typesRes = await supabase.from('benefit_types').select('*').eq('company_id', companyId).eq('is_enabled', true).order('sort_order')
+
+    if (!typesRes.data || typesRes.data.length === 0) {
+      await seedBenefitDefaults(companyId)
+      typesRes = await supabase.from('benefit_types').select('*').eq('company_id', companyId).eq('is_enabled', true).order('sort_order')
+    }
+
+    const enrollRes = await supabase.from('benefit_enrollments').select('*').eq('company_id', companyId).eq('employee_id', employeeId)
 
     const types = (typesRes.data || []) as BenefitType[]
     const typeIds = types.map(t => t.id)
