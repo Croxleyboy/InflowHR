@@ -202,6 +202,12 @@ export default function Benefits() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  useEffect(() => {
+    function onFocus() { loadData() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadData])
+
   function isEnrolledInType(typeId: number): boolean {
     return enrollments.some(e => e.benefit_type_id === typeId && e.option_id === null)
   }

@@ -104,8 +104,8 @@ export default function AdminBenefits() {
 
   async function toggleBenefitEnabled(id: number) {
     const b = benefits.find(x => x.id === id)
-    if (!b) return
-    await supabase.from('benefit_types').update({ is_enabled: !b.is_enabled }).eq('id', id)
+    if (!b || !companyId) return
+    await supabase.from('benefit_types').update({ is_enabled: !b.is_enabled }).eq('id', id).eq('company_id', companyId)
     setBenefits(prev => prev.map(x => x.id === id ? { ...x, is_enabled: !x.is_enabled } : x))
   }
 
