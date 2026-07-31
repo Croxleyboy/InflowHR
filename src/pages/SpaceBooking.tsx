@@ -85,6 +85,7 @@ export default function SpaceBooking() {
   const [selectedType, setSelectedType] = useState<'' | 'desk' | 'room'>('')
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
   const [selectedTime, setSelectedTime] = useState('09:00')
+  const [selectedEndTime, setSelectedEndTime] = useState('17:00')
 
   const [bookingModal, setBookingModal] = useState<Space | null>(null)
   const [bookingTitle, setBookingTitle] = useState('')
@@ -174,13 +175,14 @@ export default function SpaceBooking() {
   const filteredFloors = selectedLocation ? floors.filter(f => f.location_id === selectedLocation) : floors
 
   function isSpaceBooked(spaceId: string): boolean {
-    const selMins = timeToMinutes(selectedTime)
+    const selStart = timeToMinutes(selectedTime)
+    const selEnd = timeToMinutes(selectedEndTime)
     return bookings.some(b => {
       if (b.space_id !== spaceId) return false
       if (!b.start_time || !b.end_time) return true
       const bStart = timeToMinutes(b.start_time.slice(0, 5))
       const bEnd = timeToMinutes(b.end_time.slice(0, 5))
-      return selMins >= bStart && selMins < bEnd
+      return selStart < bEnd && selEnd > bStart
     })
   }
 
@@ -295,22 +297,21 @@ export default function SpaceBooking() {
 
   return (
     <div className="feature-page space-booking-page">
-      <header className="feature-header">
-        <button className="feature-back" onClick={() => navigate('/')}>
-          <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="#263238" strokeWidth="2" />
-            <path d="M21 12l-6 6 6 6" stroke="#263238" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <header className="space-header">
+        <button className="space-header-back" onClick={() => navigate('/')}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <div className="feature-header-center">
-          <h1 className="feature-title">{t('space.title')} <span className="feature-title-accent">{t('space.title_accent')}</span></h1>
-          <p className="feature-subtitle">{t('space.subtitle')}</p>
+        <div className="space-header-center">
+          <h1 className="space-header-title">{t('space.title')} {t('space.title_accent')}</h1>
+          <p className="space-header-subtitle">{t('space.subtitle')}</p>
         </div>
-        <button className="feature-refresh" onClick={() => { loadSpaces(); loadBookingsForDate(); loadMyBookings() }}>
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="#263238" strokeWidth="2" />
-            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#263238" strokeWidth="2" strokeLinecap="round" />
-            <path d="M22 10v4h-4M10 22v-4h4" stroke="#263238" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <button className="space-header-refresh" onClick={() => { loadSpaces(); loadBookingsForDate(); loadMyBookings() }}>
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       </header>
@@ -352,6 +353,12 @@ export default function SpaceBooking() {
               <label className="space-filter-label">{t('space.start_time')}</label>
               <select className="space-filter-select" value={selectedTime} onChange={e => setSelectedTime(e.target.value)}>
                 {TIME_SLOTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="space-filter-row">
+              <label className="space-filter-label">{t('space.end_time')}</label>
+              <select className="space-filter-select" value={selectedEndTime} onChange={e => setSelectedEndTime(e.target.value)}>
+                {TIME_SLOTS.filter(s => timeToMinutes(s) >= timeToMinutes(selectedTime) + 30).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
