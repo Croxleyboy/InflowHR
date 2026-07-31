@@ -25,6 +25,7 @@ interface Employee {
 
 interface LeaveType {
   name: string
+  deducts_from_allowance: boolean | null
 }
 
 function formatDate(dateStr: string) {
@@ -77,7 +78,7 @@ export default function LeaveApproval() {
       setRequest(r)
       const [empRes, typeRes] = await Promise.all([
         supabase.from('employees').select('first_name, last_name, email, avatar_url').eq('id', r.employee_id).single(),
-        supabase.from('leave_types').select('name').eq('id', r.leave_type_id).single(),
+        supabase.from('leave_types').select('name, deducts_from_allowance').eq('id', r.leave_type_id).single(),
       ])
       if (empRes.data) setEmployee(empRes.data as Employee)
       if (typeRes.data) setLeaveType(typeRes.data as LeaveType)
@@ -101,13 +102,33 @@ export default function LeaveApproval() {
       approved_at: approved ? now : null,
     }).eq('id', id)
 
+    if (approved && leaveType?.deducts_from_allowance !== false) {
+      const year = new Date(request.start_date).getFullYear()
+      const { data: balance } = await supabase
+        .from('leave_balances')
+        .select('id, used')
+        .eq('employee_id', request.employee_id)
+        .eq('year', year)
+        .limit(1)
+        .single()
+      if (balance) {
+        await supabase.from('leave_balances')
+          .update({ used: balance.used + request.days_requested })
+          .eq('id', balance.id)
+      }
+    }
+
+    const deductNote = leaveType?.deducts_from_allowance === false
+      ? ' (does not reduce annual leave / reduziert den Jahresurlaub nicht)'
+      : ''
+
     await supabase.from('workflow_tracker')
       .update({
         status: 'Complete',
         approval_status: approved ? 'Approved' : 'Declined',
         updated_at: now,
         task_description: approved
-          ? `${typeName} approved - ${formatDate(request.start_date)} to ${formatDate(request.end_date)}`
+          ? `${typeName} approved - ${formatDate(request.start_date)} to ${formatDate(request.end_date)}${deductNote}`
           : `${typeName} declined`,
       })
       .eq('record_type', 'Leave')
@@ -127,7 +148,7 @@ export default function LeaveApproval() {
       approval_id: request.id,
       reminder_count: 1,
       task_description: approved
-        ? `Your ${typeName} from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been approved. ${happyMsg}`
+        ? `Your ${typeName} from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been approved. ${happyMsg}${deductNote}`
         : `Your ${typeName} request from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been declined. Please contact your manager.`,
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
@@ -143,7 +164,7 @@ export default function LeaveApproval() {
       assigned_to: APPROVER_EMAIL,
       approval_id: request.id,
       reminder_count: 1,
-      task_description: `You ${approved ? 'approved' : 'declined'} ${typeName} for ${empName} - ${formatDate(request.start_date)} to ${formatDate(request.end_date)}`,
+      task_description: `You ${approved ? 'approved' : 'declined'} ${typeName} for ${empName} - ${formatDate(request.start_date)} to ${formatDate(request.end_date)}${deductNote}`,
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })

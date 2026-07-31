@@ -220,11 +220,39 @@ export default function NewLeaveRequest() {
       }
     }
 
-    const typeId = leaveTypeIds[leaveType]
+    let typeId = leaveTypeIds[leaveType]
+    if (!typeId && companyUser?.company_id) {
+      const NO_DEDUCT_TYPES = ['Sick Leave', 'Jury Duty', 'Lieu Days']
+      const { data: newType } = await supabase
+        .from('leave_types')
+        .insert({ name: leaveType, company_id: companyUser.company_id, deducts_from_allowance: !NO_DEDUCT_TYPES.includes(leaveType) })
+        .select('id')
+        .single()
+      if (newType) {
+        typeId = newType.id
+        setLeaveTypeIds(prev => ({ ...prev, [leaveType]: newType.id }))
+      }
+    }
     if (!typeId) {
-      setError('Leave type not found. Please try again.')
+      setError('Leave type not found. Please try again. / Urlaubsart nicht gefunden. Bitte versuchen Sie es erneut.')
       setSubmitting(false)
       return
+    }
+
+    const daysVal = parseFloat(days)
+    let careerBreakFlag = false
+    if (leaveType === 'Career Break') {
+      const { data: balances } = await supabase
+        .from('leave_balances')
+        .select('total_allowance, used')
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('year', new Date().getFullYear())
+        .limit(1)
+        .single()
+      if (balances) {
+        const remaining = balances.total_allowance - balances.used
+        if (daysVal > remaining) careerBreakFlag = true
+      }
     }
 
     const { data, error: err } = await supabase
@@ -234,7 +262,7 @@ export default function NewLeaveRequest() {
         leave_type_id: typeId,
         start_date: startDate,
         end_date: endDate,
-        days_requested: parseFloat(days),
+        days_requested: daysVal,
         status: 'pending',
         reason: reason.trim() || null,
         company_id: companyUser?.company_id,
@@ -248,6 +276,8 @@ export default function NewLeaveRequest() {
       return
     }
 
+    const flagNote = careerBreakFlag ? ' ⚠️ Days exceed remaining allowance — conversation required with employee / Tage überschreiten den verbleibenden Urlaub — Gespräch mit dem Mitarbeiter erforderlich' : ''
+
     await supabase.from('workflow_tracker').insert({
       emp_display_name: EMPLOYEE_NAME,
       step: 1,
@@ -258,7 +288,7 @@ export default function NewLeaveRequest() {
       assigned_to: MANAGER_EMAIL,
       approval_id: data.id,
       reminder_count: 1,
-      task_description: `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${halfDay ? ' (Half Day)' : ` (${days} days)`}`,
+      task_description: `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${halfDay ? ' (Half Day)' : ` (${days} days)`}${flagNote}`,
       company_id: companyUser?.company_id,
     })
 

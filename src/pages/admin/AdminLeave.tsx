@@ -26,6 +26,8 @@ export default function AdminLeave() {
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [weekendsAsWorkdays, setWeekendsAsWorkdays] = useState(false)
   const [savingWeekend, setSavingWeekend] = useState(false)
+  const [leaveTypeSettings, setLeaveTypeSettings] = useState<{ id: number; name: string; deducts_from_allowance: boolean }[]>([])
+  const [savingDeduct, setSavingDeduct] = useState<number | null>(null)
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -46,7 +48,24 @@ export default function AdminLeave() {
     setSavingWeekend(false)
   }
 
-  useEffect(() => { if (selectedCompanyId) { load(); loadWeekendSetting() } }, [selectedCompanyId, loadWeekendSetting])
+  const loadLeaveTypeSettings = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase
+      .from('leave_types')
+      .select('id, name, deducts_from_allowance')
+      .eq('company_id', selectedCompanyId)
+      .order('name')
+    if (data) setLeaveTypeSettings(data.map(r => ({ ...r, deducts_from_allowance: r.deducts_from_allowance !== false })))
+  }, [selectedCompanyId])
+
+  async function toggleDeductsFromAllowance(typeId: number, currentVal: boolean) {
+    setSavingDeduct(typeId)
+    await supabase.from('leave_types').update({ deducts_from_allowance: !currentVal }).eq('id', typeId)
+    setLeaveTypeSettings(prev => prev.map(t => t.id === typeId ? { ...t, deducts_from_allowance: !currentVal } : t))
+    setSavingDeduct(null)
+  }
+
+  useEffect(() => { if (selectedCompanyId) { load(); loadWeekendSetting(); loadLeaveTypeSettings() } }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings])
 
   async function load() {
     setLoading(true)
@@ -76,9 +95,22 @@ export default function AdminLeave() {
     if (editForm.status === 'approved') {
       const req = requests.find(r => r.id === id)
       if (req) {
-        await supabase.from('leave_balances')
-          .update({ used: editForm.days_requested })
-          .eq('employee_id', (req as any).employee_id)
+        const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
+        if (!typeSetting || typeSetting.deducts_from_allowance) {
+          const year = new Date(req.start_date).getFullYear()
+          const { data: balance } = await supabase
+            .from('leave_balances')
+            .select('id, used')
+            .eq('employee_id', (req as any).employee_id)
+            .eq('year', year)
+            .limit(1)
+            .single()
+          if (balance) {
+            await supabase.from('leave_balances')
+              .update({ used: balance.used + Number(editForm.days_requested) })
+              .eq('id', balance.id)
+          }
+        }
       }
     }
     setEditingId(null)
@@ -144,6 +176,31 @@ export default function AdminLeave() {
             : 'Weekends are excluded from leave day calculations (UK bank holidays always excluded)'}
         </span>
       </div>
+
+      {leaveTypeSettings.length > 0 && (
+        <div className="admin-weekend-toggle" style={{ marginTop: 12 }}>
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Leave Allowance Deductions / Urlaubsanspruch-Abzüge</h4>
+          <span className="admin-toggle-hint" style={{ marginBottom: 8, display: 'block' }}>
+            Choose which leave types deduct from annual leave allowance. Sick Leave, Jury Duty and Lieu Days never deduct.
+          </span>
+          <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
+            Wählen Sie, welche Urlaubsarten vom Jahresurlaub abgezogen werden. Krankheit, Geschworenenpflicht und Freizeitausgleich werden nie abgezogen.
+          </span>
+          {leaveTypeSettings
+            .filter(t => ['Bereavement', 'Exam Leave', 'Carers Leave'].includes(t.name))
+            .map(t => (
+              <label key={t.id} className="admin-toggle-label" style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={t.deducts_from_allowance}
+                  onChange={() => toggleDeductsFromAllowance(t.id, t.deducts_from_allowance)}
+                  disabled={savingDeduct === t.id}
+                />
+                <span>{t.name} — {t.deducts_from_allowance ? 'Deducts from allowance / Wird vom Urlaub abgezogen' : 'Does not deduct / Wird nicht abgezogen'}</span>
+              </label>
+            ))}
+        </div>
+      )}
 
       <div className="admin-filters">
         <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="admin-select">

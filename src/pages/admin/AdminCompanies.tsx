@@ -122,11 +122,14 @@ export default function AdminCompanies() {
       }
 
       await supabase.from('leave_types').insert([
-        { name: 'Annual Leave', company_id: newCo.id },
-        { name: 'Sick Leave', company_id: newCo.id },
-        { name: 'Compassionate Leave', company_id: newCo.id },
-        { name: 'Parental Leave', company_id: newCo.id },
-        { name: 'Unpaid Leave', company_id: newCo.id },
+        { name: 'Annual Leave', company_id: newCo.id, deducts_from_allowance: true },
+        { name: 'Sick Leave', company_id: newCo.id, deducts_from_allowance: false },
+        { name: 'Jury Duty', company_id: newCo.id, deducts_from_allowance: false },
+        { name: 'Bereavement', company_id: newCo.id, deducts_from_allowance: true },
+        { name: 'Exam Leave', company_id: newCo.id, deducts_from_allowance: true },
+        { name: 'Carers Leave', company_id: newCo.id, deducts_from_allowance: true },
+        { name: 'Career Break', company_id: newCo.id, deducts_from_allowance: true },
+        { name: 'Lieu Days', company_id: newCo.id, deducts_from_allowance: false },
       ])
 
       await supabase.from('company_features').insert([

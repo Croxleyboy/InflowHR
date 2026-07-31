@@ -397,11 +397,14 @@ export default function AdminOnboarding() {
 
     if (!existingTypes || existingTypes.length === 0) {
       const defaultLeaveTypes = [
-        { name: 'Annual Leave', company_id: companyId },
-        { name: 'Sick Leave', company_id: companyId },
-        { name: 'Compassionate Leave', company_id: companyId },
-        { name: 'Parental Leave', company_id: companyId },
-        { name: 'Unpaid Leave', company_id: companyId },
+        { name: 'Annual Leave', company_id: companyId, deducts_from_allowance: true },
+        { name: 'Sick Leave', company_id: companyId, deducts_from_allowance: false },
+        { name: 'Jury Duty', company_id: companyId, deducts_from_allowance: false },
+        { name: 'Bereavement', company_id: companyId, deducts_from_allowance: true },
+        { name: 'Exam Leave', company_id: companyId, deducts_from_allowance: true },
+        { name: 'Carers Leave', company_id: companyId, deducts_from_allowance: true },
+        { name: 'Career Break', company_id: companyId, deducts_from_allowance: true },
+        { name: 'Lieu Days', company_id: companyId, deducts_from_allowance: false },
       ]
       await supabase.from('leave_types').insert(defaultLeaveTypes)
     }

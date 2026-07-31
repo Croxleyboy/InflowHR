@@ -155,6 +155,7 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true)
   const [canPost, setCanPost] = useState(false)
   const [swapActions, setSwapActions] = useState<SwapAction[]>([])
+  const [expenseReceipts, setExpenseReceipts] = useState<Set<number>>(new Set())
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -215,6 +216,20 @@ export default function Notifications() {
           created_at: s.created_at,
         })))
       }
+    }
+
+    const allItems = [...(actionsRes.data || []), ...(notifsRes.data || [])] as WorkflowItem[]
+    const expenseIds = allItems
+      .filter(i => i.record_type === 'Expense' && i.approval_id)
+      .map(i => i.approval_id as number)
+    const uniqueExpenseIds = [...new Set(expenseIds)]
+    if (uniqueExpenseIds.length > 0) {
+      const { data: receiptRows } = await supabase
+        .from('expense_line_items')
+        .select('expense_claim_id')
+        .in('expense_claim_id', uniqueExpenseIds)
+        .not('receipt_url', 'is', null)
+      if (receiptRows) setExpenseReceipts(new Set(receiptRows.map((r: { expense_claim_id: number }) => r.expense_claim_id)))
     }
 
     setLoading(false)
@@ -429,6 +444,11 @@ export default function Notifications() {
                 <div className="notif-action-detail">
                   <span className="notif-action-type">{item.record_type === 'Expense' ? t('dashboard.expenses') : item.record_type === 'Meeting' ? t('one_to_one.page_subtitle') : item.record_type}</span>
                   {item.task_description && <span className="notif-action-amount">{item.task_description.split(' - ').pop()}</span>}
+                  {item.record_type === 'Expense' && item.approval_id && expenseReceipts.has(item.approval_id) && (
+                    <span className="notif-receipt-indicator" title="Has receipts / Hat Belege">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                    </span>
+                  )}
                   <span className="notif-action-for">{t('notifications.for')} {item.emp_display_name}</span>
                   {item.approval_id && <span className="notif-action-id">{item.approval_id}</span>}
                 </div>
@@ -449,7 +469,9 @@ export default function Notifications() {
               <NotifIcon type={n.record_type} status={n.approval_status} />
               <div className="notif-card-content">
                 <span className="notif-card-title">{getNotifTitle(n)}</span>
-                <span className="notif-card-sub">{n.task_description}</span>
+                <span className="notif-card-sub">{n.task_description}{n.record_type === 'Expense' && n.approval_id && expenseReceipts.has(n.approval_id) && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 6, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
+                )}</span>
                 <span className="notif-card-date">{formatNotifDate(n.created_at)}</span>
               </div>
               {(n.record_type === 'Expense' || n.record_type === 'Leave') && n.approval_id && (
