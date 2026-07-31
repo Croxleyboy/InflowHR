@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useFeatures } from '../../context/FeatureContext'
-import { useAuth } from '../../context/AuthContext'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { supabase } from '../../lib/supabase'
 import { seedBenefitDefaults } from '../../lib/benefitDefaults'
 
@@ -33,8 +33,7 @@ interface BenefitType {
 
 export default function AdminBenefits() {
   const { features } = useFeatures()
-  const { companyUser } = useAuth()
-  const companyId = companyUser?.company_id
+  const { selectedCompanyId: companyId } = useAdminCompany()
   const payrollEnabled = features.payslips
   const [benefits, setBenefits] = useState<BenefitType[]>([])
   const [loading, setLoading] = useState(true)
