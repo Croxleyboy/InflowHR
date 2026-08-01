@@ -67,7 +67,7 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
   const loadCompanyFeatures = useCallback(async (companyId: string) => {
     const { data: companyFeaturesData } = await supabase
       .from('company_features')
-      .select('feature_key, is_enabled')
+      .select('feature_key, is_enabled, is_visible')
       .eq('company_id', companyId)
 
     if (!companyFeaturesData || companyFeaturesData.length === 0) {
@@ -77,20 +77,26 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const dbFlags = new Map(
-      companyFeaturesData.map(f => [f.feature_key, f.is_enabled])
+    const dbRows = new Map(
+      companyFeaturesData.map(f => [f.feature_key, f])
     )
 
-    const newFeatures: Features = { ...defaultFeatures }
+    const subscribed: Features = { ...defaultFeatures }
+    const visible: Features = { ...defaultFeatures }
+
     for (const key of STANDARD_FEATURES) {
-      newFeatures[key] = dbFlags.get(key) ?? true
+      const row = dbRows.get(key)
+      subscribed[key] = row?.is_enabled ?? true
+      visible[key] = subscribed[key] && (row?.is_visible ?? true)
     }
     for (const [dbKey, featureKey] of Object.entries(ADDON_FEATURE_KEYS)) {
-      newFeatures[featureKey] = dbFlags.get(dbKey) ?? false
+      const row = dbRows.get(dbKey)
+      subscribed[featureKey] = row?.is_enabled ?? false
+      visible[featureKey] = subscribed[featureKey] && (row?.is_visible ?? true)
     }
 
-    setCompanyFeatures({ ...newFeatures })
-    setFeaturesState(newFeatures)
+    setCompanyFeatures(subscribed)
+    setFeaturesState(visible)
     setFeaturesLoaded(true)
   }, [])
 

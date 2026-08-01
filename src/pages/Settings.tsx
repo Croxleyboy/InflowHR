@@ -57,9 +57,14 @@ export default function Settings() {
       const featureRows = (Object.keys(draft) as (keyof Features)[]).map(key => ({
         company_id: companyUser.company_id,
         feature_key: key === 'payslips' ? 'payroll' : key,
-        is_enabled: draft[key],
+        is_visible: draft[key],
       }))
-      await supabase.from('company_features').upsert(featureRows, { onConflict: 'company_id,feature_key' })
+      for (const row of featureRows) {
+        await supabase.from('company_features')
+          .update({ is_visible: row.is_visible })
+          .eq('company_id', row.company_id)
+          .eq('feature_key', row.feature_key)
+      }
     }
 
     setSaved(true)
