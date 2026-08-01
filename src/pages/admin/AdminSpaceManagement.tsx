@@ -38,7 +38,40 @@ interface SpaceSettings {
   default_slot_minutes: number
 }
 
-type SubTab = 'locations' | 'spaces' | 'settings'
+interface AdminBooking {
+  id: string
+  space_id: string
+  employee_id: string
+  booking_date: string
+  start_time: string | null
+  end_time: string | null
+  title: string | null
+  status: string
+  checked_in_at: string | null
+  created_at: string
+  space_name?: string
+  space_type?: string
+  employee_name?: string
+}
+
+type SubTab = 'locations' | 'spaces' | 'bookings' | 'settings'
+
+function generateTimeSlots(): string[] {
+  const slots: string[] = []
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+    }
+  }
+  return slots
+}
+
+const TIME_SLOTS = generateTimeSlots()
+
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
 
 const DEFAULT_SETTINGS: SpaceSettings = {
   max_advance_days: 30,
@@ -73,6 +106,15 @@ export default function AdminSpaceManagement() {
   const [showNewSpace, setShowNewSpace] = useState(false)
 
   const [savingSettings, setSavingSettings] = useState(false)
+
+  // Bookings state
+  const [allBookings, setAllBookings] = useState<AdminBooking[]>([])
+  const [bookingsLoading, setBookingsLoading] = useState(false)
+  const [bookingFilter, setBookingFilter] = useState<'upcoming' | 'past' | 'cancelled'>('upcoming')
+  const [editingBookingId, setEditingBookingId] = useState<string | null>(null)
+  const [bookingForm, setBookingForm] = useState({ date: '', start_time: '09:00', end_time: '10:00', title: '', status: 'confirmed' })
+  const [bookingError, setBookingError] = useState<string | null>(null)
+  const [savingBooking, setSavingBooking] = useState(false)
 
   const loadAll = useCallback(async () => {
     if (!companyId) return
@@ -193,6 +235,123 @@ export default function AdminSpaceManagement() {
     setSavingSettings(false)
   }
 
+  const loadBookings = useCallback(async () => {
+    if (!companyId) return
+    setBookingsLoading(true)
+    const todayStr = new Date().toISOString().split('T')[0]
+    let query = supabase.from('space_bookings')
+      .select('id, space_id, employee_id, booking_date, start_time, end_time, title, status, checked_in_at, created_at, spaces(name, space_type), employees(first_name, last_name)')
+      .eq('company_id', companyId)
+      .order('booking_date', { ascending: bookingFilter === 'upcoming' })
+
+    if (bookingFilter === 'upcoming') {
+      query = query.gte('booking_date', todayStr).neq('status', 'cancelled')
+    } else if (bookingFilter === 'past') {
+      query = query.lt('booking_date', todayStr).neq('status', 'cancelled')
+    } else {
+      query = query.eq('status', 'cancelled')
+    }
+
+    const { data } = await query
+    const mapped: AdminBooking[] = (data || []).map((b: Record<string, unknown>) => {
+      const space = b.spaces as Record<string, string> | null
+      const emp = b.employees as Record<string, string> | null
+      return {
+        id: b.id as string,
+        space_id: b.space_id as string,
+        employee_id: b.employee_id as string,
+        booking_date: b.booking_date as string,
+        start_time: b.start_time as string | null,
+        end_time: b.end_time as string | null,
+        title: b.title as string | null,
+        status: b.status as string,
+        checked_in_at: b.checked_in_at as string | null,
+        created_at: b.created_at as string,
+        space_name: space?.name || '',
+        space_type: space?.space_type || '',
+        employee_name: emp ? `${emp.first_name} ${emp.last_name}` : '',
+      }
+    })
+    setAllBookings(mapped)
+    setBookingsLoading(false)
+  }, [companyId, bookingFilter])
+
+  useEffect(() => { if (subTab === 'bookings') loadBookings() }, [loadBookings, subTab])
+
+  function editBooking(b: AdminBooking) {
+    setEditingBookingId(b.id)
+    setBookingForm({
+      date: b.booking_date,
+      start_time: b.start_time?.slice(0, 5) || '09:00',
+      end_time: b.end_time?.slice(0, 5) || '10:00',
+      title: b.title || '',
+      status: b.status,
+    })
+    setBookingError(null)
+  }
+
+  async function saveBooking() {
+    if (!editingBookingId || !companyId) return
+    setSavingBooking(true)
+    setBookingError(null)
+
+    const startMins = timeToMinutes(bookingForm.start_time)
+    const endMins = timeToMinutes(bookingForm.end_time)
+    if (endMins - startMins < 30) {
+      setBookingError('Minimum booking duration is 30 minutes')
+      setSavingBooking(false)
+      return
+    }
+
+    const current = allBookings.find(b => b.id === editingBookingId)
+    if (!current) { setSavingBooking(false); return }
+
+    const { data: conflicts } = await supabase.from('space_bookings')
+      .select('id, start_time, end_time')
+      .eq('space_id', current.space_id)
+      .eq('booking_date', bookingForm.date)
+      .neq('status', 'cancelled')
+      .neq('id', editingBookingId)
+
+    if (conflicts && conflicts.length > 0) {
+      const hasOverlap = conflicts.some(c => {
+        if (!c.start_time || !c.end_time) return true
+        const cStart = timeToMinutes(c.start_time.slice(0, 5))
+        const cEnd = timeToMinutes(c.end_time.slice(0, 5))
+        return startMins < cEnd && endMins > cStart
+      })
+      if (hasOverlap) {
+        setBookingError('Time conflict — another booking overlaps this slot')
+        setSavingBooking(false)
+        return
+      }
+    }
+
+    const { error } = await supabase.from('space_bookings').update({
+      booking_date: bookingForm.date,
+      start_time: bookingForm.start_time,
+      end_time: bookingForm.end_time,
+      title: bookingForm.title || null,
+      status: bookingForm.status,
+      admin_modified_at: new Date().toISOString(),
+    }).eq('id', editingBookingId)
+
+    if (error) {
+      setBookingError(error.message)
+      setSavingBooking(false)
+      return
+    }
+
+    setEditingBookingId(null)
+    setSavingBooking(false)
+    loadBookings()
+  }
+
+  async function cancelBookingAdmin(id: string) {
+    await supabase.from('space_bookings').update({ status: 'cancelled' }).eq('id', id)
+    loadBookings()
+  }
+
   function getLocName(id: string) { return locations.find(l => l.id === id)?.name || '' }
   function getFloorLabel(id: string) {
     const f = floors.find(fl => fl.id === id)
@@ -211,6 +370,7 @@ export default function AdminSpaceManagement() {
       <div className="admin-sub-tabs">
         <button className={`admin-sub-tab ${subTab === 'locations' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('locations')}>Locations &amp; Floors</button>
         <button className={`admin-sub-tab ${subTab === 'spaces' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('spaces')}>Spaces Directory</button>
+        <button className={`admin-sub-tab ${subTab === 'bookings' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('bookings')}>Bookings</button>
         <button className={`admin-sub-tab ${subTab === 'settings' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('settings')}>Booking Settings</button>
       </div>
 
@@ -349,6 +509,103 @@ export default function AdminSpaceManagement() {
               {spaces.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: '#999' }}>No spaces yet — add locations and floors first</td></tr>}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ---- BOOKINGS ---- */}
+      {subTab === 'bookings' && (
+        <div className="admin-section">
+          <div className="admin-section-header">
+            <h2>Bookings</h2>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className={`admin-action-btn ${bookingFilter === 'upcoming' ? 'admin-filter-active' : ''}`} onClick={() => setBookingFilter('upcoming')}>Upcoming</button>
+              <button className={`admin-action-btn ${bookingFilter === 'past' ? 'admin-filter-active' : ''}`} onClick={() => setBookingFilter('past')}>Past</button>
+              <button className={`admin-action-btn ${bookingFilter === 'cancelled' ? 'admin-filter-active' : ''}`} onClick={() => setBookingFilter('cancelled')}>Cancelled</button>
+            </div>
+          </div>
+
+          {editingBookingId && (
+            <div className="admin-inline-form" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                Edit Booking — {allBookings.find(b => b.id === editingBookingId)?.space_name} ({allBookings.find(b => b.id === editingBookingId)?.employee_name})
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#888', display: 'block' }}>Date</label>
+                  <input type="date" className="admin-input" value={bookingForm.date} onChange={e => setBookingForm({ ...bookingForm, date: e.target.value })} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#888', display: 'block' }}>Start</label>
+                  <select className="admin-input" value={bookingForm.start_time} onChange={e => setBookingForm({ ...bookingForm, start_time: e.target.value })}>
+                    {TIME_SLOTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#888', display: 'block' }}>End</label>
+                  <select className="admin-input" value={bookingForm.end_time} onChange={e => setBookingForm({ ...bookingForm, end_time: e.target.value })}>
+                    {TIME_SLOTS.filter(s => timeToMinutes(s) >= timeToMinutes(bookingForm.start_time) + 30).map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#888', display: 'block' }}>Title</label>
+                  <input className="admin-input" value={bookingForm.title} onChange={e => setBookingForm({ ...bookingForm, title: e.target.value })} placeholder="Optional" />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#888', display: 'block' }}>Status</label>
+                  <select className="admin-input" value={bookingForm.status} onChange={e => setBookingForm({ ...bookingForm, status: e.target.value })}>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="checked_in">Checked In</option>
+                    <option value="cancelled">Cancelled</option>
+                    <option value="no_show">No Show</option>
+                  </select>
+                </div>
+              </div>
+              {bookingError && <p style={{ color: '#c62828', fontSize: 13, margin: '4px 0 0' }}>{bookingError}</p>}
+              <div className="admin-form-actions" style={{ marginTop: 8 }}>
+                <button className="admin-save-btn" onClick={saveBooking} disabled={savingBooking}>{savingBooking ? 'Saving...' : 'Save'}</button>
+                <button className="admin-cancel-btn" onClick={() => { setEditingBookingId(null); setBookingError(null) }}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {bookingsLoading ? (
+            <div className="admin-loading">Loading...</div>
+          ) : (
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Space</th>
+                  <th>Type</th>
+                  <th>Employee</th>
+                  <th>Date</th>
+                  <th>Time</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allBookings.map(b => (
+                  <tr key={b.id}>
+                    <td>{b.space_name}</td>
+                    <td><span className={`admin-badge admin-badge-${b.space_type}`}>{b.space_type === 'desk' ? 'Desk' : 'Room'}</span></td>
+                    <td>{b.employee_name}</td>
+                    <td>{b.booking_date}</td>
+                    <td>{b.start_time?.slice(0, 5) || '—'} – {b.end_time?.slice(0, 5) || '—'}</td>
+                    <td>{b.title || '—'}</td>
+                    <td><span className={`admin-badge admin-badge-${b.status}`}>{b.status}</span></td>
+                    <td>
+                      <button className="admin-action-btn" onClick={() => editBooking(b)}>Edit</button>
+                      {b.status !== 'cancelled' && (
+                        <button className="admin-action-btn admin-delete-btn" onClick={() => cancelBookingAdmin(b.id)}>Cancel</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {allBookings.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No bookings found</td></tr>}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 

@@ -5282,6 +5282,7 @@ body {
 /* My Bookings */
 .space-my-bookings { padding: 0 16px; display: flex; flex-direction: column; gap: 8px; }
 .space-booking-card { padding: 14px; border-radius: 12px; border: 1px solid #e0e0e0; background: var(--bg, #fff); }
+.space-amended-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #fff3e0; color: #e65100; font-size: 11px; font-weight: 600; margin-bottom: 6px; }
 .space-booking-cancelled { opacity: .5; }
 .space-booking-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .space-booking-name { font-weight: 600; font-size: 14px; }
@@ -5349,6 +5350,11 @@ body {
 .admin-badge-draft { background: #fff3e0; color: #e65100; }
 .admin-badge-active { background: #e8f5e9; color: #2e7d32; }
 .admin-badge-maintenance { background: #fce4ec; color: #c62828; }
+.admin-badge-confirmed { background: #e8f5e9; color: #2e7d32; }
+.admin-badge-checked_in { background: #e3f2fd; color: #1565c0; }
+.admin-badge-cancelled { background: #fafafa; color: #999; }
+.admin-badge-no_show { background: #fff3e0; color: #e65100; }
+.admin-filter-active { background: #1976d2 !important; color: #fff !important; border-color: #1976d2 !important; }
 
 .admin-settings-grid { display: flex; flex-direction: column; gap: 14px; max-width: 400px; }
 .admin-setting-row { display: flex; flex-direction: column; gap: 4px; }

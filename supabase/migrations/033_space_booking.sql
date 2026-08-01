@@ -72,6 +72,7 @@ CREATE TABLE space_bookings (
   guests         text[] DEFAULT '{}',
   status         text NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'checked_in', 'cancelled', 'no_show')),
   checked_in_at  timestamptz,
+  admin_modified_at timestamptz,
   created_at     timestamptz DEFAULT now()
 );
 

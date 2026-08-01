@@ -38,6 +38,7 @@ interface Booking {
   guests: string[]
   status: string
   checked_in_at: string | null
+  admin_modified_at: string | null
   created_at: string
   space?: { name: string; space_type: string; floor_id: string; floors?: { name: string; locations?: { name: string } } }
 }
@@ -137,7 +138,7 @@ export default function SpaceBooking() {
     const spaceIds = spaces.map(s => s.id)
     if (!spaceIds.length) { setBookings([]); return }
     const { data } = await supabase.from('space_bookings')
-      .select('id, space_id, employee_id, booking_date, start_time, end_time, title, attendees, guests, status, checked_in_at, created_at')
+      .select('id, space_id, employee_id, booking_date, start_time, end_time, title, attendees, guests, status, checked_in_at, admin_modified_at, created_at')
       .eq('company_id', companyId)
       .eq('booking_date', selectedDate)
       .in('space_id', spaceIds)
@@ -148,7 +149,7 @@ export default function SpaceBooking() {
   const loadMyBookings = useCallback(async () => {
     if (!companyId || !employeeId) return
     const { data } = await supabase.from('space_bookings')
-      .select('id, space_id, employee_id, booking_date, start_time, end_time, title, attendees, guests, status, checked_in_at, created_at, space:spaces(name, space_type, floor_id, floors(name, locations:locations(name)))')
+      .select('id, space_id, employee_id, booking_date, start_time, end_time, title, attendees, guests, status, checked_in_at, admin_modified_at, created_at, space:spaces(name, space_type, floor_id, floors(name, locations:locations(name)))')
       .eq('company_id', companyId)
       .eq('employee_id', employeeId)
       .gte('booking_date', new Date().toISOString().split('T')[0])
@@ -430,6 +431,9 @@ export default function SpaceBooking() {
                       {b.status === 'confirmed' && isToday ? t('space.today') : b.status === 'confirmed' ? t('space.upcoming') : b.status === 'checked_in' ? t('space.checked_in') : b.status === 'cancelled' ? t('space.cancelled') : t('space.no_show')}
                     </span>
                   </div>
+                  {b.admin_modified_at && (
+                    <div className="space-amended-badge">{t('space.amended_by_admin')}</div>
+                  )}
                   <div className="space-booking-details">
                     <span>{b.booking_date}</span>
                     {b.start_time && b.end_time && <span>{b.start_time.slice(0, 5)} – {b.end_time.slice(0, 5)}</span>}
