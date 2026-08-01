@@ -77,16 +77,16 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const enabledAddons = new Set(
-      companyFeaturesData.filter(f => f.is_enabled).map(f => f.feature_key)
+    const dbFlags = new Map(
+      companyFeaturesData.map(f => [f.feature_key, f.is_enabled])
     )
 
     const newFeatures: Features = { ...defaultFeatures }
     for (const key of STANDARD_FEATURES) {
-      newFeatures[key] = true
+      newFeatures[key] = dbFlags.get(key) ?? true
     }
     for (const [dbKey, featureKey] of Object.entries(ADDON_FEATURE_KEYS)) {
-      newFeatures[featureKey] = enabledAddons.has(dbKey)
+      newFeatures[featureKey] = dbFlags.get(dbKey) ?? false
     }
 
     setCompanyFeatures({ ...newFeatures })

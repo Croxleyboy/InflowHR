@@ -18,6 +18,7 @@ const featureLabels: { key: keyof Features; tKey: string }[] = [
   { key: 'timesheets', tKey: 'dashboard.timesheets' },
   { key: 'shifts', tKey: 'dashboard.shifts' },
   { key: 'legal_timesheets', tKey: 'dashboard.legal_timesheets' },
+  { key: 'space_booking', tKey: 'dashboard.space_booking' },
 ]
 
 const monthLabels = [
@@ -52,6 +53,13 @@ export default function Settings() {
         financial_year_start_month: draftFy,
         updated_at: new Date().toISOString(),
       }).eq('company_id', companyUser.company_id)
+
+      const featureRows = (Object.keys(draft) as (keyof Features)[]).map(key => ({
+        company_id: companyUser.company_id,
+        feature_key: key === 'payslips' ? 'payroll' : key,
+        is_enabled: draft[key],
+      }))
+      await supabase.from('company_features').upsert(featureRows, { onConflict: 'company_id,feature_key' })
     }
 
     setSaved(true)
