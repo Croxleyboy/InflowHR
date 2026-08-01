@@ -137,6 +137,7 @@ export default function ExpenseApproval() {
       company_id: companyUser?.company_id,
     })
 
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }
 
@@ -147,6 +148,7 @@ export default function ExpenseApproval() {
     await supabase.from('expense_line_items').delete().eq('expense_claim_id', claim.id)
     await supabase.from('workflow_tracker').delete().eq('record_type', 'Expense').eq('approval_id', claim.id)
     await supabase.from('expense_claims').delete().eq('id', claim.id)
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }
 

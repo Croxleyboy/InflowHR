@@ -67,6 +67,7 @@ export default function TimesheetDetail() {
       company_id: companyUser?.company_id,
     })
 
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/timesheets')
   }
 
@@ -75,6 +76,7 @@ export default function TimesheetDetail() {
     if (!confirm(t('timesheets.confirm_delete'))) return
     await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id)
     await supabase.from('timesheets').delete().eq('id', ts.id)
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/timesheets')
   }
 

@@ -119,6 +119,7 @@ export default function MyLeave() {
       company_id: companyUser?.company_id,
     })
 
+    window.dispatchEvent(new Event('notifications-updated'))
     setImOffState('sent')
     setTimeout(() => setImOffState('idle'), 3000)
   }

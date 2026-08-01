@@ -64,6 +64,7 @@ export default function AdminTimesheets() {
     if (!confirm('Delete this timesheet entry?')) return
     await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', id)
     await supabase.from('timesheets').delete().eq('id', id)
+    window.dispatchEvent(new Event('notifications-updated'))
     setTimesheets(prev => prev.filter(t => t.id !== id))
   }
 

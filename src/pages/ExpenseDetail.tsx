@@ -108,6 +108,7 @@ export default function ExpenseDetail() {
       company_id: companyUser?.company_id,
     })
 
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/expenses')
   }
 

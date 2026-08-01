@@ -313,6 +313,7 @@ export default function NewLeaveRequest() {
       company_id: companyUser?.company_id,
     })
 
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/leave')
   }
 

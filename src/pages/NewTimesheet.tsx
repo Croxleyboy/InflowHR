@@ -117,6 +117,8 @@ export default function NewTimesheet() {
       })
     }
 
+    window.dispatchEvent(new Event('notifications-updated'))
+
     navigate('/timesheets')
   }
 

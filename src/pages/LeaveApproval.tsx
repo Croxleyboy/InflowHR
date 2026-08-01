@@ -171,6 +171,7 @@ export default function LeaveApproval() {
       company_id: companyUser?.company_id,
     })
 
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }
 
@@ -180,6 +181,7 @@ export default function LeaveApproval() {
     setDeleting(true)
     await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', request.id)
     await supabase.from('leave_requests').delete().eq('id', request.id)
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }
 

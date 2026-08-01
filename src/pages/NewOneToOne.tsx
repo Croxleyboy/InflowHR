@@ -79,6 +79,7 @@ export default function NewOneToOne() {
       })
     }
 
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/one-to-ones')
   }
 

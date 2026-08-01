@@ -293,6 +293,7 @@ export default function Notifications() {
       await supabase.from('timesheets').delete().eq('id', item.approval_id)
     }
 
+    window.dispatchEvent(new Event('notifications-updated'))
     setMyNotifs(prev => prev.filter(n => !(n.record_type === item.record_type && n.approval_id === item.approval_id)))
   }
 

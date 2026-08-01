@@ -271,6 +271,7 @@ export default function Kudos() {
       }
     }
 
+    window.dispatchEvent(new Event('notifications-updated'))
     setSendState('sent')
     setMessage('')
     setRecipientId('')

@@ -11,12 +11,17 @@ export default function Footer() {
 
   useEffect(() => {
     if (!employeeEmail || !companyUser?.company_id) return
-    supabase.from('workflow_tracker')
-      .select('id', { count: 'exact', head: true })
-      .ilike('assigned_to', `%${employeeEmail}%`)
-      .eq('status', 'Pending')
-      .eq('company_id', companyUser.company_id)
-      .then(({ count }) => setBadgeCount(count || 0))
+    const fetchCount = () => {
+      supabase.from('workflow_tracker')
+        .select('id', { count: 'exact', head: true })
+        .ilike('assigned_to', `%${employeeEmail}%`)
+        .eq('status', 'Pending')
+        .eq('company_id', companyUser.company_id)
+        .then(({ count }) => setBadgeCount(count || 0))
+    }
+    fetchCount()
+    window.addEventListener('notifications-updated', fetchCount)
+    return () => window.removeEventListener('notifications-updated', fetchCount)
   }, [employeeEmail, companyUser?.company_id])
   return (
     <nav className="footer">

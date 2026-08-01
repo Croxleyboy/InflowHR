@@ -151,6 +151,7 @@ export default function OneToOneDetail() {
       .update({ status: 'Complete', approval_status: 'Approved', action: '1:1 meeting accepted' })
       .eq('record_type', 'Meeting')
       .eq('approval_id', meeting.id)
+    window.dispatchEvent(new Event('notifications-updated'))
     fetchData()
   }
 
@@ -164,6 +165,7 @@ export default function OneToOneDetail() {
       .update({ status: 'Complete', approval_status: 'Declined', action: '1:1 meeting declined' })
       .eq('record_type', 'Meeting')
       .eq('approval_id', meeting.id)
+    window.dispatchEvent(new Event('notifications-updated'))
     navigate('/one-to-ones')
   }
 
