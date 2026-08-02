@@ -55,7 +55,7 @@ export default function AdminTickets() {
   const [newTicket, setNewTicket] = useState(EMPTY_NEW_TICKET)
 
   async function load() {
-    if (!selectedCompanyId) return
+    if (!selectedCompanyId) { setLoading(false); return }
     setLoading(true)
     const { data } = await supabase
       .from('hr_tickets')
