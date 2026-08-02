@@ -70,11 +70,17 @@ export default function AdminTickets() {
 
   async function raiseTicket() {
     if (!newTicket.title.trim() || !selectedCompanyId) return
-    const maxNum = tickets.reduce((max, t) => {
-      const num = parseInt(t.ref.replace('HR-', ''), 10)
+
+    const { data: allRefs } = await supabase
+      .from('hr_tickets')
+      .select('ref')
+      .eq('company_id', selectedCompanyId)
+    const maxNum = (allRefs || []).reduce((max, r) => {
+      const num = parseInt(r.ref.replace('HR-', ''), 10)
       return isNaN(num) ? max : Math.max(max, num)
     }, 0)
     const ref = `HR-${String(maxNum + 1).padStart(3, '0')}`
+
     const { error } = await supabase.from('hr_tickets').insert({
       ref,
       title: newTicket.title.trim(),
