@@ -14,7 +14,6 @@ interface AdminCompanyState {
   selectedCompanyId: string
   selectedCompany: Company | null
   setSelectedCompanyId: (id: string) => void
-  ready: boolean
 }
 
 const AdminCompanyContext = createContext<AdminCompanyState | null>(null)
@@ -28,41 +27,30 @@ export function useAdminCompany() {
 export function AdminCompanyProvider({ children }: { children: ReactNode }) {
   const { isSuperAdmin, company } = useAuth()
 
-  const initialId = company?.id || ''
-  const initialCompanies: Company[] = company
-    ? [{ id: company.id, name: company.name, domain: company.domain, is_active: true }]
-    : []
-
-  const [companies, setCompanies] = useState<Company[]>(initialCompanies)
-  const [selectedCompanyId, setSelectedCompanyId] = useState(initialId)
-  const [ready, setReady] = useState(!isSuperAdmin && !!company)
+  const [companies, setCompanies] = useState<Company[]>(() => {
+    if (company) return [{ id: company.id, name: company.name, domain: company.domain, is_active: true }]
+    return []
+  })
+  const [selectedCompanyId, setSelectedCompanyId] = useState(() => company?.id || '')
 
   useEffect(() => {
-    if (!isSuperAdmin) {
-      if (company) {
-        setCompanies([{ id: company.id, name: company.name, domain: company.domain, is_active: true }])
-        setSelectedCompanyId(company.id)
-        setReady(true)
-      }
-      return
-    }
+    if (!isSuperAdmin) return
     let cancelled = false
-    async function loadCompanies() {
-      const { data } = await supabase.from('companies').select('id, name, domain, is_active').order('name')
+    supabase.from('companies').select('id, name, domain, is_active').order('name').then(({ data }) => {
       if (cancelled) return
       const list = (data as Company[]) || []
       setCompanies(list)
-      setSelectedCompanyId(prev => prev || company?.id || (list.length > 0 ? list[0].id : ''))
-      setReady(true)
-    }
-    loadCompanies()
+      if (list.length > 0) {
+        setSelectedCompanyId(prev => prev || list[0].id)
+      }
+    })
     return () => { cancelled = true }
-  }, [isSuperAdmin, company])
+  }, [isSuperAdmin])
 
   const selectedCompany = companies.find(c => c.id === selectedCompanyId) || null
 
   return (
-    <AdminCompanyContext.Provider value={{ companies, selectedCompanyId, selectedCompany, setSelectedCompanyId, ready }}>
+    <AdminCompanyContext.Provider value={{ companies, selectedCompanyId, selectedCompany, setSelectedCompanyId }}>
       {children}
     </AdminCompanyContext.Provider>
   )
