@@ -40,7 +40,7 @@ function AdminLayoutInner() {
   const navigate = useNavigate()
   const { isSuperAdmin, employeeEmail, companyUser } = useAuth()
   const { features } = useFeatures()
-  const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany } = useAdminCompany()
+  const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany, loading: companyLoading } = useAdminCompany()
   const visibleItems = MENU_ITEMS.filter(item =>
     (!item.superAdminOnly || isSuperAdmin) &&
     (!item.feature || isSuperAdmin || features[item.feature])
@@ -117,7 +117,7 @@ function AdminLayoutInner() {
       </aside>
 
       <main className="admin-main">
-        <Outlet />
+        {companyLoading ? <div className="admin-loading">Loading...</div> : <Outlet />}
       </main>
     </div>
   )

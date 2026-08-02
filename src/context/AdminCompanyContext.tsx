@@ -40,11 +40,12 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
         if (!selectedCompanyId && list.length > 0) {
           setSelectedCompanyId(company?.id || list[0].id)
         }
+        setLoading(false)
       } else if (company) {
         setCompanies([{ id: company.id, name: company.name, domain: company.domain, is_active: true }])
         setSelectedCompanyId(company.id)
+        setLoading(false)
       }
-      setLoading(false)
     }
     load()
   }, [isSuperAdmin, company])
