@@ -26,12 +26,13 @@ export function useAdminCompany() {
 }
 
 export function AdminCompanyProvider({ children }: { children: ReactNode }) {
-  const { isSuperAdmin, company } = useAuth()
+  const { isSuperAdmin, company, loading: authLoading } = useAuth()
   const [companies, setCompanies] = useState<Company[]>([])
   const [selectedCompanyId, setSelectedCompanyId] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (authLoading) return
     async function load() {
       if (isSuperAdmin) {
         const { data } = await supabase.from('companies').select('id, name, domain, is_active').order('name')
@@ -40,15 +41,14 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
         if (!selectedCompanyId && list.length > 0) {
           setSelectedCompanyId(company?.id || list[0].id)
         }
-        setLoading(false)
       } else if (company) {
         setCompanies([{ id: company.id, name: company.name, domain: company.domain, is_active: true }])
         setSelectedCompanyId(company.id)
-        setLoading(false)
       }
+      setLoading(false)
     }
     load()
-  }, [isSuperAdmin, company])
+  }, [authLoading, isSuperAdmin, company])
 
   const selectedCompany = companies.find(c => c.id === selectedCompanyId) || null
 
