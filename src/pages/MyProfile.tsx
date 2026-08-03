@@ -47,7 +47,7 @@ function formatDate(dateStr: string | null): string {
 export default function MyProfile() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeEmail: EMPLOYEE_EMAIL, employeeId, updateAvatarUrl } = useAuth()
+  const { employeeEmail: EMPLOYEE_EMAIL, employeeId, companyUser, updateAvatarUrl } = useAuth()
   const [tab, setTab] = useState<'personal' | 'job'>('personal')
   const [profile, setProfile] = useState<OnboardingRecord | null>(null)
   const [loading, setLoading] = useState(true)
@@ -57,21 +57,20 @@ export default function MyProfile() {
   const avatarInputRef = useRef<HTMLInputElement>(null)
 
   const fetchData = useCallback(async () => {
+    if (!EMPLOYEE_EMAIL || !companyUser?.company_id) return
     setLoading(true)
     const { data } = await supabase
       .from('onboarding')
       .select('firstname, surname, display_name, job_title, contract_type, user_email, date_of_birth, telephone, personal_email, address_line_1, address_line_2, address_line_3, address_line_4, emergency_contact_number, gender, nationality, religion, relationship, start_date, status, manager, location, employee_number, department, avatar_url')
       .eq('user_email', EMPLOYEE_EMAIL)
-      .single()
+      .eq('company_id', companyUser.company_id)
+      .maybeSingle()
 
     if (data) setProfile(data as OnboardingRecord)
     setLoading(false)
-  }, [EMPLOYEE_EMAIL])
+  }, [EMPLOYEE_EMAIL, companyUser?.company_id])
 
-  useEffect(() => {
-    if (!EMPLOYEE_EMAIL) return
-    fetchData()
-  }, [fetchData, EMPLOYEE_EMAIL])
+  useEffect(() => { fetchData() }, [fetchData])
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
