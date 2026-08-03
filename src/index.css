@@ -312,7 +312,7 @@ body {
 
 /* ── Shift Swap Page ── */
 .swap-tabs { display: flex; gap: 4px; margin: 12px 16px; background: var(--bg-card); border-radius: 12px; padding: 4px; border: 1px solid var(--border); }
-.swap-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 10px 6px; border: none; background: none; border-radius: 10px; font-size: 12px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: all 0.15s; position: relative; white-space: nowrap; }
+.swap-tab { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 10px 4px; border: none; background: none; border-radius: 10px; font-size: 11px; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: all 0.15s; position: relative; text-align: center; min-width: 0; }
 .swap-tab:hover { background: rgba(0,0,0,0.04); }
 .swap-tab-active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .swap-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; font-size: 10px; font-weight: 800; background: #c62828; color: #fff; margin-left: 4px; }
@@ -323,13 +323,13 @@ body {
 .swap-empty p { font-size: 14px; margin: 0; }
 .swap-hint { font-size: 12px; color: var(--text-muted); margin: 0 0 10px; }
 
-.swap-shift-card { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: var(--bg-card); border: 1px solid var(--border); border-left: 4px solid; border-radius: 10px; padding: 10px 12px; margin-bottom: 4px; cursor: pointer; transition: all 0.12s; font-family: inherit; color: var(--text); }
+.swap-shift-card { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; width: 100%; text-align: left; background: var(--bg-card); border: 1px solid var(--border); border-left: 4px solid; border-radius: 10px; padding: 10px 12px; margin-bottom: 4px; cursor: pointer; transition: all 0.12s; font-family: inherit; color: var(--text); overflow: hidden; }
 .swap-shift-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
 .swap-shift-selected { border-color: var(--text); background: var(--bg); box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-bottom-left-radius: 0; border-bottom-right-radius: 0; margin-bottom: 0; }
 .swap-shift-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; }
-.swap-shift-name { font-size: 13px; font-weight: 700; white-space: nowrap; }
+.swap-shift-name { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .swap-shift-date { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-.swap-shift-time { font-size: 11px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+.swap-shift-time { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 .swap-shift-rota { font-size: 10px; color: var(--text-muted); background: rgba(0,0,0,0.04); padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
 .swap-shift-chevron { transition: transform 0.2s; flex-shrink: 0; color: var(--text-muted); }
 .swap-shift-chevron.open { transform: rotate(180deg); }
@@ -369,14 +369,14 @@ body {
 
 /* Sent swap cards */
 .swap-sent-list { display: flex; flex-direction: column; gap: 8px; }
-.swap-sent-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-.swap-sent-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.swap-sent-shift { border-left: 3px solid; border-radius: 6px; padding: 6px 10px; background: rgba(0,0,0,0.02); display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.swap-sent-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; overflow: hidden; }
+.swap-sent-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.swap-sent-shift { border-left: 3px solid; border-radius: 6px; padding: 6px 10px; background: rgba(0,0,0,0.02); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; min-width: 0; flex: 1 1 0; }
 .swap-status { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
 .swap-status-pending { background: #fff3e0; color: #e65100; }
 .swap-status-approved { background: #e8f5e9; color: #2e7d32; }
 .swap-status-rejected { background: #ffebee; color: #c62828; }
-.swap-sent-target { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin-bottom: 6px; }
+.swap-sent-target { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--text); margin-bottom: 6px; min-width: 0; }
 .swap-sent-target strong { font-weight: 700; }
 .swap-sent-ago { font-size: 11px; color: var(--text-muted); margin-left: auto; }
 .swap-cancel-btn { display: flex; align-items: center; justify-content: center; width: 100%; padding: 8px; border: 1.5px solid var(--border); border-radius: 8px; background: none; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; margin-top: 4px; }
