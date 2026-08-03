@@ -306,9 +306,7 @@ export default function MyProfile() {
               <span className="my-profile-status-card-header my-profile-status-blue">{t('my_profile.emp_type')}</span>
               <span className="my-profile-status-card-value">{profile.contract_type}</span>
             </div>
-            <div className="my-profile-status-card my-profile-status-tbc">
-              <span className="my-profile-status-card-value">TBC</span>
-            </div>
+
           </div>
         </div>
       )}
