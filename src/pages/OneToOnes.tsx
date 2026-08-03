@@ -117,6 +117,9 @@ export default function OneToOnes() {
   return (
     <div className="oto-page">
       <header className="oto-header">
+        <button className="oto-header-back" onClick={() => navigate('/')}>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
         <div className="oto-header-center">
           <h1 className="oto-header-title">{t('one_to_one.title')}</h1>
           <p className="oto-header-subtitle">{t('one_to_one.page_subtitle')}</p>
