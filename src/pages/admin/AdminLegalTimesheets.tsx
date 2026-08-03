@@ -431,12 +431,12 @@ export default function AdminLegalTimesheets() {
   async function approveSelected() {
     const ids = Array.from(selectedIds)
     const auditEntry: AuditEntry = { action: 'approved', by: 'Admin', at: new Date().toISOString() }
-    for (const id of ids) {
+    await Promise.all(ids.map(id => {
       const entry = entries.find(e => e.id === id)
-      if (!entry || !['submitted', 'pending'].includes(entry.status)) continue
+      if (!entry || !['submitted', 'pending'].includes(entry.status)) return Promise.resolve()
       const newLog = [...(entry.audit_log || []), auditEntry]
-      await supabase.from('legal_timesheet_entries').update({ status: 'approved', audit_log: newLog }).eq('id', id)
-    }
+      return supabase.from('legal_timesheet_entries').update({ status: 'approved', audit_log: newLog }).eq('id', id)
+    }))
     setSelectedIds(new Set())
     await loadEntries()
   }
@@ -445,12 +445,12 @@ export default function AdminLegalTimesheets() {
     if (!rejectReason.trim()) return
     const ids = Array.from(selectedIds)
     const auditEntry: AuditEntry = { action: 'rejected', by: 'Admin', at: new Date().toISOString(), reason: rejectReason }
-    for (const id of ids) {
+    await Promise.all(ids.map(id => {
       const entry = entries.find(e => e.id === id)
-      if (!entry || !['submitted', 'pending'].includes(entry.status)) continue
+      if (!entry || !['submitted', 'pending'].includes(entry.status)) return Promise.resolve()
       const newLog = [...(entry.audit_log || []), auditEntry]
-      await supabase.from('legal_timesheet_entries').update({ status: 'rejected', audit_log: newLog }).eq('id', id)
-    }
+      return supabase.from('legal_timesheet_entries').update({ status: 'rejected', audit_log: newLog }).eq('id', id)
+    }))
     setSelectedIds(new Set())
     setRejectReason('')
     setShowRejectModal(false)
@@ -460,12 +460,12 @@ export default function AdminLegalTimesheets() {
   async function requestRevision() {
     const ids = Array.from(selectedIds)
     const auditEntry: AuditEntry = { action: 'revision_requested', by: 'Admin', at: new Date().toISOString(), reason: 'Narrative revision needed' }
-    for (const id of ids) {
+    await Promise.all(ids.map(id => {
       const entry = entries.find(e => e.id === id)
-      if (!entry) continue
+      if (!entry) return Promise.resolve()
       const newLog = [...(entry.audit_log || []), auditEntry]
-      await supabase.from('legal_timesheet_entries').update({ audit_log: newLog }).eq('id', id)
-    }
+      return supabase.from('legal_timesheet_entries').update({ audit_log: newLog }).eq('id', id)
+    }))
     setSelectedIds(new Set())
     await loadEntries()
   }

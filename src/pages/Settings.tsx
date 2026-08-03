@@ -59,12 +59,12 @@ export default function Settings() {
         feature_key: key === 'payslips' ? 'payroll' : key,
         is_visible: draft[key],
       }))
-      for (const row of featureRows) {
-        await supabase.from('company_features')
+      await Promise.all(featureRows.map(row =>
+        supabase.from('company_features')
           .update({ is_visible: row.is_visible })
           .eq('company_id', row.company_id)
           .eq('feature_key', row.feature_key)
-      }
+      ))
     }
 
     setSaved(true)

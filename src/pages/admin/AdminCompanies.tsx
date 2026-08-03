@@ -64,17 +64,19 @@ export default function AdminCompanies() {
     setCompanies(cos)
 
     const adminMap: Record<string, CompanyAdmin> = {}
-    for (const co of cos) {
-      const { data: cu } = await supabase
+    const companyIds = cos.map(co => co.id)
+    if (companyIds.length > 0) {
+      const { data: allAdmins } = await supabase
         .from('company_users')
-        .select('employee_id, employee:employees!company_users_employee_id_fkey(first_name, last_name, email)')
-        .eq('company_id', co.id)
+        .select('company_id, employee_id, employee:employees!company_users_employee_id_fkey(first_name, last_name, email)')
+        .in('company_id', companyIds)
         .eq('role', 'admin')
-        .limit(1)
-        .maybeSingle()
-      adminMap[co.id] = cu
-        ? { employee_id: cu.employee_id, employee: cu.employee as any }
-        : { employee_id: null, employee: null }
+      for (const co of cos) {
+        const cu = (allAdmins || []).find((a: any) => a.company_id === co.id)
+        adminMap[co.id] = cu
+          ? { employee_id: cu.employee_id, employee: cu.employee as any }
+          : { employee_id: null, employee: null }
+      }
     }
     setAdmins(adminMap)
     setLoading(false)

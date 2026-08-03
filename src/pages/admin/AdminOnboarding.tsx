@@ -178,13 +178,12 @@ export default function AdminOnboarding() {
     setUploading(true)
     let success = 0, failed = 0
 
-    for (const row of uploadRows) {
-      const { error } = await supabase.from('onboarding').insert({
-        ...row, status: 'new', is_complete: false, company_id: selectedCompanyId,
-      })
-      if (error) failed++
-      else success++
-    }
+    const toInsert = uploadRows.map(row => ({
+      ...row, status: 'new', is_complete: false, company_id: selectedCompanyId,
+    }))
+    const { error } = await supabase.from('onboarding').insert(toInsert)
+    if (error) failed = uploadRows.length
+    else success = uploadRows.length
 
     setUploadResult({ success, failed })
     setUploading(false)
@@ -541,8 +540,8 @@ export default function AdminOnboarding() {
       if (employeeId) {
         const { data: leaveTypes } = await supabase.from('leave_types').select('id').eq('company_id', setupCompanyId)
         if (leaveTypes && leaveTypes.length > 0) {
-          for (const lt of leaveTypes) {
-            await supabase.from('leave_balances').insert({
+          await supabase.from('leave_balances').insert(
+            leaveTypes.map(lt => ({
               employee_id: employeeId,
               leave_type_id: lt.id,
               year: now.getFullYear(),
@@ -550,8 +549,8 @@ export default function AdminOnboarding() {
               used: 0,
               carried_over: 0,
               company_id: setupCompanyId,
-            })
-          }
+            }))
+          )
         }
       }
     }
