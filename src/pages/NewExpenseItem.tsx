@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { EXPENSE_TYPE_KEYS } from '../lib/translations'
+import { formatDateDisplay } from '../lib/formatters'
 
 interface Props {
   claimId: number
@@ -13,11 +14,6 @@ interface Props {
 
 function todayStr() {
   return new Date().toISOString().split('T')[0]
-}
-
-function formatDateDisplay(dateStr: string) {
-  const [y, m, d] = dateStr.split('-')
-  return `${d}/${m}/${y}`
 }
 
 export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: Props) {

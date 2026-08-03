@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { formatDate, formatTime24 as formatTime } from '../lib/formatters'
 
 type TimesheetStatus = 'draft' | 'pending' | 'approved' | 'rejected'
 type Filter = 'all' | 'approved' | 'pending'
@@ -25,18 +26,6 @@ const statusColor: Record<TimesheetStatus, string> = {
   pending: '#ff9800',
   approved: '#4caf50',
   rejected: '#f44336',
-}
-
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr + 'T00:00:00')
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const year = d.getFullYear()
-  return `${day}/${month}/${year}`
-}
-
-function formatTime(timeStr: string) {
-  return timeStr.slice(0, 5)
 }
 
 export default function Timesheets() {

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import Chevron from '../components/Chevron'
+import { formatDate } from '../lib/formatters'
 
 type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected'
 
@@ -35,11 +36,6 @@ const LEAVE_TYPE_KEY_MAP: Record<string, string> = {
   'Carers Leave': 'my_leave.carers_leave',
   'Career Break': 'my_leave.career_break',
   'Lieu Days': 'my_leave.lieu_days',
-}
-
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr + 'T00:00:00')
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
 export default function MyLeaveHistory() {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { formatDate } from '../../lib/formatters'
 
 interface Employee {
   id: string
@@ -72,11 +73,6 @@ export default function AdminPerformance() {
     setReassignModal(null)
     setNewManagerId('')
     fetchData()
-  }
-
-  function formatDate(dateStr: string) {
-    const d = new Date(dateStr + 'T00:00:00')
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
   }
 
   if (loading) return <div className="admin-page"><p className="claims-empty">Loading...</p></div>

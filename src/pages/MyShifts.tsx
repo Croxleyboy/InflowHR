@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
+import { formatTime12 as formatTimeShort } from '../lib/formatters'
 
 interface ShiftTemplate {
   id: string
@@ -108,13 +109,7 @@ function toDateStr(d: Date): string {
   return `${yyyy}-${mm}-${dd}`
 }
 
-function formatTimeShort(time: string): string {
-  if (!time) return ''
-  const [hh, mm] = time.split(':').map(Number)
-  const ampm = hh >= 12 ? 'pm' : 'am'
-  const h = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-  return mm === 0 ? `${h}${ampm}` : `${h}:${String(mm).padStart(2, '0')}${ampm}`
-}
+
 
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() &&

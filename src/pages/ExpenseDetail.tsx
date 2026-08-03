@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import NewExpenseItem from './NewExpenseItem'
+import { formatDateTime } from '../lib/formatters'
 
 interface Claim {
   id: number
@@ -22,16 +23,6 @@ interface LineItem {
   date_of_purchase: string
   description: string | null
   receipt_url: string | null
-}
-
-function formatDateTime(dateStr: string) {
-  const d = new Date(dateStr)
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const year = d.getFullYear()
-  const hours = String(d.getHours()).padStart(2, '0')
-  const mins = String(d.getMinutes()).padStart(2, '0')
-  return `${day}/${month}/${year} ${hours}:${mins}`
 }
 
 export default function ExpenseDetail() {

@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { LEAVE_TYPE_KEYS } from '../lib/translations'
 import { countWorkingDays } from '../lib/workingDays'
+import { formatDate, formatDateDisplay } from '../lib/formatters'
 
 const VACATION_OPTION_LEAVE_TYPES: Record<string, { name: string; translationKey: string }> = {
   buy_leave: { name: 'Buy Additional Leave', translationKey: 'buy_leave' },
@@ -17,19 +18,6 @@ const VACATION_OPTION_LEAVE_TYPES: Record<string, { name: string; translationKey
 
 function todayStr() {
   return new Date().toISOString().split('T')[0]
-}
-
-function formatDateDisplay(dateStr: string) {
-  const [y, m, d] = dateStr.split('-')
-  return `${d}/${m}/${y}`
-}
-
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr + 'T00:00:00')
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const year = d.getFullYear()
-  return `${day}/${month}/${year}`
 }
 
 function LeaveTypeIcon({ type }: { type: string }) {

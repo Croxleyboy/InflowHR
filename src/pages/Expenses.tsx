@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import ExpenseGraph from '../components/ExpenseGraph'
+import { formatDateLong as formatDate } from '../lib/formatters'
 
 type ClaimStatus = 'draft' | 'pending' | 'submitted' | 'approved' | 'rejected'
 type Filter = ClaimStatus | 'all'
@@ -24,15 +25,6 @@ const statusColor: Record<ClaimStatus, string> = {
   submitted: '#2196f3',
   approved: '#4caf50',
   rejected: '#f44336',
-}
-
-function formatDate(dateStr: string) {
-  const d = new Date(dateStr)
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  const day = d.getDate()
-  const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th'
-  return `${days[d.getDay()]}, ${day}${suffix} ${months[d.getMonth()]}`
 }
 
 function formatAmount(n: number) {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { formatDate } from '../lib/formatters'
 
 interface DeptMember {
   first_name: string
@@ -36,12 +37,6 @@ interface OnboardingRecord {
   employee_number: string | null
   department: string | null
   avatar_url: string | null
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return ''
-  const d = new Date(dateStr + 'T00:00:00')
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
 export default function MyProfile() {

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { formatTime12 as formatTime } from '../lib/formatters'
 
 interface ShiftAssignment {
   id: string
@@ -55,14 +56,6 @@ type SwapTab = 'request' | 'incoming' | 'sent'
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-}
-
-function formatTime(time: string): string {
-  if (!time) return ''
-  const [hh, mm] = time.split(':').map(Number)
-  const ampm = hh >= 12 ? 'pm' : 'am'
-  const h = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
-  return mm === 0 ? `${h}${ampm}` : `${h}:${String(mm).padStart(2, '0')}${ampm}`
 }
 
 function timeAgo(dateStr: string): string {
