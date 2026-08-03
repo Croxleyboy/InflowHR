@@ -60,6 +60,7 @@ export default function Dashboard() {
       supabase.from('kudos')
         .select('id', { count: 'exact', head: true })
         .eq('to_employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
         .gt('created_at', lastSeen)
         .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
 
@@ -84,12 +85,14 @@ export default function Dashboard() {
       supabase.from('employees')
         .select('id', { count: 'exact', head: true })
         .eq('manager_id', employeeId)
+        .eq('company_id', companyUser.company_id)
         .eq('is_active', true)
         .then(({ count }) => setIsManager((count || 0) > 0))
 
       supabase.from('leave_balances')
         .select('total_allowance')
         .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
         .eq('year', new Date().getFullYear())
         .limit(1)
         .single()
@@ -100,10 +103,12 @@ export default function Dashboard() {
             supabase.from('leave_requests')
               .select('days_requested')
               .eq('employee_id', employeeId)
+              .eq('company_id', companyUser.company_id)
               .eq('status', 'approved'),
             supabase.from('leave_requests')
               .select('days_requested')
               .eq('employee_id', employeeId)
+              .eq('company_id', companyUser.company_id)
               .eq('status', 'pending'),
           ])
           const approvedDays = (approvedRes.data || []).reduce((s, r) => s + Number(r.days_requested), 0)

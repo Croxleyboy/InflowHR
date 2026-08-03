@@ -51,7 +51,7 @@ export default function TimesheetDetail() {
     await supabase.from('timesheets').update({
       status: 'pending',
       submitted_at: new Date().toISOString(),
-    }).eq('id', ts.id)
+    }).eq('id', ts.id).eq('company_id', companyUser?.company_id)
 
     await supabase.from('workflow_tracker').insert({
       emp_display_name: employeeName,
@@ -74,8 +74,8 @@ export default function TimesheetDetail() {
   async function handleDelete() {
     if (!ts) return
     if (!confirm(t('timesheets.confirm_delete'))) return
-    await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id)
-    await supabase.from('timesheets').delete().eq('id', ts.id)
+    await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id).eq('company_id', companyUser?.company_id)
+    await supabase.from('timesheets').delete().eq('id', ts.id).eq('company_id', companyUser?.company_id)
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/timesheets')
   }

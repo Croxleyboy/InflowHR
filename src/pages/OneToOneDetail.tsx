@@ -112,7 +112,7 @@ export default function OneToOneDetail() {
       status: 'completed',
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }).eq('id', meeting.id)
+    }).eq('id', meeting.id).eq('company_id', companyUser?.company_id)
     setSaving(false)
     fetchData()
   }
@@ -137,7 +137,7 @@ export default function OneToOneDetail() {
     await supabase.from('one_to_one_meetings').update({
       status: 'cancelled',
       updated_at: new Date().toISOString(),
-    }).eq('id', meeting.id)
+    }).eq('id', meeting.id).eq('company_id', companyUser?.company_id)
     navigate('/one-to-ones')
   }
 
@@ -146,7 +146,7 @@ export default function OneToOneDetail() {
     await supabase.from('one_to_one_meetings').update({
       status: 'accepted',
       updated_at: new Date().toISOString(),
-    }).eq('id', meeting.id)
+    }).eq('id', meeting.id).eq('company_id', companyUser?.company_id)
     await supabase.from('workflow_tracker')
       .update({ status: 'Complete', approval_status: 'Approved', action: '1:1 meeting accepted' })
       .eq('record_type', 'Meeting')
@@ -160,7 +160,7 @@ export default function OneToOneDetail() {
     await supabase.from('one_to_one_meetings').update({
       status: 'declined',
       updated_at: new Date().toISOString(),
-    }).eq('id', meeting.id)
+    }).eq('id', meeting.id).eq('company_id', companyUser?.company_id)
     await supabase.from('workflow_tracker')
       .update({ status: 'Complete', approval_status: 'Declined', action: '1:1 meeting declined' })
       .eq('record_type', 'Meeting')

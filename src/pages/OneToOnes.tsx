@@ -41,7 +41,7 @@ function formatDate(dateStr: string) {
 export default function OneToOnes() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId } = useAuth()
+  const { employeeId, companyUser } = useAuth()
   const [tab, setTab] = useState<Tab>('upcoming')
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [directReports, setDirectReports] = useState<DirectReport[]>([])
@@ -55,6 +55,7 @@ export default function OneToOnes() {
     const { data: reports } = await supabase.from('employees')
       .select('id, first_name, last_name, job_title, department, email, avatar_url')
       .eq('manager_id', employeeId)
+      .eq('company_id', companyUser?.company_id)
       .eq('is_active', true)
     const dr = (reports || []) as DirectReport[]
     setDirectReports(dr)
@@ -62,6 +63,7 @@ export default function OneToOnes() {
 
     const { data: allMeetings } = await supabase.from('one_to_one_meetings')
       .select('*')
+      .eq('company_id', companyUser?.company_id)
       .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
       .order('scheduled_date', { ascending: false })
 
@@ -71,6 +73,7 @@ export default function OneToOnes() {
       const { data: empData } = await supabase.from('employees')
         .select('id, first_name, last_name, avatar_url')
         .in('id', Array.from(empIds))
+        .eq('company_id', companyUser?.company_id)
       const nameMap: Record<string, string> = {}
       const avatarMap: Record<string, string | null> = {}
       ;(empData || []).forEach((e: { id: string; first_name: string; last_name: string; avatar_url: string | null }) => {
@@ -90,23 +93,23 @@ export default function OneToOnes() {
     }
 
     setLoading(false)
-  }, [employeeId])
+  }, [employeeId, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 
   async function handleAccept(meetingId: number) {
-    await supabase.from('one_to_one_meetings').update({ status: 'accepted', updated_at: new Date().toISOString() }).eq('id', meetingId)
+    await supabase.from('one_to_one_meetings').update({ status: 'accepted', updated_at: new Date().toISOString() }).eq('id', meetingId).eq('company_id', companyUser?.company_id)
     await supabase.from('workflow_tracker')
       .update({ status: 'Complete', approval_status: 'Approved', action: '1:1 meeting accepted' })
-      .eq('record_type', 'Meeting').eq('approval_id', meetingId)
+      .eq('record_type', 'Meeting').eq('approval_id', meetingId).eq('company_id', companyUser?.company_id)
     fetchData()
   }
 
   async function handleDecline(meetingId: number) {
-    await supabase.from('one_to_one_meetings').update({ status: 'declined', updated_at: new Date().toISOString() }).eq('id', meetingId)
+    await supabase.from('one_to_one_meetings').update({ status: 'declined', updated_at: new Date().toISOString() }).eq('id', meetingId).eq('company_id', companyUser?.company_id)
     await supabase.from('workflow_tracker')
       .update({ status: 'Complete', approval_status: 'Declined', action: '1:1 meeting declined' })
-      .eq('record_type', 'Meeting').eq('approval_id', meetingId)
+      .eq('record_type', 'Meeting').eq('approval_id', meetingId).eq('company_id', companyUser?.company_id)
     fetchData()
   }
 

@@ -510,7 +510,7 @@ export default function LegalTimesheets() {
   }
 
   async function deleteEntry(id: string) {
-    await supabase.from('legal_timesheet_entries').delete().eq('id', id)
+    await supabase.from('legal_timesheet_entries').delete().eq('id', id).eq('company_id', companyId)
     setEntries(prev => prev.filter(e => e.id !== id))
   }
 
@@ -519,6 +519,7 @@ export default function LegalTimesheets() {
       .from('legal_timesheet_entries')
       .update({ status: 'submitted', submitted_at: new Date().toISOString() })
       .eq('id', id)
+      .eq('company_id', companyId)
     if (!error) {
       setEntries(prev => prev.map(e => e.id === id ? { ...e, status: 'submitted' } : e))
     }

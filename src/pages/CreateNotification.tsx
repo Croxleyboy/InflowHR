@@ -15,6 +15,7 @@ export default function CreateNotification() {
     supabase.from('employees')
       .select('can_post_notifications')
       .eq('id', HARDCODED_EMPLOYEE_ID)
+      .eq('company_id', companyUser?.company_id)
       .single()
       .then(({ data }) => {
         if (!data?.can_post_notifications) navigate('/notifications', { replace: true })

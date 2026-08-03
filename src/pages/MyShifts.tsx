@@ -302,6 +302,7 @@ export default function MyShifts() {
       .from('shift_assignments')
       .update({ shift_template_id: newTemplateId })
       .eq('id', assignmentId)
+      .eq('company_id', companyUser?.company_id)
     setEditingId(null)
     fetchMyShifts()
     if (filter === 'everyone') fetchAllShifts()

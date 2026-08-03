@@ -102,7 +102,7 @@ export default function LeaveApproval() {
     await supabase.from('leave_requests').update({
       status: approved ? 'approved' : 'rejected',
       approved_at: approved ? now : null,
-    }).eq('id', id)
+    }).eq('id', id).eq('company_id', companyUser?.company_id)
 
     if (approved && leaveType?.deducts_from_allowance !== false) {
       const year = new Date(request.start_date).getFullYear()
@@ -110,6 +110,7 @@ export default function LeaveApproval() {
         .from('leave_balances')
         .select('id, used')
         .eq('employee_id', request.employee_id)
+        .eq('company_id', companyUser?.company_id)
         .eq('year', year)
         .limit(1)
         .single()
@@ -117,6 +118,7 @@ export default function LeaveApproval() {
         await supabase.from('leave_balances')
           .update({ used: balance.used + request.days_requested })
           .eq('id', balance.id)
+          .eq('company_id', companyUser?.company_id)
       }
     }
 
@@ -136,6 +138,7 @@ export default function LeaveApproval() {
       .eq('record_type', 'Leave')
       .eq('approval_id', request.id)
       .eq('status', 'Pending')
+      .eq('company_id', companyUser?.company_id)
 
     const happyMsg = happyLeaveMessages[Math.floor(Math.random() * happyLeaveMessages.length)]
 
@@ -179,8 +182,8 @@ export default function LeaveApproval() {
     if (!request) return
     if (!confirm(`Delete this leave request? This cannot be undone.`)) return
     setDeleting(true)
-    await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', request.id)
-    await supabase.from('leave_requests').delete().eq('id', request.id)
+    await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', request.id).eq('company_id', companyUser?.company_id)
+    await supabase.from('leave_requests').delete().eq('id', request.id).eq('company_id', companyUser?.company_id)
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }

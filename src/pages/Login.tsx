@@ -7,6 +7,7 @@ export default function Login() {
 
   return (
     <div className="login-page">
+      <span className="login-build">{__BUILD_NUMBER__}</span>
       <div className="login-hero">
         <div className="login-hero-content">
           <div className="login-hero-logo">

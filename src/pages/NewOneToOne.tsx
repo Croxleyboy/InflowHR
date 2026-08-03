@@ -31,6 +31,7 @@ export default function NewOneToOne() {
     supabase.from('employees')
       .select('id, first_name, last_name, job_title, avatar_url')
       .eq('manager_id', employeeId)
+      .eq('company_id', companyUser?.company_id)
       .eq('is_active', true)
       .order('first_name')
       .then(({ data }) => { if (data) setReports(data as DirectReport[]) })
@@ -45,7 +46,8 @@ export default function NewOneToOne() {
 
     const { data: empData } = await supabase.from('employees')
       .select('first_name, last_name, email')
-      .eq('id', selectedEmployee).single()
+      .eq('id', selectedEmployee)
+      .eq('company_id', companyUser?.company_id).single()
 
     const { data: insertData, error: insertErr } = await supabase.from('one_to_one_meetings').insert({
       manager_id: employeeId,

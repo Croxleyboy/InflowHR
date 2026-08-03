@@ -284,13 +284,13 @@ export default function SpaceBooking() {
   }
 
   async function cancelBooking(bookingId: string) {
-    await supabase.from('space_bookings').update({ status: 'cancelled' }).eq('id', bookingId)
+    await supabase.from('space_bookings').update({ status: 'cancelled' }).eq('id', bookingId).eq('company_id', companyId)
     loadMyBookings()
     loadBookingsForDate()
   }
 
   async function checkIn(bookingId: string) {
-    await supabase.from('space_bookings').update({ status: 'checked_in', checked_in_at: new Date().toISOString() }).eq('id', bookingId)
+    await supabase.from('space_bookings').update({ status: 'checked_in', checked_in_at: new Date().toISOString() }).eq('id', bookingId).eq('company_id', companyId)
     loadMyBookings()
   }
 

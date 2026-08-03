@@ -30,16 +30,19 @@ export default function MyLeave() {
         .from('leave_balances')
         .select('leave_type_id, total_allowance, used, carried_over')
         .eq('employee_id', EMPLOYEE_ID)
+        .eq('company_id', companyUser?.company_id)
         .eq('year', new Date().getFullYear()),
       supabase
         .from('leave_requests')
         .select('days_requested')
         .eq('employee_id', EMPLOYEE_ID)
+        .eq('company_id', companyUser?.company_id)
         .eq('status', 'pending'),
       supabase
         .from('leave_requests')
         .select('days_requested')
         .eq('employee_id', EMPLOYEE_ID)
+        .eq('company_id', companyUser?.company_id)
         .eq('status', 'approved'),
     ])
 

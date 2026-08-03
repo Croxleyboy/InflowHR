@@ -46,7 +46,7 @@ interface PayslipData {
 export default function Payslips() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl, company } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl, company, companyUser } = useAuth()
   const [payslip, setPayslip] = useState<PayslipData | null>(null)
   const [loading, setLoading] = useState(true)
   const [employeeRole, setEmployeeRole] = useState('')
@@ -67,6 +67,7 @@ export default function Payslips() {
     const { data } = await supabase.from('payslips')
       .select('*')
       .eq('employee_id', EMPLOYEE_ID)
+      .eq('company_id', companyUser?.company_id)
       .gte('pay_period_start', startOfMonth)
       .lte('pay_period_start', endStr)
       .limit(1)
@@ -82,6 +83,7 @@ export default function Payslips() {
     supabase.from('employees')
       .select('job_title, department')
       .eq('id', EMPLOYEE_ID)
+      .eq('company_id', companyUser?.company_id)
       .single()
       .then(({ data }) => {
         if (data) {

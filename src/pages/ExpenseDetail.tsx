@@ -68,19 +68,19 @@ export default function ExpenseDetail() {
 
   async function handleDeleteItem(itemId: number) {
     if (!confirm('Delete this line item?')) return
-    await supabase.from('expense_line_items').delete().eq('id', itemId)
+    await supabase.from('expense_line_items').delete().eq('id', itemId).eq('company_id', companyUser?.company_id)
     const remaining = items.filter(i => i.id !== itemId)
     setItems(remaining)
     const newTotal = remaining.reduce((s, i) => s + i.amount, 0)
-    await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id)
+    await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id).eq('company_id', companyUser?.company_id)
     setClaim(prev => prev ? { ...prev, amount: newTotal } : prev)
   }
 
   async function handleDelete() {
     if (!confirm('Delete this expense claim and all its items?')) return
     setDeleting(true)
-    await supabase.from('expense_line_items').delete().eq('expense_claim_id', id)
-    await supabase.from('expense_claims').delete().eq('id', id)
+    await supabase.from('expense_line_items').delete().eq('expense_claim_id', id).eq('company_id', companyUser?.company_id)
+    await supabase.from('expense_claims').delete().eq('id', id).eq('company_id', companyUser?.company_id)
     navigate('/expenses')
   }
 
@@ -93,7 +93,7 @@ export default function ExpenseDetail() {
       status: 'submitted',
       amount: totalAmount,
       submitted_at: now,
-    }).eq('id', id)
+    }).eq('id', id).eq('company_id', companyUser?.company_id)
 
     await supabase.from('workflow_tracker').insert({
       emp_display_name: HARDCODED_EMPLOYEE_NAME,
@@ -115,10 +115,10 @@ export default function ExpenseDetail() {
 
   async function handleItemAdded() {
     setShowNewItem(false)
-    const { data } = await supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description, receipt_url').eq('expense_claim_id', id).order('created_at', { ascending: true })
+    const { data } = await supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description, receipt_url').eq('expense_claim_id', id).eq('company_id', companyUser?.company_id).order('created_at', { ascending: true })
     if (data) setItems(data as LineItem[])
     const newTotal = (data as LineItem[] || []).reduce((s, i) => s + i.amount, 0)
-    await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id)
+    await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id).eq('company_id', companyUser?.company_id)
     setClaim(prev => prev ? { ...prev, amount: newTotal } : prev)
   }
 

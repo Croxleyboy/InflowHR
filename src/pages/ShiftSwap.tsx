@@ -187,16 +187,18 @@ export default function ShiftSwap() {
     const origAssignment = request.shift_assignment
     const targetShiftOnDate = shifts.find(s => s.date === origAssignment.date)
 
-    await supabase.from('shift_swap_requests').update({ status: 'approved' }).eq('id', request.id)
+    await supabase.from('shift_swap_requests').update({ status: 'approved' }).eq('id', request.id).eq('company_id', companyUser?.company_id)
 
     await supabase.from('shift_assignments')
       .update({ employee_id: employeeId })
       .eq('id', origAssignment.id)
+      .eq('company_id', companyUser?.company_id)
 
     if (targetShiftOnDate) {
       await supabase.from('shift_assignments')
         .update({ employee_id: request.requesting_employee_id })
         .eq('id', targetShiftOnDate.id)
+        .eq('company_id', companyUser?.company_id)
     }
 
     setActioningId(null)
@@ -205,14 +207,14 @@ export default function ShiftSwap() {
 
   async function handleDeclineSwap(requestId: string) {
     setActioningId(requestId)
-    await supabase.from('shift_swap_requests').update({ status: 'rejected' }).eq('id', requestId)
+    await supabase.from('shift_swap_requests').update({ status: 'rejected' }).eq('id', requestId).eq('company_id', companyUser?.company_id)
     setActioningId(null)
     fetchData()
   }
 
   async function handleCancelSwap(requestId: string) {
     setActioningId(requestId)
-    await supabase.from('shift_swap_requests').delete().eq('id', requestId)
+    await supabase.from('shift_swap_requests').delete().eq('id', requestId).eq('company_id', companyUser?.company_id)
     setActioningId(null)
     fetchData()
   }

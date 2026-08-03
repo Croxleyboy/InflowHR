@@ -87,8 +87,8 @@ export default function MyProfile() {
     }
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
     const newUrl = urlData.publicUrl + '?t=' + Date.now()
-    await supabase.from('employees').update({ avatar_url: newUrl }).eq('id', employeeId)
-    await supabase.from('onboarding').update({ avatar_url: newUrl }).eq('user_email', EMPLOYEE_EMAIL)
+    await supabase.from('employees').update({ avatar_url: newUrl }).eq('id', employeeId).eq('company_id', companyUser?.company_id)
+    await supabase.from('onboarding').update({ avatar_url: newUrl }).eq('user_email', EMPLOYEE_EMAIL).eq('company_id', companyUser?.company_id)
     setProfile(prev => prev ? { ...prev, avatar_url: newUrl } : prev)
     updateAvatarUrl(newUrl)
     setAvatarUploading(false)
@@ -109,6 +109,7 @@ export default function MyProfile() {
         .from('employees')
         .select('first_name, last_name, job_title')
         .eq('department', profile!.department)
+        .eq('company_id', companyUser?.company_id)
         .eq('is_active', true)
         .order('first_name')
       setMembers((data || []) as DeptMember[])

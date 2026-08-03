@@ -67,6 +67,7 @@ export default function LeaveCalendar() {
         .from('employees')
         .select('id, first_name, last_name, avatar_url')
         .in('id', empIds)
+        .eq('company_id', companyUser?.company_id)
 
       const empMap = new Map((emps || []).map((e: any) => [e.id, { name: `${e.first_name} ${e.last_name}`, avatar: e.avatar_url }]))
       setLeaves(reqs.map((r: any) => ({

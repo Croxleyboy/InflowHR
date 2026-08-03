@@ -213,13 +213,14 @@ export default function Kudos() {
       .from('kudos')
       .update({ like_count: entry.like_count + 1, liked_by: newLikedBy })
       .eq('id', entry.id)
+      .eq('company_id', companyUser?.company_id)
     setEntries(prev => prev.map(e =>
       e.id === entry.id ? { ...e, like_count: e.like_count + 1, liked_by: newLikedBy } : e
     ))
   }
 
   async function handleDelete(id: number) {
-    await supabase.from('kudos').delete().eq('id', id)
+    await supabase.from('kudos').delete().eq('id', id).eq('company_id', companyUser?.company_id)
     setEntries(prev => prev.filter(e => e.id !== id))
   }
 
@@ -251,7 +252,7 @@ export default function Kudos() {
         const recInfo = RECOGNITION_TYPES.find(r => r.value === recType)
         const typeLabel = recInfo ? t(recInfo.key) : recType
         const { data: recipientEmp } = await supabase.from('employees')
-          .select('email').eq('id', recipientId).single()
+          .select('email').eq('id', recipientId).eq('company_id', companyUser?.company_id).single()
         if (recipientEmp) {
           await supabase.from('workflow_tracker').insert({
             emp_display_name: recipientName,

@@ -85,7 +85,7 @@ export default function TimesheetApproval() {
 
     await supabase.from('timesheets').update({
       status: approved ? 'approved' : 'rejected',
-    }).eq('id', id)
+    }).eq('id', id).eq('company_id', companyUser?.company_id)
 
     await supabase.from('workflow_tracker')
       .update({
@@ -99,6 +99,7 @@ export default function TimesheetApproval() {
       .eq('record_type', 'Timesheet')
       .eq('approval_id', ts.id)
       .eq('status', 'Pending')
+      .eq('company_id', companyUser?.company_id)
 
     await supabase.from('workflow_tracker').insert({
       emp_display_name: empName,
@@ -140,8 +141,8 @@ export default function TimesheetApproval() {
     if (!ts) return
     if (!confirm(t('timesheets.confirm_delete'))) return
     setDeleting(true)
-    await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id)
-    await supabase.from('timesheets').delete().eq('id', ts.id)
+    await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id).eq('company_id', companyUser?.company_id)
+    await supabase.from('timesheets').delete().eq('id', ts.id).eq('company_id', companyUser?.company_id)
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }

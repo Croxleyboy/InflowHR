@@ -63,6 +63,7 @@ export default function MyLeaveHistory() {
       .from('leave_requests')
       .select('id, leave_type_id, start_date, end_date, days_requested, status, reason, created_at')
       .eq('employee_id', EMPLOYEE_ID)
+      .eq('company_id', companyUser?.company_id)
       .order('created_at', { ascending: false })
 
     if (reqs && reqs.length > 0) {

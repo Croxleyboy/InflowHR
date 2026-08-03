@@ -182,6 +182,7 @@ export default function Notifications() {
       supabase.from('employees')
         .select('can_post_notifications')
         .eq('id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyUser?.company_id)
         .single(),
     ])
     if (actionsRes.data) setActions(actionsRes.data as WorkflowItem[])
@@ -204,6 +205,7 @@ export default function Notifications() {
           .from('employees')
           .select('id, first_name, last_name')
           .in('id', empIds)
+          .eq('company_id', companyUser?.company_id)
         const nameMap: Record<string, string> = {}
         ;(empNames || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
 
@@ -228,6 +230,7 @@ export default function Notifications() {
         .from('expense_line_items')
         .select('expense_claim_id')
         .in('expense_claim_id', uniqueExpenseIds)
+        .eq('company_id', companyUser?.company_id)
         .not('receipt_url', 'is', null)
       if (receiptRows) setExpenseReceipts(new Set(receiptRows.map((r: { expense_claim_id: number }) => r.expense_claim_id)))
     }
@@ -282,15 +285,15 @@ export default function Notifications() {
     if (!confirm(`Delete this ${label}? This cannot be undone.`)) return
 
     if (item.record_type === 'Expense') {
-      await supabase.from('expense_line_items').delete().eq('expense_claim_id', item.approval_id)
-      await supabase.from('workflow_tracker').delete().eq('record_type', 'Expense').eq('approval_id', item.approval_id)
-      await supabase.from('expense_claims').delete().eq('id', item.approval_id)
+      await supabase.from('expense_line_items').delete().eq('expense_claim_id', item.approval_id).eq('company_id', companyUser?.company_id)
+      await supabase.from('workflow_tracker').delete().eq('record_type', 'Expense').eq('approval_id', item.approval_id).eq('company_id', companyUser?.company_id)
+      await supabase.from('expense_claims').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
     } else if (item.record_type === 'Leave') {
-      await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', item.approval_id)
-      await supabase.from('leave_requests').delete().eq('id', item.approval_id)
+      await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', item.approval_id).eq('company_id', companyUser?.company_id)
+      await supabase.from('leave_requests').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
     } else if (item.record_type === 'Timesheet') {
-      await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', item.approval_id)
-      await supabase.from('timesheets').delete().eq('id', item.approval_id)
+      await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', item.approval_id).eq('company_id', companyUser?.company_id)
+      await supabase.from('timesheets').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
     }
 
     window.dispatchEvent(new Event('notifications-updated'))
