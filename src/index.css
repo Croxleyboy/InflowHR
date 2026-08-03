@@ -2209,7 +2209,7 @@ body {
   margin-bottom: 10px;
 }
 .my-profile-status-cards {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
 }
 .my-profile-status-card {
   border-radius: 10px;
