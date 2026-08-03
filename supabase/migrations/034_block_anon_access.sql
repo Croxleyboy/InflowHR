@@ -15,6 +15,17 @@
 -- anon read access since they contain no tenant data.
 -- ============================================================
 
+-- ============================================================
+-- STEP 0: Drop rogue anon policies from pre-026 migrations
+-- that were never cleaned up. These grant USING(true) on
+-- employees UPDATE and DELETE — the most dangerous gap.
+-- ============================================================
+DROP POLICY IF EXISTS "Anon can update employees (temp)" ON employees;
+DROP POLICY IF EXISTS "Anon can delete employees (temp)" ON employees;
+
+CREATE POLICY "anon_blocked_update_employees" ON employees FOR UPDATE TO anon USING (false);
+CREATE POLICY "anon_blocked_delete_employees" ON employees FOR DELETE TO anon USING (false);
+
 -- Helper: tables that had anon SELECT only
 DO $$
 DECLARE
