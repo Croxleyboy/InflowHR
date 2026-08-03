@@ -979,8 +979,12 @@ body {
 .line-item-title { font-size: 14px; font-weight: 600; color: var(--text); }
 .line-item-type { font-size: 12px; color: var(--text-muted); }
 .line-item-amount { font-size: 15px; font-weight: 700; color: var(--text); }
-.line-item-receipt, .exp-approval-receipt { display: flex; align-items: center; flex-shrink: 0; }
+.line-item-receipt, .exp-approval-receipt { display: flex; align-items: center; flex-shrink: 0; background: none; border: none; cursor: pointer; padding: 4px; }
 .line-item-receipt:hover svg, .exp-approval-receipt:hover svg { stroke: #2e7d32; }
+.receipt-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.receipt-modal { position: relative; max-width: 100%; max-height: 100%; display: flex; align-items: center; justify-content: center; }
+.receipt-modal-close { position: absolute; top: -40px; right: 0; background: none; border: none; cursor: pointer; padding: 4px; z-index: 1; }
+.receipt-modal-img { max-width: 100%; max-height: 85vh; border-radius: 8px; object-fit: contain; }
 .notif-receipt-indicator { display: inline-flex; align-items: center; vertical-align: middle; margin-left: 4px; }
 .line-item-delete {
   background: none; border: none; cursor: pointer; padding: 4px;
