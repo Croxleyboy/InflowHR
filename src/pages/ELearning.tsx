@@ -133,13 +133,6 @@ function getTypeLabel(type: CourseType, t: (k: string) => string): string {
 
 const CATEGORY_FILTERS = ['onboarding', 'compliance', 'policies', 'role', 'development', 'wellbeing'] as const
 
-const INDUSTRY_FILTERS = [
-  { value: '', labelKey: 'elearning.industry_all' },
-  { value: 'legal', labelKey: 'elearning.industry_legal' },
-  { value: 'education', labelKey: 'elearning.industry_education' },
-  { value: 'accountancy', labelKey: 'elearning.industry_accountancy' },
-] as const
-
 function isRenewalDue(courseId: string, completedDates: Record<string, string>): boolean {
   const completedDate = completedDates[courseId]
   if (!completedDate) return false
@@ -156,7 +149,6 @@ export default function ELearning() {
   const [progress, setProgress] = useState<CourseProgress>(loadProgress)
   const [filter, setFilter] = useState<Category>('all')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
-  const [industryFilter, setIndustryFilter] = useState('')
   const [expandedCourse, setExpandedCourse] = useState<string | null>(null)
   const [showComplete, setShowComplete] = useState<string | null>(null)
   const [enabledCourseIds, setEnabledCourseIds] = useState<Set<string> | null>(null)
@@ -176,11 +168,9 @@ export default function ELearning() {
   useEffect(() => { fetchEnabledCourses() }, [fetchEnabledCourses])
   useEffect(() => { saveProgress(progress) }, [progress])
 
-  const companyCourses = enabledCourseIds !== null
+  const visibleCourses = enabledCourseIds !== null
     ? COURSES.filter(c => enabledCourseIds.has(c.id))
     : COURSES
-
-  const visibleCourses = companyCourses.filter(c => !c.industry || c.industry === industryFilter || industryFilter === '')
 
   const completedCount = progress.completed.filter(id => visibleCourses.some(c => c.id === id)).length
   const totalHours = visibleCourses.reduce((sum, c) => {
@@ -325,19 +315,6 @@ export default function ELearning() {
             </div>
           </>
         )}
-      </div>
-
-      {/* Industry Filter */}
-      <div className="elearning-industry-filter">
-        {INDUSTRY_FILTERS.map(ind => (
-          <button
-            key={ind.value}
-            className={`elearning-industry-chip ${industryFilter === ind.value ? 'elearning-industry-active' : ''}`}
-            onClick={() => setIndustryFilter(ind.value)}
-          >
-            {t(ind.labelKey)}
-          </button>
-        ))}
       </div>
 
       {/* Continue Learning */}
