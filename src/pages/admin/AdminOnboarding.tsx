@@ -45,7 +45,7 @@ const WORKFLOW_STEPS = [
 export default function AdminOnboarding() {
   const { isSuperAdmin } = useAuth()
   const { selectedCompanyId } = useAdminCompany()
-  const { t, fyStartMonth } = useLanguage()
+  const { fyStartMonth } = useLanguage()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup'>('dashboard')
@@ -650,7 +650,7 @@ export default function AdminOnboarding() {
       )}
 
       {tab === 'setup' && (
-        <CompanySetupWizard selectedCompanyId={selectedCompanyId} onSetupComplete={load} />
+        <CompanySetupWizard onSetupComplete={load} />
       )}
     </div>
   )

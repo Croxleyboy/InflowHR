@@ -46,11 +46,10 @@ const SETUP_STEPS = [
 ]
 
 interface CompanySetupWizardProps {
-  selectedCompanyId: string
   onSetupComplete: () => void
 }
 
-export default function CompanySetupWizard({ selectedCompanyId, onSetupComplete }: CompanySetupWizardProps) {
+export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWizardProps) {
   const { t } = useLanguage()
 
   const [companies, setCompanies] = useState<CompanyRow[]>([])

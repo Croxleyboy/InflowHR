@@ -4,7 +4,6 @@ import {
   TASK_CODES,
   RATE_CARDS,
   STATUS_COLOR,
-  DEFAULT_STATUS_COLOR,
 } from './AdminLegalTimesheets'
 import type { LegalClient, LegalMatter, Employee } from './AdminLegalTimesheets'
 
