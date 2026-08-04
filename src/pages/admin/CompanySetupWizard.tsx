@@ -219,7 +219,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
       let employeeId = existing?.id
 
       if (!existing) {
-        const { error: empErr } = await supabase.from('employees').insert({
+        const { data: newEmp, error: empErr } = await supabase.from('employees').insert({
           employee_number: row.employee_number || `EMP-${Date.now().toString().slice(-6)}`,
           first_name: row.firstname,
           last_name: row.surname,
@@ -231,11 +231,12 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           is_admin: row.role === 'admin',
           is_active: true,
           company_id: setupCompanyId,
-        })
-        if (!empErr) {
+        }).select('id').single()
+        if (!empErr && newEmp) {
           empCount++
-          const { data: newEmp } = await supabase.from('employees').select('id').eq('email', row.user_email).maybeSingle()
-          if (newEmp) employeeId = newEmp.id
+          employeeId = newEmp.id
+        } else if (empErr) {
+          console.error(`Failed to create employee ${row.user_email}:`, empErr.message)
         }
       }
 
@@ -612,10 +613,10 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
                     </>
                   )}
                   {processResult.employees === 0 && (
-                    <>
-                      <li>Add employees via Onboarding — New Starter or Bulk Upload</li>
-                      <li>Assign a company admin in Subscriptions &gt; Companies</li>
-                    </>
+                    <li>Add employees via Onboarding — New Starter or Bulk Upload</li>
+                  )}
+                  {!processResult.admin && (
+                    <li>Assign a company admin in Subscriptions &gt; Companies</li>
                   )}
                   <li>Configure feature toggles in Subscriptions &gt; Company Features</li>
                   {setupCompany && !setupCompany.is_active && (
