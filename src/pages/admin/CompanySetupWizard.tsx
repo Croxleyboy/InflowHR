@@ -59,7 +59,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
   const [setupErrors, setSetupErrors] = useState<string[]>([])
   const [adminEmail, setAdminEmail] = useState('')
   const [processing, setProcessing] = useState(false)
-  const [processResult, setProcessResult] = useState<{ onboarding: number; employees: number; payslips: number; admin: string } | null>(null)
+  const [processResult, setProcessResult] = useState<{ onboarding: number; employees: number; payslips: number; admin: string; errors: string[] } | null>(null)
   const setupFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -184,6 +184,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
     const company = companies.find(c => c.id === setupCompanyId)
     let onboardCount = 0, empCount = 0, payslipCount = 0
     let assignedAdmin = ''
+    const errors: string[] = []
 
     await ensureCompanyFoundation(setupCompanyId)
 
@@ -218,7 +219,9 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
       const { data: existing } = await supabase.from('employees').select('id').eq('email', row.user_email).eq('company_id', setupCompanyId).maybeSingle()
       let employeeId = existing?.id
 
-      if (!existing) {
+      if (existing) {
+        empCount++
+      } else {
         const { data: newEmp, error: empErr } = await supabase.from('employees').insert({
           employee_number: row.employee_number || `EMP-${Date.now().toString().slice(-6)}`,
           first_name: row.firstname,
@@ -236,7 +239,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           empCount++
           employeeId = newEmp.id
         } else if (empErr) {
-          console.error(`Failed to create employee ${row.user_email}:`, empErr.message)
+          errors.push(`${row.firstname} ${row.surname}: ${empErr.message}`)
         }
       }
 
@@ -272,14 +275,18 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
       }
 
       // 4. Create company_users record for admin role
-      if (row.user_email === adminEmail && company) {
-        await supabase.from('company_users').insert({
+      if (row.user_email === adminEmail && company && employeeId) {
+        const { error: adminErr } = await supabase.from('company_users').insert({
           company_id: setupCompanyId,
           role: 'admin',
           is_active: true,
           employee_id: employeeId,
         })
-        assignedAdmin = `${row.firstname} ${row.surname} (${row.user_email})`
+        if (!adminErr) {
+          assignedAdmin = `${row.firstname} ${row.surname} (${row.user_email})`
+        } else {
+          errors.push(`Admin assignment for ${row.user_email}: ${adminErr.message}`)
+        }
       }
 
       // 5. Create leave balances for each leave type
@@ -301,7 +308,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
       }
     }
 
-    setProcessResult({ onboarding: onboardCount, employees: empCount, payslips: payslipCount, admin: assignedAdmin })
+    setProcessResult({ onboarding: onboardCount, employees: empCount, payslips: payslipCount, admin: assignedAdmin, errors })
     setProcessing(false)
     onSetupComplete()
   }
@@ -625,6 +632,15 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
                   <li>Employees will complete their own personal details (DOB, address, emergency contact) on first login</li>
                 </ol>
               </div>
+
+              {processResult.errors.length > 0 && (
+                <div style={{ background: '#ffebee', border: '1px solid #ef5350', borderRadius: 8, padding: 16, maxWidth: 500, margin: '16px auto', textAlign: 'left' }}>
+                  <h4 style={{ margin: '0 0 8px', color: '#c62828' }}>Errors ({processResult.errors.length})</h4>
+                  <ul style={{ margin: 0, paddingLeft: 20, color: '#b71c1c', fontSize: 13 }}>
+                    {processResult.errors.map((err, i) => <li key={i}>{err}</li>)}
+                  </ul>
+                </div>
+              )}
 
               <button className="admin-btn admin-btn-primary" onClick={resetSetup} style={{ marginTop: 24 }}>
                 Set Up Another Company

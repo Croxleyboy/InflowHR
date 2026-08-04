@@ -49,9 +49,22 @@ export default function AdminEmployees() {
     load()
   }
 
-  async function deleteEmployee(id: string) {
+  async function deactivateEmployee(id: string) {
     if (!confirm('Deactivate this employee? This will mark them as inactive.')) return
     await supabase.from('employees').update({ is_active: false }).eq('id', id)
+    load()
+  }
+
+  async function permanentlyDeleteEmployee(id: string) {
+    if (!confirm('Permanently delete this employee and all their related records? This cannot be undone.')) return
+    await supabase.from('leave_balances').delete().eq('employee_id', id)
+    await supabase.from('payslips').delete().eq('employee_id', id)
+    await supabase.from('company_users').delete().eq('employee_id', id)
+    const { error } = await supabase.from('employees').delete().eq('id', id)
+    if (error) {
+      alert(`Failed to delete: ${error.message}`)
+      return
+    }
     load()
   }
 
@@ -151,7 +164,10 @@ export default function AdminEmployees() {
                           <button className="admin-btn-icon" onClick={() => startEdit(emp)}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                           </button>
-                          <button className="admin-btn-icon admin-btn-danger" onClick={() => deleteEmployee(emp.id)}>
+                          <button className="admin-btn-icon" title="Deactivate" onClick={() => deactivateEmployee(emp.id)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                          </button>
+                          <button className="admin-btn-icon admin-btn-danger" title="Delete permanently" onClick={() => permanentlyDeleteEmployee(emp.id)}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                           </button>
                         </>
