@@ -211,23 +211,31 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         onboardCount++
       } else {
         const { error: onbErr } = await supabase.from('onboarding').insert({
-        firstname: row.firstname,
-        surname: row.surname,
-        user_email: row.user_email,
-        job_title: row.job_title,
-        department: row.department,
-        manager: row.manager,
-        manager_email: row.manager_email,
-        location: row.location,
-        telephone: row.telephone,
-        employee_number: row.employee_number,
-        start_date: row.start_date,
-        contract_type: row.contract_type,
-        status: 'Onboarded',
-        is_complete: true,
-        company_id: setupCompanyId,
-      })
-        if (!onbErr) onboardCount++
+          firstname: row.firstname,
+          surname: row.surname,
+          user_email: row.user_email,
+          job_title: row.job_title,
+          department: row.department,
+          manager: row.manager,
+          manager_email: row.manager_email,
+          location: row.location,
+          telephone: row.telephone,
+          employee_number: row.employee_number,
+          start_date: row.start_date,
+          contract_type: row.contract_type,
+          status: 'Onboarded',
+          is_complete: true,
+          first_day: true,
+          first_week: true,
+          first_month: true,
+          elearning: true,
+          company_id: setupCompanyId,
+        })
+        if (!onbErr) {
+          onboardCount++
+        } else {
+          errors.push(`Onboarding ${row.firstname} ${row.surname}: ${onbErr.message}`)
+        }
       }
 
       // 2. Create employee record

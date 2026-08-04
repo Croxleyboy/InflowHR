@@ -63,12 +63,11 @@ export default function AdminSubscriptions() {
     setPricingLoading(false)
   }
 
-  // Load companies
+  // Load companies (include inactive so newly registered companies appear)
   async function loadCompanies() {
     const { data } = await supabase
       .from('companies')
       .select('id, name')
-      .eq('is_active', true)
       .order('name')
     setCompanies((data as CompanyOption[]) || [])
   }
@@ -233,7 +232,7 @@ export default function AdminSubscriptions() {
           Pricing
         </button>
         <button
-          onClick={() => setTab('features')}
+          onClick={() => { setTab('features'); loadCompanies() }}
           style={{
             padding: '10px 24px',
             border: 'none',
