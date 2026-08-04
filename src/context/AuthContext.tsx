@@ -70,43 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         || rows[0]
       : null
 
-    // If no company_users row found by auth_user_id, check for a pre-created row
-    // (e.g. from the setup wizard) that has a matching employee email but no auth_user_id yet
-    if (!cu && email) {
-      const domain = email.split('@')[1]?.toLowerCase()
-      if (domain) {
-        const { data: co } = await supabase
-          .from('companies')
-          .select('id')
-          .eq('domain', domain)
-          .eq('is_active', true)
-          .maybeSingle()
-        if (co) {
-          const { data: emp } = await supabase
-            .from('employees')
-            .select('id')
-            .eq('email', email)
-            .eq('company_id', co.id)
-            .maybeSingle()
-          if (emp) {
-            const { data: pendingCu } = await supabase
-              .from('company_users')
-              .select('id, company_id, role, employee_id')
-              .eq('employee_id', emp.id)
-              .is('auth_user_id', null)
-              .maybeSingle()
-            if (pendingCu) {
-              await supabase
-                .from('company_users')
-                .update({ auth_user_id: userId })
-                .eq('id', pendingCu.id)
-              cu = pendingCu
-            }
-          }
-        }
-      }
-    }
-
     if (!cu && email) {
       const { data: result } = await (supabase.rpc as any)('ensure_company_user')
       if (result && !result.error) {
