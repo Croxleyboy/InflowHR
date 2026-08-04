@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useLanguage } from '../../context/LanguageContext'
+import { useToast } from '../../context/ToastContext'
 import * as XLSX from 'xlsx'
 
 interface CompanyRow {
@@ -83,6 +84,7 @@ interface CompanySetupWizardProps {
 
 export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWizardProps) {
   const { t } = useLanguage()
+  const { showError, showSuccess } = useToast()
 
   const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [setupStep, setSetupStep] = useState(0)
@@ -192,7 +194,8 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         { name: 'Career Break', company_id: companyId, deducts_from_allowance: true },
         { name: 'Lieu Days', company_id: companyId, deducts_from_allowance: false },
       ]
-      await supabase.from('leave_types').insert(defaultLeaveTypes)
+      const { error: leaveTypesErr } = await supabase.from('leave_types').insert(defaultLeaveTypes)
+      if (leaveTypesErr) { showError('Failed to create leave types: ' + leaveTypesErr.message); return }
     }
 
     const { data: existingFeatures } = await supabase
@@ -215,7 +218,8 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         { company_id: companyId, feature_key: 'legal_timesheets', is_enabled: false },
         { company_id: companyId, feature_key: 'space_booking', is_enabled: false },
       ]
-      await supabase.from('company_features').insert(standardFeatures)
+      const { error: featuresErr } = await supabase.from('company_features').insert(standardFeatures)
+      if (featuresErr) { showError('Failed to create company features: ' + featuresErr.message); return }
     }
   }
 
@@ -403,7 +407,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
       if (employeeId) {
         const { data: leaveTypes } = await supabase.from('leave_types').select('id').eq('company_id', setupCompanyId)
         if (leaveTypes && leaveTypes.length > 0) {
-          await supabase.from('leave_balances').insert(
+          const { error: leaveBalErr } = await supabase.from('leave_balances').insert(
             leaveTypes.map(lt => ({
               employee_id: employeeId,
               leave_type_id: lt.id,
@@ -414,6 +418,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
               company_id: setupCompanyId,
             }))
           )
+          if (leaveBalErr) errors.push(`Leave balances for ${row.firstname} ${row.surname}: ${leaveBalErr.message}`)
         }
       }
     }
@@ -426,7 +431,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
       .eq('title', 'Welcome to InflowHR!')
       .maybeSingle()
     if (!existingAnnouncement) {
-      await supabase.from('announcements').insert({
+      const { error: announcementErr } = await supabase.from('announcements').insert({
         title: 'Welcome to InflowHR!',
         body: 'Welcome to your new HR app! Take a look around and explore all the features available to you. Head to E-Learning to get started with your onboarding modules, check your profile in the Directory, and submit your first expense or leave request. If you need help, speak to your company admin.',
         company_id: setupCompanyId,
@@ -434,10 +439,13 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         published_at: new Date().toISOString(),
         submitted_by_name: 'InflowHR',
       })
+      if (announcementErr) errors.push(`Welcome announcement: ${announcementErr.message}`)
     }
 
     setProcessResult({ onboarding: onboardCount, employees: empCount, payslips: payslipCount, admin: assignedAdmin, errors })
     setProcessing(false)
+    if (errors.length === 0) showSuccess('Company setup complete')
+    else showError(`Setup completed with ${errors.length} error${errors.length !== 1 ? 's' : ''}`)
     onSetupComplete(setupCompanyId)
   }
 

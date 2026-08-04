@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 
 interface Company {
   id: string
@@ -41,6 +42,7 @@ async function uploadCompanyLogo(companyId: string, file: File): Promise<string 
 export default function AdminCompanies() {
   const { company: myCompany } = useAuth()
   const { refreshCompanies } = useAdminCompany()
+  const { showError, showSuccess } = useToast()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -127,11 +129,12 @@ export default function AdminCompanies() {
       if (logoFile) {
         const logoUrl = await uploadCompanyLogo(newCo.id, logoFile)
         if (logoUrl) {
-          await supabase.from('companies').update({ logo_url: logoUrl }).eq('id', newCo.id)
+          const { error } = await supabase.from('companies').update({ logo_url: logoUrl }).eq('id', newCo.id)
+          if (error) showError('Failed to save company logo: ' + error.message)
         }
       }
 
-      await supabase.from('leave_types').insert([
+      const { error: leaveTypesError } = await supabase.from('leave_types').insert([
         { name: 'Annual Leave', company_id: newCo.id, deducts_from_allowance: true },
         { name: 'Sick Leave', company_id: newCo.id, deducts_from_allowance: false },
         { name: 'Jury Duty', company_id: newCo.id, deducts_from_allowance: false },
@@ -141,8 +144,9 @@ export default function AdminCompanies() {
         { name: 'Career Break', company_id: newCo.id, deducts_from_allowance: true },
         { name: 'Lieu Days', company_id: newCo.id, deducts_from_allowance: false },
       ])
+      if (leaveTypesError) showError('Failed to create default leave types: ' + leaveTypesError.message)
 
-      await supabase.from('company_features').insert([
+      const { error: featuresError } = await supabase.from('company_features').insert([
         { company_id: newCo.id, feature_key: 'expenses', is_enabled: true },
         { company_id: newCo.id, feature_key: 'leave', is_enabled: true },
         { company_id: newCo.id, feature_key: 'kudos', is_enabled: true },
@@ -154,6 +158,7 @@ export default function AdminCompanies() {
         { company_id: newCo.id, feature_key: 'benefits', is_enabled: false },
         { company_id: newCo.id, feature_key: 'legal_timesheets', is_enabled: false },
       ])
+      if (featuresError) showError('Failed to create default company features: ' + featuresError.message)
     }
 
     setForm({ name: '', domain: '' })
@@ -163,20 +168,27 @@ export default function AdminCompanies() {
     setSaving(false)
     load()
     refreshCompanies()
+    showSuccess('Company registered successfully')
   }
 
   async function handleEditLogo(companyId: string, file: File) {
     setUploadingLogo(companyId)
     const logoUrl = await uploadCompanyLogo(companyId, file)
     if (logoUrl) {
-      await supabase.from('companies').update({ logo_url: logoUrl }).eq('id', companyId)
+      const { error } = await supabase.from('companies').update({ logo_url: logoUrl }).eq('id', companyId)
+      if (error) {
+        showError('Failed to save company logo: ' + error.message)
+        setUploadingLogo(null)
+        return
+      }
     }
     setUploadingLogo(null)
     load()
   }
 
   async function removeLogo(companyId: string) {
-    await supabase.from('companies').update({ logo_url: null }).eq('id', companyId)
+    const { error } = await supabase.from('companies').update({ logo_url: null }).eq('id', companyId)
+    if (error) { showError('Failed to remove logo: ' + error.message); return }
     load()
   }
 
@@ -185,7 +197,8 @@ export default function AdminCompanies() {
       alert('You cannot disable your own company.')
       return
     }
-    await supabase.from('companies').update({ is_active: !currentlyActive }).eq('id', id)
+    const { error } = await supabase.from('companies').update({ is_active: !currentlyActive }).eq('id', id)
+    if (error) { showError('Failed to update company status: ' + error.message); return }
     load()
   }
 
@@ -209,7 +222,8 @@ export default function AdminCompanies() {
       alert('You cannot disable login for your own company.')
       return
     }
-    await supabase.from('companies').update({ login_disabled: !currentlyDisabled }).eq('id', id)
+    const { error } = await supabase.from('companies').update({ login_disabled: !currentlyDisabled }).eq('id', id)
+    if (error) { showError('Failed to update login status: ' + error.message); return }
     load()
   }
 
@@ -221,22 +235,37 @@ export default function AdminCompanies() {
   async function changeAdmin(companyId: string, newEmployeeId: string) {
     setSavingAdmin(true)
 
-    await supabase
+    const { error: demoteCuError } = await supabase
       .from('company_users')
       .update({ role: 'employee' })
       .eq('company_id', companyId)
       .eq('role', 'admin')
+    if (demoteCuError) {
+      showError('Failed to update previous admin: ' + demoteCuError.message)
+      setSavingAdmin(false)
+      return
+    }
 
-    await supabase
+    const { error: demoteEmpError } = await supabase
       .from('employees')
       .update({ is_admin: false })
       .eq('company_id', companyId)
       .eq('is_admin', true)
+    if (demoteEmpError) {
+      showError('Failed to update previous admin: ' + demoteEmpError.message)
+      setSavingAdmin(false)
+      return
+    }
 
-    await supabase
+    const { error: promoteEmpError } = await supabase
       .from('employees')
       .update({ is_admin: true })
       .eq('id', newEmployeeId)
+    if (promoteEmpError) {
+      showError('Failed to assign admin: ' + promoteEmpError.message)
+      setSavingAdmin(false)
+      return
+    }
 
     const { data: emp } = await supabase
       .from('employees')
@@ -252,10 +281,13 @@ export default function AdminCompanies() {
       .maybeSingle()
 
     if (cuByEmp) {
-      await supabase
+      const { error } = await supabase
         .from('company_users')
         .update({ role: 'admin' })
         .eq('id', cuByEmp.id)
+      if (error) {
+        showError('Failed to assign admin: ' + error.message)
+      }
     } else if (emp?.email) {
       const { error } = await (supabase.rpc as any)('link_and_promote_admin', {
         p_company_id: companyId,
@@ -263,13 +295,14 @@ export default function AdminCompanies() {
         p_email: emp.email,
       })
       if (error) {
-        alert('Failed to assign admin: ' + error.message)
+        showError('Failed to assign admin: ' + error.message)
       }
     }
 
     setEditingAdmin(null)
     setSavingAdmin(false)
     load()
+    showSuccess('Company admin updated')
   }
 
   return (

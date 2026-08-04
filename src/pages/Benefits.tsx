@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
 import { seedBenefitDefaults } from '../lib/benefitDefaults'
 
@@ -83,6 +84,7 @@ export default function Benefits() {
   const { t } = useLanguage()
   const { features } = useFeatures()
   const { employeeId, companyUser } = useAuth()
+  const { showError } = useToast()
   const companyId = companyUser?.company_id
   const payrollEnabled = features.payslips
 
@@ -162,14 +164,16 @@ export default function Benefits() {
     if (!vacType) return
 
     if (isEnrolledInOption(optionId)) {
-      await supabase.from('benefit_enrollments').delete()
+      const { error } = await supabase.from('benefit_enrollments').delete()
         .eq('company_id', companyId).eq('employee_id', employeeId).eq('option_id', optionId)
+      if (error) { showError('Failed to update benefit: ' + error.message); return }
       setEnrollments(prev => prev.filter(e => e.option_id !== optionId))
     } else {
-      const { data } = await supabase.from('benefit_enrollments').insert({
+      const { data, error } = await supabase.from('benefit_enrollments').insert({
         company_id: companyId, employee_id: employeeId,
         benefit_type_id: vacType.id, option_id: optionId,
       }).select('*').single()
+      if (error) { showError('Failed to update benefit: ' + error.message); return }
       if (data) setEnrollments(prev => [...prev, data as Enrollment])
     }
   }
@@ -193,15 +197,17 @@ export default function Benefits() {
     const enrolled = isEnrolledInType(bt.id)
 
     if (enrolled) {
-      await supabase.from('benefit_enrollments').delete()
+      const { error } = await supabase.from('benefit_enrollments').delete()
         .eq('company_id', companyId).eq('employee_id', employeeId)
         .eq('benefit_type_id', bt.id).is('option_id', null)
+      if (error) { showError('Failed to update enrolment: ' + error.message); return }
       setEnrollments(prev => prev.filter(e => !(e.benefit_type_id === bt.id && e.option_id === null)))
     } else {
-      const { data } = await supabase.from('benefit_enrollments').insert({
+      const { data, error } = await supabase.from('benefit_enrollments').insert({
         company_id: companyId, employee_id: employeeId,
         benefit_type_id: bt.id, option_id: null,
       }).select('*').single()
+      if (error) { showError('Failed to update enrolment: ' + error.message); return }
       if (data) setEnrollments(prev => [...prev, data as Enrollment])
     }
   }

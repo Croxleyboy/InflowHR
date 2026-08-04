@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 
 interface LeaveBalance {
   leave_type_id: number
@@ -17,6 +18,7 @@ export default function MyLeave() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
+  const { showError } = useToast()
   const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -97,7 +99,7 @@ export default function MyLeave() {
   async function handleImOff() {
     setImOffState('sending')
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: wfError } = await supabase.from('workflow_tracker').insert({
       emp_display_name: EMPLOYEE_NAME,
       step: 1,
       status: 'Complete',
@@ -111,8 +113,9 @@ export default function MyLeave() {
       approval_status: null,
       company_id: companyUser?.company_id,
     })
+    if (wfError) showError('Failed to create workflow tracker: ' + wfError.message)
 
-    await supabase.from('notifications').insert({
+    const { error: notifError } = await supabase.from('notifications').insert({
       employee_id: EMPLOYEE_ID,
       title: `${EMPLOYEE_NAME} is Off`,
       message: `${EMPLOYEE_NAME} has marked themselves as away. They will not be available.`,
@@ -121,6 +124,7 @@ export default function MyLeave() {
       is_read: false,
       company_id: companyUser?.company_id,
     })
+    if (notifError) showError('Failed to create notification: ' + notifError.message)
 
     window.dispatchEvent(new Event('notifications-updated'))
     setImOffState('sent')

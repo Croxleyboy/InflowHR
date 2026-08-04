@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 
 interface Employee {
   id: string
@@ -48,6 +49,7 @@ interface Employee {
 
 export default function AdminEmployees() {
   const { selectedCompanyId } = useAdminCompany()
+  const { showError, showSuccess } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
   const [filterDept, setFilterDept] = useState('')
@@ -94,28 +96,37 @@ export default function AdminEmployees() {
   }
 
   async function saveEdit(id: string) {
-    await supabase.from('employees').update(editForm).eq('id', id)
+    const { error } = await supabase.from('employees').update(editForm).eq('id', id)
+    if (error) { showError('Failed to save employee: ' + error.message); return }
     setEditingId(null)
+    showSuccess('Employee updated')
     load()
   }
 
   async function deactivateEmployee(id: string) {
     if (!confirm('Deactivate this employee? This will mark them as inactive.')) return
-    await supabase.from('employees').update({ is_active: false }).eq('id', id)
+    const { error } = await supabase.from('employees').update({ is_active: false }).eq('id', id)
+    if (error) { showError('Failed to deactivate employee: ' + error.message); return }
+    showSuccess('Employee deactivated')
     load()
   }
 
   async function permanentlyDeleteEmployee(emp: Employee) {
     if (!confirm(`Permanently delete ${emp.first_name} ${emp.last_name} and all their related records (onboarding, payslips, leave balances)? This cannot be undone.`)) return
-    await supabase.from('leave_balances').delete().eq('employee_id', emp.id)
-    await supabase.from('payslips').delete().eq('employee_id', emp.id)
-    await supabase.from('company_users').delete().eq('employee_id', emp.id)
-    await supabase.from('onboarding').delete().eq('user_email', emp.email)
+    const { error: leaveErr } = await supabase.from('leave_balances').delete().eq('employee_id', emp.id)
+    if (leaveErr) { showError('Failed to delete leave balances: ' + leaveErr.message); return }
+    const { error: payslipErr } = await supabase.from('payslips').delete().eq('employee_id', emp.id)
+    if (payslipErr) { showError('Failed to delete payslips: ' + payslipErr.message); return }
+    const { error: companyUserErr } = await supabase.from('company_users').delete().eq('employee_id', emp.id)
+    if (companyUserErr) { showError('Failed to delete company user record: ' + companyUserErr.message); return }
+    const { error: onboardingErr } = await supabase.from('onboarding').delete().eq('user_email', emp.email)
+    if (onboardingErr) { showError('Failed to delete onboarding record: ' + onboardingErr.message); return }
     const { error } = await supabase.from('employees').delete().eq('id', emp.id)
     if (error) {
-      alert(`Failed to delete: ${error.message}`)
+      showError(`Failed to delete: ${error.message}`)
       return
     }
+    showSuccess('Employee deleted')
     load()
   }
 
@@ -124,22 +135,26 @@ export default function AdminEmployees() {
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const path = `${emp.id}.${ext}`
     const { error: uploadErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
-    if (uploadErr) { alert('Upload failed: ' + uploadErr.message); setUploading(null); return }
+    if (uploadErr) { showError('Upload failed: ' + uploadErr.message); setUploading(null); return }
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
     const avatarUrl = urlData.publicUrl + '?t=' + Date.now()
     const { error: empErr } = await supabase.from('employees').update({ avatar_url: avatarUrl }).eq('id', emp.id)
     if (empErr) console.error('Employee update failed:', empErr)
     const { error: onbErr } = await supabase.from('onboarding').update({ avatar_url: avatarUrl }).eq('user_email', emp.email)
     if (onbErr) console.error('Onboarding update failed:', onbErr)
-    if (empErr && onbErr) alert('Photo uploaded but database update failed. Check RLS policies.')
+    if (empErr && onbErr) showError('Photo uploaded but database update failed. Check RLS policies.')
+    else showSuccess('Photo updated')
     setUploading(null)
     load()
   }
 
   async function removePhoto(emp: Employee) {
     if (!confirm('Remove this employee photo?')) return
-    await supabase.from('employees').update({ avatar_url: null }).eq('id', emp.id)
-    await supabase.from('onboarding').update({ avatar_url: null }).eq('user_email', emp.email)
+    const { error: empErr } = await supabase.from('employees').update({ avatar_url: null }).eq('id', emp.id)
+    if (empErr) { showError('Failed to remove photo: ' + empErr.message); return }
+    const { error: onbErr } = await supabase.from('onboarding').update({ avatar_url: null }).eq('user_email', emp.email)
+    if (onbErr) console.error('Onboarding photo update failed:', onbErr)
+    showSuccess('Photo removed')
     load()
   }
 

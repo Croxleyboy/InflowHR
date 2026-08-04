@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDate } from '../lib/formatters'
+import { useToast } from '../context/ToastContext'
 
 interface TimesheetRecord {
   id: number
@@ -23,6 +24,7 @@ export default function TimesheetDetail() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
   const { employeeName, employeeEmail, companyUser } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [ts, setTs] = useState<TimesheetRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -44,12 +46,13 @@ export default function TimesheetDetail() {
   async function handleSubmit() {
     if (!ts) return
     setSubmitting(true)
-    await supabase.from('timesheets').update({
+    const { error } = await supabase.from('timesheets').update({
       status: 'pending',
       submitted_at: new Date().toISOString(),
     }).eq('id', ts.id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to submit timesheet: ' + error.message); setSubmitting(false); return }
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: error2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: employeeName,
       step: 1,
       status: 'Pending',
@@ -62,7 +65,9 @@ export default function TimesheetDetail() {
       task_description: `Timesheet - ${ts.date} ${ts.start_time.slice(0, 5)}-${ts.end_time.slice(0, 5)} (${ts.role})`,
       company_id: companyUser?.company_id,
     })
+    if (error2) { showError('Failed to create workflow entry: ' + error2.message); setSubmitting(false); return }
 
+    showSuccess('Timesheet submitted')
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/timesheets')
   }
@@ -70,8 +75,10 @@ export default function TimesheetDetail() {
   async function handleDelete() {
     if (!ts) return
     if (!confirm(t('timesheets.confirm_delete'))) return
-    await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id).eq('company_id', companyUser?.company_id)
-    await supabase.from('timesheets').delete().eq('id', ts.id).eq('company_id', companyUser?.company_id)
+    const { error } = await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to delete workflow entries: ' + error.message); return }
+    const { error: error2 } = await supabase.from('timesheets').delete().eq('id', ts.id).eq('company_id', companyUser?.company_id)
+    if (error2) { showError('Failed to delete timesheet: ' + error2.message); return }
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/timesheets')
   }

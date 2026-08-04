@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 
 interface DirectReport {
   id: string
@@ -17,6 +18,7 @@ export default function NewOneToOne() {
   const location = useLocation()
   const { t } = useLanguage()
   const { employeeId, employeeName, companyUser } = useAuth()
+  const { showError } = useToast()
   const preselect = (location.state as { employeeId?: string; employeeName?: string } | null)
 
   const [reports, setReports] = useState<DirectReport[]>([])
@@ -66,7 +68,7 @@ export default function NewOneToOne() {
 
     if (empData) {
       const formattedDate = new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-      await supabase.from('workflow_tracker').insert({
+      const { error: wfError } = await supabase.from('workflow_tracker').insert({
         emp_display_name: `${empData.first_name} ${empData.last_name}`,
         step: 1,
         status: 'Pending',
@@ -79,6 +81,7 @@ export default function NewOneToOne() {
         task_description: `${employeeName} has scheduled a 1:1 meeting with you on ${formattedDate} at ${time}`,
         company_id: companyUser?.company_id,
       })
+      if (wfError) showError('Failed to create workflow tracker: ' + wfError.message)
     }
 
     window.dispatchEvent(new Event('notifications-updated'))

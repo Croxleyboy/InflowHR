@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
+import { useToast } from '../../context/ToastContext'
 
 interface LeaveRequest {
   id: number
@@ -20,6 +21,7 @@ const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
 export default function AdminLeave() {
   const { selectedCompanyId } = useAdminCompany()
   const { t } = useLanguage()
+  const { showError } = useToast()
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -45,7 +47,8 @@ export default function AdminLeave() {
     if (!selectedCompanyId) return
     setSavingWeekend(true)
     const newVal = !weekendsAsWorkdays
-    await supabase.from('companies').update({ weekends_as_workdays: newVal }).eq('id', selectedCompanyId)
+    const { error } = await supabase.from('companies').update({ weekends_as_workdays: newVal }).eq('id', selectedCompanyId)
+    if (error) { showError('Failed to update weekend setting: ' + error.message); setSavingWeekend(false); return }
     setWeekendsAsWorkdays(newVal)
     setSavingWeekend(false)
   }
@@ -62,7 +65,8 @@ export default function AdminLeave() {
 
   async function toggleDeductsFromAllowance(typeId: number, currentVal: boolean) {
     setSavingDeduct(typeId)
-    await supabase.from('leave_types').update({ deducts_from_allowance: !currentVal }).eq('id', typeId)
+    const { error } = await supabase.from('leave_types').update({ deducts_from_allowance: !currentVal }).eq('id', typeId)
+    if (error) { showError('Failed to update leave type: ' + error.message); setSavingDeduct(null); return }
     setLeaveTypeSettings(prev => prev.map(t => t.id === typeId ? { ...t, deducts_from_allowance: !currentVal } : t))
     setSavingDeduct(null)
   }
@@ -86,13 +90,14 @@ export default function AdminLeave() {
   }
 
   async function saveEdit(id: number) {
-    await supabase.from('leave_requests').update({
+    const { error } = await supabase.from('leave_requests').update({
       status: editForm.status,
       days_requested: editForm.days_requested,
       start_date: editForm.start_date,
       end_date: editForm.end_date,
       reason: editForm.reason || null,
     }).eq('id', id)
+    if (error) { showError('Failed to update leave request: ' + error.message); return }
 
     if (editForm.status === 'approved') {
       const req = requests.find(r => r.id === id)
@@ -121,7 +126,8 @@ export default function AdminLeave() {
 
   async function deleteRequest(id: number) {
     if (!confirm('Delete this leave request?')) return
-    await supabase.from('leave_requests').delete().eq('id', id)
+    const { error } = await supabase.from('leave_requests').delete().eq('id', id)
+    if (error) { showError('Failed to delete leave request: ' + error.message); return }
     setRequests(prev => prev.filter(r => r.id !== id))
   }
 

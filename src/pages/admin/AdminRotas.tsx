@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 
 interface Rota {
   id: string
@@ -103,6 +104,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function AdminRotas() {
   const { selectedCompanyId } = useAdminCompany()
+  const { showError, showSuccess } = useToast()
   const [rotas, setRotas] = useState<Rota[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -157,7 +159,7 @@ export default function AdminRotas() {
 
   async function createRota() {
     if (!addForm.name.trim() || !addForm.start_date || !addForm.end_date) return
-    await supabase.from('rotas').insert({
+    const { error } = await supabase.from('rotas').insert({
       company_id: selectedCompanyId,
       name: addForm.name.trim(),
       start_date: addForm.start_date,
@@ -166,6 +168,8 @@ export default function AdminRotas() {
       status: addForm.status,
       allow_employee_edit: addForm.allow_employee_edit,
     })
+    if (error) { showError('Failed to create rota: ' + error.message); return }
+    showSuccess('Rota created')
     setAddForm({ ...EMPTY_ROTA })
     setShowModal(false)
     loadRotas()
@@ -185,7 +189,7 @@ export default function AdminRotas() {
   }
 
   async function saveEditRota(id: string) {
-    await supabase.from('rotas').update({
+    const { error } = await supabase.from('rotas').update({
       name: editFormRota.name,
       start_date: editFormRota.start_date,
       end_date: editFormRota.end_date,
@@ -193,6 +197,7 @@ export default function AdminRotas() {
       status: editFormRota.status,
       allow_employee_edit: editFormRota.allow_employee_edit ?? false,
     }).eq('id', id)
+    if (error) { showError('Failed to update rota: ' + error.message); return }
     setEditingRotaId(null)
     setShowModal(false)
     loadRotas()
@@ -200,14 +205,17 @@ export default function AdminRotas() {
 
   async function deleteRota(id: string) {
     if (!confirm('Delete this rota and all its assignments?')) return
-    await supabase.from('shift_assignments').delete().eq('rota_id', id)
-    await supabase.from('rotas').delete().eq('id', id)
+    const { error: delAssign } = await supabase.from('shift_assignments').delete().eq('rota_id', id)
+    if (delAssign) { showError('Failed to delete assignments: ' + delAssign.message); return }
+    const { error: delRota } = await supabase.from('rotas').delete().eq('id', id)
+    if (delRota) { showError('Failed to delete rota: ' + delRota.message); return }
     setRotas(prev => prev.filter(r => r.id !== id))
   }
 
   async function publishRota(id: string) {
     if (!confirm('Publish this rota? Employees will be notified.')) return
-    await supabase.from('rotas').update({ status: 'published' }).eq('id', id)
+    const { error } = await supabase.from('rotas').update({ status: 'published' }).eq('id', id)
+    if (error) { showError('Failed to publish rota: ' + error.message); return }
     loadRotas()
     if (selectedRota && selectedRota.id === id) {
       setSelectedRota(prev => prev ? { ...prev, status: 'published' } : null)
@@ -216,7 +224,8 @@ export default function AdminRotas() {
 
   async function toggleAllowEdit(r: Rota) {
     const newVal = !r.allow_employee_edit
-    await supabase.from('rotas').update({ allow_employee_edit: newVal }).eq('id', r.id)
+    const { error } = await supabase.from('rotas').update({ allow_employee_edit: newVal }).eq('id', r.id)
+    if (error) { showError('Failed to update rota: ' + error.message); return }
     setRotas(prev => prev.map(x => x.id === r.id ? { ...x, allow_employee_edit: newVal } : x))
     if (selectedRota && selectedRota.id === r.id) {
       setSelectedRota(prev => prev ? { ...prev, allow_employee_edit: newVal } : null)
@@ -315,7 +324,7 @@ export default function AdminRotas() {
 
     if (existing) {
       const { error } = await supabase.from('shift_assignments').update({ shift_template_id: templateId }).eq('id', existing.id)
-      if (error) { console.error('[AdminRotas] update error:', error); alert(`Failed to update shift: ${error.message}`); return }
+      if (error) { showError('Failed to update shift: ' + error.message); return }
     } else {
       const { error } = await supabase.from('shift_assignments').insert({
         company_id: selectedCompanyId,
@@ -324,7 +333,7 @@ export default function AdminRotas() {
         employee_id: employeeId,
         date,
       })
-      if (error) { console.error('[AdminRotas] insert error:', error); alert(`Failed to assign shift: ${error.message}`); return }
+      if (error) { showError('Failed to assign shift: ' + error.message); return }
     }
     setActiveCell(null)
     const { data, error: fetchErr } = await supabase.from('shift_assignments').select('*').eq('rota_id', selectedRota!.id)
@@ -336,7 +345,8 @@ export default function AdminRotas() {
   async function removeAssignment(employeeId: string, date: string) {
     const existing = getAssignment(employeeId, date)
     if (!existing) return
-    await supabase.from('shift_assignments').delete().eq('id', existing.id)
+    const { error } = await supabase.from('shift_assignments').delete().eq('id', existing.id)
+    if (error) { showError('Failed to remove shift: ' + error.message); return }
     setAssignments(prev => prev.filter(a => a.id !== existing.id))
     setActiveCell(null)
   }

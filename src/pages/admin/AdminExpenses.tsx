@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
+import { useToast } from '../../context/ToastContext'
 
 interface Claim {
   id: number
@@ -38,6 +39,7 @@ const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', '
 export default function AdminExpenses() {
   const { selectedCompanyId } = useAdminCompany()
   const { t } = useLanguage()
+  const { showError, showSuccess } = useToast()
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -87,18 +89,22 @@ export default function AdminExpenses() {
   }
 
   async function saveEdit(id: number) {
-    await supabase.from('expense_claims').update({
+    const { error } = await supabase.from('expense_claims').update({
       title: editForm.title, amount: editForm.amount, status: editForm.status, cost_center: editForm.cost_center,
     }).eq('id', id)
+    if (error) { showError('Failed to save expense claim: ' + error.message); return }
     setEditingId(null)
     loadClaims()
+    showSuccess('Expense claim saved')
   }
 
   async function deleteClaim(id: number) {
     if (!confirm('Delete this expense claim and all line items?')) return
-    await supabase.from('expense_claims').delete().eq('id', id)
+    const { error } = await supabase.from('expense_claims').delete().eq('id', id)
+    if (error) { showError('Failed to delete expense claim: ' + error.message); return }
     setClaims(prev => prev.filter(c => c.id !== id))
     setExpandedId(null)
+    showSuccess('Expense claim deleted')
   }
 
   function startLineEdit(item: LineItem) {
@@ -107,27 +113,31 @@ export default function AdminExpenses() {
   }
 
   async function saveLineEdit(lineId: number, claimId: number) {
-    await supabase.from('expense_line_items').update({
+    const { error } = await supabase.from('expense_line_items').update({
       title: lineForm.title, expense_type: lineForm.expense_type, amount: lineForm.amount, date_of_purchase: lineForm.date_of_purchase,
     }).eq('id', lineId)
+    if (error) { showError('Failed to save line item: ' + error.message); return }
     setEditingLineId(null)
     await loadLineItems(claimId)
     const { data } = await supabase.from('expense_line_items').select('amount').eq('expense_claim_id', claimId)
     if (data) {
       const total = data.reduce((s, r) => s + Number(r.amount), 0)
-      await supabase.from('expense_claims').update({ amount: total }).eq('id', claimId)
+      const { error: totalError } = await supabase.from('expense_claims').update({ amount: total }).eq('id', claimId)
+      if (totalError) { showError('Failed to update claim total: ' + totalError.message); return }
       loadClaims()
     }
   }
 
   async function deleteLineItem(lineId: number, claimId: number) {
     if (!confirm('Delete this line item?')) return
-    await supabase.from('expense_line_items').delete().eq('id', lineId)
+    const { error } = await supabase.from('expense_line_items').delete().eq('id', lineId)
+    if (error) { showError('Failed to delete line item: ' + error.message); return }
     await loadLineItems(claimId)
     const { data } = await supabase.from('expense_line_items').select('amount').eq('expense_claim_id', claimId)
     if (data) {
       const total = data.reduce((s, r) => s + Number(r.amount), 0)
-      await supabase.from('expense_claims').update({ amount: total }).eq('id', claimId)
+      const { error: totalError } = await supabase.from('expense_claims').update({ amount: total }).eq('id', claimId)
+      if (totalError) { showError('Failed to update claim total: ' + totalError.message); return }
       loadClaims()
     }
   }

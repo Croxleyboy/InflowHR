@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDateTime } from '../lib/formatters'
+import { useToast } from '../context/ToastContext'
 
 interface Claim {
   id: number
@@ -35,6 +36,7 @@ export default function ExpenseApproval() {
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
   const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL, companyUser } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
   const [employee, setEmployee] = useState<Employee | null>(null)
@@ -72,12 +74,13 @@ export default function ExpenseApproval() {
     const now = new Date().toISOString()
     const newStatus = approved ? 'approved' : 'rejected'
 
-    await supabase.from('expense_claims').update({
+    const { error } = await supabase.from('expense_claims').update({
       status: newStatus,
       approved_at: approved ? now : null,
     }).eq('id', id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to update expense claim: ' + error.message); setProcessing(false); return }
 
-    await supabase.from('workflow_tracker')
+    const { error: errWf1 } = await supabase.from('workflow_tracker')
       .update({
         status: 'Complete',
         approval_status: approved ? 'Approved' : 'Declined',
@@ -90,6 +93,7 @@ export default function ExpenseApproval() {
       .eq('approval_id', claim.id)
       .eq('status', 'Pending')
       .eq('company_id', companyUser?.company_id)
+    if (errWf1) { showError('Failed to update workflow: ' + errWf1.message) }
 
     const happyMessages = [
       'Great news!', 'All sorted!', 'Done and dusted!',
@@ -98,7 +102,7 @@ export default function ExpenseApproval() {
 
     const responseNote = response.trim() ? ` — "${response.trim()}"` : ''
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: errWf2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: empName,
       step: 2,
       status: 'Complete',
@@ -114,8 +118,9 @@ export default function ExpenseApproval() {
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
+    if (errWf2) { showError('Failed to create employee notification: ' + errWf2.message) }
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: errWf3 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: APPROVER_NAME,
       step: 2,
       status: 'Complete',
@@ -129,7 +134,9 @@ export default function ExpenseApproval() {
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
+    if (errWf3) { showError('Failed to create manager notification: ' + errWf3.message) }
 
+    showSuccess(approved ? 'Expense approved' : 'Expense declined')
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }
@@ -138,9 +145,12 @@ export default function ExpenseApproval() {
     if (!claim) return
     if (!confirm(`Delete expense claim ${claim.reference_number}? This cannot be undone.`)) return
     setDeleting(true)
-    await supabase.from('expense_line_items').delete().eq('expense_claim_id', claim.id).eq('company_id', companyUser?.company_id)
-    await supabase.from('workflow_tracker').delete().eq('record_type', 'Expense').eq('approval_id', claim.id).eq('company_id', companyUser?.company_id)
-    await supabase.from('expense_claims').delete().eq('id', claim.id).eq('company_id', companyUser?.company_id)
+    const { error } = await supabase.from('expense_line_items').delete().eq('expense_claim_id', claim.id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to delete line items: ' + error.message); setDeleting(false); return }
+    const { error: error2 } = await supabase.from('workflow_tracker').delete().eq('record_type', 'Expense').eq('approval_id', claim.id).eq('company_id', companyUser?.company_id)
+    if (error2) { showError('Failed to delete workflow entries: ' + error2.message) }
+    const { error: error3 } = await supabase.from('expense_claims').delete().eq('id', claim.id).eq('company_id', companyUser?.company_id)
+    if (error3) { showError('Failed to delete expense claim: ' + error3.message); setDeleting(false); return }
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }

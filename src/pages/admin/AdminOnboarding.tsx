@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
+import { useToast } from '../../context/ToastContext'
 import * as XLSX from 'xlsx'
 import CompanySetupWizard from './CompanySetupWizard'
 
@@ -70,6 +71,7 @@ export default function AdminOnboarding() {
   const { isSuperAdmin } = useAuth()
   const { selectedCompanyId, refreshCompanies } = useAdminCompany()
   const { fyStartMonth } = useLanguage()
+  const { showError, showSuccess } = useToast()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup'>('dashboard')
@@ -175,8 +177,8 @@ export default function AdminOnboarding() {
       ...row, status: 'new', is_complete: false, company_id: selectedCompanyId,
     }))
     const { error } = await supabase.from('onboarding').insert(toInsert)
-    if (error) failed = uploadRows.length
-    else success = uploadRows.length
+    if (error) { failed = uploadRows.length; showError('Bulk upload failed: ' + error.message) }
+    else { success = uploadRows.length; showSuccess(`${success} starter${success !== 1 ? 's' : ''} created`) }
 
     setUploadResult({ success, failed })
     setUploading(false)
@@ -209,27 +211,32 @@ export default function AdminOnboarding() {
 
   async function createStarter() {
     if (!newForm.firstname || !newForm.surname || !newForm.user_email || !selectedCompanyId) return
-    const { data } = await supabase.from('onboarding').insert({
+    const { data, error } = await supabase.from('onboarding').insert({
       ...newForm, status: 'new', is_complete: false, company_id: selectedCompanyId,
     }).select().single()
+    if (error) { showError('Failed to create starter: ' + error.message); return }
     if (data) {
       setSelectedId(data.id)
       setWorkflowStep(0)
       setStepChecks({})
       setTab('workflow')
+      showSuccess('Starter created')
       load()
     }
   }
 
   async function updateOnboardStatus(id: number, updates: Record<string, any>) {
-    await supabase.from('onboarding').update(updates).eq('id', id)
+    const { error } = await supabase.from('onboarding').update(updates).eq('id', id)
+    if (error) { showError('Failed to update onboarding record: ' + error.message); return }
     load()
   }
 
   async function deleteRecord(id: number) {
     if (!confirm('Delete this onboarding record?')) return
-    await supabase.from('onboarding').delete().eq('id', id)
+    const { error } = await supabase.from('onboarding').delete().eq('id', id)
+    if (error) { showError('Failed to delete record: ' + error.message); return }
     setRecords(prev => prev.filter(r => r.id !== id))
+    showSuccess('Record deleted')
   }
 
   function openWorkflow(record: OnboardRecord) {
@@ -273,7 +280,8 @@ export default function AdminOnboarding() {
         const created = await createEmployeeFromOnboard(record)
         if (!created) return
       }
-      await supabase.from('employees').update({ is_active: true }).eq('email', record.user_email).eq('company_id', selectedCompanyId)
+      const { error: activateErr } = await supabase.from('employees').update({ is_active: true }).eq('email', record.user_email).eq('company_id', selectedCompanyId)
+      if (activateErr) { showError('Failed to activate employee: ' + activateErr.message); return }
     }
     if (!updates.status) updates.status = 'in-progress'
     const newSkips = { ...stepSkips, [stepKey]: false }
@@ -343,7 +351,7 @@ export default function AdminOnboarding() {
       payroll_id: record.payroll_id || null,
     })
     if (error) {
-      alert(`Failed to create employee record: ${error.message}`)
+      showError(`Failed to create employee record: ${error.message}`)
       return false
     }
     return true

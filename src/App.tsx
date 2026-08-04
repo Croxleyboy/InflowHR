@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
+import { ToastProvider } from './context/ToastContext'
 import { FeatureProvider } from './context/FeatureContext'
 import { LanguageProvider } from './context/LanguageContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -251,6 +252,7 @@ function AuthGate() {
 export default function App() {
   return (
     <ThemeProvider>
+      <ToastProvider>
       <LanguageProvider>
       <FeatureProvider>
         <BrowserRouter>
@@ -260,6 +262,7 @@ export default function App() {
         </BrowserRouter>
       </FeatureProvider>
       </LanguageProvider>
+      </ToastProvider>
     </ThemeProvider>
   )
 }

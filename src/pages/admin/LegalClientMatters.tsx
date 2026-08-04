@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useToast } from '../../context/ToastContext'
 import {
   TASK_CODES,
   RATE_CARDS,
@@ -16,6 +17,7 @@ interface LegalClientMattersProps {
 }
 
 export default function LegalClientMatters({ clients, matters, employees, selectedCompanyId, onDataChanged }: LegalClientMattersProps) {
+  const { showError } = useToast()
   // Client/Matter management state
   const [newClientName, setNewClientName] = useState('')
   const [editingClientId, setEditingClientId] = useState<string | null>(null)
@@ -37,7 +39,8 @@ export default function LegalClientMatters({ clients, matters, employees, select
   // Client/Matter management functions
   async function addClient() {
     if (!newClientName.trim() || !selectedCompanyId) return
-    await supabase.from('legal_clients').insert({ company_id: selectedCompanyId, name: newClientName.trim(), status: 'active' })
+    const { error } = await supabase.from('legal_clients').insert({ company_id: selectedCompanyId, name: newClientName.trim(), status: 'active' })
+    if (error) { showError('Failed to add client: ' + error.message); return }
     setNewClientName('')
     onDataChanged()
   }

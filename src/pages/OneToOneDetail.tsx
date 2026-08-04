@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { formatDateFriendly as formatDate, formatDateTime } from '../lib/formatters'
 
 interface Meeting {
@@ -30,6 +31,7 @@ export default function OneToOneDetail() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { employeeId, companyUser } = useAuth()
+  const { showError } = useToast()
   const [meeting, setMeeting] = useState<Meeting | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [managerName, setManagerName] = useState('')
@@ -96,25 +98,27 @@ export default function OneToOneDetail() {
   async function handleSaveSummary() {
     if (!meeting) return
     setSaving(true)
-    await supabase.from('one_to_one_meetings').update({
+    const { error } = await supabase.from('one_to_one_meetings').update({
       summary: summary.trim(),
       status: 'completed',
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).eq('id', meeting.id).eq('company_id', companyUser?.company_id)
     setSaving(false)
+    if (error) { showError('Failed to save summary: ' + error.message); return }
     fetchData()
   }
 
   async function handleAddComment() {
     if (!meeting || !newComment.trim()) return
     setSaving(true)
-    await supabase.from('one_to_one_comments').insert({
+    const { error } = await supabase.from('one_to_one_comments').insert({
       meeting_id: meeting.id,
       author_id: employeeId,
       body: newComment.trim(),
       company_id: companyUser?.company_id,
     })
+    if (error) { showError('Failed to add comment: ' + error.message); setSaving(false); return }
     setNewComment('')
     setSaving(false)
     fetchData()
@@ -123,19 +127,21 @@ export default function OneToOneDetail() {
   async function handleCancel() {
     if (!meeting) return
     if (!confirm(t('one_to_one.confirm_cancel'))) return
-    await supabase.from('one_to_one_meetings').update({
+    const { error } = await supabase.from('one_to_one_meetings').update({
       status: 'cancelled',
       updated_at: new Date().toISOString(),
     }).eq('id', meeting.id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to cancel meeting: ' + error.message); return }
     navigate('/one-to-ones')
   }
 
   async function handleAccept() {
     if (!meeting) return
-    await supabase.from('one_to_one_meetings').update({
+    const { error } = await supabase.from('one_to_one_meetings').update({
       status: 'accepted',
       updated_at: new Date().toISOString(),
     }).eq('id', meeting.id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to accept meeting: ' + error.message); return }
     await supabase.from('workflow_tracker')
       .update({ status: 'Complete', approval_status: 'Approved', action: '1:1 meeting accepted' })
       .eq('record_type', 'Meeting')
@@ -146,10 +152,11 @@ export default function OneToOneDetail() {
 
   async function handleDecline() {
     if (!meeting) return
-    await supabase.from('one_to_one_meetings').update({
+    const { error } = await supabase.from('one_to_one_meetings').update({
       status: 'declined',
       updated_at: new Date().toISOString(),
     }).eq('id', meeting.id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to decline meeting: ' + error.message); return }
     await supabase.from('workflow_tracker')
       .update({ status: 'Complete', approval_status: 'Declined', action: '1:1 meeting declined' })
       .eq('record_type', 'Meeting')

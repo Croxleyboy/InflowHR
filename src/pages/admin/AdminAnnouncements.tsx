@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 
 interface Announcement {
   id: number
@@ -14,6 +15,7 @@ interface Announcement {
 
 export default function AdminAnnouncements() {
   const { selectedCompanyId } = useAdminCompany()
+  const { showError, showSuccess } = useToast()
   const [items, setItems] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -39,18 +41,22 @@ export default function AdminAnnouncements() {
   }
 
   async function saveEdit(id: number) {
-    await supabase.from('announcements').update({
+    const { error } = await supabase.from('announcements').update({
       title: editForm.title, body: editForm.body, is_pinned: editForm.is_pinned,
       expires_at: editForm.expires_at || null,
     }).eq('id', id)
+    if (error) { showError('Failed to save announcement: ' + error.message); return }
     setEditingId(null)
     load()
+    showSuccess('Announcement saved')
   }
 
   async function deleteAnnouncement(id: number) {
     if (!confirm('Delete this announcement?')) return
-    await supabase.from('announcements').delete().eq('id', id)
+    const { error } = await supabase.from('announcements').delete().eq('id', id)
+    if (error) { showError('Failed to delete announcement: ' + error.message); return }
     setItems(prev => prev.filter(a => a.id !== id))
+    showSuccess('Announcement deleted')
   }
 
   const filtered = useMemo(() => {

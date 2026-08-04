@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 
 interface KudosEntry {
   id: number
@@ -84,6 +85,7 @@ export default function Kudos() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName: currentUserName, companyUser } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [tab, setTab] = useState<'feed' | 'new'>('feed')
   const [entries, setEntries] = useState<KudosEntry[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -209,18 +211,20 @@ export default function Kudos() {
   async function handleLike(entry: KudosEntry) {
     if (!EMPLOYEE_ID || entry.liked_by.includes(EMPLOYEE_ID)) return
     const newLikedBy: string[] = [...entry.liked_by, EMPLOYEE_ID]
-    await supabase
+    const { error } = await supabase
       .from('kudos')
       .update({ like_count: entry.like_count + 1, liked_by: newLikedBy })
       .eq('id', entry.id)
       .eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to like kudos: ' + error.message); return }
     setEntries(prev => prev.map(e =>
       e.id === entry.id ? { ...e, like_count: e.like_count + 1, liked_by: newLikedBy } : e
     ))
   }
 
   async function handleDelete(id: number) {
-    await supabase.from('kudos').delete().eq('id', id).eq('company_id', companyUser?.company_id)
+    const { error } = await supabase.from('kudos').delete().eq('id', id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to delete kudos: ' + error.message); return }
     setEntries(prev => prev.filter(e => e.id !== id))
   }
 
@@ -230,7 +234,7 @@ export default function Kudos() {
     if (!isBroadcast && !recipientId) return
 
     setSendState('sending')
-    const { data: insertedKudos } = await supabase.from('kudos').insert({
+    const { data: insertedKudos, error: insertError } = await supabase.from('kudos').insert({
       from_employee_id: EMPLOYEE_ID,
       to_employee_id: isBroadcast ? null : recipientId,
       message: message.trim(),
@@ -244,6 +248,7 @@ export default function Kudos() {
       liked_by: [],
       company_id: companyUser?.company_id,
     }).select('id').single()
+    if (insertError) { showError('Failed to send kudos: ' + insertError.message); setSendState('idle'); return }
 
     if (!isBroadcast && recipientId) {
       const recipient = employees.find(e => e.id === recipientId)
@@ -273,6 +278,7 @@ export default function Kudos() {
     }
 
     window.dispatchEvent(new Event('notifications-updated'))
+    showSuccess('Kudos sent!')
     setSendState('sent')
     setMessage('')
     setRecipientId('')

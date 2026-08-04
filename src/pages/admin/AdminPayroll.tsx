@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 
 interface Payslip {
   id: number
@@ -35,6 +36,7 @@ const PAYROLL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 
 
 export default function AdminPayroll() {
   const { selectedCompanyId } = useAdminCompany()
+  const { showError, showSuccess } = useToast()
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
@@ -68,15 +70,19 @@ export default function AdminPayroll() {
 
   async function saveEdit(id: number) {
     const net = Number(editForm.gross_pay) + Number(editForm.overtime) + Number(editForm.adjustments) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions)
-    await supabase.from('payslips').update({ ...editForm, net_pay: net }).eq('id', id)
+    const { error } = await supabase.from('payslips').update({ ...editForm, net_pay: net }).eq('id', id)
+    if (error) { showError('Failed to save payslip: ' + error.message); return }
     setEditingId(null)
     loadAll()
+    showSuccess('Payslip saved')
   }
 
   async function deletePayslip(id: number) {
     if (!confirm('Delete this payslip?')) return
-    await supabase.from('payslips').delete().eq('id', id)
+    const { error } = await supabase.from('payslips').delete().eq('id', id)
+    if (error) { showError('Failed to delete payslip: ' + error.message); return }
     setPayslips(prev => prev.filter(p => p.id !== id))
+    showSuccess('Payslip deleted')
   }
 
   async function generateNextPayroll() {
@@ -88,6 +94,7 @@ export default function AdminPayroll() {
     paymentDate.setDate(paymentDate.getDate() - 3)
     const ref = `PAY-${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
 
+    const errors: string[] = []
     for (const emp of employees) {
       const latest = payslips.find(p => p.employee?.id === emp.id)
       const gross = latest ? Number(latest.gross_pay) : 3500
@@ -95,7 +102,7 @@ export default function AdminPayroll() {
       const ni = latest ? Number(latest.national_insurance) : 350
       const pension = latest ? Number(latest.pension) : 175
 
-      await supabase.from('payslips').insert({
+      const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
         reference_number: `${ref}-${emp.id.slice(0, 4)}`,
         pay_period_start: nextMonth.toISOString().split('T')[0],
@@ -109,8 +116,14 @@ export default function AdminPayroll() {
         annual_salary: latest?.annual_salary || 42000,
         payroll_id: latest?.payroll_id || '',
       }).select()
+      if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
     }
     setGenerating(false)
+    if (errors.length > 0) {
+      showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
+    } else {
+      showSuccess('Next payroll generated')
+    }
     loadAll()
   }
 

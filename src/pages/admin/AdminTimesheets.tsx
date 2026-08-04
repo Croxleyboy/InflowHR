@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 
 interface Timesheet {
   id: number
@@ -20,6 +21,7 @@ const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected']
 
 export default function AdminTimesheets() {
   const { selectedCompanyId } = useAdminCompany()
+  const { showError } = useToast()
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -47,7 +49,7 @@ export default function AdminTimesheets() {
   }
 
   async function saveEdit(id: number) {
-    await supabase.from('timesheets').update({
+    const { error } = await supabase.from('timesheets').update({
       location: editForm.location,
       customer: editForm.customer || null,
       role: editForm.role,
@@ -56,14 +58,17 @@ export default function AdminTimesheets() {
       end_time: editForm.end_time,
       status: editForm.status,
     }).eq('id', id)
+    if (error) { showError('Failed to update timesheet: ' + error.message); return }
     setEditingId(null)
     load()
   }
 
   async function deleteTimesheet(id: number) {
     if (!confirm('Delete this timesheet entry?')) return
-    await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', id)
-    await supabase.from('timesheets').delete().eq('id', id)
+    const { error: e1 } = await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', id)
+    if (e1) { showError('Failed to delete workflow tracker: ' + e1.message); return }
+    const { error: e2 } = await supabase.from('timesheets').delete().eq('id', id)
+    if (e2) { showError('Failed to delete timesheet: ' + e2.message); return }
     window.dispatchEvent(new Event('notifications-updated'))
     setTimesheets(prev => prev.filter(t => t.id !== id))
   }

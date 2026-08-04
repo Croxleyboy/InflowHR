@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
 
 interface Location {
@@ -72,6 +73,7 @@ export default function SpaceBooking() {
   const { t } = useLanguage()
   const { features } = useFeatures()
   const { employeeId, companyUser } = useAuth()
+  const { showError, showSuccess } = useToast()
 
   const [tab, setTab] = useState<Tab>('book')
   const [locations, setLocations] = useState<Location[]>([])
@@ -284,13 +286,17 @@ export default function SpaceBooking() {
   }
 
   async function cancelBooking(bookingId: string) {
-    await supabase.from('space_bookings').update({ status: 'cancelled' }).eq('id', bookingId).eq('company_id', companyId)
+    const { error: cancelErr } = await supabase.from('space_bookings').update({ status: 'cancelled' }).eq('id', bookingId).eq('company_id', companyId)
+    if (cancelErr) { showError('Failed to cancel booking: ' + cancelErr.message); return }
+    showSuccess('Booking cancelled')
     loadMyBookings()
     loadBookingsForDate()
   }
 
   async function checkIn(bookingId: string) {
-    await supabase.from('space_bookings').update({ status: 'checked_in', checked_in_at: new Date().toISOString() }).eq('id', bookingId).eq('company_id', companyId)
+    const { error: checkInErr } = await supabase.from('space_bookings').update({ status: 'checked_in', checked_in_at: new Date().toISOString() }).eq('id', bookingId).eq('company_id', companyId)
+    if (checkInErr) { showError('Failed to check in: ' + checkInErr.message); return }
+    showSuccess('Checked in')
     loadMyBookings()
   }
 

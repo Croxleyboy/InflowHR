@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, formatDateTime } from '../lib/formatters'
+import { useToast } from '../context/ToastContext'
 
 interface TimesheetRecord {
   id: number
@@ -31,6 +32,7 @@ export default function TimesheetApproval() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
   const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL, companyUser } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [ts, setTs] = useState<TimesheetRecord | null>(null)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [loading, setLoading] = useState(true)
@@ -69,11 +71,12 @@ export default function TimesheetApproval() {
     setProcessing(true)
     const now = new Date().toISOString()
 
-    await supabase.from('timesheets').update({
+    const { error } = await supabase.from('timesheets').update({
       status: approved ? 'approved' : 'rejected',
     }).eq('id', id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to update timesheet: ' + error.message); setProcessing(false); return }
 
-    await supabase.from('workflow_tracker')
+    const { error: errWf1 } = await supabase.from('workflow_tracker')
       .update({
         status: 'Complete',
         approval_status: approved ? 'Approved' : 'Declined',
@@ -86,8 +89,9 @@ export default function TimesheetApproval() {
       .eq('approval_id', ts.id)
       .eq('status', 'Pending')
       .eq('company_id', companyUser?.company_id)
+    if (errWf1) { showError('Failed to update workflow: ' + errWf1.message) }
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: errWf2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: empName,
       step: 2,
       status: 'Complete',
@@ -103,8 +107,9 @@ export default function TimesheetApproval() {
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
+    if (errWf2) { showError('Failed to create employee notification: ' + errWf2.message) }
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: errWf3 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: APPROVER_NAME,
       step: 2,
       status: 'Complete',
@@ -118,7 +123,9 @@ export default function TimesheetApproval() {
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
+    if (errWf3) { showError('Failed to create manager notification: ' + errWf3.message) }
 
+    showSuccess(approved ? 'Timesheet approved' : 'Timesheet declined')
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }
@@ -127,8 +134,10 @@ export default function TimesheetApproval() {
     if (!ts) return
     if (!confirm(t('timesheets.confirm_delete'))) return
     setDeleting(true)
-    await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id).eq('company_id', companyUser?.company_id)
-    await supabase.from('timesheets').delete().eq('id', ts.id).eq('company_id', companyUser?.company_id)
+    const { error } = await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', ts.id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to delete workflow entries: ' + error.message); setDeleting(false); return }
+    const { error: error2 } = await supabase.from('timesheets').delete().eq('id', ts.id).eq('company_id', companyUser?.company_id)
+    if (error2) { showError('Failed to delete timesheet: ' + error2.message); setDeleting(false); return }
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }

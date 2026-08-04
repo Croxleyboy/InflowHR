@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 
 const LOCATIONS = ['Head Office', 'Home', 'Customer Site', 'Event', 'Unassigned']
 const ROLES = ['IT', 'Engineering', 'Design', 'HR', 'Finance', 'Marketing', 'Sales', 'Operations', 'Management', 'Unassigned']
@@ -15,6 +16,7 @@ export default function NewTimesheet() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { employeeId, employeeName, employeeEmail, companyUser } = useAuth()
+  const { showError } = useToast()
   const [location, setLocation] = useState(LOCATIONS[0])
   const [customLocation, setCustomLocation] = useState('')
   const [customer, setCustomer] = useState('')
@@ -87,7 +89,7 @@ export default function NewTimesheet() {
         if (mgr?.email) managerEmail = mgr.email
       }
 
-      await supabase.from('workflow_tracker').insert({
+      const { error: wfError1 } = await supabase.from('workflow_tracker').insert({
         emp_display_name: employeeName,
         step: 1,
         status: 'Pending',
@@ -100,8 +102,9 @@ export default function NewTimesheet() {
         task_description: `Timesheet - ${date} ${startTime}-${endTime} (${effectiveRole})`,
         company_id: companyUser?.company_id,
       })
+      if (wfError1) showError('Failed to create workflow tracker: ' + wfError1.message)
 
-      await supabase.from('workflow_tracker').insert({
+      const { error: wfError2 } = await supabase.from('workflow_tracker').insert({
         emp_display_name: employeeName,
         step: 1,
         status: 'Complete',
@@ -115,6 +118,7 @@ export default function NewTimesheet() {
         approval_status: 'Submitted',
         company_id: companyUser?.company_id,
       })
+      if (wfError2) showError('Failed to create workflow tracker: ' + wfError2.message)
     }
 
     window.dispatchEvent(new Event('notifications-updated'))

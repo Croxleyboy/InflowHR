@@ -4,6 +4,7 @@ import { useFeatures, type Features } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { useToast } from '../context/ToastContext'
 import type { Lang } from '../lib/translations'
 
 const featureLabels: { key: keyof Features; tKey: string }[] = [
@@ -30,6 +31,7 @@ export default function Settings() {
   const { features, companyFeatures, setFeatures } = useFeatures()
   const { lang, setLang, t, fyStartMonth, setFyStartMonth } = useLanguage()
   const { employeeName, employeeEmail, companyUser } = useAuth()
+  const { showError } = useToast()
   const navigate = useNavigate()
   const [draft, setDraft] = useState<Features>({ ...features })
   const [draftLang, setDraftLang] = useState<Lang>(lang)
@@ -48,23 +50,29 @@ export default function Settings() {
     setFyStartMonth(draftFy)
 
     if (companyUser?.company_id) {
-      await supabase.from('app_settings').update({
+      const { error: settingsError } = await supabase.from('app_settings').update({
         language: draftLang,
         financial_year_start_month: draftFy,
         updated_at: new Date().toISOString(),
       }).eq('company_id', companyUser.company_id)
+      if (settingsError) { showError('Failed to update settings: ' + settingsError.message); return }
 
       const featureRows = (Object.keys(draft) as (keyof Features)[]).map(key => ({
         company_id: companyUser.company_id,
         feature_key: key === 'payslips' ? 'payroll' : key,
         is_visible: draft[key],
       }))
-      await Promise.all(featureRows.map(row =>
-        supabase.from('company_features')
-          .update({ is_visible: row.is_visible })
-          .eq('company_id', row.company_id)
-          .eq('feature_key', row.feature_key)
-      ))
+      try {
+        await Promise.all(featureRows.map(row =>
+          supabase.from('company_features')
+            .update({ is_visible: row.is_visible })
+            .eq('company_id', row.company_id)
+            .eq('feature_key', row.feature_key)
+        ))
+      } catch (e: any) {
+        showError('Failed to update feature toggles: ' + (e?.message || String(e)))
+        return
+      }
     }
 
     setSaved(true)

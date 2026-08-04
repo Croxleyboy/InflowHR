@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, formatDateTime } from '../lib/formatters'
+import { useToast } from '../context/ToastContext'
 
 interface LeaveRequest {
   id: number
@@ -42,6 +43,7 @@ export default function LeaveApproval() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
   const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL, companyUser } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [request, setRequest] = useState<LeaveRequest | null>(null)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [leaveType, setLeaveType] = useState<LeaveType | null>(null)
@@ -82,10 +84,11 @@ export default function LeaveApproval() {
     setProcessing(true)
     const now = new Date().toISOString()
 
-    await supabase.from('leave_requests').update({
+    const { error } = await supabase.from('leave_requests').update({
       status: approved ? 'approved' : 'rejected',
       approved_at: approved ? now : null,
     }).eq('id', id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to update leave request: ' + error.message); setProcessing(false); return }
 
     if (approved && leaveType?.deducts_from_allowance !== false) {
       const year = new Date(request.start_date).getFullYear()
@@ -98,10 +101,11 @@ export default function LeaveApproval() {
         .limit(1)
         .single()
       if (balance) {
-        await supabase.from('leave_balances')
+        const { error: errBal } = await supabase.from('leave_balances')
           .update({ used: balance.used + request.days_requested })
           .eq('id', balance.id)
           .eq('company_id', companyUser?.company_id)
+        if (errBal) { showError('Failed to update leave balance: ' + errBal.message) }
       }
     }
 
@@ -109,7 +113,7 @@ export default function LeaveApproval() {
       ? ` ${t('approval.does_not_reduce')}`
       : ''
 
-    await supabase.from('workflow_tracker')
+    const { error: errWf1 } = await supabase.from('workflow_tracker')
       .update({
         status: 'Complete',
         approval_status: approved ? 'Approved' : 'Declined',
@@ -122,10 +126,11 @@ export default function LeaveApproval() {
       .eq('approval_id', request.id)
       .eq('status', 'Pending')
       .eq('company_id', companyUser?.company_id)
+    if (errWf1) { showError('Failed to update workflow: ' + errWf1.message) }
 
     const happyMsg = happyLeaveMessages[Math.floor(Math.random() * happyLeaveMessages.length)]
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: errWf2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: empName,
       step: 2,
       status: 'Complete',
@@ -141,8 +146,9 @@ export default function LeaveApproval() {
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
+    if (errWf2) { showError('Failed to create employee notification: ' + errWf2.message) }
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: errWf3 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: APPROVER_NAME,
       step: 2,
       status: 'Complete',
@@ -156,7 +162,9 @@ export default function LeaveApproval() {
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
+    if (errWf3) { showError('Failed to create manager notification: ' + errWf3.message) }
 
+    showSuccess(approved ? 'Leave request approved' : 'Leave request declined')
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }
@@ -165,8 +173,10 @@ export default function LeaveApproval() {
     if (!request) return
     if (!confirm(`Delete this leave request? This cannot be undone.`)) return
     setDeleting(true)
-    await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', request.id).eq('company_id', companyUser?.company_id)
-    await supabase.from('leave_requests').delete().eq('id', request.id).eq('company_id', companyUser?.company_id)
+    const { error } = await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', request.id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to delete workflow entries: ' + error.message); setDeleting(false); return }
+    const { error: error2 } = await supabase.from('leave_requests').delete().eq('id', request.id).eq('company_id', companyUser?.company_id)
+    if (error2) { showError('Failed to delete leave request: ' + error2.message); setDeleting(false); return }
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
+import { useToast } from '../../context/ToastContext'
 
 interface WorkflowRow {
   id: number
@@ -51,6 +52,7 @@ function defaultTo() {
 export default function AdminNotifications() {
   const { selectedCompanyId } = useAdminCompany()
   const { t } = useLanguage()
+  const { showError, showSuccess } = useToast()
   const [tab, setTab] = useState<Tab>('workflow')
 
   // Workflow state
@@ -165,18 +167,22 @@ export default function AdminNotifications() {
   }
 
   async function saveEditAnn(id: number) {
-    await supabase.from('announcements').update({
+    const { error } = await supabase.from('announcements').update({
       title: annEditForm.title, body: annEditForm.body, is_pinned: annEditForm.is_pinned,
       expires_at: annEditForm.expires_at || null,
     }).eq('id', id)
+    if (error) { showError('Failed to save announcement: ' + error.message); return }
     setEditingAnnId(null)
     loadAnnouncements()
+    showSuccess('Announcement saved')
   }
 
   async function deleteAnnouncement(id: number) {
     if (!confirm('Delete this announcement?')) return
-    await supabase.from('announcements').delete().eq('id', id)
+    const { error } = await supabase.from('announcements').delete().eq('id', id)
+    if (error) { showError('Failed to delete announcement: ' + error.message); return }
     setAnnouncements(prev => prev.filter(a => a.id !== id))
+    showSuccess('Announcement deleted')
   }
 
   return (

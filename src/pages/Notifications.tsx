@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 
 type Tab = 'company' | 'actions' | 'notifications'
 
@@ -147,6 +148,7 @@ export default function Notifications() {
   const location = useLocation()
   const { t } = useLanguage()
   const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser, isSuperAdmin } = useAuth()
+  const { showError } = useToast()
   const initialTab = (location.state as { tab?: Tab } | null)?.tab || 'actions'
   const [tab, setTab] = useState<Tab>(initialTab)
   const [actions, setActions] = useState<WorkflowItem[]>([])
@@ -285,15 +287,19 @@ export default function Notifications() {
     if (!confirm(`Delete this ${label}? This cannot be undone.`)) return
 
     if (item.record_type === 'Expense') {
-      await supabase.from('expense_line_items').delete().eq('expense_claim_id', item.approval_id).eq('company_id', companyUser?.company_id)
+      const { error: e1 } = await supabase.from('expense_line_items').delete().eq('expense_claim_id', item.approval_id).eq('company_id', companyUser?.company_id)
+      if (e1) { showError('Failed to delete expense items: ' + e1.message); return }
       await supabase.from('workflow_tracker').delete().eq('record_type', 'Expense').eq('approval_id', item.approval_id).eq('company_id', companyUser?.company_id)
-      await supabase.from('expense_claims').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
+      const { error: e3 } = await supabase.from('expense_claims').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
+      if (e3) { showError('Failed to delete expense: ' + e3.message); return }
     } else if (item.record_type === 'Leave') {
       await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', item.approval_id).eq('company_id', companyUser?.company_id)
-      await supabase.from('leave_requests').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
+      const { error: e2 } = await supabase.from('leave_requests').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
+      if (e2) { showError('Failed to delete leave request: ' + e2.message); return }
     } else if (item.record_type === 'Timesheet') {
       await supabase.from('workflow_tracker').delete().eq('record_type', 'Timesheet').eq('approval_id', item.approval_id).eq('company_id', companyUser?.company_id)
-      await supabase.from('timesheets').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
+      const { error: e2 } = await supabase.from('timesheets').delete().eq('id', item.approval_id).eq('company_id', companyUser?.company_id)
+      if (e2) { showError('Failed to delete timesheet: ' + e2.message); return }
     }
 
     window.dispatchEvent(new Event('notifications-updated'))

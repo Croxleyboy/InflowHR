@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 import LegalClientMatters from './LegalClientMatters'
 
 // ── Types ──
@@ -141,6 +142,7 @@ function empName(e: { first_name: string; last_name: string } | null | undefined
 
 export default function AdminLegalTimesheets() {
   const { selectedCompanyId } = useAdminCompany()
+  const { showError } = useToast()
   const [tab, setTab] = useState<Tab>('overview')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [entries, setEntries] = useState<TimesheetEntry[]>([])
@@ -200,10 +202,11 @@ export default function AdminLegalTimesheets() {
   async function saveRoundingSetting(val: number) {
     if (!selectedCompanyId) return
     setRoundingSaving(true)
-    await supabase
+    const { error } = await supabase
       .from('companies')
       .update({ legal_ts_rounding_minutes: val })
       .eq('id', selectedCompanyId)
+    if (error) { showError('Failed to save rounding setting: ' + error.message); setRoundingSaving(false); return }
     setRoundingMinutes(val)
     setRoundingSaving(false)
   }
@@ -415,12 +418,16 @@ export default function AdminLegalTimesheets() {
   async function approveSelected() {
     const ids = Array.from(selectedIds)
     const auditEntry: AuditEntry = { action: 'approved', by: 'Admin', at: new Date().toISOString() }
-    await Promise.all(ids.map(id => {
-      const entry = entries.find(e => e.id === id)
-      if (!entry || !['submitted', 'pending'].includes(entry.status)) return Promise.resolve()
-      const newLog = [...(entry.audit_log || []), auditEntry]
-      return supabase.from('legal_timesheet_entries').update({ status: 'approved', audit_log: newLog }).eq('id', id)
-    }))
+    try {
+      await Promise.all(ids.map(id => {
+        const entry = entries.find(e => e.id === id)
+        if (!entry || !['submitted', 'pending'].includes(entry.status)) return Promise.resolve()
+        const newLog = [...(entry.audit_log || []), auditEntry]
+        return supabase.from('legal_timesheet_entries').update({ status: 'approved', audit_log: newLog }).eq('id', id)
+      }))
+    } catch (err: any) {
+      showError('Failed to approve entries: ' + (err.message || err)); return
+    }
     setSelectedIds(new Set())
     await loadEntries()
   }
@@ -429,12 +436,16 @@ export default function AdminLegalTimesheets() {
     if (!rejectReason.trim()) return
     const ids = Array.from(selectedIds)
     const auditEntry: AuditEntry = { action: 'rejected', by: 'Admin', at: new Date().toISOString(), reason: rejectReason }
-    await Promise.all(ids.map(id => {
-      const entry = entries.find(e => e.id === id)
-      if (!entry || !['submitted', 'pending'].includes(entry.status)) return Promise.resolve()
-      const newLog = [...(entry.audit_log || []), auditEntry]
-      return supabase.from('legal_timesheet_entries').update({ status: 'rejected', audit_log: newLog }).eq('id', id)
-    }))
+    try {
+      await Promise.all(ids.map(id => {
+        const entry = entries.find(e => e.id === id)
+        if (!entry || !['submitted', 'pending'].includes(entry.status)) return Promise.resolve()
+        const newLog = [...(entry.audit_log || []), auditEntry]
+        return supabase.from('legal_timesheet_entries').update({ status: 'rejected', audit_log: newLog }).eq('id', id)
+      }))
+    } catch (err: any) {
+      showError('Failed to reject entries: ' + (err.message || err)); return
+    }
     setSelectedIds(new Set())
     setRejectReason('')
     setShowRejectModal(false)
@@ -444,12 +455,16 @@ export default function AdminLegalTimesheets() {
   async function requestRevision() {
     const ids = Array.from(selectedIds)
     const auditEntry: AuditEntry = { action: 'revision_requested', by: 'Admin', at: new Date().toISOString(), reason: 'Narrative revision needed' }
-    await Promise.all(ids.map(id => {
-      const entry = entries.find(e => e.id === id)
-      if (!entry) return Promise.resolve()
-      const newLog = [...(entry.audit_log || []), auditEntry]
-      return supabase.from('legal_timesheet_entries').update({ audit_log: newLog }).eq('id', id)
-    }))
+    try {
+      await Promise.all(ids.map(id => {
+        const entry = entries.find(e => e.id === id)
+        if (!entry) return Promise.resolve()
+        const newLog = [...(entry.audit_log || []), auditEntry]
+        return supabase.from('legal_timesheet_entries').update({ audit_log: newLog }).eq('id', id)
+      }))
+    } catch (err: any) {
+      showError('Failed to request revision: ' + (err.message || err)); return
+    }
     setSelectedIds(new Set())
     await loadEntries()
   }
@@ -463,12 +478,13 @@ export default function AdminLegalTimesheets() {
     if (editCode !== entry.task_code) changes.push(`code ${entry.task_code} → ${editCode}`)
     const auditEntry: AuditEntry = { action: `edited: ${changes.join(', ')}`, by: 'Admin', at: new Date().toISOString(), reason: auditReason || undefined }
     const newLog = [...(entry.audit_log || []), auditEntry]
-    await supabase.from('legal_timesheet_entries').update({
+    const { error } = await supabase.from('legal_timesheet_entries').update({
       narrative: editNarrative,
       duration_hrs: parseFloat(editHrs) || entry.duration_hrs,
       task_code: editCode,
       audit_log: newLog,
     }).eq('id', id)
+    if (error) { showError('Failed to save edit: ' + error.message); return }
     setEditingId(null)
     setAuditReason('')
     await loadEntries()

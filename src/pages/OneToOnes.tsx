@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDateFriendly as formatDate } from '../lib/formatters'
+import { useToast } from '../context/ToastContext'
 
 type Tab = 'upcoming' | 'history' | 'reports'
 
@@ -36,6 +37,7 @@ export default function OneToOnes() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { employeeId, companyUser } = useAuth()
+  const { showError } = useToast()
   const [tab, setTab] = useState<Tab>('upcoming')
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [directReports, setDirectReports] = useState<DirectReport[]>([])
@@ -92,18 +94,22 @@ export default function OneToOnes() {
   useEffect(() => { fetchData() }, [fetchData])
 
   async function handleAccept(meetingId: number) {
-    await supabase.from('one_to_one_meetings').update({ status: 'accepted', updated_at: new Date().toISOString() }).eq('id', meetingId).eq('company_id', companyUser?.company_id)
-    await supabase.from('workflow_tracker')
+    const { error } = await supabase.from('one_to_one_meetings').update({ status: 'accepted', updated_at: new Date().toISOString() }).eq('id', meetingId).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to accept meeting: ' + error.message); return }
+    const { error: error2 } = await supabase.from('workflow_tracker')
       .update({ status: 'Complete', approval_status: 'Approved', action: '1:1 meeting accepted' })
       .eq('record_type', 'Meeting').eq('approval_id', meetingId).eq('company_id', companyUser?.company_id)
+    if (error2) { showError('Failed to update workflow: ' + error2.message) }
     fetchData()
   }
 
   async function handleDecline(meetingId: number) {
-    await supabase.from('one_to_one_meetings').update({ status: 'declined', updated_at: new Date().toISOString() }).eq('id', meetingId).eq('company_id', companyUser?.company_id)
-    await supabase.from('workflow_tracker')
+    const { error } = await supabase.from('one_to_one_meetings').update({ status: 'declined', updated_at: new Date().toISOString() }).eq('id', meetingId).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to decline meeting: ' + error.message); return }
+    const { error: error2 } = await supabase.from('workflow_tracker')
       .update({ status: 'Complete', approval_status: 'Declined', action: '1:1 meeting declined' })
       .eq('record_type', 'Meeting').eq('approval_id', meetingId).eq('company_id', companyUser?.company_id)
+    if (error2) { showError('Failed to update workflow: ' + error2.message) }
     fetchData()
   }
 

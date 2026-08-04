@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import NewExpenseItem from './NewExpenseItem'
 import { formatDateTime } from '../lib/formatters'
+import { useToast } from '../context/ToastContext'
 
 interface Claim {
   id: number
@@ -30,6 +31,7 @@ export default function ExpenseDetail() {
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
   const { employeeName: HARDCODED_EMPLOYEE_NAME, employeeEmail: HARDCODED_EMPLOYEE_EMAIL, companyUser } = useAuth()
+  const { showError, showSuccess } = useToast()
   const HARDCODED_MANAGER_EMAIL = HARDCODED_EMPLOYEE_EMAIL
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
@@ -59,19 +61,23 @@ export default function ExpenseDetail() {
 
   async function handleDeleteItem(itemId: number) {
     if (!confirm('Delete this line item?')) return
-    await supabase.from('expense_line_items').delete().eq('id', itemId).eq('company_id', companyUser?.company_id)
+    const { error } = await supabase.from('expense_line_items').delete().eq('id', itemId).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to delete line item: ' + error.message); return }
     const remaining = items.filter(i => i.id !== itemId)
     setItems(remaining)
     const newTotal = remaining.reduce((s, i) => s + i.amount, 0)
-    await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id).eq('company_id', companyUser?.company_id)
+    const { error: error2 } = await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id).eq('company_id', companyUser?.company_id)
+    if (error2) { showError('Failed to update claim total: ' + error2.message) }
     setClaim(prev => prev ? { ...prev, amount: newTotal } : prev)
   }
 
   async function handleDelete() {
     if (!confirm('Delete this expense claim and all its items?')) return
     setDeleting(true)
-    await supabase.from('expense_line_items').delete().eq('expense_claim_id', id).eq('company_id', companyUser?.company_id)
-    await supabase.from('expense_claims').delete().eq('id', id).eq('company_id', companyUser?.company_id)
+    const { error } = await supabase.from('expense_line_items').delete().eq('expense_claim_id', id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to delete line items: ' + error.message); setDeleting(false); return }
+    const { error: error2 } = await supabase.from('expense_claims').delete().eq('id', id).eq('company_id', companyUser?.company_id)
+    if (error2) { showError('Failed to delete expense claim: ' + error2.message); setDeleting(false); return }
     navigate('/expenses')
   }
 
@@ -80,13 +86,14 @@ export default function ExpenseDetail() {
     setSubmitting(true)
     const now = new Date().toISOString()
 
-    await supabase.from('expense_claims').update({
+    const { error } = await supabase.from('expense_claims').update({
       status: 'submitted',
       amount: totalAmount,
       submitted_at: now,
     }).eq('id', id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to submit expense claim: ' + error.message); setSubmitting(false); return }
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: error2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: HARDCODED_EMPLOYEE_NAME,
       step: 1,
       status: 'Pending',
@@ -99,7 +106,9 @@ export default function ExpenseDetail() {
       task_description: `Expense claim ${claim.reference_number} - ${claim.title} - £${totalAmount.toFixed(2)}`,
       company_id: companyUser?.company_id,
     })
+    if (error2) { showError('Failed to create workflow entry: ' + error2.message); setSubmitting(false); return }
 
+    showSuccess('Expense claim submitted')
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/expenses')
   }
@@ -109,7 +118,8 @@ export default function ExpenseDetail() {
     const { data } = await supabase.from('expense_line_items').select('id, title, expense_type, amount, date_of_purchase, description, receipt_url').eq('expense_claim_id', id).eq('company_id', companyUser?.company_id).order('created_at', { ascending: true })
     if (data) setItems(data as LineItem[])
     const newTotal = (data as LineItem[] || []).reduce((s, i) => s + i.amount, 0)
-    await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id).eq('company_id', companyUser?.company_id)
+    const { error } = await supabase.from('expense_claims').update({ amount: newTotal }).eq('id', id).eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to update claim total: ' + error.message) }
     setClaim(prev => prev ? { ...prev, amount: newTotal } : prev)
   }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useFeatures } from '../../context/FeatureContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 import { seedBenefitDefaults } from '../../lib/benefitDefaults'
 
@@ -34,6 +35,7 @@ interface BenefitType {
 export default function AdminBenefits() {
   const { features } = useFeatures()
   const { selectedCompanyId: companyId } = useAdminCompany()
+  const { showError } = useToast()
   const payrollEnabled = features.payslips
   const [benefits, setBenefits] = useState<BenefitType[]>([])
   const [loading, setLoading] = useState(true)
@@ -104,7 +106,8 @@ export default function AdminBenefits() {
   async function toggleBenefitEnabled(id: number) {
     const b = benefits.find(x => x.id === id)
     if (!b || !companyId) return
-    await supabase.from('benefit_types').update({ is_enabled: !b.is_enabled }).eq('id', id).eq('company_id', companyId)
+    const { error } = await supabase.from('benefit_types').update({ is_enabled: !b.is_enabled }).eq('id', id).eq('company_id', companyId)
+    if (error) { showError('Failed to toggle benefit: ' + error.message); return }
     setBenefits(prev => prev.map(x => x.id === id ? { ...x, is_enabled: !x.is_enabled } : x))
   }
 
@@ -112,7 +115,8 @@ export default function AdminBenefits() {
     const b = benefits.find(x => x.id === benefitId)
     const opt = b?.options.find(o => o.id === optionId)
     if (!opt) return
-    await supabase.from('benefit_options').update({ is_enabled: !opt.is_enabled }).eq('id', optionId)
+    const { error } = await supabase.from('benefit_options').update({ is_enabled: !opt.is_enabled }).eq('id', optionId)
+    if (error) { showError('Failed to toggle option: ' + error.message); return }
     setBenefits(prev => prev.map(x => x.id === benefitId ? {
       ...x, options: x.options.map(o => o.id === optionId ? { ...o, is_enabled: !o.is_enabled } : o)
     } : x))
@@ -125,7 +129,7 @@ export default function AdminBenefits() {
   }
 
   async function saveEditBenefit(id: number) {
-    await supabase.from('benefit_types').update({
+    const { error } = await supabase.from('benefit_types').update({
       title: editForm.title,
       description: editForm.description,
       icon: editForm.icon,
@@ -136,15 +140,19 @@ export default function AdminBenefits() {
       monthly_cost: editForm.monthly_cost,
       lock_period: editForm.lock_period,
     }).eq('id', id)
+    if (error) { showError('Failed to save benefit: ' + error.message); return }
     setBenefits(prev => prev.map(b => b.id === id ? { ...b, ...editForm } : b))
     setEditingId(null)
   }
 
   async function deleteBenefit(id: number) {
     if (!confirm('Delete this benefit type and all its options?')) return
-    await supabase.from('benefit_options').delete().eq('benefit_type_id', id)
-    await supabase.from('benefit_enrollments').delete().eq('benefit_type_id', id)
-    await supabase.from('benefit_types').delete().eq('id', id)
+    const { error: e1 } = await supabase.from('benefit_options').delete().eq('benefit_type_id', id)
+    if (e1) { showError('Failed to delete benefit options: ' + e1.message); return }
+    const { error: e2 } = await supabase.from('benefit_enrollments').delete().eq('benefit_type_id', id)
+    if (e2) { showError('Failed to delete benefit enrollments: ' + e2.message); return }
+    const { error: e3 } = await supabase.from('benefit_types').delete().eq('id', id)
+    if (e3) { showError('Failed to delete benefit type: ' + e3.message); return }
     setBenefits(prev => prev.filter(b => b.id !== id))
     if (expandedId === id) setExpandedId(null)
   }
@@ -155,11 +163,12 @@ export default function AdminBenefits() {
   }
 
   async function saveEditOption(optionId: number) {
-    await supabase.from('benefit_options').update({
+    const { error } = await supabase.from('benefit_options').update({
       icon: optionForm.icon,
       title: optionForm.title,
       description: optionForm.description,
     }).eq('id', optionId)
+    if (error) { showError('Failed to save option: ' + error.message); return }
     setBenefits(prev => prev.map(b => ({
       ...b, options: b.options.map(o => o.id === optionId ? { ...o, ...optionForm } : o)
     })))
@@ -168,8 +177,10 @@ export default function AdminBenefits() {
 
   async function deleteOption(benefitId: number, optionId: number) {
     if (!confirm('Delete this option?')) return
-    await supabase.from('benefit_enrollments').delete().eq('option_id', optionId)
-    await supabase.from('benefit_options').delete().eq('id', optionId)
+    const { error: e1 } = await supabase.from('benefit_enrollments').delete().eq('option_id', optionId)
+    if (e1) { showError('Failed to delete option enrollments: ' + e1.message); return }
+    const { error: e2 } = await supabase.from('benefit_options').delete().eq('id', optionId)
+    if (e2) { showError('Failed to delete option: ' + e2.message); return }
     setBenefits(prev => prev.map(b => b.id === benefitId ? {
       ...b, options: b.options.filter(o => o.id !== optionId)
     } : b))
@@ -179,7 +190,7 @@ export default function AdminBenefits() {
     if (!newBenefit.title || !companyId) return
     const key = newBenefit.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')
     const nextSort = benefits.length
-    const { data: inserted } = await supabase.from('benefit_types').insert({
+    const { data: inserted, error } = await supabase.from('benefit_types').insert({
       company_id: companyId,
       benefit_key: key,
       title: newBenefit.title,
@@ -195,6 +206,7 @@ export default function AdminBenefits() {
       sort_order: nextSort,
     }).select('*').single()
 
+    if (error) { showError('Failed to add benefit type: ' + error.message); return }
     if (inserted) {
       setBenefits(prev => [...prev, { ...inserted, options: [] } as BenefitType])
     }
@@ -207,7 +219,7 @@ export default function AdminBenefits() {
     const key = newOption.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')
     const b = benefits.find(x => x.id === benefitId)
     const nextSort = b ? b.options.length : 0
-    const { data: inserted } = await supabase.from('benefit_options').insert({
+    const { data: inserted, error } = await supabase.from('benefit_options').insert({
       company_id: companyId,
       benefit_type_id: benefitId,
       option_key: key,
@@ -218,6 +230,7 @@ export default function AdminBenefits() {
       sort_order: nextSort,
     }).select('*').single()
 
+    if (error) { showError('Failed to add option: ' + error.message); return }
     if (inserted) {
       setBenefits(prev => prev.map(x => x.id === benefitId ? {
         ...x, options: [...x.options, inserted as BenefitOption]

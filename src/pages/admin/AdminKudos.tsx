@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 
 interface Kudo {
   id: number
@@ -16,6 +17,7 @@ const CATEGORIES = ['teamwork', 'innovation', 'leadership', 'customer_focus', 'g
 
 export default function AdminKudos() {
   const { selectedCompanyId } = useAdminCompany()
+  const { showError, showSuccess } = useToast()
   const [kudos, setKudos] = useState<Kudo[]>([])
   const [loading, setLoading] = useState(true)
   const [filterCat, setFilterCat] = useState('')
@@ -41,15 +43,19 @@ export default function AdminKudos() {
   }
 
   async function saveEdit(id: number) {
-    await supabase.from('kudos').update(editForm).eq('id', id)
+    const { error } = await supabase.from('kudos').update(editForm).eq('id', id)
+    if (error) { showError('Failed to save kudos: ' + error.message); return }
     setEditingId(null)
+    showSuccess('Kudos updated')
     load()
   }
 
   async function deleteKudo(id: number) {
     if (!confirm('Delete this kudos entry?')) return
-    await supabase.from('kudos').delete().eq('id', id)
+    const { error } = await supabase.from('kudos').delete().eq('id', id)
+    if (error) { showError('Failed to delete kudos: ' + error.message); return }
     setKudos(prev => prev.filter(k => k.id !== id))
+    showSuccess('Kudos deleted')
   }
 
   const filtered = useMemo(() => {

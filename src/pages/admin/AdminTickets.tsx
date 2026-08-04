@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
+import { useToast } from '../../context/ToastContext'
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 type TicketStatus = 'open' | 'in-progress' | 'resolved' | 'closed'
@@ -43,6 +44,7 @@ export default function AdminTickets() {
   const { employeeName } = useAuth()
   const { selectedCompanyId } = useAdminCompany()
   const { lang } = useLanguage()
+  const { showError, showSuccess } = useToast()
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState('')
@@ -93,11 +95,12 @@ export default function AdminTickets() {
       company_id: selectedCompanyId,
     })
     if (error) {
-      alert('Failed to create ticket: ' + error.message)
+      showError('Failed to create ticket: ' + error.message)
       return
     }
     setNewTicket(EMPTY_NEW_TICKET)
     setShowRaiseForm(false)
+    showSuccess('Ticket raised')
     load()
   }
 
@@ -107,7 +110,7 @@ export default function AdminTickets() {
   }
 
   async function saveEdit(id: string) {
-    await supabase.from('hr_tickets').update({
+    const { error } = await supabase.from('hr_tickets').update({
       title: editForm.title,
       description: editForm.description,
       category: editForm.category,
@@ -116,13 +119,17 @@ export default function AdminTickets() {
       assigned_to: editForm.assigned_to,
       updated_at: new Date().toISOString(),
     }).eq('id', id)
+    if (error) { showError('Failed to save ticket: ' + error.message); return }
     setEditingId(null)
+    showSuccess('Ticket updated')
     load()
   }
 
   async function deleteTicket(id: string) {
     if (!confirm(lang === 'de' ? 'Dieses Ticket löschen?' : 'Delete this ticket?')) return
-    await supabase.from('hr_tickets').delete().eq('id', id)
+    const { error } = await supabase.from('hr_tickets').delete().eq('id', id)
+    if (error) { showError('Failed to delete ticket: ' + error.message); return }
+    showSuccess('Ticket deleted')
     load()
   }
 

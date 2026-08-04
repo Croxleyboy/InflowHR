@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { formatDate } from '../lib/formatters'
 
 interface DeptMember {
@@ -43,6 +44,7 @@ export default function MyProfile() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { employeeEmail: EMPLOYEE_EMAIL, employeeId, companyUser, updateAvatarUrl } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [tab, setTab] = useState<'personal' | 'job'>('personal')
   const [profile, setProfile] = useState<OnboardingRecord | null>(null)
   const [loading, setLoading] = useState(true)
@@ -82,10 +84,13 @@ export default function MyProfile() {
     }
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
     const newUrl = urlData.publicUrl + '?t=' + Date.now()
-    await supabase.from('employees').update({ avatar_url: newUrl }).eq('id', employeeId).eq('company_id', companyUser?.company_id)
-    await supabase.from('onboarding').update({ avatar_url: newUrl }).eq('user_email', EMPLOYEE_EMAIL).eq('company_id', companyUser?.company_id)
+    const { error: empErr } = await supabase.from('employees').update({ avatar_url: newUrl }).eq('id', employeeId).eq('company_id', companyUser?.company_id)
+    if (empErr) { showError('Failed to update photo: ' + empErr.message); setAvatarUploading(false); return }
+    const { error: onbErr } = await supabase.from('onboarding').update({ avatar_url: newUrl }).eq('user_email', EMPLOYEE_EMAIL).eq('company_id', companyUser?.company_id)
+    if (onbErr) { showError('Failed to update photo: ' + onbErr.message); setAvatarUploading(false); return }
     setProfile(prev => prev ? { ...prev, avatar_url: newUrl } : prev)
     updateAvatarUrl(newUrl)
+    showSuccess('Photo updated')
     setAvatarUploading(false)
     if (avatarInputRef.current) avatarInputRef.current.value = ''
   }

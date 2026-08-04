@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 
 interface ShiftTemplate {
   id: string
@@ -20,6 +21,7 @@ const EMPTY_TEMPLATE = { name: '', start_time: '09:00', end_time: '17:00', break
 
 export default function AdminShifts() {
   const { selectedCompanyId } = useAdminCompany()
+  const { showError } = useToast()
   const [templates, setTemplates] = useState<ShiftTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
@@ -44,7 +46,7 @@ export default function AdminShifts() {
 
   async function addTemplate() {
     if (!addForm.name.trim()) return
-    await supabase.from('shift_templates').insert({
+    const { error } = await supabase.from('shift_templates').insert({
       company_id: selectedCompanyId,
       name: addForm.name.trim(),
       start_time: addForm.start_time,
@@ -55,6 +57,7 @@ export default function AdminShifts() {
       department: addForm.department || null,
       is_active: addForm.is_active,
     })
+    if (error) { showError('Failed to add shift template: ' + error.message); return }
     setAddForm({ ...EMPTY_TEMPLATE })
     setShowAdd(false)
     load()
@@ -75,7 +78,7 @@ export default function AdminShifts() {
   }
 
   async function saveEdit(id: string) {
-    await supabase.from('shift_templates').update({
+    const { error } = await supabase.from('shift_templates').update({
       name: editForm.name,
       start_time: editForm.start_time,
       end_time: editForm.end_time,
@@ -85,13 +88,15 @@ export default function AdminShifts() {
       department: editForm.department || null,
       is_active: editForm.is_active,
     }).eq('id', id)
+    if (error) { showError('Failed to update shift template: ' + error.message); return }
     setEditingId(null)
     load()
   }
 
   async function deleteTemplate(id: string) {
     if (!confirm('Delete this shift template?')) return
-    await supabase.from('shift_templates').delete().eq('id', id)
+    const { error } = await supabase.from('shift_templates').delete().eq('id', id)
+    if (error) { showError('Failed to delete shift template: ' + error.message); return }
     setTemplates(prev => prev.filter(t => t.id !== id))
   }
 

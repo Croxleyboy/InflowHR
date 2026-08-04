@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 
 interface Location {
@@ -83,6 +84,7 @@ const DEFAULT_SETTINGS: SpaceSettings = {
 
 export default function AdminSpaceManagement() {
   const { selectedCompanyId: companyId } = useAdminCompany()
+  const { showError } = useToast()
   const [subTab, setSubTab] = useState<SubTab>('locations')
   const [locations, setLocations] = useState<Location[]>([])
   const [floors, setFloors] = useState<Floor[]>([])
@@ -138,9 +140,11 @@ export default function AdminSpaceManagement() {
   async function saveLoc() {
     if (!companyId || !locForm.name.trim()) return
     if (editingLocId) {
-      await supabase.from('locations').update({ name: locForm.name, address: locForm.address, timezone: locForm.timezone }).eq('id', editingLocId)
+      const { error } = await supabase.from('locations').update({ name: locForm.name, address: locForm.address, timezone: locForm.timezone }).eq('id', editingLocId)
+      if (error) { showError('Failed to update location: ' + error.message); return }
     } else {
-      await supabase.from('locations').insert({ company_id: companyId, name: locForm.name, address: locForm.address, timezone: locForm.timezone })
+      const { error } = await supabase.from('locations').insert({ company_id: companyId, name: locForm.name, address: locForm.address, timezone: locForm.timezone })
+      if (error) { showError('Failed to add location: ' + error.message); return }
     }
     setEditingLocId(null)
     setShowNewLoc(false)
@@ -148,7 +152,8 @@ export default function AdminSpaceManagement() {
   }
 
   async function deleteLoc(id: string) {
-    await supabase.from('locations').delete().eq('id', id)
+    const { error } = await supabase.from('locations').delete().eq('id', id)
+    if (error) { showError('Failed to delete location: ' + error.message); return }
     loadAll()
   }
 
@@ -162,9 +167,11 @@ export default function AdminSpaceManagement() {
   async function saveFloor() {
     if (!companyId || !floorForm.name.trim() || !floorForm.location_id) return
     if (editingFloorId) {
-      await supabase.from('floors').update({ name: floorForm.name, location_id: floorForm.location_id }).eq('id', editingFloorId)
+      const { error } = await supabase.from('floors').update({ name: floorForm.name, location_id: floorForm.location_id }).eq('id', editingFloorId)
+      if (error) { showError('Failed to update floor: ' + error.message); return }
     } else {
-      await supabase.from('floors').insert({ company_id: companyId, name: floorForm.name, location_id: floorForm.location_id })
+      const { error } = await supabase.from('floors').insert({ company_id: companyId, name: floorForm.name, location_id: floorForm.location_id })
+      if (error) { showError('Failed to add floor: ' + error.message); return }
     }
     setEditingFloorId(null)
     setShowNewFloor(false)
@@ -172,7 +179,8 @@ export default function AdminSpaceManagement() {
   }
 
   async function deleteFloor(id: string) {
-    await supabase.from('floors').delete().eq('id', id)
+    const { error } = await supabase.from('floors').delete().eq('id', id)
+    if (error) { showError('Failed to delete floor: ' + error.message); return }
     loadAll()
   }
 

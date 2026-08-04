@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { formatTime12 as formatTime } from '../lib/formatters'
 
 interface ShiftAssignment {
@@ -85,6 +86,7 @@ export default function ShiftSwap() {
   const location = useLocation()
   const { t } = useLanguage()
   const { employeeId, companyUser } = useAuth()
+  const { showError } = useToast()
   const initialTab = (location.state as { tab?: SwapTab } | null)?.tab || 'request'
   const [tab, setTab] = useState<SwapTab>(initialTab)
   const [shifts, setShifts] = useState<ShiftAssignment[]>([])
@@ -162,7 +164,7 @@ export default function ShiftSwap() {
 
     if (error) {
       console.error('[ShiftSwap] insert error:', error)
-      alert(t('shifts.swap_failed'))
+      showError(t('shifts.swap_failed'))
     } else {
       setSelectedShiftId(null)
       setTargetEmployeeId('')
@@ -180,7 +182,8 @@ export default function ShiftSwap() {
     const origAssignment = request.shift_assignment
     const targetShiftOnDate = shifts.find(s => s.date === origAssignment.date)
 
-    await supabase.from('shift_swap_requests').update({ status: 'approved' }).eq('id', request.id).eq('company_id', companyUser?.company_id)
+    const { error: approveErr } = await supabase.from('shift_swap_requests').update({ status: 'approved' }).eq('id', request.id).eq('company_id', companyUser?.company_id)
+    if (approveErr) { showError('Failed to approve swap: ' + approveErr.message); setActioningId(null); return }
 
     await supabase.from('shift_assignments')
       .update({ employee_id: employeeId })
@@ -200,14 +203,16 @@ export default function ShiftSwap() {
 
   async function handleDeclineSwap(requestId: string) {
     setActioningId(requestId)
-    await supabase.from('shift_swap_requests').update({ status: 'rejected' }).eq('id', requestId).eq('company_id', companyUser?.company_id)
+    const { error: declineErr } = await supabase.from('shift_swap_requests').update({ status: 'rejected' }).eq('id', requestId).eq('company_id', companyUser?.company_id)
+    if (declineErr) { showError('Failed to decline swap: ' + declineErr.message); setActioningId(null); return }
     setActioningId(null)
     fetchData()
   }
 
   async function handleCancelSwap(requestId: string) {
     setActioningId(requestId)
-    await supabase.from('shift_swap_requests').delete().eq('id', requestId).eq('company_id', companyUser?.company_id)
+    const { error: cancelErr } = await supabase.from('shift_swap_requests').delete().eq('id', requestId).eq('company_id', companyUser?.company_id)
+    if (cancelErr) { showError('Failed to withdraw swap request: ' + cancelErr.message); setActioningId(null); return }
     setActioningId(null)
     fetchData()
   }
