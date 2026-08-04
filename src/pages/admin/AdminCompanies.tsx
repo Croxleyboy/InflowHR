@@ -108,12 +108,18 @@ export default function AdminCompanies() {
     if (!form.name.trim() || !form.domain.trim()) return
     setSaving(true)
     const domain = form.domain.trim().toLowerCase().replace(/^@/, '')
-    const { data: newCo } = await supabase.from('companies').insert({
+    const { data: newCo, error: insertError } = await supabase.from('companies').insert({
       name: form.name.trim(),
       domain,
       microsoft_tenant_id: '',
       is_active: true,
     }).select('id').single()
+
+    if (insertError) {
+      alert(`Failed to add company: ${insertError.message}`)
+      setSaving(false)
+      return
+    }
 
     if (newCo) {
       if (logoFile) {
