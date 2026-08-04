@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 
 interface Company {
   id: string
@@ -39,6 +40,7 @@ async function uploadCompanyLogo(companyId: string, file: File): Promise<string 
 
 export default function AdminCompanies() {
   const { company: myCompany } = useAuth()
+  const { refreshCompanies } = useAdminCompany()
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -160,6 +162,7 @@ export default function AdminCompanies() {
     setShowForm(false)
     setSaving(false)
     load()
+    refreshCompanies()
   }
 
   async function handleEditLogo(companyId: string, file: File) {

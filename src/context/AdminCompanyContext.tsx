@@ -14,6 +14,7 @@ interface AdminCompanyState {
   selectedCompanyId: string
   selectedCompany: Company | null
   setSelectedCompanyId: (id: string) => void
+  refreshCompanies: () => void
 }
 
 const AdminCompanyContext = createContext<AdminCompanyState | null>(null)
@@ -33,24 +34,25 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
   })
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => company?.id || '')
 
-  useEffect(() => {
-    if (!isSuperAdmin) return
-    let cancelled = false
+  function refreshCompanies() {
     supabase.from('companies').select('id, name, domain, is_active').order('name').then(({ data }) => {
-      if (cancelled) return
       const list = (data as Company[]) || []
       setCompanies(list)
       if (list.length > 0) {
         setSelectedCompanyId(prev => prev || list[0].id)
       }
     })
-    return () => { cancelled = true }
+  }
+
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    refreshCompanies()
   }, [isSuperAdmin])
 
   const selectedCompany = companies.find(c => c.id === selectedCompanyId) || null
 
   return (
-    <AdminCompanyContext.Provider value={{ companies, selectedCompanyId, selectedCompany, setSelectedCompanyId }}>
+    <AdminCompanyContext.Provider value={{ companies, selectedCompanyId, selectedCompany, setSelectedCompanyId, refreshCompanies }}>
       {children}
     </AdminCompanyContext.Provider>
   )
