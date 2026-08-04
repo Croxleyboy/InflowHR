@@ -14,7 +14,7 @@ interface AdminCompanyState {
   selectedCompanyId: string
   selectedCompany: Company | null
   setSelectedCompanyId: (id: string) => void
-  refreshCompanies: () => void
+  refreshCompanies: (selectCompanyId?: string) => void
 }
 
 const AdminCompanyContext = createContext<AdminCompanyState | null>(null)
@@ -34,11 +34,13 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
   })
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => company?.id || '')
 
-  const refreshCompanies = useCallback(async () => {
+  const refreshCompanies = useCallback(async (selectCompanyId?: string) => {
     const { data } = await supabase.from('companies').select('id, name, domain, is_active').order('name')
     const list = (data as Company[]) || []
     setCompanies(list)
-    if (list.length > 0) {
+    if (selectCompanyId && list.some(c => c.id === selectCompanyId)) {
+      setSelectedCompanyId(selectCompanyId)
+    } else if (list.length > 0) {
       setSelectedCompanyId(prev => prev || list[0].id)
     }
   }, [])

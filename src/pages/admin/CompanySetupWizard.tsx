@@ -46,7 +46,7 @@ const SETUP_STEPS = [
 ]
 
 interface CompanySetupWizardProps {
-  onSetupComplete: () => void
+  onSetupComplete: (companyId?: string) => void
 }
 
 export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWizardProps) {
@@ -205,8 +205,12 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
     paymentDate.setDate(paymentDate.getDate() - 3)
 
     for (const row of setupRows) {
-      // 1. Create onboarding record
-      const { error: onbErr } = await supabase.from('onboarding').insert({
+      // 1. Create onboarding record (skip if already exists)
+      const { data: existingOnb } = await supabase.from('onboarding').select('id').eq('user_email', row.user_email).eq('company_id', setupCompanyId).maybeSingle()
+      if (existingOnb) {
+        onboardCount++
+      } else {
+        const { error: onbErr } = await supabase.from('onboarding').insert({
         firstname: row.firstname,
         surname: row.surname,
         user_email: row.user_email,
@@ -223,7 +227,8 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         is_complete: true,
         company_id: setupCompanyId,
       })
-      if (!onbErr) onboardCount++
+        if (!onbErr) onboardCount++
+      }
 
       // 2. Create employee record
       const { data: existing } = await supabase.from('employees').select('id').eq('email', row.user_email).eq('company_id', setupCompanyId).maybeSingle()
@@ -320,7 +325,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
     setProcessResult({ onboarding: onboardCount, employees: empCount, payslips: payslipCount, admin: assignedAdmin, errors })
     setProcessing(false)
-    onSetupComplete()
+    onSetupComplete(setupCompanyId)
   }
 
   function resetSetup() {

@@ -650,7 +650,7 @@ export default function AdminOnboarding() {
       )}
 
       {tab === 'setup' && (
-        <CompanySetupWizard onSetupComplete={() => { load(); refreshCompanies() }} />
+        <CompanySetupWizard onSetupComplete={(companyId) => { refreshCompanies(companyId); load() }} />
       )}
     </div>
   )
