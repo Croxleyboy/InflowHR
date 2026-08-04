@@ -224,6 +224,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           start_date: row.start_date,
           contract_type: row.contract_type,
           status: 'Onboarded',
+          appstatus: 'active',
           is_complete: true,
           first_day: true,
           first_week: true,
@@ -329,6 +330,24 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           )
         }
       }
+    }
+
+    // 6. Create welcome announcement
+    const { data: existingAnnouncement } = await supabase
+      .from('announcements')
+      .select('id')
+      .eq('company_id', setupCompanyId)
+      .eq('title', 'Welcome to InflowHR!')
+      .maybeSingle()
+    if (!existingAnnouncement) {
+      await supabase.from('announcements').insert({
+        title: 'Welcome to InflowHR!',
+        body: 'Welcome to your new HR app! Take a look around and explore all the features available to you. Head to E-Learning to get started with your onboarding modules, check your profile in the Directory, and submit your first expense or leave request. If you need help, speak to your company admin.',
+        company_id: setupCompanyId,
+        is_pinned: true,
+        published_at: new Date().toISOString(),
+        submitted_by_name: 'InflowHR',
+      })
     }
 
     setProcessResult({ onboarding: onboardCount, employees: empCount, payslips: payslipCount, admin: assignedAdmin, errors })
