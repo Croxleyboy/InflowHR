@@ -111,7 +111,7 @@ export default function AdminCompanies() {
     const { data: newCo, error: insertError } = await supabase.from('companies').insert({
       name: form.name.trim(),
       domain,
-      microsoft_tenant_id: null,
+      microsoft_tenant_id: `pending-${Date.now()}`,
       is_active: true,
     }).select('id').single()
 
