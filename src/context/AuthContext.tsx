@@ -29,6 +29,8 @@ interface AuthState {
   employeeName: string
   employeeEmail: string
   isSuperAdmin: boolean
+  isManager: boolean
+  canPostNotifications: boolean
   avatarUrl: string | null
   updateAvatarUrl: (url: string) => void
   setupComplete: boolean | null
@@ -55,6 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [employeeId, setEmployeeId] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
+  const [isManager, setIsManager] = useState(false)
+  const [canPostNotifications, setCanPostNotifications] = useState(false)
 
   async function loadCompanyData(userId: string, email: string) {
     const { data: rows } = await supabase
@@ -139,6 +143,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle()
       setSetupComplete(onb ? onb.initial_setup_complete === true : true)
       setAvatarUrl(onb?.avatar_url || null)
+
+      if (empId) {
+        supabase.from('employees')
+          .select('id', { count: 'exact', head: true })
+          .eq('manager_id', empId)
+          .eq('is_active', true)
+          .eq('company_id', cu.company_id)
+          .then(({ count }) => setIsManager((count || 0) > 0))
+
+        supabase.from('employees')
+          .select('can_post_notifications')
+          .eq('id', empId)
+          .eq('company_id', cu.company_id)
+          .single()
+          .then(({ data }) => setCanPostNotifications(data?.can_post_notifications === true))
+      }
     } else {
       setSetupComplete(null)
     }
@@ -198,6 +218,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCompanyUser(null)
     setCompany(null)
     setEmployeeId(null)
+    setIsManager(false)
+    setCanPostNotifications(false)
   }
 
   const employeeName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
@@ -205,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = employeeEmail.toLowerCase() === SUPER_ADMIN_EMAIL
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, setupComplete, markSetupComplete, signInWithMicrosoft, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, setupComplete, markSetupComplete, signInWithMicrosoft, signOut }}>
       {children}
     </AuthContext.Provider>
   )

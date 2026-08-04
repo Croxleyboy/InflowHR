@@ -1,28 +1,10 @@
-import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
-import { useAuth } from '../context/AuthContext'
-import { supabase } from '../lib/supabase'
+import { useNotificationBadge } from '../hooks/useNotificationBadge'
 
 export default function Footer() {
   const { t } = useLanguage()
-  const { employeeEmail, companyUser } = useAuth()
-  const [badgeCount, setBadgeCount] = useState(0)
-
-  useEffect(() => {
-    if (!employeeEmail || !companyUser?.company_id) return
-    const fetchCount = () => {
-      supabase.from('workflow_tracker')
-        .select('id', { count: 'exact', head: true })
-        .ilike('assigned_to', `%${employeeEmail}%`)
-        .eq('status', 'Pending')
-        .eq('company_id', companyUser.company_id)
-        .then(({ count }) => setBadgeCount(count || 0))
-    }
-    fetchCount()
-    window.addEventListener('notifications-updated', fetchCount)
-    return () => window.removeEventListener('notifications-updated', fetchCount)
-  }, [employeeEmail, companyUser?.company_id])
+  const badgeCount = useNotificationBadge()
   return (
     <nav className="footer">
       <NavLink to="/" className={({ isActive }) => `footer-item ${isActive ? 'active' : ''}`} end>

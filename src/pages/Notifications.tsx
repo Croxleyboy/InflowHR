@@ -147,7 +147,7 @@ export default function Notifications() {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useLanguage()
-  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser, isSuperAdmin } = useAuth()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser, isSuperAdmin, canPostNotifications: canPost } = useAuth()
   const { showError } = useToast()
   const initialTab = (location.state as { tab?: Tab } | null)?.tab || 'actions'
   const [tab, setTab] = useState<Tab>(initialTab)
@@ -155,14 +155,13 @@ export default function Notifications() {
   const [myNotifs, setMyNotifs] = useState<WorkflowItem[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
-  const [canPost, setCanPost] = useState(false)
   const [swapActions, setSwapActions] = useState<SwapAction[]>([])
   const [expenseReceipts, setExpenseReceipts] = useState<Set<number>>(new Set())
 
   const fetchData = useCallback(async () => {
     setLoading(true)
     const companyId = companyUser?.company_id || ''
-    const [actionsRes, notifsRes, announcementsRes, empRes] = await Promise.all([
+    const [actionsRes, notifsRes, announcementsRes] = await Promise.all([
       supabase.from('workflow_tracker')
         .select('*')
         .ilike('assigned_to', `%${HARDCODED_EMAIL}%`)
@@ -181,16 +180,10 @@ export default function Notifications() {
         .eq('company_id', companyUser?.company_id || '')
         .order('published_at', { ascending: false })
         .limit(20),
-      supabase.from('employees')
-        .select('can_post_notifications')
-        .eq('id', HARDCODED_EMPLOYEE_ID)
-        .eq('company_id', companyUser?.company_id)
-        .single(),
     ])
     if (actionsRes.data) setActions(actionsRes.data as WorkflowItem[])
     if (notifsRes.data) setMyNotifs(notifsRes.data as WorkflowItem[])
     if (announcementsRes.data) setAnnouncements(announcementsRes.data as Announcement[])
-    if (empRes.data) setCanPost(empRes.data.can_post_notifications === true)
 
     if (HARDCODED_EMPLOYEE_ID && companyUser?.company_id) {
       const { data: swapData } = await supabase

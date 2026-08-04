@@ -33,7 +33,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser, isManager } = useAuth()
   const navigate = useNavigate()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
@@ -41,7 +41,6 @@ export default function Dashboard() {
   const [lastExpenseHasReceipt, setLastExpenseHasReceipt] = useState(false)
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const [leavePending, setLeavePending] = useState<number | null>(null)
-  const [isManager, setIsManager] = useState(false)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   useEffect(() => {
@@ -81,13 +80,6 @@ export default function Dashboard() {
               .then(({ count }) => setLastExpenseHasReceipt((count || 0) > 0))
           }
         })
-
-      supabase.from('employees')
-        .select('id', { count: 'exact', head: true })
-        .eq('manager_id', employeeId)
-        .eq('company_id', companyUser.company_id)
-        .eq('is_active', true)
-        .then(({ count }) => setIsManager((count || 0) > 0))
 
       supabase.from('leave_balances')
         .select('total_allowance')

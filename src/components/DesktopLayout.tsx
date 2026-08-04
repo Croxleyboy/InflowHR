@@ -3,44 +3,17 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { useFeatures, type Features } from '../context/FeatureContext'
-import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase'
+import { useNotificationBadge } from '../hooks/useNotificationBadge'
 
 export default function DesktopLayout() {
   const { t } = useLanguage()
-  const { signOut, employeeName, employeeEmail, employeeId, company, companyUser, avatarUrl } = useAuth()
+  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl, isManager } = useAuth()
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const navigate = useNavigate()
-  const [badgeCount, setBadgeCount] = useState(0)
-  const [isManager, setIsManager] = useState(false)
+  const badgeCount = useNotificationBadge()
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
   const isAdmin = companyUser && ['admin', 'hr'].includes(companyUser.role)
-
-  useEffect(() => {
-    let fetchCount: (() => void) | undefined
-    if (employeeEmail && companyUser?.company_id) {
-      fetchCount = () => {
-        supabase.from('workflow_tracker')
-          .select('id', { count: 'exact', head: true })
-          .ilike('assigned_to', `%${employeeEmail}%`)
-          .eq('status', 'Pending')
-          .eq('company_id', companyUser.company_id)
-          .then(({ count }) => setBadgeCount(count || 0))
-      }
-      fetchCount()
-      window.addEventListener('notifications-updated', fetchCount)
-    }
-    if (employeeId && companyUser?.company_id) {
-      supabase.from('employees')
-        .select('id', { count: 'exact', head: true })
-        .eq('manager_id', employeeId)
-        .eq('is_active', true)
-        .eq('company_id', companyUser.company_id)
-        .then(({ count }) => setIsManager((count || 0) > 0))
-    }
-    return () => { if (fetchCount) window.removeEventListener('notifications-updated', fetchCount) }
-  }, [employeeEmail, employeeId, companyUser?.company_id])
 
   const allNavItems: { to: string; icon: string; label: string; end?: boolean; badge?: number; feature?: keyof Features }[] = [
     { to: '/', icon: 'home', label: t('footer.dashboard'), end: true },

@@ -7,20 +7,12 @@ import { useAuth } from '../context/AuthContext'
 export default function CreateNotification() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeName: HARDCODED_EMPLOYEE_NAME, companyUser, isSuperAdmin } = useAuth()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeName: HARDCODED_EMPLOYEE_NAME, companyUser, isSuperAdmin, canPostNotifications } = useAuth()
 
   useEffect(() => {
     if (isSuperAdmin || companyUser?.role === 'admin') return
-    if (!HARDCODED_EMPLOYEE_ID) return
-    supabase.from('employees')
-      .select('can_post_notifications')
-      .eq('id', HARDCODED_EMPLOYEE_ID)
-      .eq('company_id', companyUser?.company_id)
-      .single()
-      .then(({ data }) => {
-        if (!data?.can_post_notifications) navigate('/notifications', { replace: true })
-      })
-  }, [HARDCODED_EMPLOYEE_ID, isSuperAdmin, companyUser?.role, navigate])
+    if (!canPostNotifications) navigate('/notifications', { replace: true })
+  }, [canPostNotifications, isSuperAdmin, companyUser?.role, navigate])
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)

@@ -36,13 +36,12 @@ interface DirectReport {
 export default function OneToOnes() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId, companyUser } = useAuth()
+  const { employeeId, companyUser, isManager } = useAuth()
   const { showError } = useToast()
   const [tab, setTab] = useState<Tab>('upcoming')
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [directReports, setDirectReports] = useState<DirectReport[]>([])
   const [loading, setLoading] = useState(true)
-  const [isManager, setIsManager] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!employeeId) return
@@ -55,7 +54,6 @@ export default function OneToOnes() {
       .eq('is_active', true)
     const dr = (reports || []) as DirectReport[]
     setDirectReports(dr)
-    setIsManager(dr.length > 0)
 
     const { data: allMeetings } = await supabase.from('one_to_one_meetings')
       .select('*')
