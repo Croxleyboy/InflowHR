@@ -48,6 +48,7 @@ export interface Course {
 
 export const COURSES: Course[] = [
   // ── Onboarding ──
+  { id: 'onb-getting-started', titleKey: 'elearning.c_getting_started_title', descKey: 'elearning.c_getting_started_desc', category: 'onboarding', type: 'article', duration: '20 min', required: true, tags: ['new-starter', 'faq'] },
   { id: 'onb-welcome', titleKey: 'elearning.c_welcome_title', descKey: 'elearning.c_welcome_desc', category: 'onboarding', type: 'video', duration: '12 min', required: true, deadline: '2026-08-01', tags: ['new-starter'] },
   { id: 'onb-systems', titleKey: 'elearning.c_systems_title', descKey: 'elearning.c_systems_desc', category: 'onboarding', type: 'article', duration: '8 min', required: true, deadline: '2026-08-01', tags: ['new-starter'] },
   { id: 'onb-culture', titleKey: 'elearning.c_culture_title', descKey: 'elearning.c_culture_desc', category: 'onboarding', type: 'video', duration: '15 min', required: true, deadline: '2026-08-01', tags: ['new-starter'] },
