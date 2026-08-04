@@ -17,7 +17,7 @@ interface Company {
   login_disabled: boolean
 }
 
-const SUPER_ADMIN_EMAIL = 'andy.jones@kumonix.com'
+const SUPER_ADMIN_EMAIL = (import.meta.env.VITE_SUPER_ADMIN_EMAIL || 'andy.jones@kumonix.com').toLowerCase()
 
 interface AuthState {
   user: User | null
@@ -75,7 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       : null
 
     if (!cu && email) {
-      const { data: result } = await (supabase.rpc as any)('ensure_company_user')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: result } = await supabase.rpc('ensure_company_user' as any)
       if (result && !result.error) {
         cu = result
       }

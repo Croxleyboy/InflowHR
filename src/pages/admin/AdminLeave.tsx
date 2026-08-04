@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext'
 
 interface LeaveRequest {
   id: number
+  employee_id: string
   start_date: string
   end_date: string
   days_requested: number
@@ -108,7 +109,7 @@ export default function AdminLeave() {
           const { data: balance } = await supabase
             .from('leave_balances')
             .select('id, used')
-            .eq('employee_id', (req as any).employee_id)
+            .eq('employee_id', req.employee_id)
             .eq('year', year)
             .limit(1)
             .single()

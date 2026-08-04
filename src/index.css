@@ -183,7 +183,6 @@ body {
 .card-legal-ts { background: linear-gradient(135deg, #00897b, #00695c); }
 
 /* ── My Schedule (Employee Shifts) ── */
-.my-schedule { padding-bottom: 90px; overflow-y: auto; height: 100%; }
 .schedule-header { display: flex; align-items: center; padding: 12px 16px 0; }
 
 .schedule-cal-strip { padding: 12px 16px 0; }
@@ -199,12 +198,6 @@ body {
 .schedule-cal-today .schedule-cal-number { background: #1565c0; color: #fff; }
 .schedule-cal-dot { width: 5px; height: 5px; border-radius: 50%; background: #e65100; }
 .schedule-cal-has-shift .schedule-cal-letter { color: #e65100; }
-
-.schedule-filters { display: flex; gap: 8px; padding: 14px 16px 6px; overflow-x: auto; }
-.schedule-filter-btn { background: var(--bg-card); border: 1.5px solid var(--border); border-radius: 20px; padding: 6px 16px; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer; white-space: nowrap; transition: all 0.15s; }
-.schedule-filter-btn:hover { border-color: #e65100; color: #e65100; }
-.schedule-filter-active { background: #e65100; color: #fff; border-color: #e65100; }
-.schedule-filter-active:hover { background: #bf360c; border-color: #bf360c; color: #fff; }
 
 .schedule-shift-list { padding: 0 16px 16px; }
 .schedule-day-group { margin-top: 14px; }
@@ -1160,7 +1153,6 @@ body {
   border-radius: 12px;
   padding: 14px;
 }
-.notif-unread { border-left: 3px solid #2196f3; }
 .notif-card-content { flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .notif-card-title { font-size: 14px; font-weight: 700; color: var(--text); }
 .notif-card-sub { font-size: 13px; color: var(--text-muted); line-height: 1.3; }
@@ -1176,7 +1168,6 @@ body {
 .notif-icon-leave { background: #2e7d32; }
 .notif-icon-meeting { background: #ec407a; }
 .notif-icon-default { background: #d4a017; }
-.notif-icon-company { background: #546e7a; }
 .notif-icon-swap { background: #e65100; }
 
 .notif-upcoming-leave {
@@ -1532,7 +1523,6 @@ body {
 .notif-icon-expense { background: #c62828; }
 .notif-icon-leave { background: #ff9800; }
 .notif-icon-default { background: #757575; }
-.notif-icon-company { background: #5c6bc0; }
 
 .notif-delete-btn {
   background: none; border: none; cursor: pointer; padding: 6px;
@@ -2232,15 +2222,6 @@ body {
   display: block; padding: 8px 4px;
   font-size: 12px; font-weight: 700; color: var(--text);
 }
-.my-profile-status-tbc {
-  background: #7b1fa2;
-  display: flex; align-items: center; justify-content: center;
-  border-color: #7b1fa2;
-}
-.my-profile-status-tbc .my-profile-status-card-value {
-  color: #fff; font-size: 16px; font-weight: 800;
-}
-
 /* ── My Profile Members Modal ── */
 .my-profile-modal-overlay {
   position: fixed; inset: 0;
@@ -3014,11 +2995,6 @@ body {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.benefits-icon-vacation { background: #00acc1; }
-.benefits-icon-health { background: #e53935; }
-.benefits-icon-car { background: #43a047; }
-.benefits-icon-cycle { background: #546e7a; }
-
 .benefits-card-text { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .benefits-card-title { font-size: 15px; font-weight: 800; color: var(--text); }
 .benefits-card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
@@ -3064,11 +3040,6 @@ body {
 }
 .benefits-modal-header h2 { font-size: 18px; font-weight: 800; margin: 0; }
 .benefits-modal-close { background: none; border: none; cursor: pointer; padding: 0; }
-
-.benefits-modal-header-vacation { background: linear-gradient(135deg, #00acc1, #00838f); }
-.benefits-modal-header-health { background: linear-gradient(135deg, #e53935, #c62828); }
-.benefits-modal-header-car { background: linear-gradient(135deg, #43a047, #2e7d32); }
-.benefits-modal-header-cycle { background: linear-gradient(135deg, #546e7a, #37474f); }
 
 .benefits-modal-body { padding: 0; }
 .benefits-modal-intro {
@@ -3149,10 +3120,6 @@ body {
 .benefits-confirm-no { background: #e5e7eb; color: #4a4a68; }
 .benefits-confirm-no:hover { background: #d1d5db; }
 [data-theme="dark"] .benefits-confirm-no { background: #333; color: #ccc; }
-
-/* Payslip benefit deduction row */
-.payslips-row-benefit { color: #ef6c00; font-style: italic; }
-[data-theme="dark"] .payslips-row-benefit { color: #ffab91; }
 
 /* Vacation options list */
 .benefits-modal-options {
@@ -3559,11 +3526,6 @@ body {
   cursor: pointer; margin-top: 8px;
 }
 
-/* Admin external link */
-.admin-external-link {
-  color: #1565c0; display: inline-flex; align-items: center;
-}
-
 /* Admin toggle switch */
 .admin-toggle-switch {
   position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer;
@@ -3578,21 +3540,6 @@ body {
 }
 .admin-toggle-switch input:checked + .admin-toggle-slider { background: #43a047; }
 .admin-toggle-switch input:checked + .admin-toggle-slider::before { transform: translateX(16px); }
-
-/* Admin bulk action bar */
-.admin-bulk-bar {
-  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
-  background: #e3f2fd; border-radius: 8px; margin-bottom: 12px;
-  font-size: 13px; font-weight: 600; color: #1565c0;
-}
-.admin-btn-activate { background: #43a047; color: #fff; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.admin-btn-activate:hover { background: #388e3c; }
-.admin-btn-deactivate { background: #e53935; color: #fff; border: none; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
-.admin-btn-deactivate:hover { background: #c62828; }
-
-/* Admin table checkbox columns */
-.admin-th-check, .admin-td-check { width: 32px; text-align: center; }
-.admin-th-check input, .admin-td-check input { cursor: pointer; width: 16px; height: 16px; accent-color: #1565c0; }
 
 /* Inactive row */
 .admin-row-inactive { opacity: 0.45; }
@@ -3736,13 +3683,6 @@ body {
   height: 100px;
   width: auto;
   border-radius: 0;
-}
-.login-hero-title {
-  font-size: 40px;
-  font-weight: 800;
-  color: #fff;
-  margin-bottom: 12px;
-  letter-spacing: -0.5px;
 }
 .login-hero-tagline {
   font-size: 18px;
@@ -3895,9 +3835,6 @@ body {
   .login-hero {
     padding: 40px 32px;
     min-height: auto;
-  }
-  .login-hero-title {
-    font-size: 28px;
   }
   .login-hero-tagline {
     font-size: 15px;
@@ -4651,14 +4588,6 @@ body {
 .oto-comment-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* Notifications subtitle */
-.notif-subtitle {
-  font-size: 0.82em;
-  opacity: 0.6;
-  margin: 2px 0 0;
-  font-weight: 400;
 }
 
 /* Schedule 1:1 form */

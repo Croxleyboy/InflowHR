@@ -54,6 +54,7 @@ interface OnboardRecord {
   annual_salary: number | null
   tax_code: string | null
   payroll_id: string | null
+  skipped_steps: Record<string, boolean> | null
 }
 
 const WORKFLOW_STEPS = [
@@ -252,7 +253,7 @@ export default function AdminOnboarding() {
       day1_access: record.is_complete,
     }
     setStepChecks(checks)
-    const skipped = (record as any).skipped_steps
+    const skipped = record.skipped_steps
     setStepSkips(skipped && typeof skipped === 'object' ? skipped : {})
     const doneCount = WORKFLOW_STEPS.filter(s => checks[s.key] || (skipped && skipped[s.key])).length
     setWorkflowStep(record.is_complete ? WORKFLOW_STEPS.length - 1 : Math.min(doneCount, WORKFLOW_STEPS.length - 1))
@@ -393,7 +394,7 @@ export default function AdminOnboarding() {
         meeting: r.first_day, notify_manager: r.first_day, plan_day1: r.first_day,
         inform_starter: r.first_week, accounts: r.elearning, day1_access: r.is_complete,
       }
-      const skipped = (r as any).skipped_steps
+      const skipped = r.skipped_steps
       const doneCount = WORKFLOW_STEPS.filter(s => checks[s.key] || (skipped && skipped[s.key])).length
       const currentIdx = Math.min(doneCount, WORKFLOW_STEPS.length - 1)
       const stepKey = WORKFLOW_STEPS[currentIdx].key
@@ -764,7 +765,7 @@ export default function AdminOnboarding() {
                 <thead><tr><th>Name</th><th>Role</th><th>Start Date</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
                 <tbody>
                   {filtered.map(r => {
-                    const skipped = (r as any).skipped_steps || {}
+                    const skipped = r.skipped_steps || {}
                     const completedSteps = [true, r.equipment_order === 'Y', r.first_day, r.first_day, r.first_day, r.first_week, r.elearning, r.is_complete].filter(Boolean).length
                     const skippedCount = Object.values(skipped).filter(Boolean).length
                     const totalDone = completedSteps + skippedCount

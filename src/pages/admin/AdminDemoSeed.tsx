@@ -15,7 +15,7 @@ export default function AdminDemoSeed() {
     setResult(null)
     setError(null)
 
-    const { data, error: err } = await (supabase.rpc as any)('run_demo_seed', {
+    const { data, error: err } = await supabase.rpc('run_demo_seed' as any, {
       p_auth_uid: user.id,
     })
 

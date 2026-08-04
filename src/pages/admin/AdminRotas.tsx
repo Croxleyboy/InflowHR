@@ -314,7 +314,8 @@ export default function AdminRotas() {
         .neq('rota_id', selectedRota!.id)
         .limit(1)
       if (otherRotaShifts && otherRotaShifts.length > 0) {
-        const otherName = (otherRotaShifts[0] as any).rotas?.name || 'another rota'
+        const joined = otherRotaShifts[0] as { rotas?: { name: string }[] }
+        const otherName = joined.rotas?.[0]?.name || 'another rota'
         if (!window.confirm(`This employee already has a shift on ${date} in "${otherName}". Assign anyway?`)) {
           setActiveCell(null)
           return

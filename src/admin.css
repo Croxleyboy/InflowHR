@@ -290,16 +290,6 @@
 .admin-add-row .admin-input { flex: 1; }
 
 /* Tag pickers (e-learning) */
-.admin-tag-picker { display: flex; flex-wrap: wrap; gap: 6px; }
-.admin-tag-pick {
-  padding: 4px 10px; border-radius: 14px; font-size: 12px;
-  border: 1px solid #e5e7eb; background: #fff; color: #8b8fa3;
-  cursor: pointer; text-transform: capitalize; transition: all 0.15s;
-}
-.admin-tag-pick-active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
-.admin-tag-pick-sm { padding: 2px 8px; font-size: 11px; }
-.admin-tag-picker-sm { gap: 4px; }
-.admin-tag-list-inline { display: flex; flex-wrap: wrap; gap: 4px; }
 .admin-tag-mini {
   padding: 2px 8px; border-radius: 10px; font-size: 10px;
   background: #eef0f5; color: #4a4a68; text-transform: capitalize;
@@ -383,7 +373,6 @@
 }
 .admin-photo-actions { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .admin-photo-upload-label { cursor: pointer; text-align: center; }
-.admin-detail-grid-2 { grid-template-columns: repeat(2, 1fr); }
 .admin-detail-grid-3 { grid-template-columns: repeat(3, 1fr); }
 
 /* Payroll schedule */
@@ -632,16 +621,6 @@
 /* ===== E-Learning Admin Table ===== */
 .admin-el-table { table-layout: auto; }
 .admin-el-title-cell { min-width: 200px; max-width: 320px; }
-.admin-el-tag-picker { max-width: 220px; }
-
-.admin-el-edit-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px; padding: 8px 0;
-}
-.admin-el-edit-field { display: flex; flex-direction: column; gap: 4px; }
-.admin-el-edit-field label { font-size: 12px; font-weight: 600; color: #8b8fa3; text-transform: uppercase; }
-.admin-el-edit-field .admin-inline-input,
-.admin-el-edit-field .admin-inline-select { width: 100%; }
 
 @media (max-width: 1024px) {
   .admin-el-hide-tablet { display: none; }
@@ -649,10 +628,6 @@
 @media (max-width: 768px) {
   .admin-el-hide-mobile { display: none; }
   .admin-el-title-cell { min-width: 140px; max-width: none; }
-  .admin-el-edit-grid { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 480px) {
-  .admin-el-edit-grid { grid-template-columns: 1fr; }
 }
 
 /* ===== HR Tickets responsive ===== */
@@ -708,8 +683,6 @@
 .rota-modal-field label { display: block; font-size: 12px; font-weight: 600; color: #666; margin-bottom: 4px; }
 .rota-modal-field input,
 .rota-modal-field select { width: 100%; padding: 8px 12px; border: 1.5px solid #e0e0e0; border-radius: 8px; font-size: 14px; }
-.rota-modal-actions { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
-.rota-modal-actions button { padding: 8px 22px; border-radius: 8px; font-weight: 600; font-size: 14px; border: none; cursor: pointer; }
 
 /* Rota Grid View (Colorful) */
 /* ===== Rota Grid V2 (rg-*) ===== */
@@ -834,10 +807,6 @@
 .rt-bar:hover { opacity: 0.85; transform: scaleY(1.1); }
 .rt-bar-draft { opacity: 0.6; background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.3) 3px, rgba(255,255,255,0.3) 6px); }
 .rt-bar-label { font-size: 10px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 6px; text-shadow: 0 1px 2px rgba(0,0,0,0.2); }
-
-.rota-edit-badge { font-size: 11px; padding: 3px 10px; border-radius: 10px; font-weight: 600; }
-.rota-edit-badge.on { background: #e8f5e9; color: #2e7d32; }
-.rota-edit-badge.off { background: #f5f5f5; color: #999; }
 
 /* (old rota-grid classes removed — rg-* classes above replace them) */
 

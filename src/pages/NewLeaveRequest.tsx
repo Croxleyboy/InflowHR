@@ -145,7 +145,8 @@ export default function NewLeaveRequest() {
               if (!enrolled) return
               const extras: { name: string; translationKey: string }[] = []
               for (const row of enrolled) {
-                const optKey = (row as any).benefit_options?.option_key
+                const opts = (row as { benefit_options?: { option_key: string }[] }).benefit_options
+                const optKey = opts?.[0]?.option_key
                 if (optKey && VACATION_OPTION_LEAVE_TYPES[optKey]) {
                   extras.push(VACATION_OPTION_LEAVE_TYPES[optKey])
                 }

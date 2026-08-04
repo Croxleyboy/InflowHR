@@ -78,7 +78,7 @@ export default function AdminCompanies() {
       for (const co of cos) {
         const cu = (allAdmins || []).find((a: any) => a.company_id === co.id)
         adminMap[co.id] = cu
-          ? { employee_id: cu.employee_id, employee: cu.employee as any }
+          ? { employee_id: cu.employee_id, employee: (Array.isArray(cu.employee) ? cu.employee[0] : cu.employee) as CompanyAdmin['employee'] }
           : { employee_id: null, employee: null }
       }
     }
@@ -209,7 +209,7 @@ export default function AdminCompanies() {
     }
     const company = companies.find(c => c.id === id)
     if (!confirm(`Delete "${company?.name || 'this company'}" and ALL its data? This cannot be undone.`)) return
-    const { error } = await (supabase.rpc as any)('delete_company_data', { p_company_id: id })
+    const { error } = await supabase.rpc('delete_company_data' as any, { p_company_id: id })
     if (error) {
       alert('Error deleting company: ' + error.message)
       return
@@ -289,7 +289,7 @@ export default function AdminCompanies() {
         showError('Failed to assign admin: ' + error.message)
       }
     } else if (emp?.email) {
-      const { error } = await (supabase.rpc as any)('link_and_promote_admin', {
+      const { error } = await supabase.rpc('link_and_promote_admin' as any, {
         p_company_id: companyId,
         p_employee_id: newEmployeeId,
         p_email: emp.email,
