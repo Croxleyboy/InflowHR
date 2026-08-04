@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './AuthContext'
 
@@ -34,20 +34,19 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
   })
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => company?.id || '')
 
-  function refreshCompanies() {
-    supabase.from('companies').select('id, name, domain, is_active').order('name').then(({ data }) => {
-      const list = (data as Company[]) || []
-      setCompanies(list)
-      if (list.length > 0) {
-        setSelectedCompanyId(prev => prev || list[0].id)
-      }
-    })
-  }
+  const refreshCompanies = useCallback(async () => {
+    const { data } = await supabase.from('companies').select('id, name, domain, is_active').order('name')
+    const list = (data as Company[]) || []
+    setCompanies(list)
+    if (list.length > 0) {
+      setSelectedCompanyId(prev => prev || list[0].id)
+    }
+  }, [])
 
   useEffect(() => {
     if (!isSuperAdmin) return
     refreshCompanies()
-  }, [isSuperAdmin])
+  }, [isSuperAdmin, refreshCompanies])
 
   const selectedCompany = companies.find(c => c.id === selectedCompanyId) || null
 
