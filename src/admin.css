@@ -1128,3 +1128,51 @@
   .alt-export-btns { flex-direction: column; }
   .alt-export-btns .admin-btn { width: 100%; justify-content: center; }
 }
+
+/* ─── Analytics ─── */
+.admin-analytics-card {
+  background: #fff; border: 1px solid #e8e8ef; border-radius: 10px;
+  padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.admin-analytics-card h4 {
+  font-size: 13px; font-weight: 700; color: #555; margin: 0 0 12px;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.admin-analytics-big-num {
+  font-size: 36px; font-weight: 800; line-height: 1;
+}
+.admin-bar-chart {
+  display: flex; gap: 6px; align-items: flex-end; height: 120px;
+}
+.admin-bar-item {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.admin-bar-track {
+  width: 100%; height: 80px; background: #f0f0f5; border-radius: 4px;
+  display: flex; align-items: flex-end; overflow: hidden;
+}
+.admin-bar-fill {
+  width: 100%; background: linear-gradient(180deg, #7b1fa2, #ab47bc);
+  border-radius: 4px 4px 0 0; min-height: 2px; transition: height 0.3s ease;
+}
+.admin-bar-label { font-size: 10px; color: #888; font-weight: 600; }
+.admin-bar-value { font-size: 10px; color: #555; font-weight: 700; }
+
+/* ─── Equipment Picker ─── */
+.admin-equipment-picker {
+  padding: 8px 0; width: 100%;
+}
+.admin-equipment-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 6px;
+}
+.admin-equipment-option {
+  display: flex; align-items: center; gap: 6px; font-size: 13px;
+  padding: 4px 8px; border-radius: 6px; cursor: pointer; transition: background 0.15s;
+}
+.admin-equipment-option:hover { background: #f5f0ff; }
+.admin-equipment-option input[type="checkbox"] { accent-color: #7b1fa2; }
+
+@media (max-width: 768px) {
+  .admin-analytics-rates { grid-template-columns: 1fr !important; }
+  .admin-equipment-grid { grid-template-columns: 1fr 1fr; }
+}

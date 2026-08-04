@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useFeatures } from '../context/FeatureContext'
@@ -89,6 +89,13 @@ export default function SpaceBooking() {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
   const [selectedTime, setSelectedTime] = useState('09:00')
   const [selectedEndTime, setSelectedEndTime] = useState('17:00')
+  const [selectedEquipment, setSelectedEquipment] = useState<string[]>([])
+
+  const allEquipmentTags = useMemo(() => {
+    const tags = new Set<string>()
+    spaces.forEach(s => s.equipment_tags.forEach(t => tags.add(t)))
+    return Array.from(tags).sort()
+  }, [spaces])
 
   const [bookingModal, setBookingModal] = useState<Space | null>(null)
   const [bookingTitle, setBookingTitle] = useState('')
@@ -368,13 +375,33 @@ export default function SpaceBooking() {
                 {TIME_SLOTS.filter(s => timeToMinutes(s) >= timeToMinutes(selectedTime) + 30).map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+            {allEquipmentTags.length > 0 && (
+              <div className="space-filter-row space-filter-equipment">
+                <label className="space-filter-label">{t('space.filter_equipment')}</label>
+                <div className="space-equipment-chips">
+                  {allEquipmentTags.map(tag => (
+                    <button
+                      key={tag}
+                      className={`space-equipment-chip ${selectedEquipment.includes(tag) ? 'space-equipment-chip-active' : ''}`}
+                      onClick={() => setSelectedEquipment(prev =>
+                        prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+                      )}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {spaces.length === 0 ? (
             <p className="space-empty">{t('space.no_spaces')}</p>
           ) : (
             <div className="space-grid">
-              {spaces.map(space => {
+              {spaces.filter(space =>
+                selectedEquipment.length === 0 || selectedEquipment.every(tag => space.equipment_tags.includes(tag))
+              ).map(space => {
                 const booked = isSpaceBooked(space.id)
                 const spaceBookings = bookings.filter(b => b.space_id === space.id)
                 return (

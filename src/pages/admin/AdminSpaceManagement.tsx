@@ -3,6 +3,19 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 
+const EQUIPMENT_OPTIONS = [
+  'TV / Display',
+  'Whiteboard',
+  'Video Conferencing',
+  'Conference Phone',
+  'Projector',
+  'Webcam',
+  'Standing Desk',
+  'Dual Monitor',
+  'Microphone',
+  'Speakers',
+]
+
 interface Location {
   id: string
   name: string
@@ -55,7 +68,20 @@ interface AdminBooking {
   employee_name?: string
 }
 
-type SubTab = 'locations' | 'spaces' | 'bookings' | 'settings'
+interface AnalyticsData {
+  totalBookings: number
+  checkedIn: number
+  noShows: number
+  cancelled: number
+  deskBookings: number
+  roomBookings: number
+  avgDailyBookings: number
+  topSpaces: { name: string; type: string; count: number }[]
+  byDayOfWeek: number[]
+  byHour: number[]
+}
+
+type SubTab = 'locations' | 'spaces' | 'bookings' | 'analytics' | 'settings'
 
 function generateTimeSlots(): string[] {
   const slots: string[] = []
@@ -104,8 +130,13 @@ export default function AdminSpaceManagement() {
 
   // Space form
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null)
-  const [spaceForm, setSpaceForm] = useState({ name: '', floor_id: '', space_type: 'desk' as 'desk' | 'room', capacity: 1, equipment_tags: '', status: 'draft' as 'draft' | 'active' | 'maintenance' })
+  const [spaceForm, setSpaceForm] = useState({ name: '', floor_id: '', space_type: 'desk' as 'desk' | 'room', capacity: 1, equipment_tags: [] as string[], status: 'draft' as 'draft' | 'active' | 'maintenance' })
   const [showNewSpace, setShowNewSpace] = useState(false)
+
+  // Analytics state
+  const [analyticsRange, setAnalyticsRange] = useState<7 | 30 | 90>(30)
+  const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null)
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
 
   const [savingSettings, setSavingSettings] = useState(false)
 
@@ -193,17 +224,18 @@ export default function AdminSpaceManagement() {
   // ---- Space CRUD ----
   async function saveSpace() {
     if (!companyId || !spaceForm.name.trim() || !spaceForm.floor_id) return
-    const tags = spaceForm.equipment_tags.split(',').map(s => s.trim()).filter(Boolean)
     if (editingSpaceId) {
-      await supabase.from('spaces').update({
+      const { error } = await supabase.from('spaces').update({
         name: spaceForm.name, floor_id: spaceForm.floor_id, space_type: spaceForm.space_type,
-        capacity: spaceForm.capacity, equipment_tags: tags, status: spaceForm.status,
+        capacity: spaceForm.capacity, equipment_tags: spaceForm.equipment_tags, status: spaceForm.status,
       }).eq('id', editingSpaceId)
+      if (error) { showError('Failed to update space: ' + error.message); return }
     } else {
-      await supabase.from('spaces').insert({
+      const { error } = await supabase.from('spaces').insert({
         company_id: companyId, name: spaceForm.name, floor_id: spaceForm.floor_id,
-        space_type: spaceForm.space_type, capacity: spaceForm.capacity, equipment_tags: tags, status: spaceForm.status,
+        space_type: spaceForm.space_type, capacity: spaceForm.capacity, equipment_tags: spaceForm.equipment_tags, status: spaceForm.status,
       })
+      if (error) { showError('Failed to add space: ' + error.message); return }
     }
     setEditingSpaceId(null)
     setShowNewSpace(false)
@@ -219,7 +251,7 @@ export default function AdminSpaceManagement() {
     setEditingSpaceId(space.id)
     setSpaceForm({
       name: space.name, floor_id: space.floor_id, space_type: space.space_type,
-      capacity: space.capacity, equipment_tags: space.equipment_tags.join(', '), status: space.status,
+      capacity: space.capacity, equipment_tags: [...space.equipment_tags], status: space.status,
     })
     setShowNewSpace(false)
   }
@@ -284,7 +316,72 @@ export default function AdminSpaceManagement() {
     setBookingsLoading(false)
   }, [companyId, bookingFilter])
 
+  const loadAnalytics = useCallback(async () => {
+    if (!companyId) return
+    setAnalyticsLoading(true)
+    const since = new Date()
+    since.setDate(since.getDate() - analyticsRange)
+    const sinceStr = since.toISOString().split('T')[0]
+
+    const { data: rows } = await supabase.from('space_bookings')
+      .select('id, space_id, booking_date, start_time, status, checked_in_at')
+      .eq('company_id', companyId)
+      .gte('booking_date', sinceStr)
+
+    const all = rows || []
+    const nonCancelled = all.filter(r => r.status !== 'cancelled')
+    const checkedIn = all.filter(r => r.status === 'checked_in' || r.checked_in_at)
+    const noShows = all.filter(r => r.status === 'no_show')
+    const cancelled = all.filter(r => r.status === 'cancelled')
+
+    const spaceMap = new Map(spaces.map(s => [s.id, s]))
+    const deskBookings = nonCancelled.filter(r => spaceMap.get(r.space_id)?.space_type === 'desk').length
+    const roomBookings = nonCancelled.filter(r => spaceMap.get(r.space_id)?.space_type === 'room').length
+
+    const uniqueDays = new Set(nonCancelled.map(r => r.booking_date))
+    const avgDaily = uniqueDays.size > 0 ? nonCancelled.length / uniqueDays.size : 0
+
+    const spaceCounts = new Map<string, number>()
+    nonCancelled.forEach(r => spaceCounts.set(r.space_id, (spaceCounts.get(r.space_id) || 0) + 1))
+    const topSpaces = Array.from(spaceCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([sid, count]) => {
+        const s = spaceMap.get(sid)
+        return { name: s?.name || 'Unknown', type: s?.space_type || '', count }
+      })
+
+    const byDayOfWeek = [0, 0, 0, 0, 0, 0, 0]
+    nonCancelled.forEach(r => {
+      const d = new Date(r.booking_date).getDay()
+      byDayOfWeek[d]++
+    })
+
+    const byHour = new Array(24).fill(0)
+    nonCancelled.forEach(r => {
+      if (r.start_time) {
+        const h = parseInt(r.start_time.slice(0, 2), 10)
+        byHour[h]++
+      }
+    })
+
+    setAnalyticsData({
+      totalBookings: nonCancelled.length,
+      checkedIn: checkedIn.length,
+      noShows: noShows.length,
+      cancelled: cancelled.length,
+      deskBookings,
+      roomBookings,
+      avgDailyBookings: Math.round(avgDaily * 10) / 10,
+      topSpaces,
+      byDayOfWeek,
+      byHour,
+    })
+    setAnalyticsLoading(false)
+  }, [companyId, analyticsRange, spaces])
+
   useEffect(() => { if (subTab === 'bookings') loadBookings() }, [loadBookings, subTab])
+  useEffect(() => { if (subTab === 'analytics') loadAnalytics() }, [loadAnalytics, subTab])
 
   function editBooking(b: AdminBooking) {
     setEditingBookingId(b.id)
@@ -379,6 +476,7 @@ export default function AdminSpaceManagement() {
         <button className={`admin-sub-tab ${subTab === 'locations' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('locations')}>Locations &amp; Floors</button>
         <button className={`admin-sub-tab ${subTab === 'spaces' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('spaces')}>Spaces Directory</button>
         <button className={`admin-sub-tab ${subTab === 'bookings' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('bookings')}>Bookings</button>
+        <button className={`admin-sub-tab ${subTab === 'analytics' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('analytics')}>Analytics</button>
         <button className={`admin-sub-tab ${subTab === 'settings' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('settings')}>Booking Settings</button>
       </div>
 
@@ -470,7 +568,7 @@ export default function AdminSpaceManagement() {
         <div className="admin-section">
           <div className="admin-section-header">
             <h2>Spaces</h2>
-            <button className="admin-add-btn" onClick={() => { setShowNewSpace(true); setEditingSpaceId(null); setSpaceForm({ name: '', floor_id: floors[0]?.id || '', space_type: 'desk', capacity: 1, equipment_tags: '', status: 'draft' }) }}>+ Add Space</button>
+            <button className="admin-add-btn" onClick={() => { setShowNewSpace(true); setEditingSpaceId(null); setSpaceForm({ name: '', floor_id: floors[0]?.id || '', space_type: 'desk', capacity: 1, equipment_tags: [], status: 'draft' }) }}>+ Add Space</button>
           </div>
 
           {(showNewSpace || editingSpaceId) && (
@@ -484,7 +582,28 @@ export default function AdminSpaceManagement() {
                 <option value="room">Meeting Room</option>
               </select>
               <input type="number" placeholder="Capacity" value={spaceForm.capacity} onChange={e => setSpaceForm({ ...spaceForm, capacity: Number(e.target.value) })} className="admin-input" min={1} />
-              <input placeholder="Equipment tags (comma separated)" value={spaceForm.equipment_tags} onChange={e => setSpaceForm({ ...spaceForm, equipment_tags: e.target.value })} className="admin-input" />
+              {spaceForm.space_type === 'room' && (
+                <div className="admin-equipment-picker">
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#666', marginBottom: 4, display: 'block' }}>Equipment</label>
+                  <div className="admin-equipment-grid">
+                    {EQUIPMENT_OPTIONS.map(tag => (
+                      <label key={tag} className="admin-equipment-option">
+                        <input
+                          type="checkbox"
+                          checked={spaceForm.equipment_tags.includes(tag)}
+                          onChange={e => {
+                            const next = e.target.checked
+                              ? [...spaceForm.equipment_tags, tag]
+                              : spaceForm.equipment_tags.filter(t => t !== tag)
+                            setSpaceForm({ ...spaceForm, equipment_tags: next })
+                          }}
+                        />
+                        <span>{tag}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <select value={spaceForm.status} onChange={e => setSpaceForm({ ...spaceForm, status: e.target.value as 'draft' | 'active' | 'maintenance' })} className="admin-input">
                 <option value="draft">Draft</option>
                 <option value="active">Active (Published)</option>
@@ -613,6 +732,113 @@ export default function AdminSpaceManagement() {
                 {allBookings.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No bookings found</td></tr>}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {/* ---- ANALYTICS ---- */}
+      {subTab === 'analytics' && (
+        <div className="admin-section">
+          <div className="admin-section-header">
+            <h2>Occupancy Analytics</h2>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {([7, 30, 90] as const).map(d => (
+                <button key={d} className={`admin-action-btn ${analyticsRange === d ? 'admin-filter-active' : ''}`} onClick={() => setAnalyticsRange(d)}>
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {analyticsLoading ? (
+            <div className="admin-loading">Loading analytics...</div>
+          ) : analyticsData ? (
+            <>
+              <div className="admin-mini-stats">
+                <div className="admin-mini-stat"><span className="admin-mini-value">{analyticsData.totalBookings}</span><span>Total Bookings</span></div>
+                <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#5b9bd5' }}>{analyticsData.deskBookings}</span><span>Desk</span></div>
+                <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#7e57c2' }}>{analyticsData.roomBookings}</span><span>Room</span></div>
+                <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#43a047' }}>{analyticsData.checkedIn}</span><span>Checked In</span></div>
+                <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#e53935' }}>{analyticsData.noShows}</span><span>No Shows</span></div>
+                <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#ff9800' }}>{analyticsData.cancelled}</span><span>Cancelled</span></div>
+                <div className="admin-mini-stat"><span className="admin-mini-value">{analyticsData.avgDailyBookings}</span><span>Avg / Day</span></div>
+              </div>
+
+              <div className="admin-analytics-rates" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, margin: '16px 0' }}>
+                <div className="admin-analytics-card">
+                  <h4>Check-in Rate</h4>
+                  <div className="admin-analytics-big-num" style={{ color: '#43a047' }}>
+                    {analyticsData.totalBookings > 0 ? Math.round((analyticsData.checkedIn / analyticsData.totalBookings) * 100) : 0}%
+                  </div>
+                </div>
+                <div className="admin-analytics-card">
+                  <h4>No-show Rate</h4>
+                  <div className="admin-analytics-big-num" style={{ color: '#e53935' }}>
+                    {analyticsData.totalBookings > 0 ? Math.round((analyticsData.noShows / analyticsData.totalBookings) * 100) : 0}%
+                  </div>
+                </div>
+              </div>
+
+              {analyticsData.topSpaces.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Most Popular Spaces</h3>
+                  <table className="admin-table">
+                    <thead><tr><th>Space</th><th>Type</th><th>Bookings</th><th>Share</th></tr></thead>
+                    <tbody>
+                      {analyticsData.topSpaces.map(s => (
+                        <tr key={s.name}>
+                          <td>{s.name}</td>
+                          <td><span className={`admin-badge admin-badge-${s.type}`}>{s.type === 'desk' ? 'Desk' : 'Room'}</span></td>
+                          <td>{s.count}</td>
+                          <td>{analyticsData.totalBookings > 0 ? Math.round((s.count / analyticsData.totalBookings) * 100) : 0}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div className="admin-analytics-card">
+                  <h4>Bookings by Day of Week</h4>
+                  <div className="admin-bar-chart">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, i) => {
+                      const max = Math.max(...analyticsData.byDayOfWeek, 1)
+                      return (
+                        <div key={day} className="admin-bar-item">
+                          <div className="admin-bar-track">
+                            <div className="admin-bar-fill" style={{ height: `${(analyticsData.byDayOfWeek[i] / max) * 100}%` }} />
+                          </div>
+                          <span className="admin-bar-label">{day}</span>
+                          <span className="admin-bar-value">{analyticsData.byDayOfWeek[i]}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="admin-analytics-card">
+                  <h4>Peak Hours</h4>
+                  <div className="admin-bar-chart">
+                    {analyticsData.byHour.map((count, h) => {
+                      if (h < 7 || h > 19) return null
+                      const max = Math.max(...analyticsData.byHour.slice(7, 20), 1)
+                      return (
+                        <div key={h} className="admin-bar-item">
+                          <div className="admin-bar-track">
+                            <div className="admin-bar-fill" style={{ height: `${(count / max) * 100}%` }} />
+                          </div>
+                          <span className="admin-bar-label">{String(h).padStart(2, '0')}</span>
+                          <span className="admin-bar-value">{count}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p style={{ color: '#999', textAlign: 'center', padding: 32 }}>No analytics data available</p>
           )}
         </div>
       )}
