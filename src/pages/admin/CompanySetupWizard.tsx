@@ -96,9 +96,19 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           if (key) {
             if (key === 'annual_salary') {
               out[key] = Number(val) || 0
-            } else if (key === 'start_date' && typeof val === 'number') {
-              const d = XLSX.SSF.parse_date_code(val)
-              out[key] = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+            } else if (key === 'start_date') {
+              if (typeof val === 'number') {
+                const d = XLSX.SSF.parse_date_code(val)
+                out[key] = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+              } else {
+                const str = String(val).trim()
+                const ddmmyyyy = str.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/)
+                if (ddmmyyyy) {
+                  out[key] = `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`
+                } else {
+                  out[key] = str
+                }
+              }
             } else {
               out[key] = String(val).trim()
             }
