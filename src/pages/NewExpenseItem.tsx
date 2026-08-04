@@ -28,7 +28,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
   const [mileageTo, setMileageTo] = useState('')
   const [totalMiles, setTotalMiles] = useState('')
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null)
-  const [receiptData, setReceiptData] = useState<string | null>(null)
+  const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -38,12 +38,9 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
   function handleReceiptCapture(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    setReceiptFile(file)
     const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      setReceiptPreview(result)
-      setReceiptData(result)
-    }
+    reader.onload = () => setReceiptPreview(reader.result as string)
     reader.readAsDataURL(file)
   }
 
@@ -55,6 +52,16 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
     setSaving(true)
     setError(null)
 
+    let receiptUrl: string | null = null
+    if (receiptFile && companyUser?.company_id) {
+      const ext = receiptFile.name.split('.').pop() || 'jpg'
+      const path = `${companyUser.company_id}/${claimId}/${Date.now()}.${ext}`
+      const { error: uploadErr } = await supabase.storage.from('receipts').upload(path, receiptFile, { upsert: true })
+      if (uploadErr) { setError('Failed to upload receipt: ' + uploadErr.message); setSaving(false); return }
+      const { data: urlData } = supabase.storage.from('receipts').getPublicUrl(path)
+      receiptUrl = urlData.publicUrl
+    }
+
     const { error: err } = await supabase.from('expense_line_items').insert({
       expense_claim_id: claimId,
       title: title.trim(),
@@ -65,7 +72,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
       mileage_from: mileageFrom.trim() || null,
       mileage_to: mileageTo.trim() || null,
       total_miles: totalMiles ? parseFloat(totalMiles) : null,
-      receipt_url: receiptData,
+      receipt_url: receiptUrl,
       company_id: companyUser?.company_id,
     })
 
