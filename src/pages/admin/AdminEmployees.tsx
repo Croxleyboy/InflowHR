@@ -15,6 +15,35 @@ interface Employee {
   is_active: boolean
   is_admin: boolean
   avatar_url: string | null
+  date_of_birth: string | null
+  gender: string | null
+  nationality: string | null
+  marital_status: string | null
+  address_line1: string | null
+  address_line2: string | null
+  city: string | null
+  county: string | null
+  postcode: string | null
+  country: string | null
+  emergency_contact_name: string | null
+  emergency_contact_phone: string | null
+  emergency_contact_relationship: string | null
+  ni_number: string | null
+  bank_sort_code: string | null
+  bank_account_number: string | null
+  bank_account_name: string | null
+  probation_end_date: string | null
+  notice_period: string | null
+  working_pattern: string | null
+  weekly_hours: number | null
+  location: string | null
+  contract_type: string | null
+  annual_salary: number | null
+  tax_code: string | null
+  payroll_id: string | null
+  personal_email: string | null
+  manager_name: string | null
+  manager_email: string | null
 }
 
 export default function AdminEmployees() {
@@ -40,7 +69,28 @@ export default function AdminEmployees() {
 
   function startEdit(emp: Employee) {
     setEditingId(emp.id)
-    setEditForm({ first_name: emp.first_name, last_name: emp.last_name, email: emp.email, job_title: emp.job_title || '', department: emp.department || '', phone: emp.phone || '', is_active: emp.is_active, is_admin: emp.is_admin })
+    setEditForm({
+      first_name: emp.first_name, last_name: emp.last_name, email: emp.email,
+      job_title: emp.job_title || '', department: emp.department || '', phone: emp.phone || '',
+      is_active: emp.is_active, is_admin: emp.is_admin,
+      date_of_birth: emp.date_of_birth || '', gender: emp.gender || '',
+      nationality: emp.nationality || '', marital_status: emp.marital_status || '',
+      address_line1: emp.address_line1 || '', address_line2: emp.address_line2 || '',
+      city: emp.city || '', county: emp.county || '', postcode: emp.postcode || '',
+      country: emp.country || 'United Kingdom',
+      emergency_contact_name: emp.emergency_contact_name || '',
+      emergency_contact_phone: emp.emergency_contact_phone || '',
+      emergency_contact_relationship: emp.emergency_contact_relationship || '',
+      ni_number: emp.ni_number || '',
+      bank_sort_code: emp.bank_sort_code || '', bank_account_number: emp.bank_account_number || '',
+      bank_account_name: emp.bank_account_name || '',
+      probation_end_date: emp.probation_end_date || '', notice_period: emp.notice_period || '',
+      working_pattern: emp.working_pattern || 'Full-time', weekly_hours: emp.weekly_hours ?? 37.5,
+      location: emp.location || '', contract_type: emp.contract_type || 'Permanent',
+      annual_salary: emp.annual_salary ?? '', tax_code: emp.tax_code || '',
+      payroll_id: emp.payroll_id || '', personal_email: emp.personal_email || '',
+      manager_name: emp.manager_name || '', manager_email: emp.manager_email || '',
+    })
   }
 
   async function saveEdit(id: string) {
@@ -200,11 +250,170 @@ export default function AdminEmployees() {
                               )}
                             </div>
                           </div>
-                          <div className="admin-detail-grid admin-detail-grid-2" style={{flex:1}}>
-                            <div><strong>Phone:</strong> {emp.phone || '—'}</div>
-                            <div><strong>Start Date:</strong> {new Date(emp.start_date).toLocaleDateString('en-GB')}</div>
-                            <div><strong>Admin:</strong> {emp.is_admin ? 'Yes' : 'No'}</div>
-                            <div><strong>Employee ID:</strong> {emp.employee_number}</div>
+                          <div style={{flex:1}}>
+                            {editingId === emp.id ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
+                                  <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Personal Details</legend>
+                                  <div className="admin-detail-grid admin-detail-grid-3">
+                                    {[
+                                      { k: 'date_of_birth', l: 'Date of Birth', t: 'date' },
+                                      { k: 'gender', l: 'Gender', t: 'select', opts: ['', 'Male', 'Female', 'Non-binary', 'Prefer not to say'] },
+                                      { k: 'nationality', l: 'Nationality' },
+                                      { k: 'marital_status', l: 'Marital Status', t: 'select', opts: ['', 'Single', 'Married', 'Civil Partnership', 'Divorced', 'Widowed', 'Prefer not to say'] },
+                                      { k: 'ni_number', l: 'NI Number' },
+                                      { k: 'personal_email', l: 'Personal Email' },
+                                    ].map(f => (
+                                      <div key={f.k} className="admin-form-field">
+                                        <label style={{ fontSize: 12 }}>{f.l}</label>
+                                        {f.t === 'select' ? (
+                                          <select className="admin-select" value={editForm[f.k] || ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))}>
+                                            {f.opts!.map(o => <option key={o} value={o}>{o || '—'}</option>)}
+                                          </select>
+                                        ) : (
+                                          <input className="admin-inline-input" type={f.t || 'text'} value={editForm[f.k] || ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </fieldset>
+                                <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
+                                  <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Address</legend>
+                                  <div className="admin-detail-grid admin-detail-grid-3">
+                                    {[
+                                      { k: 'address_line1', l: 'Address Line 1' }, { k: 'address_line2', l: 'Address Line 2' },
+                                      { k: 'city', l: 'City' }, { k: 'county', l: 'County' },
+                                      { k: 'postcode', l: 'Postcode' }, { k: 'country', l: 'Country' },
+                                    ].map(f => (
+                                      <div key={f.k} className="admin-form-field">
+                                        <label style={{ fontSize: 12 }}>{f.l}</label>
+                                        <input className="admin-inline-input" value={editForm[f.k] || ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </fieldset>
+                                <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
+                                  <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Employment</legend>
+                                  <div className="admin-detail-grid admin-detail-grid-3">
+                                    {[
+                                      { k: 'location', l: 'Work Location' },
+                                      { k: 'contract_type', l: 'Contract Type', t: 'select', opts: ['Permanent', 'Fixed-term', 'Full-time', 'Part-time', 'Contract', 'Apprentice', 'Intern', 'Guest'] },
+                                      { k: 'working_pattern', l: 'Working Pattern', t: 'select', opts: ['Full-time', 'Part-time', 'Compressed', 'Flexible', 'Shift', 'Term-time'] },
+                                      { k: 'weekly_hours', l: 'Weekly Hours', t: 'number' },
+                                      { k: 'probation_end_date', l: 'Probation End Date', t: 'date' },
+                                      { k: 'notice_period', l: 'Notice Period' },
+                                      { k: 'manager_name', l: 'Manager Name' },
+                                      { k: 'manager_email', l: 'Manager Email' },
+                                    ].map(f => (
+                                      <div key={f.k} className="admin-form-field">
+                                        <label style={{ fontSize: 12 }}>{f.l}</label>
+                                        {f.t === 'select' ? (
+                                          <select className="admin-select" value={editForm[f.k] || ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))}>
+                                            {f.opts!.map(o => <option key={o} value={o}>{o}</option>)}
+                                          </select>
+                                        ) : (
+                                          <input className="admin-inline-input" type={f.t || 'text'} value={editForm[f.k] ?? ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </fieldset>
+                                <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
+                                  <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Payroll</legend>
+                                  <div className="admin-detail-grid admin-detail-grid-3">
+                                    {[
+                                      { k: 'annual_salary', l: 'Annual Salary (£)', t: 'number' },
+                                      { k: 'tax_code', l: 'Tax Code' },
+                                      { k: 'payroll_id', l: 'Payroll ID' },
+                                    ].map(f => (
+                                      <div key={f.k} className="admin-form-field">
+                                        <label style={{ fontSize: 12 }}>{f.l}</label>
+                                        <input className="admin-inline-input" type={f.t || 'text'} value={editForm[f.k] ?? ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </fieldset>
+                                <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
+                                  <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Emergency Contact</legend>
+                                  <div className="admin-detail-grid admin-detail-grid-3">
+                                    {[
+                                      { k: 'emergency_contact_name', l: 'Contact Name' },
+                                      { k: 'emergency_contact_phone', l: 'Contact Phone' },
+                                      { k: 'emergency_contact_relationship', l: 'Relationship' },
+                                    ].map(f => (
+                                      <div key={f.k} className="admin-form-field">
+                                        <label style={{ fontSize: 12 }}>{f.l}</label>
+                                        <input className="admin-inline-input" value={editForm[f.k] || ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </fieldset>
+                                <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
+                                  <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Bank Details</legend>
+                                  <div className="admin-detail-grid admin-detail-grid-3">
+                                    {[
+                                      { k: 'bank_account_name', l: 'Account Name' },
+                                      { k: 'bank_sort_code', l: 'Sort Code' },
+                                      { k: 'bank_account_number', l: 'Account Number' },
+                                    ].map(f => (
+                                      <div key={f.k} className="admin-form-field">
+                                        <label style={{ fontSize: 12 }}>{f.l}</label>
+                                        <input className="admin-inline-input" value={editForm[f.k] || ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </fieldset>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div className="admin-detail-grid admin-detail-grid-3">
+                                  <div><strong>Phone:</strong> {emp.phone || '—'}</div>
+                                  <div><strong>Start Date:</strong> {emp.start_date ? new Date(emp.start_date).toLocaleDateString('en-GB') : '—'}</div>
+                                  <div><strong>Admin:</strong> {emp.is_admin ? 'Yes' : 'No'}</div>
+                                  <div><strong>Employee ID:</strong> {emp.employee_number}</div>
+                                  <div><strong>Location:</strong> {emp.location || '—'}</div>
+                                  <div><strong>Contract:</strong> {emp.contract_type || '—'}</div>
+                                  <div><strong>DOB:</strong> {emp.date_of_birth ? new Date(emp.date_of_birth).toLocaleDateString('en-GB') : '—'}</div>
+                                  <div><strong>Gender:</strong> {emp.gender || '—'}</div>
+                                  <div><strong>Nationality:</strong> {emp.nationality || '—'}</div>
+                                  <div><strong>Marital Status:</strong> {emp.marital_status || '—'}</div>
+                                  <div><strong>NI Number:</strong> {emp.ni_number || '—'}</div>
+                                  <div><strong>Personal Email:</strong> {emp.personal_email || '—'}</div>
+                                </div>
+                                {(emp.address_line1 || emp.city || emp.postcode) && (
+                                  <div>
+                                    <strong>Address:</strong> {[emp.address_line1, emp.address_line2, emp.city, emp.county, emp.postcode, emp.country].filter(Boolean).join(', ') || '—'}
+                                  </div>
+                                )}
+                                <div className="admin-detail-grid admin-detail-grid-3">
+                                  <div><strong>Working Pattern:</strong> {emp.working_pattern || '—'}</div>
+                                  <div><strong>Weekly Hours:</strong> {emp.weekly_hours ?? '—'}</div>
+                                  <div><strong>Notice Period:</strong> {emp.notice_period || '—'}</div>
+                                  <div><strong>Probation End:</strong> {emp.probation_end_date ? new Date(emp.probation_end_date).toLocaleDateString('en-GB') : '—'}</div>
+                                  <div><strong>Manager:</strong> {emp.manager_name || '—'}</div>
+                                  <div><strong>Manager Email:</strong> {emp.manager_email || '—'}</div>
+                                </div>
+                                <div className="admin-detail-grid admin-detail-grid-3">
+                                  <div><strong>Salary:</strong> {emp.annual_salary ? `£${Number(emp.annual_salary).toLocaleString()}` : '—'}</div>
+                                  <div><strong>Tax Code:</strong> {emp.tax_code || '—'}</div>
+                                  <div><strong>Payroll ID:</strong> {emp.payroll_id || '—'}</div>
+                                </div>
+                                {emp.emergency_contact_name && (
+                                  <div className="admin-detail-grid admin-detail-grid-3">
+                                    <div><strong>Emergency Contact:</strong> {emp.emergency_contact_name}</div>
+                                    <div><strong>Emergency Phone:</strong> {emp.emergency_contact_phone || '—'}</div>
+                                    <div><strong>Relationship:</strong> {emp.emergency_contact_relationship || '—'}</div>
+                                  </div>
+                                )}
+                                {emp.bank_account_name && (
+                                  <div className="admin-detail-grid admin-detail-grid-3">
+                                    <div><strong>Bank Account:</strong> {emp.bank_account_name}</div>
+                                    <div><strong>Sort Code:</strong> {emp.bank_sort_code || '—'}</div>
+                                    <div><strong>Account No:</strong> {emp.bank_account_number || '—'}</div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>

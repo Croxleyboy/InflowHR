@@ -27,15 +27,47 @@ interface SetupRow {
   tax_code: string
   payroll_id: string
   role: string
+  personal_email: string
+  date_of_birth: string
+  gender: string
+  nationality: string
+  marital_status: string
+  address_line1: string
+  address_line2: string
+  city: string
+  county: string
+  postcode: string
+  country: string
+  emergency_contact_name: string
+  emergency_contact_phone: string
+  emergency_contact_relationship: string
+  ni_number: string
+  bank_sort_code: string
+  bank_account_number: string
+  bank_account_name: string
+  probation_end_date: string
+  notice_period: string
+  working_pattern: string
+  weekly_hours: number
 }
 
 const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
   'first name': 'firstname', 'surname': 'surname', 'work email': 'user_email',
-  'job title': 'job_title', 'department': 'department',
+  'personal email': 'personal_email', 'job title': 'job_title', 'department': 'department',
   'manager name': 'manager', 'manager email': 'manager_email', 'location': 'location',
   'phone': 'telephone', 'employee number': 'employee_number', 'start date': 'start_date',
   'contract type': 'contract_type', 'annual salary': 'annual_salary',
   'tax code': 'tax_code', 'payroll id': 'payroll_id', 'role': 'role',
+  'date of birth': 'date_of_birth', 'gender': 'gender', 'nationality': 'nationality',
+  'marital status': 'marital_status', 'address line 1': 'address_line1',
+  'address line 2': 'address_line2', 'city': 'city', 'county': 'county',
+  'postcode': 'postcode', 'country': 'country',
+  'emergency contact name': 'emergency_contact_name', 'emergency contact phone': 'emergency_contact_phone',
+  'emergency contact relationship': 'emergency_contact_relationship',
+  'ni number': 'ni_number', 'bank sort code': 'bank_sort_code',
+  'bank account number': 'bank_account_number', 'bank account name': 'bank_account_name',
+  'probation end date': 'probation_end_date', 'notice period': 'notice_period',
+  'working pattern': 'working_pattern', 'weekly hours': 'weekly_hours',
 }
 
 const SETUP_STEPS = [
@@ -90,13 +122,13 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
       const errors: string[] = []
       const mapped: SetupRow[] = raw.map((row, i) => {
-        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee' }
+        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: 37.5 }
         for (const [excelCol, val] of Object.entries(row)) {
           const key = SETUP_COLUMN_MAP[excelCol.toLowerCase().trim()]
           if (key) {
-            if (key === 'annual_salary') {
+            if (key === 'annual_salary' || key === 'weekly_hours') {
               out[key] = Number(val) || 0
-            } else if (key === 'start_date') {
+            } else if (['start_date', 'date_of_birth', 'probation_end_date'].includes(key)) {
               if (typeof val === 'number') {
                 const d = XLSX.SSF.parse_date_code(val)
                 out[key] = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
@@ -134,7 +166,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
   }
 
   function generateTemplate() {
-    const headers = ['First Name', 'Surname', 'Work Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Role']
+    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number', 'Role']
     const ws = XLSX.utils.aoa_to_sheet([headers])
     ws['!cols'] = headers.map(() => ({ wch: 20 }))
     const wb = XLSX.utils.book_new()
@@ -214,6 +246,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           firstname: row.firstname,
           surname: row.surname,
           user_email: row.user_email,
+          personal_email: row.personal_email || null,
           job_title: row.job_title,
           department: row.department,
           manager: row.manager,
@@ -231,6 +264,30 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           first_month: true,
           elearning: true,
           company_id: setupCompanyId,
+          date_of_birth: row.date_of_birth || null,
+          gender: row.gender || null,
+          nationality: row.nationality || null,
+          marital_status: row.marital_status || null,
+          address_line1: row.address_line1 || null,
+          address_line2: row.address_line2 || null,
+          city: row.city || null,
+          county: row.county || null,
+          postcode: row.postcode || null,
+          country: row.country || null,
+          emergency_contact_name: row.emergency_contact_name || null,
+          emergency_contact_phone: row.emergency_contact_phone || null,
+          emergency_contact_relationship: row.emergency_contact_relationship || null,
+          ni_number: row.ni_number || null,
+          bank_sort_code: row.bank_sort_code || null,
+          bank_account_number: row.bank_account_number || null,
+          bank_account_name: row.bank_account_name || null,
+          probation_end_date: row.probation_end_date || null,
+          notice_period: row.notice_period || null,
+          working_pattern: row.working_pattern || null,
+          weekly_hours: row.weekly_hours || null,
+          annual_salary: row.annual_salary || null,
+          tax_code: row.tax_code || null,
+          payroll_id: row.payroll_id || null,
         })
         if (!onbErr) {
           onboardCount++
@@ -251,6 +308,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           first_name: row.firstname,
           last_name: row.surname,
           email: row.user_email,
+          personal_email: row.personal_email || null,
           job_title: row.job_title || '',
           department: row.department || '',
           start_date: row.start_date || now.toISOString().split('T')[0],
@@ -258,6 +316,34 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           is_admin: row.role === 'admin',
           is_active: true,
           company_id: setupCompanyId,
+          location: row.location || null,
+          contract_type: row.contract_type || 'Full-time',
+          manager_name: row.manager || null,
+          manager_email: row.manager_email || null,
+          date_of_birth: row.date_of_birth || null,
+          gender: row.gender || null,
+          nationality: row.nationality || null,
+          marital_status: row.marital_status || null,
+          address_line1: row.address_line1 || null,
+          address_line2: row.address_line2 || null,
+          city: row.city || null,
+          county: row.county || null,
+          postcode: row.postcode || null,
+          country: row.country || null,
+          emergency_contact_name: row.emergency_contact_name || null,
+          emergency_contact_phone: row.emergency_contact_phone || null,
+          emergency_contact_relationship: row.emergency_contact_relationship || null,
+          ni_number: row.ni_number || null,
+          bank_sort_code: row.bank_sort_code || null,
+          bank_account_number: row.bank_account_number || null,
+          bank_account_name: row.bank_account_name || null,
+          probation_end_date: row.probation_end_date || null,
+          notice_period: row.notice_period || null,
+          working_pattern: row.working_pattern || null,
+          weekly_hours: row.weekly_hours || null,
+          annual_salary: row.annual_salary || null,
+          tax_code: row.tax_code || null,
+          payroll_id: row.payroll_id || null,
         }).select('id').single()
         if (!empErr && newEmp) {
           empCount++
@@ -450,7 +536,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
             Upload an Excel file with employee details and salary information for <strong>{setupCompany?.name}</strong>.
           </p>
           <p style={{ color: '#999', fontSize: 13, marginBottom: 16 }}>
-            Required columns: First Name, Surname, Work Email. Optional: Job Title, Department, Manager Name/Email, Location, Phone, Employee Number, Start Date, Contract Type, Annual Salary, Tax Code, Payroll ID, Role (admin/employee/hr).
+            Required columns: First Name, Surname, Work Email. Optional: Personal Email, Job Title, Department, Manager Name/Email, Location, Phone, Employee Number, Start Date, Contract Type, Date of Birth, Gender, Nationality, Marital Status, NI Number, Address (Line 1/2, City, County, Postcode, Country), Working Pattern, Weekly Hours, Probation End Date, Notice Period, Annual Salary, Tax Code, Payroll ID, Emergency Contact (Name/Phone/Relationship), Bank Details (Account Name/Sort Code/Account Number), Role (admin/employee/hr).
           </p>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>

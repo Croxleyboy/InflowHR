@@ -29,6 +29,30 @@ interface OnboardRecord {
   first_month: boolean
   elearning: boolean
   created_at: string
+  date_of_birth: string | null
+  gender: string | null
+  nationality: string | null
+  marital_status: string | null
+  address_line1: string | null
+  address_line2: string | null
+  city: string | null
+  county: string | null
+  postcode: string | null
+  country: string | null
+  emergency_contact_name: string | null
+  emergency_contact_phone: string | null
+  emergency_contact_relationship: string | null
+  ni_number: string | null
+  bank_sort_code: string | null
+  bank_account_number: string | null
+  bank_account_name: string | null
+  probation_end_date: string | null
+  notice_period: string | null
+  working_pattern: string | null
+  weekly_hours: number | null
+  annual_salary: number | null
+  tax_code: string | null
+  payroll_id: string | null
 }
 
 const WORKFLOW_STEPS = [
@@ -58,6 +82,12 @@ export default function AdminOnboarding() {
     firstname: '', surname: '', user_email: '', job_title: '', department: '',
     start_date: '', manager: '', manager_email: '', personal_email: '',
     location: '', telephone: '', employee_number: '', contract_type: 'Full-time',
+    date_of_birth: '', gender: '', nationality: '', marital_status: '',
+    address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom',
+    emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '',
+    ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '',
+    probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: '37.5',
+    annual_salary: '', tax_code: '', payroll_id: '',
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -72,7 +102,17 @@ export default function AdminOnboarding() {
     'personal email': 'personal_email', 'job title': 'job_title', 'department': 'department',
     'manager name': 'manager', 'manager email': 'manager_email', 'location': 'location',
     'phone': 'telephone', 'employee number': 'employee_number', 'start date': 'start_date',
-    'contract type': 'contract_type',
+    'contract type': 'contract_type', 'date of birth': 'date_of_birth', 'gender': 'gender',
+    'nationality': 'nationality', 'marital status': 'marital_status',
+    'address line 1': 'address_line1', 'address line 2': 'address_line2',
+    'city': 'city', 'county': 'county', 'postcode': 'postcode', 'country': 'country',
+    'emergency contact name': 'emergency_contact_name', 'emergency contact phone': 'emergency_contact_phone',
+    'emergency contact relationship': 'emergency_contact_relationship',
+    'ni number': 'ni_number', 'bank sort code': 'bank_sort_code',
+    'bank account number': 'bank_account_number', 'bank account name': 'bank_account_name',
+    'probation end date': 'probation_end_date', 'notice period': 'notice_period',
+    'working pattern': 'working_pattern', 'weekly hours': 'weekly_hours',
+    'annual salary': 'annual_salary', 'tax code': 'tax_code', 'payroll id': 'payroll_id',
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -100,9 +140,13 @@ export default function AdminOnboarding() {
           const key = COLUMN_MAP[excelCol.toLowerCase().trim()]
           if (key) {
             let strVal = String(val).trim()
-            if (key === 'start_date' && typeof val === 'number') {
+            const dateFields = ['start_date', 'date_of_birth', 'probation_end_date']
+            if (dateFields.includes(key) && typeof val === 'number') {
               const d = XLSX.SSF.parse_date_code(val)
               strVal = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`
+            } else if (dateFields.includes(key) && typeof val === 'string') {
+              const ddmmyyyy = strVal.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/)
+              if (ddmmyyyy) strVal = `${ddmmyyyy[3]}-${ddmmyyyy[2].padStart(2, '0')}-${ddmmyyyy[1].padStart(2, '0')}`
             }
             out[key] = strVal
           }
@@ -143,6 +187,15 @@ export default function AdminOnboarding() {
     setUploadRows([])
     setUploadErrors([])
     setUploadResult(null)
+  }
+
+  function generateBulkTemplate() {
+    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number']
+    const ws = XLSX.utils.aoa_to_sheet([headers])
+    ws['!cols'] = headers.map(() => ({ wch: 20 }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'New Starters')
+    XLSX.writeFile(wb, 'new-starter-template.xlsx')
   }
 
   useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
@@ -259,6 +312,35 @@ export default function AdminOnboarding() {
       is_admin: false,
       is_active: false,
       company_id: selectedCompanyId,
+      location: record.location || '',
+      contract_type: record.contract_type || '',
+      personal_email: record.personal_email || '',
+      manager_name: record.manager || '',
+      manager_email: record.manager_email || '',
+      date_of_birth: record.date_of_birth || null,
+      gender: record.gender || null,
+      nationality: record.nationality || null,
+      marital_status: record.marital_status || null,
+      address_line1: record.address_line1 || null,
+      address_line2: record.address_line2 || null,
+      city: record.city || null,
+      county: record.county || null,
+      postcode: record.postcode || null,
+      country: record.country || null,
+      emergency_contact_name: record.emergency_contact_name || null,
+      emergency_contact_phone: record.emergency_contact_phone || null,
+      emergency_contact_relationship: record.emergency_contact_relationship || null,
+      ni_number: record.ni_number || null,
+      bank_sort_code: record.bank_sort_code || null,
+      bank_account_number: record.bank_account_number || null,
+      bank_account_name: record.bank_account_name || null,
+      probation_end_date: record.probation_end_date || null,
+      notice_period: record.notice_period || null,
+      working_pattern: record.working_pattern || null,
+      weekly_hours: record.weekly_hours || null,
+      annual_salary: record.annual_salary || null,
+      tax_code: record.tax_code || null,
+      payroll_id: record.payroll_id || null,
     })
     if (error) {
       alert(`Failed to create employee record: ${error.message}`)
@@ -429,31 +511,143 @@ export default function AdminOnboarding() {
       {tab === 'new' && (
         <div className="admin-add-form">
           <h3>Create New Starter</h3>
-          <div className="admin-form-grid">
-            {[
-              { key: 'firstname', label: 'First Name' }, { key: 'surname', label: 'Surname' },
-              { key: 'user_email', label: 'Work Email' }, { key: 'personal_email', label: 'Personal Email' },
-              { key: 'job_title', label: 'Job Title' }, { key: 'department', label: 'Department' },
-              { key: 'manager', label: 'Manager Name' }, { key: 'manager_email', label: 'Manager Email' },
-              { key: 'location', label: 'Location' }, { key: 'telephone', label: 'Phone' },
-              { key: 'employee_number', label: 'Employee Number' },
-            ].map(f => (
-              <div key={f.key} className="admin-form-field">
-                <label>{f.label}</label>
-                <input className="admin-input" value={newForm[f.key]} onChange={e => setNewForm(p => ({...p, [f.key]: e.target.value}))} />
+          <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Basic Details</legend>
+            <div className="admin-form-grid">
+              {[
+                { key: 'firstname', label: 'First Name *' }, { key: 'surname', label: 'Surname *' },
+                { key: 'user_email', label: 'Work Email *' }, { key: 'personal_email', label: 'Personal Email' },
+                { key: 'job_title', label: 'Job Title' }, { key: 'department', label: 'Department' },
+                { key: 'manager', label: 'Manager Name' }, { key: 'manager_email', label: 'Manager Email' },
+                { key: 'location', label: 'Work Location' }, { key: 'telephone', label: 'Phone' },
+                { key: 'employee_number', label: 'Employee Number' },
+              ].map(f => (
+                <div key={f.key} className="admin-form-field">
+                  <label>{f.label}</label>
+                  <input className="admin-input" value={newForm[f.key]} onChange={e => setNewForm(p => ({...p, [f.key]: e.target.value}))} />
+                </div>
+              ))}
+              <div className="admin-form-field">
+                <label>Start Date</label>
+                <input type="date" className="admin-input" value={newForm.start_date} onChange={e => setNewForm(p => ({...p, start_date: e.target.value}))} />
               </div>
-            ))}
-            <div className="admin-form-field">
-              <label>Start Date</label>
-              <input type="date" className="admin-input" value={newForm.start_date} onChange={e => setNewForm(p => ({...p, start_date: e.target.value}))} />
+              <div className="admin-form-field">
+                <label>Contract Type</label>
+                <select className="admin-select" value={newForm.contract_type} onChange={e => setNewForm(p => ({...p, contract_type: e.target.value}))}>
+                  <option>Full-time</option><option>Part-time</option><option>Contract</option><option>Apprentice</option><option>Intern</option><option>Guest</option>
+                </select>
+              </div>
             </div>
-            <div className="admin-form-field">
-              <label>Contract Type</label>
-              <select className="admin-select" value={newForm.contract_type} onChange={e => setNewForm(p => ({...p, contract_type: e.target.value}))}>
-                <option>Full-time</option><option>Part-time</option><option>Contract</option><option>Guest</option>
-              </select>
+          </fieldset>
+          <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Personal Information</legend>
+            <div className="admin-form-grid">
+              <div className="admin-form-field">
+                <label>Date of Birth</label>
+                <input type="date" className="admin-input" value={newForm.date_of_birth} onChange={e => setNewForm(p => ({...p, date_of_birth: e.target.value}))} />
+              </div>
+              <div className="admin-form-field">
+                <label>Gender</label>
+                <select className="admin-select" value={newForm.gender} onChange={e => setNewForm(p => ({...p, gender: e.target.value}))}>
+                  <option value="">—</option><option>Male</option><option>Female</option><option>Non-binary</option><option>Prefer not to say</option>
+                </select>
+              </div>
+              <div className="admin-form-field">
+                <label>Nationality</label>
+                <input className="admin-input" value={newForm.nationality} onChange={e => setNewForm(p => ({...p, nationality: e.target.value}))} />
+              </div>
+              <div className="admin-form-field">
+                <label>Marital Status</label>
+                <select className="admin-select" value={newForm.marital_status} onChange={e => setNewForm(p => ({...p, marital_status: e.target.value}))}>
+                  <option value="">—</option><option>Single</option><option>Married</option><option>Civil Partnership</option><option>Divorced</option><option>Widowed</option><option>Prefer not to say</option>
+                </select>
+              </div>
+              <div className="admin-form-field">
+                <label>NI Number</label>
+                <input className="admin-input" value={newForm.ni_number} onChange={e => setNewForm(p => ({...p, ni_number: e.target.value}))} />
+              </div>
             </div>
-          </div>
+          </fieldset>
+          <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Address</legend>
+            <div className="admin-form-grid">
+              {[
+                { key: 'address_line1', label: 'Address Line 1' }, { key: 'address_line2', label: 'Address Line 2' },
+                { key: 'city', label: 'City' }, { key: 'county', label: 'County' },
+                { key: 'postcode', label: 'Postcode' }, { key: 'country', label: 'Country' },
+              ].map(f => (
+                <div key={f.key} className="admin-form-field">
+                  <label>{f.label}</label>
+                  <input className="admin-input" value={newForm[f.key]} onChange={e => setNewForm(p => ({...p, [f.key]: e.target.value}))} />
+                </div>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Employment</legend>
+            <div className="admin-form-grid">
+              <div className="admin-form-field">
+                <label>Working Pattern</label>
+                <select className="admin-select" value={newForm.working_pattern} onChange={e => setNewForm(p => ({...p, working_pattern: e.target.value}))}>
+                  <option>Full-time</option><option>Part-time</option><option>Compressed</option><option>Flexible</option><option>Shift</option><option>Term-time</option>
+                </select>
+              </div>
+              <div className="admin-form-field">
+                <label>Weekly Hours</label>
+                <input type="number" step="0.5" className="admin-input" value={newForm.weekly_hours} onChange={e => setNewForm(p => ({...p, weekly_hours: e.target.value}))} />
+              </div>
+              <div className="admin-form-field">
+                <label>Probation End Date</label>
+                <input type="date" className="admin-input" value={newForm.probation_end_date} onChange={e => setNewForm(p => ({...p, probation_end_date: e.target.value}))} />
+              </div>
+              <div className="admin-form-field">
+                <label>Notice Period</label>
+                <input className="admin-input" placeholder="e.g. 1 month" value={newForm.notice_period} onChange={e => setNewForm(p => ({...p, notice_period: e.target.value}))} />
+              </div>
+              <div className="admin-form-field">
+                <label>Annual Salary (£)</label>
+                <input type="number" className="admin-input" value={newForm.annual_salary} onChange={e => setNewForm(p => ({...p, annual_salary: e.target.value}))} />
+              </div>
+              <div className="admin-form-field">
+                <label>Tax Code</label>
+                <input className="admin-input" value={newForm.tax_code} onChange={e => setNewForm(p => ({...p, tax_code: e.target.value}))} />
+              </div>
+              <div className="admin-form-field">
+                <label>Payroll ID</label>
+                <input className="admin-input" value={newForm.payroll_id} onChange={e => setNewForm(p => ({...p, payroll_id: e.target.value}))} />
+              </div>
+            </div>
+          </fieldset>
+          <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Emergency Contact</legend>
+            <div className="admin-form-grid">
+              {[
+                { key: 'emergency_contact_name', label: 'Contact Name' },
+                { key: 'emergency_contact_phone', label: 'Contact Phone' },
+                { key: 'emergency_contact_relationship', label: 'Relationship' },
+              ].map(f => (
+                <div key={f.key} className="admin-form-field">
+                  <label>{f.label}</label>
+                  <input className="admin-input" value={newForm[f.key]} onChange={e => setNewForm(p => ({...p, [f.key]: e.target.value}))} />
+                </div>
+              ))}
+            </div>
+          </fieldset>
+          <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+            <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Bank Details</legend>
+            <div className="admin-form-grid">
+              {[
+                { key: 'bank_account_name', label: 'Account Name' },
+                { key: 'bank_sort_code', label: 'Sort Code' },
+                { key: 'bank_account_number', label: 'Account Number' },
+              ].map(f => (
+                <div key={f.key} className="admin-form-field">
+                  <label>{f.label}</label>
+                  <input className="admin-input" value={newForm[f.key]} onChange={e => setNewForm(p => ({...p, [f.key]: e.target.value}))} />
+                </div>
+              ))}
+            </div>
+          </fieldset>
           <button className="admin-btn admin-btn-primary" onClick={createStarter}>Create & Start Workflow</button>
         </div>
       )}
@@ -464,10 +658,10 @@ export default function AdminOnboarding() {
           <p style={{ color: '#666', marginBottom: 16 }}>Upload an Excel file (.xlsx) to create multiple new starter records at once.</p>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
-            <a href="/new-starter-template.xlsx" download className="admin-btn admin-btn-primary" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <button className="admin-btn admin-btn-primary" onClick={generateBulkTemplate} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Download Template
-            </a>
+            </button>
             <button className="admin-btn" style={{ background: '#43a047', color: '#fff' }} onClick={() => fileInputRef.current?.click()}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               Upload Excel File

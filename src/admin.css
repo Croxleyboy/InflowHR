@@ -384,6 +384,7 @@
 .admin-photo-actions { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .admin-photo-upload-label { cursor: pointer; text-align: center; }
 .admin-detail-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.admin-detail-grid-3 { grid-template-columns: repeat(3, 1fr); }
 
 /* Payroll schedule */
 .admin-schedule h3 { font-size: 16px; font-weight: 700; margin: 0 0 12px; }
