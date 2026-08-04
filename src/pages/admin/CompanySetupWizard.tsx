@@ -109,7 +109,6 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         if (!out.user_email) errors.push(`Row ${i + 2}: Missing Work Email`)
         else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.user_email))
           errors.push(`Row ${i + 2}: Invalid email "${out.user_email}"`)
-        if (out.annual_salary <= 0) errors.push(`Row ${i + 2}: Missing or invalid Annual Salary`)
         if (out.role && !['admin', 'employee', 'hr'].includes(out.role))
           errors.push(`Row ${i + 2}: Role must be admin, employee or hr`)
         return out as SetupRow
@@ -401,7 +400,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
             Upload an Excel file with employee details and salary information for <strong>{setupCompany?.name}</strong>.
           </p>
           <p style={{ color: '#999', fontSize: 13, marginBottom: 16 }}>
-            Required columns: First Name, Surname, Work Email, Annual Salary. Optional: Job Title, Department, Manager Name/Email, Location, Phone, Employee Number, Start Date, Contract Type, Tax Code, Payroll ID, Role (admin/employee/hr).
+            Required columns: First Name, Surname, Work Email. Optional: Job Title, Department, Manager Name/Email, Location, Phone, Employee Number, Start Date, Contract Type, Annual Salary, Tax Code, Payroll ID, Role (admin/employee/hr).
           </p>
 
           <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
