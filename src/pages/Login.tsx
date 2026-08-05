@@ -1,9 +1,26 @@
+import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 
 export default function Login() {
-  const { signInWithMicrosoft } = useAuth()
+  const { signInWithMicrosoft, signInWithPassword } = useAuth()
   const { t } = useLanguage()
+
+  const [showBreakGlass, setShowBreakGlass] = useState(false)
+  const [bgEmail, setBgEmail] = useState('')
+  const [bgPassword, setBgPassword] = useState('')
+  const [bgError, setBgError] = useState('')
+  const [bgLoading, setBgLoading] = useState(false)
+
+  async function handleBreakGlass(e: React.FormEvent) {
+    e.preventDefault()
+    if (!bgEmail || !bgPassword) return
+    setBgLoading(true)
+    setBgError('')
+    const err = await signInWithPassword(bgEmail.trim(), bgPassword)
+    if (err) setBgError(err)
+    setBgLoading(false)
+  }
 
   return (
     <div className="login-page">
@@ -77,6 +94,43 @@ export default function Login() {
           </div>
 
           <p className="login-footer">{t('login.footer')}</p>
+
+          <button
+            className="login-breakglass-toggle"
+            onClick={() => setShowBreakGlass(!showBreakGlass)}
+          >
+            {showBreakGlass ? 'Hide' : 'Emergency Access'}
+          </button>
+
+          {showBreakGlass && (
+            <form className="login-breakglass-form" onSubmit={handleBreakGlass}>
+              <p className="login-breakglass-warning">Break glass access — authorised personnel only</p>
+              <input
+                type="email"
+                className="login-breakglass-input"
+                placeholder="Email"
+                value={bgEmail}
+                onChange={e => setBgEmail(e.target.value)}
+                autoComplete="username"
+              />
+              <input
+                type="password"
+                className="login-breakglass-input"
+                placeholder="Password"
+                value={bgPassword}
+                onChange={e => setBgPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+              {bgError && <p className="login-breakglass-error">{bgError}</p>}
+              <button
+                type="submit"
+                className="login-breakglass-btn"
+                disabled={bgLoading || !bgEmail || !bgPassword}
+              >
+                {bgLoading ? 'Signing in...' : 'Sign In'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>

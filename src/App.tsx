@@ -74,8 +74,8 @@ import AdminUserGuides from './pages/admin/AdminUserGuides'
 import UserGuide from './pages/UserGuide'
 
 function AdminGate() {
-  const { companyUser } = useAuth()
-  if (!companyUser || !['admin', 'hr'].includes(companyUser.role)) {
+  const { companyUser, isSuperAdmin } = useAuth()
+  if (!isSuperAdmin && (!companyUser || !['admin', 'hr'].includes(companyUser.role))) {
     return <Navigate to="/" replace />
   }
   return <Outlet />
@@ -145,7 +145,7 @@ function FeatureLoader() {
 }
 
 function AuthGate() {
-  const { user, loading, companyUser, setupComplete } = useAuth()
+  const { user, loading, companyUser, setupComplete, isSuperAdmin } = useAuth()
   const isDesktop = useMediaQuery('(min-width: 769px)')
 
   if (loading) {
@@ -156,7 +156,7 @@ function AuthGate() {
     return <Login />
   }
 
-  if (!companyUser) {
+  if (!companyUser && !isSuperAdmin) {
     return <AccessDenied />
   }
 

@@ -3922,6 +3922,63 @@ body {
   color: #bbb;
 }
 
+.login-breakglass-toggle {
+  margin-top: 16px;
+  background: none;
+  border: none;
+  color: #666;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+.login-breakglass-toggle:hover { opacity: 1; }
+
+.login-breakglass-form {
+  margin-top: 12px;
+  padding: 16px;
+  background: #1a1a2e;
+  border: 1px solid #c0392b;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.login-breakglass-warning {
+  font-size: 11px;
+  color: #e74c3c;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+.login-breakglass-input {
+  padding: 10px 12px;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #0d0d1a;
+  color: #fff;
+  font-size: 14px;
+}
+.login-breakglass-input::placeholder { color: #555; }
+.login-breakglass-error {
+  color: #e74c3c;
+  font-size: 12px;
+  margin: 0;
+}
+.login-breakglass-btn {
+  padding: 10px;
+  background: #c0392b;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 14px;
+}
+.login-breakglass-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-breakglass-btn:hover:not(:disabled) { background: #e74c3c; }
+
 @media (max-width: 900px) {
   .login-page {
     flex-direction: column;

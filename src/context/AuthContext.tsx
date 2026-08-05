@@ -17,7 +17,10 @@ interface Company {
   login_disabled: boolean
 }
 
-const SUPER_ADMIN_EMAIL = (import.meta.env.VITE_SUPER_ADMIN_EMAIL || 'andy.jones@kumonix.com').toLowerCase()
+const SUPER_ADMIN_EMAILS = [
+  (import.meta.env.VITE_SUPER_ADMIN_EMAIL || 'andy.jones@kumonix.com').toLowerCase(),
+  (import.meta.env.VITE_BREAK_GLASS_EMAIL || 'breakglass@kumonic.com').toLowerCase(),
+]
 
 interface AuthState {
   user: User | null
@@ -36,6 +39,7 @@ interface AuthState {
   setupComplete: boolean | null
   markSetupComplete: () => void
   signInWithMicrosoft: () => Promise<void>
+  signInWithPassword: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
 }
 
@@ -212,6 +216,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  async function signInWithPassword(email: string, password: string): Promise<string | null> {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    return error ? error.message : null
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null)
@@ -225,10 +234,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const employeeName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
   const employeeEmail = user?.email || ''
-  const isSuperAdmin = employeeEmail.toLowerCase() === SUPER_ADMIN_EMAIL
+  const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(employeeEmail.toLowerCase())
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, setupComplete, markSetupComplete, signInWithMicrosoft, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithPassword, signOut }}>
       {children}
     </AuthContext.Provider>
   )
