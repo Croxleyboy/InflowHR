@@ -54,6 +54,7 @@ interface OnboardRecord {
   annual_salary: number | null
   tax_code: string | null
   payroll_id: string | null
+  leave_allowance: number | null
   skipped_steps: Record<string, boolean> | null
 }
 
@@ -116,6 +117,7 @@ export default function AdminOnboarding() {
     'probation end date': 'probation_end_date', 'notice period': 'notice_period',
     'working pattern': 'working_pattern', 'weekly hours': 'weekly_hours',
     'annual salary': 'annual_salary', 'tax code': 'tax_code', 'payroll id': 'payroll_id',
+    'leave allowance': 'leave_allowance', 'assigned leave days': 'leave_allowance',
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -196,7 +198,7 @@ export default function AdminOnboarding() {
   }
 
   function generateBulkTemplate() {
-    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number']
+    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Leave Allowance', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number']
     const ws = XLSX.utils.aoa_to_sheet([headers])
     ws['!cols'] = headers.map(() => ({ wch: 20 }))
     const wb = XLSX.utils.book_new()
@@ -215,7 +217,7 @@ export default function AdminOnboarding() {
 
   function sanitisePayload(form: Record<string, string>): Record<string, any> {
     const dateFields = ['start_date', 'date_of_birth', 'probation_end_date']
-    const numericFields = ['weekly_hours', 'annual_salary']
+    const numericFields = ['weekly_hours', 'annual_salary', 'leave_allowance']
     const out: Record<string, any> = {}
     for (const [k, v] of Object.entries(form)) {
       if (dateFields.includes(k)) { out[k] = v || null }
@@ -341,7 +343,7 @@ export default function AdminOnboarding() {
     let empNum = record.employee_number || `EMP-${Date.now().toString().slice(-8)}`
     const { data: numClash } = await supabase.from('employees').select('id').eq('employee_number', empNum).maybeSingle()
     if (numClash) empNum = `EMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`
-    const { error } = await supabase.from('employees').insert({
+    const { data: newEmp, error } = await supabase.from('employees').insert({
       employee_number: empNum,
       first_name: record.firstname,
       last_name: record.surname,
@@ -382,11 +384,30 @@ export default function AdminOnboarding() {
       annual_salary: record.annual_salary || null,
       tax_code: record.tax_code || null,
       payroll_id: record.payroll_id || null,
-    })
+    }).select('id').single()
     if (error) {
       showError(`Failed to create employee record: ${error.message}`)
       return false
     }
+
+    if (newEmp) {
+      const allowance = record.leave_allowance ?? 15
+      const { data: leaveTypes } = await supabase.from('leave_types').select('id, name, deducts_from_allowance').eq('company_id', selectedCompanyId)
+      if (leaveTypes && leaveTypes.length > 0) {
+        const year = new Date().getFullYear()
+        const balances = leaveTypes.map(lt => ({
+          employee_id: newEmp.id,
+          leave_type_id: lt.id,
+          year,
+          total_allowance: lt.deducts_from_allowance ? allowance : 0,
+          used: 0,
+          carried_over: 0,
+          company_id: selectedCompanyId,
+        }))
+        await supabase.from('leave_balances').insert(balances)
+      }
+    }
+
     return true
   }
 
@@ -656,6 +677,10 @@ export default function AdminOnboarding() {
               <div className="admin-form-field">
                 <label>Payroll ID</label>
                 <input className="admin-input" value={newForm.payroll_id} onChange={e => setNewForm(p => ({...p, payroll_id: e.target.value}))} />
+              </div>
+              <div className="admin-form-field">
+                <label>Leave Allowance (days)</label>
+                <input type="number" className="admin-input" placeholder="15" value={newForm.leave_allowance} onChange={e => setNewForm(p => ({...p, leave_allowance: e.target.value}))} />
               </div>
             </div>
           </fieldset>

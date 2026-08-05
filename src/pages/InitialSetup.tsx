@@ -71,14 +71,19 @@ export default function InitialSetup() {
       return
     }
 
+    const empUpdate: Record<string, any> = {
+      date_of_birth: dob,
+      emergency_contact_name: nextOfKinName.trim(),
+      emergency_contact_phone: nextOfKinPhone.trim(),
+    }
+    if (avatarUrl) empUpdate.avatar_url = avatarUrl
+
     if (employeeId) {
-      const empUpdate: Record<string, any> = {
-        date_of_birth: dob,
-        emergency_contact_name: nextOfKinName.trim(),
-        emergency_contact_phone: nextOfKinPhone.trim(),
-      }
-      if (avatarUrl) empUpdate.avatar_url = avatarUrl
       await supabase.from('employees').update(empUpdate).eq('id', employeeId)
+    } else if (employeeEmail && companyUser?.company_id) {
+      await supabase.from('employees').update(empUpdate)
+        .eq('email', employeeEmail)
+        .eq('company_id', companyUser.company_id)
     }
 
     markSetupComplete()
