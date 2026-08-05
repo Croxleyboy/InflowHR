@@ -17,6 +17,21 @@ BEGIN
   ALTER TABLE one_to_one_comments DISABLE ROW LEVEL SECURITY;
   ALTER TABLE one_to_one_meetings DISABLE ROW LEVEL SECURITY;
 
+  -- Dashboard-created tables
+  DELETE FROM benefit_enrollments       WHERE company_id = p_company_id;
+  DELETE FROM benefit_options           WHERE company_id = p_company_id;
+  DELETE FROM benefit_types             WHERE company_id = p_company_id;
+  DELETE FROM shift_swap_requests       WHERE company_id = p_company_id;
+  DELETE FROM shift_assignments         WHERE company_id = p_company_id;
+  DELETE FROM shift_templates           WHERE company_id = p_company_id;
+  DELETE FROM rotas                     WHERE company_id = p_company_id;
+  DELETE FROM employee_availability     WHERE company_id = p_company_id;
+  DELETE FROM legal_timesheet_entries   WHERE company_id = p_company_id;
+  DELETE FROM legal_matters             WHERE company_id = p_company_id;
+  DELETE FROM legal_clients             WHERE company_id = p_company_id;
+  DELETE FROM hr_tickets                WHERE company_id = p_company_id;
+
+  -- Original migration tables
   DELETE FROM one_to_one_comments WHERE company_id = p_company_id;
   DELETE FROM one_to_one_meetings WHERE company_id = p_company_id;
   DELETE FROM workflow_tracker     WHERE company_id = p_company_id;

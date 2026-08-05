@@ -217,6 +217,18 @@ export default function AdminCompanies() {
     }
     const company = companies.find(c => c.id === id)
     if (!confirm(`Delete "${company?.name || 'this company'}" and ALL its data? This cannot be undone.`)) return
+    await supabase.from('benefit_enrollments').delete().eq('company_id', id)
+    await supabase.from('benefit_options').delete().eq('company_id', id)
+    await supabase.from('benefit_types').delete().eq('company_id', id)
+    await supabase.from('shift_swap_requests').delete().eq('company_id', id)
+    await supabase.from('shift_assignments').delete().eq('company_id', id)
+    await supabase.from('shift_templates').delete().eq('company_id', id)
+    await supabase.from('rotas').delete().eq('company_id', id)
+    await supabase.from('employee_availability').delete().eq('company_id', id)
+    await supabase.from('legal_timesheet_entries').delete().eq('company_id', id)
+    await supabase.from('legal_matters').delete().eq('company_id', id)
+    await supabase.from('legal_clients').delete().eq('company_id', id)
+    await supabase.from('hr_tickets').delete().eq('company_id', id)
     await supabase.from('company_features').delete().eq('company_id', id)
     await supabase.from('company_elearning_courses').delete().eq('company_id', id)
     await supabase.from('benefits').delete().eq('company_id', id)
