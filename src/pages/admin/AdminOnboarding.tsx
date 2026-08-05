@@ -293,13 +293,26 @@ export default function AdminOnboarding() {
     }
     if (stepKey === 'day1_access') {
       updates.is_complete = true; updates.status = 'Onboarded'; updates.appstatus = 'active'
-      const { data: emp } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
+      let { data: emp } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
       if (!emp) {
         const created = await createEmployeeFromOnboard(record)
         if (!created) return
+        const { data: newEmp } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
+        emp = newEmp
       }
       const { error: activateErr } = await supabase.from('employees').update({ is_active: true }).eq('email', record.user_email).eq('company_id', selectedCompanyId)
       if (activateErr) { showError('Failed to activate employee: ' + activateErr.message); return }
+      if (emp) {
+        const { data: existingCu } = await supabase.from('company_users').select('id').eq('employee_id', emp.id).eq('company_id', selectedCompanyId).maybeSingle()
+        if (!existingCu) {
+          await supabase.from('company_users').insert({
+            company_id: selectedCompanyId,
+            employee_id: emp.id,
+            role: 'employee',
+            is_active: true,
+          })
+        }
+      }
     }
     if (!updates.status) updates.status = 'in-progress'
     const newSkips = { ...stepSkips, [stepKey]: false }
