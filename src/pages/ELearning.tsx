@@ -238,14 +238,6 @@ export default function ELearning() {
   }
 
   function openCourse(course: Course) {
-    if (course.externalUrl) {
-      window.open(course.externalUrl, '_blank', 'noopener,noreferrer')
-      setProgress(p => ({
-        ...p,
-        inProgress: { ...p.inProgress, [course.id]: Math.max(p.inProgress[course.id] ?? 0, 25) },
-      }))
-      return
-    }
     if (course.type === 'policy') {
       setProgress(p => ({
         ...p,
@@ -258,7 +250,14 @@ export default function ELearning() {
       ...p,
       inProgress: { ...p.inProgress, [course.id]: Math.max(p.inProgress[course.id] ?? 0, 25) },
     }))
-    navigate(`/elearning/${course.id}?type=${course.type}&title=${encodeURIComponent(t(course.titleKey))}&desc=${encodeURIComponent(t(course.descKey))}&duration=${encodeURIComponent(course.duration)}`)
+    const params = new URLSearchParams({
+      type: course.type,
+      title: t(course.titleKey),
+      desc: t(course.descKey),
+      duration: course.duration,
+    })
+    if (course.externalUrl) params.set('url', course.externalUrl)
+    navigate(`/elearning/${course.id}?${params.toString()}`)
   }
 
   function completeCourse(id: string) {

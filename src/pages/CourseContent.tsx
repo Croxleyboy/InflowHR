@@ -91,6 +91,7 @@ export default function CourseContent() {
   const courseTitle = searchParams.get('title') || title || rawTitle
   const courseDesc = searchParams.get('desc') || ''
   const duration = searchParams.get('duration') || ''
+  const externalUrl = searchParams.get('url') || ''
 
   const sections = generateSections(courseTitle, courseDesc, type)
   const quizQuestions = type === 'quiz' ? generateQuiz(courseTitle) : []
@@ -193,12 +194,23 @@ export default function CourseContent() {
         </div>
       ) : type === 'video' ? (
         <div className="course-content-video">
-          <div className="course-content-video-placeholder">
-            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-            <span>{t('elearning.video_placeholder')}</span>
-          </div>
+          {externalUrl ? (
+            <div className="course-content-video-embed">
+              <iframe
+                src={externalUrl}
+                title={courseTitle}
+                allowFullScreen
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              />
+            </div>
+          ) : (
+            <div className="course-content-video-placeholder">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+              </svg>
+              <span>{t('elearning.video_placeholder')}</span>
+            </div>
+          )}
           <div className="course-content-sections">
             <div className="course-content-section">
               <h2>{t('elearning.content_overview')}</h2>
