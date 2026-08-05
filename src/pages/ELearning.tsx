@@ -152,7 +152,33 @@ export default function ELearning() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [expandedCourse, setExpandedCourse] = useState<string | null>(null)
   const [showComplete, setShowComplete] = useState<string | null>(null)
+  const [allCourses, setAllCourses] = useState<Course[]>(COURSES)
   const [enabledCourseIds, setEnabledCourseIds] = useState<Set<string> | null>(null)
+
+  const fetchCourses = useCallback(async () => {
+    const { data } = await supabase
+      .from('elearning_courses')
+      .select('*')
+      .eq('is_active', true)
+      .order('category')
+      .order('title')
+    if (data && data.length > 0) {
+      setAllCourses(data.map((r: any) => ({
+        id: r.id,
+        titleKey: r.title,
+        descKey: r.description,
+        category: r.category,
+        type: r.type,
+        duration: r.duration,
+        required: r.required,
+        deadline: r.deadline || undefined,
+        tags: r.tags || [],
+        annualReminder: r.annual_reminder,
+        industry: r.industry || undefined,
+        externalUrl: r.external_url || undefined,
+      })))
+    }
+  }, [])
 
   const fetchEnabledCourses = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -166,12 +192,13 @@ export default function ELearning() {
     }
   }, [companyUser?.company_id])
 
+  useEffect(() => { fetchCourses() }, [fetchCourses])
   useEffect(() => { fetchEnabledCourses() }, [fetchEnabledCourses])
   useEffect(() => { saveProgress(progress) }, [progress])
 
   const visibleCourses = enabledCourseIds !== null
-    ? COURSES.filter(c => enabledCourseIds.has(c.id))
-    : COURSES
+    ? allCourses.filter(c => enabledCourseIds.has(c.id))
+    : allCourses
 
   const completedCount = progress.completed.filter(id => visibleCourses.some(c => c.id === id)).length
   const totalHours = visibleCourses.reduce((sum, c) => {
@@ -259,7 +286,7 @@ export default function ELearning() {
 
   function getCourseStatus(id: string): 'completed' | 'in-progress' | 'not-started' | 'renewal-due' {
     if (progress.completed.includes(id)) {
-      const course = COURSES.find(c => c.id === id)
+      const course = allCourses.find(c => c.id === id)
       if (course?.annualReminder && isRenewalDue(id, progress.completedDates)) return 'renewal-due'
       return 'completed'
     }
