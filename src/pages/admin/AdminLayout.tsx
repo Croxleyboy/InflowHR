@@ -33,6 +33,7 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/space-management', label: 'Space Management', icon: '🏢', feature: 'space_booking' },
   { path: '/admin/notifications', label: 'Notifications', icon: '🔔' },
   { path: '/admin/billing', label: 'Billing', icon: '💳' },
+  { path: '/admin/user-guides', label: 'User Guides', icon: '📖' },
 ]
 
 function AdminLayoutInner() {

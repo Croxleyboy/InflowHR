@@ -70,6 +70,8 @@ import AdminSubscriptions from './pages/admin/AdminSubscriptions'
 import AdminBilling from './pages/admin/AdminBilling'
 import AdminLegalTimesheets from './pages/admin/AdminLegalTimesheets'
 import AdminSpaceManagement from './pages/admin/AdminSpaceManagement'
+import AdminUserGuides from './pages/admin/AdminUserGuides'
+import UserGuide from './pages/UserGuide'
 
 function AdminGate() {
   const { companyUser } = useAuth()
@@ -128,6 +130,7 @@ function EmployeeRoutes() {
       <Route path="/legal-timesheets" element={<LegalTimesheets />} />
       <Route path="/space-booking" element={<SpaceBooking />} />
       <Route path="/announcements" element={<Placeholder title="Company Announcements" />} />
+      <Route path="/user-guide" element={<UserGuide />} />
     </Routes>
   )
 }
@@ -186,6 +189,7 @@ function AuthGate() {
             <Route path="billing" element={<AdminBilling />} />
             <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
             <Route path="space-management" element={<AdminSpaceManagement />} />
+            <Route path="user-guides" element={<AdminUserGuides />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
@@ -225,6 +229,7 @@ function AuthGate() {
           <Route path="notifications" element={<AdminNotifications />} />
           <Route path="billing" element={<AdminBilling />} />
           <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
+          <Route path="user-guides" element={<AdminUserGuides />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />

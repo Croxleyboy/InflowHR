@@ -1308,3 +1308,49 @@
   .admin-el-form-grid { grid-template-columns: 1fr; }
   .admin-el-vis-dropdown { min-width: 180px; }
 }
+
+/* ── Admin User Guides ── */
+.admin-ug-intro {
+  background: var(--admin-card-bg, #fff); border: 1px solid var(--admin-border, #e0e0e0);
+  border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+}
+.admin-ug-intro h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.admin-ug-intro p { font-size: 14px; color: #666; line-height: 1.6; margin-bottom: 8px; }
+.admin-ug-intro ul { padding-left: 20px; margin-top: 8px; }
+.admin-ug-intro li { font-size: 14px; color: #666; margin-bottom: 4px; line-height: 1.5; }
+.admin-ug-intro li strong { color: #333; }
+
+.admin-ug-section {
+  background: var(--admin-card-bg, #fff); border: 1px solid var(--admin-border, #e0e0e0);
+  border-radius: 12px; margin-bottom: 10px; overflow: hidden;
+}
+.admin-ug-section-toggle {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 16px 20px; border: none; background: none; font: inherit;
+  font-size: 15px; font-weight: 600; cursor: pointer; color: #333;
+}
+.admin-ug-section-toggle:hover { background: #f8f9fa; }
+.admin-ug-section-icon { font-size: 18px; width: 28px; text-align: center; flex-shrink: 0; }
+.admin-ug-chevron { flex-shrink: 0; color: #999; transition: transform .2s; }
+.admin-ug-section-open .admin-ug-chevron { transform: rotate(180deg); }
+
+.admin-ug-section-body { padding: 0 20px 20px 60px; }
+
+.admin-ug-feature { margin-bottom: 22px; }
+.admin-ug-feature:last-child { margin-bottom: 0; }
+.admin-ug-feature + .admin-ug-feature { border-top: 1px solid var(--admin-border, #e0e0e0); padding-top: 18px; }
+.admin-ug-feature h4 { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #333; }
+.admin-ug-purpose { font-size: 13.5px; color: #666; margin-bottom: 10px; }
+.admin-ug-feature ul { padding-left: 20px; }
+.admin-ug-feature li { font-size: 13.5px; color: #555; margin-bottom: 4px; line-height: 1.55; }
+
+.admin-ug-callout {
+  display: flex; gap: 10px; padding: 12px 16px; border-radius: 8px;
+  font-size: 13px; line-height: 1.5; margin-top: 10px; border-left: 3px solid;
+}
+.admin-ug-callout-tip { background: #eef0fb; border-color: #4f5aad; color: #555; }
+.admin-ug-callout-note { background: #fef9ec; border-color: #d4890a; color: #555; }
+
+@media (max-width: 600px) {
+  .admin-ug-section-body { padding-left: 20px; }
+}

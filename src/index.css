@@ -5410,3 +5410,65 @@ body {
   from { opacity: 0; transform: translateY(16px) scale(0.95); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* ── User Guide (Employee) ── */
+.user-guide-page { padding-bottom: 100px; }
+.user-guide-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 20px 16px 16px; background: var(--primary); color: #fff; border-radius: 0 0 20px 20px;
+  margin: -16px -16px 20px;
+}
+.user-guide-back {
+  background: none; border: none; color: #fff; cursor: pointer; padding: 4px;
+  display: flex; align-items: center; justify-content: center;
+}
+.user-guide-header h1 { font-size: 20px; font-weight: 700; }
+.user-guide-subtitle { font-size: 13px; opacity: .8; }
+
+.user-guide-intro {
+  background: var(--card-bg); border-radius: 14px; padding: 18px; margin-bottom: 16px;
+  border: 1px solid var(--border-color);
+}
+.user-guide-intro h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.user-guide-intro p { font-size: 13.5px; color: var(--text-secondary); line-height: 1.6; }
+.user-guide-intro ul { padding-left: 20px; margin-top: 8px; }
+.user-guide-intro li { font-size: 13.5px; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.5; }
+.user-guide-intro li strong { color: var(--text-primary); }
+
+.user-guide-section {
+  background: var(--card-bg); border-radius: 14px; margin-bottom: 10px;
+  border: 1px solid var(--border-color); overflow: hidden;
+}
+.user-guide-section-toggle {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 14px 16px; border: none; background: none; font: inherit;
+  font-size: 15px; font-weight: 600; color: var(--text-primary); cursor: pointer; text-align: left;
+}
+.user-guide-section-toggle:active { background: var(--bg-hover, rgba(0,0,0,.04)); }
+.user-guide-section-icon { font-size: 18px; width: 26px; text-align: center; flex-shrink: 0; }
+.user-guide-section-title { flex: 1; }
+.user-guide-chevron {
+  flex-shrink: 0; color: var(--text-secondary); transition: transform .2s;
+}
+.user-guide-section-open .user-guide-chevron { transform: rotate(180deg); }
+
+.user-guide-section-body { padding: 0 16px 16px 52px; }
+
+.user-guide-feature { margin-bottom: 20px; }
+.user-guide-feature:last-child { margin-bottom: 0; }
+.user-guide-feature + .user-guide-feature { border-top: 1px solid var(--border-color); padding-top: 16px; }
+.user-guide-feature h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.user-guide-purpose { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.user-guide-feature ul { padding-left: 18px; }
+.user-guide-feature li { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.5; }
+
+.user-guide-callout {
+  display: flex; gap: 8px; padding: 10px 14px; border-radius: 8px;
+  font-size: 13px; line-height: 1.5; margin-top: 10px; border-left: 3px solid;
+}
+.user-guide-callout-tip { background: #eef0fb; border-color: #4f5aad; color: #555; }
+.user-guide-callout-note { background: #fef9ec; border-color: #d4890a; color: #555; }
+[data-theme="dark"] .user-guide-callout-tip { background: #1e2040; border-color: #7880c0; color: #a8acc2; }
+[data-theme="dark"] .user-guide-callout-note { background: #2a2215; border-color: #e0a020; color: #a8acc2; }
+
+.settings-guide-btn { background: var(--card-bg) !important; color: var(--text-primary) !important; border: 1px solid var(--border-color) !important; }

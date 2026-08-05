@@ -159,6 +159,16 @@ export default function Settings() {
         {saved ? t('settings.saved') : t('settings.save')}
       </button>
 
+      <section className="settings-section">
+        <button className="settings-admin-btn settings-guide-btn" onClick={() => navigate('/user-guide')}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+          </svg>
+          User Guide
+        </button>
+      </section>
+
       {isCompanyAdmin && (
         <section className="settings-section settings-admin-section">
           <button className="settings-admin-btn" onClick={() => navigate('/admin')}>
