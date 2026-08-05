@@ -1831,6 +1831,20 @@ body {
   .ts-form-input { padding: 9px 10px; font-size: 14px; }
   .ts-btn { font-size: 14px; padding: 11px 0; }
 }
+.ts-overlap-warning {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: #fef2f2; border: 1px solid #fca5a5; border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 12px;
+}
+.ts-overlap-warning svg { flex-shrink: 0; margin-top: 2px; }
+.ts-overlap-warning p { margin: 0 0 4px; font-size: 13px; color: #991b1b; }
+.ts-overlap-warning p:last-child { margin-bottom: 0; }
+@media (prefers-color-scheme: dark) {
+  .ts-overlap-warning { background: #451a1a; border-color: #7f1d1d; }
+  .ts-overlap-warning p { color: #fca5a5; }
+}
+:root[data-theme="dark"] .ts-overlap-warning { background: #451a1a; border-color: #7f1d1d; }
+:root[data-theme="dark"] .ts-overlap-warning p { color: #fca5a5; }
 
 .ts-submit-row {
   display: flex; gap: 12px; margin-top: 16px;
@@ -5312,7 +5326,7 @@ body {
 
 /* Booking Modal */
 .space-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 1000; display: flex; align-items: flex-end; }
-.space-modal { background: var(--bg, #fff); border-radius: 20px 20px 0 0; width: 100%; max-height: 85dvh; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom); }
+.space-modal { background: var(--bg, #fff); border-radius: 20px; width: 100%; max-height: 80dvh; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom); margin-bottom: 80px; }
 .space-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px 8px; }
 .space-modal-header h2 { font-size: 18px; font-weight: 700; color: var(--text, #333); }
 .space-modal-close { background: none; border: none; font-size: 28px; color: #999; cursor: pointer; line-height: 1; }

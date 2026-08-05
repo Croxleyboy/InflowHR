@@ -4,7 +4,9 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { useFeatures } from '../context/FeatureContext'
 import { formatDate } from '../lib/formatters'
+import { checkTimeOverlap } from '../lib/overlapCheck'
 
 const LOCATIONS = ['Head Office', 'Home', 'Customer Site', 'Event', 'Unassigned']
 const ROLES = ['IT', 'Engineering', 'Design', 'HR', 'Finance', 'Marketing', 'Sales', 'Operations', 'Management', 'Unassigned']
@@ -18,6 +20,7 @@ export default function NewTimesheet() {
   const { t } = useLanguage()
   const { employeeId, employeeName, employeeEmail, companyUser } = useAuth()
   const { showError } = useToast()
+  const { features } = useFeatures()
   const [location, setLocation] = useState(LOCATIONS[0])
   const [customLocation, setCustomLocation] = useState('')
   const [customer, setCustomer] = useState('')
@@ -29,6 +32,7 @@ export default function NewTimesheet() {
   const [endTime, setEndTime] = useState('17:00')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [overlapWarning, setOverlapWarning] = useState<string | null>(null)
 
   const effectiveLocation = location === 'Custom' ? customLocation : location
   const effectiveRole = role === 'Custom' ? customRole : role
@@ -58,6 +62,25 @@ export default function NewTimesheet() {
 
     setSubmitting(true)
     setError(null)
+    setOverlapWarning(null)
+
+    const dates: string[] = []
+    let d = new Date(startDate + 'T00:00:00')
+    const end = new Date(endDate + 'T00:00:00')
+    while (d <= end) {
+      dates.push(d.toISOString().split('T')[0])
+      d.setDate(d.getDate() + 1)
+    }
+
+    const overlap = await checkTimeOverlap(
+      employeeId!, companyUser!.company_id, dates, startTime, endTime,
+      { timesheets: features.timesheets, shifts: features.shifts, legal_timesheets: features.legal_timesheets },
+    )
+    if (overlap.hasOverlap) {
+      setOverlapWarning(overlap.conflicts.map(c => c.message).join('\n'))
+      setSubmitting(false)
+      return
+    }
 
     const status = asDraft ? 'draft' : 'pending'
     const dateRange = startDate === endDate
@@ -219,6 +242,12 @@ export default function NewTimesheet() {
           </div>
         </div>
 
+        {overlapWarning && (
+          <div className="ts-overlap-warning">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div>{overlapWarning.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>
+          </div>
+        )}
         {error && <p className="form-error">{error}</p>}
 
         <div className="ts-form-actions">

@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
+import { formatDate } from '../../lib/formatters'
 
 interface Payslip {
   id: number
@@ -40,7 +41,7 @@ export default function AdminPayroll() {
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees'>('payslips')
+  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -50,7 +51,29 @@ export default function AdminPayroll() {
   const [empEditId, setEmpEditId] = useState<string | null>(null)
   const [empForm, setEmpForm] = useState<Record<string, any>>({})
 
+  const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
+  const [tbPeriodStart, setTbPeriodStart] = useState(() => {
+    const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]
+  })
+  const [tbPeriodEnd, setTbPeriodEnd] = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return d.toISOString().split('T')[0]
+  })
+  const [tbData, setTbData] = useState<Record<string, { shiftHrs: number; shiftEntries: any[]; tsHrs: number; tsEntries: any[]; legalHrs: number; legalEntries: any[] }>>({})
+  const [tbLoading, setTbLoading] = useState(false)
+  const [tbExpandedEmp, setTbExpandedEmp] = useState<string | null>(null)
+  const [tbFilterEmp, setTbFilterEmp] = useState('')
+
   useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId])
+
+  useEffect(() => {
+    if (!selectedCompanyId) return
+    supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', selectedCompanyId)
+      .in('feature_key', ['timesheets', 'shifts', 'legal_timesheets']).then(({ data }) => {
+        const map: Record<string, boolean> = { timesheets: false, shifts: false, legal_timesheets: false }
+        data?.forEach(r => { if (r.feature_key in map) map[r.feature_key] = r.is_enabled })
+        setEnabledFeatures(map as any)
+      })
+  }, [selectedCompanyId])
 
   async function loadAll() {
     setLoading(true)
@@ -150,6 +173,80 @@ export default function AdminPayroll() {
     totalNet: payslips.reduce((s, p) => s + Number(p.net_pay), 0),
   }), [payslips])
 
+  const loadTimeBreakdown = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setTbLoading(true)
+    const result: Record<string, { shiftHrs: number; shiftEntries: any[]; tsHrs: number; tsEntries: any[]; legalHrs: number; legalEntries: any[] }> = {}
+    for (const emp of employees) {
+      result[emp.id] = { shiftHrs: 0, shiftEntries: [], tsHrs: 0, tsEntries: [], legalHrs: 0, legalEntries: [] }
+    }
+
+    const queries: Promise<void>[] = []
+
+    if (enabledFeatures.timesheets) {
+      queries.push((async () => {
+        const { data } = await supabase.from('timesheets')
+          .select('employee_id, date, end_date, start_time, end_time, location, role, status, hours')
+          .eq('company_id', selectedCompanyId).neq('status', 'rejected')
+          .gte('date', tbPeriodStart).lte('date', tbPeriodEnd)
+        if (data) {
+          for (const row of data) {
+            if (!result[row.employee_id]) continue
+            const hrs = Number(row.hours) || 0
+            result[row.employee_id].tsHrs += hrs
+            result[row.employee_id].tsEntries.push(row)
+          }
+        }
+      })())
+    }
+
+    if (enabledFeatures.shifts) {
+      queries.push((async () => {
+        const { data } = await supabase.from('shift_assignments')
+          .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(status)')
+          .eq('company_id', selectedCompanyId)
+          .gte('date', tbPeriodStart).lte('date', tbPeriodEnd)
+        if (data) {
+          for (const row of data as any[]) {
+            if (!result[row.employee_id]) continue
+            const rota = row.rotas as any
+            if (rota?.status === 'draft') continue
+            const tmpl = row.shift_templates as any
+            if (!tmpl) continue
+            const startMins = parseInt(tmpl.start_time?.split(':')[0]) * 60 + parseInt(tmpl.start_time?.split(':')[1] || '0')
+            const endMins = parseInt(tmpl.end_time?.split(':')[0]) * 60 + parseInt(tmpl.end_time?.split(':')[1] || '0')
+            const hrs = Math.max(0, (endMins - startMins - (tmpl.break_minutes || 0)) / 60)
+            result[row.employee_id].shiftHrs += hrs
+            result[row.employee_id].shiftEntries.push({ ...row, shiftName: tmpl.name, start_time: tmpl.start_time, end_time: tmpl.end_time, breakMins: tmpl.break_minutes, hrs })
+          }
+        }
+      })())
+    }
+
+    if (enabledFeatures.legal_timesheets) {
+      queries.push((async () => {
+        const { data } = await supabase.from('legal_timesheet_entries')
+          .select('employee_id, date, duration_hrs, task_code, status, client_id, matter_id')
+          .eq('company_id', selectedCompanyId).neq('status', 'rejected')
+          .gte('date', tbPeriodStart).lte('date', tbPeriodEnd)
+        if (data) {
+          for (const row of data) {
+            if (!result[row.employee_id]) continue
+            const hrs = Number(row.duration_hrs) || 0
+            result[row.employee_id].legalHrs += hrs
+            result[row.employee_id].legalEntries.push(row)
+          }
+        }
+      })())
+    }
+
+    await Promise.all(queries)
+    setTbData(result)
+    setTbLoading(false)
+  }, [selectedCompanyId, tbPeriodStart, tbPeriodEnd, employees, enabledFeatures])
+
+  useEffect(() => { if (tab === 'time_breakdown' && employees.length > 0) loadTimeBreakdown() }, [tab, loadTimeBreakdown])
+
   function startEmpEdit(emp: Employee) {
     setEmpEditId(emp.id)
     const latest = payslips.find(p => p.employee?.id === emp.id)
@@ -174,6 +271,9 @@ export default function AdminPayroll() {
         <button className={`admin-tab ${tab === 'payslips' ? 'admin-tab-active' : ''}`} onClick={() => setTab('payslips')}>Payslips</button>
         <button className={`admin-tab ${tab === 'employees' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employees')}>Employee Pay</button>
         <button className={`admin-tab ${tab === 'schedule' ? 'admin-tab-active' : ''}`} onClick={() => setTab('schedule')}>Payroll Schedule</button>
+        {(enabledFeatures.timesheets || enabledFeatures.shifts || enabledFeatures.legal_timesheets) && (
+          <button className={`admin-tab ${tab === 'time_breakdown' ? 'admin-tab-active' : ''}`} onClick={() => setTab('time_breakdown')}>Time Breakdown</button>
+        )}
       </div>
 
       {tab === 'payslips' && (
@@ -324,6 +424,142 @@ export default function AdminPayroll() {
             </table>
           </div>
         </div>
+      )}
+
+      {tab === 'time_breakdown' && (
+        <>
+          <div className="admin-filters">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>Period:</label>
+              <input type="date" className="admin-select" value={tbPeriodStart} onChange={e => setTbPeriodStart(e.target.value)} />
+              <span>to</span>
+              <input type="date" className="admin-select" value={tbPeriodEnd} onChange={e => setTbPeriodEnd(e.target.value)} />
+            </div>
+            <select className="admin-select" value={tbFilterEmp} onChange={e => setTbFilterEmp(e.target.value)}>
+              <option value="">All Employees</option>
+              {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+            </select>
+            <button className="admin-btn admin-btn-primary" onClick={loadTimeBreakdown} disabled={tbLoading}>
+              {tbLoading ? 'Loading...' : 'Refresh'}
+            </button>
+          </div>
+
+          {tbLoading ? <div className="admin-loading">Loading time data...</div> : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    {enabledFeatures.shifts && <th>Shift Hours</th>}
+                    {enabledFeatures.timesheets && <th>Timesheet Hours</th>}
+                    {enabledFeatures.legal_timesheets && <th>Legal Hours</th>}
+                    <th>Total Hours</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.filter(e => !tbFilterEmp || e.id === tbFilterEmp).map(emp => {
+                    const data = tbData[emp.id]
+                    if (!data) return null
+                    const total = data.shiftHrs + data.tsHrs + data.legalHrs
+                    if (total === 0 && !tbFilterEmp) return null
+                    const isExpanded = tbExpandedEmp === emp.id
+                    return (
+                      <>
+                        <tr key={emp.id} className={isExpanded ? 'admin-row-active' : ''}>
+                          <td><strong>{emp.first_name} {emp.last_name}</strong><br /><span style={{ fontSize: 12, color: '#888' }}>{emp.department} · {emp.job_title}</span></td>
+                          {enabledFeatures.shifts && <td>{data.shiftHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.shiftEntries.length} shifts)</span></td>}
+                          {enabledFeatures.timesheets && <td>{data.tsHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.tsEntries.length} entries)</span></td>}
+                          {enabledFeatures.legal_timesheets && <td>{data.legalHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.legalEntries.length} entries)</span></td>}
+                          <td><strong>{total.toFixed(1)}h</strong></td>
+                          <td>
+                            <button className="admin-btn-icon" onClick={() => setTbExpandedEmp(isExpanded ? null : emp.id)}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={isExpanded ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
+                            </button>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr key={`tb-exp-${emp.id}`} className="admin-expanded-row">
+                            <td colSpan={2 + (enabledFeatures.shifts ? 1 : 0) + (enabledFeatures.timesheets ? 1 : 0) + (enabledFeatures.legal_timesheets ? 1 : 0)}>
+                              <div className="admin-tb-detail">
+                                {enabledFeatures.shifts && data.shiftEntries.length > 0 && (
+                                  <div className="admin-tb-section">
+                                    <h4 className="admin-tb-section-title">Shifts ({data.shiftHrs.toFixed(1)}h)</h4>
+                                    <table className="admin-table admin-table-nested">
+                                      <thead><tr><th>Date</th><th>Shift</th><th>Time</th><th>Break</th><th>Hours</th></tr></thead>
+                                      <tbody>
+                                        {data.shiftEntries.sort((a: any, b: any) => a.date.localeCompare(b.date)).map((s: any, i: number) => (
+                                          <tr key={i}>
+                                            <td>{formatDate(s.date)}</td>
+                                            <td>{s.shiftName}</td>
+                                            <td>{s.start_time?.slice(0, 5)} - {s.end_time?.slice(0, 5)}</td>
+                                            <td>{s.breakMins || 0} mins</td>
+                                            <td>{s.hrs.toFixed(1)}h</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+
+                                {enabledFeatures.timesheets && data.tsEntries.length > 0 && (
+                                  <div className="admin-tb-section">
+                                    <h4 className="admin-tb-section-title">Timesheets ({data.tsHrs.toFixed(1)}h)</h4>
+                                    <table className="admin-table admin-table-nested">
+                                      <thead><tr><th>Date</th><th>Location</th><th>Role</th><th>Time</th><th>Hours</th><th>Status</th></tr></thead>
+                                      <tbody>
+                                        {data.tsEntries.sort((a: any, b: any) => a.date.localeCompare(b.date)).map((ts: any, i: number) => (
+                                          <tr key={i}>
+                                            <td>{ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)}</td>
+                                            <td>{ts.location}</td>
+                                            <td>{ts.role}</td>
+                                            <td>{ts.start_time?.slice(0, 5)} - {ts.end_time?.slice(0, 5)}</td>
+                                            <td>{Number(ts.hours).toFixed(1)}h</td>
+                                            <td><span className={`admin-badge admin-badge-${ts.status}`}>{ts.status}</span></td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+
+                                {enabledFeatures.legal_timesheets && data.legalEntries.length > 0 && (
+                                  <div className="admin-tb-section">
+                                    <h4 className="admin-tb-section-title">Legal Timesheets ({data.legalHrs.toFixed(1)}h)</h4>
+                                    <table className="admin-table admin-table-nested">
+                                      <thead><tr><th>Date</th><th>Task Code</th><th>Hours</th><th>Status</th></tr></thead>
+                                      <tbody>
+                                        {data.legalEntries.sort((a: any, b: any) => a.date.localeCompare(b.date)).map((lt: any, i: number) => (
+                                          <tr key={i}>
+                                            <td>{formatDate(lt.date)}</td>
+                                            <td>{lt.task_code}</td>
+                                            <td>{Number(lt.duration_hrs).toFixed(1)}h</td>
+                                            <td><span className={`admin-badge admin-badge-${lt.status}`}>{lt.status}</span></td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+
+                                {data.shiftEntries.length === 0 && data.tsEntries.length === 0 && data.legalEntries.length === 0 && (
+                                  <p style={{ color: '#888', fontStyle: 'italic' }}>No time entries for this period</p>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {Object.values(tbData).every(d => d.shiftHrs + d.tsHrs + d.legalHrs === 0) && !tbFilterEmp && (
+                <div className="admin-empty">No time entries found for this period</div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

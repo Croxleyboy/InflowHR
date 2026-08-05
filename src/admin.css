@@ -415,6 +415,19 @@
   .admin-admin-select { max-width: 100%; width: 100%; }
 }
 
+/* ── Time Breakdown ── */
+.admin-tb-detail { padding: 8px 0; }
+.admin-tb-section { margin-bottom: 16px; }
+.admin-tb-section:last-child { margin-bottom: 0; }
+.admin-tb-section-title {
+  font-size: 13px; font-weight: 700; margin: 0 0 8px;
+  color: var(--text, #333);
+  display: flex; align-items: center; gap: 6px;
+}
+.admin-table-nested { font-size: 12px; margin: 0; }
+.admin-table-nested th { background: var(--bg, #f8f9fa); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+.admin-table-nested td { padding: 6px 10px; }
+
 /* Toggle Switch */
 .admin-toggle {
   position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0;
