@@ -341,7 +341,7 @@ export default function AdminOnboarding() {
     const { data: existing } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
     if (existing) return true
     let empNum = record.employee_number || `EMP-${Date.now().toString().slice(-8)}`
-    const { data: numClash } = await supabase.from('employees').select('id').eq('employee_number', empNum).maybeSingle()
+    const { data: numClash } = await supabase.from('employees').select('id').eq('employee_number', empNum).eq('company_id', selectedCompanyId).maybeSingle()
     if (numClash) empNum = `EMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`
     const { data: newEmp, error } = await supabase.from('employees').insert({
       employee_number: empNum,
