@@ -159,6 +159,14 @@ export default function AdminCompanies() {
         { company_id: newCo.id, feature_key: 'legal_timesheets', is_enabled: false },
       ])
       if (featuresError) showError('Failed to create default company features: ' + featuresError.message)
+
+      await supabase.from('announcements').insert({
+        title: 'Welcome to your new HR App',
+        body: "Take a look within 'Settings' and choose the guide to get to know your app and its features.",
+        submitted_by_name: 'InflowHR',
+        is_pinned: true,
+        company_id: newCo.id,
+      })
     }
 
     setForm({ name: '', domain: '' })

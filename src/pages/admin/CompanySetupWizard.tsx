@@ -221,6 +221,22 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
       const { error: featuresErr } = await supabase.from('company_features').insert(standardFeatures)
       if (featuresErr) { showError('Failed to create company features: ' + featuresErr.message); return }
     }
+
+    const { data: existingAnn } = await supabase
+      .from('announcements')
+      .select('id')
+      .eq('company_id', companyId)
+      .limit(1)
+
+    if (!existingAnn || existingAnn.length === 0) {
+      await supabase.from('announcements').insert({
+        title: 'Welcome to your new HR App',
+        body: "Take a look within 'Settings' and choose the guide to get to know your app and its features.",
+        submitted_by_name: 'InflowHR',
+        is_pinned: true,
+        company_id: companyId,
+      })
+    }
   }
 
   async function processSetup() {

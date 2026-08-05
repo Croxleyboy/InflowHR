@@ -254,6 +254,7 @@ BEGIN
 
   -- ========== ANNOUNCEMENTS ==========
   INSERT INTO announcements (title, body, author_id, is_pinned, published_at, submitted_by_name, company_id) VALUES
+    ('Welcome to your new HR App',         'Take a look within ''Settings'' and choose the guide to get to know your app and its features.',                                                   NULL,   true,  NOW(),                  'InflowHR',   v_company_id),
     ('Q3 Company All-Hands',              'Join us on August 1st at 2pm for the quarterly all-hands meeting. We will cover company performance, upcoming initiatives, and team highlights.', v_andy, true,  '2026-07-20T09:00:00Z', 'Andy Jones', v_company_id),
     ('Office Closure: August Bank Holiday','Please note the office will be closed on Monday 31st August for the bank holiday. Normal hours resume Tuesday 1st September.',                   v_emma, false, '2026-07-18T10:00:00Z', 'Emma Chen',  v_company_id),
     ('New Benefits Portal Launch',         'We are excited to announce the launch of our updated benefits portal. Manage pension, cycle-to-work, and health insurance in one place.',         v_emma, false, '2026-07-15T14:00:00Z', 'Emma Chen',  v_company_id),
@@ -556,6 +557,7 @@ BEGIN
 
   -- ========== ANNOUNCEMENTS ==========
   INSERT INTO announcements (title, body, author_id, is_pinned, published_at, submitted_by_name, company_id) VALUES
+    ('Welcome to your new HR App',     'Take a look within ''Settings'' and choose the guide to get to know your app and its features.',                                           NULL,        true,  NOW(),                  'InflowHR',       v_m2m_id),
     ('Q3 Strategy Review',             'Join us on August 5th at 10am for the quarterly strategy review. We will discuss client pipeline, hiring plans, and technology roadmap.', v_m2m_sarah, true,  '2026-07-21T09:00:00Z', 'Sarah Mitchell', v_m2m_id),
     ('Office Move Update',             'Our new office at WeWork Moorgate is confirmed for September 1st. Packing boxes will be distributed next week.',                          v_m2m_sarah, false, '2026-07-18T10:00:00Z', 'Sarah Mitchell', v_m2m_id),
     ('AWS Partnership Certified',      'Exciting news - Move2Modern is now an AWS Advanced Consulting Partner! Huge thanks to the technology team for making this happen.',        v_m2m_sarah, false, '2026-07-10T14:00:00Z', 'Sarah Mitchell', v_m2m_id),
