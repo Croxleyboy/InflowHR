@@ -4,8 +4,20 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { COURSES } from './ELearning'
 
 type Tab = 'company' | 'actions' | 'notifications'
+
+type ReminderType = 'birthday' | 'shift' | 'performance' | 'booking_desk' | 'booking_room' | 'elearning' | 'confirm_booking' | 'confirm_shift'
+
+interface PersonalReminder {
+  id: string
+  type: ReminderType
+  title: string
+  subtitle: string
+  date: string
+  navigateTo?: string
+}
 
 interface WorkflowItem {
   id: number
@@ -133,6 +145,70 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'Shift') {
+    return (
+      <div className="notif-icon notif-icon-shift">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'BookingDesk') {
+    return (
+      <div className="notif-icon notif-icon-booking-desk">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="7" width="20" height="3" rx="1" /><path d="M4 10v7" /><path d="M20 10v7" /><path d="M12 10v4" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'BookingRoom') {
+    return (
+      <div className="notif-icon notif-icon-booking-room">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 3h18v18H3z" /><path d="M3 9h18" /><path d="M9 3v18" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'ELearning') {
+    return (
+      <div className="notif-icon notif-icon-elearning">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Performance') {
+    return (
+      <div className="notif-icon notif-icon-performance">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'ConfirmBooking') {
+    return (
+      <div className="notif-icon notif-icon-confirm-booking">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5">
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'ConfirmShift') {
+    return (
+      <div className="notif-icon notif-icon-confirm-shift">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" /><path d="M9 12l2 2 4-4" />
+        </svg>
+      </div>
+    )
+  }
   return (
     <div className="notif-icon notif-icon-default">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
@@ -157,6 +233,7 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true)
   const [swapActions, setSwapActions] = useState<SwapAction[]>([])
   const [expenseReceipts, setExpenseReceipts] = useState<Set<number>>(new Set())
+  const [reminders, setReminders] = useState<PersonalReminder[]>([])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -229,6 +306,240 @@ export default function Notifications() {
         .not('receipt_url', 'is', null)
       if (receiptRows) setExpenseReceipts(new Set(receiptRows.map((r: { expense_claim_id: number }) => r.expense_claim_id)))
     }
+
+    // ── Personal reminders ──
+    const personalReminders: PersonalReminder[] = []
+    const todayDate = new Date()
+    const todayStr = todayDate.toISOString().split('T')[0]
+    const weekAhead = new Date(todayDate)
+    weekAhead.setDate(weekAhead.getDate() + 7)
+    const weekAheadStr = weekAhead.toISOString().split('T')[0]
+
+    // Birthdays — colleagues with birthday in next 7 days
+    if (HARDCODED_EMPLOYEE_ID && companyId) {
+      const { data: colleagues } = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, date_of_birth')
+        .eq('company_id', companyId)
+        .eq('is_active', true)
+        .not('date_of_birth', 'is', null)
+
+      if (colleagues) {
+        const thisYear = todayDate.getFullYear()
+        colleagues.forEach((c: { id: string; first_name: string; last_name: string; date_of_birth: string | null }) => {
+          if (!c.date_of_birth || c.id === HARDCODED_EMPLOYEE_ID) return
+          const dob = new Date(c.date_of_birth)
+          const birthdayThisYear = new Date(thisYear, dob.getMonth(), dob.getDate())
+          if (birthdayThisYear < todayDate) birthdayThisYear.setFullYear(thisYear + 1)
+          const diffDays = Math.floor((birthdayThisYear.getTime() - todayDate.getTime()) / 86400000)
+          if (diffDays >= 0 && diffDays <= 7) {
+            const dateStr = birthdayThisYear.toISOString().split('T')[0]
+            personalReminders.push({
+              id: `bday-${c.id}`,
+              type: 'birthday',
+              title: diffDays === 0
+                ? `It's ${c.first_name} ${c.last_name}'s birthday today!`
+                : `${c.first_name} ${c.last_name}'s birthday in ${diffDays} day${diffDays > 1 ? 's' : ''}`,
+              subtitle: `${new Date(dateStr).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}`,
+              date: dateStr,
+            })
+          }
+        })
+      }
+    }
+
+    // Upcoming shifts — next 7 days
+    if (HARDCODED_EMPLOYEE_ID && companyId) {
+      const { data: upcomingShifts } = await supabase
+        .from('shift_assignments')
+        .select('id, date, shift_template:shift_templates(name, start_time, end_time), rota:rotas(name, status)')
+        .eq('employee_id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyId)
+        .gte('date', todayStr)
+        .lte('date', weekAheadStr)
+
+      if (upcomingShifts) {
+        upcomingShifts
+          .filter((s: any) => s.rota?.status === 'published')
+          .forEach((s: any) => {
+            const shiftName = s.shift_template?.name || 'Shift'
+            const startTime = s.shift_template?.start_time?.slice(0, 5) || ''
+            const endTime = s.shift_template?.end_time?.slice(0, 5) || ''
+            const dateLabel = new Date(s.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+            personalReminders.push({
+              id: `shift-${s.id}`,
+              type: 'shift',
+              title: `Upcoming shift: ${shiftName}`,
+              subtitle: `${dateLabel}${startTime ? ` · ${startTime} – ${endTime}` : ''}`,
+              date: s.date,
+              navigateTo: '/shifts',
+            })
+          })
+      }
+    }
+
+    // Performance meetings — upcoming one-to-ones in next 14 days
+    if (HARDCODED_EMPLOYEE_ID && companyId) {
+      const twoWeeksAhead = new Date(todayDate)
+      twoWeeksAhead.setDate(twoWeeksAhead.getDate() + 14)
+      const { data: meetings } = await supabase
+        .from('one_to_one_meetings')
+        .select('id, scheduled_date, scheduled_time, status, manager_id, employee_id')
+        .eq('company_id', companyId)
+        .or(`manager_id.eq.${HARDCODED_EMPLOYEE_ID},employee_id.eq.${HARDCODED_EMPLOYEE_ID}`)
+        .in('status', ['pending', 'accepted'])
+        .gte('scheduled_date', todayStr)
+        .lte('scheduled_date', twoWeeksAhead.toISOString().split('T')[0])
+
+      if (meetings && meetings.length > 0) {
+        const otherIds = [...new Set(meetings.map((m: any) => m.manager_id === HARDCODED_EMPLOYEE_ID ? m.employee_id : m.manager_id))]
+        const { data: empNames } = await supabase
+          .from('employees')
+          .select('id, first_name, last_name')
+          .in('id', otherIds)
+          .eq('company_id', companyId)
+        const nameMap: Record<string, string> = {}
+        ;(empNames || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
+
+        meetings.forEach((m: any) => {
+          const otherId = m.manager_id === HARDCODED_EMPLOYEE_ID ? m.employee_id : m.manager_id
+          const otherName = nameMap[otherId] || 'colleague'
+          const dateLabel = new Date(m.scheduled_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+          personalReminders.push({
+            id: `perf-${m.id}`,
+            type: 'performance',
+            title: `1-to-1 meeting with ${otherName}`,
+            subtitle: `${dateLabel}${m.scheduled_time ? ` at ${m.scheduled_time.slice(0, 5)}` : ''} · ${m.status}`,
+            date: m.scheduled_date,
+            navigateTo: `/one-to-ones/${m.id}`,
+          })
+        })
+      }
+    }
+
+    // Space bookings — upcoming confirmed desk & room bookings
+    if (HARDCODED_EMPLOYEE_ID && companyId) {
+      const { data: upcomingBookings } = await supabase
+        .from('space_bookings')
+        .select('id, booking_date, start_time, end_time, title, status, space:spaces(name, space_type)')
+        .eq('employee_id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyId)
+        .gte('booking_date', todayStr)
+        .lte('booking_date', weekAheadStr)
+        .in('status', ['confirmed', 'checked_in'])
+
+      if (upcomingBookings) {
+        upcomingBookings.forEach((b: any) => {
+          const spaceName = b.space?.name || 'Space'
+          const spaceType = b.space?.space_type || 'desk'
+          const dateLabel = new Date(b.booking_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+          const timeStr = b.start_time && b.end_time ? ` · ${b.start_time.slice(0, 5)} – ${b.end_time.slice(0, 5)}` : ''
+          personalReminders.push({
+            id: `booking-${b.id}`,
+            type: spaceType === 'room' ? 'booking_room' : 'booking_desk',
+            title: `${spaceType === 'room' ? 'Room' : 'Desk'} booking: ${spaceName}`,
+            subtitle: `${dateLabel}${timeStr}${b.title ? ` · ${b.title}` : ''}`,
+            date: b.booking_date,
+            navigateTo: '/space-booking',
+          })
+        })
+      }
+    }
+
+    // E-learning — courses with deadlines expiring in next 30 days
+    const elearningKey = 'inflowhr-elearning'
+    try {
+      const raw = localStorage.getItem(elearningKey)
+      const progress = raw ? JSON.parse(raw) : { completed: [] }
+      const completedSet = new Set(progress.completed || [])
+      const thirtyDaysAhead = new Date(todayDate)
+      thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30)
+
+      COURSES.forEach(course => {
+        if (!course.deadline || completedSet.has(course.id)) return
+        const deadlineDate = new Date(course.deadline)
+        if (deadlineDate >= todayDate && deadlineDate <= thirtyDaysAhead) {
+          const daysLeft = Math.floor((deadlineDate.getTime() - todayDate.getTime()) / 86400000)
+          personalReminders.push({
+            id: `elearn-${course.id}`,
+            type: 'elearning',
+            title: daysLeft <= 7
+              ? `Course expiring soon: ${course.id.replace(/^[a-z]+-/, '').replace(/-/g, ' ')}`
+              : `Course deadline approaching`,
+            subtitle: `Due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left) · ${course.duration}`,
+            date: course.deadline,
+            navigateTo: '/elearning',
+          })
+        }
+      })
+    } catch {}
+
+    // Booking confirmations — bookings confirmed in last 3 days
+    if (HARDCODED_EMPLOYEE_ID && companyId) {
+      const threeDaysAgo = new Date(todayDate)
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+      const { data: recentBookings } = await supabase
+        .from('space_bookings')
+        .select('id, booking_date, start_time, end_time, status, created_at, space:spaces(name, space_type)')
+        .eq('employee_id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyId)
+        .eq('status', 'confirmed')
+        .gte('created_at', threeDaysAgo.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(5)
+
+      if (recentBookings) {
+        recentBookings.forEach((b: any) => {
+          if (personalReminders.some(r => r.id === `booking-${b.id}`)) return
+          const spaceName = b.space?.name || 'Space'
+          const spaceType = b.space?.space_type || 'desk'
+          const dateLabel = new Date(b.booking_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+          personalReminders.push({
+            id: `confirm-booking-${b.id}`,
+            type: 'confirm_booking',
+            title: `${spaceType === 'room' ? 'Room' : 'Desk'} booking confirmed`,
+            subtitle: `${spaceName} · ${dateLabel}${b.start_time ? ` · ${b.start_time.slice(0, 5)} – ${b.end_time?.slice(0, 5)}` : ''}`,
+            date: b.created_at,
+            navigateTo: '/space-booking',
+          })
+        })
+      }
+    }
+
+    // Shift confirmations — shifts assigned in last 3 days
+    if (HARDCODED_EMPLOYEE_ID && companyId) {
+      const threeDaysAgo = new Date(todayDate)
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+      const { data: recentShifts } = await supabase
+        .from('shift_assignments')
+        .select('id, date, created_at, shift_template:shift_templates(name, start_time, end_time), rota:rotas(name, status)')
+        .eq('employee_id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyId)
+        .gte('created_at', threeDaysAgo.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(5)
+
+      if (recentShifts) {
+        recentShifts
+          .filter((s: any) => s.rota?.status === 'published')
+          .forEach((s: any) => {
+            if (personalReminders.some(r => r.id === `shift-${s.id}`)) return
+            const shiftName = s.shift_template?.name || 'Shift'
+            const dateLabel = new Date(s.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+            personalReminders.push({
+              id: `confirm-shift-${s.id}`,
+              type: 'confirm_shift',
+              title: `Shift registered: ${shiftName}`,
+              subtitle: `${dateLabel} · ${s.rota?.name || 'Rota'}`,
+              date: s.created_at,
+              navigateTo: '/shifts',
+            })
+          })
+      }
+    }
+
+    personalReminders.sort((a, b) => a.date.localeCompare(b.date))
+    setReminders(personalReminders)
 
     setLoading(false)
   }, [HARDCODED_EMPLOYEE_ID, HARDCODED_EMAIL, companyUser?.company_id])
@@ -466,7 +777,47 @@ export default function Notifications() {
 
       {!loading && tab === 'notifications' && (
         <div className="notif-list">
-          {myNotifs.length === 0 && <p className="claims-empty">{t('notifications.no_notifs')}</p>}
+          {reminders.length > 0 && (
+            <>
+              <h3 className="notif-section-heading">{t('notifications.reminders')}</h3>
+              {reminders.map(r => (
+                <div
+                  key={r.id}
+                  className={`notif-card notif-reminder-card ${r.navigateTo ? 'notif-card-clickable' : ''}`}
+                  onClick={() => r.navigateTo && navigate(r.navigateTo)}
+                >
+                  <NotifIcon
+                    type={
+                      r.type === 'birthday' ? 'Birthday'
+                        : r.type === 'shift' ? 'Shift'
+                        : r.type === 'performance' ? 'Performance'
+                        : r.type === 'booking_desk' ? 'BookingDesk'
+                        : r.type === 'booking_room' ? 'BookingRoom'
+                        : r.type === 'elearning' ? 'ELearning'
+                        : r.type === 'confirm_booking' ? 'ConfirmBooking'
+                        : r.type === 'confirm_shift' ? 'ConfirmShift'
+                        : 'default'
+                    }
+                  />
+                  <div className="notif-card-content">
+                    <span className="notif-card-title">{r.title}</span>
+                    <span className="notif-card-sub">{r.subtitle}</span>
+                  </div>
+                  {r.navigateTo && (
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="notif-reminder-arrow">
+                      <path d="M9 6l6 6-6 6" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+
+          {myNotifs.length > 0 && reminders.length > 0 && (
+            <h3 className="notif-section-heading">{t('notifications.history')}</h3>
+          )}
+
+          {myNotifs.length === 0 && reminders.length === 0 && <p className="claims-empty">{t('notifications.no_notifs')}</p>}
           {myNotifs.map(n => (
             <div key={n.id} className="notif-card">
               <NotifIcon type={n.record_type} status={n.approval_status} />

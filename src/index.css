@@ -1523,6 +1523,26 @@ body {
 .notif-icon-expense { background: #c62828; }
 .notif-icon-leave { background: #ff9800; }
 .notif-icon-default { background: #757575; }
+.notif-icon-shift { background: #ff6d00; }
+.notif-icon-booking-desk { background: #1565c0; }
+.notif-icon-booking-room { background: #0277bd; }
+.notif-icon-elearning { background: #00897b; }
+.notif-icon-performance { background: #7c3aed; }
+.notif-icon-confirm-booking { background: #2e7d32; }
+.notif-icon-confirm-shift { background: #388e3c; }
+
+.notif-section-heading {
+  font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: #888; padding: 12px 0 4px; margin: 0;
+}
+.notif-reminder-card {
+  position: relative;
+}
+.notif-card-clickable { cursor: pointer; }
+.notif-card-clickable:active { background: #f0f4ff; }
+.notif-reminder-arrow {
+  flex-shrink: 0; align-self: center;
+}
 
 .notif-delete-btn {
   background: none; border: none; cursor: pointer; padding: 6px;
