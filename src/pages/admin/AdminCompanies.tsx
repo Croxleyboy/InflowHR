@@ -227,6 +227,7 @@ export default function AdminCompanies() {
       return
     }
     load()
+    refreshCompanies()
   }
 
   async function toggleLoginDisabled(id: string, currentlyDisabled: boolean) {
