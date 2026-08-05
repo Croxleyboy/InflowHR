@@ -5036,9 +5036,10 @@ body {
 }
 .lt-modal {
   background: var(--bg-card);
-  border-radius: 20px 20px 0 0;
+  border-radius: 20px;
   width: 100%; max-width: 500px;
-  max-height: 90dvh;
+  max-height: 82dvh;
+  margin-bottom: 80px;
   display: flex; flex-direction: column;
   animation: lt-slide-up 0.25s ease-out;
 }
