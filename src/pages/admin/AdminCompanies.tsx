@@ -209,6 +209,10 @@ export default function AdminCompanies() {
     }
     const company = companies.find(c => c.id === id)
     if (!confirm(`Delete "${company?.name || 'this company'}" and ALL its data? This cannot be undone.`)) return
+    await supabase.from('company_features').delete().eq('company_id', id)
+    await supabase.from('company_elearning_courses').delete().eq('company_id', id)
+    await supabase.from('benefits').delete().eq('company_id', id)
+    await supabase.from('courses').delete().eq('company_id', id)
     const { error } = await supabase.rpc('delete_company_data' as any, { p_company_id: id })
     if (error) {
       alert('Error deleting company: ' + error.message)
