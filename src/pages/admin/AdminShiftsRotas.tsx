@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import AdminShiftTemplates from './AdminShifts'
 import AdminRotaManager from './AdminRotas'
+import AdminShiftReports from './AdminShiftReports'
 
 export default function AdminShiftsRotas() {
-  const [tab, setTab] = useState<'rotas' | 'templates'>('rotas')
+  const [tab, setTab] = useState<'rotas' | 'templates' | 'reports'>('rotas')
 
   return (
     <div className="admin-section">
@@ -45,10 +46,27 @@ export default function AdminShiftsRotas() {
         >
           Shift Templates
         </button>
+        <button
+          onClick={() => setTab('reports')}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            background: 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            borderBottom: tab === 'reports' ? '3px solid #5c6bc0' : '3px solid transparent',
+            color: tab === 'reports' ? '#5c6bc0' : 'var(--text-muted, #8b8fa3)',
+            marginBottom: -2,
+          }}
+        >
+          Reports &amp; Analytics
+        </button>
       </div>
 
       {tab === 'rotas' && <AdminRotaManager />}
       {tab === 'templates' && <AdminShiftTemplates />}
+      {tab === 'reports' && <AdminShiftReports />}
     </div>
   )
 }
