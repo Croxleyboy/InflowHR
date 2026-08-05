@@ -96,7 +96,16 @@ export default function AdminEmployees() {
   }
 
   async function saveEdit(id: string) {
-    const { error } = await supabase.from('employees').update(editForm).eq('id', id)
+    const dateFields = ['date_of_birth', 'probation_end_date', 'start_date']
+    const numericFields = ['weekly_hours', 'annual_salary']
+    const payload: Record<string, any> = {}
+    for (const [k, v] of Object.entries(editForm)) {
+      if (dateFields.includes(k)) { payload[k] = v || null }
+      else if (numericFields.includes(k)) { payload[k] = v !== '' && v != null ? parseFloat(v) : null }
+      else if (typeof v === 'string') { payload[k] = v || null }
+      else { payload[k] = v }
+    }
+    const { error } = await supabase.from('employees').update(payload).eq('id', id)
     if (error) { showError('Failed to save employee: ' + error.message); return }
     setEditingId(null)
     showSuccess('Employee updated')

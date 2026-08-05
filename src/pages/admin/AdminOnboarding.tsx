@@ -174,9 +174,12 @@ export default function AdminOnboarding() {
     setUploading(true)
     let success = 0, failed = 0
 
-    const toInsert = uploadRows.map(row => ({
-      ...sanitisePayload(row), status: 'new', is_complete: false, company_id: selectedCompanyId,
-    }))
+    const toInsert = uploadRows.map(row => {
+      const s = sanitisePayload(row)
+      if (s.emergency_contact_phone) s.emergency_contact_number = s.emergency_contact_phone
+      if (s.emergency_contact_relationship) s.relationship = s.emergency_contact_relationship
+      return { ...s, status: 'new', is_complete: false, company_id: selectedCompanyId }
+    })
     const { error } = await supabase.from('onboarding').insert(toInsert)
     if (error) { failed = uploadRows.length; showError('Bulk upload failed: ' + error.message) }
     else { success = uploadRows.length; showSuccess(`${success} starter${success !== 1 ? 's' : ''} created`) }
@@ -224,7 +227,10 @@ export default function AdminOnboarding() {
 
   async function createStarter() {
     if (!newForm.firstname || !newForm.surname || !newForm.user_email || !selectedCompanyId) return
-    const payload = { ...sanitisePayload(newForm), status: 'new', is_complete: false, company_id: selectedCompanyId }
+    const sanitised = sanitisePayload(newForm)
+    if (sanitised.emergency_contact_phone) sanitised.emergency_contact_number = sanitised.emergency_contact_phone
+    if (sanitised.emergency_contact_relationship) sanitised.relationship = sanitised.emergency_contact_relationship
+    const payload = { ...sanitised, status: 'new', is_complete: false, company_id: selectedCompanyId }
     const { data, error } = await supabase.from('onboarding').insert(payload).select().single()
     if (error) { showError('Failed to create starter: ' + error.message); return }
     if (data) {
