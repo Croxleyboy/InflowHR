@@ -174,15 +174,9 @@ export default function AdminOnboarding() {
     setUploading(true)
     let success = 0, failed = 0
 
-    const toInsert = uploadRows.map(row => {
-      const r: Record<string, any> = { ...row, status: 'new', is_complete: false, company_id: selectedCompanyId }
-      r.weekly_hours = row.weekly_hours ? parseFloat(row.weekly_hours) : null
-      r.annual_salary = row.annual_salary ? parseFloat(row.annual_salary) : null
-      for (const key of ['date_of_birth', 'probation_end_date'] as const) {
-        if (!row[key]) r[key] = null
-      }
-      return r
-    })
+    const toInsert = uploadRows.map(row => ({
+      ...sanitisePayload(row), status: 'new', is_complete: false, company_id: selectedCompanyId,
+    }))
     const { error } = await supabase.from('onboarding').insert(toInsert)
     if (error) { failed = uploadRows.length; showError('Bulk upload failed: ' + error.message) }
     else { success = uploadRows.length; showSuccess(`${success} starter${success !== 1 ? 's' : ''} created`) }
@@ -216,14 +210,21 @@ export default function AdminOnboarding() {
     setLoading(false)
   }
 
+  function sanitisePayload(form: Record<string, string>): Record<string, any> {
+    const dateFields = ['start_date', 'date_of_birth', 'probation_end_date']
+    const numericFields = ['weekly_hours', 'annual_salary']
+    const out: Record<string, any> = {}
+    for (const [k, v] of Object.entries(form)) {
+      if (dateFields.includes(k)) { out[k] = v || null }
+      else if (numericFields.includes(k)) { out[k] = v ? parseFloat(v) : null }
+      else { out[k] = v || null }
+    }
+    return out
+  }
+
   async function createStarter() {
     if (!newForm.firstname || !newForm.surname || !newForm.user_email || !selectedCompanyId) return
-    const payload: Record<string, any> = { ...newForm, status: 'new', is_complete: false, company_id: selectedCompanyId }
-    payload.weekly_hours = newForm.weekly_hours ? parseFloat(newForm.weekly_hours) : null
-    payload.annual_salary = newForm.annual_salary ? parseFloat(newForm.annual_salary) : null
-    for (const key of ['date_of_birth', 'probation_end_date'] as const) {
-      if (!newForm[key]) payload[key] = null
-    }
+    const payload = { ...sanitisePayload(newForm), status: 'new', is_complete: false, company_id: selectedCompanyId }
     const { data, error } = await supabase.from('onboarding').insert(payload).select().single()
     if (error) { showError('Failed to create starter: ' + error.message); return }
     if (data) {
