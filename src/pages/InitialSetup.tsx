@@ -55,8 +55,9 @@ export default function InitialSetup() {
 
     const onbUpdate: Record<string, any> = {
       date_of_birth: dob,
-      next_of_kin_name: nextOfKinName.trim(),
+      emergency_contact_name: nextOfKinName.trim(),
       emergency_contact_number: nextOfKinPhone.trim(),
+      emergency_contact_phone: nextOfKinPhone.trim(),
       initial_setup_complete: true,
     }
     if (avatarUrl) onbUpdate.avatar_url = avatarUrl
@@ -68,6 +69,16 @@ export default function InitialSetup() {
       setError(updErr.message)
       setSaving(false)
       return
+    }
+
+    if (employeeId) {
+      const empUpdate: Record<string, any> = {
+        date_of_birth: dob,
+        emergency_contact_name: nextOfKinName.trim(),
+        emergency_contact_phone: nextOfKinPhone.trim(),
+      }
+      if (avatarUrl) empUpdate.avatar_url = avatarUrl
+      await supabase.from('employees').update(empUpdate).eq('id', employeeId)
     }
 
     markSetupComplete()
