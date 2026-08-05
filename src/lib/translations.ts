@@ -302,6 +302,10 @@ const en: Translations = {
   'new_leave.half_day_info': 'Requesting half a day (0.5 days)',
   'new_leave.days_hint': 'Auto-calculated: excludes weekends & UK bank holidays',
   'new_leave.days_hint_holidays': 'Auto-calculated: excludes UK bank holidays',
+  'new_leave.does_not_deduct': 'This leave type does not reduce your holiday allowance',
+  'new_leave.balance_remaining': '{remaining} of {total} days remaining',
+  'new_leave.pending_lowercase': 'pending',
+  'new_leave.error_insufficient_balance': 'Insufficient leave balance — you have {remaining} days remaining',
 
   // Leave History
   'leave_history.title': 'My',
@@ -1166,6 +1170,10 @@ const de: Translations = {
   'new_leave.half_day_info': 'Beantragung eines halben Tages (0,5 Tage)',
   'new_leave.days_hint': 'Automatisch berechnet: ohne Wochenenden & britische Feiertage',
   'new_leave.days_hint_holidays': 'Automatisch berechnet: ohne britische Feiertage',
+  'new_leave.does_not_deduct': 'Dieser Urlaubstyp wird nicht vom Urlaubskontingent abgezogen',
+  'new_leave.balance_remaining': '{remaining} von {total} Tagen verbleibend',
+  'new_leave.pending_lowercase': 'ausstehend',
+  'new_leave.error_insufficient_balance': 'Unzureichendes Urlaubskontingent — Sie haben {remaining} Tage übrig',
 
   // Leave History
   'leave_history.title': 'Mein',

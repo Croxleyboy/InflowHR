@@ -105,18 +105,25 @@ export default function NewLeaveRequest() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [leaveTypeIds, setLeaveTypeIds] = useState<Record<string, number>>({})
+  const [leaveTypeDeducts, setLeaveTypeDeducts] = useState<Record<string, boolean>>({})
   const [weekendsAsWorkdays, setWeekendsAsWorkdays] = useState(false)
+  const [leaveBalance, setLeaveBalance] = useState<{ total: number; used: number; pending: number } | null>(null)
 
   useEffect(() => {
     if (!companyUser?.company_id) return
     supabase.from('leave_types')
-      .select('id, name')
+      .select('id, name, deducts_from_allowance')
       .eq('company_id', companyUser.company_id)
       .then(({ data }) => {
         if (data) {
-          const map: Record<string, number> = {}
-          for (const row of data) map[row.name] = row.id
-          setLeaveTypeIds(map)
+          const idMap: Record<string, number> = {}
+          const deductMap: Record<string, boolean> = {}
+          for (const row of data) {
+            idMap[row.name] = row.id
+            deductMap[row.name] = row.deducts_from_allowance !== false
+          }
+          setLeaveTypeIds(idMap)
+          setLeaveTypeDeducts(deductMap)
         }
       })
     supabase.from('companies')
@@ -126,6 +133,27 @@ export default function NewLeaveRequest() {
       .then(({ data }) => {
         if (data?.weekends_as_workdays) setWeekendsAsWorkdays(true)
       })
+    if (EMPLOYEE_ID) {
+      Promise.all([
+        supabase.from('leave_balances')
+          .select('total_allowance, used')
+          .eq('employee_id', EMPLOYEE_ID)
+          .eq('company_id', companyUser.company_id)
+          .eq('year', new Date().getFullYear())
+          .limit(1)
+          .single(),
+        supabase.from('leave_requests')
+          .select('days_requested')
+          .eq('employee_id', EMPLOYEE_ID)
+          .eq('company_id', companyUser.company_id)
+          .eq('status', 'pending'),
+      ]).then(([balRes, pendRes]) => {
+        const total = balRes.data?.total_allowance || 0
+        const used = balRes.data?.used || 0
+        const pending = (pendRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
+        setLeaveBalance({ total, used, pending })
+      })
+    }
     if (EMPLOYEE_ID) {
       supabase.from('benefit_types')
         .select('id')
@@ -253,19 +281,19 @@ export default function NewLeaveRequest() {
     }
 
     const daysVal = parseFloat(days)
+    const typeDeducts = leaveTypeDeducts[leaveType] !== false
     let careerBreakFlag = false
-    if (leaveType === 'Career Break') {
-      const { data: balances } = await supabase
-        .from('leave_balances')
-        .select('total_allowance, used')
-        .eq('employee_id', EMPLOYEE_ID)
-        .eq('company_id', companyUser?.company_id)
-        .eq('year', new Date().getFullYear())
-        .limit(1)
-        .single()
-      if (balances) {
-        const remaining = balances.total_allowance - balances.used
-        if (daysVal > remaining) careerBreakFlag = true
+
+    if (typeDeducts && leaveBalance) {
+      const remaining = leaveBalance.total - leaveBalance.used - leaveBalance.pending
+      if (daysVal > remaining) {
+        if (leaveType === 'Career Break') {
+          careerBreakFlag = true
+        } else {
+          setError(t('new_leave.error_insufficient_balance').replace('{remaining}', String(remaining)))
+          setSubmitting(false)
+          return
+        }
       }
     }
 
@@ -420,6 +448,29 @@ export default function NewLeaveRequest() {
             <span>{t('new_leave.half_day_info')}</span>
           </div>
         )}
+
+        {leaveTypeDeducts[leaveType] === false ? (
+          <div className="leave-deduction-info leave-deduction-info-exempt">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span>{t('new_leave.does_not_deduct')}</span>
+          </div>
+        ) : leaveBalance ? (() => {
+          const rem = leaveBalance.total - leaveBalance.used - leaveBalance.pending
+          const insufficient = rem < parseFloat(days || '0')
+          return (
+            <div className={`leave-deduction-info ${insufficient ? 'leave-deduction-info-warning' : ''}`}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <span>
+                {t('new_leave.balance_remaining').replace('{remaining}', String(rem)).replace('{total}', String(leaveBalance.total))}
+                {leaveBalance.pending > 0 && ` (${leaveBalance.pending} ${t('new_leave.pending_lowercase')})`}
+              </span>
+            </div>
+          )
+        })() : null}
 
         <div className="form-field">
           <label className="field-label">{t('new_leave.reason')}</label>

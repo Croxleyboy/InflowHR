@@ -1759,6 +1759,17 @@ body {
 [data-theme="dark"] .leave-half-day-info { background: #1b3a1b; color: #66bb6a; }
 .leave-days-hint { display: block; font-size: 11px; color: #888; margin-top: 4px; }
 
+.leave-deduction-info {
+  display: flex; align-items: center; gap: 8px;
+  background: #e3f2fd; border-radius: 8px; padding: 10px 14px;
+  font-size: 13px; color: #1565c0; font-weight: 500; margin-bottom: 12px;
+}
+.leave-deduction-info-exempt { background: #e8f5e9; color: #2e7d32; }
+.leave-deduction-info-warning { background: #fff3e0; color: #e65100; }
+[data-theme="dark"] .leave-deduction-info { background: #0d2137; color: #64b5f6; }
+[data-theme="dark"] .leave-deduction-info-exempt { background: #1b3a1b; color: #66bb6a; }
+[data-theme="dark"] .leave-deduction-info-warning { background: #3e2723; color: #ffb74d; }
+
 .card-leave-pending {
   color: #ffe082 !important; font-weight: 600; opacity: 1 !important;
 }
