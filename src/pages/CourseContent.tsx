@@ -15,6 +15,24 @@ interface QuizQuestion {
   correct: number
 }
 
+function toEmbedUrl(url: string): string {
+  if (!url) return ''
+  try {
+    const u = new URL(url)
+    if (u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') {
+      const v = u.searchParams.get('v')
+      if (v) return `https://www.youtube.com/embed/${v}`
+    }
+    if (u.hostname === 'youtu.be') {
+      return `https://www.youtube.com/embed${u.pathname}`
+    }
+    if (u.hostname === 'vimeo.com' && /^\/\d+/.test(u.pathname)) {
+      return `https://player.vimeo.com/video${u.pathname}`
+    }
+  } catch {}
+  return url
+}
+
 const STORAGE_KEY = 'inflowhr-elearning'
 
 function loadProgress() {
@@ -91,7 +109,8 @@ export default function CourseContent() {
   const courseTitle = searchParams.get('title') || title || rawTitle
   const courseDesc = searchParams.get('desc') || ''
   const duration = searchParams.get('duration') || ''
-  const externalUrl = searchParams.get('url') || ''
+  const rawUrl = searchParams.get('url') || ''
+  const externalUrl = toEmbedUrl(rawUrl)
 
   const sections = generateSections(courseTitle, courseDesc, type)
   const quizQuestions = type === 'quiz' ? generateQuiz(courseTitle) : []
