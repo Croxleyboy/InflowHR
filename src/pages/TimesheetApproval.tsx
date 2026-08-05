@@ -13,6 +13,7 @@ interface TimesheetRecord {
   customer: string | null
   role: string
   date: string
+  end_date: string | null
   start_time: string
   end_time: string
   hours: number
@@ -43,7 +44,7 @@ export default function TimesheetApproval() {
     if (!id) return
     setLoading(true)
     const { data } = await supabase.from('timesheets')
-      .select('id, employee_id, location, customer, role, date, start_time, end_time, hours, status, created_at')
+      .select('id, employee_id, location, customer, role, date, end_date, start_time, end_time, hours, status, created_at')
       .eq('id', id)
       .eq('company_id', companyUser?.company_id)
       .single()
@@ -65,6 +66,9 @@ export default function TimesheetApproval() {
 
   const empName = employee ? `${employee.first_name} ${employee.last_name}` : ''
   const empInitials = employee ? `${employee.first_name[0]}${employee.last_name[0]}` : ''
+  const tsDateDisplay = ts && ts.end_date && ts.end_date !== ts.date
+    ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}`
+    : ts ? formatDate(ts.date) : ''
 
   async function handleDecision(approved: boolean) {
     if (!ts || !employee) return
@@ -82,8 +86,8 @@ export default function TimesheetApproval() {
         approval_status: approved ? 'Approved' : 'Declined',
         updated_at: now,
         task_description: approved
-          ? `Timesheet approved - ${formatDate(ts.date)} ${ts.start_time.slice(0, 5)}-${ts.end_time.slice(0, 5)}`
-          : `Timesheet declined - ${formatDate(ts.date)}`,
+          ? `Timesheet approved - ${tsDateDisplay} ${ts.start_time.slice(0, 5)}-${ts.end_time.slice(0, 5)}`
+          : `Timesheet declined - ${tsDateDisplay}`,
       })
       .eq('record_type', 'Timesheet')
       .eq('approval_id', ts.id)
@@ -102,8 +106,8 @@ export default function TimesheetApproval() {
       approval_id: ts.id,
       reminder_count: 1,
       task_description: approved
-        ? `Your timesheet for ${formatDate(ts.date)} (${Number(ts.hours).toFixed(1)}h) has been approved.`
-        : `Your timesheet for ${formatDate(ts.date)} has been declined. Please contact your manager.`,
+        ? `Your timesheet for ${tsDateDisplay} (${Number(ts.hours).toFixed(1)}h) has been approved.`
+        : `Your timesheet for ${tsDateDisplay} has been declined. Please contact your manager.`,
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
@@ -119,7 +123,7 @@ export default function TimesheetApproval() {
       assigned_to: APPROVER_EMAIL,
       approval_id: ts.id,
       reminder_count: 1,
-      task_description: `You ${approved ? 'approved' : 'declined'} timesheet for ${empName} - ${formatDate(ts.date)} (${Number(ts.hours).toFixed(1)}h)`,
+      task_description: `You ${approved ? 'approved' : 'declined'} timesheet for ${empName} - ${tsDateDisplay} (${Number(ts.hours).toFixed(1)}h)`,
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
@@ -183,7 +187,7 @@ export default function TimesheetApproval() {
         <div className="leave-approval-details">
           <div className="leave-detail-row">
             <span className="leave-detail-label">{t('timesheets.date')}</span>
-            <span className="leave-detail-value">{formatDate(ts.date)}</span>
+            <span className="leave-detail-value">{tsDateDisplay}</span>
           </div>
           <div className="leave-detail-row">
             <span className="leave-detail-label">{t('timesheets.start_time')}</span>

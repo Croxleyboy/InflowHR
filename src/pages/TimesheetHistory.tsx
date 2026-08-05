@@ -11,6 +11,7 @@ interface Timesheet {
   customer: string | null
   role: string
   date: string
+  end_date: string | null
   start_time: string
   end_time: string
   hours: number
@@ -79,7 +80,7 @@ export default function TimesheetHistory() {
 
     const { data } = await supabase
       .from('timesheets')
-      .select('id, location, customer, role, date, start_time, end_time, hours, status')
+      .select('id, location, customer, role, date, end_date, start_time, end_time, hours, status')
       .eq('employee_id', employeeId)
       .gte('date', cutoff)
       .order('date', { ascending: false })
@@ -131,7 +132,7 @@ export default function TimesheetHistory() {
               {week.entries.map(ts => (
                 <button key={ts.id} className="claim-row" onClick={() => navigate(`/timesheets/${ts.id}`)}>
                   <div className="claim-date-col">
-                    <span className="claim-date">{formatDate(ts.date)}</span>
+                    <span className="claim-date">{ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)}</span>
                     <span className="claim-id">{formatTime(ts.start_time)} - {formatTime(ts.end_time)}</span>
                   </div>
                   <div className="claim-detail-col">

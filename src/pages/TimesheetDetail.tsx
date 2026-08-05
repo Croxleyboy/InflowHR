@@ -12,6 +12,7 @@ interface TimesheetRecord {
   customer: string | null
   role: string
   date: string
+  end_date: string | null
   start_time: string
   end_time: string
   hours: number
@@ -33,7 +34,7 @@ export default function TimesheetDetail() {
     if (!id) return
     setLoading(true)
     const { data } = await supabase.from('timesheets')
-      .select('id, location, customer, role, date, start_time, end_time, hours, status, created_at')
+      .select('id, location, customer, role, date, end_date, start_time, end_time, hours, status, created_at')
       .eq('id', id)
       .eq('company_id', companyUser?.company_id)
       .single()
@@ -62,7 +63,7 @@ export default function TimesheetDetail() {
       assigned_to: employeeEmail,
       approval_id: ts.id,
       reminder_count: 1,
-      task_description: `Timesheet - ${ts.date} ${ts.start_time.slice(0, 5)}-${ts.end_time.slice(0, 5)} (${ts.role})`,
+      task_description: `Timesheet - ${ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)} ${ts.start_time.slice(0, 5)}-${ts.end_time.slice(0, 5)} (${ts.role})`,
       company_id: companyUser?.company_id,
     })
     if (error2) { showError('Failed to create workflow entry: ' + error2.message); setSubmitting(false); return }
@@ -111,7 +112,7 @@ export default function TimesheetDetail() {
         <div className="leave-approval-details">
           <div className="leave-detail-row">
             <span className="leave-detail-label">{t('timesheets.date')}</span>
-            <span className="leave-detail-value">{formatDate(ts.date)}</span>
+            <span className="leave-detail-value">{ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)}</span>
           </div>
           <div className="leave-detail-row">
             <span className="leave-detail-label">{t('timesheets.start_time')}</span>
