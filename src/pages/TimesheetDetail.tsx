@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDate } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
+import { getManagerEmail } from '../lib/workflow'
 
 interface TimesheetRecord {
   id: number
@@ -24,7 +25,7 @@ export default function TimesheetDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { employeeName, employeeEmail, companyUser } = useAuth()
+  const { employeeId, employeeName, employeeEmail, companyUser } = useAuth()
   const { showError, showSuccess } = useToast()
   const [ts, setTs] = useState<TimesheetRecord | null>(null)
   const [loading, setLoading] = useState(true)
@@ -53,6 +54,8 @@ export default function TimesheetDetail() {
     }).eq('id', ts.id).eq('company_id', companyUser?.company_id)
     if (error) { showError('Failed to submit timesheet: ' + error.message); setSubmitting(false); return }
 
+    const managerEmail = await getManagerEmail(employeeId, employeeEmail)
+
     const { error: error2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: employeeName,
       step: 1,
@@ -60,7 +63,7 @@ export default function TimesheetDetail() {
       record_type: 'Timesheet',
       action: 'Timesheet submitted for approval',
       employee_email: employeeEmail,
-      assigned_to: employeeEmail,
+      assigned_to: managerEmail,
       approval_id: ts.id,
       reminder_count: 1,
       task_description: `Timesheet - ${ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)} ${ts.start_time.slice(0, 5)}-${ts.end_time.slice(0, 5)} (${ts.role})`,

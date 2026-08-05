@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext'
 import { useFeatures } from '../context/FeatureContext'
 import { formatDate } from '../lib/formatters'
 import { checkTimeOverlap } from '../lib/overlapCheck'
+import { getManagerEmail } from '../lib/workflow'
 
 const LOCATIONS = ['Head Office', 'Home', 'Customer Site', 'Event', 'Unassigned']
 const ROLES = ['IT', 'Engineering', 'Design', 'HR', 'Finance', 'Marketing', 'Sales', 'Operations', 'Management', 'Unassigned']
@@ -112,20 +113,7 @@ export default function NewTimesheet() {
     }
 
     if (!asDraft && data) {
-      let managerEmail = employeeEmail
-      const { data: empRow } = await supabase
-        .from('employees')
-        .select('manager_id')
-        .eq('id', employeeId)
-        .single()
-      if (empRow?.manager_id) {
-        const { data: mgr } = await supabase
-          .from('employees')
-          .select('email')
-          .eq('id', empRow.manager_id)
-          .single()
-        if (mgr?.email) managerEmail = mgr.email
-      }
+      const managerEmail = await getManagerEmail(employeeId, employeeEmail)
 
       const { error: wfError1 } = await supabase.from('workflow_tracker').insert({
         emp_display_name: employeeName,

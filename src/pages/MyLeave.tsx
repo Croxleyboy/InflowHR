@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { getManagerEmail } from '../lib/workflow'
 
 interface LeaveBalance {
   leave_type_id: number
@@ -99,6 +100,8 @@ export default function MyLeave() {
   async function handleImOff() {
     setImOffState('sending')
 
+    const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL)
+
     const { error: wfError } = await supabase.from('workflow_tracker').insert({
       emp_display_name: EMPLOYEE_NAME,
       step: 1,
@@ -106,7 +109,7 @@ export default function MyLeave() {
       record_type: 'Notification',
       action: "I'm Off notification",
       employee_email: EMPLOYEE_EMAIL,
-      assigned_to: EMPLOYEE_EMAIL,
+      assigned_to: managerEmail,
       approval_id: null,
       reminder_count: 0,
       task_description: `${EMPLOYEE_NAME} is now off and away from the office.`,

@@ -7,6 +7,7 @@ import { LEAVE_TYPE_KEYS } from '../lib/translations'
 import { countWorkingDays } from '../lib/workingDays'
 import { formatDate, formatDateDisplay } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
+import { getManagerEmail } from '../lib/workflow'
 
 const VACATION_OPTION_LEAVE_TYPES: Record<string, { name: string; translationKey: string }> = {
   buy_leave: { name: 'Buy Additional Leave', translationKey: 'buy_leave' },
@@ -93,7 +94,6 @@ export default function NewLeaveRequest() {
   const { t } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
   const { showError } = useToast()
-  const MANAGER_EMAIL = EMPLOYEE_EMAIL
   const [benefitLeaveTypes, setBenefitLeaveTypes] = useState<{ name: string; translationKey: string }[]>([])
   const allLeaveTypes = [...LEAVE_TYPE_KEYS, ...benefitLeaveTypes]
   const [leaveType, setLeaveType] = useState(LEAVE_TYPE_KEYS[0].name)
@@ -319,6 +319,7 @@ export default function NewLeaveRequest() {
     }
 
     const flagNote = careerBreakFlag ? ` ⚠️ ${t('leave.career_break_flag')}` : ''
+    const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL)
 
     const { error: wfError } = await supabase.from('workflow_tracker').insert({
       emp_display_name: EMPLOYEE_NAME,
@@ -327,7 +328,7 @@ export default function NewLeaveRequest() {
       record_type: 'Leave',
       action: 'Leave request submitted for approval',
       employee_email: EMPLOYEE_EMAIL,
-      assigned_to: MANAGER_EMAIL,
+      assigned_to: managerEmail,
       approval_id: data.id,
       reminder_count: 1,
       task_description: `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${halfDay ? ' (Half Day)' : ` (${days} days)`}${flagNote}`,

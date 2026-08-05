@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import NewExpenseItem from './NewExpenseItem'
 import { formatDateTime } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
+import { getManagerEmail } from '../lib/workflow'
 
 interface Claim {
   id: number
@@ -30,9 +31,8 @@ export default function ExpenseDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
-  const { employeeName: HARDCODED_EMPLOYEE_NAME, employeeEmail: HARDCODED_EMPLOYEE_EMAIL, companyUser } = useAuth()
+  const { employeeId, employeeName: HARDCODED_EMPLOYEE_NAME, employeeEmail: HARDCODED_EMPLOYEE_EMAIL, companyUser } = useAuth()
   const { showError, showSuccess } = useToast()
-  const HARDCODED_MANAGER_EMAIL = HARDCODED_EMPLOYEE_EMAIL
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -93,6 +93,8 @@ export default function ExpenseDetail() {
     }).eq('id', id).eq('company_id', companyUser?.company_id)
     if (error) { showError('Failed to submit expense claim: ' + error.message); setSubmitting(false); return }
 
+    const managerEmail = await getManagerEmail(employeeId, HARDCODED_EMPLOYEE_EMAIL)
+
     const { error: error2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: HARDCODED_EMPLOYEE_NAME,
       step: 1,
@@ -100,7 +102,7 @@ export default function ExpenseDetail() {
       record_type: 'Expense',
       action: 'Expense claim submitted for approval',
       employee_email: HARDCODED_EMPLOYEE_EMAIL,
-      assigned_to: HARDCODED_MANAGER_EMAIL,
+      assigned_to: managerEmail,
       approval_id: claim.id,
       reminder_count: 1,
       task_description: `Expense claim ${claim.reference_number} - ${claim.title} - £${totalAmount.toFixed(2)}`,
