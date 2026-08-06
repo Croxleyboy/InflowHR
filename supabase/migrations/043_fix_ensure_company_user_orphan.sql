@@ -14,10 +14,11 @@ BEGIN
 END;
 $$;
 
--- 2. Fix ensure_company_user to:
---    a) claim orphaned company_users rows (onboarding sets employee_id but not auth_user_id)
---    b) match employees by local part of email when exact match fails
---       (SSO email may be user@domain.onmicrosoft.com while onboarded email is user@domain.com)
+-- 2. Robust ensure_company_user:
+--    - Claims orphaned company_users rows (onboarding sets employee_id but not auth_user_id)
+--    - Matches employees by local part when SSO email differs from onboarded email
+--    - Re-resolves employee_id on every login if still null
+--    - Syncs role from employees.is_admin flag
 CREATE OR REPLACE FUNCTION public.ensure_company_user()
 RETURNS json
 LANGUAGE plpgsql
@@ -34,6 +35,7 @@ DECLARE
   v_cu_id bigint;
   v_role text;
   v_login_disabled boolean;
+  v_is_admin boolean;
 BEGIN
   v_user_id := auth.uid();
   IF v_user_id IS NULL THEN
@@ -42,30 +44,37 @@ BEGIN
 
   SELECT email INTO v_email FROM auth.users WHERE id = v_user_id;
   v_domain := split_part(v_email, '@', 2);
-  v_local_part := split_part(v_email, '@', 1);
+  v_local_part := lower(split_part(v_email, '@', 1));
 
-  -- 1. Check for existing company_users row linked to this auth user
-  SELECT id, company_id, role, employee_id INTO v_cu_id, v_company_id, v_role, v_employee_id
+  -- =========================================================
+  -- A. Check for existing company_users row linked to this auth user
+  -- =========================================================
+  SELECT id, company_id, role, employee_id
+    INTO v_cu_id, v_company_id, v_role, v_employee_id
   FROM company_users
   WHERE auth_user_id = v_user_id AND is_active = true
   LIMIT 1;
 
   IF v_cu_id IS NOT NULL THEN
-    -- If we have a row but no employee_id, try to resolve it now
+    -- Re-resolve employee_id if still null
     IF v_employee_id IS NULL THEN
       SELECT id INTO v_employee_id
       FROM employees
       WHERE company_id = v_company_id
-        AND (email = v_email OR split_part(email, '@', 1) = v_local_part)
+        AND (lower(email) = lower(v_email) OR lower(split_part(email, '@', 1)) = v_local_part)
       LIMIT 1;
 
       IF v_employee_id IS NOT NULL THEN
         UPDATE company_users SET employee_id = v_employee_id WHERE id = v_cu_id;
+      END IF;
+    END IF;
 
-        SELECT CASE WHEN is_admin THEN 'admin' ELSE v_role END INTO v_role
-        FROM employees WHERE id = v_employee_id;
-
-        UPDATE company_users SET role = v_role WHERE id = v_cu_id;
+    -- Sync role from is_admin flag
+    IF v_employee_id IS NOT NULL THEN
+      SELECT is_admin INTO v_is_admin FROM employees WHERE id = v_employee_id;
+      IF v_is_admin = true AND v_role <> 'admin' THEN
+        v_role := 'admin';
+        UPDATE company_users SET role = 'admin' WHERE id = v_cu_id;
       END IF;
     END IF;
 
@@ -76,34 +85,41 @@ BEGIN
     RETURN json_build_object('id', v_cu_id, 'company_id', v_company_id, 'role', v_role, 'employee_id', v_employee_id);
   END IF;
 
-  -- 2. No row by auth_user_id — find company by domain
+  -- =========================================================
+  -- B. No row by auth_user_id — find company by domain
+  -- =========================================================
   SELECT id INTO v_company_id
   FROM companies
-  WHERE domain = v_domain AND is_active = true AND login_disabled = false;
+  WHERE lower(domain) = lower(v_domain) AND is_active = true AND login_disabled = false;
 
   IF v_company_id IS NULL THEN
     RETURN json_build_object('error', 'No matching company');
   END IF;
 
-  -- 3. Find matching employee — exact email first, then by local part
+  -- =========================================================
+  -- C. Find matching employee — exact email then local-part
+  -- =========================================================
   SELECT id INTO v_employee_id
   FROM employees
-  WHERE email = v_email AND company_id = v_company_id;
+  WHERE lower(email) = lower(v_email) AND company_id = v_company_id;
 
   IF v_employee_id IS NULL THEN
     SELECT id INTO v_employee_id
     FROM employees
-    WHERE split_part(email, '@', 1) = v_local_part AND company_id = v_company_id
+    WHERE lower(split_part(email, '@', 1)) = v_local_part AND company_id = v_company_id
     LIMIT 1;
   END IF;
 
+  -- Determine role from is_admin flag
   v_role := 'employee';
   IF v_employee_id IS NOT NULL THEN
     SELECT CASE WHEN is_admin THEN 'admin' ELSE 'employee' END INTO v_role
     FROM employees WHERE id = v_employee_id;
   END IF;
 
-  -- 4. Check for an orphaned company_users row (created by onboarding with no auth_user_id)
+  -- =========================================================
+  -- D. Claim orphaned company_users row (onboarding created with null auth_user_id)
+  -- =========================================================
   IF v_employee_id IS NOT NULL THEN
     SELECT id INTO v_cu_id
     FROM company_users
@@ -118,12 +134,14 @@ BEGIN
     END IF;
   END IF;
 
-  -- 5. No orphan found — insert new row
+  -- =========================================================
+  -- E. No orphan — insert new row
+  -- =========================================================
   INSERT INTO company_users (auth_user_id, company_id, employee_id, role, is_active)
   VALUES (v_user_id, v_company_id, v_employee_id, v_role, true)
   ON CONFLICT (auth_user_id, company_id) DO UPDATE
     SET employee_id = COALESCE(EXCLUDED.employee_id, company_users.employee_id),
-        role = EXCLUDED.role
+        role = CASE WHEN EXCLUDED.employee_id IS NOT NULL THEN EXCLUDED.role ELSE company_users.role END
   RETURNING id INTO v_cu_id;
 
   RETURN json_build_object('id', v_cu_id, 'company_id', v_company_id, 'role', v_role, 'employee_id', v_employee_id);

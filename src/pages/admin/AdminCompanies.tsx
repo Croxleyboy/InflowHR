@@ -292,12 +292,6 @@ export default function AdminCompanies() {
       return
     }
 
-    const { data: emp } = await supabase
-      .from('employees')
-      .select('email')
-      .eq('id', newEmployeeId)
-      .single()
-
     const { data: cuByEmp } = await supabase
       .from('company_users')
       .select('id')
@@ -313,12 +307,15 @@ export default function AdminCompanies() {
       if (error) {
         showError('Failed to assign admin: ' + error.message)
       }
-    } else if (emp?.email) {
-      const { error } = await supabase.rpc('link_and_promote_admin' as any, {
-        p_company_id: companyId,
-        p_employee_id: newEmployeeId,
-        p_email: emp.email,
-      })
+    } else {
+      const { error } = await supabase
+        .from('company_users')
+        .insert({
+          company_id: companyId,
+          employee_id: newEmployeeId,
+          role: 'admin',
+          is_active: true,
+        })
       if (error) {
         showError('Failed to assign admin: ' + error.message)
       }

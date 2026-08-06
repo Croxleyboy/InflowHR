@@ -71,6 +71,16 @@ export default function TimesheetDetail() {
     })
     if (error2) { showError('Failed to create workflow entry: ' + error2.message); setSubmitting(false); return }
 
+    await supabase.from('notifications').insert({
+      employee_id: employeeId,
+      title: 'Timesheet Submitted',
+      message: `Your timesheet for ${ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)} has been submitted for approval.`,
+      type: 'info',
+      link: '/timesheets',
+      is_read: false,
+      company_id: companyUser?.company_id,
+    })
+
     showSuccess('Timesheet submitted')
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/timesheets')

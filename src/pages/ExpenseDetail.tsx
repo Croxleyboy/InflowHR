@@ -110,6 +110,16 @@ export default function ExpenseDetail() {
     })
     if (error2) { showError('Failed to create workflow entry: ' + error2.message); setSubmitting(false); return }
 
+    await supabase.from('notifications').insert({
+      employee_id: employeeId,
+      title: 'Expense Claim Submitted',
+      message: `Your expense claim ${claim.reference_number} - ${claim.title} (£${totalAmount.toFixed(2)}) has been submitted for approval.`,
+      type: 'info',
+      link: `/expenses/${claim.id}`,
+      is_read: false,
+      company_id: companyUser?.company_id,
+    })
+
     showSuccess('Expense claim submitted')
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/expenses')

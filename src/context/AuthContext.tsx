@@ -65,16 +65,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [canPostNotifications, setCanPostNotifications] = useState(false)
 
   async function loadCompanyData(userId: string, email: string) {
+    // Step 1: RPC ensures company_users row exists, claims orphans, resolves employee by local-part match
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: rpcResult } = await supabase.rpc('ensure_company_user' as any)
 
-    // After RPC, always re-query company_users directly so we have a reliable row
+    // Step 2: Re-query company_users to get the authoritative row (RPC may have updated it)
     const { data: rows } = await supabase
       .from('company_users')
       .select('id, company_id, role, employee_id')
       .eq('auth_user_id', userId)
       .eq('is_active', true)
 
+    // Prefer the row with employee_id linked, then admin, then any
     let cu = rows && rows.length > 0
       ? rows.find((r: any) => r.role === 'admin' && r.employee_id)
         || rows.find((r: any) => r.employee_id != null)
@@ -82,24 +84,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         || rows[0]
       : null
 
-    // If direct query found nothing but RPC succeeded, use RPC result
+    // If direct query found nothing but RPC succeeded, use RPC result as fallback
     if (!cu && rpcResult && !rpcResult.error) {
       cu = rpcResult
     }
 
     if (cu) {
       let empId = cu.employee_id
+
+      // Step 3: If employee_id still missing, resolve it client-side
       if (!empId && email && cu.company_id) {
-        // Try exact email match first
+        const localPart = email.split('@')[0]
+        // Try exact email, then local-part match
         let { data: emp } = await supabase
           .from('employees')
           .select('id')
           .eq('email', email)
           .eq('company_id', cu.company_id)
           .maybeSingle()
-        // SSO email may differ from onboarded email (e.g. user@domain.onmicrosoft.com vs user@domain.com)
         if (!emp) {
-          const localPart = email.split('@')[0]
           const { data: fuzzy } = await supabase
             .from('employees')
             .select('id')
@@ -118,6 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Step 4: Sync role from employees.is_admin flag
       if (empId) {
         const { data: empRow } = await supabase
           .from('employees')
@@ -125,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('id', empId)
           .single()
         if (empRow) {
-          const expectedRole = empRow.is_admin ? 'admin' : cu.role
+          const expectedRole = empRow.is_admin ? 'admin' : (cu.role === 'admin' ? 'admin' : cu.role)
           if (expectedRole !== cu.role) {
             cu = { ...cu, role: expectedRole }
             await supabase

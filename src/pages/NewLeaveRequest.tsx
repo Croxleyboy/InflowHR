@@ -321,6 +321,8 @@ export default function NewLeaveRequest() {
     const flagNote = careerBreakFlag ? ` ⚠️ ${t('leave.career_break_flag')}` : ''
     const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL)
 
+    const taskDesc = `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${halfDay ? ' (Half Day)' : ` (${days} days)`}${flagNote}`
+
     const { error: wfError } = await supabase.from('workflow_tracker').insert({
       emp_display_name: EMPLOYEE_NAME,
       step: 1,
@@ -331,10 +333,20 @@ export default function NewLeaveRequest() {
       assigned_to: managerEmail,
       approval_id: data.id,
       reminder_count: 1,
-      task_description: `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${halfDay ? ' (Half Day)' : ` (${days} days)`}${flagNote}`,
+      task_description: taskDesc,
       company_id: companyUser?.company_id,
     })
     if (wfError) showError('Failed to create workflow tracker: ' + wfError.message)
+
+    await supabase.from('notifications').insert({
+      employee_id: EMPLOYEE_ID,
+      title: 'Leave Request Submitted',
+      message: `Your leave request has been submitted for approval: ${taskDesc}`,
+      type: 'info',
+      link: '/leave',
+      is_read: false,
+      company_id: companyUser?.company_id,
+    })
 
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/leave')
