@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -16,6 +16,12 @@ function todayStr() {
   return new Date().toISOString().split('T')[0]
 }
 
+interface CustomerProject {
+  id: string
+  name: string
+  customer_name: string
+}
+
 export default function NewTimesheet() {
   const navigate = useNavigate()
   const { t } = useLanguage()
@@ -25,6 +31,8 @@ export default function NewTimesheet() {
   const [location, setLocation] = useState(LOCATIONS[0])
   const [customLocation, setCustomLocation] = useState('')
   const [customer, setCustomer] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [projects, setProjects] = useState<CustomerProject[]>([])
   const [role, setRole] = useState(ROLES[0])
   const [customRole, setCustomRole] = useState('')
   const [startDate, setStartDate] = useState(todayStr())
@@ -34,6 +42,16 @@ export default function NewTimesheet() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [overlapWarning, setOverlapWarning] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (companyUser?.company_id) {
+      supabase.from('customer_projects').select('id, name, customer_name')
+        .eq('company_id', companyUser.company_id).eq('is_active', true)
+        .order('customer_name').then(({ data }) => {
+          if (data) setProjects(data as CustomerProject[])
+        })
+    }
+  }, [companyUser?.company_id])
 
   const effectiveLocation = location === 'Custom' ? customLocation : location
   const effectiveRole = role === 'Custom' ? customRole : role
@@ -94,6 +112,7 @@ export default function NewTimesheet() {
         employee_id: employeeId,
         location: effectiveLocation.trim(),
         customer: customer.trim() || null,
+        project_id: projectId || null,
         role: effectiveRole.trim(),
         date: startDate,
         end_date: endDate,
@@ -183,12 +202,24 @@ export default function NewTimesheet() {
 
         <div className="ts-form-group">
           <label className="ts-form-label">{t('timesheets.customer')}</label>
-          <input
-            className="ts-form-input"
-            placeholder={t('timesheets.customer_placeholder')}
-            value={customer}
-            onChange={e => setCustomer(e.target.value)}
-          />
+          {projects.length > 0 ? (
+            <select className="ts-form-input" value={projectId} onChange={e => {
+              setProjectId(e.target.value)
+              const proj = projects.find(p => p.id === e.target.value)
+              if (proj) setCustomer(proj.customer_name)
+              else setCustomer('')
+            }}>
+              <option value="">— Select project —</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.customer_name} — {p.name}</option>)}
+            </select>
+          ) : (
+            <input
+              className="ts-form-input"
+              placeholder={t('timesheets.customer_placeholder')}
+              value={customer}
+              onChange={e => setCustomer(e.target.value)}
+            />
+          )}
         </div>
 
         <div className="ts-form-group">

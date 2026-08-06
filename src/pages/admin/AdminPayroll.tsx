@@ -41,7 +41,7 @@ export default function AdminPayroll() {
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown'>('payslips')
+  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -62,6 +62,20 @@ export default function AdminPayroll() {
   const [tbLoading, setTbLoading] = useState(false)
   const [tbExpandedEmp, setTbExpandedEmp] = useState<string | null>(null)
   const [tbFilterEmp, setTbFilterEmp] = useState('')
+
+  const [anPeriodStart, setAnPeriodStart] = useState(() => {
+    const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]
+  })
+  const [anPeriodEnd, setAnPeriodEnd] = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return d.toISOString().split('T')[0]
+  })
+  const [anLoading, setAnLoading] = useState(false)
+  const [anData, setAnData] = useState<{
+    empMetrics: { id: string; name: string; dept: string; weeklyHrs: number; tsHrs: number; shiftHrs: number; legalHrs: number; totalHrs: number; contractedPeriodHrs: number }[]
+    projectBreakdown: { project: string; customer: string; hours: number }[]
+    legalClientBreakdown: { client: string; matter: string; hours: number }[]
+    weeklySubmissions: { week: string; count: number; hours: number }[]
+  }>({ empMetrics: [], projectBreakdown: [], legalClientBreakdown: [], weeklySubmissions: [] })
 
   useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId])
 
@@ -246,6 +260,225 @@ export default function AdminPayroll() {
   }, [selectedCompanyId, tbPeriodStart, tbPeriodEnd, employees, enabledFeatures])
 
   useEffect(() => { if (tab === 'time_breakdown' && employees.length > 0) loadTimeBreakdown() }, [tab, loadTimeBreakdown])
+  useEffect(() => { if (tab === 'analytics' && employees.length > 0) loadAnalytics() }, [tab, anPeriodStart, anPeriodEnd, employees, enabledFeatures])
+
+  const loadAnalytics = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setAnLoading(true)
+
+    const empMap: Record<string, { name: string; dept: string; weeklyHrs: number; tsHrs: number; shiftHrs: number; legalHrs: number }> = {}
+    for (const emp of employees) {
+      empMap[emp.id] = { name: `${emp.first_name} ${emp.last_name}`, dept: emp.department || '—', weeklyHrs: 0, tsHrs: 0, shiftHrs: 0, legalHrs: 0 }
+    }
+
+    const { data: empHrsData } = await supabase.from('employees').select('id, weekly_hours').eq('company_id', selectedCompanyId).eq('is_active', true)
+    if (empHrsData) empHrsData.forEach((e: any) => {
+      if (empMap[e.id]) empMap[e.id].weeklyHrs = Number(e.weekly_hours) || 37.5
+    })
+
+    const projectMap: Record<string, { customer: string; hours: number }> = {}
+    const legalMap: Record<string, { matter: string; hours: number }> = {}
+    const weekMap: Record<string, { count: number; hours: number }> = {}
+
+    const queries: Promise<void>[] = []
+
+    if (enabledFeatures.timesheets) {
+      queries.push((async () => {
+        const { data } = await supabase.from('timesheets')
+          .select('employee_id, date, hours, project_id, customer, project:customer_projects!timesheets_project_id_fkey(name, customer_name)')
+          .eq('company_id', selectedCompanyId).neq('status', 'rejected')
+          .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+        if (data) for (const row of data as any[]) {
+          if (empMap[row.employee_id]) empMap[row.employee_id].tsHrs += Number(row.hours) || 0
+          const projName = row.project?.name || row.customer || 'Unassigned'
+          const custName = row.project?.customer_name || row.customer || 'Unassigned'
+          const pKey = `${custName}|||${projName}`
+          if (!projectMap[pKey]) projectMap[pKey] = { customer: custName, hours: 0 }
+          projectMap[pKey].hours += Number(row.hours) || 0
+
+          const weekStart = getWeekStart(row.date)
+          if (!weekMap[weekStart]) weekMap[weekStart] = { count: 0, hours: 0 }
+          weekMap[weekStart].count++
+          weekMap[weekStart].hours += Number(row.hours) || 0
+        }
+      })())
+    }
+
+    if (enabledFeatures.shifts) {
+      queries.push((async () => {
+        const { data } = await supabase.from('shift_assignments')
+          .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(status)')
+          .eq('company_id', selectedCompanyId)
+          .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+        if (data) for (const row of data as any[]) {
+          if (row.rotas?.status === 'draft') continue
+          const tmpl = row.shift_templates as any
+          if (!tmpl || !empMap[row.employee_id]) continue
+          const startMins = parseInt(tmpl.start_time?.split(':')[0]) * 60 + parseInt(tmpl.start_time?.split(':')[1] || '0')
+          const endMins = parseInt(tmpl.end_time?.split(':')[0]) * 60 + parseInt(tmpl.end_time?.split(':')[1] || '0')
+          const hrs = Math.max(0, (endMins - startMins - (tmpl.break_minutes || 0)) / 60)
+          empMap[row.employee_id].shiftHrs += hrs
+        }
+      })())
+    }
+
+    if (enabledFeatures.legal_timesheets) {
+      queries.push((async () => {
+        const { data } = await supabase.from('legal_timesheet_entries')
+          .select('employee_id, date, duration_hrs, client:legal_clients!legal_timesheet_entries_client_id_fkey(name), matter:legal_matters!legal_timesheet_entries_matter_id_fkey(name)')
+          .eq('company_id', selectedCompanyId).neq('status', 'rejected')
+          .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+        if (data) for (const row of data as any[]) {
+          if (empMap[row.employee_id]) empMap[row.employee_id].legalHrs += Number(row.duration_hrs) || 0
+          const cName = row.client?.name || 'Unknown'
+          const mName = row.matter?.name || 'Unknown'
+          const lKey = `${cName}|||${mName}`
+          if (!legalMap[lKey]) legalMap[lKey] = { matter: mName, hours: 0 }
+          legalMap[lKey].hours += Number(row.duration_hrs) || 0
+        }
+      })())
+    }
+
+    await Promise.all(queries)
+
+    const periodDays = Math.max(1, (new Date(anPeriodEnd).getTime() - new Date(anPeriodStart).getTime()) / 86400000 + 1)
+    const periodWeeks = periodDays / 7
+
+    const empMetrics = Object.entries(empMap).map(([id, d]) => ({
+      id, name: d.name, dept: d.dept, weeklyHrs: d.weeklyHrs,
+      tsHrs: d.tsHrs, shiftHrs: d.shiftHrs, legalHrs: d.legalHrs,
+      totalHrs: d.tsHrs + d.shiftHrs + d.legalHrs,
+      contractedPeriodHrs: d.weeklyHrs * periodWeeks,
+    })).filter(e => e.totalHrs > 0).sort((a, b) => b.totalHrs - a.totalHrs)
+
+    const projectBreakdown = Object.entries(projectMap).map(([key, v]) => {
+      const [customer, project] = key.split('|||')
+      return { project, customer, hours: v.hours }
+    }).sort((a, b) => b.hours - a.hours)
+
+    const legalClientBreakdown = Object.entries(legalMap).map(([key, v]) => {
+      const [client] = key.split('|||')
+      return { client, matter: v.matter, hours: v.hours }
+    }).sort((a, b) => b.hours - a.hours)
+
+    const weeklySubmissions = Object.entries(weekMap)
+      .map(([week, v]) => ({ week, ...v }))
+      .sort((a, b) => a.week.localeCompare(b.week))
+
+    setAnData({ empMetrics, projectBreakdown, legalClientBreakdown, weeklySubmissions })
+    setAnLoading(false)
+  }, [selectedCompanyId, anPeriodStart, anPeriodEnd, employees, enabledFeatures])
+
+  function getWeekStart(dateStr: string) {
+    const d = new Date(dateStr + 'T00:00:00')
+    const day = d.getDay()
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+    d.setDate(diff)
+    return d.toISOString().split('T')[0]
+  }
+
+  function downloadCsv(filename: string, headers: string[], rows: string[][]) {
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function exportLegalCsv() {
+    const { data } = await supabase.from('legal_timesheet_entries')
+      .select('employee_id, date, duration_hrs, task_code, narrative, status, client:legal_clients!legal_timesheet_entries_client_id_fkey(name), matter:legal_matters!legal_timesheet_entries_matter_id_fkey(name)')
+      .eq('company_id', selectedCompanyId).neq('status', 'rejected')
+      .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+      .order('date')
+    if (!data || data.length === 0) { showError('No legal timesheet data for this period'); return }
+    const empLookup: Record<string, string> = {}
+    employees.forEach(e => { empLookup[e.id] = `${e.first_name} ${e.last_name}` })
+    const rows = (data as any[]).map(r => [
+      empLookup[r.employee_id] || r.employee_id,
+      new Date(r.date + 'T00:00:00').toLocaleDateString('en-GB'),
+      (r.client as any)?.name || '', (r.matter as any)?.name || '',
+      r.task_code, String(r.duration_hrs), r.narrative || '', r.status,
+    ])
+    downloadCsv(`legal-timesheets-${anPeriodStart}-to-${anPeriodEnd}.csv`,
+      ['Employee', 'Date', 'Client', 'Matter', 'Task Code', 'Hours', 'Narrative', 'Status'], rows)
+    showSuccess('Legal timesheets CSV downloaded')
+  }
+
+  async function exportShiftsCsv() {
+    const { data } = await supabase.from('shift_assignments')
+      .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(name, status)')
+      .eq('company_id', selectedCompanyId)
+      .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+    if (!data || data.length === 0) { showError('No shift data for this period'); return }
+    const empLookup: Record<string, string> = {}
+    employees.forEach(e => { empLookup[e.id] = `${e.first_name} ${e.last_name}` })
+    const rows = (data as any[]).filter(r => r.rotas?.status !== 'draft').map(r => {
+      const tmpl = r.shift_templates as any
+      const startMins = parseInt(tmpl?.start_time?.split(':')[0] || '0') * 60 + parseInt(tmpl?.start_time?.split(':')[1] || '0')
+      const endMins = parseInt(tmpl?.end_time?.split(':')[0] || '0') * 60 + parseInt(tmpl?.end_time?.split(':')[1] || '0')
+      const hrs = Math.max(0, (endMins - startMins - (tmpl?.break_minutes || 0)) / 60)
+      return [
+        empLookup[r.employee_id] || r.employee_id,
+        new Date(r.date + 'T00:00:00').toLocaleDateString('en-GB'),
+        tmpl?.name || '', tmpl?.start_time?.slice(0, 5) || '', tmpl?.end_time?.slice(0, 5) || '',
+        String(hrs.toFixed(1)), r.rotas?.name || '',
+      ]
+    })
+    downloadCsv(`shifts-rotas-${anPeriodStart}-to-${anPeriodEnd}.csv`,
+      ['Employee', 'Date', 'Shift', 'Start', 'End', 'Hours', 'Rota'], rows)
+    showSuccess('Shifts & rotas CSV downloaded')
+  }
+
+  async function exportAdjustmentsCsv() {
+    const empLookup: Record<string, string> = {}
+    employees.forEach(e => { empLookup[e.id] = `${e.first_name} ${e.last_name}` })
+
+    const rows: string[][] = []
+
+    const [leaveRes, payslipRes] = await Promise.all([
+      supabase.from('leave_requests')
+        .select('employee_id, start_date, end_date, leave_type, status, total_days')
+        .eq('company_id', selectedCompanyId).eq('status', 'approved')
+        .gte('start_date', anPeriodStart).lte('start_date', anPeriodEnd),
+      supabase.from('payslips')
+        .select('employee_id, pay_period_start, overtime, adjustments, employee:employees!payslips_employee_id_fkey(first_name, last_name)')
+        .eq('company_id', selectedCompanyId)
+        .gte('pay_period_start', anPeriodStart).lte('pay_period_start', anPeriodEnd),
+    ])
+
+    if (leaveRes.data) {
+      for (const r of leaveRes.data as any[]) {
+        const lType = (r.leave_type || '').toLowerCase()
+        if (lType.includes('unpaid') || lType.includes('sick') || lType.includes('compassionate')) {
+          rows.push([
+            empLookup[r.employee_id] || r.employee_id,
+            new Date(r.start_date + 'T00:00:00').toLocaleDateString('en-GB'),
+            new Date(r.end_date + 'T00:00:00').toLocaleDateString('en-GB'),
+            'Leave', r.leave_type, String(r.total_days || 0), '0', '',
+          ])
+        }
+      }
+    }
+
+    if (payslipRes.data) {
+      for (const r of payslipRes.data as any[]) {
+        const ot = Number(r.overtime) || 0
+        const adj = Number(r.adjustments) || 0
+        if (ot === 0 && adj === 0) continue
+        const empName = r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : (empLookup[r.employee_id] || r.employee_id)
+        const period = new Date(r.pay_period_start + 'T00:00:00').toLocaleDateString('en-GB')
+        if (ot !== 0) rows.push([empName, period, '', 'Overtime', '', '', String(ot.toFixed(2)), ''])
+        if (adj !== 0) rows.push([empName, period, '', 'Adjustment', '', '', String(adj.toFixed(2)), ''])
+      }
+    }
+
+    if (rows.length === 0) { showError('No adjustments found for this period'); return }
+    downloadCsv(`payroll-adjustments-${anPeriodStart}-to-${anPeriodEnd}.csv`,
+      ['Employee', 'Start Date', 'End Date', 'Type', 'Detail', 'Days', 'Amount (£)', 'Notes'], rows)
+    showSuccess('Adjustments CSV downloaded')
+  }
 
   function startEmpEdit(emp: Employee) {
     setEmpEditId(emp.id)
@@ -272,7 +505,10 @@ export default function AdminPayroll() {
         <button className={`admin-tab ${tab === 'employees' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employees')}>Employee Pay</button>
         <button className={`admin-tab ${tab === 'schedule' ? 'admin-tab-active' : ''}`} onClick={() => setTab('schedule')}>Payroll Schedule</button>
         {(enabledFeatures.timesheets || enabledFeatures.shifts || enabledFeatures.legal_timesheets) && (
-          <button className={`admin-tab ${tab === 'time_breakdown' ? 'admin-tab-active' : ''}`} onClick={() => setTab('time_breakdown')}>Time Breakdown</button>
+          <>
+            <button className={`admin-tab ${tab === 'time_breakdown' ? 'admin-tab-active' : ''}`} onClick={() => setTab('time_breakdown')}>Time Breakdown</button>
+            <button className={`admin-tab ${tab === 'analytics' ? 'admin-tab-active' : ''}`} onClick={() => setTab('analytics')}>Analytics</button>
+          </>
         )}
       </div>
 
@@ -558,6 +794,166 @@ export default function AdminPayroll() {
                 <div className="admin-empty">No time entries found for this period</div>
               )}
             </div>
+          )}
+        </>
+      )}
+
+      {tab === 'analytics' && (
+        <>
+          <div className="admin-filters" style={{ flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>Period:</label>
+              <input type="date" className="admin-select" value={anPeriodStart} onChange={e => setAnPeriodStart(e.target.value)} />
+              <span>to</span>
+              <input type="date" className="admin-select" value={anPeriodEnd} onChange={e => setAnPeriodEnd(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {enabledFeatures.legal_timesheets && (
+                <button className="admin-btn admin-btn-primary" onClick={exportLegalCsv} disabled={anLoading}>Export Legal Timesheets CSV</button>
+              )}
+              {enabledFeatures.shifts && (
+                <button className="admin-btn admin-btn-primary" onClick={exportShiftsCsv} disabled={anLoading}>Export Shifts &amp; Rotas CSV</button>
+              )}
+              <button className="admin-btn admin-btn-primary" onClick={exportAdjustmentsCsv} disabled={anLoading}>Export Adjustments CSV</button>
+            </div>
+          </div>
+
+          {anLoading ? <div className="admin-loading">Loading analytics...</div> : (
+            <>
+              <div className="admin-mini-stats">
+                <div className="admin-mini-stat">
+                  <span className="admin-mini-value">{anData.empMetrics.length}</span><span>Active Employees</span>
+                </div>
+                <div className="admin-mini-stat">
+                  <span className="admin-mini-value">{anData.empMetrics.reduce((s, e) => s + e.totalHrs, 0).toFixed(0)}h</span><span>Total Hours</span>
+                </div>
+                <div className="admin-mini-stat">
+                  <span className="admin-mini-value" style={{ color: (() => {
+                    const total = anData.empMetrics.reduce((s, e) => s + e.totalHrs, 0)
+                    const contracted = anData.empMetrics.reduce((s, e) => s + e.contractedPeriodHrs, 0)
+                    const pct = contracted > 0 ? (total / contracted * 100) : 0
+                    return pct >= 80 ? '#43a047' : pct >= 50 ? '#ff9800' : '#e53935'
+                  })() }}>
+                    {(() => {
+                      const total = anData.empMetrics.reduce((s, e) => s + e.totalHrs, 0)
+                      const contracted = anData.empMetrics.reduce((s, e) => s + e.contractedPeriodHrs, 0)
+                      return contracted > 0 ? (total / contracted * 100).toFixed(0) + '%' : '—'
+                    })()}
+                  </span><span>Avg Utilisation</span>
+                </div>
+                <div className="admin-mini-stat">
+                  <span className="admin-mini-value">{anData.projectBreakdown.length}</span><span>Projects</span>
+                </div>
+              </div>
+
+              <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Employee Utilisation</h3>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Department</th>
+                      {enabledFeatures.timesheets && <th>Timesheet Hrs</th>}
+                      {enabledFeatures.shifts && <th>Shift Hrs</th>}
+                      {enabledFeatures.legal_timesheets && <th>Legal Hrs</th>}
+                      <th>Total Hrs</th>
+                      <th>Contracted</th>
+                      <th>Utilisation</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {anData.empMetrics.map(e => {
+                      const pct = e.contractedPeriodHrs > 0 ? (e.totalHrs / e.contractedPeriodHrs * 100) : 0
+                      return (
+                        <tr key={e.id}>
+                          <td><strong>{e.name}</strong></td>
+                          <td>{e.dept}</td>
+                          {enabledFeatures.timesheets && <td>{e.tsHrs.toFixed(1)}h</td>}
+                          {enabledFeatures.shifts && <td>{e.shiftHrs.toFixed(1)}h</td>}
+                          {enabledFeatures.legal_timesheets && <td>{e.legalHrs.toFixed(1)}h</td>}
+                          <td><strong>{e.totalHrs.toFixed(1)}h</strong></td>
+                          <td>{e.contractedPeriodHrs.toFixed(0)}h</td>
+                          <td>
+                            <span className={`admin-badge ${pct >= 80 ? 'admin-badge-approved' : pct >= 50 ? 'admin-badge-pending' : 'admin-badge-rejected'}`}>
+                              {pct.toFixed(0)}%
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {anData.empMetrics.length === 0 && <div className="admin-empty">No utilisation data for this period</div>}
+              </div>
+
+              {enabledFeatures.timesheets && anData.projectBreakdown.length > 0 && (
+                <>
+                  <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Customer &amp; Project Breakdown</h3>
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead><tr><th>Customer</th><th>Project</th><th>Hours</th><th>% of Total</th></tr></thead>
+                      <tbody>
+                        {anData.projectBreakdown.map((p, i) => {
+                          const totalProjHrs = anData.projectBreakdown.reduce((s, x) => s + x.hours, 0)
+                          return (
+                            <tr key={i}>
+                              <td>{p.customer}</td>
+                              <td>{p.project}</td>
+                              <td>{p.hours.toFixed(1)}h</td>
+                              <td>{totalProjHrs > 0 ? (p.hours / totalProjHrs * 100).toFixed(0) : 0}%</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {enabledFeatures.legal_timesheets && anData.legalClientBreakdown.length > 0 && (
+                <>
+                  <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Legal Client &amp; Matter Breakdown</h3>
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead><tr><th>Client</th><th>Matter</th><th>Hours</th><th>% of Total</th></tr></thead>
+                      <tbody>
+                        {anData.legalClientBreakdown.map((l, i) => {
+                          const totalLegalHrs = anData.legalClientBreakdown.reduce((s, x) => s + x.hours, 0)
+                          return (
+                            <tr key={i}>
+                              <td>{l.client}</td>
+                              <td>{l.matter}</td>
+                              <td>{l.hours.toFixed(1)}h</td>
+                              <td>{totalLegalHrs > 0 ? (l.hours / totalLegalHrs * 100).toFixed(0) : 0}%</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
+              {anData.weeklySubmissions.length > 0 && (
+                <>
+                  <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Weekly Timesheet Submissions</h3>
+                  <div className="admin-table-wrap">
+                    <table className="admin-table">
+                      <thead><tr><th>Week Starting</th><th>Submissions</th><th>Total Hours</th></tr></thead>
+                      <tbody>
+                        {anData.weeklySubmissions.map((w, i) => (
+                          <tr key={i}>
+                            <td>{new Date(w.week + 'T00:00:00').toLocaleDateString('en-GB')}</td>
+                            <td>{w.count}</td>
+                            <td>{w.hours.toFixed(1)}h</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </>
           )}
         </>
       )}
