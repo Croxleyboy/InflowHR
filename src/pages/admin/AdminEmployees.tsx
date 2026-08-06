@@ -46,6 +46,8 @@ interface Employee {
   manager_name: string | null
   manager_email: string | null
   leave_allowance: number | null
+  salary_group: string | null
+  qualifications: string | null
 }
 
 export default function AdminEmployees() {
@@ -94,6 +96,8 @@ export default function AdminEmployees() {
       payroll_id: emp.payroll_id || '', personal_email: emp.personal_email || '',
       manager_name: emp.manager_name || '', manager_email: emp.manager_email || '',
       leave_allowance: emp.leave_allowance ?? 15,
+      salary_group: emp.salary_group || 'N/A',
+      qualifications: emp.qualifications || '',
     })
   }
 
@@ -331,6 +335,7 @@ export default function AdminEmployees() {
                                       { k: 'manager_name', l: 'Manager Name' },
                                       { k: 'manager_email', l: 'Manager Email' },
                                       { k: 'leave_allowance', l: 'Leave Allowance (Days)', t: 'number' },
+                                      { k: 'salary_group', l: 'Salary Group' },
                                     ].map(f => (
                                       <div key={f.k} className="admin-form-field">
                                         <label style={{ fontSize: 12 }}>{f.l}</label>
@@ -343,6 +348,13 @@ export default function AdminEmployees() {
                                         )}
                                       </div>
                                     ))}
+                                  </div>
+                                </fieldset>
+                                <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
+                                  <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Qualifications</legend>
+                                  <div className="admin-form-field">
+                                    <label style={{ fontSize: 12 }}>Qualifications</label>
+                                    <textarea className="admin-inline-input" rows={4} value={editForm.qualifications || ''} onChange={e => setEditForm(p => ({...p, qualifications: e.target.value}))} style={{ resize: 'vertical', fontFamily: 'inherit' }} />
                                   </div>
                                 </fieldset>
                                 <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
@@ -420,7 +432,13 @@ export default function AdminEmployees() {
                                   <div><strong>Manager:</strong> {emp.manager_name || '—'}</div>
                                   <div><strong>Manager Email:</strong> {emp.manager_email || '—'}</div>
                                   <div><strong>Leave Allowance:</strong> {emp.leave_allowance ?? 15} days</div>
+                                  <div><strong>Salary Group:</strong> {emp.salary_group || 'N/A'}</div>
                                 </div>
+                                {emp.qualifications && (
+                                  <div>
+                                    <strong>Qualifications:</strong> <span style={{ whiteSpace: 'pre-line' }}>{emp.qualifications}</span>
+                                  </div>
+                                )}
                                 <div className="admin-detail-grid admin-detail-grid-3">
                                   <div><strong>Salary:</strong> {emp.annual_salary ? `£${Number(emp.annual_salary).toLocaleString()}` : '—'}</div>
                                   <div><strong>Tax Code:</strong> {emp.tax_code || '—'}</div>

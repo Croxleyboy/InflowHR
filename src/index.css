@@ -2262,10 +2262,18 @@ body {
   padding: 6px 10px; border-radius: 6px;
   font-size: 12px; font-weight: 700; color: #fff;
   background: #7b1fa2;
-  max-width: 120px;
   text-align: center;
-  word-break: break-word;
-  line-height: 1.3;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+@media (max-width: 420px) {
+  .my-profile-contract-badge {
+    white-space: normal;
+    max-width: 90px;
+    word-break: break-word;
+    line-height: 1.3;
+  }
+  .my-profile-emp-row { flex-wrap: wrap; }
 }
 
 .my-profile-details { padding: 16px; }
@@ -2326,6 +2334,10 @@ body {
 .my-profile-status-card-value {
   display: block; padding: 8px 4px;
   font-size: 12px; font-weight: 700; color: var(--text);
+  word-break: break-word;
+}
+@media (max-width: 420px) {
+  .my-profile-status-cards { grid-template-columns: 1fr; }
 }
 /* ── My Profile Members Modal ── */
 .my-profile-modal-overlay {

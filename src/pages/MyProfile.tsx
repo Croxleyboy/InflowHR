@@ -52,6 +52,7 @@ export default function MyProfile() {
   const [members, setMembers] = useState<DeptMember[]>([])
   const [avatarUploading, setAvatarUploading] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const [empData, setEmpData] = useState<{ date_of_birth: string | null; salary_group: string | null; qualifications: string | null; contract_type: string | null } | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!EMPLOYEE_EMAIL || !companyUser?.company_id) return
@@ -78,8 +79,19 @@ export default function MyProfile() {
     }
 
     if (data) setProfile(data as OnboardingRecord)
+
+    if (employeeId && companyUser?.company_id) {
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('date_of_birth, salary_group, qualifications, contract_type')
+        .eq('id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .maybeSingle()
+      if (emp) setEmpData(emp)
+    }
+
     setLoading(false)
-  }, [EMPLOYEE_EMAIL, companyUser?.company_id])
+  }, [EMPLOYEE_EMAIL, employeeId, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -199,7 +211,7 @@ export default function MyProfile() {
             <span className="my-profile-emp-role">{profile.job_title}</span>
             {tab === 'job' && <span className="my-profile-emp-email">{profile.user_email}</span>}
           </div>
-          <span className="my-profile-contract-badge">{profile.contract_type}</span>
+          <span className="my-profile-contract-badge">{empData?.contract_type || profile.contract_type}</span>
         </div>
 
         {tab === 'personal' && (
@@ -207,7 +219,7 @@ export default function MyProfile() {
             <div className="my-profile-grid">
               <div className="my-profile-field">
                 <span className="my-profile-field-label">{t('my_profile.dob')}</span>
-                <span className="my-profile-field-value">{formatDate(profile.date_of_birth)}</span>
+                <span className="my-profile-field-value">{formatDate(profile.date_of_birth || empData?.date_of_birth || null)}</span>
               </div>
               <div className="my-profile-field">
                 <span className="my-profile-field-label">{t('my_profile.business_number')}</span>
@@ -262,7 +274,7 @@ export default function MyProfile() {
 
             <div className="my-profile-field">
               <span className="my-profile-field-label">{t('my_profile.education')}</span>
-              <span className="my-profile-field-value"></span>
+              <span className="my-profile-field-value" style={{ whiteSpace: 'pre-line' }}>{empData?.qualifications || ''}</span>
             </div>
           </div>
         )}
@@ -312,7 +324,7 @@ export default function MyProfile() {
           <div className="my-profile-status-cards">
             <div className="my-profile-status-card">
               <span className="my-profile-status-card-header my-profile-status-blue">{t('my_profile.salary_group')}</span>
-              <span className="my-profile-status-card-value">Grade 3</span>
+              <span className="my-profile-status-card-value">{empData?.salary_group || 'N/A'}</span>
             </div>
             <div className="my-profile-status-card">
               <span className="my-profile-status-card-header my-profile-status-purple">{t('my_profile.emp_status')}</span>
@@ -320,7 +332,7 @@ export default function MyProfile() {
             </div>
             <div className="my-profile-status-card">
               <span className="my-profile-status-card-header my-profile-status-blue">{t('my_profile.emp_type')}</span>
-              <span className="my-profile-status-card-value">{profile.contract_type}</span>
+              <span className="my-profile-status-card-value">{empData?.contract_type || profile.contract_type}</span>
             </div>
 
           </div>

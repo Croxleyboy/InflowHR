@@ -1,0 +1,2 @@
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS salary_group TEXT DEFAULT 'N/A';
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS qualifications TEXT;
