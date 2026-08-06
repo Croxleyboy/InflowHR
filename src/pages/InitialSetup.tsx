@@ -63,8 +63,8 @@ export default function InitialSetup() {
     if (avatarUrl) onbUpdate.avatar_url = avatarUrl
     let q = supabase.from('onboarding').update(onbUpdate).eq('user_email', employeeEmail)
     if (companyUser?.company_id) q = q.eq('company_id', companyUser.company_id)
-    let { error: updErr, count: updCount } = await q
-    if ((updErr || updCount === 0) && companyUser?.company_id) {
+    let { error: updErr, data: updData } = await q.select('id')
+    if ((!updData || updData.length === 0) && !updErr && companyUser?.company_id) {
       const lp = employeeEmail.split('@')[0].toLowerCase()
       const res = await supabase.from('onboarding').update(onbUpdate)
         .ilike('user_email', `${lp}@%`)
