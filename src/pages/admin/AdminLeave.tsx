@@ -18,6 +18,12 @@ interface LeaveRequest {
 }
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const LEAVE_TYPE_COLOURS: Record<string, string> = {
+  'Annual Leave': '#5b9bd5', 'Sick Leave': '#e53935', 'Unpaid Leave': '#ff9800',
+  'Compassionate': '#ab47bc', 'Parental': '#26a69a', 'Bereavement': '#78909c',
+  'Exam Leave': '#7e57c2', 'Carers Leave': '#ef6c00',
+}
 
 export default function AdminLeave() {
   const { selectedCompanyId } = useAdminCompany()
@@ -33,6 +39,7 @@ export default function AdminLeave() {
   const [savingWeekend, setSavingWeekend] = useState(false)
   const [leaveTypeSettings, setLeaveTypeSettings] = useState<{ id: number; name: string; deducts_from_allowance: boolean }[]>([])
   const [savingDeduct, setSavingDeduct] = useState<number | null>(null)
+  const [fyStartMonth, setFyStartMonth] = useState(4)
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -72,7 +79,13 @@ export default function AdminLeave() {
     setSavingDeduct(null)
   }
 
-  useEffect(() => { if (selectedCompanyId) { load(); loadWeekendSetting(); loadLeaveTypeSettings() } }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings])
+  useEffect(() => {
+    if (selectedCompanyId) {
+      load(); loadWeekendSetting(); loadLeaveTypeSettings()
+      supabase.from('companies').select('fy_start_month').eq('id', selectedCompanyId).single()
+        .then(({ data }) => { if (data?.fy_start_month) setFyStartMonth(data.fy_start_month) })
+    }
+  }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings])
 
   async function load() {
     setLoading(true)
@@ -154,6 +167,42 @@ export default function AdminLeave() {
     totalDays: requests.filter(r => r.status === 'approved').reduce((s, r) => s + Number(r.days_requested), 0),
   }), [requests])
 
+  const chartData = useMemo(() => {
+    const fyMonths: number[] = []
+    for (let i = 0; i < 12; i++) fyMonths.push((fyStartMonth - 1 + i) % 12)
+
+    const now = new Date()
+    const fyYear = now.getMonth() + 1 >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+
+    const approved = requests.filter(r => r.status === 'approved')
+    const monthData: { month: number; label: string; byType: Record<string, number>; total: number }[] = fyMonths.map(m => ({
+      month: m, label: MONTH_LABELS[m], byType: {}, total: 0,
+    }))
+
+    for (const r of approved) {
+      const startD = new Date(r.start_date + 'T00:00:00')
+      const startMonth = startD.getMonth()
+
+      const fyStartDate = new Date(fyYear, fyStartMonth - 1, 1)
+      const fyEndDate = new Date(fyYear + 1, fyStartMonth - 1, 0)
+      if (startD < fyStartDate || startD > fyEndDate) continue
+
+      const idx = fyMonths.indexOf(startMonth)
+      if (idx === -1) continue
+      const typeName = r.leave_type?.name || 'Other'
+      const days = Number(r.days_requested) || 0
+      monthData[idx].byType[typeName] = (monthData[idx].byType[typeName] || 0) + days
+      monthData[idx].total += days
+    }
+
+    const maxTotal = Math.max(...monthData.map(d => d.total), 1)
+    const leaveTypes = Array.from(new Set(approved.map(r => r.leave_type?.name || 'Other')))
+
+    const fyLabel = `${MONTH_LABELS[fyStartMonth - 1]} ${fyYear} – ${MONTH_LABELS[(fyStartMonth - 2 + 12) % 12]} ${fyYear + 1}`
+
+    return { monthData, maxTotal, leaveTypes, fyLabel }
+  }, [requests, fyStartMonth])
+
   return (
     <div className="admin-section">
       <div className="admin-page-header">
@@ -168,6 +217,51 @@ export default function AdminLeave() {
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#e53935'}}>{stats.rejected}</span><span>Rejected</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.totalDays}</span><span>Days Used</span></div>
       </div>
+
+      {!loading && chartData.monthData.some(d => d.total > 0) && (
+        <div style={{ background: 'var(--card-bg, #fff)', borderRadius: 10, padding: '16px 16px 12px', marginBottom: 16, border: '1px solid var(--border-color, #e0e0e0)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Approved Leave Distribution</h3>
+            <span style={{ fontSize: 12, color: '#888' }}>{chartData.fyLabel}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 160 }}>
+            {chartData.monthData.map((d, i) => (
+              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                {d.total > 0 && (
+                  <span style={{ fontSize: 11, fontWeight: 600, marginBottom: 2, color: 'var(--text-color, #333)' }}>{d.total}</span>
+                )}
+                <div style={{ width: '100%', maxWidth: 40, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', borderRadius: '3px 3px 0 0', overflow: 'hidden' }}>
+                  {chartData.leaveTypes.map(type => {
+                    const val = d.byType[type] || 0
+                    if (val === 0) return null
+                    const pct = (val / chartData.maxTotal) * 140
+                    return (
+                      <div
+                        key={type}
+                        title={`${type}: ${val} day${val !== 1 ? 's' : ''}`}
+                        style={{
+                          height: pct,
+                          background: LEAVE_TYPE_COLOURS[type] || '#90a4ae',
+                          minHeight: val > 0 ? 3 : 0,
+                        }}
+                      />
+                    )
+                  })}
+                </div>
+                <span style={{ fontSize: 11, marginTop: 4, color: '#888' }}>{d.label}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: 10 }}>
+            {chartData.leaveTypes.map(type => (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#666' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: LEAVE_TYPE_COLOURS[type] || '#90a4ae', flexShrink: 0 }} />
+                {type}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="admin-weekend-toggle">
         <label className="admin-toggle-label">
