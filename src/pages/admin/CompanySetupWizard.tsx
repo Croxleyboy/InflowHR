@@ -50,6 +50,7 @@ interface SetupRow {
   notice_period: string
   working_pattern: string
   weekly_hours: number
+  leave_allowance: number | null
 }
 
 const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
@@ -69,6 +70,7 @@ const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
   'bank account number': 'bank_account_number', 'bank account name': 'bank_account_name',
   'probation end date': 'probation_end_date', 'notice period': 'notice_period',
   'working pattern': 'working_pattern', 'weekly hours': 'weekly_hours',
+  'leave allowance': 'leave_allowance', 'assigned leave days': 'leave_allowance',
 }
 
 const SETUP_STEPS = [
@@ -124,7 +126,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
       const errors: string[] = []
       const mapped: SetupRow[] = raw.map((row, i) => {
-        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: 37.5 }
+        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: 37.5, leave_allowance: null }
         for (const [excelCol, val] of Object.entries(row)) {
           const key = SETUP_COLUMN_MAP[excelCol.toLowerCase().trim()]
           if (key) {
@@ -364,6 +366,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           annual_salary: row.annual_salary || null,
           tax_code: row.tax_code || null,
           payroll_id: row.payroll_id || null,
+          leave_allowance: row.leave_allowance ?? 15,
         }).select('id').single()
         if (!empErr && newEmp) {
           empCount++
@@ -421,14 +424,15 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
       // 5. Create leave balances for each leave type
       if (employeeId) {
-        const { data: leaveTypes } = await supabase.from('leave_types').select('id').eq('company_id', setupCompanyId)
+        const allowance = row.leave_allowance ?? 15
+        const { data: leaveTypes } = await supabase.from('leave_types').select('id, deducts_from_allowance').eq('company_id', setupCompanyId)
         if (leaveTypes && leaveTypes.length > 0) {
           const { error: leaveBalErr } = await supabase.from('leave_balances').insert(
             leaveTypes.map(lt => ({
               employee_id: employeeId,
               leave_type_id: lt.id,
               year: now.getFullYear(),
-              total_allowance: 25,
+              total_allowance: lt.deducts_from_allowance ? allowance : 0,
               used: 0,
               carried_over: 0,
               company_id: setupCompanyId,
@@ -668,7 +672,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
               <li><strong>{setupRows.length}</strong> onboarding records (status: Onboarded)</li>
               <li><strong>{setupRows.length}</strong> employee records (active, visible in Directory)</li>
               <li><strong>{setupRows.filter(r => r.annual_salary > 0).length}</strong> initial payslips (draft, current month)</li>
-              <li><strong>{setupRows.length}</strong> annual leave balances (25 days)</li>
+              <li><strong>{setupRows.length}</strong> annual leave balances (default 15 days)</li>
               {adminEmail && <li><strong>1</strong> company admin: {adminEmail}</li>}
             </ul>
           </div>

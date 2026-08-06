@@ -67,28 +67,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadCompanyData(userId: string, email: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: rpcResult } = await supabase.rpc('ensure_company_user' as any)
-    let cu: any = null
 
-    if (rpcResult && !rpcResult.error) {
+    // After RPC, always re-query company_users directly so we have a reliable row
+    const { data: rows } = await supabase
+      .from('company_users')
+      .select('id, company_id, role, employee_id')
+      .eq('auth_user_id', userId)
+      .eq('is_active', true)
+
+    let cu = rows && rows.length > 0
+      ? rows.find((r: any) => r.role === 'admin' && r.employee_id)
+        || rows.find((r: any) => r.employee_id != null)
+        || rows.find((r: any) => r.role === 'admin')
+        || rows[0]
+      : null
+
+    // If direct query found nothing but RPC succeeded, use RPC result
+    if (!cu && rpcResult && !rpcResult.error) {
       cu = rpcResult
-    } else {
-      const { data: rows } = await supabase
-        .from('company_users')
-        .select('id, company_id, role, employee_id')
-        .eq('auth_user_id', userId)
-        .eq('is_active', true)
-
-      cu = rows && rows.length > 0
-        ? rows.find((r: any) => r.role === 'admin' && r.employee_id)
-          || rows.find((r: any) => r.employee_id != null)
-          || rows.find((r: any) => r.role === 'admin')
-          || rows[0]
-        : null
     }
 
     if (cu) {
       let empId = cu.employee_id
-      if (!empId && email) {
+      if (!empId && email && cu.company_id) {
         const { data: emp } = await supabase
           .from('employees')
           .select('id')

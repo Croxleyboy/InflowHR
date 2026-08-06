@@ -93,6 +93,7 @@ export default function AdminEmployees() {
       annual_salary: emp.annual_salary ?? '', tax_code: emp.tax_code || '',
       payroll_id: emp.payroll_id || '', personal_email: emp.personal_email || '',
       manager_name: emp.manager_name || '', manager_email: emp.manager_email || '',
+      leave_allowance: emp.leave_allowance ?? 15,
     })
   }
 
