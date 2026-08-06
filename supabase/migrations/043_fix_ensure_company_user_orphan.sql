@@ -1,4 +1,20 @@
--- Fix ensure_company_user to claim orphaned company_users rows
+-- 1. Update is_super_admin() to include break glass account
+CREATE OR REPLACE FUNCTION is_super_admin()
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN (
+    SELECT email IN ('andy.jones@kumonix.com', 'breakglass@kumonic.com')
+    FROM auth.users
+    WHERE id = auth.uid()
+  );
+END;
+$$;
+
+-- 2. Fix ensure_company_user to claim orphaned company_users rows
 -- (created during onboarding with employee_id but no auth_user_id)
 CREATE OR REPLACE FUNCTION public.ensure_company_user()
 RETURNS json

@@ -30,14 +30,14 @@ const monthLabels = [
 export default function Settings() {
   const { features, companyFeatures, setFeatures } = useFeatures()
   const { lang, setLang, t, fyStartMonth, setFyStartMonth } = useLanguage()
-  const { employeeName, employeeEmail, companyUser } = useAuth()
+  const { employeeName, employeeEmail, companyUser, isSuperAdmin } = useAuth()
   const { showError } = useToast()
   const navigate = useNavigate()
   const [draft, setDraft] = useState<Features>({ ...features })
   const [draftLang, setDraftLang] = useState<Lang>(lang)
   const [draftFy, setDraftFy] = useState(fyStartMonth)
   const [saved, setSaved] = useState(false)
-  const isCompanyAdmin = companyUser?.role === 'admin'
+  const isCompanyAdmin = isSuperAdmin || companyUser?.role === 'admin'
 
   function handleToggle(key: keyof Features) {
     setDraft(d => ({ ...d, [key]: !d[key] }))
