@@ -15,7 +15,9 @@ interface MenuItem {
 
 const MENU_ITEMS: MenuItem[] = [
   { path: '/admin', label: 'Dashboard', icon: '📊', end: true },
+  { path: '/admin/companies', label: 'Companies', icon: '🏢', superAdminOnly: true },
   { path: '/admin/subscriptions', label: 'Subscriptions', icon: '📋', superAdminOnly: true },
+  { path: '/admin/demo-seed', label: 'Demo Seed', icon: '🌱', superAdminOnly: true },
   { path: '/admin/expenses', label: 'Expenses', icon: '💰', feature: 'expenses' },
   { path: '/admin/leave', label: 'Leave', icon: '🏖️', feature: 'leave' },
   { path: '/admin/payroll', label: 'Payroll', icon: '💷', feature: 'payslips' },
