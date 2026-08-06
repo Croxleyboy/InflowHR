@@ -90,12 +90,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (cu) {
       let empId = cu.employee_id
       if (!empId && email && cu.company_id) {
-        const { data: emp } = await supabase
+        // Try exact email match first
+        let { data: emp } = await supabase
           .from('employees')
           .select('id')
           .eq('email', email)
           .eq('company_id', cu.company_id)
           .maybeSingle()
+        // SSO email may differ from onboarded email (e.g. user@domain.onmicrosoft.com vs user@domain.com)
+        if (!emp) {
+          const localPart = email.split('@')[0]
+          const { data: fuzzy } = await supabase
+            .from('employees')
+            .select('id')
+            .eq('company_id', cu.company_id)
+            .ilike('email', `${localPart}@%`)
+            .limit(1)
+            .maybeSingle()
+          emp = fuzzy
+        }
         if (emp) {
           empId = emp.id
           await supabase
