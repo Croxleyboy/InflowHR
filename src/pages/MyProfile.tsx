@@ -56,12 +56,26 @@ export default function MyProfile() {
   const fetchData = useCallback(async () => {
     if (!EMPLOYEE_EMAIL || !companyUser?.company_id) return
     setLoading(true)
-    const { data } = await supabase
+    const selectCols = 'firstname, surname, display_name, job_title, contract_type, user_email, date_of_birth, telephone, personal_email, address_line_1, address_line_2, address_line_3, address_line_4, emergency_contact_number, gender, nationality, religion, relationship, start_date, status, manager, location, employee_number, department, avatar_url'
+
+    let { data } = await supabase
       .from('onboarding')
-      .select('firstname, surname, display_name, job_title, contract_type, user_email, date_of_birth, telephone, personal_email, address_line_1, address_line_2, address_line_3, address_line_4, emergency_contact_number, gender, nationality, religion, relationship, start_date, status, manager, location, employee_number, department, avatar_url')
+      .select(selectCols)
       .eq('user_email', EMPLOYEE_EMAIL)
       .eq('company_id', companyUser.company_id)
       .maybeSingle()
+
+    if (!data) {
+      const localPart = EMPLOYEE_EMAIL.split('@')[0].toLowerCase()
+      const { data: fuzzy } = await supabase
+        .from('onboarding')
+        .select(selectCols)
+        .eq('company_id', companyUser.company_id)
+        .ilike('user_email', `${localPart}@%`)
+        .limit(1)
+        .maybeSingle()
+      data = fuzzy
+    }
 
     if (data) setProfile(data as OnboardingRecord)
     setLoading(false)
@@ -86,7 +100,8 @@ export default function MyProfile() {
     const newUrl = urlData.publicUrl + '?t=' + Date.now()
     const { error: empErr } = await supabase.from('employees').update({ avatar_url: newUrl }).eq('id', employeeId).eq('company_id', companyUser?.company_id)
     if (empErr) { showError('Failed to update photo: ' + empErr.message); setAvatarUploading(false); return }
-    const { error: onbErr } = await supabase.from('onboarding').update({ avatar_url: newUrl }).eq('user_email', EMPLOYEE_EMAIL).eq('company_id', companyUser?.company_id)
+    const onbEmail = profile?.user_email || EMPLOYEE_EMAIL
+    const { error: onbErr } = await supabase.from('onboarding').update({ avatar_url: newUrl }).eq('user_email', onbEmail).eq('company_id', companyUser?.company_id)
     if (onbErr) { showError('Failed to update photo: ' + onbErr.message); setAvatarUploading(false); return }
     setProfile(prev => prev ? { ...prev, avatar_url: newUrl } : prev)
     updateAvatarUrl(newUrl)

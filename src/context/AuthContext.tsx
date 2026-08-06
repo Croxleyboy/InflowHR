@@ -158,12 +158,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCompany(co as Company)
       }
 
-      const { data: onb } = await supabase
+      let { data: onb } = await supabase
         .from('onboarding')
         .select('initial_setup_complete, avatar_url')
         .eq('user_email', email)
         .eq('company_id', cu.company_id)
         .maybeSingle()
+      if (!onb) {
+        const lp = email.split('@')[0].toLowerCase()
+        const { data: onbFuzzy } = await supabase
+          .from('onboarding')
+          .select('initial_setup_complete, avatar_url')
+          .eq('company_id', cu.company_id)
+          .ilike('user_email', `${lp}@%`)
+          .limit(1)
+          .maybeSingle()
+        onb = onbFuzzy
+      }
       setSetupComplete(onb ? onb.initial_setup_complete === true : true)
       setAvatarUrl(onb?.avatar_url || null)
 
