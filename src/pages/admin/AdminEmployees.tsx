@@ -45,6 +45,7 @@ interface Employee {
   personal_email: string | null
   manager_name: string | null
   manager_email: string | null
+  leave_allowance: number | null
 }
 
 export default function AdminEmployees() {
@@ -97,7 +98,7 @@ export default function AdminEmployees() {
 
   async function saveEdit(id: string) {
     const dateFields = ['date_of_birth', 'probation_end_date', 'start_date']
-    const numericFields = ['weekly_hours', 'annual_salary']
+    const numericFields = ['weekly_hours', 'annual_salary', 'leave_allowance']
     const payload: Record<string, any> = {}
     for (const [k, v] of Object.entries(editForm)) {
       if (dateFields.includes(k)) { payload[k] = v || null }
@@ -328,6 +329,7 @@ export default function AdminEmployees() {
                                       { k: 'notice_period', l: 'Notice Period' },
                                       { k: 'manager_name', l: 'Manager Name' },
                                       { k: 'manager_email', l: 'Manager Email' },
+                                      { k: 'leave_allowance', l: 'Leave Allowance (Days)', t: 'number' },
                                     ].map(f => (
                                       <div key={f.k} className="admin-form-field">
                                         <label style={{ fontSize: 12 }}>{f.l}</label>
@@ -416,6 +418,7 @@ export default function AdminEmployees() {
                                   <div><strong>Probation End:</strong> {emp.probation_end_date ? new Date(emp.probation_end_date).toLocaleDateString('en-GB') : '—'}</div>
                                   <div><strong>Manager:</strong> {emp.manager_name || '—'}</div>
                                   <div><strong>Manager Email:</strong> {emp.manager_email || '—'}</div>
+                                  <div><strong>Leave Allowance:</strong> {emp.leave_allowance ?? 15} days</div>
                                 </div>
                                 <div className="admin-detail-grid admin-detail-grid-3">
                                   <div><strong>Salary:</strong> {emp.annual_salary ? `£${Number(emp.annual_salary).toLocaleString()}` : '—'}</div>

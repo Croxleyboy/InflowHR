@@ -384,6 +384,7 @@ export default function AdminOnboarding() {
       annual_salary: record.annual_salary || null,
       tax_code: record.tax_code || null,
       payroll_id: record.payroll_id || null,
+      leave_allowance: record.leave_allowance ?? 15,
     }).select('id').single()
     if (error) {
       showError(`Failed to create employee record: ${error.message}`)
