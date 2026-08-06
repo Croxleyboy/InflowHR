@@ -48,6 +48,7 @@ interface Employee {
   leave_allowance: number | null
   salary_group: string | null
   qualifications: string | null
+  religion: string | null
 }
 
 export default function AdminEmployees() {
@@ -98,6 +99,7 @@ export default function AdminEmployees() {
       leave_allowance: emp.leave_allowance ?? 15,
       salary_group: emp.salary_group || 'N/A',
       qualifications: emp.qualifications || '',
+      religion: emp.religion || '',
     })
   }
 
@@ -291,6 +293,7 @@ export default function AdminEmployees() {
                                       { k: 'gender', l: 'Gender', t: 'select', opts: ['', 'Male', 'Female', 'Non-binary', 'Prefer not to say'] },
                                       { k: 'nationality', l: 'Nationality' },
                                       { k: 'marital_status', l: 'Marital Status', t: 'select', opts: ['', 'Single', 'Married', 'Civil Partnership', 'Divorced', 'Widowed', 'Prefer not to say'] },
+                                      { k: 'religion', l: 'Religion' },
                                       { k: 'ni_number', l: 'NI Number' },
                                       { k: 'personal_email', l: 'Personal Email' },
                                     ].map(f => (
@@ -416,6 +419,7 @@ export default function AdminEmployees() {
                                   <div><strong>Gender:</strong> {emp.gender || '—'}</div>
                                   <div><strong>Nationality:</strong> {emp.nationality || '—'}</div>
                                   <div><strong>Marital Status:</strong> {emp.marital_status || '—'}</div>
+                                  <div><strong>Religion:</strong> {emp.religion || '—'}</div>
                                   <div><strong>NI Number:</strong> {emp.ni_number || '—'}</div>
                                   <div><strong>Personal Email:</strong> {emp.personal_email || '—'}</div>
                                 </div>

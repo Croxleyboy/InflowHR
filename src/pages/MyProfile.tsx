@@ -52,7 +52,16 @@ export default function MyProfile() {
   const [members, setMembers] = useState<DeptMember[]>([])
   const [avatarUploading, setAvatarUploading] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
-  const [empData, setEmpData] = useState<{ date_of_birth: string | null; salary_group: string | null; qualifications: string | null; contract_type: string | null } | null>(null)
+  const [empData, setEmpData] = useState<{
+    date_of_birth: string | null; salary_group: string | null; qualifications: string | null;
+    contract_type: string | null; phone: string | null; personal_email: string | null;
+    address_line1: string | null; address_line2: string | null; city: string | null;
+    county: string | null; postcode: string | null; country: string | null;
+    emergency_contact_name: string | null; emergency_contact_phone: string | null;
+    emergency_contact_relationship: string | null;
+    gender: string | null; nationality: string | null; marital_status: string | null;
+    religion: string | null;
+  } | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!EMPLOYEE_EMAIL || !companyUser?.company_id) return
@@ -83,7 +92,7 @@ export default function MyProfile() {
     if (employeeId && companyUser?.company_id) {
       const { data: emp } = await supabase
         .from('employees')
-        .select('date_of_birth, salary_group, qualifications, contract_type')
+        .select('date_of_birth, salary_group, qualifications, contract_type, phone, personal_email, address_line1, address_line2, city, county, postcode, country, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, gender, nationality, marital_status, religion')
         .eq('id', employeeId)
         .eq('company_id', companyUser.company_id)
         .maybeSingle()
@@ -128,7 +137,9 @@ export default function MyProfile() {
   const initials = `${(profile.firstname || '')[0] || ''}${(profile.surname || '')[0] || ''}`
   const fullName = profile.display_name || `${profile.firstname} ${profile.surname}`
 
-  const addressLines = [profile.address_line_1, profile.address_line_2, profile.address_line_3, profile.address_line_4].filter(Boolean)
+  const addressLines = empData?.address_line1
+    ? [empData.address_line1, empData.address_line2, empData.city, empData.county, empData.postcode, empData.country].filter(Boolean)
+    : [profile.address_line_1, profile.address_line_2, profile.address_line_3, profile.address_line_4].filter(Boolean)
 
   async function openMembers() {
     if (profile?.department) {
@@ -219,19 +230,15 @@ export default function MyProfile() {
             <div className="my-profile-grid">
               <div className="my-profile-field">
                 <span className="my-profile-field-label">{t('my_profile.dob')}</span>
-                <span className="my-profile-field-value">{formatDate(profile.date_of_birth || empData?.date_of_birth || null)}</span>
+                <span className="my-profile-field-value">{formatDate(empData?.date_of_birth || profile.date_of_birth || null)}</span>
               </div>
               <div className="my-profile-field">
                 <span className="my-profile-field-label">{t('my_profile.business_number')}</span>
-                <span className="my-profile-field-value">{profile.telephone || ''}</span>
+                <span className="my-profile-field-value">{empData?.phone || profile.telephone || ''}</span>
               </div>
               <div className="my-profile-field">
-                <span className="my-profile-field-label">{t('my_profile.personal_mobile')}</span>
-                <span className="my-profile-field-value">{profile.telephone || ''}</span>
-              </div>
-              <div className="my-profile-field">
-                <span className="my-profile-field-label">{t('my_profile.mobile_number')}</span>
-                <span className="my-profile-field-value"></span>
+                <span className="my-profile-field-label">{t('my_profile.personal_email')}</span>
+                <span className="my-profile-field-value">{empData?.personal_email || profile.personal_email || ''}</span>
               </div>
             </div>
 
@@ -249,23 +256,23 @@ export default function MyProfile() {
               <div className="my-profile-field">
                 <div className="my-profile-field-block">
                   <span className="my-profile-field-label">{t('my_profile.emergency_contact')}</span>
-                  <span className="my-profile-field-value">{profile.emergency_contact_number || ''}</span>
+                  <span className="my-profile-field-value">{empData?.emergency_contact_name ? `${empData.emergency_contact_name} — ${empData.emergency_contact_phone || ''}` : (profile.emergency_contact_number || '')}</span>
                 </div>
                 <div className="my-profile-field-block">
                   <span className="my-profile-field-label">{t('my_profile.gender')}</span>
-                  <span className="my-profile-field-value">{profile.gender || ''}</span>
+                  <span className="my-profile-field-value">{empData?.gender || profile.gender || ''}</span>
                 </div>
                 <div className="my-profile-field-block">
                   <span className="my-profile-field-label">{t('my_profile.nationality')}</span>
-                  <span className="my-profile-field-value">{profile.nationality || ''}</span>
+                  <span className="my-profile-field-value">{empData?.nationality || profile.nationality || ''}</span>
                 </div>
                 <div className="my-profile-field-block">
                   <span className="my-profile-field-label">{t('my_profile.religion')}</span>
-                  <span className="my-profile-field-value">{profile.religion || ''}</span>
+                  <span className="my-profile-field-value">{empData?.religion || profile.religion || ''}</span>
                 </div>
                 <div className="my-profile-field-block">
                   <span className="my-profile-field-label">{t('my_profile.relationship')}</span>
-                  <span className="my-profile-field-value">{profile.relationship || ''}</span>
+                  <span className="my-profile-field-value">{empData?.marital_status || profile.relationship || ''}</span>
                 </div>
               </div>
             </div>
