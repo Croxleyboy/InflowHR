@@ -65,25 +65,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [canPostNotifications, setCanPostNotifications] = useState(false)
 
   async function loadCompanyData(userId: string, email: string) {
-    const { data: rows } = await supabase
-      .from('company_users')
-      .select('id, company_id, role, employee_id')
-      .eq('auth_user_id', userId)
-      .eq('is_active', true)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: rpcResult } = await supabase.rpc('ensure_company_user' as any)
+    let cu: any = null
 
-    let cu = rows && rows.length > 0
-      ? rows.find(r => r.role === 'admin' && r.employee_id)
-        || rows.find(r => r.employee_id != null)
-        || rows.find(r => r.role === 'admin')
-        || rows[0]
-      : null
+    if (rpcResult && !rpcResult.error) {
+      cu = rpcResult
+    } else {
+      const { data: rows } = await supabase
+        .from('company_users')
+        .select('id, company_id, role, employee_id')
+        .eq('auth_user_id', userId)
+        .eq('is_active', true)
 
-    if (!cu && email) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: result } = await supabase.rpc('ensure_company_user' as any)
-      if (result && !result.error) {
-        cu = result
-      }
+      cu = rows && rows.length > 0
+        ? rows.find((r: any) => r.role === 'admin' && r.employee_id)
+          || rows.find((r: any) => r.employee_id != null)
+          || rows.find((r: any) => r.role === 'admin')
+          || rows[0]
+        : null
     }
 
     if (cu) {
