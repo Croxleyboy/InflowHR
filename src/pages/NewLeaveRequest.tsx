@@ -338,13 +338,18 @@ export default function NewLeaveRequest() {
     })
     if (wfError) showError('Failed to create workflow tracker: ' + wfError.message)
 
-    await supabase.from('notifications').insert({
-      employee_id: EMPLOYEE_ID,
-      title: 'Leave Request Submitted',
-      message: `Your leave request has been submitted for approval: ${taskDesc}`,
-      type: 'info',
-      link: '/leave',
-      is_read: false,
+    await supabase.from('workflow_tracker').insert({
+      emp_display_name: EMPLOYEE_NAME,
+      step: 1,
+      status: 'Complete',
+      record_type: 'Leave',
+      action: 'Leave request submitted',
+      employee_email: EMPLOYEE_EMAIL,
+      assigned_to: EMPLOYEE_EMAIL,
+      approval_id: data.id,
+      reminder_count: 1,
+      task_description: `Leave request submitted: ${taskDesc}`,
+      approval_status: 'Submitted',
       company_id: companyUser?.company_id,
     })
 

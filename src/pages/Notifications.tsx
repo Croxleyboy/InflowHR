@@ -234,6 +234,7 @@ export default function Notifications() {
   const [swapActions, setSwapActions] = useState<SwapAction[]>([])
   const [expenseReceipts, setExpenseReceipts] = useState<Set<number>>(new Set())
   const [reminders, setReminders] = useState<PersonalReminder[]>([])
+  const [remindersExpanded, setRemindersExpanded] = useState(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -778,39 +779,51 @@ export default function Notifications() {
       {!loading && tab === 'notifications' && (
         <div className="notif-list">
           {reminders.length > 0 && (
-            <>
-              <h3 className="notif-section-heading">{t('notifications.reminders')}</h3>
-              {reminders.map(r => (
-                <div
-                  key={r.id}
-                  className={`notif-card notif-reminder-card ${r.navigateTo ? 'notif-card-clickable' : ''}`}
-                  onClick={() => r.navigateTo && navigate(r.navigateTo)}
+            <div className="notif-reminders-collapsible">
+              <button className="notif-reminders-toggle" onClick={() => setRemindersExpanded(prev => !prev)}>
+                <h3 className="notif-section-heading" style={{ margin: 0 }}>{t('notifications.reminders')} ({reminders.length})</h3>
+                <svg
+                  width="20" height="20" viewBox="0 0 24 24" fill="none"
+                  className={`notif-reminders-arrow ${remindersExpanded ? 'notif-reminders-arrow-open' : ''}`}
                 >
-                  <NotifIcon
-                    type={
-                      r.type === 'birthday' ? 'Birthday'
-                        : r.type === 'shift' ? 'Shift'
-                        : r.type === 'performance' ? 'Performance'
-                        : r.type === 'booking_desk' ? 'BookingDesk'
-                        : r.type === 'booking_room' ? 'BookingRoom'
-                        : r.type === 'elearning' ? 'ELearning'
-                        : r.type === 'confirm_booking' ? 'ConfirmBooking'
-                        : r.type === 'confirm_shift' ? 'ConfirmShift'
-                        : 'default'
-                    }
-                  />
-                  <div className="notif-card-content">
-                    <span className="notif-card-title">{r.title}</span>
-                    <span className="notif-card-sub">{r.subtitle}</span>
-                  </div>
-                  {r.navigateTo && (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="notif-reminder-arrow">
-                      <path d="M9 6l6 6-6 6" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
+                  <path d="M6 9l6 6 6-6" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              {remindersExpanded && (
+                <div className="notif-reminders-body">
+                  {reminders.map(r => (
+                    <div
+                      key={r.id}
+                      className={`notif-card notif-reminder-card ${r.navigateTo ? 'notif-card-clickable' : ''}`}
+                      onClick={() => r.navigateTo && navigate(r.navigateTo)}
+                    >
+                      <NotifIcon
+                        type={
+                          r.type === 'birthday' ? 'Birthday'
+                            : r.type === 'shift' ? 'Shift'
+                            : r.type === 'performance' ? 'Performance'
+                            : r.type === 'booking_desk' ? 'BookingDesk'
+                            : r.type === 'booking_room' ? 'BookingRoom'
+                            : r.type === 'elearning' ? 'ELearning'
+                            : r.type === 'confirm_booking' ? 'ConfirmBooking'
+                            : r.type === 'confirm_shift' ? 'ConfirmShift'
+                            : 'default'
+                        }
+                      />
+                      <div className="notif-card-content">
+                        <span className="notif-card-title">{r.title}</span>
+                        <span className="notif-card-sub">{r.subtitle}</span>
+                      </div>
+                      {r.navigateTo && (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="notif-reminder-arrow">
+                          <path d="M9 6l6 6-6 6" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </>
+              )}
+            </div>
           )}
 
           {myNotifs.length > 0 && reminders.length > 0 && (
