@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
+import { formatDate } from '../../lib/formatters'
 
 interface LeaveRequest {
   id: number
@@ -14,7 +15,7 @@ interface LeaveRequest {
   reason: string | null
   created_at: string
   leave_type: { name: string } | null
-  employee: { first_name: string; last_name: string } | null
+  employee: { first_name: string; last_name: string; email: string } | null
 }
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
@@ -91,7 +92,7 @@ export default function AdminLeave() {
     setLoading(true)
     const { data } = await supabase
       .from('leave_requests')
-      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name)')
+      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, email)')
       .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
     setRequests((data as LeaveRequest[]) || [])
@@ -104,36 +105,91 @@ export default function AdminLeave() {
   }
 
   async function saveEdit(id: number) {
+    const req = requests.find(r => r.id === id)
+    const oldStatus = req?.status
+    const newStatus = editForm.status
+
     const { error } = await supabase.from('leave_requests').update({
-      status: editForm.status,
+      status: newStatus,
       days_requested: editForm.days_requested,
       start_date: editForm.start_date,
       end_date: editForm.end_date,
       reason: editForm.reason || null,
+      approved_at: newStatus === 'approved' ? new Date().toISOString() : null,
     }).eq('id', id)
     if (error) { showError('Failed to update leave request: ' + error.message); return }
 
-    if (editForm.status === 'approved') {
-      const req = requests.find(r => r.id === id)
-      if (req) {
-        const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
-        if (!typeSetting || typeSetting.deducts_from_allowance) {
-          const year = new Date(req.start_date).getFullYear()
-          const { data: balance } = await supabase
-            .from('leave_balances')
-            .select('id, used')
-            .eq('employee_id', req.employee_id)
-            .eq('year', year)
-            .limit(1)
-            .single()
-          if (balance) {
-            await supabase.from('leave_balances')
-              .update({ used: balance.used + Number(editForm.days_requested) })
-              .eq('id', balance.id)
-          }
+    if (newStatus === 'approved' && req) {
+      const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
+      if (!typeSetting || typeSetting.deducts_from_allowance) {
+        const year = new Date(req.start_date).getFullYear()
+        const { data: balance } = await supabase
+          .from('leave_balances')
+          .select('id, used')
+          .eq('employee_id', req.employee_id)
+          .eq('year', year)
+          .limit(1)
+          .single()
+        if (balance) {
+          await supabase.from('leave_balances')
+            .update({ used: balance.used + Number(editForm.days_requested) })
+            .eq('id', balance.id)
         }
       }
     }
+
+    if (req && oldStatus === 'pending' && (newStatus === 'approved' || newStatus === 'rejected')) {
+      const empName = req.employee ? `${req.employee.first_name} ${req.employee.last_name}` : ''
+      const empEmail = req.employee?.email || ''
+      const typeName = req.leave_type?.name || 'Leave'
+      const approved = newStatus === 'approved'
+      const now = new Date().toISOString()
+      const dateRange = `${formatDate(editForm.start_date || req.start_date)} to ${formatDate(editForm.end_date || req.end_date)}`
+
+      const { data: pendingWf } = await supabase.from('workflow_tracker')
+        .select('assigned_to')
+        .eq('record_type', 'Leave').eq('approval_id', id).eq('status', 'Pending')
+        .eq('company_id', selectedCompanyId).limit(1).maybeSingle()
+      const approverEmail = pendingWf?.assigned_to || ''
+
+      await supabase.from('workflow_tracker').update({
+        status: 'Complete',
+        approval_status: approved ? 'Approved' : 'Declined',
+        updated_at: now,
+        task_description: approved
+          ? `${typeName} approved - ${dateRange}`
+          : `${typeName} declined`,
+      }).eq('record_type', 'Leave').eq('approval_id', id).eq('status', 'Pending').eq('company_id', selectedCompanyId)
+
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: empName,
+        step: 2, status: 'Complete', record_type: 'Leave',
+        action: approved ? 'Leave approved' : 'Leave declined',
+        employee_email: empEmail, assigned_to: empEmail,
+        approval_id: id, reminder_count: 1,
+        task_description: approved
+          ? `Your ${typeName} from ${dateRange} has been approved by admin.`
+          : `Your ${typeName} request from ${dateRange} has been declined by admin. Please contact your manager.`,
+        approval_status: approved ? 'Approved' : 'Declined',
+        company_id: selectedCompanyId,
+      })
+
+      if (approverEmail) {
+        await supabase.from('workflow_tracker').insert({
+          emp_display_name: 'Admin',
+          step: 2, status: 'Complete', record_type: 'Leave',
+          action: approved ? 'Leave approved by admin' : 'Leave declined by admin',
+          employee_email: approverEmail, assigned_to: approverEmail,
+          approval_id: id, reminder_count: 1,
+          task_description: `Admin ${approved ? 'approved' : 'declined'} ${typeName} for ${empName} - ${dateRange}`,
+          approval_status: approved ? 'Approved' : 'Declined',
+          company_id: selectedCompanyId,
+        })
+      }
+
+      window.dispatchEvent(new Event('notifications-updated'))
+    }
+
     setEditingId(null)
     load()
   }

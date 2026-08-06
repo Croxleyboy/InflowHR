@@ -6,6 +6,7 @@ import { useToast } from '../../context/ToastContext'
 
 interface Claim {
   id: number
+  employee_id: string
   reference_number: string
   title: string
   amount: number
@@ -13,7 +14,7 @@ interface Claim {
   cost_center: string
   created_at: string
   submitted_at: string | null
-  employee: { first_name: string; last_name: string } | null
+  employee: { first_name: string; last_name: string; email: string } | null
   line_items?: LineItem[]
 }
 interface LineItem {
@@ -61,7 +62,7 @@ export default function AdminExpenses() {
     setLoading(true)
     const { data } = await supabase
       .from('expense_claims')
-      .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name)')
+      .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email)')
       .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
     setClaims((data as Claim[]) || [])
@@ -89,10 +90,67 @@ export default function AdminExpenses() {
   }
 
   async function saveEdit(id: number) {
+    const claim = claims.find(c => c.id === id)
+    const oldStatus = claim?.status
+    const newStatus = editForm.status
+
     const { error } = await supabase.from('expense_claims').update({
-      title: editForm.title, amount: editForm.amount, status: editForm.status, cost_center: editForm.cost_center,
+      title: editForm.title, amount: editForm.amount, status: newStatus, cost_center: editForm.cost_center,
+      approved_at: newStatus === 'approved' ? new Date().toISOString() : null,
     }).eq('id', id)
     if (error) { showError('Failed to save expense claim: ' + error.message); return }
+
+    if (claim && oldStatus === 'pending' && (newStatus === 'approved' || newStatus === 'rejected')) {
+      const empName = claim.employee ? `${claim.employee.first_name} ${claim.employee.last_name}` : ''
+      const empEmail = claim.employee?.email || ''
+      const approved = newStatus === 'approved'
+      const now = new Date().toISOString()
+      const amountStr = `£${Number(claim.amount).toFixed(2)}`
+
+      const { data: pendingWf } = await supabase.from('workflow_tracker')
+        .select('assigned_to')
+        .eq('record_type', 'Expense').eq('approval_id', id).eq('status', 'Pending')
+        .eq('company_id', selectedCompanyId).limit(1).maybeSingle()
+      const approverEmail = pendingWf?.assigned_to || ''
+
+      await supabase.from('workflow_tracker').update({
+        status: 'Complete',
+        approval_status: approved ? 'Approved' : 'Declined',
+        updated_at: now,
+        task_description: approved
+          ? `Expense claim ${claim.reference_number} approved - ${amountStr}`
+          : `Expense claim ${claim.reference_number} declined`,
+      }).eq('record_type', 'Expense').eq('approval_id', id).eq('status', 'Pending').eq('company_id', selectedCompanyId)
+
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: empName,
+        step: 2, status: 'Complete', record_type: 'Expense',
+        action: approved ? 'Expense approved' : 'Expense declined',
+        employee_email: empEmail, assigned_to: empEmail,
+        approval_id: id, reminder_count: 1,
+        task_description: approved
+          ? `Your expense claim ${claim.reference_number} (${amountStr}) has been approved by admin.`
+          : `Your expense claim ${claim.reference_number} (${amountStr}) has been declined by admin. Please contact your manager.`,
+        approval_status: approved ? 'Approved' : 'Declined',
+        company_id: selectedCompanyId,
+      })
+
+      if (approverEmail) {
+        await supabase.from('workflow_tracker').insert({
+          emp_display_name: 'Admin',
+          step: 2, status: 'Complete', record_type: 'Expense',
+          action: approved ? 'Expense approved by admin' : 'Expense declined by admin',
+          employee_email: approverEmail, assigned_to: approverEmail,
+          approval_id: id, reminder_count: 1,
+          task_description: `Admin ${approved ? 'approved' : 'declined'} expense claim ${claim.reference_number} (${amountStr}) for ${empName}`,
+          approval_status: approved ? 'Approved' : 'Declined',
+          company_id: selectedCompanyId,
+        })
+      }
+
+      window.dispatchEvent(new Event('notifications-updated'))
+    }
+
     setEditingId(null)
     loadClaims()
     showSuccess('Expense claim saved')

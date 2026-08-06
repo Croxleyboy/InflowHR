@@ -2,20 +2,23 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
+import { formatDate } from '../../lib/formatters'
 
 interface Timesheet {
   id: number
+  employee_id: string
   location: string
   customer: string | null
   role: string
   date: string
+  end_date: string | null
   start_time: string
   end_time: string
   hours: number
   status: string
   created_at: string
   project_id: string | null
-  employee: { first_name: string; last_name: string } | null
+  employee: { first_name: string; last_name: string; email: string } | null
   project: { name: string; customer_name: string } | null
 }
 
@@ -55,7 +58,7 @@ export default function AdminTimesheets() {
     setLoading(true)
     const { data } = await supabase
       .from('timesheets')
-      .select('*, employee:employees!timesheets_employee_id_fkey(first_name, last_name), project:customer_projects!timesheets_project_id_fkey(name, customer_name)')
+      .select('*, employee:employees!timesheets_employee_id_fkey(first_name, last_name, email), project:customer_projects!timesheets_project_id_fkey(name, customer_name)')
       .eq('company_id', selectedCompanyId)
       .order('date', { ascending: false })
     setTimesheets((data as Timesheet[]) || [])
@@ -79,6 +82,10 @@ export default function AdminTimesheets() {
   }
 
   async function saveEdit(id: number) {
+    const ts = timesheets.find(t => t.id === id)
+    const oldStatus = ts?.status
+    const newStatus = editForm.status
+
     const { error } = await supabase.from('timesheets').update({
       location: editForm.location,
       customer: editForm.customer || null,
@@ -86,9 +93,64 @@ export default function AdminTimesheets() {
       date: editForm.date,
       start_time: editForm.start_time,
       end_time: editForm.end_time,
-      status: editForm.status,
+      status: newStatus,
     }).eq('id', id)
     if (error) { showError('Failed to update timesheet: ' + error.message); return }
+
+    if (ts && oldStatus === 'pending' && (newStatus === 'approved' || newStatus === 'rejected')) {
+      const empName = ts.employee ? `${ts.employee.first_name} ${ts.employee.last_name}` : ''
+      const empEmail = ts.employee?.email || ''
+      const approved = newStatus === 'approved'
+      const now = new Date().toISOString()
+      const dateDisplay = ts.end_date && ts.end_date !== ts.date
+        ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}`
+        : formatDate(ts.date)
+      const timeDisplay = `${ts.start_time.slice(0, 5)}-${ts.end_time.slice(0, 5)}`
+
+      const { data: pendingWf } = await supabase.from('workflow_tracker')
+        .select('assigned_to')
+        .eq('record_type', 'Timesheet').eq('approval_id', id).eq('status', 'Pending')
+        .eq('company_id', selectedCompanyId).limit(1).maybeSingle()
+      const approverEmail = pendingWf?.assigned_to || ''
+
+      await supabase.from('workflow_tracker').update({
+        status: 'Complete',
+        approval_status: approved ? 'Approved' : 'Declined',
+        updated_at: now,
+        task_description: approved
+          ? `Timesheet approved - ${dateDisplay} ${timeDisplay}`
+          : `Timesheet declined - ${dateDisplay}`,
+      }).eq('record_type', 'Timesheet').eq('approval_id', id).eq('status', 'Pending').eq('company_id', selectedCompanyId)
+
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: empName,
+        step: 2, status: 'Complete', record_type: 'Timesheet',
+        action: approved ? 'Timesheet approved' : 'Timesheet declined',
+        employee_email: empEmail, assigned_to: empEmail,
+        approval_id: id, reminder_count: 1,
+        task_description: approved
+          ? `Your timesheet for ${dateDisplay} ${timeDisplay} has been approved by admin.`
+          : `Your timesheet for ${dateDisplay} ${timeDisplay} has been declined by admin. Please contact your manager.`,
+        approval_status: approved ? 'Approved' : 'Declined',
+        company_id: selectedCompanyId,
+      })
+
+      if (approverEmail) {
+        await supabase.from('workflow_tracker').insert({
+          emp_display_name: 'Admin',
+          step: 2, status: 'Complete', record_type: 'Timesheet',
+          action: approved ? 'Timesheet approved by admin' : 'Timesheet declined by admin',
+          employee_email: approverEmail, assigned_to: approverEmail,
+          approval_id: id, reminder_count: 1,
+          task_description: `Admin ${approved ? 'approved' : 'declined'} timesheet for ${empName} - ${dateDisplay} ${timeDisplay}`,
+          approval_status: approved ? 'Approved' : 'Declined',
+          company_id: selectedCompanyId,
+        })
+      }
+
+      window.dispatchEvent(new Event('notifications-updated'))
+    }
+
     setEditingId(null)
     load()
   }
