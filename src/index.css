@@ -1544,15 +1544,16 @@ body {
   flex-shrink: 0; align-self: center;
 }
 .notif-reminders-collapsible {
-  border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden;
-  margin-bottom: 8px; background: #fafbfc;
+  border: 1px solid #e8d4a0; border-radius: 12px; overflow: hidden;
+  margin-bottom: 8px; background: linear-gradient(135deg, #fef9ef, #fff7e1);
+  box-shadow: 0 1px 4px rgba(200, 160, 60, 0.12);
 }
 .notif-reminders-toggle {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; padding: 12px 16px; border: none; background: none;
   cursor: pointer; gap: 8px;
 }
-.notif-reminders-toggle:active { background: #f0f4ff; }
+.notif-reminders-toggle:active { background: #fdf0d0; }
 .notif-reminders-arrow {
   transition: transform 0.25s ease; flex-shrink: 0;
 }
@@ -1562,6 +1563,10 @@ body {
 .notif-reminders-body {
   padding: 0 8px 8px;
 }
+[data-theme="dark"] .notif-reminders-collapsible {
+  background: #2a2a40; border-color: #444; box-shadow: none;
+}
+[data-theme="dark"] .notif-reminders-toggle:active { background: #333; }
 
 .notif-delete-btn {
   background: none; border: none; cursor: pointer; padding: 6px;
