@@ -215,9 +215,9 @@ export default function MyLeave() {
         </div>
       </div>
 
-      {balances.length > 0 && (
+      {balances.filter(b => b.used > 0).length > 0 && (
         <div className="my-leave-balances">
-          {balances.map(b => {
+          {balances.filter(b => b.used > 0).map(b => {
             const rem = b.total_allowance - b.used
             const pct = b.total_allowance > 0 ? (b.used / b.total_allowance) * 100 : 0
             return (
