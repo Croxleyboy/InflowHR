@@ -1568,6 +1568,23 @@ body {
 }
 [data-theme="dark"] .notif-reminders-toggle:active { background: #333; }
 
+.notif-search-bar {
+  display: flex; align-items: center; gap: 8px;
+  background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px;
+  padding: 6px 10px; margin-bottom: 8px;
+}
+.notif-search-input {
+  flex: 1; border: none; background: none; outline: none;
+  font-size: 13px; color: inherit; min-width: 0;
+}
+.notif-search-input::placeholder { color: #aaa; }
+.notif-search-clear {
+  background: none; border: none; cursor: pointer; padding: 2px;
+  display: flex; align-items: center;
+}
+[data-theme="dark"] .notif-search-bar { background: #2a2a40; border-color: #444; }
+[data-theme="dark"] .notif-search-input::placeholder { color: #666; }
+
 .notif-delete-btn {
   background: none; border: none; cursor: pointer; padding: 6px;
   flex-shrink: 0; opacity: 0.6; transition: opacity 0.2s;

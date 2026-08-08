@@ -235,6 +235,7 @@ export default function Notifications() {
   const [expenseReceipts, setExpenseReceipts] = useState<Set<number>>(new Set())
   const [reminders, setReminders] = useState<PersonalReminder[]>([])
   const [remindersExpanded, setRemindersExpanded] = useState(false)
+  const [notifSearch, setNotifSearch] = useState('')
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -826,12 +827,38 @@ export default function Notifications() {
             </div>
           )}
 
-          {myNotifs.length > 0 && reminders.length > 0 && (
-            <h3 className="notif-section-heading">{t('notifications.history')}</h3>
+          {myNotifs.length > 0 && (
+            <>
+              {reminders.length > 0 && (
+                <h3 className="notif-section-heading">{t('notifications.history')}</h3>
+              )}
+              <div className="notif-search-bar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input
+                  className="notif-search-input"
+                  placeholder={t('notifications.search_placeholder')}
+                  value={notifSearch}
+                  onChange={e => setNotifSearch(e.target.value)}
+                />
+                {notifSearch && (
+                  <button className="notif-search-clear" onClick={() => setNotifSearch('')}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                )}
+              </div>
+            </>
           )}
 
           {myNotifs.length === 0 && reminders.length === 0 && <p className="claims-empty">{t('notifications.no_notifs')}</p>}
-          {myNotifs.map(n => (
+          {myNotifs.filter(n => {
+            if (!notifSearch) return true
+            const q = notifSearch.toLowerCase()
+            return (n.action || '').toLowerCase().includes(q)
+              || (n.task_description || '').toLowerCase().includes(q)
+              || (n.record_type || '').toLowerCase().includes(q)
+              || (n.approval_status || '').toLowerCase().includes(q)
+              || (n.emp_display_name || '').toLowerCase().includes(q)
+          }).map(n => (
             <div key={n.id} className="notif-card">
               <NotifIcon type={n.record_type} status={n.approval_status} />
               <div className="notif-card-content">
