@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
@@ -26,6 +26,7 @@ interface CustomerProject {
   id: string
   name: string
   customer_name: string
+  description: string | null
   start_date: string
   end_date: string | null
   is_active: boolean
@@ -33,23 +34,30 @@ interface CustomerProject {
 }
 
 const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected']
+const MONTH_NAMES = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar']
+const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+const BAR_COLORS = [
+  '#5c6bc0','#26a69a','#ef5350','#ab47bc','#ffa726','#42a5f5',
+  '#66bb6a','#ec407a','#7e57c2','#78909c','#8d6e63','#d4e157',
+]
 
 export default function AdminTimesheets() {
   const { selectedCompanyId } = useAdminCompany()
   const { showError, showSuccess } = useToast()
-  const [tsTab, setTsTab] = useState<'entries' | 'projects'>('entries')
+  const [tsTab, setTsTab] = useState<'entries' | 'projects' | 'timeline'>('entries')
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [editForm, setEditForm] = useState<Partial<Timesheet>>({})
+  const [editForm, setEditForm] = useState<Record<string, any>>({})
 
   const [projects, setProjects] = useState<CustomerProject[]>([])
   const [projLoading, setProjLoading] = useState(false)
   const [projEditId, setProjEditId] = useState<string | null>(null)
-  const [projForm, setProjForm] = useState({ name: '', customer_name: '', start_date: '', end_date: '', is_active: true })
+  const [projForm, setProjForm] = useState({ name: '', customer_name: '', description: '', start_date: '', end_date: '', is_active: true })
   const [projAdding, setProjAdding] = useState(false)
 
   useEffect(() => { if (selectedCompanyId) { load(); loadProjects() } }, [selectedCompanyId])
@@ -65,7 +73,7 @@ export default function AdminTimesheets() {
     setLoading(false)
   }
 
-  async function loadProjects() {
+  const loadProjects = useCallback(async () => {
     setProjLoading(true)
     const { data } = await supabase
       .from('customer_projects')
@@ -74,11 +82,15 @@ export default function AdminTimesheets() {
       .order('customer_name')
     setProjects((data as CustomerProject[]) || [])
     setProjLoading(false)
-  }
+  }, [selectedCompanyId])
 
   function startEdit(ts: Timesheet) {
     setEditingId(ts.id)
-    setEditForm({ location: ts.location, customer: ts.customer, role: ts.role, date: ts.date, start_time: ts.start_time, end_time: ts.end_time, status: ts.status })
+    setEditForm({
+      location: ts.location, customer: ts.customer, role: ts.role,
+      date: ts.date, start_time: ts.start_time, end_time: ts.end_time,
+      hours: ts.hours, status: ts.status, project_id: ts.project_id || '',
+    })
   }
 
   async function saveEdit(id: number) {
@@ -93,7 +105,9 @@ export default function AdminTimesheets() {
       date: editForm.date,
       start_time: editForm.start_time,
       end_time: editForm.end_time,
+      hours: Number(editForm.hours),
       status: newStatus,
+      project_id: editForm.project_id || null,
     }).eq('id', id)
     if (error) { showError('Failed to update timesheet: ' + error.message); return }
 
@@ -167,17 +181,18 @@ export default function AdminTimesheets() {
 
   function startProjEdit(p: CustomerProject) {
     setProjEditId(p.id)
-    setProjForm({ name: p.name, customer_name: p.customer_name, start_date: p.start_date, end_date: p.end_date || '', is_active: p.is_active })
+    setProjForm({ name: p.name, customer_name: p.customer_name, description: p.description || '', start_date: p.start_date, end_date: p.end_date || '', is_active: p.is_active })
   }
 
   function startProjAdd() {
     setProjAdding(true)
-    setProjForm({ name: '', customer_name: '', start_date: new Date().toISOString().split('T')[0], end_date: '', is_active: true })
+    setProjForm({ name: '', customer_name: '', description: '', start_date: new Date().toISOString().split('T')[0], end_date: '', is_active: true })
   }
 
   async function saveProjEdit(id: string) {
     const { error } = await supabase.from('customer_projects').update({
       name: projForm.name, customer_name: projForm.customer_name,
+      description: projForm.description || null,
       start_date: projForm.start_date, end_date: projForm.end_date || null, is_active: projForm.is_active,
     }).eq('id', id)
     if (error) { showError('Failed to update project: ' + error.message); return }
@@ -192,6 +207,7 @@ export default function AdminTimesheets() {
     }
     const { error } = await supabase.from('customer_projects').insert({
       name: projForm.name, customer_name: projForm.customer_name,
+      description: projForm.description || null,
       start_date: projForm.start_date, end_date: projForm.end_date || null,
       is_active: projForm.is_active, company_id: selectedCompanyId,
     })
@@ -240,6 +256,7 @@ export default function AdminTimesheets() {
       <div className="admin-tabs">
         <button className={`admin-tab ${tsTab === 'entries' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('entries')}>Entries</button>
         <button className={`admin-tab ${tsTab === 'projects' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('projects')}>Customer Projects</button>
+        <button className={`admin-tab ${tsTab === 'timeline' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('timeline')}>Project Timeline</button>
       </div>
 
       {tsTab === 'entries' && (
@@ -289,8 +306,21 @@ export default function AdminTimesheets() {
                         ? <><input type="time" className="admin-inline-input admin-inline-sm" value={editForm.start_time?.slice(0, 5) || ''} onChange={e => setEditForm(p => ({ ...p, start_time: e.target.value }))} /> - <input type="time" className="admin-inline-input admin-inline-sm" value={editForm.end_time?.slice(0, 5) || ''} onChange={e => setEditForm(p => ({ ...p, end_time: e.target.value }))} /></>
                         : `${ts.start_time.slice(0, 5)} - ${ts.end_time.slice(0, 5)}`
                       }</td>
-                      <td>{Number(ts.hours).toFixed(1)}</td>
-                      <td>{ts.project ? `${ts.project.customer_name} — ${ts.project.name}` : (ts.customer || '—')}</td>
+                      <td>{editingId === ts.id
+                        ? <input type="number" step="0.1" min="0" className="admin-inline-input admin-inline-sm" value={editForm.hours ?? ''} onChange={e => setEditForm(p => ({ ...p, hours: e.target.value }))} style={{ width: 60 }} />
+                        : Number(ts.hours).toFixed(1)
+                      }</td>
+                      <td>{editingId === ts.id
+                        ? (
+                          <select className="admin-inline-select" value={editForm.project_id || ''} onChange={e => setEditForm(p => ({ ...p, project_id: e.target.value }))}>
+                            <option value="">No project</option>
+                            {projects.map(proj => (
+                              <option key={proj.id} value={proj.id}>{proj.customer_name} — {proj.name}</option>
+                            ))}
+                          </select>
+                        )
+                        : ts.project ? `${ts.project.customer_name} — ${ts.project.name}` : (ts.customer || '—')
+                      }</td>
                       <td>{editingId === ts.id
                         ? <input className="admin-inline-input" value={editForm.location || ''} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} />
                         : ts.location
@@ -337,13 +367,14 @@ export default function AdminTimesheets() {
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
-                  <tr><th>Customer</th><th>Project Name</th><th>Start Date</th><th>End Date</th><th>Status</th><th>Actions</th></tr>
+                  <tr><th>Customer</th><th>Project Name</th><th>Description</th><th>Start Date</th><th>End Date</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {projAdding && (
                     <tr>
                       <td><input className="admin-inline-input" placeholder="Customer name" value={projForm.customer_name} onChange={e => setProjForm(f => ({ ...f, customer_name: e.target.value }))} /></td>
                       <td><input className="admin-inline-input" placeholder="Project name" value={projForm.name} onChange={e => setProjForm(f => ({ ...f, name: e.target.value }))} /></td>
+                      <td><input className="admin-inline-input" placeholder="Description (optional)" value={projForm.description} onChange={e => setProjForm(f => ({ ...f, description: e.target.value }))} /></td>
                       <td><input type="date" className="admin-inline-input" value={projForm.start_date} onChange={e => setProjForm(f => ({ ...f, start_date: e.target.value }))} /></td>
                       <td><input type="date" className="admin-inline-input" value={projForm.end_date} onChange={e => setProjForm(f => ({ ...f, end_date: e.target.value }))} /></td>
                       <td>
@@ -362,6 +393,7 @@ export default function AdminTimesheets() {
                     <tr key={p.id}>
                       <td>{projEditId === p.id ? <input className="admin-inline-input" value={projForm.customer_name} onChange={e => setProjForm(f => ({ ...f, customer_name: e.target.value }))} /> : p.customer_name}</td>
                       <td>{projEditId === p.id ? <input className="admin-inline-input" value={projForm.name} onChange={e => setProjForm(f => ({ ...f, name: e.target.value }))} /> : p.name}</td>
+                      <td>{projEditId === p.id ? <input className="admin-inline-input" value={projForm.description} onChange={e => setProjForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" /> : (p.description || '—')}</td>
                       <td>{projEditId === p.id ? <input type="date" className="admin-inline-input" value={projForm.start_date} onChange={e => setProjForm(f => ({ ...f, start_date: e.target.value }))} /> : new Date(p.start_date + 'T00:00:00').toLocaleDateString('en-GB')}</td>
                       <td>{projEditId === p.id ? <input type="date" className="admin-inline-input" value={projForm.end_date} onChange={e => setProjForm(f => ({ ...f, end_date: e.target.value }))} /> : (p.end_date ? new Date(p.end_date + 'T00:00:00').toLocaleDateString('en-GB') : '—')}</td>
                       <td>{projEditId === p.id ? (
@@ -396,6 +428,105 @@ export default function AdminTimesheets() {
           )}
         </>
       )}
+
+      {tsTab === 'timeline' && (
+        <ProjectTimeline projects={projects} loading={projLoading} />
+      )}
+    </div>
+  )
+}
+
+function ProjectTimeline({ projects, loading }: { projects: CustomerProject[]; loading: boolean }) {
+  const now = new Date()
+  const fyStartMonth = 3
+  const fyStartYear = now.getMonth() >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+
+  const fyMonths: { year: number; month: number; label: string }[] = []
+  for (let i = 0; i < 12; i++) {
+    const m = (fyStartMonth + i) % 12
+    const y = fyStartYear + Math.floor((fyStartMonth + i) / 12)
+    fyMonths.push({ year: y, month: m, label: MONTH_NAMES[i] })
+  }
+
+  const fyStart = new Date(fyStartYear, fyStartMonth, 1)
+  const fyEnd = new Date(fyStartYear + 1, fyStartMonth, 0)
+  const fyRange = fyEnd.getTime() - fyStart.getTime()
+
+  function getBarStyle(p: CustomerProject): { left: string; width: string } {
+    const start = new Date(p.start_date + 'T00:00:00')
+    const end = p.end_date ? new Date(p.end_date + 'T00:00:00') : fyEnd
+    const clampedStart = start < fyStart ? fyStart : start
+    const clampedEnd = end > fyEnd ? fyEnd : end
+    if (clampedStart >= clampedEnd) return { left: '0%', width: '0%' }
+    const leftPct = ((clampedStart.getTime() - fyStart.getTime()) / fyRange) * 100
+    const widthPct = ((clampedEnd.getTime() - clampedStart.getTime()) / fyRange) * 100
+    return { left: `${Math.max(0, leftPct)}%`, width: `${Math.min(100 - leftPct, widthPct)}%` }
+  }
+
+  if (loading) return <div className="admin-loading">Loading...</div>
+  if (projects.length === 0) return <div className="admin-empty">No projects to display</div>
+
+  return (
+    <div style={{ padding: '16px 0' }}>
+      <h3 style={{ margin: '0 0 16px', fontSize: 15 }}>
+        Financial Year {MONTH_NAMES_FULL[fyStartMonth]} {fyStartYear} — {MONTH_NAMES_FULL[(fyStartMonth - 1 + 12) % 12]} {fyStartYear + 1}
+      </h3>
+
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ minWidth: 700 }}>
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border, #e5e7eb)', marginBottom: 4 }}>
+            <div style={{ width: 180, flexShrink: 0, padding: '6px 8px', fontWeight: 700, fontSize: 12, color: 'var(--text-muted)' }}>Project</div>
+            <div style={{ flex: 1, display: 'flex' }}>
+              {fyMonths.map((m, i) => (
+                <div key={i} style={{
+                  flex: 1, textAlign: 'center', fontSize: 11, fontWeight: 600,
+                  color: 'var(--text-muted)', padding: '6px 0',
+                  borderLeft: '1px solid var(--border, #e5e7eb)',
+                }}>
+                  {m.label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {projects.map((p, idx) => {
+            const bar = getBarStyle(p)
+            const color = BAR_COLORS[idx % BAR_COLORS.length]
+            return (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', minHeight: 36, borderBottom: '1px solid var(--border, #f0f0f0)' }}>
+                <div style={{ width: 180, flexShrink: 0, padding: '6px 8px', fontSize: 12 }}>
+                  <strong>{p.name}</strong>
+                  <br /><span style={{ opacity: 0.6, fontSize: 11 }}>{p.customer_name}</span>
+                </div>
+                <div style={{ flex: 1, position: 'relative', height: 24 }}>
+                  {fyMonths.map((_, i) => (
+                    <div key={i} style={{
+                      position: 'absolute', top: 0, bottom: 0,
+                      left: `${(i / 12) * 100}%`, width: `${100 / 12}%`,
+                      borderLeft: '1px solid var(--border, #f0f0f0)',
+                    }} />
+                  ))}
+                  <div style={{
+                    position: 'absolute', top: 4, height: 16,
+                    left: bar.left, width: bar.width,
+                    background: color, borderRadius: 4, opacity: p.is_active ? 1 : 0.4,
+                    minWidth: bar.width !== '0%' ? 4 : 0,
+                  }} title={`${p.customer_name} — ${p.name}: ${new Date(p.start_date).toLocaleDateString('en-GB')} → ${p.end_date ? new Date(p.end_date).toLocaleDateString('en-GB') : 'Ongoing'}`} />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px', marginTop: 16, fontSize: 12 }}>
+        {projects.map((p, idx) => (
+          <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: BAR_COLORS[idx % BAR_COLORS.length], display: 'inline-block', opacity: p.is_active ? 1 : 0.4 }} />
+            {p.customer_name} — {p.name}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

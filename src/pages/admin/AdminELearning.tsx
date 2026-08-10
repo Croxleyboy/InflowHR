@@ -244,6 +244,7 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
   const [editForm, setEditForm] = useState<DbCourse>({ ...EMPTY_COURSE } as DbCourse)
   const [showAdd, setShowAdd] = useState(false)
   const [addForm, setAddForm] = useState<DbCourse>({ ...EMPTY_COURSE } as DbCourse)
+  const [addCompanyIds, setAddCompanyIds] = useState<Set<string>>(new Set())
   const [visDropdownOpen, setVisDropdownOpen] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
@@ -299,8 +300,13 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
       is_active: form.is_active,
     })
     if (error) { showError('Failed to create course: ' + error.message); return }
+    if (addCompanyIds.size > 0) {
+      const rows = Array.from(addCompanyIds).map(cid => ({ company_id: cid, course_id: id, is_enabled: true }))
+      await supabase.from('company_elearning_courses').upsert(rows, { onConflict: 'company_id,course_id' })
+    }
     showSuccess('Course created')
     setAddForm({ ...EMPTY_COURSE } as DbCourse)
+    setAddCompanyIds(new Set())
     setShowAdd(false)
     loadAll()
   }
@@ -386,7 +392,7 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
       {showAdd && (
         <div className="admin-el-editor" style={{ marginBottom: 20 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Create New Course</h3>
-          <CourseForm form={addForm} setForm={setAddForm as any} />
+          <CourseForm form={addForm} setForm={setAddForm as any} companies={companies} selectedCompanyIds={addCompanyIds} onCompanyToggle={(cid) => setAddCompanyIds(prev => { const next = new Set(prev); if (next.has(cid)) next.delete(cid); else next.add(cid); return next })} />
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button className="admin-btn-sm admin-btn-save" onClick={saveCourse}>Create Course</button>
             <button className="admin-btn-sm admin-btn-cancel" onClick={() => setShowAdd(false)}>Cancel</button>
@@ -482,7 +488,7 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
 
 /* ────── Course Form (shared by Add & Edit) ────── */
 
-function CourseForm({ form, setForm, isEdit }: { form: DbCourse; setForm: (fn: (prev: DbCourse) => DbCourse) => void; isEdit?: boolean }) {
+function CourseForm({ form, setForm, isEdit, companies, selectedCompanyIds, onCompanyToggle }: { form: DbCourse; setForm: (fn: (prev: DbCourse) => DbCourse) => void; isEdit?: boolean; companies?: CompanyRow[]; selectedCompanyIds?: Set<string>; onCompanyToggle?: (companyId: string) => void }) {
   const [tagsInput, setTagsInput] = useState(form.tags.join(', '))
 
   useEffect(() => { setTagsInput(form.tags.join(', ')) }, [form.tags])
@@ -547,6 +553,22 @@ function CourseForm({ form, setForm, isEdit }: { form: DbCourse; setForm: (fn: (
         <label><input type="checkbox" checked={form.annual_reminder} onChange={e => setForm(p => ({ ...p, annual_reminder: e.target.checked }))} /> Annual Reminder</label>
         <label><input type="checkbox" checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} /> Active</label>
       </div>
+      {companies && companies.length > 0 && onCompanyToggle && selectedCompanyIds && (
+        <div className="admin-el-form-field admin-el-form-wide">
+          <label>Visible to Companies</label>
+          <p style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)', margin: '0 0 6px' }}>
+            Select which companies can see this course. Leave all unchecked to manage visibility later.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
+            {companies.map(c => (
+              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
+                <input type="checkbox" checked={selectedCompanyIds.has(c.id)} onChange={() => onCompanyToggle(c.id)} />
+                {c.name}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

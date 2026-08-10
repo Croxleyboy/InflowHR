@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -29,6 +29,22 @@ const statusColor: Record<TimesheetStatus, string> = {
   rejected: '#f44336',
 }
 
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+function getFYMonths(): { year: number; month: number }[] {
+  const now = new Date()
+  const fyStartMonth = 3
+  const fyStartYear = now.getMonth() >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+  const months: { year: number; month: number }[] = []
+  for (let i = 0; i < 12; i++) {
+    const m = (fyStartMonth + i) % 12
+    const y = fyStartYear + Math.floor((fyStartMonth + i) / 12)
+    if (y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth())) break
+    months.push({ year: y, month: m })
+  }
+  return months
+}
+
 export default function Timesheets() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
@@ -37,24 +53,45 @@ export default function Timesheets() {
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
 
+  const fyMonths = useMemo(() => getFYMonths(), [])
+  const [monthIdx, setMonthIdx] = useState(fyMonths.length - 1)
+  const current = fyMonths[monthIdx]
+
   const fetchTimesheets = useCallback(async () => {
     if (!employeeId) return
     setLoading(true)
+    const fyStartMonth = 3
+    const now = new Date()
+    const fyStartYear = now.getMonth() >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+    const startDate = `${fyStartYear}-${String(fyStartMonth + 1).padStart(2, '0')}-01`
+
     const { data } = await supabase
       .from('timesheets')
       .select('id, location, customer, role, date, end_date, start_time, end_time, hours, status, created_at')
       .eq('employee_id', employeeId)
+      .gte('date', startDate)
       .order('date', { ascending: false })
-      .limit(20)
     setTimesheets((data as Timesheet[]) || [])
     setLoading(false)
   }, [employeeId])
 
   useEffect(() => { fetchTimesheets() }, [fetchTimesheets])
 
-  const filtered = filter === 'all'
-    ? timesheets
-    : timesheets.filter(ts => ts.status === filter)
+  const monthEntries = useMemo(() => {
+    if (!current) return []
+    const y = current.year
+    const m = current.month
+    const start = `${y}-${String(m + 1).padStart(2, '0')}-01`
+    const endDate = new Date(y, m + 1, 0)
+    const end = `${y}-${String(m + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
+    let entries = timesheets.filter(ts => ts.date >= start && ts.date <= end)
+    if (filter !== 'all') entries = entries.filter(ts => ts.status === filter)
+    return entries
+  }, [timesheets, current, filter])
+
+  const monthTotal = monthEntries.reduce((s, ts) => s + Number(ts.hours), 0)
+  const canPrev = monthIdx > 0
+  const canNext = monthIdx < fyMonths.length - 1
 
   const filters: { key: Filter; label: string }[] = [
     { key: 'all', label: t('timesheets.all') },
@@ -104,13 +141,25 @@ export default function Timesheets() {
         {t('timesheets.last_4_weeks')}
       </button>
 
+      <div className="payslips-month-nav" style={{ padding: '8px 16px' }}>
+        <button className="payslips-nav-btn" disabled={!canPrev} onClick={() => setMonthIdx(i => i - 1)}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <span className="payslips-month-label">
+          {current ? `${MONTH_NAMES[current.month]} ${current.year}` : ''}
+        </span>
+        <button className="payslips-nav-btn" disabled={!canNext} onClick={() => setMonthIdx(i => i + 1)}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+
       {loading && <p className="claims-empty">{t('common.loading')}</p>}
 
       <div className="claims-list">
-        {!loading && filtered.length === 0 && (
+        {!loading && monthEntries.length === 0 && (
           <p className="claims-empty">{t('timesheets.no_timesheets')}</p>
         )}
-        {filtered.slice(0, 5).map(ts => (
+        {monthEntries.map(ts => (
           <button key={ts.id} className="claim-row" onClick={() => navigate(`/timesheets/${ts.id}`)}>
             <div className="claim-date-col">
               <span className="claim-date">{ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)}</span>
@@ -132,6 +181,13 @@ export default function Timesheets() {
           </button>
         ))}
       </div>
+
+      {!loading && monthEntries.length > 0 && (
+        <div className="ts-week-total-row" style={{ margin: '0 16px' }}>
+          <span className="ts-week-total-label">{t('timesheets.month_total')}</span>
+          <span className="ts-week-total-value">{monthTotal.toFixed(1)}h</span>
+        </div>
+      )}
     </div>
   )
 }

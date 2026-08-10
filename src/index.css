@@ -3383,13 +3383,13 @@ body {
   display: flex; flex-wrap: wrap; gap: 6px; padding: 16px 16px 8px;
 }
 .elearning-filter-chip {
-  flex: 1 1 0;
-  padding: 7px 0; border-radius: 20px;
+  flex: 1 1 auto;
+  padding: 7px 10px; border-radius: 20px;
   border: 1.5px solid var(--border);
   background: var(--card-bg); color: var(--text-muted);
   font-size: 12px; font-weight: 600; cursor: pointer;
   text-align: center; transition: all 0.2s;
-  white-space: nowrap; min-width: 0;
+  min-width: 0; word-break: break-word;
 }
 .elearning-filter-active {
   background: #f9a825; color: #333; border-color: #f9a825; font-weight: 700;
