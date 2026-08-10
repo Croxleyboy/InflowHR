@@ -146,7 +146,7 @@ function isRenewalDue(courseId: string, completedDates: Record<string, string>):
 export default function ELearning() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { companyUser } = useAuth()
+  const { companyUser, employeeId: EMPLOYEE_ID } = useAuth()
   const [progress, setProgress] = useState<CourseProgress>(loadProgress)
   const [filter, setFilter] = useState<Category>('all')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
@@ -195,6 +195,17 @@ export default function ELearning() {
   useEffect(() => { fetchCourses() }, [fetchCourses])
   useEffect(() => { fetchEnabledCourses() }, [fetchEnabledCourses])
   useEffect(() => { saveProgress(progress) }, [progress])
+
+  useEffect(() => {
+    if (!companyUser?.company_id || !EMPLOYEE_ID || progress.completed.length === 0) return
+    const rows = progress.completed.map(cid => ({
+      company_id: companyUser.company_id,
+      employee_id: EMPLOYEE_ID,
+      course_id: cid,
+      completed_at: progress.completedDates[cid] || new Date().toISOString(),
+    }))
+    supabase.from('elearning_completions').upsert(rows, { onConflict: 'company_id,employee_id,course_id' })
+  }, [companyUser?.company_id, EMPLOYEE_ID])
 
   const visibleCourses = enabledCourseIds !== null
     ? allCourses.filter(c => enabledCourseIds.has(c.id))
@@ -263,12 +274,21 @@ export default function ELearning() {
   function completeCourse(id: string) {
     setShowComplete(id)
     setTimeout(() => {
+      const now = new Date().toISOString()
       setProgress(p => ({
         ...p,
         completed: [...p.completed.filter(c => c !== id), id],
         inProgress: { ...p.inProgress, [id]: 100 },
-        completedDates: { ...p.completedDates, [id]: new Date().toISOString() },
+        completedDates: { ...p.completedDates, [id]: now },
       }))
+      if (companyUser?.company_id && EMPLOYEE_ID) {
+        supabase.from('elearning_completions').upsert({
+          company_id: companyUser.company_id,
+          employee_id: EMPLOYEE_ID,
+          course_id: id,
+          completed_at: now,
+        }, { onConflict: 'company_id,employee_id,course_id' })
+      }
       setShowComplete(null)
       setExpandedCourse(null)
     }, 1500)
@@ -280,6 +300,12 @@ export default function ELearning() {
       completed: p.completed.filter(c => c !== id),
       inProgress: { ...p.inProgress, [id]: 0 },
     }))
+    if (companyUser?.company_id && EMPLOYEE_ID) {
+      supabase.from('elearning_completions').delete()
+        .eq('company_id', companyUser.company_id)
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('course_id', id)
+    }
     setExpandedCourse(id)
   }
 
