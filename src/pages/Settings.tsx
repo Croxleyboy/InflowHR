@@ -155,9 +155,11 @@ export default function Settings() {
         </section>
       )}
 
-      <button className="save-btn" onClick={handleSave}>
-        {saved ? t('settings.saved') : t('settings.save')}
-      </button>
+      {isCompanyAdmin && (
+        <button className="save-btn" onClick={handleSave}>
+          {saved ? t('settings.saved') : t('settings.save')}
+        </button>
+      )}
 
       <section className="settings-section">
         <button className="settings-admin-btn settings-guide-btn" onClick={() => navigate('/user-guide')}>
