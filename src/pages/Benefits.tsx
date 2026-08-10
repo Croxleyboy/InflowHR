@@ -32,6 +32,13 @@ interface BenefitType {
   options: BenefitOption[]
 }
 
+interface BenefitDoc {
+  id: number
+  benefit_type_id: number
+  file_name: string
+  file_url: string
+}
+
 interface Enrollment {
   id: number
   benefit_type_id: number
@@ -46,21 +53,35 @@ const CARD_SVG_ICONS: Record<string, React.ReactNode> = {
   cycle: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2z" fill="#fff"/><path d="M12 17.5V14l-3-3 4-3 2 3h3"/></svg>,
 }
 
+function getFYStartMonth(): number {
+  return 3
+}
+
+function isEnrollmentActive(enrolledAt: string, lockPeriod: string): boolean {
+  if (lockPeriod === 'month') {
+    const enrolled = new Date(enrolledAt)
+    const effectiveStart = new Date(enrolled.getFullYear(), enrolled.getMonth() + 1, 1)
+    return new Date() >= effectiveStart
+  }
+  return true
+}
 
 function isLocked(benefit: BenefitType, enrolledAt: string | null): { locked: boolean; until: string } {
   if (!enrolledAt || !benefit.lock_period || benefit.lock_period === 'none' || benefit.monthly_cost === 0) return { locked: false, until: '' }
   const now = new Date()
   if (benefit.lock_period === 'month') {
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    if (new Date(enrolledAt) <= endOfMonth) {
-      return { locked: now < endOfMonth, until: `${endOfMonth.getDate()}/${endOfMonth.getMonth() + 1}/${endOfMonth.getFullYear()}` }
+    const enrolled = new Date(enrolledAt)
+    const lockEnd = new Date(enrolled.getFullYear(), enrolled.getMonth() + 2, 0)
+    if (now < lockEnd) {
+      return { locked: true, until: `${lockEnd.getDate()}/${lockEnd.getMonth() + 1}/${lockEnd.getFullYear()}` }
     }
   }
   if (benefit.lock_period === 'year') {
-    const fyEndYear = now.getMonth() >= 3 ? now.getFullYear() + 1 : now.getFullYear()
-    const fyEnd = new Date(fyEndYear, 3, 5)
-    if (new Date(enrolledAt) <= fyEnd) {
-      return { locked: now < fyEnd, until: `5/4/${fyEndYear}` }
+    const fyStart = getFYStartMonth()
+    const fyEndYear = now.getMonth() >= fyStart ? now.getFullYear() + 1 : now.getFullYear()
+    const fyEnd = new Date(fyEndYear, fyStart, 0)
+    if (now < fyEnd) {
+      return { locked: true, until: `${fyEnd.getDate()}/${fyEnd.getMonth() + 1}/${fyEnd.getFullYear()}` }
     }
   }
   return { locked: false, until: '' }
@@ -69,14 +90,25 @@ function isLocked(benefit: BenefitType, enrolledAt: string | null): { locked: bo
 function getLockUntilDate(lockPeriod: string): string {
   const now = new Date()
   if (lockPeriod === 'month') {
-    const d = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    const d = new Date(now.getFullYear(), now.getMonth() + 2, 0)
     return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
   }
   if (lockPeriod === 'year') {
-    const fyEndYear = now.getMonth() >= 3 ? now.getFullYear() + 1 : now.getFullYear()
-    return `5/4/${fyEndYear}`
+    const fyStart = getFYStartMonth()
+    const fyEndYear = now.getMonth() >= fyStart ? now.getFullYear() + 1 : now.getFullYear()
+    const fyEnd = new Date(fyEndYear, fyStart, 0)
+    return `${fyEnd.getDate()}/${fyEnd.getMonth() + 1}/${fyEnd.getFullYear()}`
   }
   return ''
+}
+
+function canSubscribeToYearlyBenefit(): boolean {
+  const now = new Date()
+  const fyStart = getFYStartMonth()
+  const fyStartYear = now.getMonth() >= fyStart ? now.getFullYear() + 1 : now.getFullYear()
+  const windowOpen = new Date(fyStartYear, fyStart - 1, 1)
+  const windowClose = new Date(fyStartYear, fyStart, 0)
+  return now >= windowOpen && now <= windowClose
 }
 
 export default function Benefits() {
@@ -93,6 +125,7 @@ export default function Benefits() {
   const [loading, setLoading] = useState(true)
   const [openModal, setOpenModal] = useState<string | null>(null)
   const [confirmEnroll, setConfirmEnroll] = useState<{ benefitType: BenefitType; title: string; cost: number; until: string } | null>(null)
+  const [docs, setDocs] = useState<BenefitDoc[]>([])
 
   const loadData = useCallback(async () => {
     if (!companyId || !employeeId) return
@@ -111,16 +144,13 @@ export default function Benefits() {
     const typeIds = types.map(t => t.id)
 
     if (typeIds.length > 0) {
-      const { data: opts } = await supabase
-        .from('benefit_options')
-        .select('*')
-        .eq('company_id', companyId)
-        .in('benefit_type_id', typeIds)
-        .eq('is_enabled', true)
-        .order('sort_order')
+      const [optsRes, docsRes] = await Promise.all([
+        supabase.from('benefit_options').select('*').eq('company_id', companyId).in('benefit_type_id', typeIds).eq('is_enabled', true).order('sort_order'),
+        supabase.from('benefit_documents').select('*').eq('company_id', companyId).in('benefit_type_id', typeIds),
+      ])
 
       const optMap = new Map<number, BenefitOption[]>()
-      for (const o of (opts || [])) {
+      for (const o of (optsRes.data || [])) {
         const list = optMap.get(o.benefit_type_id) || []
         list.push(o as BenefitOption)
         optMap.set(o.benefit_type_id, list)
@@ -128,8 +158,10 @@ export default function Benefits() {
       for (const t of types) {
         t.options = optMap.get(t.id) || []
       }
+      setDocs((docsRes.data || []) as BenefitDoc[])
     } else {
       for (const t of types) t.options = []
+      setDocs([])
     }
 
     setBenefitTypes(types)
@@ -158,6 +190,14 @@ export default function Benefits() {
     return e ? e.enrolled_at : null
   }
 
+  function isActiveEnrollment(typeId: number): boolean {
+    const e = enrollments.find(x => x.benefit_type_id === typeId && x.option_id === null)
+    if (!e) return false
+    const bt = benefitTypes.find(b => b.id === typeId)
+    if (!bt) return false
+    return isEnrollmentActive(e.enrolled_at, bt.lock_period)
+  }
+
   async function toggleVacOption(optionId: number) {
     if (!companyId || !employeeId) return
     const vacType = benefitTypes.find(b => b.benefit_key === 'vacation')
@@ -183,6 +223,14 @@ export default function Benefits() {
     const enrolled = isEnrolledInType(bt.id)
     const lock = isLocked(bt, getEnrollDate(bt.id))
     if (lock.locked && enrolled) return
+
+    if (!enrolled && bt.lock_period === 'year' && !canSubscribeToYearlyBenefit()) {
+      const fyStart = getFYStartMonth()
+      const fyStartYear = new Date().getMonth() >= fyStart ? new Date().getFullYear() + 1 : new Date().getFullYear()
+      const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+      showError(`This benefit can only be subscribed to during ${monthNames[fyStart - 1]} ${fyStart === 0 ? fyStartYear - 1 : fyStartYear}, one month before the financial year starts.`)
+      return
+    }
 
     if (!enrolled && bt.monthly_cost > 0 && bt.lock_period !== 'none') {
       setConfirmEnroll({ benefitType: bt, title: bt.title, cost: bt.monthly_cost, until: getLockUntilDate(bt.lock_period) })
@@ -218,6 +266,8 @@ export default function Benefits() {
     const svgIcon = CARD_SVG_ICONS[bt.benefit_key]
     const isVacation = bt.benefit_key === 'vacation'
     const enrolled = isVacation ? bt.options.some(o => isEnrolledInOption(o.id)) : isEnrolledInType(bt.id)
+    const active = !isVacation && enrolled && isActiveEnrollment(bt.id)
+    const pending = !isVacation && enrolled && !active
 
     return (
       <button key={bt.id} className="benefits-card" onClick={() => setOpenModal(bt.benefit_key)}>
@@ -228,13 +278,16 @@ export default function Benefits() {
           <span className="benefits-card-title">{bt.title}</span>
           <span className="benefits-card-desc">{bt.description}</span>
         </div>
-        {enrolled && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
+        {active && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
+        {pending && <span className="benefits-enrolled-badge" style={{ background: '#ff9800' }}>{t('benefits.pending_start')}</span>}
+        {isVacation && enrolled && <span className="benefits-enrolled-badge">{t('benefits.enrolled')}</span>}
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="benefits-card-arrow"><path d="M9 6l6 6-6 6"/></svg>
       </button>
     )
   }
 
   function renderVacationModal(bt: BenefitType) {
+    const typeDocs = docs.filter(d => d.benefit_type_id === bt.id)
     return (
       <div className="benefits-modal-overlay" onClick={() => setOpenModal(null)}>
         <div className="benefits-modal" onClick={e => e.stopPropagation()}>
@@ -263,6 +316,17 @@ export default function Benefits() {
               )
             })}
           </div>
+          {typeDocs.length > 0 && (
+            <div className="benefits-docs-section">
+              <h4>{t('benefits.documents')}</h4>
+              {typeDocs.map(d => (
+                <a key={d.id} href={d.file_url} target="_blank" rel="noopener noreferrer" className="benefits-doc-link">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  {d.file_name}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -271,6 +335,9 @@ export default function Benefits() {
   function renderDetailModal(bt: BenefitType) {
     const enrolled = isEnrolledInType(bt.id)
     const lock = isLocked(bt, getEnrollDate(bt.id))
+    const yearlyBlocked = !enrolled && bt.lock_period === 'year' && !canSubscribeToYearlyBenefit()
+    const typeDocs = docs.filter(d => d.benefit_type_id === bt.id)
+
     return (
       <div className="benefits-modal-overlay" onClick={() => setOpenModal(null)}>
         <div className="benefits-modal" onClick={e => e.stopPropagation()}>
@@ -292,13 +359,34 @@ export default function Benefits() {
             </div>
             <p className="benefits-modal-eligibility">{bt.eligibility}</p>
             {payrollEnabled && bt.cost_description && <p className="benefits-modal-cost">{bt.cost_description}</p>}
-            <button className={`benefits-signup-btn ${enrolled ? 'benefits-signup-active' : ''} ${lock.locked && enrolled ? 'benefits-signup-locked' : ''}`} onClick={() => toggleBenefitEnrollment(bt)} disabled={lock.locked && enrolled}>
+            {bt.lock_period === 'month' && !enrolled && (
+              <p className="benefits-lock-notice">{t('benefits.monthly_note')}</p>
+            )}
+            {yearlyBlocked && (
+              <p className="benefits-lock-notice">{t('benefits.yearly_window_closed')}</p>
+            )}
+            <button
+              className={`benefits-signup-btn ${enrolled ? 'benefits-signup-active' : ''} ${(lock.locked && enrolled) || yearlyBlocked ? 'benefits-signup-locked' : ''}`}
+              onClick={() => toggleBenefitEnrollment(bt)}
+              disabled={(lock.locked && enrolled) || yearlyBlocked}
+            >
               <div className={`benefits-checkbox ${enrolled ? 'benefits-checkbox-on' : ''}`}>
                 {enrolled && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
               </div>
-              <span>{lock.locked && enrolled ? t('benefits.locked') : enrolled ? t('benefits.enrolled_label') : t('benefits.sign_up')}</span>
+              <span>{lock.locked && enrolled ? t('benefits.locked') : enrolled ? t('benefits.enrolled_label') : yearlyBlocked ? t('benefits.unavailable') : t('benefits.sign_up')}</span>
             </button>
             {lock.locked && enrolled && <p className="benefits-lock-notice">{t('benefits.locked_until')} {lock.until}</p>}
+            {typeDocs.length > 0 && (
+              <div className="benefits-docs-section">
+                <h4>{t('benefits.documents')}</h4>
+                {typeDocs.map(d => (
+                  <a key={d.id} href={d.file_url} target="_blank" rel="noopener noreferrer" className="benefits-doc-link">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    {d.file_name}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

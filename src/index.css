@@ -3103,6 +3103,7 @@ body {
   background: rgba(0,0,0,0.03);
 }
 [data-theme="dark"] .payslips-row-total { background: rgba(255,255,255,0.04); }
+.payslips-row-benefit { color: #e65100; font-style: italic; font-size: 13px; }
 
 .payslips-net-pay {
   display: flex; justify-content: space-between; align-items: center;

@@ -43,6 +43,11 @@ interface PayslipData {
   payroll_office: string
 }
 
+interface BenefitDeduction {
+  title: string
+  monthly_cost: number
+}
+
 export default function Payslips() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
@@ -50,6 +55,8 @@ export default function Payslips() {
   const [payslip, setPayslip] = useState<PayslipData | null>(null)
   const [loading, setLoading] = useState(true)
   const [employeeRole, setEmployeeRole] = useState('')
+  const [benefitDeductions, setBenefitDeductions] = useState<BenefitDeduction[]>([])
+  const [initialised, setInitialised] = useState(false)
   const monthNames = lang === 'de' ? MONTH_NAMES_DE : MONTH_NAMES_EN
 
   const fyMonths = getFYMonths()
@@ -73,17 +80,24 @@ export default function Payslips() {
       .limit(1)
       .single()
     setPayslip(data as PayslipData | null)
+
+    if (!data && !initialised && monthIdx > 0) {
+      setInitialised(true)
+      setMonthIdx(i => i - 1)
+      return
+    }
+    setInitialised(true)
     setLoading(false)
-  }, [EMPLOYEE_ID, current?.year, current?.month])
+  }, [EMPLOYEE_ID, current?.year, current?.month, companyUser?.company_id, initialised, monthIdx])
 
   useEffect(() => { loadPayslip() }, [loadPayslip])
 
   useEffect(() => {
-    if (!EMPLOYEE_ID) return
+    if (!EMPLOYEE_ID || !companyUser?.company_id) return
     supabase.from('employees')
       .select('job_title, department')
       .eq('id', EMPLOYEE_ID)
-      .eq('company_id', companyUser?.company_id)
+      .eq('company_id', companyUser.company_id)
       .single()
       .then(({ data }) => {
         if (data) {
@@ -91,15 +105,49 @@ export default function Payslips() {
           setEmployeeRole(parts.join(' — '))
         }
       })
-  }, [EMPLOYEE_ID])
+  }, [EMPLOYEE_ID, companyUser?.company_id])
+
+  useEffect(() => {
+    if (!EMPLOYEE_ID || !companyUser?.company_id || !current) return
+    const monthEnd = new Date(current.year, current.month + 1, 0)
+
+    supabase.from('benefit_enrollments')
+      .select('benefit_type_id, enrolled_at, benefit_type:benefit_types(title, monthly_cost, lock_period, is_enabled)')
+      .eq('company_id', companyUser.company_id)
+      .eq('employee_id', EMPLOYEE_ID)
+      .is('option_id', null)
+      .then(({ data }) => {
+        if (!data) { setBenefitDeductions([]); return }
+        const active: BenefitDeduction[] = []
+        for (const row of data as any[]) {
+          const bt = row.benefit_type
+          if (!bt || !bt.is_enabled) continue
+          const enrolledAt = new Date(row.enrolled_at)
+          if (bt.lock_period === 'month') {
+            const effectiveStart = new Date(enrolledAt.getFullYear(), enrolledAt.getMonth() + 1, 1)
+            if (effectiveStart > monthEnd) continue
+          } else {
+            if (enrolledAt > monthEnd) continue
+          }
+          active.push({ title: bt.title, monthly_cost: bt.monthly_cost || 0 })
+        }
+        setBenefitDeductions(active)
+      })
+  }, [EMPLOYEE_ID, companyUser?.company_id, current?.year, current?.month])
 
   const canPrev = monthIdx > 0
   const canNext = monthIdx < fyMonths.length - 1
 
   const fmt = (n: number) => n?.toFixed(2) ?? '0.00'
 
+  const benefitTotal = benefitDeductions.reduce((s, b) => s + b.monthly_cost, 0)
+
   const totalDeductions = payslip
-    ? payslip.tax + payslip.national_insurance + payslip.pension + payslip.other_deductions + (payslip.monthly_deductions || 0)
+    ? payslip.tax + payslip.national_insurance + payslip.pension + payslip.other_deductions + (payslip.monthly_deductions || 0) + benefitTotal
+    : 0
+
+  const adjustedNetPay = payslip
+    ? payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0) - totalDeductions
     : 0
 
   return (
@@ -219,6 +267,12 @@ export default function Payslips() {
                 <span>&pound;{fmt(payslip.other_deductions)}</span>
               </div>
             )}
+            {benefitDeductions.map((bd, i) => (
+              <div key={i} className="payslips-row payslips-row-benefit">
+                <span>{bd.title}</span>
+                <span>&pound;{fmt(bd.monthly_cost)}</span>
+              </div>
+            ))}
             <div className="payslips-row payslips-row-total">
               <span>{t('payslips.total_deductions')}</span>
               <span>&pound;{fmt(totalDeductions)}</span>
@@ -227,7 +281,7 @@ export default function Payslips() {
 
           <div className="payslips-net-pay">
             <span>{t('payslips.net_pay')}</span>
-            <span>&pound;{fmt(payslip.net_pay)}</span>
+            <span>&pound;{fmt(adjustedNetPay)}</span>
           </div>
 
           <div className="payslips-footer-info">

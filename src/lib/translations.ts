@@ -496,6 +496,11 @@ const en: Translations = {
   'benefits.confirm_lock': 'You will not be able to cancel this benefit until',
   'benefits.confirm_yes': 'Yes, enrol me',
   'benefits.confirm_no': 'Cancel',
+  'benefits.pending_start': 'Starts next month',
+  'benefits.monthly_note': 'Subscribing now will take effect from the start of next month.',
+  'benefits.yearly_window_closed': 'This benefit is only available to subscribe during the month before the financial year starts.',
+  'benefits.unavailable': 'Not available',
+  'benefits.documents': 'Documents',
 
   // E-Learning
   'elearning.title': 'My',
@@ -1375,6 +1380,11 @@ const de: Translations = {
   'benefits.confirm_lock': 'Sie können diese Leistung nicht kündigen bis',
   'benefits.confirm_yes': 'Ja, anmelden',
   'benefits.confirm_no': 'Abbrechen',
+  'benefits.pending_start': 'Beginnt nächsten Monat',
+  'benefits.monthly_note': 'Eine Anmeldung jetzt wird ab Beginn des nächsten Monats wirksam.',
+  'benefits.yearly_window_closed': 'Dieser Vorteil kann nur im Monat vor Beginn des Geschäftsjahres abonniert werden.',
+  'benefits.unavailable': 'Nicht verfügbar',
+  'benefits.documents': 'Dokumente',
 
   // E-Learning
   'elearning.title': 'Mein',

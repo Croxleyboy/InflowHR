@@ -50,6 +50,7 @@ export default function AdminPayroll() {
   const [generating, setGenerating] = useState(false)
   const [empEditId, setEmpEditId] = useState<string | null>(null)
   const [empForm, setEmpForm] = useState<Record<string, any>>({})
+  const [empBenefits, setEmpBenefits] = useState<Record<string, { title: string; enrolled_at: string; monthly_cost: number }[]>>({})
 
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
@@ -554,7 +555,7 @@ export default function AdminPayroll() {
                             </>
                           ) : (
                             <>
-                              <button className="admin-btn-icon" onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}>
+                              <button className="admin-btn-icon" onClick={() => { const next = expandedId === p.id ? null : p.id; setExpandedId(next); if (next && p.employee?.id && !empBenefits[p.employee.id]) { supabase.from('benefit_enrollments').select('enrolled_at, benefit_type:benefit_types(title, monthly_cost)').eq('company_id', selectedCompanyId).eq('employee_id', p.employee.id).is('option_id', null).then(({ data }) => { setEmpBenefits(prev => ({ ...prev, [p.employee!.id]: (data || []).map((r: any) => ({ title: r.benefit_type?.title || '', enrolled_at: r.enrolled_at, monthly_cost: r.benefit_type?.monthly_cost || 0 })) })) }) } }}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={expandedId === p.id ? "18 15 12 9 6 15" : "6 9 12 15 18 9"}/></svg>
                               </button>
                               <button className="admin-btn-icon" onClick={() => startEdit(p)}>
@@ -580,6 +581,18 @@ export default function AdminPayroll() {
                               <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
                               <div><strong>Payment Date:</strong> {new Date(p.payment_date).toLocaleDateString('en-GB')}</div>
                             </div>
+                            {p.employee?.id && (empBenefits[p.employee.id] || []).length > 0 && (
+                              <div style={{ marginTop: '12px' }}>
+                                <strong style={{ fontSize: '13px' }}>Benefit Subscriptions:</strong>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
+                                  {empBenefits[p.employee.id].map((b, i) => (
+                                    <span key={i} style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px' }}>
+                                      {b.title} — £{b.monthly_cost.toFixed(2)}/mo (since {new Date(b.enrolled_at).toLocaleDateString('en-GB')})
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       )}
