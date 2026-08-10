@@ -342,7 +342,7 @@ export default function AdminLeave() {
           <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
             {t('leave.deductions_hint')}
           </span>
-          {leaveTypeSettings.map(lt => (
+          {leaveTypeSettings.filter(lt => ['Sick Leave', 'Jury Duty', 'Compassionate Leave', 'Bereavement', 'Exam Leave', 'Carers Leave'].includes(lt.name)).map(lt => (
               <label key={lt.id} className="admin-toggle-label" style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
                 <input
                   type="checkbox"

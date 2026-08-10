@@ -263,7 +263,7 @@ export default function NewLeaveRequest() {
 
     let typeId = leaveTypeIds[leaveType]
     if (!typeId && companyUser?.company_id) {
-      const NO_DEDUCT_TYPES = ['Sick Leave', 'Jury Duty', 'Lieu Days']
+      const NO_DEDUCT_TYPES = ['Sick Leave', 'Jury Duty', 'Career Break', 'Lieu Days']
       const { data: newType } = await supabase
         .from('leave_types')
         .insert({ name: leaveType, company_id: companyUser.company_id, deducts_from_allowance: !NO_DEDUCT_TYPES.includes(leaveType) })
