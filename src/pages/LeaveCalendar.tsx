@@ -9,8 +9,11 @@ interface CalendarLeave {
   employee_id: string
   start_date: string
   end_date: string
+  half_day: boolean
+  leave_type_id: number
   emp_name: string
   emp_avatar: string | null
+  colour: string
 }
 
 const EN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -35,6 +38,11 @@ function addDays(d: Date, n: number): Date {
   return r
 }
 
+interface DayInfo {
+  colour: string
+  halfDay: boolean
+}
+
 export default function LeaveCalendar() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
@@ -55,7 +63,7 @@ export default function LeaveCalendar() {
     setLoading(true)
     const { data: reqs } = await supabase
       .from('leave_requests')
-      .select('id, employee_id, start_date, end_date')
+      .select('id, employee_id, start_date, end_date, half_day, leave_type_id')
       .eq('company_id', companyUser.company_id)
       .eq('status', 'approved')
       .lte('start_date', rangeEnd)
@@ -63,18 +71,31 @@ export default function LeaveCalendar() {
 
     if (reqs && reqs.length > 0) {
       const empIds = [...new Set(reqs.map((r: any) => r.employee_id))]
-      const { data: emps } = await supabase
-        .from('employees')
-        .select('id, first_name, last_name, avatar_url')
-        .in('id', empIds)
-        .eq('company_id', companyUser?.company_id)
+      const typeIds = [...new Set(reqs.map((r: any) => r.leave_type_id).filter(Boolean))]
 
-      const empMap = new Map((emps || []).map((e: any) => [e.id, { name: `${e.first_name} ${e.last_name}`, avatar: e.avatar_url }]))
+      const [empsRes, typesRes] = await Promise.all([
+        supabase
+          .from('employees')
+          .select('id, first_name, last_name, avatar_url')
+          .in('id', empIds)
+          .eq('company_id', companyUser.company_id),
+        typeIds.length > 0
+          ? supabase.from('leave_types').select('id, colour').in('id', typeIds)
+          : Promise.resolve({ data: [] }),
+      ])
+
+      const empMap = new Map((empsRes.data || []).map((e: any) => [e.id, { name: `${e.first_name} ${e.last_name}`, avatar: e.avatar_url }]))
+      const typeMap = new Map((typesRes.data || []).map((lt: any) => [lt.id, lt.colour || '#43a047']))
+
       setLeaves(reqs.map((r: any) => ({
         ...r,
+        half_day: r.half_day === true,
         emp_name: empMap.get(r.employee_id)?.name || 'Unknown',
         emp_avatar: empMap.get(r.employee_id)?.avatar || null,
+        colour: typeMap.get(r.leave_type_id) || '#43a047',
       })))
+    } else {
+      setLeaves([])
     }
 
     setLoading(false)
@@ -84,18 +105,17 @@ export default function LeaveCalendar() {
 
   const nextMonday = addDays(thisMonday, 7)
   const nextSunday = addDays(nextMonday, 6)
-  const nextWeekLeaves = leaves.filter(l => {
-    const s = l.start_date
-    const e = l.end_date
-    const ns = dateStr(nextMonday)
-    const ne = dateStr(nextSunday)
-    return s <= ne && e >= ns
-  })
+  const nextWeekLeaves = leaves.filter(l => l.start_date <= dateStr(nextSunday) && l.end_date >= dateStr(nextMonday))
   const nextWeekPeople = new Set(nextWeekLeaves.map(l => l.employee_id)).size
 
-  function isOffOnDay(leave: CalendarLeave, day: Date): boolean {
+  function getDayInfo(empLeaves: CalendarLeave[], day: Date): DayInfo | null {
     const ds = dateStr(day)
-    return leave.start_date <= ds && leave.end_date >= ds
+    for (const l of empLeaves) {
+      if (l.start_date <= ds && l.end_date >= ds) {
+        return { colour: l.colour, halfDay: l.half_day }
+      }
+    }
+    return null
   }
 
   const months = lang === 'de' ? DE_MONTHS : EN_MONTHS
@@ -139,6 +159,15 @@ export default function LeaveCalendar() {
           l.start_date <= dateStr(addDays(weekStart, 6)) && l.end_date >= dateStr(weekStart)
         )
 
+        const employeeMap = new Map<string, { name: string; avatar: string | null; leaves: CalendarLeave[] }>()
+        for (const l of weekLeaves) {
+          if (!employeeMap.has(l.employee_id)) {
+            employeeMap.set(l.employee_id, { name: l.emp_name, avatar: l.emp_avatar, leaves: [] })
+          }
+          employeeMap.get(l.employee_id)!.leaves.push(l)
+        }
+        const groupedEmployees = [...employeeMap.entries()]
+
         return (
           <div key={wi} className="leave-calendar-week">
             <h3 className="leave-calendar-month">{months[monthIdx]} {year}</h3>
@@ -164,23 +193,32 @@ export default function LeaveCalendar() {
               </div>
             </div>
 
-            {weekLeaves.length === 0 && (
+            {groupedEmployees.length === 0 && (
               <p className="leave-calendar-no-leave">{t('leave_calendar.no_leave')}</p>
             )}
 
-            {weekLeaves.map(l => (
-              <div key={l.id} className="leave-calendar-person-row">
-                {l.emp_avatar ? <img className="leave-calendar-person-avatar-img" src={l.emp_avatar} alt={l.emp_name} /> : <div className="leave-calendar-person-avatar">
-                  {l.emp_name.split(' ').map(n => n[0]).join('')}
+            {groupedEmployees.map(([empId, emp]) => (
+              <div key={empId} className="leave-calendar-person-row">
+                {emp.avatar ? <img className="leave-calendar-person-avatar-img" src={emp.avatar} alt={emp.name} /> : <div className="leave-calendar-person-avatar">
+                  {emp.name.split(' ').map(n => n[0]).join('')}
                 </div>}
-                <span className="leave-calendar-person-name">{l.emp_name}</span>
+                <span className="leave-calendar-person-name">{emp.name}</span>
                 <div className="leave-calendar-person-days">
-                  {days.map(day => (
-                    <div
-                      key={dateStr(day)}
-                      className={`leave-calendar-person-dot ${isOffOnDay(l, day) ? 'leave-calendar-dot-off' : ''}`}
-                    />
-                  ))}
+                  {days.map(day => {
+                    const info = getDayInfo(emp.leaves, day)
+                    if (info && info.halfDay) {
+                      return (
+                        <div key={dateStr(day)} className="leave-calendar-person-dot leave-calendar-dot-half" style={{ '--dot-colour': info.colour } as React.CSSProperties} />
+                      )
+                    }
+                    return (
+                      <div
+                        key={dateStr(day)}
+                        className={`leave-calendar-person-dot ${info ? 'leave-calendar-dot-off' : ''}`}
+                        style={info ? { background: info.colour } : undefined}
+                      />
+                    )
+                  })}
                 </div>
               </div>
             ))}

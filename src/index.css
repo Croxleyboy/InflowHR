@@ -2196,6 +2196,12 @@ body {
 .leave-calendar-dot-off {
   background: #43a047;
 }
+.leave-calendar-dot-half {
+  background: linear-gradient(to right, var(--dot-colour) 50%, #e0e0e0 50%);
+}
+[data-theme="dark"] .leave-calendar-dot-half {
+  background: linear-gradient(to right, var(--dot-colour) 50%, #3a3a55 50%);
+}
 
 /* ── My Profile Page ── */
 .my-profile-page { padding: 0 0 100px; }
