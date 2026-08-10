@@ -452,6 +452,9 @@ const en: Translations = {
   'kudos.quality_good_luck': 'Good Luck for the Future',
   'kudos.colleagues_only': 'Colleagues Only',
   'kudos.no_watchlist_hint': 'Add colleagues from the Directory to see their updates here',
+  'kudos.tab_history': 'History',
+  'kudos.no_history': 'You haven\'t sent any kudos yet',
+  'kudos.confirm_delete': 'Are you sure you want to delete this kudos?',
 
   // Payslips
   'payslips.title': 'My',
@@ -1327,6 +1330,9 @@ const de: Translations = {
   'kudos.quality_creative': 'Kreatives Wesen',
   'kudos.quality_good_luck': 'Alles Gute für die Zukunft',
   'kudos.colleagues_only': 'Nur Kollegen',
+  'kudos.tab_history': 'Verlauf',
+  'kudos.no_history': 'Sie haben noch keine Kudos gesendet',
+  'kudos.confirm_delete': 'Möchten Sie dieses Kudos wirklich löschen?',
   'kudos.no_watchlist_hint': 'Fügen Sie Kollegen aus dem Verzeichnis hinzu, um deren Updates hier zu sehen',
 
   // Payslips

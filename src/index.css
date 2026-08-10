@@ -2575,6 +2575,18 @@ body {
   font-family: var(--sans); cursor: pointer;
 }
 
+.kudos-pagination {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 12px 0;
+}
+.kudos-page-btn {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text);
+}
+.kudos-page-btn:disabled { opacity: 0.3; cursor: default; }
+.kudos-page-info { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+
 /* ── Kudos New Form ── */
 .kudos-new-form { padding: 16px; }
 .kudos-form-group { margin-bottom: 16px; }

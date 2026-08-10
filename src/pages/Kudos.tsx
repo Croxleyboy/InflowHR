@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -70,6 +70,7 @@ const QUALITIES = [
 
 const WATCHLIST_KEY = 'inflowhr-kudos-watchlist'
 const COLLEAGUES_ONLY_KEY = 'inflowhr-kudos-colleagues-only'
+const PAGE_SIZE = 8
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -86,10 +87,11 @@ export default function Kudos() {
   const { t } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName: currentUserName, companyUser } = useAuth()
   const { showError, showSuccess } = useToast()
-  const [tab, setTab] = useState<'feed' | 'new'>('feed')
+  const [tab, setTab] = useState<'feed' | 'new' | 'history'>('feed')
   const [entries, setEntries] = useState<KudosEntry[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
+  const [feedPage, setFeedPage] = useState(1)
 
   // New kudos form
   const [recipientId, setRecipientId] = useState('')
@@ -122,6 +124,7 @@ export default function Kudos() {
     const next = !colleaguesOnly
     setColleaguesOnly(next)
     localStorage.setItem(COLLEAGUES_ONLY_KEY, String(next))
+    setFeedPage(1)
   }
 
   async function openLeaderboard() {
@@ -153,28 +156,19 @@ export default function Kudos() {
     if (!companyUser?.company_id) return
     setLoading(true)
 
-    const empRes = await supabase
-      .from('employees')
-      .select('id, first_name, last_name, avatar_url, department')
-      .eq('company_id', companyUser.company_id)
-      .eq('is_active', true)
-      .order('first_name')
-
-    let kudosRes = await supabase
-      .from('kudos')
-      .select('*')
-      .eq('company_id', companyUser.company_id)
-      .or(`to_employee_id.eq.${EMPLOYEE_ID},from_employee_id.eq.${EMPLOYEE_ID},is_broadcast.eq.true`)
-      .order('created_at', { ascending: false })
-
-    if (!kudosRes.data || kudosRes.error) {
-      kudosRes = await supabase
+    const [empRes, kudosRes] = await Promise.all([
+      supabase
+        .from('employees')
+        .select('id, first_name, last_name, avatar_url, department')
+        .eq('company_id', companyUser.company_id)
+        .eq('is_active', true)
+        .order('first_name'),
+      supabase
         .from('kudos')
         .select('*')
         .eq('company_id', companyUser.company_id)
-        .or(`to_employee_id.eq.${EMPLOYEE_ID},from_employee_id.eq.${EMPLOYEE_ID},to_employee_id.is.null`)
-        .order('created_at', { ascending: false })
-    }
+        .order('created_at', { ascending: false }),
+    ])
 
     const emps = (empRes.data || []) as Employee[]
     setEmployees(emps)
@@ -196,7 +190,7 @@ export default function Kudos() {
     }
 
     setLoading(false)
-  }, [EMPLOYEE_ID, companyUser?.company_id])
+  }, [companyUser?.company_id])
 
   useEffect(() => {
     if (!EMPLOYEE_ID) return
@@ -204,9 +198,23 @@ export default function Kudos() {
     localStorage.setItem('inflowhr-kudos-seen', new Date().toISOString())
   }, [fetchData, EMPLOYEE_ID])
 
-  const displayEntries = colleaguesOnly && watchlist.length > 0
-    ? entries.filter(e => e.is_broadcast || watchlist.includes(e.from_employee_id))
-    : entries
+  const displayEntries = useMemo(() => {
+    if (colleaguesOnly && watchlist.length > 0) {
+      return entries.filter(e =>
+        e.to_employee_id === EMPLOYEE_ID ||
+        watchlist.includes(e.from_employee_id) ||
+        (e.to_employee_id && watchlist.includes(e.to_employee_id))
+      )
+    }
+    return entries
+  }, [entries, colleaguesOnly, watchlist, EMPLOYEE_ID])
+
+  const feedTotalPages = Math.max(1, Math.ceil(displayEntries.length / PAGE_SIZE))
+  const feedPaged = displayEntries.slice((feedPage - 1) * PAGE_SIZE, feedPage * PAGE_SIZE)
+
+  const historyEntries = useMemo(() =>
+    entries.filter(e => e.from_employee_id === EMPLOYEE_ID)
+  , [entries, EMPLOYEE_ID])
 
   async function handleLike(entry: KudosEntry) {
     if (!EMPLOYEE_ID || entry.liked_by.includes(EMPLOYEE_ID)) return
@@ -223,6 +231,7 @@ export default function Kudos() {
   }
 
   async function handleDelete(id: number) {
+    if (!confirm(t('kudos.confirm_delete'))) return
     const { error } = await supabase.from('kudos').delete().eq('id', id).eq('company_id', companyUser?.company_id)
     if (error) { showError('Failed to delete kudos: ' + error.message); return }
     setEntries(prev => prev.filter(e => e.id !== id))
@@ -313,6 +322,76 @@ export default function Kudos() {
     return name.split(' ').map(n => n[0]).join('').toUpperCase()
   }
 
+  function renderKudosCard(entry: KudosEntry, allowDelete: boolean) {
+    const badgeInfo = getBadgeDisplay(entry.badge)
+    const qualityInfo = getQualityDisplay(entry.quality)
+    const recInfo = getRecTypeDisplay(entry.recognition_type)
+    const hasLiked = EMPLOYEE_ID ? entry.liked_by.includes(EMPLOYEE_ID) : false
+
+    return (
+      <div key={entry.id} className={`kudos-card ${entry.is_broadcast ? 'kudos-card-broadcast' : ''}`}>
+        <div className="kudos-card-top">
+          <div className="kudos-card-avatar">
+            {entry.from_avatar
+              ? <img src={entry.from_avatar} alt="" className="kudos-card-avatar-img" />
+              : <span>{getInitials(entry.from_name || '')}</span>
+            }
+          </div>
+          <div className="kudos-card-meta">
+            <span className="kudos-card-from">{entry.from_name}</span>
+            <span className="kudos-card-time">{timeAgo(entry.created_at)}</span>
+          </div>
+          {recInfo && (
+            <span className="kudos-card-type-badge">
+              <span>{recInfo.icon}</span> {recInfo.label}
+            </span>
+          )}
+        </div>
+
+        {entry.to_name && (
+          <div className="kudos-card-to">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2.5">
+              <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>{entry.to_name}</span>
+          </div>
+        )}
+
+        <p className="kudos-card-message">{entry.message}</p>
+
+        <div className="kudos-card-tags">
+          {badgeInfo && (
+            <span className="kudos-card-badge-tag">
+              <span>{badgeInfo.icon}</span> {badgeInfo.label}
+            </span>
+          )}
+          {qualityInfo && (
+            <span className="kudos-card-quality-tag">{qualityInfo}</span>
+          )}
+        </div>
+
+        <div className="kudos-card-actions">
+          <button
+            className={`kudos-like-btn ${hasLiked ? 'kudos-liked' : ''}`}
+            onClick={() => handleLike(entry)}
+            disabled={hasLiked}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={hasLiked ? '#00897b' : 'none'} stroke="#00897b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z" />
+              <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+            </svg>
+            <span>{entry.like_count}</span>
+          </button>
+          {allowDelete && (
+            <button className="kudos-delete-btn" onClick={() => handleDelete(entry.id)}>
+              {t('kudos.delete')}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="feature-page kudos-page">
       <header className="kudos-header">
@@ -344,11 +423,14 @@ export default function Kudos() {
       </header>
 
       <div className="kudos-tabs">
-        <button className={`kudos-tab ${tab === 'feed' ? 'kudos-tab-active' : ''}`} onClick={() => setTab('feed')}>
+        <button className={`kudos-tab ${tab === 'feed' ? 'kudos-tab-active' : ''}`} onClick={() => { setTab('feed'); setFeedPage(1) }}>
           {t('kudos.tab_feed')}
         </button>
         <button className={`kudos-tab ${tab === 'new' ? 'kudos-tab-active' : ''}`} onClick={() => setTab('new')}>
           {t('kudos.tab_new')}
+        </button>
+        <button className={`kudos-tab ${tab === 'history' ? 'kudos-tab-active' : ''}`} onClick={() => setTab('history')}>
+          {t('kudos.tab_history')}
         </button>
       </div>
 
@@ -380,76 +462,41 @@ export default function Kudos() {
                 : t('kudos.no_kudos')}
             </p>
           )}
-          {displayEntries.map(entry => {
-            const badgeInfo = getBadgeDisplay(entry.badge)
-            const qualityInfo = getQualityDisplay(entry.quality)
-            const recInfo = getRecTypeDisplay(entry.recognition_type)
-            const hasLiked = EMPLOYEE_ID ? entry.liked_by.includes(EMPLOYEE_ID) : false
-            const canDelete = entry.is_broadcast && entry.from_employee_id === EMPLOYEE_ID
+          {feedPaged.map(entry => renderKudosCard(entry, entry.is_broadcast && entry.from_employee_id === EMPLOYEE_ID))}
 
-            return (
-              <div key={entry.id} className={`kudos-card ${entry.is_broadcast ? 'kudos-card-broadcast' : ''}`}>
-                <div className="kudos-card-top">
-                  <div className="kudos-card-avatar">
-                    {entry.from_avatar
-                      ? <img src={entry.from_avatar} alt="" className="kudos-card-avatar-img" />
-                      : <span>{getInitials(entry.from_name || '')}</span>
-                    }
-                  </div>
-                  <div className="kudos-card-meta">
-                    <span className="kudos-card-from">{entry.from_name}</span>
-                    <span className="kudos-card-time">{timeAgo(entry.created_at)}</span>
-                  </div>
-                  {recInfo && (
-                    <span className="kudos-card-type-badge">
-                      <span>{recInfo.icon}</span> {recInfo.label}
-                    </span>
-                  )}
-                </div>
+          {feedTotalPages > 1 && (
+            <div className="kudos-pagination">
+              <button
+                className="kudos-page-btn"
+                disabled={feedPage <= 1}
+                onClick={() => setFeedPage(p => p - 1)}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+              <span className="kudos-page-info">{feedPage} / {feedTotalPages}</span>
+              <button
+                className="kudos-page-btn"
+                disabled={feedPage >= feedTotalPages}
+                onClick={() => setFeedPage(p => p + 1)}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
-                {entry.to_name && (
-                  <div className="kudos-card-to">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2.5">
-                      <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    <span>{entry.to_name}</span>
-                  </div>
-                )}
-
-                <p className="kudos-card-message">{entry.message}</p>
-
-                <div className="kudos-card-tags">
-                  {badgeInfo && (
-                    <span className="kudos-card-badge-tag">
-                      <span>{badgeInfo.icon}</span> {badgeInfo.label}
-                    </span>
-                  )}
-                  {qualityInfo && (
-                    <span className="kudos-card-quality-tag">{qualityInfo}</span>
-                  )}
-                </div>
-
-                <div className="kudos-card-actions">
-                  <button
-                    className={`kudos-like-btn ${hasLiked ? 'kudos-liked' : ''}`}
-                    onClick={() => handleLike(entry)}
-                    disabled={hasLiked}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill={hasLiked ? '#00897b' : 'none'} stroke="#00897b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z" />
-                      <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
-                    </svg>
-                    <span>{entry.like_count}</span>
-                  </button>
-                  {canDelete && (
-                    <button className="kudos-delete-btn" onClick={() => handleDelete(entry.id)}>
-                      {t('kudos.delete')}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+      {tab === 'history' && (
+        <div className="kudos-feed">
+          {loading && <p className="claims-empty">{t('common.loading')}</p>}
+          {!loading && historyEntries.length === 0 && (
+            <p className="claims-empty">{t('kudos.no_history')}</p>
+          )}
+          {historyEntries.map(entry => renderKudosCard(entry, true))}
         </div>
       )}
 
