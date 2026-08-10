@@ -108,6 +108,23 @@ export default function MyLeave() {
   async function handleImOff() {
     setImOffState('sending')
 
+    const todayStr = new Date().toISOString().split('T')[0]
+    const { data: todayLeave } = await supabase
+      .from('leave_requests')
+      .select('id')
+      .eq('employee_id', EMPLOYEE_ID)
+      .eq('company_id', companyUser?.company_id)
+      .eq('status', 'approved')
+      .lte('start_date', todayStr)
+      .gte('end_date', todayStr)
+      .limit(1)
+
+    if (!todayLeave || todayLeave.length === 0) {
+      showError(t('my_leave.im_off_no_leave'))
+      setImOffState('idle')
+      return
+    }
+
     const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL)
 
     const { error: wfError } = await supabase.from('workflow_tracker').insert({

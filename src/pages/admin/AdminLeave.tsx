@@ -196,8 +196,63 @@ export default function AdminLeave() {
 
   async function deleteRequest(id: number) {
     if (!confirm('Delete this leave request?')) return
+
+    const req = requests.find(r => r.id === id)
+
+    if (req && req.status === 'approved') {
+      const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
+      if (!typeSetting || typeSetting.deducts_from_allowance) {
+        const year = new Date(req.start_date).getFullYear()
+        const { data: balance } = await supabase
+          .from('leave_balances')
+          .select('id, used')
+          .eq('employee_id', req.employee_id)
+          .eq('year', year)
+          .limit(1)
+          .single()
+        if (balance) {
+          const newUsed = Math.max(0, balance.used - Number(req.days_requested))
+          await supabase.from('leave_balances').update({ used: newUsed }).eq('id', balance.id)
+        }
+      }
+    }
+
     const { error } = await supabase.from('leave_requests').delete().eq('id', id)
     if (error) { showError('Failed to delete leave request: ' + error.message); return }
+
+    if (req) {
+      const empName = req.employee ? `${req.employee.first_name} ${req.employee.last_name}` : ''
+      const typeName = req.leave_type?.name || 'Leave'
+      const dateRange = `${formatDate(req.start_date)} to ${formatDate(req.end_date)}`
+
+      await supabase.from('notifications').insert({
+        employee_id: req.employee_id,
+        title: `${typeName} request deleted`,
+        message: `Your ${typeName} request for ${dateRange} (${req.days_requested} days) has been deleted by an administrator.`,
+        type: 'warning',
+        link: '/leave',
+        is_read: false,
+        company_id: selectedCompanyId,
+      })
+
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: empName,
+        step: 1,
+        status: 'Complete',
+        record_type: 'Leave',
+        action: 'Leave request deleted',
+        employee_email: req.employee?.email || '',
+        assigned_to: req.employee?.email || '',
+        approval_id: id,
+        reminder_count: 0,
+        task_description: `${typeName} request for ${dateRange} has been deleted by an administrator.`,
+        approval_status: 'Deleted',
+        company_id: selectedCompanyId,
+      })
+
+      window.dispatchEvent(new Event('notifications-updated'))
+    }
+
     setRequests(prev => prev.filter(r => r.id !== id))
   }
 
