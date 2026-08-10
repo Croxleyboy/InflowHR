@@ -37,19 +37,26 @@ export default function MyLeave() {
         .eq('year', new Date().getFullYear()),
       supabase
         .from('leave_requests')
-        .select('days_requested')
+        .select('leave_type_id, days_requested')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
         .eq('status', 'pending'),
       supabase
         .from('leave_requests')
-        .select('days_requested')
+        .select('leave_type_id, days_requested')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
         .eq('status', 'approved'),
     ])
 
-    const approvedDays = (approvedReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
+    const approvedByType = new Map<number, number>()
+    for (const r of approvedReqRes.data || []) {
+      approvedByType.set(r.leave_type_id, (approvedByType.get(r.leave_type_id) || 0) + Number(r.days_requested))
+    }
+    const pendingByType = new Map<number, number>()
+    for (const r of pendReqRes.data || []) {
+      pendingByType.set(r.leave_type_id, (pendingByType.get(r.leave_type_id) || 0) + Number(r.days_requested))
+    }
     const pendingDays = (pendReqRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
 
     if (balRes.data && balRes.data.length > 0) {
@@ -62,7 +69,8 @@ export default function MyLeave() {
       const typeMap = new Map((types || []).map((lt: any) => [lt.id, lt]))
       const merged: LeaveBalance[] = balRes.data.map((b: any) => {
         const lt = typeMap.get(b.leave_type_id) || { name: 'Leave', colour: '#999' }
-        return { ...b, used: lt.name === 'Annual Leave' ? approvedDays : b.used, leave_type_name: lt.name, colour: lt.colour }
+        const approved = approvedByType.get(b.leave_type_id) || 0
+        return { ...b, used: approved, leave_type_name: lt.name, colour: lt.colour }
       })
       setBalances(merged)
     }
