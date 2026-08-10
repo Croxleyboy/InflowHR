@@ -1816,6 +1816,9 @@ body {
 .card-leave-pending {
   color: #ffe082 !important; font-weight: 600; opacity: 1 !important;
 }
+.card-expense-pending {
+  color: #ffb74d !important; font-weight: 600; opacity: 1 !important;
+}
 
 .new-leave-submit-btn {
   display: block;
