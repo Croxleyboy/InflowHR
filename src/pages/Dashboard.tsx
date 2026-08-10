@@ -33,7 +33,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser, isManager } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser } = useAuth()
   const navigate = useNavigate()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
@@ -234,7 +234,7 @@ export default function Dashboard() {
             <Chevron color="#f9a825" />
           </button>
         )}
-        {features.performance && isManager && (
+        {features.performance && (
           <button className="dash-card card-performance" onClick={() => navigate('/one-to-ones')}>
             <div className="card-content">
               <span className="card-label">{t('one_to_one.nav_label')}</span>
