@@ -1,0 +1,17 @@
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS marital_status TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS ni_number TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS county TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS postcode TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS bank_sort_code TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS bank_account_number TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS bank_account_name TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS probation_end_date DATE;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS notice_period TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS working_pattern TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS weekly_hours NUMERIC;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS annual_salary NUMERIC;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS tax_code TEXT;
+ALTER TABLE onboarding ADD COLUMN IF NOT EXISTS payroll_id TEXT;
