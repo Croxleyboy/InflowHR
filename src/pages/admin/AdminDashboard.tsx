@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
-import { listCompanyArchives } from '../../lib/companyArchive'
+import { listCompanyArchives, listAllCompanyArchives } from '../../lib/companyArchive'
+import type { ArchiveFile } from '../../lib/companyArchive'
 
 interface AllCompanyStats {
   totalEmployees: number
@@ -47,10 +48,12 @@ export default function AdminDashboard() {
   const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null)
   const [empTrend, setEmpTrend] = useState<TrendPoint[]>([])
   const [ticketTrend, setTicketTrend] = useState<TrendPoint[]>([])
+  const [allArchives, setAllArchives] = useState<ArchiveFile[]>([])
 
   useEffect(() => {
     if (isSuperAdmin) {
       loadSuperAdminStats()
+      listAllCompanyArchives().then(setAllArchives)
     } else if (selectedCompanyId) {
       loadCompanyStats()
     }
@@ -157,7 +160,7 @@ export default function AdminDashboard() {
     )
   }
 
-  if (isSuperAdmin && allStats) return <SuperAdminDash stats={allStats} navigate={navigate} />
+  if (isSuperAdmin && allStats) return <SuperAdminDash stats={allStats} navigate={navigate} archives={allArchives} />
 
   if (companyStats) {
     return (
@@ -338,7 +341,7 @@ function CompanyDash({
   )
 }
 
-function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate: (p: string) => void }) {
+function SuperAdminDash({ stats, navigate, archives }: { stats: AllCompanyStats; navigate: (p: string) => void; archives: ArchiveFile[] }) {
   const featureSubs = [
     { label: 'Payroll', value: stats.subsPayroll, color: '#1565c0' },
     { label: 'Benefits', value: stats.subsBenefits, color: '#7b1fa2' },
@@ -429,6 +432,45 @@ function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate:
           ))}
         </div>
       </div>
+
+      {archives.length > 0 && (
+        <div className="cd-archives-section">
+          <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 12px', color: '#1e1e2d' }}>Company Archives</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  <th>Archive</th>
+                  <th>Created</th>
+                  <th>Download</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archives.map((a, i) => (
+                  <tr key={i}>
+                    <td><strong>{a.companyName}</strong></td>
+                    <td>{a.name}</td>
+                    <td>{a.created_at ? new Date(a.created_at).toLocaleDateString('en-GB') : '-'}</td>
+                    <td>
+                      {a.url ? (
+                        <a
+                          href={a.url}
+                          download
+                          className="admin-btn-sm"
+                          style={{ background: '#1565c0', color: '#fff', border: 'none', textDecoration: 'none', display: 'inline-block' }}
+                        >
+                          Download
+                        </a>
+                      ) : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

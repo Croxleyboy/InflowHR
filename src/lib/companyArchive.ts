@@ -388,19 +388,48 @@ export async function deleteCompanyFYData(
   return { deleted, errors }
 }
 
-export async function listCompanyArchives(companyId: string): Promise<{ name: string; url: string; created_at: string }[]> {
+export interface ArchiveFile {
+  name: string
+  url: string
+  created_at: string
+  companyName?: string
+}
+
+export async function listCompanyArchives(companyId: string): Promise<ArchiveFile[]> {
   const { data, error } = await supabase.storage
     .from('company-archives')
     .list(companyId, { sortBy: { column: 'created_at', order: 'desc' } })
 
   if (error || !data) return []
 
-  return data.map(f => {
-    const { data: urlData } = supabase.storage.from('company-archives').getPublicUrl(`${companyId}/${f.name}`)
-    return {
+  const files: ArchiveFile[] = []
+  for (const f of data) {
+    if (!f.name || f.name.startsWith('.')) continue
+    const { data: signedData } = await supabase.storage
+      .from('company-archives')
+      .createSignedUrl(`${companyId}/${f.name}`, 3600)
+    files.push({
       name: f.name.replace('.csv', ''),
-      url: urlData.publicUrl,
-      created_at: f.created_at || '',
+      url: signedData?.signedUrl || '',
+      created_at: f.created_at || f.updated_at || '',
+    })
+  }
+  return files
+}
+
+export async function listAllCompanyArchives(): Promise<ArchiveFile[]> {
+  const { data: companies } = await supabase
+    .from('companies')
+    .select('id, name')
+    .order('name')
+  if (!companies) return []
+
+  const all: ArchiveFile[] = []
+  for (const co of companies) {
+    const archives = await listCompanyArchives(co.id)
+    for (const a of archives) {
+      all.push({ ...a, companyName: co.name })
     }
-  })
+  }
+  return all
 }
