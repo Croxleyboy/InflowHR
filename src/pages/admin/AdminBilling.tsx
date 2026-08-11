@@ -6,9 +6,10 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 interface PricingRow {
   id: string
   feature_key: string
-  feature_label: string
-  feature_type: string
+  display_name: string
+  description: string
   default_price: number
+  is_addon: boolean
   is_active: boolean
 }
 
@@ -44,7 +45,7 @@ function CompanyBilling({ companyId }: { companyId: string }) {
     setLoading(true)
     const [pricingRes, featuresRes, countRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
-      supabase.from('company_features').select('*').eq('company_id', companyId).eq('is_enabled', true),
+      supabase.from('company_features').select('*').eq('company_id', companyId),
       supabase.from('employees').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('is_active', true),
     ])
     setPricing((pricingRes.data as PricingRow[]) || [])
@@ -53,20 +54,19 @@ function CompanyBilling({ companyId }: { companyId: string }) {
     setLoading(false)
   }
 
-  const enabledFeatureKeys = useMemo(() => new Set(features.map(f => f.feature_key)), [features])
-  const baseline = useMemo(() => pricing.find(p => p.feature_type === 'baseline'), [pricing])
-  const addons = useMemo(() =>
-    pricing.filter(p => p.feature_type === 'addon' && enabledFeatureKeys.has(p.feature_key)),
-    [pricing, enabledFeatureKeys]
-  )
+  const baseline = useMemo(() => pricing.find(p => !p.is_addon), [pricing])
+  const enabledAddons = useMemo(() => {
+    const enabledKeys = new Set(features.filter(f => f.is_enabled).map(f => f.feature_key))
+    return pricing.filter(p => p.is_addon && enabledKeys.has(p.feature_key))
+  }, [pricing, features])
 
-  function effectivePrice(pricingRow: PricingRow): number {
-    const cf = features.find(f => f.feature_key === pricingRow.feature_key)
-    return cf?.custom_price != null ? cf.custom_price : pricingRow.default_price
+  function effectivePrice(pr: PricingRow): number {
+    const cf = features.find(f => f.feature_key === pr.feature_key)
+    return cf?.custom_price != null ? cf.custom_price : pr.default_price
   }
 
   const baselinePrice = baseline ? effectivePrice(baseline) : 0
-  const addonTotal = addons.reduce((sum, a) => sum + effectivePrice(a), 0)
+  const addonTotal = enabledAddons.reduce((sum, a) => sum + effectivePrice(a), 0)
   const perUserTotal = baselinePrice + addonTotal
   const monthlyTotal = perUserTotal * employeeCount
 
@@ -105,7 +105,7 @@ function CompanyBilling({ companyId }: { companyId: string }) {
         <div className="billing-card">
           <span className="billing-card-label">Feature Add-ons</span>
           <span className="billing-card-value">&pound;{addonTotal.toFixed(2)}</span>
-          <span className="billing-card-sub">{addons.length} active add-on{addons.length !== 1 ? 's' : ''}</span>
+          <span className="billing-card-sub">{enabledAddons.length} active add-on{enabledAddons.length !== 1 ? 's' : ''}</span>
         </div>
         <div className="billing-card">
           <span className="billing-card-label">Employees</span>
@@ -119,11 +119,11 @@ function CompanyBilling({ companyId }: { companyId: string }) {
         </div>
       </div>
 
-      {addons.length > 0 && (
+      {enabledAddons.length > 0 && (
         <div className="billing-addons">
-          {addons.map(a => (
+          {enabledAddons.map(a => (
             <span key={a.feature_key} className="billing-addon-chip">
-              {a.feature_label} &mdash; &pound;{effectivePrice(a).toFixed(2)}
+              {a.display_name} &mdash; &pound;{effectivePrice(a).toFixed(2)}
             </span>
           ))}
         </div>
@@ -150,12 +150,14 @@ function CompanyBilling({ companyId }: { companyId: string }) {
                 </span>
                 <div style={{ display: 'flex', flexDirection: 'column-reverse' }}>
                   <div
-                    className={`billing-chart-bar${m.isCurrent ? ' billing-chart-bar-current' : ''}`}
+                    className="billing-chart-bar"
                     style={{ height: `${(m.core / maxAmount) * 170}px`, background: '#1565c0', borderRadius: '4px 4px 0 0' }}
                   />
-                  <div
-                    style={{ height: `${(m.addons / maxAmount) * 170}px`, background: '#7b1fa2', borderRadius: '4px 4px 0 0' }}
-                  />
+                  {m.addons > 0 && (
+                    <div
+                      style={{ height: `${(m.addons / maxAmount) * 170}px`, background: '#7b1fa2', borderRadius: '4px 4px 0 0' }}
+                    />
+                  )}
                 </div>
               </div>
               <span className="billing-chart-label">{m.label}</span>
@@ -177,15 +179,15 @@ function CompanyBilling({ companyId }: { companyId: string }) {
           <tbody>
             {baseline && (
               <tr>
-                <td>{baseline.feature_label}</td>
+                <td>{baseline.display_name}</td>
                 <td><span className="admin-badge admin-badge-approved">Core</span></td>
                 <td>&pound;{effectivePrice(baseline).toFixed(2)}</td>
                 <td>&pound;{(effectivePrice(baseline) * employeeCount).toFixed(2)}</td>
               </tr>
             )}
-            {addons.map(a => (
+            {enabledAddons.map(a => (
               <tr key={a.feature_key}>
-                <td>{a.feature_label}</td>
+                <td>{a.display_name}</td>
                 <td><span className="admin-badge admin-badge-pending">Add-on</span></td>
                 <td>&pound;{effectivePrice(a).toFixed(2)}</td>
                 <td>&pound;{(effectivePrice(a) * employeeCount).toFixed(2)}</td>
@@ -223,7 +225,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
     setLoading(true)
     const [pricingRes, featuresRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
-      supabase.from('company_features').select('*').eq('is_enabled', true),
+      supabase.from('company_features').select('*'),
     ])
     setPricing((pricingRes.data as PricingRow[]) || [])
     setAllFeatures((featuresRes.data as CompanyFeature[]) || [])
@@ -244,8 +246,8 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
   }
 
   const companyData = useMemo(() => {
-    const baseline = pricing.find(p => p.feature_type === 'baseline')
-    const addons = pricing.filter(p => p.feature_type === 'addon')
+    const baseline = pricing.find(p => !p.is_addon)
+    const addons = pricing.filter(p => p.is_addon)
 
     return companies.map(c => {
       const coFeatures = allFeatures.filter(f => f.company_id === c.id)
@@ -257,7 +259,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
       }
 
       const basePrice = baseline ? effectivePrice(baseline) : 0
-      const enabledAddons = addons.filter(a => coFeatures.some(f => f.feature_key === a.feature_key))
+      const enabledAddons = addons.filter(a => coFeatures.some(f => f.feature_key === a.feature_key && f.is_enabled))
       const addonTotal = enabledAddons.reduce((s, a) => s + effectivePrice(a), 0)
       const monthly = (basePrice + addonTotal) * empCount
 
@@ -268,7 +270,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         core: basePrice * empCount,
         addonsTotal: addonTotal * empCount,
         monthly,
-        enabledAddons: enabledAddons.map(a => a.feature_label),
+        enabledAddons: enabledAddons.map(a => a.display_name),
       }
     }).sort((a, b) => b.monthly - a.monthly)
   }, [companies, pricing, allFeatures, employeeCounts])

@@ -366,6 +366,34 @@ export default function AdminSubscriptions() {
                     <div className="sub-company-count">{employeeCount} active employee{employeeCount !== 1 ? 's' : ''}</div>
                   </div>
 
+                  {/* HR Core baseline price override */}
+                  {baseline && (
+                    <div className="sub-feature-card" style={{ borderColor: '#1565c0', background: '#f8faff' }}>
+                      <div style={{ width: 44 }} />
+                      <div className="sub-feature-info">
+                        <div className="sub-feature-name">{baseline.display_name}</div>
+                        <div className="sub-feature-desc">{baseline.description}</div>
+                      </div>
+                      <div className="sub-feature-price">
+                        <label>Custom £</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder={String(baseline.default_price)}
+                          value={customPrices[baseline.feature_key] ?? ''}
+                          onChange={e =>
+                            setCustomPrices(prev => ({
+                              ...prev,
+                              [baseline.feature_key]: e.target.value,
+                            }))
+                          }
+                          onBlur={() => saveCustomPrice(baseline.feature_key)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* Add-on feature toggles */}
                   {addons.map(addon => {
                     const enabled = isFeatureEnabled(addon.feature_key)
