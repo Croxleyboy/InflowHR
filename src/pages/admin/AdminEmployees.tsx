@@ -138,7 +138,7 @@ export default function AdminEmployees() {
       { table: 'performance_reviews', column: 'employee_id', value: emp.id },
       { table: 'performance_reviews', column: 'reviewer_id', value: emp.id },
       { table: 'course_enrolments', column: 'employee_id', value: emp.id },
-      { table: 'employee_benefits', column: 'employee_id', value: emp.id },
+      { table: 'benefit_enrollments', column: 'employee_id', value: emp.id },
       { table: 'kudos', column: 'from_employee_id', value: emp.id },
       { table: 'kudos', column: 'to_employee_id', value: emp.id },
       { table: 'notifications', column: 'employee_id', value: emp.id },
