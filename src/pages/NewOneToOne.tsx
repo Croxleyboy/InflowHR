@@ -129,13 +129,25 @@ export default function NewOneToOne() {
         </div>
 
         <div className="oto-form-row">
-          <div className="oto-form-section" style={{ flex: 1 }}>
+          <div className="oto-form-section">
             <label className="oto-form-label">{t('one_to_one.meeting_date')}</label>
-            <input type="date" className="oto-form-input" value={date} min={today} onChange={e => setDate(e.target.value)} />
+            <div className="oto-input-wrap">
+              <svg className="oto-input-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="4" width="16" height="14" rx="2" />
+                <path d="M2 8h16M6 2v4M14 2v4" />
+              </svg>
+              <input type="date" className="oto-form-input" value={date} min={today} onChange={e => setDate(e.target.value)} />
+            </div>
           </div>
-          <div className="oto-form-section" style={{ flex: 1 }}>
+          <div className="oto-form-section">
             <label className="oto-form-label">{t('one_to_one.meeting_time')}</label>
-            <input type="time" className="oto-form-input" value={time} onChange={e => setTime(e.target.value)} />
+            <div className="oto-input-wrap">
+              <svg className="oto-input-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="10" cy="10" r="8" />
+                <path d="M10 6v4l3 2" />
+              </svg>
+              <input type="time" className="oto-form-input" value={time} onChange={e => setTime(e.target.value)} />
+            </div>
           </div>
         </div>
 

@@ -4902,30 +4902,38 @@ body {
 .oto-form-row {
   display: flex;
   gap: 12px;
-  flex-wrap: wrap;
 }
 .oto-form-row > .oto-form-section {
-  flex: 1 1 140px;
+  flex: 1 1 0;
   min-width: 0;
   margin-bottom: 0;
 }
 .oto-form-input {
   width: 100%;
-  padding: 12px;
+  padding: 14px 14px 14px 44px;
   border: 2px solid var(--border);
   border-radius: 12px;
-  font-size: 0.95em;
+  font-size: 1em;
   font-family: inherit;
   background: var(--bg-card);
   color: var(--text);
   box-sizing: border-box;
   transition: border-color 0.15s;
   min-width: 0;
+  height: 52px;
 }
-.oto-form-input[type="date"],
-.oto-form-input[type="time"] {
-  -webkit-appearance: none;
-  appearance: none;
+.oto-input-wrap {
+  position: relative;
+}
+.oto-input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
+  color: var(--text-muted);
 }
 .oto-form-input:focus {
   outline: none;
