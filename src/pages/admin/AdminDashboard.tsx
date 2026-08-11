@@ -61,19 +61,21 @@ export default function AdminDashboard() {
 
   async function loadSuperAdminStats() {
     setLoading(true)
-    const [empRes, compRes, featRes, onbRes, annRes, tickRes, benRes] = await Promise.all([
-      supabase.from('employees').select('id', { count: 'exact', head: true }),
+    const [metricsRes, compRes, featRes, annRes, benRes] = await Promise.all([
+      supabase.rpc('get_all_company_metrics'),
       supabase.from('companies').select('id', { count: 'exact', head: true }),
       supabase.from('company_features').select('feature_key, company_id').eq('is_enabled', true),
-      supabase.from('onboarding').select('id', { count: 'exact', head: true }),
       supabase.from('announcements').select('id', { count: 'exact', head: true }),
-      supabase.from('hr_tickets').select('id', { count: 'exact', head: true }),
       supabase.from('benefit_types').select('id', { count: 'exact', head: true }),
     ])
+    const metrics = (metricsRes.data || []) as { employee_count: number; total_employees: number; open_tickets: number; pending_onboarding: number }[]
+    const totalEmployees = metrics.reduce((s, m) => s + (m.total_employees || 0), 0)
+    const totalTickets = metrics.reduce((s, m) => s + (m.open_tickets || 0), 0)
+    const totalOnboarders = metrics.reduce((s, m) => s + (m.pending_onboarding || 0), 0)
     const features = (featRes.data || []) as { feature_key: string; company_id: string }[]
     const countFeature = (key: string) => features.filter(f => f.feature_key === key).length
     setAllStats({
-      totalEmployees: empRes.count ?? 0,
+      totalEmployees,
       totalCompanies: compRes.count ?? 0,
       subsPayroll: countFeature('payroll'),
       subsBenefits: countFeature('benefits'),
@@ -82,9 +84,9 @@ export default function AdminDashboard() {
       subsTimesheets: countFeature('timesheets'),
       subsPerformance: countFeature('performance'),
       subsSpaceBooking: countFeature('space_booking'),
-      totalOnboarders: onbRes.count ?? 0,
+      totalOnboarders,
       totalAnnouncements: annRes.count ?? 0,
-      totalTickets: tickRes.count ?? 0,
+      totalTickets,
       totalBenefitTypes: benRes.count ?? 0,
     })
     setLoading(false)

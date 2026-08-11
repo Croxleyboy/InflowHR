@@ -19,21 +19,26 @@ interface SupportGrant {
 const RESTRICTED_TABLES = [
   'employees', 'expense_claims', 'expense_line_items',
   'leave_requests', 'leave_balances', 'onboarding',
-  'kudos', 'announcements', 'payslips',
-  'workflow_tracker', 'notifications', 'app_settings',
+  'kudos', 'payslips',
+  'workflow_tracker', 'notifications',
   'benefit_enrollments', 'shift_assignments', 'rotas',
   'shift_swap_requests', 'employee_availability',
   'legal_timesheet_entries',
-  'hr_tickets', 'space_bookings', 'timesheets',
+  'space_bookings', 'timesheets',
   'one_to_one_meetings', 'one_to_one_comments',
   'performance_reviews',
 ]
 
 const CONFIG_TABLES = [
-  'leave_types', 'benefit_types', 'benefit_options',
+  'company_features', 'leave_types',
+  'benefit_types', 'benefit_options',
   'shift_templates', 'legal_clients', 'legal_matters',
-  'company_elearning_courses', 'company_features',
-  'customer_projects',
+  'company_elearning_courses', 'app_settings',
+  'customer_projects', 'announcements',
+]
+
+const PARTIAL_TABLES = [
+  'hr_tickets (provider-assigned only)',
 ]
 
 const UNRESTRICTED_TABLES = [
@@ -189,15 +194,14 @@ export default function AdminSupportAccess() {
       {/* Restrictions info panel */}
       {showInfo && (
         <div className="sa-support-info">
-          <h4 style={{ margin: '0 0 12px', fontSize: 14 }}>What the super admin loses access to without an active grant:</h4>
-          <div className="sa-support-info-grid">
+          <h4 style={{ margin: '0 0 12px', fontSize: 14 }}>Access tiers without an active support grant:</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div>
               <h5 style={{ color: '#c62828', margin: '0 0 6px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Restricted — Employee PII Data ({RESTRICTED_TABLES.length} tables)
+                Blocked — Employee PII ({RESTRICTED_TABLES.length} tables)
               </h5>
               <p style={{ fontSize: 12, color: '#666', margin: '0 0 8px' }}>
-                Cannot view, edit, or manage any data in these tables for companies without an active grant.
-                Queries return empty results — no error shown.
+                Individual employee data hidden. Aggregate counts still available via dashboard metrics.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {RESTRICTED_TABLES.map(t => (
@@ -206,11 +210,24 @@ export default function AdminSupportAccess() {
               </div>
             </div>
             <div>
-              <h5 style={{ color: '#e65100', margin: '0 0 6px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Restricted — Config Tables ({CONFIG_TABLES.length} tables)
+              <h5 style={{ color: '#1565c0', margin: '0 0 6px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Partial — Service Tickets ({PARTIAL_TABLES.length} table)
               </h5>
               <p style={{ fontSize: 12, color: '#666', margin: '0 0 8px' }}>
-                Company feature config, leave types, benefit setup. Also gated by support access.
+                Only tickets assigned to "Service Provider" are visible. Internal company tickets are hidden.
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {PARTIAL_TABLES.map(t => (
+                  <code key={t} style={{ fontSize: 11, padding: '2px 6px', background: '#e3f2fd', color: '#1565c0', borderRadius: 4 }}>{t}</code>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h5 style={{ color: '#e65100', margin: '0 0 6px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Always Accessible — Config/Billing ({CONFIG_TABLES.length} tables)
+              </h5>
+              <p style={{ fontSize: 12, color: '#666', margin: '0 0 8px' }}>
+                Feature config, pricing, and billing tables needed for platform operations. No PII.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {CONFIG_TABLES.map(t => (
@@ -220,10 +237,10 @@ export default function AdminSupportAccess() {
             </div>
             <div>
               <h5 style={{ color: '#2e7d32', margin: '0 0 6px', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                Always Accessible ({UNRESTRICTED_TABLES.length} tables)
+                Always Accessible — Platform ({UNRESTRICTED_TABLES.length} tables)
               </h5>
               <p style={{ fontSize: 12, color: '#666', margin: '0 0 8px' }}>
-                Platform management tables — always visible to super admin regardless of grants.
+                Core platform management. Always visible regardless of grants.
               </p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                 {UNRESTRICTED_TABLES.map(t => (
@@ -234,20 +251,22 @@ export default function AdminSupportAccess() {
           </div>
 
           <div style={{ marginTop: 16, padding: '12px 14px', background: '#fff3e0', borderRadius: 8, borderLeft: '4px solid #e65100' }}>
-            <strong style={{ fontSize: 13, color: '#e65100' }}>Super admin pages affected without access:</strong>
+            <strong style={{ fontSize: 13, color: '#e65100' }}>What still works without a grant:</strong>
             <ul style={{ fontSize: 13, margin: '6px 0 0 18px', color: '#555' }}>
-              <li><strong>Dashboard</strong> — employee counts, ticket counts, onboarder counts all return 0</li>
-              <li><strong>Employees</strong> — empty table, cannot view/edit any employee records</li>
-              <li><strong>Billing</strong> — company features not visible, cost breakdown shows £0</li>
-              <li><strong>Benefits, Shifts, Legal Timesheets, Performance</strong> — all empty</li>
-              <li><strong>Expenses, Leave, Kudos, Announcements, Tickets</strong> — all empty</li>
-              <li><strong>Timesheets, Space Management, E-Learning</strong> — all empty</li>
-              <li><strong>Subscriptions → Company Features</strong> — feature toggles not visible</li>
-              <li><strong>Onboarding</strong> — cannot see or manage onboarders</li>
+              <li><strong>Dashboard</strong> — employee counts and metrics via secure RPC (no PII exposed)</li>
+              <li><strong>Billing</strong> — employee counts, feature config, cost breakdowns all visible</li>
+              <li><strong>Subscriptions</strong> — company features, pricing, support access management</li>
+              <li><strong>HR Tickets</strong> — only tickets assigned to "Service Provider" are visible</li>
+              <li><strong>Companies</strong> — company list and user management always available</li>
             </ul>
-            <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
-              The Companies tab, Pricing tab, Demo Seed, and this Support Access page remain fully functional.
-            </p>
+            <strong style={{ fontSize: 13, color: '#c62828', display: 'block', marginTop: 12 }}>What requires an active grant:</strong>
+            <ul style={{ fontSize: 13, margin: '6px 0 0 18px', color: '#555' }}>
+              <li><strong>Employees</strong> — individual records, personal data, bank details</li>
+              <li><strong>Expenses, Leave, Payslips</strong> — financial and absence data</li>
+              <li><strong>Performance, 1-to-1s, Kudos</strong> — personal reviews and feedback</li>
+              <li><strong>Shifts, Timesheets, Space Bookings</strong> — individual schedules</li>
+              <li><strong>Onboarding</strong> — new starter personal data</li>
+            </ul>
           </div>
         </div>
       )}

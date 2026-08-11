@@ -211,14 +211,14 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
 
   async function load() {
     setLoading(true)
-    const [pricingRes, featuresRes, countRes] = await Promise.all([
+    const [pricingRes, featuresRes, metricsRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
       supabase.from('company_features').select('*').eq('company_id', companyId),
-      supabase.from('employees').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('is_active', true),
+      supabase.rpc('get_company_metrics', { p_company_id: companyId }),
     ])
     setPricing((pricingRes.data as PricingRow[]) || [])
     setFeatures((featuresRes.data as CompanyFeature[]) || [])
-    setEmployeeCount(countRes.count ?? 0)
+    setEmployeeCount(metricsRes.data?.employee_count ?? 0)
     setLoading(false)
   }
 
@@ -433,15 +433,11 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
     setAllFeatures((featuresRes.data as CompanyFeature[]) || [])
 
     const counts: Record<string, number> = {}
-    const batchSize = 10
-    for (let i = 0; i < companies.length; i += batchSize) {
-      const batch = companies.slice(i, i + batchSize)
-      const results = await Promise.all(
-        batch.map(c =>
-          supabase.from('employees').select('id', { count: 'exact', head: true }).eq('company_id', c.id).eq('is_active', true)
-        )
-      )
-      batch.forEach((c, idx) => { counts[c.id] = results[idx].count ?? 0 })
+    const { data: metrics } = await supabase.rpc('get_all_company_metrics')
+    if (metrics && Array.isArray(metrics)) {
+      for (const m of metrics) {
+        counts[m.company_id] = m.employee_count || 0
+      }
     }
     setEmployeeCounts(counts)
     setLoading(false)

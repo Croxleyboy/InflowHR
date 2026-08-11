@@ -19,10 +19,18 @@ interface Ticket {
   status: TicketStatus
   submitted_by: string
   assigned_to: string
+  assigned_to_provider: boolean
   company_id: string
   created_at: string
   updated_at: string
 }
+
+const ASSIGN_OPTIONS = [
+  { value: 'HR Team', label: 'HR Team', labelDe: 'HR-Team', provider: false },
+  { value: 'IT Support', label: 'IT Support', labelDe: 'IT-Support', provider: false },
+  { value: 'Line Manager', label: 'Line Manager', labelDe: 'Vorgesetzter', provider: false },
+  { value: 'Service Provider', label: 'Service Provider (InflowHR)', labelDe: 'Dienstleister (InflowHR)', provider: true },
+]
 
 const CATEGORY_OPTIONS: { value: TicketCategory; label: string; labelDe: string }[] = [
   { value: 'hr-query', label: 'HR Query', labelDe: 'HR-Anfrage' },
@@ -83,6 +91,7 @@ export default function AdminTickets() {
     }, 0)
     const ref = `HR-${String(maxNum + 1).padStart(3, '0')}`
 
+    const assignOption = ASSIGN_OPTIONS.find(a => a.value === newTicket.assignedTo)
     const { error } = await supabase.from('hr_tickets').insert({
       ref,
       title: newTicket.title.trim(),
@@ -92,6 +101,7 @@ export default function AdminTickets() {
       status: 'open',
       submitted_by: employeeName || 'Admin',
       assigned_to: newTicket.assignedTo || 'HR Team',
+      assigned_to_provider: assignOption?.provider ?? false,
       company_id: selectedCompanyId,
     })
     if (error) {
@@ -110,6 +120,7 @@ export default function AdminTickets() {
   }
 
   async function saveEdit(id: string) {
+    const assignOption = ASSIGN_OPTIONS.find(a => a.value === editForm.assigned_to)
     const { error } = await supabase.from('hr_tickets').update({
       title: editForm.title,
       description: editForm.description,
@@ -117,6 +128,7 @@ export default function AdminTickets() {
       priority: editForm.priority,
       status: editForm.status,
       assigned_to: editForm.assigned_to,
+      assigned_to_provider: assignOption?.provider ?? false,
       updated_at: new Date().toISOString(),
     }).eq('id', id)
     if (error) { showError('Failed to save ticket: ' + error.message); return }
@@ -220,7 +232,9 @@ export default function AdminTickets() {
             </div>
             <div className="admin-form-field">
               <label>{isEn ? 'Assign To' : 'Zuweisen an'}</label>
-              <input className="admin-input" placeholder={isEn ? 'e.g. HR Team, IT Support' : 'z.B. HR-Team, IT-Support'} value={newTicket.assignedTo} onChange={e => setNewTicket(f => ({...f, assignedTo: e.target.value}))} />
+              <select className="admin-select" value={newTicket.assignedTo} onChange={e => setNewTicket(f => ({...f, assignedTo: e.target.value}))}>
+                {ASSIGN_OPTIONS.map(a => <option key={a.value} value={a.value}>{isEn ? a.label : a.labelDe}</option>)}
+              </select>
             </div>
             <div className="admin-form-field">
               <label>{isEn ? 'Submitted By' : 'Eingereicht von'}</label>
@@ -263,7 +277,16 @@ export default function AdminTickets() {
                         <option value="open">{isEn ? 'Open' : 'Offen'}</option><option value="in-progress">{isEn ? 'In Progress' : 'In Bearbeitung'}</option><option value="resolved">{isEn ? 'Resolved' : 'Gelöst'}</option><option value="closed">{isEn ? 'Closed' : 'Geschlossen'}</option>
                       </select>
                     ) : <span className="admin-badge" style={{background: STATUS_COLORS[t.status], color: '#fff'}}>{t.status}</span>}</td>
-                    <td className="admin-ticket-hide-mobile">{editingId === t.id ? <input className="admin-inline-input" value={editForm.assigned_to} onChange={e => setEditForm(f => ({...f, assigned_to: e.target.value}))} /> : t.assigned_to}</td>
+                    <td className="admin-ticket-hide-mobile">{editingId === t.id ? (
+                      <select className="admin-inline-select" value={editForm.assigned_to} onChange={e => setEditForm(f => ({...f, assigned_to: e.target.value}))}>
+                        {ASSIGN_OPTIONS.map(a => <option key={a.value} value={a.value}>{isEn ? a.label : a.labelDe}</option>)}
+                      </select>
+                    ) : (
+                      <span>
+                        {t.assigned_to}
+                        {t.assigned_to_provider && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#e3f2fd', color: '#1565c0', fontWeight: 600 }}>Provider</span>}
+                      </span>
+                    )}</td>
                     <td className="admin-actions">
                       {editingId === t.id ? (
                         <>
