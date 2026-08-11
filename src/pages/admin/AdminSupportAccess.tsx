@@ -62,11 +62,18 @@ export default function AdminSupportAccess() {
       return
     }
 
-    const mapped = (data || []).map((g: any) => ({
+    const all = (data || []).map((g: any) => ({
       ...g,
       company_name: g.companies?.name || 'Unknown',
     }))
-    setGrants(mapped)
+    const latest = new Map<string, typeof all[0]>()
+    for (const g of all) {
+      const existing = latest.get(g.company_id)
+      if (!existing || new Date(g.created_at) > new Date(existing.created_at)) {
+        latest.set(g.company_id, g)
+      }
+    }
+    setGrants(Array.from(latest.values()))
     setLoading(false)
   }
 

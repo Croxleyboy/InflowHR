@@ -184,8 +184,10 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
   SELECT
-    is_my_company(p_company_id)
-    OR (is_super_admin() AND has_active_support_access(p_company_id));
+    CASE
+      WHEN is_super_admin() THEN has_active_support_access(p_company_id)
+      ELSE is_my_company(p_company_id)
+    END;
 $$;
 
 -- Rebuild RLS on ALL tenant-scoped tables using consent-gated access
