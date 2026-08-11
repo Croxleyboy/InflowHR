@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { listCompanyArchives } from '../../lib/companyArchive'
 
 interface AllCompanyStats {
   totalEmployees: number
@@ -163,6 +164,7 @@ export default function AdminDashboard() {
       <CompanyDash
         stats={companyStats}
         companyName={selectedCompany?.name || ''}
+        companyId={selectedCompanyId || ''}
         navigate={navigate}
         empTrend={empTrend}
         ticketTrend={ticketTrend}
@@ -230,14 +232,25 @@ function MiniBarChart({ data, color, height = 48 }: { data: TrendPoint[]; color:
 }
 
 function CompanyDash({
-  stats, companyName, navigate, empTrend, ticketTrend,
+  stats, companyName, companyId, navigate, empTrend, ticketTrend,
 }: {
   stats: CompanyStats
   companyName: string
+  companyId: string
   navigate: (p: string) => void
   empTrend: TrendPoint[]
   ticketTrend: TrendPoint[]
 }) {
+  const [archives, setArchives] = useState<{ name: string; url: string; created_at: string }[]>([])
+  const [archivesLoading, setArchivesLoading] = useState(false)
+
+  useEffect(() => {
+    if (companyId) {
+      setArchivesLoading(true)
+      listCompanyArchives(companyId).then(a => { setArchives(a); setArchivesLoading(false) })
+    }
+  }, [companyId])
+
   const cards: {
     label: string; value: number; color: string; path: string
     chart?: 'line' | 'bar'; chartData?: TrendPoint[]
@@ -286,6 +299,41 @@ function CompanyDash({
           </button>
         ))}
       </div>
+
+      {!archivesLoading && archives.length > 0 && (
+        <div className="cd-archives-section">
+          <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 12px', color: '#1a1a2e' }}>Company Archives</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Archive</th>
+                  <th>Created</th>
+                  <th>Download</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archives.map(a => (
+                  <tr key={a.name}>
+                    <td>{a.name}</td>
+                    <td>{a.created_at ? new Date(a.created_at).toLocaleDateString('en-GB') : '-'}</td>
+                    <td>
+                      <a
+                        href={a.url}
+                        download
+                        className="admin-btn-sm"
+                        style={{ background: '#1565c0', color: '#fff', border: 'none', textDecoration: 'none', display: 'inline-block' }}
+                      >
+                        Download
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

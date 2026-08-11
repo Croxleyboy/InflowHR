@@ -1648,3 +1648,12 @@
   .sa-dash-grid { grid-template-columns: 1fr; }
   .sa-dash-bar-label { width: 100px; font-size: 11px; }
 }
+
+/* Company Archives Section */
+.cd-archives-section {
+  margin-top: 32px;
+  padding: 20px;
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+}

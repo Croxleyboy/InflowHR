@@ -3,6 +3,11 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
+import {
+  getCompanyFY, exportCompanyData, downloadCsv,
+  validateImportCsv, importCompanyData,
+  archiveCompanyData, deleteCompanyFYData,
+} from '../../lib/companyArchive'
 
 interface Company {
   id: string
@@ -55,8 +60,14 @@ export default function AdminCompanies() {
   const [editingAdmin, setEditingAdmin] = useState<string | null>(null)
   const [savingAdmin, setSavingAdmin] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState<string | null>(null)
+  const [exporting, setExporting] = useState<string | null>(null)
+  const [archiving, setArchiving] = useState<string | null>(null)
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState<string | null>(null)
+  const [importingFor, setImportingFor] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null)
   const logoInputRef = useRef<HTMLInputElement>(null)
   const editLogoRef = useRef<HTMLInputElement>(null)
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
     setLoading(true)
@@ -327,6 +338,76 @@ export default function AdminCompanies() {
     showSuccess('Company admin updated')
   }
 
+  async function handleExport(companyId: string, companyName: string) {
+    setExporting(companyId)
+    try {
+      const fy = await getCompanyFY(companyId)
+      const csv = await exportCompanyData(companyId, companyName, fy)
+      const safeName = companyName.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-')
+      downloadCsv(csv, `${safeName}-Export-${fy.label.replace(/\s/g, '-')}.csv`)
+      showSuccess(`Export downloaded for ${companyName} (${fy.label})`)
+    } catch {
+      showError('Export failed — please try again')
+    }
+    setExporting(null)
+  }
+
+  async function handleArchive(companyId: string, companyName: string, deleteData: boolean) {
+    setShowArchiveConfirm(null)
+    setArchiving(companyId)
+    try {
+      const fy = await getCompanyFY(companyId)
+      const result = await archiveCompanyData(companyId, companyName, fy)
+      if (!result.success) {
+        showError('Archive failed: ' + (result.error || 'Unknown error'))
+        setArchiving(null)
+        return
+      }
+      if (deleteData) {
+        const delResult = await deleteCompanyFYData(companyId, fy)
+        if (delResult.errors.length > 0) {
+          showError(`Archive saved but ${delResult.errors.length} table(s) failed to delete`)
+        } else {
+          showSuccess(`Archived & deleted ${delResult.deleted} record(s) for ${companyName}`)
+        }
+      } else {
+        showSuccess(`Archive saved for ${companyName} (${fy.label})`)
+      }
+    } catch {
+      showError('Archive failed — please try again')
+    }
+    setArchiving(null)
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    const companyId = importingFor
+    e.target.value = ''
+    if (!file || !companyId) return
+    setImportingFor(null)
+
+    const text = await file.text()
+    const validation = validateImportCsv(text)
+    if (!validation.valid) {
+      setImportResult({ success: false, message: 'Validation failed:\n' + validation.errors.join('\n') })
+      return
+    }
+
+    const company = companies.find(c => c.id === companyId)
+    if (!confirm(
+      `Import ${validation.tables.reduce((s, t) => s + t.rowCount, 0)} rows across ${validation.tables.length} tables into "${company?.name}"?\n\nSource: ${validation.companyName} (${validation.fyLabel})`
+    )) return
+
+    const result = await importCompanyData(text, companyId)
+    if (result.success) {
+      setImportResult({ success: true, message: `Successfully imported ${result.imported} records` })
+      showSuccess(`Imported ${result.imported} records into ${company?.name}`)
+    } else {
+      setImportResult({ success: false, message: `Imported ${result.imported} records with errors:\n${result.errors.join('\n')}` })
+      showError(`Import completed with ${result.errors.length} error(s)`)
+    }
+  }
+
   return (
     <div className="admin-section">
       <div className="admin-page-header">
@@ -534,6 +615,35 @@ export default function AdminCompanies() {
                     <td>{new Date(c.created_at).toLocaleDateString('en-GB')}</td>
                     <td className="admin-actions">
                       <button
+                        className="admin-btn-sm"
+                        style={{ background: '#1565c0', color: '#fff', border: 'none' }}
+                        title="Export company data as CSV"
+                        onClick={() => handleExport(c.id, c.name)}
+                        disabled={exporting === c.id}
+                      >
+                        {exporting === c.id ? 'Exporting...' : 'Export'}
+                      </button>
+                      <button
+                        className="admin-btn-sm"
+                        style={{ background: '#2e7d32', color: '#fff', border: 'none' }}
+                        title="Import data from CSV"
+                        onClick={() => {
+                          setImportingFor(c.id)
+                          importFileRef.current?.click()
+                        }}
+                      >
+                        Import
+                      </button>
+                      <button
+                        className="admin-btn-sm"
+                        style={{ background: '#e65100', color: '#fff', border: 'none' }}
+                        title="Archive company FY data"
+                        onClick={() => setShowArchiveConfirm(c.id)}
+                        disabled={archiving === c.id}
+                      >
+                        {archiving === c.id ? 'Archiving...' : 'Archive'}
+                      </button>
+                      <button
                         className={`admin-btn-sm ${c.is_active ? 'admin-btn-cancel' : 'admin-btn-save'}`}
                         onClick={() => toggleActive(c.id, c.is_active)}
                       >
@@ -570,6 +680,72 @@ export default function AdminCompanies() {
           e.target.value = ''
         }}
       />
+
+      <input
+        ref={importFileRef}
+        type="file"
+        accept=".csv"
+        style={{ display: 'none' }}
+        onChange={handleImportFile}
+      />
+
+      {showArchiveConfirm && (() => {
+        const company = companies.find(c => c.id === showArchiveConfirm)
+        return (
+          <div className="admin-modal-overlay" onClick={() => setShowArchiveConfirm(null)}>
+            <div className="admin-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+              <h3 style={{ margin: '0 0 12px' }}>Archive {company?.name}</h3>
+              <p style={{ fontSize: 14, color: '#555', margin: '0 0 16px' }}>
+                This will create a CSV archive of all company data for the current financial year
+                and save it to the company documents folder.
+              </p>
+              <p style={{ fontSize: 13, color: '#c62828', fontWeight: 600, margin: '0 0 16px' }}>
+                Would you also like to delete the company's FY data after archiving?
+                Employees and user accounts will be kept.
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button
+                  className="admin-btn"
+                  onClick={() => setShowArchiveConfirm(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="admin-btn admin-btn-primary"
+                  onClick={() => handleArchive(showArchiveConfirm, company?.name || '', false)}
+                >
+                  Archive Only
+                </button>
+                <button
+                  className="admin-btn"
+                  style={{ background: '#c62828', color: '#fff', border: 'none' }}
+                  onClick={() => handleArchive(showArchiveConfirm, company?.name || '', true)}
+                >
+                  Archive & Delete Data
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {importResult && (
+        <div className="admin-modal-overlay" onClick={() => setImportResult(null)}>
+          <div className="admin-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <h3 style={{ margin: '0 0 12px', color: importResult.success ? '#2e7d32' : '#c62828' }}>
+              {importResult.success ? 'Import Complete' : 'Import Issues'}
+            </h3>
+            <pre style={{ fontSize: 13, whiteSpace: 'pre-wrap', background: '#f5f5f5', padding: 12, borderRadius: 6, margin: '0 0 16px' }}>
+              {importResult.message}
+            </pre>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="admin-btn admin-btn-primary" onClick={() => setImportResult(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
