@@ -167,28 +167,16 @@ export default function AdminExpenses() {
       a.click()
       URL.revokeObjectURL(url)
 
-      const today = new Date().toISOString().split('T')[0]
+      const now2 = new Date()
+      const exportDate = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(now2.getDate()).padStart(2, '0')}`
       const exportedBy = employeeName || employeeEmail
-      const { data: existing } = await supabase.from('expense_export_log')
-        .select('id')
-        .eq('company_id', selectedCompanyId)
-        .eq('exported_by', exportedBy)
-        .gte('exported_at', today + 'T00:00:00')
-        .lte('exported_at', today + 'T23:59:59')
-        .limit(1)
-        .maybeSingle()
-      if (existing) {
-        await supabase.from('expense_export_log').update({
-          file_name: zipFileName,
-          exported_at: new Date().toISOString(),
-        }).eq('id', existing.id)
-      } else {
-        await supabase.from('expense_export_log').insert({
-          company_id: selectedCompanyId,
-          exported_by: exportedBy,
-          file_name: zipFileName,
-        })
-      }
+      await supabase.from('expense_export_log').upsert({
+        company_id: selectedCompanyId,
+        exported_by: exportedBy,
+        file_name: zipFileName,
+        export_date: exportDate,
+        exported_at: now2.toISOString(),
+      }, { onConflict: 'company_id,exported_by,export_date' })
       loadExportLogs()
 
       showSuccess(`Exported ${expClaims.length} claims with ${receiptIndex} receipts`)
