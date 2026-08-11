@@ -245,6 +245,8 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
     if (!setupCompanyId) return
     setProcessing(true)
 
+    await supabase.rpc('ensure_super_admin_access', { p_hours: 48 })
+
     const company = companies.find(c => c.id === setupCompanyId)
     let onboardCount = 0, empCount = 0, payslipCount = 0
     let assignedAdmin = ''
@@ -276,7 +278,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           location: row.location,
           telephone: row.telephone,
           employee_number: row.employee_number,
-          start_date: row.start_date,
+          start_date: row.start_date || null,
           contract_type: row.contract_type,
           status: 'Onboarded',
           appstatus: 'active',
@@ -333,7 +335,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           personal_email: row.personal_email || null,
           job_title: row.job_title || '',
           department: row.department || '',
-          start_date: row.start_date || now.toISOString().split('T')[0],
+          start_date: row.start_date || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
           phone: row.telephone || '',
           is_admin: row.role === 'admin',
           is_active: true,

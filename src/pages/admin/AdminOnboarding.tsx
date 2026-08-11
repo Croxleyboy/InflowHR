@@ -34,15 +34,15 @@ interface OnboardRecord {
   gender: string | null
   nationality: string | null
   marital_status: string | null
-  address_line_1: string | null
-  address_line_2: string | null
+  address_line1: string | null
+  address_line2: string | null
   city: string | null
   county: string | null
   postcode: string | null
   country: string | null
   emergency_contact_name: string | null
-  emergency_contact_number: string | null
-  relationship: string | null
+  emergency_contact_phone: string | null
+  emergency_contact_relationship: string | null
   ni_number: string | null
   bank_sort_code: string | null
   bank_account_number: string | null
@@ -87,8 +87,8 @@ export default function AdminOnboarding() {
     start_date: '', manager: '', manager_email: '', personal_email: '',
     location: '', telephone: '', employee_number: '', contract_type: 'Full-time',
     date_of_birth: '', gender: '', nationality: '', marital_status: '',
-    address_line_1: '', address_line_2: '', city: '', county: '', postcode: '', country: 'United Kingdom',
-    emergency_contact_name: '', emergency_contact_number: '', relationship: '',
+    address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom',
+    emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '',
     ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '',
     probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: '37.5',
     annual_salary: '', tax_code: '', payroll_id: '', religion: '', salary_group: 'N/A', qualifications: '',
@@ -108,10 +108,10 @@ export default function AdminOnboarding() {
     'phone': 'telephone', 'employee number': 'employee_number', 'start date': 'start_date',
     'contract type': 'contract_type', 'date of birth': 'date_of_birth', 'gender': 'gender',
     'nationality': 'nationality', 'marital status': 'marital_status',
-    'address line 1': 'address_line_1', 'address line 2': 'address_line_2',
+    'address line 1': 'address_line1', 'address line 2': 'address_line2',
     'city': 'city', 'county': 'county', 'postcode': 'postcode', 'country': 'country',
-    'emergency contact name': 'emergency_contact_name', 'emergency contact phone': 'emergency_contact_number',
-    'emergency contact relationship': 'relationship',
+    'emergency contact name': 'emergency_contact_name', 'emergency contact phone': 'emergency_contact_phone',
+    'emergency contact relationship': 'emergency_contact_relationship',
     'ni number': 'ni_number', 'bank sort code': 'bank_sort_code',
     'bank account number': 'bank_account_number', 'bank account name': 'bank_account_name',
     'probation end date': 'probation_end_date', 'notice period': 'notice_period',
@@ -176,6 +176,8 @@ export default function AdminOnboarding() {
     if (uploadErrors.length > 0 || uploadRows.length === 0 || !selectedCompanyId) return
     setUploading(true)
     let success = 0, failed = 0
+
+    await supabase.rpc('ensure_super_admin_access', { p_hours: 48 })
 
     const toInsert = uploadRows.map(row => {
       const s = sanitisePayload(row)
@@ -361,15 +363,15 @@ export default function AdminOnboarding() {
       gender: record.gender || null,
       nationality: record.nationality || null,
       marital_status: record.marital_status || null,
-      address_line_1: record.address_line_1 || null,
-      address_line_2: record.address_line_2 || null,
+      address_line1: record.address_line1 || null,
+      address_line2: record.address_line2 || null,
       city: record.city || null,
       county: record.county || null,
       postcode: record.postcode || null,
       country: record.country || null,
       emergency_contact_name: record.emergency_contact_name || null,
-      emergency_contact_number: record.emergency_contact_number || null,
-      relationship: record.relationship || null,
+      emergency_contact_phone: record.emergency_contact_phone || null,
+      emergency_contact_relationship: record.emergency_contact_relationship || null,
       ni_number: record.ni_number || null,
       bank_sort_code: record.bank_sort_code || null,
       bank_account_number: record.bank_account_number || null,
@@ -632,7 +634,7 @@ export default function AdminOnboarding() {
             <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Address</legend>
             <div className="admin-form-grid">
               {[
-                { key: 'address_line_1', label: 'Address Line 1' }, { key: 'address_line_2', label: 'Address Line 2' },
+                { key: 'address_line1', label: 'Address Line 1' }, { key: 'address_line2', label: 'Address Line 2' },
                 { key: 'city', label: 'City' }, { key: 'county', label: 'County' },
                 { key: 'postcode', label: 'Postcode' }, { key: 'country', label: 'Country' },
               ].map(f => (
@@ -687,8 +689,8 @@ export default function AdminOnboarding() {
             <div className="admin-form-grid">
               {[
                 { key: 'emergency_contact_name', label: 'Contact Name' },
-                { key: 'emergency_contact_number', label: 'Contact Phone' },
-                { key: 'relationship', label: 'Relationship' },
+                { key: 'emergency_contact_phone', label: 'Contact Phone' },
+                { key: 'emergency_contact_relationship', label: 'Relationship' },
               ].map(f => (
                 <div key={f.key} className="admin-form-field">
                   <label>{f.label}</label>
