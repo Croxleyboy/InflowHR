@@ -251,14 +251,32 @@ function CompanyDash({
   const [supportGrant, setSupportGrant] = useState<{ active: boolean; expires_at: string; reason: string } | null>(null)
   const [grantingAccess, setGrantingAccess] = useState(false)
   const [revokingAccess, setRevokingAccess] = useState(false)
+  const [expenseExportDaysAgo, setExpenseExportDaysAgo] = useState<number | null>(null)
 
   useEffect(() => {
     if (companyId) {
       setArchivesLoading(true)
       listCompanyArchives(companyId).then(a => { setArchives(a); setArchivesLoading(false) })
       loadSupportStatus()
+      loadLastExpenseExport()
     }
   }, [companyId])
+
+  async function loadLastExpenseExport() {
+    const { data } = await supabase
+      .from('expense_export_log')
+      .select('exported_at')
+      .eq('company_id', companyId)
+      .order('exported_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (data) {
+      const days = Math.floor((Date.now() - new Date(data.exported_at).getTime()) / (1000 * 60 * 60 * 24))
+      setExpenseExportDaysAgo(days)
+    } else {
+      setExpenseExportDaysAgo(-1)
+    }
+  }
 
   async function loadSupportStatus() {
     const { data } = await supabase
@@ -330,6 +348,23 @@ function CompanyDash({
         <h2>{companyName}</h2>
         <p>Company dashboard overview</p>
       </div>
+
+      {(expenseExportDaysAgo === -1 || (expenseExportDaysAgo !== null && expenseExportDaysAgo >= 25)) && (
+        <div className="cd-warning-banner" onClick={() => navigate('/admin/expenses')} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: '#fff3e0', border: '1px solid #ffb74d', borderRadius: 10, marginBottom: 16, cursor: 'pointer' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <div style={{ flex: 1 }}>
+            <strong style={{ color: '#e65100', fontSize: 13 }}>
+              {expenseExportDaysAgo === -1 ? 'Expenses have never been exported' : `Expense export is ${expenseExportDaysAgo} days old`}
+            </strong>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: '#bf360c' }}>
+              Tap here to export the latest expenses and receipts
+            </p>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      )}
 
       <div className="cd-grid">
         {cards.map(c => (
