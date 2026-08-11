@@ -9,7 +9,10 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
     .single()
   if (!emp) return fallbackEmail
 
-  // Priority 1: manager_id FK — look up that employee's email
+  // Priority 1: manager_email text field (explicitly set by admin)
+  if (emp.manager_email) return emp.manager_email
+
+  // Priority 2: manager_id FK — look up that employee's email
   if (emp.manager_id) {
     const { data: mgr } = await supabase
       .from('employees')
@@ -18,9 +21,6 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
       .single()
     if (mgr?.email) return mgr.email
   }
-
-  // Priority 2: manager_email text field (set during onboarding)
-  if (emp.manager_email) return emp.manager_email
 
   // Priority 3: find a company admin to assign to
   if (emp.company_id) {
