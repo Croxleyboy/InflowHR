@@ -9,7 +9,7 @@ interface CalendarLeave {
   employee_id: string
   start_date: string
   end_date: string
-  half_day: boolean
+  days_requested: number
   leave_type_id: number
   emp_name: string
   emp_avatar: string | null
@@ -43,6 +43,7 @@ interface DayInfo {
   halfDay: boolean
 }
 
+
 export default function LeaveCalendar() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
@@ -63,7 +64,7 @@ export default function LeaveCalendar() {
     setLoading(true)
     const { data: reqs } = await supabase
       .from('leave_requests')
-      .select('id, employee_id, start_date, end_date, half_day, leave_type_id')
+      .select('id, employee_id, start_date, end_date, days_requested, leave_type_id')
       .eq('company_id', companyUser.company_id)
       .eq('status', 'approved')
       .lte('start_date', rangeEnd)
@@ -89,7 +90,7 @@ export default function LeaveCalendar() {
 
       setLeaves(reqs.map((r: any) => ({
         ...r,
-        half_day: r.half_day === true,
+        days_requested: Number(r.days_requested) || 1,
         emp_name: empMap.get(r.employee_id)?.name || 'Unknown',
         emp_avatar: empMap.get(r.employee_id)?.avatar || null,
         colour: typeMap.get(r.leave_type_id) || '#43a047',
@@ -112,10 +113,15 @@ export default function LeaveCalendar() {
     const ds = dateStr(day)
     for (const l of empLeaves) {
       if (l.start_date <= ds && l.end_date >= ds) {
-        return { colour: l.colour, halfDay: l.half_day }
+        return { colour: l.colour, halfDay: l.days_requested === 0.5 }
       }
     }
     return null
+  }
+
+  function dayHasLeave(day: Date): boolean {
+    const ds = dateStr(day)
+    return leaves.some(l => l.start_date <= ds && l.end_date >= ds)
   }
 
   const months = lang === 'de' ? DE_MONTHS : EN_MONTHS
@@ -181,10 +187,11 @@ export default function LeaveCalendar() {
                 {days.map(day => {
                   const isToday = dateStr(day) === dateStr(today)
                   const isWeekend = day.getDay() === 0 || day.getDay() === 6
+                  const hasLeave = dayHasLeave(day)
                   return (
                     <div
                       key={dateStr(day)}
-                      className={`leave-calendar-day-cell ${isToday ? 'leave-calendar-today' : ''} ${isWeekend ? 'leave-calendar-weekend' : ''}`}
+                      className={`leave-calendar-day-cell ${isToday ? 'leave-calendar-today' : ''} ${isWeekend ? 'leave-calendar-weekend' : ''} ${hasLeave ? 'leave-calendar-day-has-leave' : ''}`}
                     >
                       {day.getDate()}
                     </div>

@@ -2157,6 +2157,14 @@ body {
 .leave-calendar-weekend {
   color: var(--text-muted); opacity: 0.6;
 }
+.leave-calendar-day-has-leave {
+  background: #fff3e0; color: #e65100;
+}
+[data-theme="dark"] .leave-calendar-day-has-leave { background: #3e2723; color: #ffab91; }
+.leave-calendar-day-has-leave.leave-calendar-today {
+  background: linear-gradient(135deg, #e8f5e9 50%, #fff3e0 50%); color: #2e7d32;
+}
+[data-theme="dark"] .leave-calendar-day-has-leave.leave-calendar-today { background: linear-gradient(135deg, #1b5e20 50%, #3e2723 50%); color: #a5d6a7; }
 
 .leave-calendar-no-leave {
   text-align: center;
