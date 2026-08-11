@@ -129,15 +129,50 @@ export default function AdminEmployees() {
   }
 
   async function permanentlyDeleteEmployee(emp: Employee) {
-    if (!confirm(`Permanently delete ${emp.first_name} ${emp.last_name} and all their related records (onboarding, payslips, leave balances)? This cannot be undone.`)) return
-    const { error: leaveErr } = await supabase.from('leave_balances').delete().eq('employee_id', emp.id)
-    if (leaveErr) { showError('Failed to delete leave balances: ' + leaveErr.message); return }
-    const { error: payslipErr } = await supabase.from('payslips').delete().eq('employee_id', emp.id)
-    if (payslipErr) { showError('Failed to delete payslips: ' + payslipErr.message); return }
-    const { error: companyUserErr } = await supabase.from('company_users').delete().eq('employee_id', emp.id)
-    if (companyUserErr) { showError('Failed to delete company user record: ' + companyUserErr.message); return }
+    if (!confirm(`Permanently delete ${emp.first_name} ${emp.last_name} and all their related records? This cannot be undone.`)) return
+
+    const deletes: { table: string; column: string; value: string }[] = [
+      { table: 'one_to_one_comments', column: 'author_id', value: emp.id },
+      { table: 'one_to_one_meetings', column: 'employee_id', value: emp.id },
+      { table: 'one_to_one_meetings', column: 'manager_id', value: emp.id },
+      { table: 'performance_reviews', column: 'employee_id', value: emp.id },
+      { table: 'performance_reviews', column: 'reviewer_id', value: emp.id },
+      { table: 'course_enrolments', column: 'employee_id', value: emp.id },
+      { table: 'employee_benefits', column: 'employee_id', value: emp.id },
+      { table: 'kudos', column: 'from_employee_id', value: emp.id },
+      { table: 'kudos', column: 'to_employee_id', value: emp.id },
+      { table: 'notifications', column: 'employee_id', value: emp.id },
+      { table: 'timesheets', column: 'employee_id', value: emp.id },
+      { table: 'leave_requests', column: 'employee_id', value: emp.id },
+      { table: 'leave_balances', column: 'employee_id', value: emp.id },
+      { table: 'expense_line_items', column: 'claim_id', value: '__expense_claims__' },
+      { table: 'expense_claims', column: 'employee_id', value: emp.id },
+      { table: 'payslips', column: 'employee_id', value: emp.id },
+      { table: 'company_users', column: 'employee_id', value: emp.id },
+    ]
+
+    // Null out approved_by / reviewer references that point to this employee
+    await supabase.from('expense_claims').update({ approved_by: null }).eq('approved_by', emp.id)
+    await supabase.from('leave_requests').update({ approved_by: null }).eq('approved_by', emp.id)
+    await supabase.from('timesheets').update({ approved_by: null }).eq('approved_by', emp.id)
+    await supabase.from('employees').update({ manager_id: null }).eq('manager_id', emp.id)
+
+    // Delete expense_line_items for this employee's claims first
+    const { data: claims } = await supabase.from('expense_claims').select('id').eq('employee_id', emp.id)
+    if (claims && claims.length > 0) {
+      const claimIds = claims.map(c => c.id)
+      await supabase.from('expense_line_items').delete().in('claim_id', claimIds)
+    }
+
+    for (const d of deletes) {
+      if (d.value === '__expense_claims__') continue
+      const { error: err } = await supabase.from(d.table).delete().eq(d.column, d.value)
+      if (err) { showError(`Failed to delete ${d.table}: ${err.message}`); return }
+    }
+
     const { error: onboardingErr } = await supabase.from('onboarding').delete().eq('user_email', emp.email)
     if (onboardingErr) { showError('Failed to delete onboarding record: ' + onboardingErr.message); return }
+
     const { error } = await supabase.from('employees').delete().eq('id', emp.id)
     if (error) {
       showError(`Failed to delete: ${error.message}`)
