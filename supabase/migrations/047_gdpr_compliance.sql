@@ -47,23 +47,10 @@ CREATE POLICY "Support access - company admin insert" ON tenant_support_access
 CREATE POLICY "Support access - company admin update" ON tenant_support_access
   FOR UPDATE USING (is_my_company(company_id));
 
--- Automatic expiry trigger
-CREATE OR REPLACE FUNCTION expire_support_access()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-  UPDATE tenant_support_access
-    SET status = 'expired'
-  WHERE status = 'active'
-    AND expires_at < now();
-  RETURN NULL;
-END;
-$$;
-
--- Fire on any read of the table to lazily expire stale grants
-DROP TRIGGER IF EXISTS trg_expire_support_access ON tenant_support_access;
-CREATE TRIGGER trg_expire_support_access
-  BEFORE INSERT OR UPDATE ON tenant_support_access
-  EXECUTE FUNCTION expire_support_access();
+-- Note: lazy expiry trigger removed — it caused infinite recursion
+-- (UPDATE inside trigger re-fires the trigger). Expiry is handled by:
+--   1. has_active_support_access() checks expires_at > now()
+--   2. ensure_super_admin_access() expires stale rows before inserting
 
 
 -- ============================================================
