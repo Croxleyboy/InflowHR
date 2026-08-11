@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 
@@ -260,6 +260,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsManager(false)
     setCanPostNotifications(false)
   }
+
+  const INACTIVITY_TIMEOUT = 15 * 60 * 1000
+  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const resetInactivityTimer = useCallback(() => {
+    if (inactivityTimer.current) clearTimeout(inactivityTimer.current)
+    if (!session) return
+    inactivityTimer.current = setTimeout(async () => {
+      await supabase.auth.signOut()
+      setUser(null)
+      setSession(null)
+      setCompanyUser(null)
+      setCompany(null)
+      setEmployeeId(null)
+      setIsManager(false)
+      setCanPostNotifications(false)
+      window.location.href = '/'
+    }, INACTIVITY_TIMEOUT)
+  }, [session])
+
+  useEffect(() => {
+    if (!session) return
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'mousemove']
+    const handler = () => resetInactivityTimer()
+    events.forEach(e => window.addEventListener(e, handler, { passive: true }))
+    resetInactivityTimer()
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handler))
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current)
+    }
+  }, [session, resetInactivityTimer])
 
   const employeeName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
   const employeeEmail = user?.email || ''

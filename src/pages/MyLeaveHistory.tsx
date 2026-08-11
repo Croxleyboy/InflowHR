@@ -79,8 +79,8 @@ export default function MyLeaveHistory() {
     weekStart.setDate(now.getDate() - now.getDay() + 1)
     const weekEnd = new Date(weekStart)
     weekEnd.setDate(weekStart.getDate() + 6)
-    const ws = weekStart.toISOString().split('T')[0]
-    const we = weekEnd.toISOString().split('T')[0]
+    const ws = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`
+    const we = `${weekEnd.getFullYear()}-${String(weekEnd.getMonth() + 1).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(2, '0')}`
 
     const { data: offData } = await supabase
       .from('leave_requests')
