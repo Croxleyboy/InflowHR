@@ -22,14 +22,20 @@ interface AllCompanyStats {
 
 interface CompanyStats {
   totalEmployees: number
-  activeExpenses: number
-  pendingLeave: number
-  payslipsThisMonth: number
-  kudosThisMonth: number
-  openTickets: number
-  pendingOnboarding: number
+  benefits: number
+  shiftsRotas: number
+  legalTimesheets: number
+  performance1to1s: number
+  spaceBookings: number
+  newOnboarders: number
   announcements: number
+  ticketsRaised: number
+  pendingExpenses: number
+  pendingLeave: number
+  kudos: number
 }
+
+interface TrendPoint { label: string; value: number }
 
 export default function AdminDashboard() {
   const navigate = useNavigate()
@@ -38,6 +44,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [allStats, setAllStats] = useState<AllCompanyStats | null>(null)
   const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null)
+  const [empTrend, setEmpTrend] = useState<TrendPoint[]>([])
+  const [ticketTrend, setTicketTrend] = useState<TrendPoint[]>([])
 
   useEffect(() => {
     if (isSuperAdmin) {
@@ -49,9 +57,7 @@ export default function AdminDashboard() {
 
   async function loadSuperAdminStats() {
     setLoading(true)
-    const [
-      empRes, compRes, featRes, onbRes, annRes, tickRes, benRes,
-    ] = await Promise.all([
+    const [empRes, compRes, featRes, onbRes, annRes, tickRes, benRes] = await Promise.all([
       supabase.from('employees').select('id', { count: 'exact', head: true }),
       supabase.from('companies').select('id', { count: 'exact', head: true }),
       supabase.from('company_features').select('feature_key, company_id').eq('is_enabled', true),
@@ -60,10 +66,8 @@ export default function AdminDashboard() {
       supabase.from('hr_tickets').select('id', { count: 'exact', head: true }),
       supabase.from('benefit_types').select('id', { count: 'exact', head: true }),
     ])
-
     const features = (featRes.data || []) as { feature_key: string; company_id: string }[]
     const countFeature = (key: string) => features.filter(f => f.feature_key === key).length
-
     setAllStats({
       totalEmployees: empRes.count ?? 0,
       totalCompanies: compRes.count ?? 0,
@@ -84,27 +88,62 @@ export default function AdminDashboard() {
 
   async function loadCompanyStats() {
     setLoading(true)
-    const eq = (q: any) => q.eq('company_id', selectedCompanyId)
-    const [emp, exp, leave, pay, kudos, onb, ann, tick] = await Promise.all([
-      eq(supabase.from('employees').select('id', { count: 'exact', head: true })),
-      eq(supabase.from('expense_claims').select('id', { count: 'exact', head: true }).eq('status', 'pending')),
-      eq(supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')),
-      eq(supabase.from('payslips').select('id', { count: 'exact', head: true })),
-      eq(supabase.from('kudos').select('id', { count: 'exact', head: true })),
+    const cid = selectedCompanyId
+    const eq = (q: any) => q.eq('company_id', cid)
+
+    const [emp, ben, shifts, legal, perf, space, onb, ann, tick, exp, leave, kudos] = await Promise.all([
+      eq(supabase.from('employees').select('id', { count: 'exact', head: true }).eq('is_active', true)),
+      eq(supabase.from('benefit_enrollments').select('id', { count: 'exact', head: true })),
+      eq(supabase.from('shift_assignments').select('id', { count: 'exact', head: true })),
+      eq(supabase.from('legal_timesheet_entries').select('id', { count: 'exact', head: true })),
+      eq(supabase.from('performance_reviews').select('id', { count: 'exact', head: true })),
+      eq(supabase.from('space_bookings').select('id', { count: 'exact', head: true })),
       eq(supabase.from('onboarding').select('id', { count: 'exact', head: true }).eq('status', 'new')),
       eq(supabase.from('announcements').select('id', { count: 'exact', head: true })),
       eq(supabase.from('hr_tickets').select('id', { count: 'exact', head: true })),
+      eq(supabase.from('expense_claims').select('id', { count: 'exact', head: true }).eq('status', 'pending')),
+      eq(supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')),
+      eq(supabase.from('kudos').select('id', { count: 'exact', head: true })),
     ])
+
     setCompanyStats({
       totalEmployees: emp.count ?? 0,
-      activeExpenses: exp.count ?? 0,
-      pendingLeave: leave.count ?? 0,
-      payslipsThisMonth: pay.count ?? 0,
-      kudosThisMonth: kudos.count ?? 0,
-      openTickets: tick.count ?? 0,
-      pendingOnboarding: onb.count ?? 0,
+      benefits: ben.count ?? 0,
+      shiftsRotas: shifts.count ?? 0,
+      legalTimesheets: legal.count ?? 0,
+      performance1to1s: perf.count ?? 0,
+      spaceBookings: space.count ?? 0,
+      newOnboarders: onb.count ?? 0,
       announcements: ann.count ?? 0,
+      ticketsRaised: tick.count ?? 0,
+      pendingExpenses: exp.count ?? 0,
+      pendingLeave: leave.count ?? 0,
+      kudos: kudos.count ?? 0,
     })
+
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const now = new Date()
+    const empPoints: TrendPoint[] = []
+    const tickPoints: TrendPoint[] = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+      const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
+      const startStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+      const label = MONTHS[d.getMonth()]
+
+      const { count: empCount } = await supabase
+        .from('employees').select('id', { count: 'exact', head: true })
+        .eq('company_id', cid).eq('is_active', true).lte('created_at', endStr + 'T23:59:59')
+      empPoints.push({ label, value: empCount ?? 0 })
+
+      const { count: tickCount } = await supabase
+        .from('hr_tickets').select('id', { count: 'exact', head: true })
+        .eq('company_id', cid).gte('created_at', startStr).lte('created_at', endStr + 'T23:59:59')
+      tickPoints.push({ label, value: tickCount ?? 0 })
+    }
+    setEmpTrend(empPoints)
+    setTicketTrend(tickPoints)
     setLoading(false)
   }
 
@@ -120,39 +159,135 @@ export default function AdminDashboard() {
   if (isSuperAdmin && allStats) return <SuperAdminDash stats={allStats} navigate={navigate} />
 
   if (companyStats) {
-    const cards = [
-      { label: 'Employees', value: companyStats.totalEmployees, color: '#5b9bd5', path: '/admin/employees' },
-      { label: 'Pending Expenses', value: companyStats.activeExpenses, color: '#43a047', path: '/admin/expenses' },
-      { label: 'Pending Leave', value: companyStats.pendingLeave, color: '#ff9800', path: '/admin/leave' },
-      { label: 'Payslips', value: companyStats.payslipsThisMonth, color: '#1565c0', path: '/admin/payroll' },
-      { label: 'Kudos', value: companyStats.kudosThisMonth, color: '#fdd835', path: '/admin/kudos' },
-      { label: 'Onboarding', value: companyStats.pendingOnboarding, color: '#e91e63', path: '/admin/onboarding' },
-      { label: 'Announcements', value: companyStats.announcements, color: '#7b1fa2', path: '/admin/announcements' },
-      { label: 'HR Tickets', value: companyStats.openTickets, color: '#00897b', path: '/admin/tickets' },
-    ]
     return (
-      <div className="admin-dashboard">
-        <div className="admin-page-header">
-          <h2>Dashboard</h2>
-          <p>{selectedCompany ? selectedCompany.name : 'Overview of your HR platform'}</p>
-        </div>
-        <div className="admin-stat-grid">
-          {cards.map(c => (
-            <button key={c.label} className="admin-stat-card" onClick={() => navigate(c.path)}>
-              <div className="admin-stat-icon" style={{ background: c.color }}>
-                <span style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>{c.value}</span>
-              </div>
-              <div className="admin-stat-info">
-                <span className="admin-stat-label">{c.label}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
+      <CompanyDash
+        stats={companyStats}
+        companyName={selectedCompany?.name || ''}
+        navigate={navigate}
+        empTrend={empTrend}
+        ticketTrend={ticketTrend}
+      />
     )
   }
 
   return null
+}
+
+function MiniLineChart({ data, color, height = 48 }: { data: TrendPoint[]; color: string; height?: number }) {
+  if (data.length < 2) return null
+  const max = Math.max(...data.map(d => d.value), 1)
+  const w = 160
+  const h = height
+  const pad = 4
+  const pts = data.map((d, i) => ({
+    x: pad + (i / (data.length - 1)) * (w - pad * 2),
+    y: pad + (1 - d.value / max) * (h - pad * 2),
+  }))
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+  const area = line + ` L${pts[pts.length - 1].x},${h} L${pts[0].x},${h} Z`
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id={`grad-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#grad-${color.replace('#', '')})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {pts.map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 3.5 : 0} fill={color} />
+      ))}
+      {data.map((d, i) => (
+        <text key={i} x={pts[i].x} y={h - 1} textAnchor="middle" fontSize="8" fill="#8b8fa3">{d.label}</text>
+      ))}
+    </svg>
+  )
+}
+
+function MiniBarChart({ data, color, height = 48 }: { data: TrendPoint[]; color: string; height?: number }) {
+  if (data.length === 0) return null
+  const max = Math.max(...data.map(d => d.value), 1)
+  const w = 160
+  const h = height
+  const barW = Math.min(16, (w - 8) / data.length - 3)
+
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      {data.map((d, i) => {
+        const x = 4 + i * ((w - 8) / data.length) + ((w - 8) / data.length - barW) / 2
+        const barH = (d.value / max) * (h - 16)
+        return (
+          <g key={i}>
+            <rect x={x} y={h - 12 - barH} width={barW} height={barH} rx={3} fill={i === data.length - 1 ? color : color + '80'} />
+            <text x={x + barW / 2} y={h - 1} textAnchor="middle" fontSize="8" fill="#8b8fa3">{d.label}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+function CompanyDash({
+  stats, companyName, navigate, empTrend, ticketTrend,
+}: {
+  stats: CompanyStats
+  companyName: string
+  navigate: (p: string) => void
+  empTrend: TrendPoint[]
+  ticketTrend: TrendPoint[]
+}) {
+  const cards: {
+    label: string; value: number; color: string; path: string
+    chart?: 'line' | 'bar'; chartData?: TrendPoint[]
+  }[] = [
+    { label: 'Total Employees', value: stats.totalEmployees, color: '#1565c0', path: '/admin/employees', chart: 'line', chartData: empTrend },
+    { label: 'New Onboarders', value: stats.newOnboarders, color: '#e91e63', path: '/admin/onboarding' },
+    { label: 'Benefits Enrolled', value: stats.benefits, color: '#7b1fa2', path: '/admin/benefits' },
+    { label: 'Shifts & Rotas', value: stats.shiftsRotas, color: '#e65100', path: '/admin/shifts' },
+    { label: 'Legal Timesheets', value: stats.legalTimesheets, color: '#00695c', path: '/admin/legal-timesheets' },
+    { label: 'Performance 1:1s', value: stats.performance1to1s, color: '#c62828', path: '/admin/performance' },
+    { label: 'Space Bookings', value: stats.spaceBookings, color: '#4527a0', path: '/admin/space-management' },
+    { label: 'Announcements', value: stats.announcements, color: '#2e7d32', path: '/admin/announcements' },
+    { label: 'Tickets Raised', value: stats.ticketsRaised, color: '#00897b', path: '/admin/tickets', chart: 'bar', chartData: ticketTrend },
+    { label: 'Pending Expenses', value: stats.pendingExpenses, color: '#43a047', path: '/admin/expenses' },
+    { label: 'Pending Leave', value: stats.pendingLeave, color: '#ff9800', path: '/admin/leave' },
+    { label: 'Kudos Given', value: stats.kudos, color: '#fbc02d', path: '/admin/kudos' },
+  ]
+
+  return (
+    <div className="admin-dashboard">
+      <div className="admin-page-header">
+        <h2>{companyName}</h2>
+        <p>Company dashboard overview</p>
+      </div>
+
+      <div className="cd-grid">
+        {cards.map(c => (
+          <button key={c.label} className="cd-card" onClick={() => navigate(c.path)}>
+            <div className="cd-card-top">
+              <div className="cd-card-meta">
+                <span className="cd-card-label">{c.label}</span>
+                <span className="cd-card-value" style={{ color: c.color }}>{c.value}</span>
+              </div>
+              <div className="cd-card-icon" style={{ background: c.color }}>
+                <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{c.value}</span>
+              </div>
+            </div>
+            {c.chart && c.chartData && c.chartData.length > 1 && (
+              <div className="cd-card-chart">
+                {c.chart === 'line'
+                  ? <MiniLineChart data={c.chartData} color={c.color} />
+                  : <MiniBarChart data={c.chartData} color={c.color} />
+                }
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate: (p: string) => void }) {
@@ -165,7 +300,6 @@ function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate:
     { label: 'Performance', value: stats.subsPerformance, color: '#c62828' },
     { label: 'Space Booking', value: stats.subsSpaceBooking, color: '#4527a0' },
   ]
-
   const maxSub = Math.max(...featureSubs.map(f => f.value), 1)
 
   return (
@@ -185,7 +319,6 @@ function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate:
             <span className="sa-dash-card-label">Total Employees</span>
           </div>
         </button>
-
         <button className="sa-dash-card" onClick={() => navigate('/admin/subscriptions')}>
           <div className="sa-dash-card-icon" style={{ background: '#2e7d32' }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -195,7 +328,6 @@ function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate:
             <span className="sa-dash-card-label">Companies</span>
           </div>
         </button>
-
         <button className="sa-dash-card" onClick={() => navigate('/admin/onboarding')}>
           <div className="sa-dash-card-icon" style={{ background: '#e91e63' }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
@@ -205,7 +337,6 @@ function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate:
             <span className="sa-dash-card-label">New Onboarders</span>
           </div>
         </button>
-
         <button className="sa-dash-card" onClick={() => navigate('/admin/announcements')}>
           <div className="sa-dash-card-icon" style={{ background: '#7b1fa2' }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/></svg>
@@ -215,7 +346,6 @@ function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate:
             <span className="sa-dash-card-label">Announcements</span>
           </div>
         </button>
-
         <button className="sa-dash-card" onClick={() => navigate('/admin/tickets')}>
           <div className="sa-dash-card-icon" style={{ background: '#00897b' }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -225,7 +355,6 @@ function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate:
             <span className="sa-dash-card-label">Tickets Raised</span>
           </div>
         </button>
-
         <button className="sa-dash-card" onClick={() => navigate('/admin/benefits')}>
           <div className="sa-dash-card-icon" style={{ background: '#ef6c00' }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4"/><circle cx="8" cy="21" r="1"/><circle cx="18" cy="21" r="1"/><path d="M1 16h22"/></svg>
@@ -245,13 +374,7 @@ function SuperAdminDash({ stats, navigate }: { stats: AllCompanyStats; navigate:
             <div key={f.label} className="sa-dash-bar-row">
               <span className="sa-dash-bar-label">{f.label}</span>
               <div className="sa-dash-bar-track">
-                <div
-                  className="sa-dash-bar-fill"
-                  style={{
-                    width: `${(f.value / maxSub) * 100}%`,
-                    background: f.color,
-                  }}
-                />
+                <div className="sa-dash-bar-fill" style={{ width: `${(f.value / maxSub) * 100}%`, background: f.color }} />
               </div>
               <span className="sa-dash-bar-value">{f.value}</span>
             </div>

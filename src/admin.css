@@ -928,6 +928,184 @@
 .billing-chart-label { font-size: 10px; color: #8b8fa3; font-weight: 600; }
 .billing-chart-amount { font-size: 9px; color: #1e1e2d; font-weight: 700; position: absolute; top: -14px; white-space: nowrap; }
 
+/* Modern billing chart */
+.billing-modern-chart {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 24px;
+  --billing-core: #1565c0;
+  --billing-addon: #7b1fa2;
+}
+.billing-modern-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+.billing-modern-chart-header h3 { font-size: 16px; font-weight: 700; margin: 0; color: #1e1e2d; }
+.billing-modern-chart-header p { font-size: 12px; color: #8b8fa3; margin: 2px 0 0; }
+.billing-chart-legend { display: flex; gap: 14px; font-size: 12px; font-weight: 600; color: #666; }
+.billing-chart-legend span { display: flex; align-items: center; gap: 5px; }
+.billing-legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.billing-modern-bars {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  height: 200px;
+  padding-bottom: 4px;
+}
+.billing-modern-bar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+.billing-modern-bar-col.billing-bar-current .billing-bar-core {
+  background: linear-gradient(180deg, #42a5f5, #1565c0);
+}
+.billing-modern-amount {
+  font-size: 10px;
+  font-weight: 700;
+  color: #1e1e2d;
+  white-space: nowrap;
+}
+.billing-modern-bar-stack {
+  width: 100%;
+  max-width: 40px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px 6px 0 0;
+  overflow: hidden;
+}
+.billing-bar-core {
+  background: var(--billing-core);
+  width: 100%;
+  transition: height 0.4s ease;
+}
+.billing-bar-addon {
+  background: var(--billing-addon);
+  width: 100%;
+  transition: height 0.4s ease;
+}
+.billing-modern-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b8fa3;
+}
+.billing-invoice-btn {
+  margin-top: 4px;
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 3px 6px;
+  cursor: pointer;
+  color: #1565c0;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+}
+.billing-invoice-btn:hover {
+  background: #e3f2fd;
+  border-color: #1565c0;
+}
+.billing-invoice-btn-table {
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: #1565c0;
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+}
+.billing-invoice-btn-table:hover {
+  background: #e3f2fd;
+  border-color: #1565c0;
+}
+.billing-terms {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px;
+  background: #f8f9fc;
+  border-radius: 10px;
+  font-size: 12px;
+  color: #666;
+  margin-top: 16px;
+  line-height: 1.5;
+}
+.billing-terms svg { flex-shrink: 0; margin-top: 1px; color: #8b8fa3; }
+
+/* ===== Company Dashboard Cards ===== */
+.cd-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.cd-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 18px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+}
+.cd-card:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.07);
+  transform: translateY(-2px);
+}
+.cd-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.cd-card-meta {
+  display: flex;
+  flex-direction: column;
+}
+.cd-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b8fa3;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.cd-card-value {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.1;
+  margin-top: 4px;
+}
+.cd-card-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.cd-card-chart {
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .cd-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .cd-grid { grid-template-columns: 1fr; }
+}
+
 /* ===== Subscriptions ===== */
 .sub-pricing-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 16px; }
 .sub-pricing-card { background: #fff; border-radius: 12px; padding: 20px; border: 2px solid #e5e7eb; }
