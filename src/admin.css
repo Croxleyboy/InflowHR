@@ -1354,3 +1354,119 @@
 @media (max-width: 600px) {
   .admin-ug-section-body { padding-left: 20px; }
 }
+
+/* ===== Super Admin Dashboard ===== */
+.sa-dash-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 28px;
+}
+.sa-dash-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 20px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+  text-align: left;
+}
+.sa-dash-card:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  transform: translateY(-2px);
+}
+.sa-dash-card-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sa-dash-card-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sa-dash-card-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #1e1e2d;
+  line-height: 1.1;
+}
+.sa-dash-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b8fa3;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+.sa-dash-chart-section {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.sa-dash-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  color: #1e1e2d;
+}
+.sa-dash-section-sub {
+  font-size: 12px;
+  color: #8b8fa3;
+  margin: 0 0 20px;
+}
+.sa-dash-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sa-dash-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sa-dash-bar-label {
+  font-size: 13px;
+  font-weight: 600;
+  width: 130px;
+  flex-shrink: 0;
+  color: #444;
+  text-align: right;
+}
+.sa-dash-bar-track {
+  flex: 1;
+  height: 26px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.sa-dash-bar-fill {
+  height: 100%;
+  border-radius: 8px;
+  min-width: 4px;
+  transition: width 0.4s ease;
+}
+.sa-dash-bar-value {
+  font-size: 14px;
+  font-weight: 700;
+  width: 30px;
+  color: #1e1e2d;
+}
+
+@media (max-width: 900px) {
+  .sa-dash-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .sa-dash-grid { grid-template-columns: 1fr; }
+  .sa-dash-bar-label { width: 100px; font-size: 11px; }
+}
