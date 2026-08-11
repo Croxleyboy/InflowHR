@@ -13,7 +13,11 @@ const LOCATIONS = ['Head Office', 'Home', 'Customer Site', 'Event', 'Unassigned'
 const ROLES = ['IT', 'Engineering', 'Design', 'HR', 'Finance', 'Marketing', 'Sales', 'Operations', 'Management', 'Unassigned']
 
 function todayStr() {
-  return new Date().toISOString().split('T')[0]
+  const n = new Date()
+  const y = n.getFullYear()
+  const m = String(n.getMonth() + 1).padStart(2, '0')
+  const d = String(n.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 interface CustomerProject {
@@ -239,25 +243,55 @@ export default function NewTimesheet() {
           )}
         </div>
 
-        <div className="ts-form-row">
-          <div className="ts-form-group">
-            <label className="ts-form-label">{t('timesheets.start_date')}</label>
-            <input type="date" className="ts-form-input" value={startDate} onChange={e => handleStartDateChange(e.target.value)} />
+        <div className="date-row">
+          <div className="date-field">
+            <label className="field-label">{t('timesheets.start_date')}</label>
+            <div className="date-input-wrap">
+              <span className="date-display">{formatDateDisplay(startDate)}</span>
+              <input type="date" value={startDate} onChange={e => handleStartDateChange(e.target.value)} className="date-input-hidden" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" className="date-icon">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </div>
           </div>
-          <div className="ts-form-group">
-            <label className="ts-form-label">{t('timesheets.end_date')}</label>
-            <input type="date" className="ts-form-input" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} />
+          <div className="date-field">
+            <label className="field-label">{t('timesheets.end_date')}</label>
+            <div className="date-input-wrap">
+              <span className="date-display">{formatDateDisplay(endDate)}</span>
+              <input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} className="date-input-hidden" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" className="date-icon">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </div>
           </div>
         </div>
 
-        <div className="ts-form-row">
-          <div className="ts-form-group">
-            <label className="ts-form-label">{t('timesheets.start_time')}</label>
-            <input type="time" className="ts-form-input" value={startTime} onChange={e => setStartTime(e.target.value)} />
+        <div className="date-row">
+          <div className="date-field">
+            <label className="field-label">{t('timesheets.start_time')}</label>
+            <div className="date-input-wrap">
+              <span className="date-display">{startTime}</span>
+              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="date-input-hidden" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" className="date-icon">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            </div>
           </div>
-          <div className="ts-form-group">
-            <label className="ts-form-label">{t('timesheets.end_time')}</label>
-            <input type="time" className="ts-form-input" value={endTime} onChange={e => setEndTime(e.target.value)} />
+          <div className="date-field">
+            <label className="field-label">{t('timesheets.end_time')}</label>
+            <div className="date-input-wrap">
+              <span className="date-display">{endTime}</span>
+              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="date-input-hidden" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" className="date-icon">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            </div>
           </div>
         </div>
 
