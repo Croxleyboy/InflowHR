@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import JSZip from 'jszip'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -55,8 +56,100 @@ export default function AdminExpenses() {
   const [expenseTypes, setExpenseTypes] = useState([...EXPENSE_TYPES])
   const [newCostCenter, setNewCostCenter] = useState('')
   const [newExpenseType, setNewExpenseType] = useState('')
+  const [exporting, setExporting] = useState(false)
 
   useEffect(() => { if (selectedCompanyId) loadClaims() }, [selectedCompanyId])
+
+  async function exportExpenses() {
+    if (!selectedCompanyId) return
+    setExporting(true)
+    try {
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const cutoff = thirtyDaysAgo.toISOString()
+
+      const { data: expClaims } = await supabase
+        .from('expense_claims')
+        .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email)')
+        .eq('company_id', selectedCompanyId)
+        .in('status', ['pending', 'approved'])
+        .gte('submitted_at', cutoff)
+        .order('submitted_at', { ascending: false })
+
+      if (!expClaims || expClaims.length === 0) {
+        showError('No submitted or approved expenses in the last 30 days')
+        setExporting(false)
+        return
+      }
+
+      const claimIds = expClaims.map(c => c.id)
+      const { data: lineItems } = await supabase
+        .from('expense_line_items')
+        .select('*')
+        .in('expense_claim_id', claimIds)
+        .order('date_of_purchase')
+
+      const linesByClaimId: Record<number, LineItem[]> = {}
+      lineItems?.forEach((li: any) => {
+        if (!linesByClaimId[li.expense_claim_id]) linesByClaimId[li.expense_claim_id] = []
+        linesByClaimId[li.expense_claim_id].push(li)
+      })
+
+      const zip = new JSZip()
+      const now = new Date()
+      const folderName = `Expenses_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`
+      const folder = zip.folder(folderName)!
+      const receiptsFolder = folder.folder('receipts')!
+
+      const csvHeader = 'Ref,Employee,Email,Title,Cost Center,Status,Submitted,Amount,Line Item,Expense Type,Purchase Date,Line Amount,Receipt File\n'
+      let csvRows = ''
+      let receiptIndex = 0
+
+      for (const claim of expClaims) {
+        const empName = claim.employee ? `${claim.employee.first_name} ${claim.employee.last_name}` : ''
+        const empEmail = claim.employee?.email || ''
+        const submitted = claim.submitted_at ? new Date(claim.submitted_at).toLocaleDateString('en-GB') : ''
+        const lines = linesByClaimId[claim.id] || []
+
+        if (lines.length === 0) {
+          csvRows += `"${claim.reference_number}","${empName}","${empEmail}","${claim.title}","${claim.cost_center || ''}","${claim.status}","${submitted}","${Number(claim.amount).toFixed(2)}","","","","",""\n`
+          continue
+        }
+
+        for (const li of lines) {
+          let receiptFilename = ''
+          if (li.receipt_url) {
+            receiptIndex++
+            const ext = li.receipt_url.split('.').pop()?.split('?')[0] || 'jpg'
+            receiptFilename = `${claim.reference_number}_${receiptIndex}.${ext}`
+            try {
+              const response = await fetch(li.receipt_url)
+              if (response.ok) {
+                const blob = await response.blob()
+                receiptsFolder.file(receiptFilename, blob)
+              }
+            } catch {}
+          }
+          const purchaseDate = li.date_of_purchase ? new Date(li.date_of_purchase).toLocaleDateString('en-GB') : ''
+          csvRows += `"${claim.reference_number}","${empName}","${empEmail}","${claim.title}","${claim.cost_center || ''}","${claim.status}","${submitted}","${Number(claim.amount).toFixed(2)}","${li.title}","${li.expense_type}","${purchaseDate}","${Number(li.amount).toFixed(2)}","${receiptFilename}"\n`
+        }
+      }
+
+      folder.file('expenses.csv', csvHeader + csvRows)
+
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${folderName}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+      showSuccess(`Exported ${expClaims.length} claims with ${receiptIndex} receipts`)
+    } catch (err: any) {
+      showError('Export failed: ' + (err.message || 'Unknown error'))
+    }
+    setExporting(false)
+  }
 
   async function loadClaims() {
     setLoading(true)
@@ -256,6 +349,12 @@ export default function AdminExpenses() {
               <option value="">All Statuses</option>
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
+            <button className="admin-btn-sm admin-btn-save" onClick={exportExpenses} disabled={exporting} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {exporting ? 'Exporting...' : 'Export 30 Days'}
+            </button>
           </div>
 
           {loading ? <div className="admin-loading">Loading...</div> : (
