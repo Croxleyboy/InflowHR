@@ -4902,10 +4902,16 @@ body {
 .oto-form-row {
   display: flex;
   gap: 12px;
+  flex-wrap: wrap;
+}
+.oto-form-row > .oto-form-section {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin-bottom: 0;
 }
 .oto-form-input {
   width: 100%;
-  padding: 14px;
+  padding: 12px;
   border: 2px solid var(--border);
   border-radius: 12px;
   font-size: 0.95em;
@@ -4914,6 +4920,12 @@ body {
   color: var(--text);
   box-sizing: border-box;
   transition: border-color 0.15s;
+  min-width: 0;
+}
+.oto-form-input[type="date"],
+.oto-form-input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
 }
 .oto-form-input:focus {
   outline: none;
