@@ -91,7 +91,7 @@ export default function AdminOnboarding() {
     emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '',
     ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '',
     probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: '37.5',
-    annual_salary: '', tax_code: '', payroll_id: '',
+    annual_salary: '', tax_code: '', payroll_id: '', religion: '', salary_group: 'N/A', qualifications: '',
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -118,6 +118,7 @@ export default function AdminOnboarding() {
     'working pattern': 'working_pattern', 'weekly hours': 'weekly_hours',
     'annual salary': 'annual_salary', 'tax code': 'tax_code', 'payroll id': 'payroll_id',
     'leave allowance': 'leave_allowance', 'assigned leave days': 'leave_allowance',
+    'religion': 'religion', 'salary group': 'salary_group', 'qualifications': 'qualifications',
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -198,7 +199,7 @@ export default function AdminOnboarding() {
   }
 
   function generateBulkTemplate() {
-    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Leave Allowance', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number']
+    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'Religion', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Salary Group', 'Tax Code', 'Payroll ID', 'Leave Allowance', 'Qualifications', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number']
     const ws = XLSX.utils.aoa_to_sheet([headers])
     ws['!cols'] = headers.map(() => ({ wch: 20 }))
     const wb = XLSX.utils.book_new()

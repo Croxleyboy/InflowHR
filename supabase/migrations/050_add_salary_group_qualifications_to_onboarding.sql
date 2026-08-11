@@ -1,0 +1,3 @@
+ALTER TABLE onboarding
+  ADD COLUMN IF NOT EXISTS salary_group TEXT DEFAULT 'N/A',
+  ADD COLUMN IF NOT EXISTS qualifications TEXT;
