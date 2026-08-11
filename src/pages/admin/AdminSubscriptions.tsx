@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import AdminCompanies from './AdminCompanies'
 import AdminDemoSeed from './AdminDemoSeed'
+import AdminSupportAccess from './AdminSupportAccess'
+import AdminAuditLog from './AdminAuditLog'
 
 interface PricingItem {
   id: string
@@ -30,7 +32,7 @@ interface CompanyFeature {
 
 export default function AdminSubscriptions() {
   const { isSuperAdmin } = useAuth()
-  const [tab, setTab] = useState<'pricing' | 'features' | 'companies' | 'demo-seed'>('pricing')
+  const [tab, setTab] = useState<'pricing' | 'features' | 'companies' | 'demo-seed' | 'support-access' | 'audit-log'>('pricing')
 
   // Pricing state
   const [pricing, setPricing] = useState<PricingItem[]>([])
@@ -279,6 +281,38 @@ export default function AdminSubscriptions() {
         >
           Demo Seed
         </button>
+        <button
+          onClick={() => setTab('support-access')}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            background: 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            borderBottom: tab === 'support-access' ? '3px solid #1565c0' : '3px solid transparent',
+            color: tab === 'support-access' ? '#1565c0' : '#8b8fa3',
+            marginBottom: -2,
+          }}
+        >
+          Support Access
+        </button>
+        <button
+          onClick={() => setTab('audit-log')}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            background: 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            borderBottom: tab === 'audit-log' ? '3px solid #1565c0' : '3px solid transparent',
+            color: tab === 'audit-log' ? '#1565c0' : '#8b8fa3',
+            marginBottom: -2,
+          }}
+        >
+          Audit Log
+        </button>
       </div>
 
       {/* Pricing Tab */}
@@ -483,6 +517,12 @@ export default function AdminSubscriptions() {
 
       {/* Demo Seed Tab */}
       {tab === 'demo-seed' && <AdminDemoSeed />}
+
+      {/* Support Access Tab */}
+      {tab === 'support-access' && <AdminSupportAccess />}
+
+      {/* Audit Log Tab */}
+      {tab === 'audit-log' && <AdminAuditLog />}
     </div>
   )
 }

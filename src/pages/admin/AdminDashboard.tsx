@@ -246,13 +246,63 @@ function CompanyDash({
 }) {
   const [archives, setArchives] = useState<{ name: string; url: string; created_at: string }[]>([])
   const [archivesLoading, setArchivesLoading] = useState(false)
+  const [supportGrant, setSupportGrant] = useState<{ active: boolean; expires_at: string; reason: string } | null>(null)
+  const [grantingAccess, setGrantingAccess] = useState(false)
+  const [revokingAccess, setRevokingAccess] = useState(false)
 
   useEffect(() => {
     if (companyId) {
       setArchivesLoading(true)
       listCompanyArchives(companyId).then(a => { setArchives(a); setArchivesLoading(false) })
+      loadSupportStatus()
     }
   }, [companyId])
+
+  async function loadSupportStatus() {
+    const { data } = await supabase
+      .from('tenant_support_access')
+      .select('id, status, expires_at, reason')
+      .eq('company_id', companyId)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at', { ascending: false })
+      .limit(1)
+    if (data && data.length > 0) {
+      setSupportGrant({ active: true, expires_at: data[0].expires_at, reason: data[0].reason })
+    } else {
+      setSupportGrant({ active: false, expires_at: '', reason: '' })
+    }
+  }
+
+  async function grantPlatformAccess() {
+    setGrantingAccess(true)
+    const { error } = await supabase.rpc('extend_support_access', {
+      p_company_id: companyId,
+      p_hours: 48,
+    })
+    if (error) {
+      alert('Failed to grant access: ' + error.message)
+    }
+    await loadSupportStatus()
+    setGrantingAccess(false)
+  }
+
+  async function revokePlatformAccess() {
+    setRevokingAccess(true)
+    const { data } = await supabase
+      .from('tenant_support_access')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+    if (data) {
+      for (const g of data) {
+        await supabase.rpc('revoke_support_access', { p_grant_id: g.id })
+      }
+    }
+    await loadSupportStatus()
+    setRevokingAccess(false)
+  }
 
   const cards: {
     label: string; value: number; color: string; path: string
@@ -334,6 +384,61 @@ function CompanyDash({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {supportGrant && (
+        <div className="cd-archives-section" style={{ marginTop: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: '0 0 4px', color: '#1a1a2e' }}>Platform Support Access</h3>
+              <p style={{ fontSize: 13, color: '#8b8fa3', margin: 0 }}>
+                Control whether the InflowHR platform team can access your company data for support
+              </p>
+            </div>
+            <span className={`admin-badge ${supportGrant.active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
+              {supportGrant.active ? 'Access Granted' : 'No Access'}
+            </span>
+          </div>
+
+          {supportGrant.active && (
+            <div style={{ padding: '10px 14px', background: '#e8f5e9', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+              <strong>Active until:</strong>{' '}
+              {new Date(supportGrant.expires_at).toLocaleDateString('en-GB')}{' '}
+              {new Date(supportGrant.expires_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+              {supportGrant.reason && <> &mdash; <em>{supportGrant.reason}</em></>}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            {!supportGrant.active ? (
+              <button
+                className="admin-btn admin-btn-primary"
+                onClick={grantPlatformAccess}
+                disabled={grantingAccess}
+              >
+                {grantingAccess ? 'Granting...' : 'Grant Platform Access (48h)'}
+              </button>
+            ) : (
+              <>
+                <button
+                  className="admin-btn admin-btn-primary"
+                  onClick={grantPlatformAccess}
+                  disabled={grantingAccess}
+                >
+                  {grantingAccess ? 'Extending...' : 'Extend 48h'}
+                </button>
+                <button
+                  className="admin-btn"
+                  style={{ background: '#c62828', color: '#fff', border: 'none' }}
+                  onClick={revokePlatformAccess}
+                  disabled={revokingAccess}
+                >
+                  {revokingAccess ? 'Revoking...' : 'Revoke Access'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
