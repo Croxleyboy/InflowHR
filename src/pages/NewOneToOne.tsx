@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { formatDateDisplay } from '../lib/formatters'
 
 interface DirectReport {
   id: string
@@ -128,25 +129,28 @@ export default function NewOneToOne() {
           </div>
         </div>
 
-        <div className="oto-form-row">
-          <div className="oto-form-section">
-            <label className="oto-form-label">{t('one_to_one.meeting_date')}</label>
-            <div className="oto-input-wrap">
-              <svg className="oto-input-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="4" width="16" height="14" rx="2" />
-                <path d="M2 8h16M6 2v4M14 2v4" />
+        <div className="date-row">
+          <div className="date-field">
+            <label className="field-label">{t('one_to_one.meeting_date')}</label>
+            <div className="date-input-wrap">
+              <span className="date-display">{date ? formatDateDisplay(date) : t('one_to_one.select_date')}</span>
+              <input type="date" value={date} min={today} onChange={e => setDate(e.target.value)} className="date-input-hidden" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ec407a" strokeWidth="2" className="date-icon">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
               </svg>
-              <input type="date" className="oto-form-input" value={date} min={today} onChange={e => setDate(e.target.value)} />
             </div>
           </div>
-          <div className="oto-form-section">
-            <label className="oto-form-label">{t('one_to_one.meeting_time')}</label>
-            <div className="oto-input-wrap">
-              <svg className="oto-input-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="10" cy="10" r="8" />
-                <path d="M10 6v4l3 2" />
+          <div className="date-field">
+            <label className="field-label">{t('one_to_one.meeting_time')}</label>
+            <div className="date-input-wrap">
+              <span className="date-display">{time}</span>
+              <input type="time" value={time} onChange={e => setTime(e.target.value)} className="date-input-hidden" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ec407a" strokeWidth="2" className="date-icon">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
               </svg>
-              <input type="time" className="oto-form-input" value={time} onChange={e => setTime(e.target.value)} />
             </div>
           </div>
         </div>
