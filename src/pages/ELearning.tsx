@@ -40,6 +40,7 @@ export interface Course {
   duration: string
   required: boolean
   deadline?: string
+  daysToComplete?: number
   tags: string[]
   annualReminder?: boolean
   industry?: string
@@ -154,6 +155,7 @@ export default function ELearning() {
   const [showComplete, setShowComplete] = useState<string | null>(null)
   const [allCourses, setAllCourses] = useState<Course[]>(COURSES)
   const [enabledCourseIds, setEnabledCourseIds] = useState<Set<string> | null>(null)
+  const [enrolmentDates, setEnrolmentDates] = useState<Record<string, string>>({})
 
   const fetchCourses = useCallback(async () => {
     const { data } = await supabase
@@ -172,6 +174,7 @@ export default function ELearning() {
         duration: r.duration,
         required: r.required,
         deadline: r.deadline || undefined,
+        daysToComplete: r.days_to_complete || undefined,
         tags: r.tags || [],
         annualReminder: r.annual_reminder,
         industry: r.industry || undefined,
@@ -192,8 +195,23 @@ export default function ELearning() {
     }
   }, [companyUser?.company_id])
 
+  const fetchEnrolmentDates = useCallback(async () => {
+    if (!companyUser?.company_id || !EMPLOYEE_ID) return
+    const { data } = await supabase
+      .from('course_enrolments')
+      .select('course_id, enrolled_at')
+      .eq('company_id', companyUser.company_id)
+      .eq('employee_id', EMPLOYEE_ID)
+    if (data) {
+      const dates: Record<string, string> = {}
+      data.forEach((r: any) => { if (r.enrolled_at) dates[r.course_id] = r.enrolled_at })
+      setEnrolmentDates(dates)
+    }
+  }, [companyUser?.company_id, EMPLOYEE_ID])
+
   useEffect(() => { fetchCourses() }, [fetchCourses])
   useEffect(() => { fetchEnabledCourses() }, [fetchEnabledCourses])
+  useEffect(() => { fetchEnrolmentDates() }, [fetchEnrolmentDates])
   useEffect(() => { saveProgress(progress) }, [progress])
 
   useEffect(() => {
@@ -319,9 +337,18 @@ export default function ELearning() {
     return 'not-started'
   }
 
-  function daysUntilDeadline(deadline?: string): number | null {
-    if (!deadline) return null
-    const diff = new Date(deadline).getTime() - Date.now()
+  function daysUntilDeadline(course: Course): number | null {
+    if (course.daysToComplete) {
+      const enrolledAt = enrolmentDates[course.id]
+      if (!enrolledAt) return course.daysToComplete
+      const enrolled = new Date(enrolledAt)
+      const deadlineDate = new Date(enrolled)
+      deadlineDate.setDate(deadlineDate.getDate() + course.daysToComplete)
+      const diff = deadlineDate.getTime() - Date.now()
+      return Math.ceil(diff / (1000 * 60 * 60 * 24))
+    }
+    if (!course.deadline) return null
+    const diff = new Date(course.deadline).getTime() - Date.now()
     return Math.ceil(diff / (1000 * 60 * 60 * 24))
   }
 
@@ -423,7 +450,7 @@ export default function ELearning() {
           const status = getCourseStatus(course.id)
           const isBookmarked = progress.bookmarked.includes(course.id)
           const isExpanded = expandedCourse === course.id
-          const daysLeft = daysUntilDeadline(course.deadline)
+          const daysLeft = daysUntilDeadline(course)
           const pct = progress.inProgress[course.id] ?? 0
 
           return (
@@ -482,7 +509,7 @@ export default function ELearning() {
                     <div className="elearning-card-required-badge">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                       {t('elearning.mandatory')}
-                      {course.deadline && <span> · {t('elearning.due_by')} {new Date(course.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+                      {daysLeft !== null && <span> · {daysLeft <= 0 ? t('elearning.overdue') : `${daysLeft} ${t('elearning.days_remaining')}`}</span>}
                     </div>
                   )}
                   {course.annualReminder && (

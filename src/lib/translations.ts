@@ -526,6 +526,7 @@ const en: Translations = {
   'elearning.mandatory': 'Mandatory',
   'elearning.due_by': 'Due by',
   'elearning.overdue': 'Overdue',
+  'elearning.days_remaining': 'days remaining',
   'elearning.complete_label': 'complete',
   'elearning.start_course': 'Start',
   'elearning.mark_complete': 'Complete',

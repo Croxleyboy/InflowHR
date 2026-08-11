@@ -14,6 +14,7 @@ interface DbCourse {
   duration: string
   required: boolean
   deadline: string | null
+  days_to_complete: number | null
   tags: string[]
   annual_reminder: boolean
   industry: string | null
@@ -49,7 +50,7 @@ const INDUSTRIES = ['', 'legal', 'education', 'accountancy']
 
 const EMPTY_COURSE: Omit<DbCourse, 'id'> & { id: string } = {
   id: '', title: '', description: '', category: 'onboarding', type: 'article',
-  duration: '10 min', required: false, deadline: null, tags: [],
+  duration: '10 min', required: false, deadline: null, days_to_complete: null, tags: [],
   annual_reminder: false, industry: null, external_url: null, is_active: true,
 }
 
@@ -293,6 +294,7 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
       duration: form.duration,
       required: form.required,
       deadline: form.deadline || null,
+      days_to_complete: form.days_to_complete || null,
       tags: form.tags,
       annual_reminder: form.annual_reminder,
       industry: form.industry || null,
@@ -323,6 +325,7 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
       duration: form.duration,
       required: form.required,
       deadline: form.deadline || null,
+      days_to_complete: form.days_to_complete || null,
       tags: form.tags,
       annual_reminder: form.annual_reminder,
       industry: form.industry || null,
@@ -537,8 +540,9 @@ function CourseForm({ form, setForm, isEdit, companies, selectedCompanyIds, onCo
         </select>
       </div>
       <div className="admin-el-form-field">
-        <label>Deadline</label>
-        <input type="date" className="admin-inline-input" value={form.deadline || ''} onChange={e => setForm(p => ({ ...p, deadline: e.target.value || null }))} />
+        <label>Days to Complete</label>
+        <input type="number" className="admin-inline-input" min="1" placeholder="e.g. 30" value={form.days_to_complete ?? ''} onChange={e => setForm(p => ({ ...p, days_to_complete: e.target.value ? parseInt(e.target.value) : null }))} />
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Days from employee enrolment date</span>
       </div>
       <div className="admin-el-form-field">
         <label>External URL</label>
