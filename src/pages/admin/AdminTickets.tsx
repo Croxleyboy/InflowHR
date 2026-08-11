@@ -49,8 +49,8 @@ const STATUS_COLORS: Record<TicketStatus, string> = { open: '#ff9800', 'in-progr
 const EMPTY_NEW_TICKET = { title: '', description: '', category: 'hr-query' as TicketCategory, priority: 'medium' as Priority, assignedTo: 'HR Team' }
 
 export default function AdminTickets() {
-  const { employeeName } = useAuth()
-  const { selectedCompanyId } = useAdminCompany()
+  const { employeeName, isSuperAdmin } = useAuth()
+  const { selectedCompanyId, companies } = useAdminCompany()
   const { lang } = useLanguage()
   const { showError, showSuccess } = useToast()
   const [tickets, setTickets] = useState<Ticket[]>([])
@@ -65,18 +65,23 @@ export default function AdminTickets() {
   const [newTicket, setNewTicket] = useState(EMPTY_NEW_TICKET)
 
   async function load() {
-    if (!selectedCompanyId) { setLoading(false); return }
+    if (!isSuperAdmin && !selectedCompanyId) { setLoading(false); return }
     setLoading(true)
-    const { data } = await supabase
+    let query = supabase
       .from('hr_tickets')
       .select('*')
-      .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
+    if (!isSuperAdmin && selectedCompanyId) {
+      query = query.eq('company_id', selectedCompanyId)
+    } else if (isSuperAdmin && selectedCompanyId) {
+      query = query.eq('company_id', selectedCompanyId)
+    }
+    const { data } = await query
     setTickets((data as Ticket[]) || [])
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [selectedCompanyId])
+  useEffect(() => { load() }, [selectedCompanyId, isSuperAdmin])
 
   async function raiseTicket() {
     if (!newTicket.title.trim() || !selectedCompanyId) return
@@ -255,11 +260,12 @@ export default function AdminTickets() {
       {loading ? <div className="admin-loading">{isEn ? 'Loading...' : 'Laden...'}</div> : (
         <div className="admin-table-wrap">
           <table className="admin-table">
-            <thead><tr><th>Ref</th><th>{isEn ? 'Title' : 'Titel'}</th><th className="admin-ticket-hide-mobile">{isEn ? 'Category' : 'Kategorie'}</th><th>{isEn ? 'Priority' : 'Priorität'}</th><th>Status</th><th className="admin-ticket-hide-mobile">{isEn ? 'Assigned' : 'Zugewiesen'}</th><th>{isEn ? 'Actions' : 'Aktionen'}</th></tr></thead>
+            <thead><tr>{isSuperAdmin && <th>{isEn ? 'Company' : 'Firma'}</th>}<th>Ref</th><th>{isEn ? 'Title' : 'Titel'}</th><th className="admin-ticket-hide-mobile">{isEn ? 'Category' : 'Kategorie'}</th><th>{isEn ? 'Priority' : 'Priorität'}</th><th>Status</th><th className="admin-ticket-hide-mobile">{isEn ? 'Assigned' : 'Zugewiesen'}</th><th>{isEn ? 'Actions' : 'Aktionen'}</th></tr></thead>
             <tbody>
               {filtered.map(t => (
                 <Fragment key={t.id}>
                   <tr className={expandedId === t.id ? 'admin-row-active' : ''}>
+                    {isSuperAdmin && <td style={{ fontSize: 12, fontWeight: 600 }}>{companies?.find(c => c.id === t.company_id)?.name || t.company_id.substring(0, 8)}</td>}
                     <td className="admin-td-mono">{t.ref}</td>
                     <td>{editingId === t.id ? <input className="admin-inline-input" value={editForm.title} onChange={e => setEditForm(f => ({...f, title: e.target.value}))} /> : t.title}</td>
                     <td className="admin-ticket-hide-mobile">{editingId === t.id ? (
@@ -310,7 +316,7 @@ export default function AdminTickets() {
                   </tr>
                   {expandedId === t.id && (
                     <tr className="admin-expanded-row">
-                      <td colSpan={7}>
+                      <td colSpan={isSuperAdmin ? 8 : 7}>
                         <div className="admin-expanded-content">
                           <p><strong>{isEn ? 'Description' : 'Beschreibung'}:</strong> {editingId === t.id ? <textarea className="admin-inline-textarea" value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} /> : t.description}</p>
                           <div className="admin-detail-grid">
