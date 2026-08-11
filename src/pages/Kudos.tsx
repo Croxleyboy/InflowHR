@@ -199,14 +199,15 @@ export default function Kudos() {
   }, [fetchData, EMPLOYEE_ID])
 
   const displayEntries = useMemo(() => {
-    if (colleaguesOnly && watchlist.length > 0) {
+    if (colleaguesOnly) {
       return entries.filter(e =>
+        e.from_employee_id === EMPLOYEE_ID ||
         e.to_employee_id === EMPLOYEE_ID ||
         watchlist.includes(e.from_employee_id) ||
         (e.to_employee_id && watchlist.includes(e.to_employee_id))
       )
     }
-    return entries
+    return entries.filter(e => e.is_public)
   }, [entries, colleaguesOnly, watchlist, EMPLOYEE_ID])
 
   const feedTotalPages = Math.max(1, Math.ceil(displayEntries.length / PAGE_SIZE))
