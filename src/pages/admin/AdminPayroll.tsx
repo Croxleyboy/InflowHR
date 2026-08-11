@@ -31,6 +31,9 @@ interface Employee {
   last_name: string
   job_title: string
   department: string
+  annual_salary: number | null
+  tax_code: string | null
+  payroll_id: string | null
 }
 
 const PAYROLL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -94,7 +97,7 @@ export default function AdminPayroll() {
     setLoading(true)
     const [pRes, eRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
     ])
     setPayslips((pRes.data as Payslip[]) || [])
     setEmployees((eRes.data as Employee[]) || [])
@@ -135,10 +138,11 @@ export default function AdminPayroll() {
     const errors: string[] = []
     for (const emp of employees) {
       const latest = payslips.find(p => p.employee?.id === emp.id)
-      const gross = latest ? Number(latest.gross_pay) : 3500
-      const tax = latest ? Number(latest.tax) : 700
-      const ni = latest ? Number(latest.national_insurance) : 350
-      const pension = latest ? Number(latest.pension) : 175
+      const salary = emp.annual_salary || latest?.annual_salary || 42000
+      const gross = Math.round((salary / 12) * 100) / 100
+      const tax = latest ? Number(latest.tax) : Math.round(gross * 0.2 * 100) / 100
+      const ni = latest ? Number(latest.national_insurance) : Math.round(gross * 0.12 * 100) / 100
+      const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
@@ -150,9 +154,9 @@ export default function AdminPayroll() {
         net_pay: gross - tax - ni - pension,
         payment_date: paymentDate.toISOString().split('T')[0],
         status: 'draft',
-        tax_code: latest?.tax_code || '1257L',
-        annual_salary: latest?.annual_salary || 42000,
-        payroll_id: latest?.payroll_id || '',
+        tax_code: emp.tax_code || latest?.tax_code || '1257L',
+        annual_salary: salary,
+        payroll_id: emp.payroll_id || latest?.payroll_id || '',
       }).select()
       if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
     }
@@ -484,7 +488,7 @@ export default function AdminPayroll() {
   function startEmpEdit(emp: Employee) {
     setEmpEditId(emp.id)
     const latest = payslips.find(p => p.employee?.id === emp.id)
-    setEmpForm({ annual_salary: latest?.annual_salary || 0, tax_code: latest?.tax_code || '1257L', pension_pct: latest ? (Number(latest.pension) / Number(latest.gross_pay) * 100).toFixed(1) : '5.0' })
+    setEmpForm({ annual_salary: emp.annual_salary || latest?.annual_salary || 0, tax_code: emp.tax_code || latest?.tax_code || '1257L', pension_pct: latest ? (Number(latest.pension) / Number(latest.gross_pay) * 100).toFixed(1) : '5.0' })
   }
 
   return (
@@ -618,8 +622,8 @@ export default function AdminPayroll() {
                     <td>{emp.first_name} {emp.last_name}</td>
                     <td>{emp.department || '—'}</td>
                     <td>{emp.job_title || '—'}</td>
-                    <td>{empEditId === emp.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={empForm.annual_salary} onChange={e => setEmpForm(f => ({...f, annual_salary: +e.target.value}))} /> : `£${Number(latest?.annual_salary || 0).toLocaleString()}`}</td>
-                    <td>{empEditId === emp.id ? <input className="admin-inline-input admin-inline-sm" value={empForm.tax_code} onChange={e => setEmpForm(f => ({...f, tax_code: e.target.value}))} /> : (latest?.tax_code || '—')}</td>
+                    <td>{empEditId === emp.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={empForm.annual_salary} onChange={e => setEmpForm(f => ({...f, annual_salary: +e.target.value}))} /> : `£${Number(emp.annual_salary || latest?.annual_salary || 0).toLocaleString()}`}</td>
+                    <td>{empEditId === emp.id ? <input className="admin-inline-input admin-inline-sm" value={empForm.tax_code} onChange={e => setEmpForm(f => ({...f, tax_code: e.target.value}))} /> : (emp.tax_code || latest?.tax_code || '—')}</td>
                     <td>{empEditId === emp.id ? <input type="number" step="0.1" className="admin-inline-input admin-inline-sm" value={empForm.pension_pct} onChange={e => setEmpForm(f => ({...f, pension_pct: e.target.value}))} /> : (latest ? `${(Number(latest.pension) / Number(latest.gross_pay) * 100).toFixed(1)}%` : '—')}</td>
                     <td className="admin-actions">
                       {empEditId === emp.id ? (

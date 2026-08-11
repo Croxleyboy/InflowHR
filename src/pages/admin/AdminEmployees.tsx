@@ -158,6 +158,7 @@ export default function AdminEmployees() {
     await supabase.from('timesheets').update({ approved_by: null }).eq('approved_by', emp.id)
     await supabase.from('employees').update({ manager_id: null }).eq('manager_id', emp.id)
     await supabase.from('announcements').update({ author_id: null }).eq('author_id', emp.id)
+    await supabase.from('workflow_tracker').delete().eq('employee_email', emp.email)
 
     // Delete expense_line_items for this employee's claims first
     const { data: claims } = await supabase.from('expense_claims').select('id').eq('employee_id', emp.id)
