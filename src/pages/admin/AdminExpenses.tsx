@@ -1,7 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import JSZip from 'jszip'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 
@@ -26,6 +27,12 @@ interface LineItem {
   date_of_purchase: string
   receipt_url: string | null
 }
+interface ExportLog {
+  id: number
+  exported_by: string
+  file_name: string
+  exported_at: string
+}
 
 const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected']
 const COST_CENTERS = ['External expenses', 'Internal costs', 'Travel & Transport', 'Client entertainment', 'Office supplies', 'IT & Software', 'Training & Development']
@@ -40,6 +47,7 @@ const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', '
 
 export default function AdminExpenses() {
   const { selectedCompanyId } = useAdminCompany()
+  const { employeeEmail, employeeName } = useAuth()
   const { t } = useLanguage()
   const { showError, showSuccess } = useToast()
   const [claims, setClaims] = useState<Claim[]>([])
@@ -51,14 +59,27 @@ export default function AdminExpenses() {
   const [editForm, setEditForm] = useState<Partial<Claim>>({})
   const [editingLineId, setEditingLineId] = useState<number | null>(null)
   const [lineForm, setLineForm] = useState<Partial<LineItem>>({})
-  const [tab, setTab] = useState<'claims' | 'settings' | 'chart'>('claims')
+  const [tab, setTab] = useState<'claims' | 'settings' | 'chart' | 'exports'>('claims')
   const [costCenters, setCostCenters] = useState([...COST_CENTERS])
   const [expenseTypes, setExpenseTypes] = useState([...EXPENSE_TYPES])
   const [newCostCenter, setNewCostCenter] = useState('')
   const [newExpenseType, setNewExpenseType] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [exportLogs, setExportLogs] = useState<ExportLog[]>([])
+
+  const loadExportLogs = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase
+      .from('expense_export_log')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .order('exported_at', { ascending: false })
+      .limit(50)
+    if (data) setExportLogs(data)
+  }, [selectedCompanyId])
 
   useEffect(() => { if (selectedCompanyId) loadClaims() }, [selectedCompanyId])
+  useEffect(() => { if (selectedCompanyId) loadExportLogs() }, [selectedCompanyId, loadExportLogs])
 
   async function exportExpenses() {
     if (!selectedCompanyId) return
@@ -138,12 +159,38 @@ export default function AdminExpenses() {
       folder.file('expenses.csv', csvHeader + csvRows)
 
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } })
+      const zipFileName = `${folderName}.zip`
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${folderName}.zip`
+      a.download = zipFileName
       a.click()
       URL.revokeObjectURL(url)
+
+      const today = new Date().toISOString().split('T')[0]
+      const exportedBy = employeeName || employeeEmail
+      const { data: existing } = await supabase.from('expense_export_log')
+        .select('id')
+        .eq('company_id', selectedCompanyId)
+        .eq('exported_by', exportedBy)
+        .gte('exported_at', today + 'T00:00:00')
+        .lte('exported_at', today + 'T23:59:59')
+        .limit(1)
+        .maybeSingle()
+      if (existing) {
+        await supabase.from('expense_export_log').update({
+          file_name: zipFileName,
+          exported_at: new Date().toISOString(),
+        }).eq('id', existing.id)
+      } else {
+        await supabase.from('expense_export_log').insert({
+          company_id: selectedCompanyId,
+          exported_by: exportedBy,
+          file_name: zipFileName,
+        })
+      }
+      loadExportLogs()
+
       showSuccess(`Exported ${expClaims.length} claims with ${receiptIndex} receipts`)
     } catch (err: any) {
       showError('Export failed: ' + (err.message || 'Unknown error'))
@@ -335,6 +382,7 @@ export default function AdminExpenses() {
       <div className="admin-tabs">
         <button className={`admin-tab ${tab === 'claims' ? 'admin-tab-active' : ''}`} onClick={() => setTab('claims')}>Claims</button>
         <button className={`admin-tab ${tab === 'chart' ? 'admin-tab-active' : ''}`} onClick={() => setTab('chart')}>Analytics</button>
+        <button className={`admin-tab ${tab === 'exports' ? 'admin-tab-active' : ''}`} onClick={() => setTab('exports')}>Exports</button>
         <button className={`admin-tab ${tab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
       </div>
 
@@ -471,6 +519,40 @@ export default function AdminExpenses() {
           <div className="admin-chart-total">
             <strong>FY Total:</strong> £{chartData.yearTotal.toFixed(2)}
           </div>
+        </div>
+      )}
+
+      {tab === 'exports' && (
+        <div className="admin-settings-section">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h3 style={{ margin: 0 }}>Export History</h3>
+            <button className="admin-btn-sm admin-btn-save" onClick={exportExpenses} disabled={exporting} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              {exporting ? 'Exporting...' : 'Export 30 Days'}
+            </button>
+          </div>
+          {exportLogs.length > 0 ? (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr><th>Date / Time</th><th>Exported By</th><th>File</th></tr>
+                </thead>
+                <tbody>
+                  {exportLogs.map(log => (
+                    <tr key={log.id}>
+                      <td>{new Date(log.exported_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date(log.exported_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+                      <td>{log.exported_by}</td>
+                      <td className="admin-td-mono">{log.file_name}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="admin-empty">No exports yet</div>
+          )}
         </div>
       )}
 
