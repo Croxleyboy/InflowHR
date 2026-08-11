@@ -5,7 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useFeatures } from '../context/FeatureContext'
-import { formatDate } from '../lib/formatters'
+import { formatDate, formatDateDisplay } from '../lib/formatters'
 import { checkTimeOverlap } from '../lib/overlapCheck'
 import { getManagerEmail } from '../lib/workflow'
 
