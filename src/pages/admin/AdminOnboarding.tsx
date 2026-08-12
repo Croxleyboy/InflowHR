@@ -402,6 +402,15 @@ export default function AdminOnboarding() {
     load()
   }
 
+  async function cancelOffboarding(record: OffboardRecord) {
+    if (!confirm(`Cancel offboarding for ${record.employee_name}?`)) return
+    const { error } = await supabase.from('offboarding').delete().eq('id', record.id)
+    if (error) { showError('Failed to cancel offboarding: ' + error.message); return }
+    showSuccess(`Offboarding cancelled for ${record.employee_name}`)
+    if (offboardSelectedId === record.id) { setOffboardSelectedId(null); setTab('offboarding') }
+    loadOffboarding()
+  }
+
   async function deleteEmployee(frozen: FrozenEmployee) {
     if (!confirm(`Permanently delete ${frozen.employee_name}? This cannot be undone.`)) return
     await supabase.from('frozen_employees').delete().eq('id', frozen.id)
@@ -1180,7 +1189,10 @@ export default function AdminOnboarding() {
                             <div className="admin-progress-bar"><div className="admin-progress-fill" style={{ width: `${(doneCount / OFFBOARD_STEPS.length) * 100}%`, background: '#c62828' }} /></div>
                             <span className="admin-progress-text">{doneCount}/{OFFBOARD_STEPS.length}</span>
                           </td>
-                          <td><button className="admin-btn-sm admin-btn-save" onClick={() => openOffboardWorkflow(r)}>Workflow</button></td>
+                          <td className="admin-actions">
+                            <button className="admin-btn-sm admin-btn-save" onClick={() => openOffboardWorkflow(r)}>Workflow</button>
+                            <button className="admin-btn-sm" style={{ background: '#e0e0e0', color: '#333', border: 'none' }} onClick={() => cancelOffboarding(r)}>Cancel</button>
+                          </td>
                         </tr>
                       )
                     })}
