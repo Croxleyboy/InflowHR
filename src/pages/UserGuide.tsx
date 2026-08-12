@@ -66,6 +66,7 @@ const SECTIONS: GuideSection[] = [
     icon: '📚', title: 'E-Learning',
     features: [
       { title: 'Browse & Complete Courses', purpose: 'Work through training courses assigned to your company — videos, articles, quizzes, and policies.', steps: ['Navigate to Home > E-Learning.', 'Filter by All, Required, Recommended, or Bookmarked.', 'Filter further by category: Onboarding, Compliance, Policies, My Role, Growth, or Wellbeing.', 'Tap a course card to expand it, then tap Start Course.', 'Video courses play inline within the app. Quizzes must be passed to complete. Articles and policies are read-through.', 'Tap Mark Complete when finished.'] },
+      { title: 'Deadlines & Days Remaining', purpose: 'See how long you have to complete each course based on your personal enrolment date.', steps: ['Each course card shows the number of days remaining until your deadline.', 'The deadline is calculated from the date you were enrolled plus the allowed completion period set by your admin.', 'Courses without a set completion period show no deadline.'], callout: { type: 'note', text: 'Deadlines are personal to you — they are based on when you were enrolled, not a fixed company-wide date.' } },
       { title: 'Progress Tracking', purpose: 'Track how many courses you have completed and time invested.', steps: ['The stats bar at the top shows completed count, total minutes, and required progress.', 'A "Continue Learning" banner appears if you have an in-progress course.'] },
       { title: 'Annual Renewals', purpose: 'Some compliance courses require annual re-completion.', steps: ['Courses due for renewal are flagged with a badge. Tap Renew Now to retake.'] },
     ],
@@ -129,7 +130,7 @@ const SECTIONS: GuideSection[] = [
 
 export default function UserGuide() {
   const navigate = useNavigate()
-  const [openSections, setOpenSections] = useState<Record<number, boolean>>({ 0: true })
+  const [openSections, setOpenSections] = useState<Record<number, boolean>>({})
 
   function toggleSection(idx: number) {
     setOpenSections(prev => ({ ...prev, [idx]: !prev[idx] }))

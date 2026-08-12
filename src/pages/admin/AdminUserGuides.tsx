@@ -66,6 +66,7 @@ const EMPLOYEE_SECTIONS: GuideSection[] = [
     icon: '📚', title: 'E-Learning',
     features: [
       { title: 'Browse & Complete Courses', purpose: 'Work through training courses assigned to your company — videos, articles, quizzes, and policies.', steps: ['Navigate to Home > E-Learning.', 'Filter by All, Required, Recommended, or Bookmarked.', 'Filter further by category: Onboarding, Compliance, Policies, My Role, Growth, or Wellbeing.', 'Tap a course card to expand it, then tap Start Course.', 'Video courses play inline within the app. Quizzes must be passed to complete. Articles and policies are read-through.', 'Tap Mark Complete when finished.'] },
+      { title: 'Deadlines & Days Remaining', purpose: 'See how long you have to complete each course based on your personal enrolment date.', steps: ['Each course card shows the number of days remaining until your deadline.', 'The deadline is calculated from the date you were enrolled plus the allowed completion period set by your admin.', 'Courses without a set completion period show no deadline.'], callout: { type: 'note', text: 'Deadlines are personal to you — they are based on when you were enrolled, not a fixed company-wide date.' } },
       { title: 'Progress Tracking', purpose: 'Track how many courses you have completed and time invested.', steps: ['The stats bar at the top shows completed count, total minutes, and required progress.', 'A "Continue Learning" banner appears if you have an in-progress course.'] },
       { title: 'Annual Renewals', purpose: 'Some compliance courses require annual re-completion.', steps: ['Courses due for renewal are flagged with a badge. Tap Renew Now to retake.'] },
     ],
@@ -147,6 +148,9 @@ const ADMIN_SECTIONS: GuideSection[] = [
     icon: '💰', title: 'Expense Administration',
     features: [
       { title: 'Process Claims', purpose: 'Review and approve or reject employee expense claims.', steps: ['Navigate to Admin > Expenses.', 'Filter by status. Click any claim to review the details, attached receipts, and audit trail.', 'Approve or reject with an optional comment.'] },
+      { title: 'Export Expenses', purpose: 'Download all pending and approved expense claims from the last 30 days as a zip file with a CSV summary and receipt attachments.', steps: ['Navigate to Admin > Expenses.', 'Click the Export Expenses button (available on the Claims tab or the Exports tab).', 'A zip file is generated containing a CSV of all claim line items and a receipts folder with all uploaded receipt files.', 'The zip downloads automatically with a date-stamped filename (e.g. Expenses_12-08-2026.zip).'], callout: { type: 'tip', text: 'The export covers the last 30 days of pending and approved claims for your company only. Run exports regularly to stay on top of expense processing.' } },
+      { title: 'Export History', purpose: 'Track when expense exports were last run and by whom.', steps: ['Navigate to Admin > Expenses and switch to the Exports tab.', 'The table lists each export with the date/time, who ran it, and the zip filename.', 'Only one export record is kept per person per day.'] },
+      { title: 'Export Warning', purpose: 'Get alerted when expenses have not been exported for 25 or more days.', steps: ['An orange warning banner appears on the Admin Dashboard and the Expense Management page when the last export is 25+ days old or no export has ever been run.', 'Click the banner to go directly to the Exports tab.'], callout: { type: 'note', text: 'The warning is visible to all company admins to encourage regular expense processing.' } },
     ],
   },
   {
@@ -184,12 +188,16 @@ const ADMIN_SECTIONS: GuideSection[] = [
     ],
   },
   {
-    icon: '🚀', title: 'Onboarding',
+    icon: '🚀', title: 'Onboard / Offboard',
     features: [
-      { title: 'Dashboard', purpose: 'At-a-glance onboarding stats and pipeline.', steps: ['Navigate to Admin > Onboarding.', 'View total starters, in-progress, due to join, overdue, and completed counts.', 'The monthly chart shows starters per month for the current financial year.', 'The pipeline view shows how many starters are at each workflow stage.'] },
+      { title: 'Onboarding Dashboard', purpose: 'At-a-glance onboarding stats and pipeline.', steps: ['Navigate to Admin > Onboard / Offboard.', 'View total starters, in-progress, due to join, overdue, and completed counts.', 'The monthly chart shows starters per month for the current financial year.', 'The pipeline view shows how many starters are at each workflow stage.'] },
       { title: 'Create a New Starter', purpose: 'Add a new employee through the onboarding workflow.', steps: ['Switch to the New Starter tab.', 'Fill in basic details (name, email, job title, department, start date, contract type).', 'Optionally complete personal information, address, employment, emergency contact, and bank details.', 'Tap Create & Start Workflow to begin the 8-step onboarding process.'] },
       { title: 'Bulk Upload', purpose: 'Create multiple starters from a spreadsheet.', steps: ['Switch to the Bulk Upload tab.', 'Download the Excel template, fill it in, and upload.', 'Review the preview table, fix any validation errors, then confirm.'] },
-      { title: 'Onboarding Workflow', purpose: 'Track each starter through 8 sequential steps.', steps: ['Steps: Create Details → Order Equipment → Organise First Meeting → Notify Manager → Plan First Day → Inform Starter → Create Accounts & Licences → Day 1 Access Verification.', 'Mark each step complete or skip if not applicable.', 'The final step (Day 1 Access) creates the employee record and activates their account.'] },
+      { title: 'Onboard Workflow', purpose: 'Track each starter through 8 sequential steps.', steps: ['Steps: Create Details → Order Equipment → Organise First Meeting → Notify Manager → Plan First Day → Inform Starter → Create Accounts & Licences → Day 1 Access Verification.', 'Mark each step complete or skip if not applicable.', 'The final step (Day 1 Access) creates the employee record and activates their account.'] },
+      { title: 'Start Offboarding', purpose: 'Begin the offboarding process for a departing employee.', steps: ['Switch to the Offboarding tab.', 'Search for the employee by name using the search bar.', 'Select the employee from the results, set their end date and reason for leaving.', 'Tap Start Offboarding to create the record and begin the workflow.'], callout: { type: 'note', text: 'Only active, onboarded employees appear in the offboarding search. Employees already being offboarded are excluded.' } },
+      { title: 'Offboarding Workflow', purpose: 'Guide a leaver through 5 sequential offboarding steps.', steps: ['Switch to the Offboarding Workflow tab (or tap Workflow on an active offboarding record).', 'Steps: Approve Resignation (HR) → Recover Equipment → Organise Leaving Meeting (Manager) → Remove Employee Accounts/Licences → Agree/Confirm Last Payments.', 'Mark each step complete or skip if not applicable. You can also undo a completed step if needed.', 'After marking the final step complete, a confirmation modal appears asking you to approve or decline the freezing of the employee account.'] },
+      { title: 'Freeze & Deletion Queue', purpose: 'Frozen employees are blocked from logging in and placed in a 30-day deletion queue.', steps: ['When you approve the freeze in the final offboarding step, the employee is immediately deactivated and cannot sign in.', 'The frozen employee appears in the Deletion Queue table on the Offboarding tab with their freeze date and scheduled deletion date (30 days later).', 'Each frozen record shows a status: Awaiting Expiry, Ready to Delete, or Recovered.', 'Use the Recover button to reinstate the employee — their account is reactivated and they can sign in again.', 'Use the Delete button to permanently remove the employee record before the 30-day period.'], callout: { type: 'tip', text: 'Recovery is available at any time before deletion. The employee\'s data is fully preserved during the 30-day freeze period.' } },
+      { title: 'Cancel Offboarding', purpose: 'Remove an in-progress offboarding record before it is completed.', steps: ['On the Offboarding tab, find the employee under Active Offboarding.', 'Click the Cancel button on their record.', 'Confirm the cancellation in the dialog. The offboarding record is removed and the employee remains active.'] },
     ],
   },
   {
@@ -248,9 +256,11 @@ const SUPER_SECTIONS: GuideSection[] = [
   {
     icon: '🏢', title: 'Company Management',
     features: [
-      { title: 'Create a Company', purpose: 'Register a new tenant on the platform.', steps: ['Navigate to Admin > Subscriptions > Companies.', 'Tap + Add Company.', 'Enter the company name and email domain (e.g. acme.co.uk).', 'Optionally upload a company logo.', 'Tap Save. The company is created with default feature settings.'] },
-      { title: 'Edit & Deactivate Companies', purpose: 'Update company details or disable access.', steps: ['From the Companies tab, tap the edit icon on any company row.', 'Change the name, domain, or logo.', 'Toggle Active off to deactivate the entire company. All employees lose access immediately.', 'Toggle Login Disabled to temporarily block sign-in without deactivating.'], callout: { type: 'note', text: 'Deactivating a company does not delete any data. Reactivation restores full access.' } },
-      { title: 'Company Admins', purpose: 'View and manage which employees have admin access within each company.', steps: ['Admin users are listed under each company\'s detail view.', 'To grant admin access, edit the employee\'s role in Admin > Employees.'] },
+      { title: 'Create a Company', purpose: 'Register a new tenant on the platform.', steps: ['Navigate to Admin > Subscriptions > Companies.', 'Tap + Register New Company.', 'Enter the company name, email domain (e.g. acme.co.uk), and optionally upload a company logo.', 'Tap Register Company. The company is created with default leave types, feature settings, and a welcome announcement.'] },
+      { title: 'Edit & Deactivate Companies', purpose: 'Update company details or disable access.', steps: ['From the Companies tab, use the logo, status, and login controls on each company row.', 'Click the logo cell to upload or change a company logo. Click the X to remove it.', 'Toggle Active off to deactivate the entire company. All employees lose access immediately.', 'Toggle Login Disabled to temporarily block sign-in without deactivating.'], callout: { type: 'note', text: 'Deactivating a company does not delete any data. Reactivation restores full access.' } },
+      { title: 'Manage Company Admins', purpose: 'Add or remove multiple admin users for each company. Admin employees see the "Go to Admin Portal" button in their HR app Settings page.', steps: ['In the Company Admins column, existing admins are listed by name.', 'Click + Add Admin to open the employee selector. Only active, onboarded employees are shown.', 'Select an employee to grant them admin access. Their company_users role is set to admin and they can access the Admin Portal immediately.', 'Click the X button next to any admin\'s name to remove their admin access.', 'Multiple admins can be assigned per company — there is no limit.'], callout: { type: 'tip', text: 'Removing an admin does not deactivate their employee account — it only revokes their access to the Admin Portal.' } },
+      { title: 'Export, Import & Archive', purpose: 'Manage company data lifecycle.', steps: ['Export — downloads a CSV of all company data for the current financial year.', 'Import — upload a previously exported CSV to restore data into a company.', 'Archive — saves company FY data to the documents folder, with an optional delete of the source data after archiving.'] },
+      { title: 'Delete a Company', purpose: 'Permanently remove a company and all its data.', steps: ['Click the delete icon on the company row.', 'Confirm the deletion in the dialog. This action cannot be undone.'], callout: { type: 'note', text: 'You cannot delete your own company. All associated data (employees, leave, expenses, etc.) is permanently removed.' } },
     ],
   },
   {
@@ -317,9 +327,9 @@ function SectionAccordion({ sections, openMap, onToggle }: { sections: GuideSect
 export default function AdminUserGuides() {
   const { isSuperAdmin } = useAuth()
   const [tab, setTab] = useState<Tab>('employee')
-  const [empOpen, setEmpOpen] = useState<Record<number, boolean>>({ 0: true })
-  const [admOpen, setAdmOpen] = useState<Record<number, boolean>>({ 0: true })
-  const [supOpen, setSupOpen] = useState<Record<number, boolean>>({ 0: true })
+  const [empOpen, setEmpOpen] = useState<Record<number, boolean>>({})
+  const [admOpen, setAdmOpen] = useState<Record<number, boolean>>({})
+  const [supOpen, setSupOpen] = useState<Record<number, boolean>>({})
 
   function toggle(setter: React.Dispatch<React.SetStateAction<Record<number, boolean>>>) {
     return (i: number) => setter(prev => ({ ...prev, [i]: !prev[i] }))
