@@ -855,7 +855,7 @@ export default function LegalTimesheets() {
 
                 <label className="lt-auto-round">
                   <input type="checkbox" checked={formAutoRound} onChange={e => setFormAutoRound(e.target.checked)} />
-                  {t('legal_ts.auto_round')}
+                  Auto-round to {roundingMins}-min increments ({(roundingMins / 60).toFixed(roundingMins % 6 === 0 ? 1 : 2)}h)
                 </label>
               </div>
 
