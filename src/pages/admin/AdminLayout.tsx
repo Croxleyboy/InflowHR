@@ -23,7 +23,7 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/kudos', label: 'Kudos', icon: '⭐', feature: 'kudos' },
   { path: '/admin/elearning', label: 'E-Learning', icon: '📚', feature: 'elearning' },
   { path: '/admin/announcements', label: 'Announcements', icon: '📢' },
-  { path: '/admin/onboarding', label: 'Onboarding', icon: '🚀' },
+  { path: '/admin/onboarding', label: 'Onboard / Offboard', icon: '🚀' },
   { path: '/admin/tickets', label: 'HR Tickets', icon: '🎫' },
   { path: '/admin/benefits', label: 'Benefits', icon: '🎁', feature: 'benefits' },
   { path: '/admin/timesheets', label: 'Timesheets', icon: '⏱️', feature: 'timesheets' },

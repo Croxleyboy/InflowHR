@@ -7,6 +7,44 @@ import { useToast } from '../../context/ToastContext'
 import * as XLSX from 'xlsx'
 import CompanySetupWizard from './CompanySetupWizard'
 
+interface OffboardRecord {
+  id: number
+  company_id: string
+  employee_id: string
+  employee_name: string
+  employee_email: string
+  job_title: string | null
+  department: string | null
+  end_date: string | null
+  reason: string | null
+  status: string
+  workflow_steps: Record<string, boolean>
+  skipped_steps: Record<string, boolean>
+  is_complete: boolean
+  frozen_at: string | null
+  created_at: string
+}
+
+interface FrozenEmployee {
+  id: number
+  company_id: string
+  employee_id: string
+  employee_name: string
+  employee_email: string
+  frozen_at: string
+  deletion_date: string
+  status: string
+  recovered_at: string | null
+}
+
+const OFFBOARD_STEPS = [
+  { key: 'approve_resignation', label: 'Approve Resignation', icon: '📝', description: 'Review and formally approve the employee resignation or termination. Update HR records with the leaving reason and confirm final working date.', role: 'HR' },
+  { key: 'recover_equipment', label: 'Recover Equipment', icon: '💻', description: 'Collect all company equipment — laptop, monitor, phone, building pass, keys, parking permit. Complete the asset return checklist and update the inventory register.', role: 'HR' },
+  { key: 'leaving_meeting', label: 'Organise Leaving Meeting', icon: '🤝', description: 'Schedule an exit interview and farewell meeting with the line manager. Cover handover tasks, knowledge transfer, and gather feedback on their experience.', role: 'Manager' },
+  { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable Active Directory / Entra account, revoke Microsoft 365 licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
+  { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR' },
+]
+
 interface OnboardRecord {
   id: number
   firstname: string
@@ -76,7 +114,7 @@ export default function AdminOnboarding() {
   const { showError, showSuccess } = useToast()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup'>('dashboard')
+  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow'>('dashboard')
   const [filterStatus, setFilterStatus] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [workflowStep, setWorkflowStep] = useState(0)
@@ -93,6 +131,17 @@ export default function AdminOnboarding() {
     probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: '37.5',
     annual_salary: '', tax_code: '', payroll_id: '', religion: '', salary_group: 'N/A', qualifications: '',
   })
+
+  const [offboardRecords, setOffboardRecords] = useState<OffboardRecord[]>([])
+  const [frozenEmployees, setFrozenEmployees] = useState<FrozenEmployee[]>([])
+  const [offboardSelectedId, setOffboardSelectedId] = useState<number | null>(null)
+  const [offboardStep, setOffboardStep] = useState(0)
+  const [offboardChecks, setOffboardChecks] = useState<Record<string, boolean>>({})
+  const [offboardSkips, setOffboardSkips] = useState<Record<string, boolean>>({})
+  const [showFreezeModal, setShowFreezeModal] = useState<OffboardRecord | null>(null)
+  const [offboardEmployeeSearch, setOffboardEmployeeSearch] = useState('')
+  const [offboardEmployeeResults, setOffboardEmployeeResults] = useState<{ id: string; first_name: string; last_name: string; email: string; job_title: string; department: string }[]>([])
+  const [offboardForm, setOffboardForm] = useState({ end_date: '', reason: '' })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadRows, setUploadRows] = useState<Record<string, string>[]>([])
@@ -207,13 +256,160 @@ export default function AdminOnboarding() {
     XLSX.writeFile(wb, 'new-starter-template.xlsx')
   }
 
-  useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
+  useEffect(() => { if (selectedCompanyId) { load(); loadOffboarding() } }, [selectedCompanyId])
 
   async function load() {
     setLoading(true)
     const { data } = await supabase.from('onboarding').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false })
     setRecords((data as OnboardRecord[]) || [])
     setLoading(false)
+  }
+
+  async function loadOffboarding() {
+    const [{ data: offData }, { data: frozenData }] = await Promise.all([
+      supabase.from('offboarding').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false }),
+      supabase.from('frozen_employees').select('*').eq('company_id', selectedCompanyId).order('frozen_at', { ascending: false }),
+    ])
+    setOffboardRecords((offData as OffboardRecord[]) || [])
+    setFrozenEmployees((frozenData as FrozenEmployee[]) || [])
+  }
+
+  async function searchEmployeesForOffboard(query: string) {
+    setOffboardEmployeeSearch(query)
+    if (query.length < 2) { setOffboardEmployeeResults([]); return }
+    const { data } = await supabase.from('employees')
+      .select('id, first_name, last_name, email, job_title, department')
+      .eq('company_id', selectedCompanyId)
+      .eq('is_active', true)
+      .eq('is_frozen', false)
+      .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,email.ilike.%${query}%`)
+      .limit(10)
+    setOffboardEmployeeResults(data || [])
+  }
+
+  async function createOffboardRecord(emp: typeof offboardEmployeeResults[0]) {
+    const { error } = await supabase.from('offboarding').insert({
+      company_id: selectedCompanyId,
+      employee_id: emp.id,
+      employee_name: `${emp.first_name} ${emp.last_name}`,
+      employee_email: emp.email,
+      job_title: emp.job_title,
+      department: emp.department,
+      end_date: offboardForm.end_date || null,
+      reason: offboardForm.reason || null,
+      status: 'pending',
+    })
+    if (error) { showError('Failed to create offboarding record: ' + error.message); return }
+    showSuccess(`Offboarding started for ${emp.first_name} ${emp.last_name}`)
+    setOffboardEmployeeSearch('')
+    setOffboardEmployeeResults([])
+    setOffboardForm({ end_date: '', reason: '' })
+    loadOffboarding()
+  }
+
+  function openOffboardWorkflow(record: OffboardRecord) {
+    setOffboardSelectedId(record.id)
+    setOffboardChecks(record.workflow_steps || {})
+    setOffboardSkips(record.skipped_steps || {})
+    const doneCount = OFFBOARD_STEPS.filter(s => record.workflow_steps?.[s.key] || record.skipped_steps?.[s.key]).length
+    setOffboardStep(record.is_complete ? OFFBOARD_STEPS.length - 1 : Math.min(doneCount, OFFBOARD_STEPS.length - 1))
+    setTab('offboard-workflow')
+  }
+
+  async function completeOffboardStep(stepKey: string) {
+    const record = offboardRecords.find(r => r.id === offboardSelectedId)
+    if (!record) return
+    const newChecks = { ...offboardChecks, [stepKey]: true }
+    const newSkips = { ...offboardSkips, [stepKey]: false }
+    setOffboardChecks(newChecks)
+    setOffboardSkips(newSkips)
+
+    const isLastStep = stepKey === OFFBOARD_STEPS[OFFBOARD_STEPS.length - 1].key
+    if (isLastStep) {
+      setShowFreezeModal(record)
+      return
+    }
+
+    await supabase.from('offboarding').update({
+      workflow_steps: newChecks,
+      skipped_steps: newSkips,
+      status: 'in-progress',
+    }).eq('id', record.id)
+    loadOffboarding()
+    if (offboardStep < OFFBOARD_STEPS.length - 1) setOffboardStep(offboardStep + 1)
+  }
+
+  function skipOffboardStep(stepKey: string) {
+    const record = offboardRecords.find(r => r.id === offboardSelectedId)
+    if (!record) return
+    const newSkips = { ...offboardSkips, [stepKey]: true }
+    setOffboardSkips(newSkips)
+    supabase.from('offboarding').update({
+      skipped_steps: newSkips,
+      status: 'in-progress',
+    }).eq('id', record.id)
+    loadOffboarding()
+    if (offboardStep < OFFBOARD_STEPS.length - 1) setOffboardStep(offboardStep + 1)
+  }
+
+  function uncompleteOffboardStep(stepKey: string) {
+    setOffboardChecks(prev => ({ ...prev, [stepKey]: false }))
+    setOffboardSkips(prev => ({ ...prev, [stepKey]: false }))
+  }
+
+  async function freezeEmployee(record: OffboardRecord, approve: boolean) {
+    setShowFreezeModal(null)
+    if (!approve) {
+      showSuccess('Freeze declined — offboarding workflow left open')
+      return
+    }
+    const newChecks = { ...offboardChecks, [OFFBOARD_STEPS[OFFBOARD_STEPS.length - 1].key]: true }
+    await supabase.from('offboarding').update({
+      workflow_steps: newChecks,
+      skipped_steps: offboardSkips,
+      is_complete: true,
+      status: 'complete',
+      frozen_at: new Date().toISOString(),
+    }).eq('id', record.id)
+
+    await supabase.from('employees').update({ is_active: false, is_frozen: true }).eq('id', record.employee_id)
+    await supabase.from('company_users').update({ is_active: false }).eq('employee_id', record.employee_id).eq('company_id', selectedCompanyId)
+
+    const deletionDate = new Date()
+    deletionDate.setDate(deletionDate.getDate() + 30)
+    const delDateStr = `${deletionDate.getFullYear()}-${String(deletionDate.getMonth() + 1).padStart(2, '0')}-${String(deletionDate.getDate()).padStart(2, '0')}`
+    await supabase.from('frozen_employees').upsert({
+      company_id: selectedCompanyId,
+      employee_id: record.employee_id,
+      employee_name: record.employee_name,
+      employee_email: record.employee_email,
+      deletion_date: delDateStr,
+      status: 'awaiting_expiry',
+    }, { onConflict: 'company_id,employee_id' })
+
+    showSuccess(`${record.employee_name} has been frozen and added to deletion queue`)
+    loadOffboarding()
+    load()
+    setTab('offboarding')
+  }
+
+  async function recoverEmployee(frozen: FrozenEmployee) {
+    await supabase.from('employees').update({ is_active: true, is_frozen: false }).eq('id', frozen.employee_id)
+    await supabase.from('company_users').update({ is_active: true }).eq('employee_id', frozen.employee_id).eq('company_id', selectedCompanyId)
+    await supabase.from('frozen_employees').update({ status: 'recovered', recovered_at: new Date().toISOString() }).eq('id', frozen.id)
+    showSuccess(`${frozen.employee_name} has been recovered and can log in again`)
+    loadOffboarding()
+    load()
+  }
+
+  async function deleteEmployee(frozen: FrozenEmployee) {
+    if (!confirm(`Permanently delete ${frozen.employee_name}? This cannot be undone.`)) return
+    await supabase.from('frozen_employees').delete().eq('id', frozen.id)
+    await supabase.from('company_users').delete().eq('employee_id', frozen.employee_id).eq('company_id', selectedCompanyId)
+    await supabase.from('employees').delete().eq('id', frozen.employee_id)
+    showSuccess(`${frozen.employee_name} has been permanently deleted`)
+    loadOffboarding()
+    load()
   }
 
   function sanitisePayload(form: Record<string, string>): Record<string, any> {
@@ -480,8 +676,8 @@ export default function AdminOnboarding() {
   return (
     <div className="admin-section">
       <div className="admin-page-header">
-        <h2>Onboarding Management</h2>
-        <p>{records.length} onboarding records</p>
+        <h2>Onboard / Offboard</h2>
+        <p>{records.length} onboarding · {offboardRecords.filter(r => !r.is_complete).length} offboarding</p>
       </div>
 
       <div className="admin-tabs">
@@ -489,7 +685,9 @@ export default function AdminOnboarding() {
         <button className={`admin-tab ${tab === 'new' ? 'admin-tab-active' : ''}`} onClick={() => setTab('new')}>New Starter</button>
         <button className={`admin-tab ${tab === 'upload' ? 'admin-tab-active' : ''}`} onClick={() => setTab('upload')}>Bulk Upload</button>
         <button className={`admin-tab ${tab === 'list' ? 'admin-tab-active' : ''}`} onClick={() => setTab('list')}>All Records</button>
-        {selectedId && <button className={`admin-tab ${tab === 'workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('workflow')}>Workflow</button>}
+        {selectedId && <button className={`admin-tab ${tab === 'workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('workflow')}>Onboard Workflow</button>}
+        <button className={`admin-tab ${tab === 'offboarding' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboarding')}>Offboarding</button>
+        {offboardSelectedId && <button className={`admin-tab ${tab === 'offboard-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboard-workflow')}>Offboarding Workflow</button>}
         {isSuperAdmin && (
           <button className={`admin-tab ${tab === 'setup' ? 'admin-tab-active' : ''}`} onClick={() => setTab('setup')} style={{ borderColor: '#7b1fa2', color: tab === 'setup' ? '#fff' : '#7b1fa2', background: tab === 'setup' ? '#7b1fa2' : undefined }}>
             Company Setup
@@ -905,6 +1103,238 @@ export default function AdminOnboarding() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+
+      {tab === 'offboarding' && (
+        <div>
+          {/* New Offboard */}
+          <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 20, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 20 }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Start Offboarding</h3>
+            <input
+              className="admin-input"
+              placeholder="Search employee by name or email..."
+              value={offboardEmployeeSearch}
+              onChange={e => searchEmployeesForOffboard(e.target.value)}
+              style={{ marginBottom: 8 }}
+            />
+            {offboardEmployeeResults.length > 0 && (
+              <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, maxHeight: 200, overflowY: 'auto', marginBottom: 12 }}>
+                {offboardEmployeeResults.map(emp => (
+                  <div key={emp.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #f0f0f0', fontSize: 13 }}>
+                    <div>
+                      <strong>{emp.first_name} {emp.last_name}</strong>
+                      <span style={{ color: '#888', marginLeft: 8 }}>{emp.job_title} · {emp.department}</span>
+                    </div>
+                    <button className="admin-btn-sm admin-btn-save" onClick={() => {
+                      setOffboardEmployeeSearch(`${emp.first_name} ${emp.last_name}`)
+                      setOffboardEmployeeResults([])
+                    }} style={{ display: 'none' }} />
+                    <button className="admin-btn-sm" style={{ background: '#c62828', color: '#fff', border: 'none' }} onClick={() => createOffboardRecord(emp)}>
+                      Start Offboarding
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {offboardEmployeeSearch.length >= 2 && offboardEmployeeResults.length > 0 && (
+              <div className="admin-form-grid" style={{ marginTop: 0 }}>
+                <div className="admin-form-field">
+                  <label>Last Working Date</label>
+                  <input type="date" className="admin-input" value={offboardForm.end_date} onChange={e => setOffboardForm(p => ({ ...p, end_date: e.target.value }))} />
+                </div>
+                <div className="admin-form-field">
+                  <label>Reason</label>
+                  <select className="admin-select" value={offboardForm.reason} onChange={e => setOffboardForm(p => ({ ...p, reason: e.target.value }))}>
+                    <option value="">Select reason</option>
+                    <option>Resignation</option>
+                    <option>Redundancy</option>
+                    <option>End of contract</option>
+                    <option>Retirement</option>
+                    <option>Dismissal</option>
+                    <option>Mutual agreement</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Active Offboarding List */}
+          {offboardRecords.filter(r => !r.is_complete).length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Active Offboarding</h3>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Employee</th><th>Role</th><th>End Date</th><th>Reason</th><th>Progress</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {offboardRecords.filter(r => !r.is_complete).map(r => {
+                      const doneCount = OFFBOARD_STEPS.filter(s => r.workflow_steps?.[s.key] || r.skipped_steps?.[s.key]).length
+                      return (
+                        <tr key={r.id}>
+                          <td><strong>{r.employee_name}</strong><br /><span style={{ fontSize: 12, color: '#888' }}>{r.employee_email}</span></td>
+                          <td>{r.job_title || '—'}</td>
+                          <td>{r.end_date ? new Date(r.end_date).toLocaleDateString('en-GB') : '—'}</td>
+                          <td>{r.reason || '—'}</td>
+                          <td>
+                            <div className="admin-progress-bar"><div className="admin-progress-fill" style={{ width: `${(doneCount / OFFBOARD_STEPS.length) * 100}%`, background: '#c62828' }} /></div>
+                            <span className="admin-progress-text">{doneCount}/{OFFBOARD_STEPS.length}</span>
+                          </td>
+                          <td><button className="admin-btn-sm admin-btn-save" onClick={() => openOffboardWorkflow(r)}>Workflow</button></td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Frozen Employees */}
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Frozen Employees — Deletion Queue</h3>
+            {frozenEmployees.length > 0 ? (
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Employee</th><th>Frozen Date</th><th>Deletion Date</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {frozenEmployees.map(f => {
+                      const now = new Date()
+                      const delDate = new Date(f.deletion_date)
+                      const daysLeft = Math.ceil((delDate.getTime() - now.getTime()) / 86400000)
+                      const statusLabel = f.status === 'recovered' ? 'Recovered' : daysLeft <= 0 ? 'Ready to Delete' : 'Awaiting Expiry'
+                      const statusColor = f.status === 'recovered' ? '#43a047' : daysLeft <= 0 ? '#c62828' : '#ff9800'
+                      return (
+                        <tr key={f.id}>
+                          <td><strong>{f.employee_name}</strong><br /><span style={{ fontSize: 12, color: '#888' }}>{f.employee_email}</span></td>
+                          <td>{new Date(f.frozen_at).toLocaleDateString('en-GB')}</td>
+                          <td>{new Date(f.deletion_date).toLocaleDateString('en-GB')}{daysLeft > 0 && f.status !== 'recovered' && <span style={{ fontSize: 12, color: '#888', marginLeft: 4 }}>({daysLeft}d)</span>}</td>
+                          <td><span className="admin-badge" style={{ background: statusColor, color: '#fff' }}>{statusLabel}</span></td>
+                          <td className="admin-actions">
+                            {f.status !== 'recovered' && (
+                              <>
+                                <button className="admin-btn-sm" style={{ background: '#43a047', color: '#fff', border: 'none' }} onClick={() => recoverEmployee(f)}>Recover</button>
+                                <button className="admin-btn-sm" style={{ background: '#c62828', color: '#fff', border: 'none' }} onClick={() => deleteEmployee(f)}>Delete</button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="admin-empty">No frozen employees</div>
+            )}
+          </div>
+
+          {/* Completed Offboarding */}
+          {offboardRecords.filter(r => r.is_complete).length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px', color: '#888' }}>Completed Offboarding</h3>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Employee</th><th>Role</th><th>End Date</th><th>Reason</th><th>Frozen</th></tr></thead>
+                  <tbody>
+                    {offboardRecords.filter(r => r.is_complete).map(r => (
+                      <tr key={r.id} style={{ opacity: 0.7 }}>
+                        <td><strong>{r.employee_name}</strong></td>
+                        <td>{r.job_title || '—'}</td>
+                        <td>{r.end_date ? new Date(r.end_date).toLocaleDateString('en-GB') : '—'}</td>
+                        <td>{r.reason || '—'}</td>
+                        <td>{r.frozen_at ? new Date(r.frozen_at).toLocaleDateString('en-GB') : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'offboard-workflow' && (() => {
+        const record = offboardRecords.find(r => r.id === offboardSelectedId)
+        if (!record) return <div className="admin-empty">Select an offboarding record</div>
+        return (
+          <div className="admin-workflow">
+            <div className="admin-workflow-header">
+              <h3>{record.employee_name}</h3>
+              <p>{record.job_title} · Last day {record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB') : 'TBC'}</p>
+            </div>
+            <div className="admin-workflow-timeline">
+              {OFFBOARD_STEPS.map((step, i) => {
+                const done = offboardChecks[step.key]
+                const skipped = offboardSkips[step.key]
+                const isCurrent = i === offboardStep
+                return (
+                  <div key={step.key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => setOffboardStep(i)}>
+                    <div className="admin-wf-connector" />
+                    <div className="admin-wf-dot">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
+                    <div className="admin-wf-content">
+                      <h4>{step.label}{skipped && <span className="admin-wf-skip-badge">Skipped</span>}<span style={{ fontSize: 11, color: '#888', fontWeight: 400, marginLeft: 8 }}>{step.role}</span></h4>
+                      {isCurrent && (
+                        <div className="admin-wf-detail">
+                          <p>{step.description}</p>
+                          <div className="admin-wf-actions">
+                            {done ? (
+                              <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteOffboardStep(step.key) }}>Undo</button>
+                            ) : skipped ? (
+                              <>
+                                <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeOffboardStep(step.key) }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                  Mark Complete
+                                </button>
+                                <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteOffboardStep(step.key) }}>Undo Skip</button>
+                              </>
+                            ) : (
+                              <>
+                                <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeOffboardStep(step.key) }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                  Mark Complete
+                                </button>
+                                <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipOffboardStep(step.key) }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+                                  Skip
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Freeze Confirmation Modal */}
+      {showFreezeModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 440, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#fff3e0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700 }}>Freeze Employee Account</h3>
+              <p style={{ margin: 0, color: '#666', fontSize: 14, lineHeight: 1.5 }}>
+                This will prevent <strong>{showFreezeModal.employee_name}</strong> from logging into the HR app and place them in the 30-day deletion queue.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333', border: 'none', padding: '10px 24px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={() => freezeEmployee(showFreezeModal, false)}>
+                Decline
+              </button>
+              <button className="admin-btn" style={{ background: '#c62828', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={() => freezeEmployee(showFreezeModal, true)}>
+                Approve & Freeze
+              </button>
+            </div>
           </div>
         </div>
       )}
