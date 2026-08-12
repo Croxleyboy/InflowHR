@@ -28,9 +28,11 @@ interface Employee {
   is_admin: boolean
 }
 
-interface CompanyAdmin {
-  employee_id: string | null
-  employee: { first_name: string; last_name: string; email: string } | null
+interface CompanyAdminEntry {
+  employee_id: string
+  first_name: string
+  last_name: string
+  email: string
 }
 
 async function uploadCompanyLogo(companyId: string, file: File): Promise<string | null> {
@@ -55,7 +57,7 @@ export default function AdminCompanies() {
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [admins, setAdmins] = useState<Record<string, CompanyAdmin>>({})
+  const [admins, setAdmins] = useState<Record<string, CompanyAdminEntry[]>>({})
   const [employees, setEmployees] = useState<Record<string, Employee[]>>({})
   const [editingAdmin, setEditingAdmin] = useState<string | null>(null)
   const [savingAdmin, setSavingAdmin] = useState(false)
@@ -78,7 +80,7 @@ export default function AdminCompanies() {
     const cos = (data as Company[]) || []
     setCompanies(cos)
 
-    const adminMap: Record<string, CompanyAdmin> = {}
+    const adminMap: Record<string, CompanyAdminEntry[]> = {}
     const companyIds = cos.map(co => co.id)
     if (companyIds.length > 0) {
       const { data: allAdmins } = await supabase
@@ -87,10 +89,11 @@ export default function AdminCompanies() {
         .in('company_id', companyIds)
         .eq('role', 'admin')
       for (const co of cos) {
-        const cu = (allAdmins || []).find((a: any) => a.company_id === co.id)
-        adminMap[co.id] = cu
-          ? { employee_id: cu.employee_id, employee: (Array.isArray(cu.employee) ? cu.employee[0] : cu.employee) as CompanyAdmin['employee'] }
-          : { employee_id: null, employee: null }
+        const matches = (allAdmins || []).filter((a: any) => a.company_id === co.id)
+        adminMap[co.id] = matches.map((cu: any) => {
+          const emp = Array.isArray(cu.employee) ? cu.employee[0] : cu.employee
+          return { employee_id: cu.employee_id, first_name: emp?.first_name || '', last_name: emp?.last_name || '', email: emp?.email || '' }
+        })
       }
     }
     setAdmins(adminMap)
@@ -268,35 +271,13 @@ export default function AdminCompanies() {
     setEditingAdmin(companyId)
   }
 
-  async function changeAdmin(companyId: string, newEmployeeId: string) {
+  async function addAdmin(companyId: string, employeeId: string) {
     setSavingAdmin(true)
-
-    const { error: demoteCuError } = await supabase
-      .from('company_users')
-      .update({ role: 'employee' })
-      .eq('company_id', companyId)
-      .eq('role', 'admin')
-    if (demoteCuError) {
-      showError('Failed to update previous admin: ' + demoteCuError.message)
-      setSavingAdmin(false)
-      return
-    }
-
-    const { error: demoteEmpError } = await supabase
-      .from('employees')
-      .update({ is_admin: false })
-      .eq('company_id', companyId)
-      .eq('is_admin', true)
-    if (demoteEmpError) {
-      showError('Failed to update previous admin: ' + demoteEmpError.message)
-      setSavingAdmin(false)
-      return
-    }
 
     const { error: promoteEmpError } = await supabase
       .from('employees')
       .update({ is_admin: true })
-      .eq('id', newEmployeeId)
+      .eq('id', employeeId)
     if (promoteEmpError) {
       showError('Failed to assign admin: ' + promoteEmpError.message)
       setSavingAdmin(false)
@@ -307,7 +288,7 @@ export default function AdminCompanies() {
       .from('company_users')
       .select('id')
       .eq('company_id', companyId)
-      .eq('employee_id', newEmployeeId)
+      .eq('employee_id', employeeId)
       .maybeSingle()
 
     if (cuByEmp) {
@@ -315,27 +296,45 @@ export default function AdminCompanies() {
         .from('company_users')
         .update({ role: 'admin' })
         .eq('id', cuByEmp.id)
-      if (error) {
-        showError('Failed to assign admin: ' + error.message)
-      }
+      if (error) showError('Failed to assign admin: ' + error.message)
     } else {
       const { error } = await supabase
         .from('company_users')
-        .insert({
-          company_id: companyId,
-          employee_id: newEmployeeId,
-          role: 'admin',
-          is_active: true,
-        })
-      if (error) {
-        showError('Failed to assign admin: ' + error.message)
-      }
+        .insert({ company_id: companyId, employee_id: employeeId, role: 'admin', is_active: true })
+      if (error) showError('Failed to assign admin: ' + error.message)
     }
 
     setEditingAdmin(null)
     setSavingAdmin(false)
+    setEmployees(prev => { const next = { ...prev }; delete next[companyId]; return next })
     load()
-    showSuccess('Company admin updated')
+    showSuccess('Admin added')
+  }
+
+  async function removeAdmin(companyId: string, employeeId: string) {
+    setSavingAdmin(true)
+
+    const { error: demoteEmpError } = await supabase
+      .from('employees')
+      .update({ is_admin: false })
+      .eq('id', employeeId)
+    if (demoteEmpError) {
+      showError('Failed to remove admin: ' + demoteEmpError.message)
+      setSavingAdmin(false)
+      return
+    }
+
+    const { error: demoteCuError } = await supabase
+      .from('company_users')
+      .update({ role: 'employee' })
+      .eq('company_id', companyId)
+      .eq('employee_id', employeeId)
+    if (demoteCuError) showError('Failed to remove admin: ' + demoteCuError.message)
+
+    setSavingAdmin(false)
+    setEmployees(prev => { const next = { ...prev }; delete next[companyId]; return next })
+    load()
+    showSuccess('Admin removed')
   }
 
   async function handleExport(companyId: string, companyName: string) {
@@ -496,7 +495,7 @@ export default function AdminCompanies() {
                 <th>Logo</th>
                 <th>Company</th>
                 <th>Domain</th>
-                <th>Company Admin</th>
+                <th>Company Admins</th>
                 <th>Status</th>
                 <th>Login</th>
                 <th>Registered</th>
@@ -505,7 +504,7 @@ export default function AdminCompanies() {
             </thead>
             <tbody>
               {companies.map(c => {
-                const admin = admins[c.id]
+                const companyAdmins = admins[c.id] || []
                 const isEditing = editingAdmin === c.id
                 const emps = employees[c.id] || []
                 return (
@@ -562,44 +561,55 @@ export default function AdminCompanies() {
                     <td><strong>{c.name}</strong></td>
                     <td>{c.domain}</td>
                     <td>
-                      {isEditing ? (
-                        <div className="admin-edit-admin-cell">
-                          <select
-                            className="admin-inline-select admin-admin-select"
-                            defaultValue={admin?.employee_id || ''}
-                            onChange={e => { if (e.target.value) changeAdmin(c.id, e.target.value) }}
-                            disabled={savingAdmin}
-                          >
-                            <option value="">Select admin...</option>
-                            {emps.map(emp => (
-                              <option key={emp.id} value={emp.id}>
-                                {emp.first_name} {emp.last_name} ({emp.email})
-                              </option>
-                            ))}
-                          </select>
-                          <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingAdmin(null)}>
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="admin-view-admin-cell">
-                          {admin?.employee ? (
-                            <span>{admin.employee.first_name} {admin.employee.last_name}</span>
-                          ) : (
-                            <span className="admin-no-admin">No admin assigned</span>
-                          )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {(companyAdmins).map(a => (
+                          <div key={a.employee_id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 13 }}>{a.first_name} {a.last_name}</span>
+                            <button
+                              className="admin-btn-icon admin-btn-danger"
+                              title={`Remove ${a.first_name} as admin`}
+                              onClick={() => removeAdmin(c.id, a.employee_id)}
+                              disabled={savingAdmin}
+                              style={{ flexShrink: 0 }}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                        {companyAdmins.length === 0 && (
+                          <span className="admin-no-admin">No admin assigned</span>
+                        )}
+                        {isEditing ? (
+                          <div className="admin-edit-admin-cell">
+                            <select
+                              className="admin-inline-select admin-admin-select"
+                              defaultValue=""
+                              onChange={e => { if (e.target.value) addAdmin(c.id, e.target.value) }}
+                              disabled={savingAdmin}
+                            >
+                              <option value="">Select employee...</option>
+                              {emps.filter(emp => !companyAdmins.some(a => a.employee_id === emp.id)).map(emp => (
+                                <option key={emp.id} value={emp.id}>
+                                  {emp.first_name} {emp.last_name} ({emp.email})
+                                </option>
+                              ))}
+                            </select>
+                            <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingAdmin(null)}>
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
                           <button
-                            className="admin-btn-icon"
-                            title="Change admin"
+                            className="admin-btn-sm"
+                            style={{ background: '#1565c0', color: '#fff', border: 'none', fontSize: 12, padding: '3px 8px', alignSelf: 'flex-start' }}
                             onClick={() => startEditAdmin(c.id)}
                           >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
+                            + Add Admin
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </td>
                     <td>
                       <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
