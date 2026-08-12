@@ -174,6 +174,7 @@ export default function AdminLegalTimesheets() {
   // Settings state
   const ROUNDING_OPTIONS = [
     { value: 1, label: '1 minute (no rounding)' },
+    { value: 5, label: '5 minutes' },
     { value: 6, label: '6 minutes (UK standard)' },
     { value: 10, label: '10 minutes' },
     { value: 15, label: '15 minutes (quarter hour)' },
