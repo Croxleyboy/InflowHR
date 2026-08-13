@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import * as XLSX from 'xlsx'
+import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
 
 interface CompanyRow {
   id: string
@@ -259,6 +260,16 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
     const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
     const paymentDate = new Date(periodEnd)
     paymentDate.setDate(paymentDate.getDate() - 3)
+
+    const piiErrors: string[] = []
+    setupRows.forEach((row, i) => {
+      const ni = validateNINumber(row.ni_number || '')
+      const sc = validateSortCode(row.bank_sort_code || '')
+      const ac = validateAccountNumber(row.bank_account_number || '')
+      const rowErrs = [ni, sc, ac].filter(Boolean)
+      if (rowErrs.length) piiErrors.push(`Row ${i + 1} (${row.firstname} ${row.surname}): ${rowErrs.join(', ')}`)
+    })
+    if (piiErrors.length > 0) { showError(piiErrors.slice(0, 5).join(' | ')); setProcessing(false); return }
 
     for (const row of setupRows) {
       // 1. Create onboarding record (skip if already exists)

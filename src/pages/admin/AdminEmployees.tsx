@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
+import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
 
 interface Employee {
   id: string
@@ -104,6 +105,12 @@ export default function AdminEmployees() {
   }
 
   async function saveEdit(id: string) {
+    const niErr = validateNINumber(editForm.ni_number || '')
+    if (niErr) { showError(niErr); return }
+    const scErr = validateSortCode(editForm.bank_sort_code || '')
+    if (scErr) { showError(scErr); return }
+    const acErr = validateAccountNumber(editForm.bank_account_number || '')
+    if (acErr) { showError(acErr); return }
     const dateFields = ['date_of_birth', 'probation_end_date', 'start_date']
     const numericFields = ['weekly_hours', 'annual_salary', 'leave_allowance']
     const payload: Record<string, any> = {}

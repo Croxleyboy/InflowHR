@@ -6,6 +6,7 @@ import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import * as XLSX from 'xlsx'
 import CompanySetupWizard from './CompanySetupWizard'
+import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
 
 interface OffboardRecord {
   id: number
@@ -223,6 +224,15 @@ export default function AdminOnboarding() {
 
   async function submitUpload() {
     if (uploadErrors.length > 0 || uploadRows.length === 0 || !selectedCompanyId) return
+    const piiErrors: string[] = []
+    uploadRows.forEach((row, i) => {
+      const ni = validateNINumber(row.ni_number || '')
+      const sc = validateSortCode(row.bank_sort_code || '')
+      const ac = validateAccountNumber(row.bank_account_number || '')
+      const rowErrs = [ni, sc, ac].filter(Boolean)
+      if (rowErrs.length) piiErrors.push(`Row ${i + 1}: ${rowErrs.join(', ')}`)
+    })
+    if (piiErrors.length > 0) { showError(piiErrors.slice(0, 5).join(' | ')); return }
     setUploading(true)
     let success = 0, failed = 0
 
@@ -435,6 +445,12 @@ export default function AdminOnboarding() {
 
   async function createStarter() {
     if (!newForm.firstname || !newForm.surname || !newForm.user_email || !selectedCompanyId) return
+    const niErr = validateNINumber(newForm.ni_number || '')
+    if (niErr) { showError(niErr); return }
+    const scErr = validateSortCode(newForm.bank_sort_code || '')
+    if (scErr) { showError(scErr); return }
+    const acErr = validateAccountNumber(newForm.bank_account_number || '')
+    if (acErr) { showError(acErr); return }
     const sanitised = sanitisePayload(newForm)
     const payload = { ...sanitised, status: 'new', is_complete: false, company_id: selectedCompanyId }
     const { data, error } = await supabase.from('onboarding').insert(payload).select().single()
@@ -542,6 +558,12 @@ export default function AdminOnboarding() {
   }
 
   async function createEmployeeFromOnboard(record: OnboardRecord): Promise<boolean> {
+    const niErr = validateNINumber(record.ni_number || '')
+    if (niErr) { showError(niErr); return false }
+    const scErr = validateSortCode(record.bank_sort_code || '')
+    if (scErr) { showError(scErr); return false }
+    const acErr = validateAccountNumber(record.bank_account_number || '')
+    if (acErr) { showError(acErr); return false }
     const { data: existing } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
     if (existing) return true
     let empNum = record.employee_number || `EMP-${Date.now().toString().slice(-8)}`
