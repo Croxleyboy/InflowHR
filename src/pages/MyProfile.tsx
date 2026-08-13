@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { useFeatures } from '../context/FeatureContext'
 import { formatDate } from '../lib/formatters'
 
 interface DeptMember {
@@ -45,6 +46,7 @@ export default function MyProfile() {
   const { t } = useLanguage()
   const { employeeEmail: EMPLOYEE_EMAIL, employeeId, companyUser, updateAvatarUrl } = useAuth()
   const { showError, showSuccess } = useToast()
+  const { features } = useFeatures()
   const [tab, setTab] = useState<'personal' | 'job'>('personal')
   const [profile, setProfile] = useState<OnboardingRecord | null>(null)
   const [loading, setLoading] = useState(true)
@@ -62,6 +64,8 @@ export default function MyProfile() {
     gender: string | null; nationality: string | null; marital_status: string | null;
     religion: string | null;
   } | null>(null)
+  const [showAssets, setShowAssets] = useState(false)
+  const [myAssets, setMyAssets] = useState<{ asset_name: string; asset_type: string }[]>([])
 
   const fetchData = useCallback(async () => {
     if (!EMPLOYEE_EMAIL || !companyUser?.company_id) return
@@ -140,6 +144,18 @@ export default function MyProfile() {
   const addressLines = empData?.address_line1
     ? [empData.address_line1, empData.address_line2, empData.city, empData.county, empData.postcode, empData.country].filter(Boolean)
     : [profile.address_line_1, profile.address_line_2, profile.address_line_3, profile.address_line_4].filter(Boolean)
+
+  async function openAssets() {
+    if (!employeeId || !companyUser?.company_id) return
+    const { data } = await supabase
+      .from('company_assets')
+      .select('asset_name, asset_type')
+      .eq('company_id', companyUser.company_id)
+      .eq('assigned_to', employeeId)
+      .order('asset_type')
+    setMyAssets((data as { asset_name: string; asset_type: string }[]) || [])
+    setShowAssets(true)
+  }
 
   async function openMembers() {
     if (profile?.department) {
@@ -318,7 +334,10 @@ export default function MyProfile() {
               </div>
             </div>
 
-            <div style={{ textAlign: 'right', padding: '8px 0 4px' }}>
+            <div style={{ textAlign: 'right', padding: '8px 0 4px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              {features.asset_management && (
+                <button className="my-profile-members-btn" onClick={openAssets}>My Assets</button>
+              )}
               <button className="my-profile-members-btn" onClick={openMembers}>{t('my_profile.members')}</button>
             </div>
           </div>
@@ -342,6 +361,34 @@ export default function MyProfile() {
               <span className="my-profile-status-card-value">{empData?.contract_type || profile.contract_type}</span>
             </div>
 
+          </div>
+        </div>
+      )}
+      {showAssets && (
+        <div className="my-profile-modal-overlay" onClick={() => setShowAssets(false)}>
+          <div className="my-profile-modal" onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header">
+              <span className="my-profile-modal-dept">My Assets</span>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+            </div>
+            <div className="my-profile-modal-list">
+              {myAssets.length === 0 && (
+                <div style={{ padding: 16, textAlign: 'center', color: '#999', fontSize: 13 }}>No assets assigned to you</div>
+              )}
+              {myAssets.map((a, i) => (
+                <div key={i} className="my-profile-modal-row">
+                  <span className="my-profile-modal-name">{a.asset_name}</span>
+                  <span className="my-profile-modal-role">{a.asset_type}</span>
+                </div>
+              ))}
+            </div>
+            <button className="my-profile-modal-close" onClick={() => setShowAssets(false)}>
+              {t('my_profile.close')}
+            </button>
           </div>
         </div>
       )}

@@ -70,6 +70,7 @@ import AdminSubscriptions from './pages/admin/AdminSubscriptions'
 import AdminBilling from './pages/admin/AdminBilling'
 import AdminLegalTimesheets from './pages/admin/AdminLegalTimesheets'
 import AdminSpaceManagement from './pages/admin/AdminSpaceManagement'
+import AdminAssetManagement from './pages/admin/AdminAssetManagement'
 import AdminUserGuides from './pages/admin/AdminUserGuides'
 import UserGuide from './pages/UserGuide'
 
@@ -189,6 +190,7 @@ function AuthGate() {
             <Route path="billing" element={<AdminBilling />} />
             <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
             <Route path="space-management" element={<AdminSpaceManagement />} />
+            <Route path="assets" element={<AdminAssetManagement />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />

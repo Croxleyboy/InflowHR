@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useFeatures } from '../../context/FeatureContext'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 
@@ -108,8 +109,15 @@ const DEFAULT_SETTINGS: SpaceSettings = {
   default_slot_minutes: 60,
 }
 
+interface SpaceAssetOption {
+  id: string
+  asset_name: string
+  asset_type: string
+}
+
 export default function AdminSpaceManagement() {
   const { selectedCompanyId: companyId } = useAdminCompany()
+  const { companyFeatures } = useFeatures()
   const { showError } = useToast()
   const [subTab, setSubTab] = useState<SubTab>('locations')
   const [locations, setLocations] = useState<Location[]>([])
@@ -130,8 +138,9 @@ export default function AdminSpaceManagement() {
 
   // Space form
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null)
-  const [spaceForm, setSpaceForm] = useState({ name: '', floor_id: '', space_type: 'desk' as 'desk' | 'room', capacity: 1, equipment_tags: [] as string[], status: 'draft' as 'draft' | 'active' | 'maintenance' })
+  const [spaceForm, setSpaceForm] = useState({ name: '', floor_id: '', space_type: 'desk' as 'desk' | 'room', capacity: 1, equipment_tags: [] as string[], status: 'draft' as 'draft' | 'active' | 'maintenance', linked_asset_ids: [] as string[] })
   const [showNewSpace, setShowNewSpace] = useState(false)
+  const [spaceAssets, setSpaceAssets] = useState<SpaceAssetOption[]>([])
 
   // Analytics state
   const [analyticsRange, setAnalyticsRange] = useState<7 | 30 | 90>(30)
@@ -165,7 +174,18 @@ export default function AdminSpaceManagement() {
     setLoading(false)
   }, [companyId])
 
-  useEffect(() => { loadAll() }, [loadAll])
+  const loadSpaceAssets = useCallback(async () => {
+    if (!companyId || !companyFeatures.asset_management) return
+    const { data } = await supabase
+      .from('company_assets')
+      .select('id, asset_name, asset_type')
+      .eq('company_id', companyId)
+      .eq('is_space_asset', true)
+      .order('asset_name')
+    setSpaceAssets((data as SpaceAssetOption[]) || [])
+  }, [companyId, companyFeatures.asset_management])
+
+  useEffect(() => { loadAll(); loadSpaceAssets() }, [loadAll, loadSpaceAssets])
 
   // ---- Location CRUD ----
   async function saveLoc() {
@@ -228,12 +248,14 @@ export default function AdminSpaceManagement() {
       const { error } = await supabase.from('spaces').update({
         name: spaceForm.name, floor_id: spaceForm.floor_id, space_type: spaceForm.space_type,
         capacity: spaceForm.capacity, equipment_tags: spaceForm.equipment_tags, status: spaceForm.status,
+        linked_asset_ids: spaceForm.linked_asset_ids,
       }).eq('id', editingSpaceId)
       if (error) { showError('Failed to update space: ' + error.message); return }
     } else {
       const { error } = await supabase.from('spaces').insert({
         company_id: companyId, name: spaceForm.name, floor_id: spaceForm.floor_id,
         space_type: spaceForm.space_type, capacity: spaceForm.capacity, equipment_tags: spaceForm.equipment_tags, status: spaceForm.status,
+        linked_asset_ids: spaceForm.linked_asset_ids,
       })
       if (error) { showError('Failed to add space: ' + error.message); return }
     }
@@ -252,6 +274,7 @@ export default function AdminSpaceManagement() {
     setSpaceForm({
       name: space.name, floor_id: space.floor_id, space_type: space.space_type,
       capacity: space.capacity, equipment_tags: [...space.equipment_tags], status: space.status,
+      linked_asset_ids: (space as Space & { linked_asset_ids?: string[] }).linked_asset_ids || [],
     })
     setShowNewSpace(false)
   }
@@ -568,7 +591,7 @@ export default function AdminSpaceManagement() {
         <div className="admin-section">
           <div className="admin-section-header">
             <h2>Spaces</h2>
-            <button className="admin-add-btn" onClick={() => { setShowNewSpace(true); setEditingSpaceId(null); setSpaceForm({ name: '', floor_id: floors[0]?.id || '', space_type: 'desk', capacity: 1, equipment_tags: [], status: 'draft' }) }}>+ Add Space</button>
+            <button className="admin-add-btn" onClick={() => { setShowNewSpace(true); setEditingSpaceId(null); setSpaceForm({ name: '', floor_id: floors[0]?.id || '', space_type: 'desk', capacity: 1, equipment_tags: [], status: 'draft', linked_asset_ids: [] }) }}>+ Add Space</button>
           </div>
 
           {(showNewSpace || editingSpaceId) && (
@@ -609,6 +632,28 @@ export default function AdminSpaceManagement() {
                 <option value="active">Active (Published)</option>
                 <option value="maintenance">Maintenance</option>
               </select>
+              {companyFeatures.asset_management && spaceAssets.length > 0 && (
+                <div className="admin-equipment-picker">
+                  <label style={{ fontSize: 12, fontWeight: 600, color: '#666', marginBottom: 4, display: 'block' }}>Linked Assets</label>
+                  <div className="admin-equipment-grid">
+                    {spaceAssets.map(asset => (
+                      <label key={asset.id} className="admin-equipment-option">
+                        <input
+                          type="checkbox"
+                          checked={spaceForm.linked_asset_ids.includes(asset.id)}
+                          onChange={e => {
+                            const next = e.target.checked
+                              ? [...spaceForm.linked_asset_ids, asset.id]
+                              : spaceForm.linked_asset_ids.filter(id => id !== asset.id)
+                            setSpaceForm({ ...spaceForm, linked_asset_ids: next })
+                          }}
+                        />
+                        <span>{asset.asset_name} ({asset.asset_type})</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="admin-form-actions">
                 <button className="admin-save-btn" onClick={saveSpace}>Save</button>
                 <button className="admin-cancel-btn" onClick={() => { setShowNewSpace(false); setEditingSpaceId(null) }}>Cancel</button>
@@ -617,7 +662,7 @@ export default function AdminSpaceManagement() {
           )}
 
           <table className="admin-table">
-            <thead><tr><th>Name</th><th>Floor</th><th>Type</th><th>Capacity</th><th>Equipment</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Floor</th><th>Type</th><th>Capacity</th><th>Equipment</th>{companyFeatures.asset_management && <th>Assets</th>}<th>Status</th><th>Actions</th></tr></thead>
             <tbody>
               {spaces.map(space => (
                 <tr key={space.id}>
@@ -626,6 +671,9 @@ export default function AdminSpaceManagement() {
                   <td><span className={`admin-badge admin-badge-${space.space_type}`}>{space.space_type === 'desk' ? 'Desk' : 'Room'}</span></td>
                   <td>{space.capacity}</td>
                   <td>{space.equipment_tags.join(', ') || '—'}</td>
+                  {companyFeatures.asset_management && (
+                    <td>{((space as Space & { linked_asset_ids?: string[] }).linked_asset_ids || []).map(id => spaceAssets.find(a => a.id === id)?.asset_name).filter(Boolean).join(', ') || '—'}</td>
+                  )}
                   <td><span className={`admin-badge admin-badge-${space.status}`}>{space.status}</span></td>
                   <td>
                     <button className="admin-action-btn" onClick={() => editSpace(space)}>Edit</button>
@@ -633,7 +681,7 @@ export default function AdminSpaceManagement() {
                   </td>
                 </tr>
               ))}
-              {spaces.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: '#999' }}>No spaces yet — add locations and floors first</td></tr>}
+              {spaces.length === 0 && <tr><td colSpan={companyFeatures.asset_management ? 8 : 7} style={{ textAlign: 'center', color: '#999' }}>No spaces yet — add locations and floors first</td></tr>}
             </tbody>
           </table>
         </div>
