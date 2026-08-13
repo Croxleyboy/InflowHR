@@ -431,6 +431,10 @@ export default function AdminOnboarding() {
     load()
   }
 
+  function stripFormulaChars(val: string): string {
+    return val.replace(/^[=+\-@\t\r]+/, '')
+  }
+
   function sanitisePayload(form: Record<string, string>): Record<string, any> {
     const dateFields = ['start_date', 'date_of_birth', 'probation_end_date']
     const numericFields = ['weekly_hours', 'annual_salary', 'leave_allowance']
@@ -438,7 +442,7 @@ export default function AdminOnboarding() {
     for (const [k, v] of Object.entries(form)) {
       if (dateFields.includes(k)) { out[k] = v || null }
       else if (numericFields.includes(k)) { out[k] = v ? parseFloat(v) : null }
-      else { out[k] = v || null }
+      else { out[k] = v ? stripFormulaChars(v) : null }
     }
     return out
   }

@@ -18,9 +18,9 @@ interface Company {
 }
 
 const SUPER_ADMIN_EMAILS = [
-  (import.meta.env.VITE_SUPER_ADMIN_EMAIL || 'andy.jones@kumonix.com').toLowerCase(),
-  (import.meta.env.VITE_BREAK_GLASS_EMAIL || 'breakglass@kumonic.com').toLowerCase(),
-]
+  import.meta.env.VITE_SUPER_ADMIN_EMAIL,
+  import.meta.env.VITE_BREAK_GLASS_EMAIL,
+].filter(Boolean).map((e: string) => e.toLowerCase())
 
 interface AuthState {
   user: User | null

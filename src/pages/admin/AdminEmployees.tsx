@@ -64,6 +64,25 @@ export default function AdminEmployees() {
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploading, setUploading] = useState<string | null>(null)
+  const [revealedPii, setRevealedPii] = useState<Set<string>>(new Set())
+
+  function maskValue(value: string | null, employeeId: string, field: string): string {
+    if (!value) return '—'
+    const key = `${employeeId}:${field}`
+    if (revealedPii.has(key)) return value
+    if (value.length <= 2) return '••'
+    return value.slice(0, 2) + '•'.repeat(value.length - 2)
+  }
+
+  function toggleReveal(employeeId: string, field: string) {
+    const key = `${employeeId}:${field}`
+    setRevealedPii(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
@@ -465,7 +484,7 @@ export default function AdminEmployees() {
                                   <div><strong>Nationality:</strong> {emp.nationality || '—'}</div>
                                   <div><strong>Marital Status:</strong> {emp.marital_status || '—'}</div>
                                   <div><strong>Religion:</strong> {emp.religion || '—'}</div>
-                                  <div><strong>NI Number:</strong> {emp.ni_number || '—'}</div>
+                                  <div><strong>NI Number:</strong> <span onClick={() => toggleReveal(emp.id, 'ni')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(emp.ni_number, emp.id, 'ni')}</span></div>
                                   <div><strong>Personal Email:</strong> {emp.personal_email || '—'}</div>
                                 </div>
                                 {(emp.address_line1 || emp.city || emp.postcode) && (
@@ -503,8 +522,8 @@ export default function AdminEmployees() {
                                 {emp.bank_account_name && (
                                   <div className="admin-detail-grid admin-detail-grid-3">
                                     <div><strong>Bank Account:</strong> {emp.bank_account_name}</div>
-                                    <div><strong>Sort Code:</strong> {emp.bank_sort_code || '—'}</div>
-                                    <div><strong>Account No:</strong> {emp.bank_account_number || '—'}</div>
+                                    <div><strong>Sort Code:</strong> <span onClick={() => toggleReveal(emp.id, 'sc')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(emp.bank_sort_code, emp.id, 'sc')}</span></div>
+                                    <div><strong>Account No:</strong> <span onClick={() => toggleReveal(emp.id, 'ac')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(emp.bank_account_number, emp.id, 'ac')}</span></div>
                                   </div>
                                 )}
                               </div>

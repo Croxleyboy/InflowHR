@@ -147,7 +147,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
                 }
               }
             } else {
-              out[key] = String(val).trim()
+              out[key] = String(val).trim().replace(/^[=+\-@\t\r]+/, '')
             }
           }
         }
