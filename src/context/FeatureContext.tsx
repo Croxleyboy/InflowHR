@@ -17,7 +17,7 @@ export interface Features {
   asset_management: boolean
 }
 
-const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos']
+const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management']
 const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   timesheets: 'timesheets',
   performance: 'performance',
@@ -27,7 +27,6 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   benefits: 'benefits',
   legal_timesheets: 'legal_timesheets',
   space_booking: 'space_booking',
-  asset_management: 'asset_management',
 }
 
 const defaultFeatures: Features = {
