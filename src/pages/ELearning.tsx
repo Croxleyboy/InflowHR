@@ -185,15 +185,29 @@ export default function ELearning() {
 
   const fetchEnabledCourses = useCallback(async () => {
     if (!companyUser?.company_id) return
-    const { data } = await supabase
-      .from('company_elearning_courses')
-      .select('course_id')
-      .eq('company_id', companyUser.company_id)
-      .eq('is_enabled', true)
-    if (data) {
-      setEnabledCourseIds(new Set(data.map((r: any) => r.course_id)))
+    const [visRes, empRes] = await Promise.all([
+      supabase
+        .from('company_elearning_courses')
+        .select('course_id, target_departments')
+        .eq('company_id', companyUser.company_id)
+        .eq('is_enabled', true),
+      EMPLOYEE_ID
+        ? supabase.from('employees').select('department').eq('id', EMPLOYEE_ID).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
+    if (visRes.data) {
+      const myDept = (empRes.data as any)?.department || ''
+      const ids = new Set(
+        visRes.data
+          .filter((r: any) => {
+            const depts: string[] = r.target_departments || []
+            return depts.length === 0 || depts.includes(myDept)
+          })
+          .map((r: any) => r.course_id)
+      )
+      setEnabledCourseIds(ids)
     }
-  }, [companyUser?.company_id])
+  }, [companyUser?.company_id, EMPLOYEE_ID])
 
   const fetchEnrolmentDates = useCallback(async () => {
     if (!companyUser?.company_id || !EMPLOYEE_ID) return

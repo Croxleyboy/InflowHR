@@ -162,44 +162,73 @@ GRANT EXECUTE ON FUNCTION public.promote_employee_to_admin(uuid, uuid) TO authen
 
 
 -- ============================================================
--- SEC-03: elearning_courses — replace open write policy
+-- SEC-03: elearning_courses — multi-tier access model
 --
--- The global course catalog (elearning_courses) should be:
---   READ:  any authenticated user (employees browse courses)
---   WRITE: super admin only (managed via AdminELearning page)
+-- Core courses (company_id IS NULL): super admin CRUD
+-- Company courses (company_id set): company admin CRUD for own company
+-- All authenticated users can read core courses + own company courses
 --
--- The per-company visibility table (company_elearning_courses)
--- is a separate table with its own RLS — not affected here.
+-- Department targeting via target_departments on company_elearning_courses
 -- ============================================================
+
+-- Add company_id to elearning_courses (NULL = core, non-NULL = company-specific)
+ALTER TABLE elearning_courses ADD COLUMN IF NOT EXISTS company_id uuid REFERENCES companies(id) ON DELETE CASCADE;
+
+-- Add department targeting to company_elearning_courses
+ALTER TABLE company_elearning_courses ADD COLUMN IF NOT EXISTS target_departments text[] NOT NULL DEFAULT '{}';
 
 -- Drop the overly permissive policies
 DROP POLICY IF EXISTS "elearning_courses_read" ON elearning_courses;
 DROP POLICY IF EXISTS "elearning_courses_write" ON elearning_courses;
 
--- Authenticated users can read the course catalog
+-- Authenticated users can read core courses (company_id IS NULL) and
+-- courses belonging to their own company
 CREATE POLICY "elearning_courses_authenticated_read"
   ON elearning_courses FOR SELECT
   TO authenticated
-  USING (true);
+  USING (company_id IS NULL OR company_id = get_my_company_id() OR is_super_admin());
 
--- Only super admin can insert courses
-CREATE POLICY "elearning_courses_super_admin_insert"
+-- Super admin can insert core courses (company_id IS NULL);
+-- company admins can insert courses for their own company
+CREATE POLICY "elearning_courses_insert"
   ON elearning_courses FOR INSERT
   TO authenticated
-  WITH CHECK (is_super_admin());
+  WITH CHECK (
+    CASE
+      WHEN company_id IS NULL THEN is_super_admin()
+      ELSE company_id = get_my_company_id() AND is_company_admin()
+    END
+  );
 
--- Only super admin can update courses
-CREATE POLICY "elearning_courses_super_admin_update"
+-- Super admin can update core courses;
+-- company admins can update their own company courses
+CREATE POLICY "elearning_courses_update"
   ON elearning_courses FOR UPDATE
   TO authenticated
-  USING (is_super_admin())
-  WITH CHECK (is_super_admin());
+  USING (
+    CASE
+      WHEN company_id IS NULL THEN is_super_admin()
+      ELSE company_id = get_my_company_id() AND is_company_admin()
+    END
+  )
+  WITH CHECK (
+    CASE
+      WHEN company_id IS NULL THEN is_super_admin()
+      ELSE company_id = get_my_company_id() AND is_company_admin()
+    END
+  );
 
--- Only super admin can delete courses
-CREATE POLICY "elearning_courses_super_admin_delete"
+-- Super admin can delete core courses;
+-- company admins can delete their own company courses
+CREATE POLICY "elearning_courses_delete"
   ON elearning_courses FOR DELETE
   TO authenticated
-  USING (is_super_admin());
+  USING (
+    CASE
+      WHEN company_id IS NULL THEN is_super_admin()
+      ELSE company_id = get_my_company_id() AND is_company_admin()
+    END
+  );
 
 -- Block anon entirely
 CREATE POLICY "elearning_courses_anon_blocked"

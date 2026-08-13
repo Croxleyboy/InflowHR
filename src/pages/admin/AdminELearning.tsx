@@ -20,6 +20,14 @@ interface DbCourse {
   industry: string | null
   external_url: string | null
   is_active: boolean
+  company_id: string | null
+}
+
+interface VisibilityRow {
+  course_id: string
+  company_id: string
+  is_enabled: boolean
+  target_departments: string[]
 }
 
 interface CompanyRow { id: string; name: string }
@@ -48,76 +56,115 @@ const CATEGORIES = ['onboarding', 'compliance', 'policies', 'role', 'development
 const TYPES: CourseType[] = ['video', 'article', 'quiz', 'policy']
 const INDUSTRIES = ['', 'legal', 'education', 'accountancy']
 
-const EMPTY_COURSE: Omit<DbCourse, 'id'> & { id: string } = {
+const EMPTY_COURSE: DbCourse = {
   id: '', title: '', description: '', category: 'onboarding', type: 'article',
   duration: '10 min', required: false, deadline: null, days_to_complete: null, tags: [],
-  annual_reminder: false, industry: null, external_url: null, is_active: true,
+  annual_reminder: false, industry: null, external_url: null, is_active: true, company_id: null,
 }
+
+type TabKey = 'courses' | 'visibility' | 'company_courses' | 'library'
 
 export default function AdminELearning() {
   const { selectedCompanyId } = useAdminCompany()
   const { isSuperAdmin } = useAuth()
   const { showError, showSuccess } = useToast()
-  const [tab, setTab] = useState<'visibility' | 'courses'>(isSuperAdmin ? 'courses' : 'visibility')
+  const [tab, setTab] = useState<TabKey>(isSuperAdmin ? 'courses' : 'library')
+
+  const tabs: { key: TabKey; label: string; show: boolean }[] = isSuperAdmin
+    ? [
+        { key: 'courses', label: 'Core Courses', show: true },
+        { key: 'visibility', label: 'Company Visibility', show: true },
+      ]
+    : [
+        { key: 'library', label: 'Course Library', show: true },
+        { key: 'company_courses', label: 'Company Courses', show: true },
+      ]
 
   return (
     <div className="admin-section">
       <div className="admin-page-header">
         <h2>E-Learning Content Management</h2>
-        <p>{isSuperAdmin ? 'Manage courses and company visibility' : 'Enable or disable courses for the selected company'}</p>
+        <p>
+          {isSuperAdmin
+            ? 'Manage core courses and company visibility'
+            : 'Manage your company courses and configure the course library'}
+        </p>
       </div>
 
-      {isSuperAdmin && (
-        <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid var(--border, #e5e7eb)' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid var(--border, #e5e7eb)' }}>
+        {tabs.filter(t => t.show).map(t => (
           <button
-            onClick={() => setTab('courses')}
+            key={t.key}
+            onClick={() => setTab(t.key)}
             style={{
               padding: '10px 24px', border: 'none', background: 'none', fontWeight: 700, fontSize: 14, cursor: 'pointer',
-              borderBottom: tab === 'courses' ? '3px solid #5c6bc0' : '3px solid transparent',
-              color: tab === 'courses' ? '#5c6bc0' : 'var(--text-muted, #8b8fa3)', marginBottom: -2,
+              borderBottom: tab === t.key ? '3px solid #5c6bc0' : '3px solid transparent',
+              color: tab === t.key ? '#5c6bc0' : 'var(--text-muted, #8b8fa3)', marginBottom: -2,
             }}
           >
-            Course Management
+            {t.label}
           </button>
-          <button
-            onClick={() => setTab('visibility')}
-            style={{
-              padding: '10px 24px', border: 'none', background: 'none', fontWeight: 700, fontSize: 14, cursor: 'pointer',
-              borderBottom: tab === 'visibility' ? '3px solid #5c6bc0' : '3px solid transparent',
-              color: tab === 'visibility' ? '#5c6bc0' : 'var(--text-muted, #8b8fa3)', marginBottom: -2,
-            }}
-          >
-            Company Visibility
-          </button>
-        </div>
-      )}
+        ))}
+      </div>
 
-      {tab === 'visibility' && <VisibilityTab companyId={selectedCompanyId} />}
-      {tab === 'courses' && isSuperAdmin && <CourseManagementTab showError={showError} showSuccess={showSuccess} />}
+      {tab === 'courses' && isSuperAdmin && (
+        <CoreCourseManagementTab showError={showError} showSuccess={showSuccess} />
+      )}
+      {tab === 'visibility' && isSuperAdmin && (
+        <SuperAdminVisibilityTab />
+      )}
+      {tab === 'library' && !isSuperAdmin && (
+        <CompanyLibraryTab companyId={selectedCompanyId} />
+      )}
+      {tab === 'company_courses' && !isSuperAdmin && (
+        <CompanyCourseTab companyId={selectedCompanyId} showError={showError} showSuccess={showSuccess} />
+      )}
     </div>
   )
 }
 
-/* ────── Company Visibility Tab ────── */
+/* ────── Helper: load company departments ────── */
 
-function VisibilityTab({ companyId }: { companyId: string }) {
+async function loadDepartments(companyId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from('employees')
+    .select('department')
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+  if (!data) return []
+  const depts = [...new Set(data.map((e: any) => e.department).filter(Boolean))] as string[]
+  return depts.sort()
+}
+
+/* ────── Company Library Tab (Company Admins) ────── */
+
+function CompanyLibraryTab({ companyId }: { companyId: string }) {
   const [courses, setCourses] = useState<DbCourse[]>([])
-  const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set())
+  const [visMap, setVisMap] = useState<Record<string, VisibilityRow>>({})
+  const [departments, setDepartments] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [filterIndustry, setFilterIndustry] = useState('')
+  const [deptDropdownOpen, setDeptDropdownOpen] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!companyId) return
     setLoading(true)
-    const [coursesRes, enabledRes] = await Promise.all([
+    const [coursesRes, visRes, depts] = await Promise.all([
       supabase.from('elearning_courses').select('*').eq('is_active', true).order('category').order('title'),
-      supabase.from('company_elearning_courses').select('course_id').eq('company_id', companyId).eq('is_enabled', true),
+      supabase.from('company_elearning_courses').select('course_id, company_id, is_enabled, target_departments').eq('company_id', companyId),
+      loadDepartments(companyId),
     ])
-    setCourses((coursesRes.data as DbCourse[]) || [])
-    setEnabledIds(new Set((enabledRes.data || []).map((r: any) => r.course_id)))
+    const allCourses = (coursesRes.data as DbCourse[]) || []
+    setCourses(allCourses.filter(c => c.company_id === null || c.company_id === companyId))
+    const vm: Record<string, VisibilityRow> = {}
+    for (const row of (visRes.data || []) as VisibilityRow[]) {
+      vm[row.course_id] = row
+    }
+    setVisMap(vm)
+    setDepartments(depts)
     setLoading(false)
   }, [companyId])
 
@@ -126,27 +173,49 @@ function VisibilityTab({ companyId }: { companyId: string }) {
   async function toggleCourse(courseId: string) {
     if (!companyId) return
     setSaving(courseId)
-    const isCurrentlyEnabled = enabledIds.has(courseId)
+    const current = visMap[courseId]
+    const newEnabled = !(current?.is_enabled)
     await supabase.from('company_elearning_courses').upsert(
-      { company_id: companyId, course_id: courseId, is_enabled: !isCurrentlyEnabled },
+      { company_id: companyId, course_id: courseId, is_enabled: newEnabled, target_departments: current?.target_departments || [] },
       { onConflict: 'company_id,course_id' }
     )
-    setEnabledIds(prev => {
-      const next = new Set(prev)
-      if (isCurrentlyEnabled) next.delete(courseId); else next.add(courseId)
-      return next
-    })
+    setVisMap(prev => ({
+      ...prev,
+      [courseId]: { course_id: courseId, company_id: companyId, is_enabled: newEnabled, target_departments: current?.target_departments || [] },
+    }))
     setSaving(null)
+  }
+
+  async function toggleDepartment(courseId: string, dept: string) {
+    if (!companyId) return
+    const current = visMap[courseId]
+    const currentDepts = current?.target_departments || []
+    const newDepts = currentDepts.includes(dept)
+      ? currentDepts.filter(d => d !== dept)
+      : [...currentDepts, dept]
+    await supabase.from('company_elearning_courses').upsert(
+      { company_id: companyId, course_id: courseId, is_enabled: current?.is_enabled ?? true, target_departments: newDepts },
+      { onConflict: 'company_id,course_id' }
+    )
+    setVisMap(prev => ({
+      ...prev,
+      [courseId]: { course_id: courseId, company_id: companyId, is_enabled: current?.is_enabled ?? true, target_departments: newDepts },
+    }))
   }
 
   async function bulkToggle(enable: boolean) {
     if (!companyId) return
     setSaving('__all__')
-    const rows = filtered.map(c => ({ company_id: companyId, course_id: c.id, is_enabled: enable }))
+    const rows = filtered.map(c => ({
+      company_id: companyId, course_id: c.id, is_enabled: enable,
+      target_departments: visMap[c.id]?.target_departments || [],
+    }))
     await supabase.from('company_elearning_courses').upsert(rows, { onConflict: 'company_id,course_id' })
-    setEnabledIds(prev => {
-      const next = new Set(prev)
-      filtered.forEach(c => enable ? next.add(c.id) : next.delete(c.id))
+    setVisMap(prev => {
+      const next = { ...prev }
+      filtered.forEach(c => {
+        next[c.id] = { course_id: c.id, company_id: companyId, is_enabled: enable, target_departments: prev[c.id]?.target_departments || [] }
+      })
       return next
     })
     setSaving(null)
@@ -159,7 +228,7 @@ function VisibilityTab({ companyId }: { companyId: string }) {
     return true
   }), [courses, search, filterCategory, filterIndustry])
 
-  const enabledCount = filtered.filter(c => enabledIds.has(c.id)).length
+  const enabledCount = filtered.filter(c => visMap[c.id]?.is_enabled).length
   const categories = [...new Set(courses.map(c => c.category))]
   const industries = [...new Set(courses.filter(c => c.industry).map(c => c.industry!))]
 
@@ -167,6 +236,9 @@ function VisibilityTab({ companyId }: { companyId: string }) {
 
   return (
     <>
+      <p style={{ margin: '0 0 4px', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+        Enable or disable courses for your employees. Use department targeting to assign courses to specific teams.
+      </p>
       <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
         {enabledCount}/{filtered.length} enabled
       </p>
@@ -193,12 +265,15 @@ function VisibilityTab({ companyId }: { companyId: string }) {
               <th className="admin-el-hide-mobile">Industry</th>
               <th className="admin-el-hide-mobile">Duration</th>
               <th className="admin-el-hide-tablet">Required</th>
-              <th className="admin-el-hide-tablet">Annual</th>
+              {departments.length > 0 && <th>Departments</th>}
+              <th className="admin-el-hide-mobile">Source</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map(course => {
-              const enabled = enabledIds.has(course.id)
+              const vis = visMap[course.id]
+              const enabled = vis?.is_enabled ?? false
+              const targetDepts = vis?.target_departments || []
               return (
                 <tr key={course.id} className={!enabled ? 'admin-row-inactive' : ''}>
                   <td>
@@ -211,7 +286,7 @@ function VisibilityTab({ companyId }: { companyId: string }) {
                   <td className="admin-el-title-cell">
                     <div>
                       <strong>{course.title}</strong><br />
-                      <span className="admin-td-desc">{course.id}</span>
+                      <span className="admin-td-desc">{course.description.substring(0, 60)}{course.description.length > 60 ? '...' : ''}</span>
                     </div>
                   </td>
                   <td className="admin-el-hide-mobile"><span className="admin-tag-mini">{CATEGORY_LABELS[course.category] || course.category}</span></td>
@@ -220,7 +295,32 @@ function VisibilityTab({ companyId }: { companyId: string }) {
                   </td>
                   <td className="admin-el-hide-mobile">{course.duration}</td>
                   <td className="admin-el-hide-tablet">{course.required ? '✓' : '—'}</td>
-                  <td className="admin-el-hide-tablet">{course.annual_reminder ? '🔔' : '—'}</td>
+                  {departments.length > 0 && (
+                    <td style={{ position: 'relative' }}>
+                      <button
+                        className="admin-btn-sm"
+                        style={{ fontSize: 12, minWidth: 80 }}
+                        onClick={() => setDeptDropdownOpen(deptDropdownOpen === course.id ? null : course.id)}
+                        disabled={!enabled}
+                      >
+                        {targetDepts.length === 0 ? 'All' : `${targetDepts.length} dept${targetDepts.length !== 1 ? 's' : ''}`} ▾
+                      </button>
+                      {deptDropdownOpen === course.id && (
+                        <DepartmentDropdown
+                          courseId={course.id}
+                          departments={departments}
+                          selectedDepartments={targetDepts}
+                          onToggle={toggleDepartment}
+                          onClose={() => setDeptDropdownOpen(null)}
+                        />
+                      )}
+                    </td>
+                  )}
+                  <td className="admin-el-hide-mobile">
+                    <span className="admin-tag-mini" style={{ background: course.company_id ? '#e3f2fd' : '#f3e5f5', color: course.company_id ? '#1565c0' : '#7b1fa2' }}>
+                      {course.company_id ? 'Company' : 'Core'}
+                    </span>
+                  </td>
                 </tr>
               )
             })}
@@ -232,9 +332,221 @@ function VisibilityTab({ companyId }: { companyId: string }) {
   )
 }
 
-/* ────── Course Management Tab (Super Admin Only) ────── */
+/* ────── Company Courses Tab (Company Admins) ────── */
 
-function CourseManagementTab({ showError, showSuccess }: { showError: (m: string) => void; showSuccess: (m: string) => void }) {
+function CompanyCourseTab({ companyId, showError, showSuccess }: { companyId: string; showError: (m: string) => void; showSuccess: (m: string) => void }) {
+  const [courses, setCourses] = useState<DbCourse[]>([])
+  const [departments, setDepartments] = useState<string[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<DbCourse>({ ...EMPTY_COURSE })
+  const [showAdd, setShowAdd] = useState(false)
+  const [addForm, setAddForm] = useState<DbCourse>({ ...EMPTY_COURSE })
+  const [addDepts, setAddDepts] = useState<string[]>([])
+  const [editDepts, setEditDepts] = useState<string[]>([])
+
+  const loadAll = useCallback(async () => {
+    if (!companyId) return
+    setLoading(true)
+    const [coursesRes, depts] = await Promise.all([
+      supabase.from('elearning_courses').select('*').eq('company_id', companyId).order('category').order('title'),
+      loadDepartments(companyId),
+    ])
+    setCourses((coursesRes.data as DbCourse[]) || [])
+    setDepartments(depts)
+    setLoading(false)
+  }, [companyId])
+
+  useEffect(() => { loadAll() }, [loadAll])
+
+  const filtered = useMemo(() => courses.filter(c => {
+    if (search && !c.title.toLowerCase().includes(search.toLowerCase())) return false
+    if (filterCategory && c.category !== filterCategory) return false
+    return true
+  }), [courses, search, filterCategory])
+
+  function generateId(title: string): string {
+    return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'new-course'
+  }
+
+  async function saveCourse() {
+    const form = addForm
+    const id = form.id.trim() || `${companyId.substring(0, 8)}-${generateId(form.title)}`
+    if (!form.title.trim()) { showError('Title is required'); return }
+    if (courses.some(c => c.id === id)) { showError('A course with this ID already exists'); return }
+    const { error } = await supabase.from('elearning_courses').insert({
+      id, title: form.title.trim(), description: form.description.trim(),
+      category: form.category, type: form.type, duration: form.duration,
+      required: form.required, deadline: form.deadline || null,
+      days_to_complete: form.days_to_complete || null, tags: form.tags,
+      annual_reminder: form.annual_reminder, industry: form.industry || null,
+      external_url: form.external_url || null, is_active: form.is_active,
+      company_id: companyId,
+    })
+    if (error) { showError('Failed to create course: ' + error.message); return }
+    await supabase.from('company_elearning_courses').upsert(
+      { company_id: companyId, course_id: id, is_enabled: true, target_departments: addDepts },
+      { onConflict: 'company_id,course_id' }
+    )
+    showSuccess('Course created')
+    setAddForm({ ...EMPTY_COURSE })
+    setAddDepts([])
+    setShowAdd(false)
+    loadAll()
+  }
+
+  async function updateCourse() {
+    if (!editingId) return
+    const form = editForm
+    if (!form.title.trim()) { showError('Title is required'); return }
+    const { error } = await supabase.from('elearning_courses').update({
+      title: form.title.trim(), description: form.description.trim(),
+      category: form.category, type: form.type, duration: form.duration,
+      required: form.required, deadline: form.deadline || null,
+      days_to_complete: form.days_to_complete || null, tags: form.tags,
+      annual_reminder: form.annual_reminder, industry: form.industry || null,
+      external_url: form.external_url || null, is_active: form.is_active,
+    }).eq('id', editingId)
+    if (error) { showError('Failed to update course: ' + error.message); return }
+    if (editDepts.length > 0 || true) {
+      await supabase.from('company_elearning_courses').upsert(
+        { company_id: companyId, course_id: editingId, is_enabled: true, target_departments: editDepts },
+        { onConflict: 'company_id,course_id' }
+      )
+    }
+    showSuccess('Course updated')
+    setEditingId(null)
+    loadAll()
+  }
+
+  async function deleteCourse(id: string) {
+    if (!confirm('Delete this course? It will be removed from all employee views.')) return
+    await supabase.from('company_elearning_courses').delete().eq('course_id', id).eq('company_id', companyId)
+    const { error } = await supabase.from('elearning_courses').delete().eq('id', id)
+    if (error) { showError('Failed to delete course: ' + error.message); return }
+    showSuccess('Course deleted')
+    loadAll()
+  }
+
+  async function startEdit(c: DbCourse) {
+    setEditingId(c.id)
+    setEditForm({ ...c })
+    setShowAdd(false)
+    const { data } = await supabase.from('company_elearning_courses')
+      .select('target_departments')
+      .eq('company_id', companyId)
+      .eq('course_id', c.id)
+      .maybeSingle()
+    setEditDepts((data as any)?.target_departments || [])
+  }
+
+  const categories = [...new Set(courses.map(c => c.category))]
+
+  if (loading) return <div className="admin-loading">Loading...</div>
+
+  return (
+    <>
+      <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+        Create and manage courses specific to your company. These are only visible to your employees.
+      </p>
+
+      <div className="admin-mini-stats">
+        <div className="admin-mini-stat"><span className="admin-mini-value">{courses.length}</span><span>Total</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#43a047' }}>{courses.filter(c => c.is_active).length}</span><span>Active</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#e53935' }}>{courses.filter(c => !c.is_active).length}</span><span>Inactive</span></div>
+      </div>
+
+      <div className="admin-filters">
+        <input placeholder="Search courses..." value={search} onChange={e => setSearch(e.target.value)} className="admin-input admin-search" style={{ minWidth: 180 }} />
+        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="admin-select">
+          <option value="">All Categories</option>
+          {categories.map(cat => <option key={cat} value={cat}>{CATEGORY_LABELS[cat] || cat}</option>)}
+        </select>
+        <button className="admin-btn-sm admin-btn-save" onClick={() => { setShowAdd(!showAdd); setEditingId(null) }}>
+          {showAdd ? 'Cancel' : '+ New Course'}
+        </button>
+      </div>
+
+      {showAdd && (
+        <div className="admin-el-editor" style={{ marginBottom: 20 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Create Company Course</h3>
+          <CourseForm form={addForm} setForm={setAddForm as any} />
+          {departments.length > 0 && (
+            <DepartmentPicker departments={departments} selected={addDepts} onChange={setAddDepts} />
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button className="admin-btn-sm admin-btn-save" onClick={saveCourse}>Create Course</button>
+            <button className="admin-btn-sm admin-btn-cancel" onClick={() => setShowAdd(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {editingId && (
+        <div className="admin-el-editor" style={{ marginBottom: 20 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Edit Course: {editForm.title}</h3>
+          <CourseForm form={editForm} setForm={setEditForm as any} isEdit />
+          {departments.length > 0 && (
+            <DepartmentPicker departments={departments} selected={editDepts} onChange={setEditDepts} />
+          )}
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button className="admin-btn-sm admin-btn-save" onClick={updateCourse}>Save Changes</button>
+            <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="admin-table-wrap">
+        <table className="admin-table admin-el-table">
+          <thead>
+            <tr>
+              <th>Status</th><th>Type</th><th>Course</th>
+              <th className="admin-el-hide-mobile">Category</th>
+              <th className="admin-el-hide-mobile">Duration</th>
+              <th className="admin-el-hide-tablet">Required</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(course => (
+              <tr key={course.id} className={!course.is_active ? 'admin-row-inactive' : ''}>
+                <td>
+                  <span className={`admin-badge ${course.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
+                    {course.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td><span className="admin-type-icon">{TYPE_ICONS[course.type]}</span> {course.type}</td>
+                <td className="admin-el-title-cell">
+                  <div>
+                    <strong>{course.title}</strong><br />
+                    <span className="admin-td-desc">{course.description.substring(0, 60)}{course.description.length > 60 ? '...' : ''}</span>
+                  </div>
+                </td>
+                <td className="admin-el-hide-mobile"><span className="admin-tag-mini">{CATEGORY_LABELS[course.category] || course.category}</span></td>
+                <td className="admin-el-hide-mobile">{course.duration}</td>
+                <td className="admin-el-hide-tablet">{course.required ? '✓' : '—'}</td>
+                <td className="admin-actions">
+                  <button className="admin-btn-icon" title="Edit" onClick={() => startEdit(course)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
+                  <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteCourse(course.id)}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filtered.length === 0 && <div className="admin-empty">No company courses yet. Create one above.</div>}
+      </div>
+    </>
+  )
+}
+
+/* ────── Super Admin: Core Course Management Tab ────── */
+
+function CoreCourseManagementTab({ showError, showSuccess }: { showError: (m: string) => void; showSuccess: (m: string) => void }) {
   const [courses, setCourses] = useState<DbCourse[]>([])
   const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [visibilityMap, setVisibilityMap] = useState<Record<string, Set<string>>>({})
@@ -242,16 +554,16 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<DbCourse>({ ...EMPTY_COURSE } as DbCourse)
+  const [editForm, setEditForm] = useState<DbCourse>({ ...EMPTY_COURSE })
   const [showAdd, setShowAdd] = useState(false)
-  const [addForm, setAddForm] = useState<DbCourse>({ ...EMPTY_COURSE } as DbCourse)
+  const [addForm, setAddForm] = useState<DbCourse>({ ...EMPTY_COURSE })
   const [addCompanyIds, setAddCompanyIds] = useState<Set<string>>(new Set())
   const [visDropdownOpen, setVisDropdownOpen] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
     const [coursesRes, companiesRes, visRes] = await Promise.all([
-      supabase.from('elearning_courses').select('*').order('category').order('title'),
+      supabase.from('elearning_courses').select('*').is('company_id', null).order('category').order('title'),
       supabase.from('companies').select('id, name').eq('is_active', true).order('name'),
       supabase.from('company_elearning_courses').select('course_id, company_id, is_enabled'),
     ])
@@ -286,28 +598,21 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
     if (!form.title.trim()) { showError('Title is required'); return }
     if (courses.some(c => c.id === id)) { showError('A course with this ID already exists'); return }
     const { error } = await supabase.from('elearning_courses').insert({
-      id,
-      title: form.title.trim(),
-      description: form.description.trim(),
-      category: form.category,
-      type: form.type,
-      duration: form.duration,
-      required: form.required,
-      deadline: form.deadline || null,
-      days_to_complete: form.days_to_complete || null,
-      tags: form.tags,
-      annual_reminder: form.annual_reminder,
-      industry: form.industry || null,
-      external_url: form.external_url || null,
-      is_active: form.is_active,
+      id, title: form.title.trim(), description: form.description.trim(),
+      category: form.category, type: form.type, duration: form.duration,
+      required: form.required, deadline: form.deadline || null,
+      days_to_complete: form.days_to_complete || null, tags: form.tags,
+      annual_reminder: form.annual_reminder, industry: form.industry || null,
+      external_url: form.external_url || null, is_active: form.is_active,
+      company_id: null,
     })
     if (error) { showError('Failed to create course: ' + error.message); return }
     if (addCompanyIds.size > 0) {
       const rows = Array.from(addCompanyIds).map(cid => ({ company_id: cid, course_id: id, is_enabled: true }))
       await supabase.from('company_elearning_courses').upsert(rows, { onConflict: 'company_id,course_id' })
     }
-    showSuccess('Course created')
-    setAddForm({ ...EMPTY_COURSE } as DbCourse)
+    showSuccess('Core course created')
+    setAddForm({ ...EMPTY_COURSE })
     setAddCompanyIds(new Set())
     setShowAdd(false)
     loadAll()
@@ -318,19 +623,12 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
     const form = editForm
     if (!form.title.trim()) { showError('Title is required'); return }
     const { error } = await supabase.from('elearning_courses').update({
-      title: form.title.trim(),
-      description: form.description.trim(),
-      category: form.category,
-      type: form.type,
-      duration: form.duration,
-      required: form.required,
-      deadline: form.deadline || null,
-      days_to_complete: form.days_to_complete || null,
-      tags: form.tags,
-      annual_reminder: form.annual_reminder,
-      industry: form.industry || null,
-      external_url: form.external_url || null,
-      is_active: form.is_active,
+      title: form.title.trim(), description: form.description.trim(),
+      category: form.category, type: form.type, duration: form.duration,
+      required: form.required, deadline: form.deadline || null,
+      days_to_complete: form.days_to_complete || null, tags: form.tags,
+      annual_reminder: form.annual_reminder, industry: form.industry || null,
+      external_url: form.external_url || null, is_active: form.is_active,
     }).eq('id', editingId)
     if (error) { showError('Failed to update course: ' + error.message); return }
     showSuccess('Course updated')
@@ -339,7 +637,7 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
   }
 
   async function deleteCourse(id: string) {
-    if (!confirm('Delete this course? This will also remove it from all company visibility settings.')) return
+    if (!confirm('Delete this core course? It will be removed from all companies.')) return
     await supabase.from('company_elearning_courses').delete().eq('course_id', id)
     const { error } = await supabase.from('elearning_courses').delete().eq('id', id)
     if (error) { showError('Failed to delete course: ' + error.message); return }
@@ -387,14 +685,13 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
           {categories.map(cat => <option key={cat} value={cat}>{CATEGORY_LABELS[cat] || cat}</option>)}
         </select>
         <button className="admin-btn-sm admin-btn-save" onClick={() => { setShowAdd(!showAdd); setEditingId(null) }}>
-          {showAdd ? 'Cancel' : '+ New Course'}
+          {showAdd ? 'Cancel' : '+ New Core Course'}
         </button>
       </div>
 
-      {/* ── Add Course Form ── */}
       {showAdd && (
         <div className="admin-el-editor" style={{ marginBottom: 20 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Create New Course</h3>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Create Core Course</h3>
           <CourseForm form={addForm} setForm={setAddForm as any} companies={companies} selectedCompanyIds={addCompanyIds} onCompanyToggle={(cid) => setAddCompanyIds(prev => { const next = new Set(prev); if (next.has(cid)) next.delete(cid); else next.add(cid); return next })} />
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button className="admin-btn-sm admin-btn-save" onClick={saveCourse}>Create Course</button>
@@ -403,7 +700,6 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
         </div>
       )}
 
-      {/* ── Edit Course Form ── */}
       {editingId && (
         <div className="admin-el-editor" style={{ marginBottom: 20 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Edit Course: {editForm.title}</h3>
@@ -415,7 +711,6 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
         </div>
       )}
 
-      {/* ── Courses Table ── */}
       <div className="admin-table-wrap">
         <table className="admin-table admin-el-table">
           <thead>
@@ -489,7 +784,128 @@ function CourseManagementTab({ showError, showSuccess }: { showError: (m: string
   )
 }
 
-/* ────── Course Form (shared by Add & Edit) ────── */
+/* ────── Super Admin: Company Visibility Tab ────── */
+
+function SuperAdminVisibilityTab() {
+  const [courses, setCourses] = useState<DbCourse[]>([])
+  const [companies, setCompanies] = useState<CompanyRow[]>([])
+  const [visibilityMap, setVisibilityMap] = useState<Record<string, Set<string>>>({})
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterCompany, setFilterCompany] = useState('')
+
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    const [coursesRes, companiesRes, visRes] = await Promise.all([
+      supabase.from('elearning_courses').select('*').order('category').order('title'),
+      supabase.from('companies').select('id, name').eq('is_active', true).order('name'),
+      supabase.from('company_elearning_courses').select('course_id, company_id, is_enabled'),
+    ])
+    setCourses((coursesRes.data as DbCourse[]) || [])
+    setCompanies((companiesRes.data as CompanyRow[]) || [])
+    const vm: Record<string, Set<string>> = {}
+    for (const row of (visRes.data || []) as { course_id: string; company_id: string; is_enabled: boolean }[]) {
+      if (row.is_enabled) {
+        if (!vm[row.course_id]) vm[row.course_id] = new Set()
+        vm[row.course_id].add(row.company_id)
+      }
+    }
+    setVisibilityMap(vm)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { loadAll() }, [loadAll])
+
+  async function toggleCompanyVisibility(courseId: string, companyId: string) {
+    const current = visibilityMap[courseId]?.has(companyId) || false
+    await supabase.from('company_elearning_courses').upsert(
+      { company_id: companyId, course_id: courseId, is_enabled: !current },
+      { onConflict: 'company_id,course_id' }
+    )
+    setVisibilityMap(prev => {
+      const next = { ...prev }
+      if (!next[courseId]) next[courseId] = new Set()
+      else next[courseId] = new Set(next[courseId])
+      if (current) next[courseId].delete(companyId); else next[courseId].add(companyId)
+      return next
+    })
+  }
+
+  const filtered = useMemo(() => courses.filter(c => {
+    if (search && !c.title.toLowerCase().includes(search.toLowerCase())) return false
+    if (filterCategory && c.category !== filterCategory) return false
+    if (filterCompany) {
+      const vis = visibilityMap[c.id]
+      if (!vis?.has(filterCompany)) return false
+    }
+    return true
+  }), [courses, search, filterCategory, filterCompany, visibilityMap])
+
+  const categories = [...new Set(courses.map(c => c.category))]
+
+  if (loading) return <div className="admin-loading">Loading...</div>
+
+  return (
+    <>
+      <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+        Manage which companies can see each course. Core and company-specific courses are listed.
+      </p>
+      <div className="admin-filters">
+        <input placeholder="Search courses..." value={search} onChange={e => setSearch(e.target.value)} className="admin-input admin-search" />
+        <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="admin-select">
+          <option value="">All Categories</option>
+          {categories.map(cat => <option key={cat} value={cat}>{CATEGORY_LABELS[cat] || cat}</option>)}
+        </select>
+        <select value={filterCompany} onChange={e => setFilterCompany(e.target.value)} className="admin-select">
+          <option value="">All Companies</option>
+          {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+
+      <div className="admin-table-wrap">
+        <table className="admin-table admin-el-table">
+          <thead>
+            <tr>
+              <th>Course</th>
+              <th className="admin-el-hide-mobile">Source</th>
+              {companies.map(c => <th key={c.id} style={{ fontSize: 11, maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis' }} title={c.name}>{c.name}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(course => (
+              <tr key={course.id}>
+                <td className="admin-el-title-cell">
+                  <div>
+                    <strong>{course.title}</strong><br />
+                    <span className="admin-td-desc">{CATEGORY_LABELS[course.category] || course.category}</span>
+                  </div>
+                </td>
+                <td className="admin-el-hide-mobile">
+                  <span className="admin-tag-mini" style={{ background: course.company_id ? '#e3f2fd' : '#f3e5f5', color: course.company_id ? '#1565c0' : '#7b1fa2' }}>
+                    {course.company_id ? 'Company' : 'Core'}
+                  </span>
+                </td>
+                {companies.map(company => (
+                  <td key={company.id} style={{ textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={visibilityMap[course.id]?.has(company.id) || false}
+                      onChange={() => toggleCompanyVisibility(course.id, company.id)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {filtered.length === 0 && <div className="admin-empty">No courses match your filters</div>}
+      </div>
+    </>
+  )
+}
+
+/* ────── Course Form (shared by Core & Company) ────── */
 
 function CourseForm({ form, setForm, isEdit, companies, selectedCompanyIds, onCompanyToggle }: { form: DbCourse; setForm: (fn: (prev: DbCourse) => DbCourse) => void; isEdit?: boolean; companies?: CompanyRow[]; selectedCompanyIds?: Set<string>; onCompanyToggle?: (companyId: string) => void }) {
   const [tagsInput, setTagsInput] = useState(form.tags.join(', '))
@@ -577,16 +993,72 @@ function CourseForm({ form, setForm, isEdit, companies, selectedCompanyIds, onCo
   )
 }
 
-/* ────── Company Visibility Dropdown ────── */
+/* ────── Department Picker (inline) ────── */
+
+function DepartmentPicker({ departments, selected, onChange }: { departments: string[]; selected: string[]; onChange: (depts: string[]) => void }) {
+  function toggle(dept: string) {
+    onChange(selected.includes(dept) ? selected.filter(d => d !== dept) : [...selected, dept])
+  }
+  return (
+    <div style={{ marginTop: 12 }}>
+      <label style={{ fontWeight: 600, fontSize: 13, display: 'block', marginBottom: 6 }}>Target Departments</label>
+      <p style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)', margin: '0 0 8px' }}>
+        Leave all unchecked to make this course available to all departments.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px' }}>
+        {departments.map(dept => (
+          <label key={dept} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={selected.includes(dept)} onChange={() => toggle(dept)} />
+            {dept}
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ────── Department Dropdown (table inline) ────── */
+
+function DepartmentDropdown({ courseId, departments, selectedDepartments, onToggle, onClose }: {
+  courseId: string; departments: string[]; selectedDepartments: string[];
+  onToggle: (courseId: string, dept: string) => void; onClose: () => void;
+}) {
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      const target = e.target as HTMLElement
+      if (!target.closest('.admin-el-vis-dropdown')) onClose()
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [onClose])
+
+  return (
+    <div className="admin-el-vis-dropdown">
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border, #e5e7eb)', fontWeight: 600, fontSize: 12 }}>
+        Department Targeting
+      </div>
+      <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--text-muted)', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+        None selected = all departments
+      </div>
+      <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+        {departments.map(dept => (
+          <label key={dept} className="admin-el-vis-item">
+            <input type="checkbox" checked={selectedDepartments.includes(dept)} onChange={() => onToggle(courseId, dept)} />
+            <span>{dept}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ────── Company Visibility Dropdown (Super Admin) ────── */
 
 function CompanyVisibilityDropdown({
   courseId, companies, enabledCompanyIds, onToggle, onClose,
 }: {
-  courseId: string
-  companies: CompanyRow[]
-  enabledCompanyIds: Set<string>
-  onToggle: (courseId: string, companyId: string) => void
-  onClose: () => void
+  courseId: string; companies: CompanyRow[]; enabledCompanyIds: Set<string>;
+  onToggle: (courseId: string, companyId: string) => void; onClose: () => void;
 }) {
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -605,11 +1077,7 @@ function CompanyVisibilityDropdown({
       <div style={{ maxHeight: 200, overflowY: 'auto' }}>
         {companies.map(company => (
           <label key={company.id} className="admin-el-vis-item">
-            <input
-              type="checkbox"
-              checked={enabledCompanyIds.has(company.id)}
-              onChange={() => onToggle(courseId, company.id)}
-            />
+            <input type="checkbox" checked={enabledCompanyIds.has(company.id)} onChange={() => onToggle(courseId, company.id)} />
             <span>{company.name}</span>
           </label>
         ))}
