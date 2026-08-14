@@ -47,7 +47,7 @@ export default function MyProfile() {
   const { employeeEmail: EMPLOYEE_EMAIL, employeeId, companyUser, updateAvatarUrl } = useAuth()
   const { showError, showSuccess } = useToast()
   const { features } = useFeatures()
-  const [tab, setTab] = useState<'personal' | 'job' | 'requests'>('personal')
+  const [tab, setTab] = useState<'personal' | 'job'>('personal')
   const [profile, setProfile] = useState<OnboardingRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [showMembers, setShowMembers] = useState(false)
@@ -66,6 +66,7 @@ export default function MyProfile() {
   } | null>(null)
   const [showAssets, setShowAssets] = useState(false)
   const [myAssets, setMyAssets] = useState<{ asset_name: string; asset_type: string }[]>([])
+  const [showChangeRequest, setShowChangeRequest] = useState(false)
   const [changeType, setChangeType] = useState('')
   const [currentInfo, setCurrentInfo] = useState('')
   const [newInfo, setNewInfo] = useState('')
@@ -230,6 +231,7 @@ export default function MyProfile() {
     setCurrentInfo('')
     setNewInfo('')
     setAdditionalDetails('')
+    setShowChangeRequest(false)
     showSuccess(t('my_profile.cr_submitted') || 'Your request has been submitted to HR')
     setSubmitting(false)
   }
@@ -247,12 +249,10 @@ export default function MyProfile() {
           <h1 className="my-profile-title">
             {tab === 'personal'
               ? t('my_profile.title')
-              : tab === 'job'
-              ? <>{t('my_profile.job_title_header')} <span className="my-profile-title-accent">{t('my_profile.job_title_accent')}</span></>
-              : (t('my_profile.cr_title') || 'Profile Change Request')
+              : <>{t('my_profile.job_title_header')} <span className="my-profile-title-accent">{t('my_profile.job_title_accent')}</span></>
             }
           </h1>
-          <p className="my-profile-subtitle">{tab === 'personal' ? t('my_profile.subtitle') : tab === 'requests' ? (t('my_profile.cr_subtitle') || 'Request a change to your profile details') : ''}</p>
+          <p className="my-profile-subtitle">{tab === 'personal' ? t('my_profile.subtitle') : ''}</p>
         </div>
         <button className="feature-refresh" onClick={fetchData}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -269,9 +269,6 @@ export default function MyProfile() {
         </button>
         <button className={`my-profile-tab ${tab === 'job' ? 'my-profile-tab-active' : ''}`} onClick={() => setTab('job')}>
           {t('my_profile.tab_job')}
-        </button>
-        <button className={`my-profile-tab ${tab === 'requests' ? 'my-profile-tab-active' : ''}`} onClick={() => setTab('requests')}>
-          {t('my_profile.tab_requests') || 'Change Request'}
         </button>
       </div>
 
@@ -432,51 +429,68 @@ export default function MyProfile() {
           </div>
         </div>
       )}
-      {tab === 'requests' && (
-        <div className="my-profile-card">
-          <div className="my-profile-details">
+      <button className="my-profile-cr-fab" onClick={() => setShowChangeRequest(true)}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        Request Profile Change
+      </button>
+
+      {showChangeRequest && (
+        <div className="my-profile-modal-overlay" onClick={() => setShowChangeRequest(false)}>
+          <div className="my-profile-cr-modal" onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header">
+              <span className="my-profile-modal-dept">Profile Change Request</span>
+              <button className="my-profile-cr-close-btn" onClick={() => setShowChangeRequest(false)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <p className="my-profile-cr-hint">Request a change to your profile details. Your HR team will review and action it.</p>
             <div className="my-profile-cr-form">
-              <div className="my-profile-field">
-                <span className="my-profile-field-label">{t('my_profile.cr_change_type') || 'Change Type'} *</span>
+              <div className="my-profile-cr-field">
+                <label className="my-profile-cr-label">Change Type <span className="my-profile-cr-req">*</span></label>
                 <select
                   className="my-profile-cr-select"
                   value={changeType}
                   onChange={e => setChangeType(e.target.value)}
                 >
-                  <option value="">{t('my_profile.cr_select_type') || '— Select change type —'}</option>
+                  <option value="">— Select what you need to change —</option>
                   {CHANGE_TYPES.map(ct => (
                     <option key={ct.value} value={ct.value}>{ct.label}</option>
                   ))}
                 </select>
               </div>
 
-              <div className="my-profile-field">
-                <span className="my-profile-field-label">{t('my_profile.cr_current') || "What's Wrong / Current Info"} *</span>
+              <div className="my-profile-cr-field">
+                <label className="my-profile-cr-label">What's Wrong / Current Info <span className="my-profile-cr-req">*</span></label>
                 <input
                   className="my-profile-cr-input"
                   type="text"
-                  placeholder={t('my_profile.cr_current_placeholder') || 'Enter current/incorrect information'}
+                  placeholder="e.g. My surname is shown as Smith"
                   value={currentInfo}
                   onChange={e => setCurrentInfo(e.target.value)}
                 />
               </div>
 
-              <div className="my-profile-field">
-                <span className="my-profile-field-label">{t('my_profile.cr_new') || 'Change To / Correct Info'} *</span>
+              <div className="my-profile-cr-field">
+                <label className="my-profile-cr-label">Change To / Correct Info <span className="my-profile-cr-req">*</span></label>
                 <input
                   className="my-profile-cr-input"
                   type="text"
-                  placeholder={t('my_profile.cr_new_placeholder') || 'Enter new/correct information'}
+                  placeholder="e.g. It should be Jones"
                   value={newInfo}
                   onChange={e => setNewInfo(e.target.value)}
                 />
               </div>
 
-              <div className="my-profile-field">
-                <span className="my-profile-field-label">{t('my_profile.cr_details') || 'Additional Details'}</span>
+              <div className="my-profile-cr-field">
+                <label className="my-profile-cr-label">Additional Details <span className="my-profile-cr-optional">(optional)</span></label>
                 <textarea
                   className="my-profile-cr-textarea"
-                  placeholder={t('my_profile.cr_details_placeholder') || 'Any extra context (optional)'}
+                  placeholder="Any extra context to help HR process this faster"
                   value={additionalDetails}
                   onChange={e => { if (e.target.value.length <= 150) setAdditionalDetails(e.target.value) }}
                   maxLength={150}
@@ -489,7 +503,7 @@ export default function MyProfile() {
                 onClick={submitChangeRequest}
                 disabled={submitting || !changeType || !currentInfo.trim() || !newInfo.trim()}
               >
-                {submitting ? (t('my_profile.cr_submitting') || 'Submitting...') : (t('my_profile.cr_submit') || 'Submit Request')}
+                {submitting ? 'Submitting...' : 'Submit Request'}
               </button>
             </div>
           </div>

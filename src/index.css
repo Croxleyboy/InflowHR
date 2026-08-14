@@ -2429,8 +2429,55 @@ body {
   cursor: pointer;
 }
 
-/* ── Profile Change Request Form ── */
-.my-profile-cr-form { display: flex; flex-direction: column; gap: 16px; }
+/* ── Profile Change Request ── */
+.my-profile-cr-fab {
+  position: fixed; bottom: 80px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 24px;
+  border: none; border-radius: 28px;
+  background: #7b1fa2; color: #fff;
+  font-size: 14px; font-weight: 700;
+  font-family: var(--sans);
+  cursor: pointer; z-index: 90;
+  box-shadow: 0 4px 16px rgba(123,31,162,0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.my-profile-cr-fab:active { transform: translateX(-50%) scale(0.96); }
+.my-profile-cr-modal {
+  background: var(--card-bg);
+  border-radius: 18px 18px 0 0;
+  width: 100%; max-width: 480px;
+  max-height: 88vh; overflow-y: auto;
+  position: fixed; bottom: 0; left: 50%;
+  transform: translateX(-50%);
+  z-index: 1001;
+  animation: cr-slide-up 0.25s ease-out;
+}
+@keyframes cr-slide-up {
+  from { transform: translateX(-50%) translateY(100%); }
+  to   { transform: translateX(-50%) translateY(0); }
+}
+.my-profile-cr-close-btn {
+  background: none; border: none; cursor: pointer; padding: 4px;
+  display: flex; align-items: center;
+}
+.my-profile-cr-hint {
+  padding: 0 20px 4px; margin: 0;
+  font-size: 13px; color: var(--text-muted);
+  line-height: 1.4;
+}
+.my-profile-cr-form {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 12px 20px 24px;
+}
+.my-profile-cr-field { display: flex; flex-direction: column; gap: 4px; }
+.my-profile-cr-label {
+  font-size: 13px; font-weight: 600;
+  color: var(--text); letter-spacing: 0.01em;
+}
+.my-profile-cr-req { color: #e53935; }
+.my-profile-cr-optional { font-weight: 400; color: var(--text-muted); font-size: 12px; }
 .my-profile-cr-select,
 .my-profile-cr-input {
   width: 100%; padding: 10px 12px;
@@ -2438,6 +2485,7 @@ body {
   background: var(--card-bg); color: var(--text);
   font-size: 14px; font-family: var(--sans);
   transition: border-color 0.2s;
+  box-sizing: border-box;
 }
 .my-profile-cr-select:focus,
 .my-profile-cr-input:focus,
@@ -2451,18 +2499,20 @@ body {
   font-size: 14px; font-family: var(--sans);
   resize: vertical; min-height: 70px; max-height: 140px;
   transition: border-color 0.2s;
+  box-sizing: border-box;
 }
 .my-profile-cr-charcount {
   font-size: 11px; color: var(--text-muted);
-  text-align: right; display: block; margin-top: 2px;
+  text-align: right; display: block; margin-top: -2px;
 }
 .my-profile-cr-submit {
-  width: 100%; padding: 12px;
+  width: 100%; padding: 13px;
   border: none; border-radius: 10px;
   background: #7b1fa2; color: #fff;
   font-size: 15px; font-weight: 700;
   font-family: var(--sans); cursor: pointer;
   transition: opacity 0.2s;
+  margin-top: 4px;
 }
 .my-profile-cr-submit:disabled {
   opacity: 0.5; cursor: not-allowed;
