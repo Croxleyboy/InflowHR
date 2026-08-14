@@ -363,9 +363,7 @@ export default function AdminRotas() {
       if (error) { showError('Failed to assign shift: ' + error.message); return }
     }
     setActiveCell(null)
-    const { data, error: fetchErr } = await supabase.from('shift_assignments').select('*').eq('rota_id', selectedRota!.id)
-    if (fetchErr) console.error('[AdminRotas] refresh error:', fetchErr)
-    console.log('[AdminRotas] assignments after save:', data?.length, 'dates:', data?.map((a: any) => a.date))
+    const { data } = await supabase.from('shift_assignments').select('*').eq('rota_id', selectedRota!.id)
     setAssignments((data as ShiftAssignment[]) || [])
   }
 

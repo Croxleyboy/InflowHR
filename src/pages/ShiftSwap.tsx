@@ -163,7 +163,6 @@ export default function ShiftSwap() {
     })
 
     if (error) {
-      console.error('[ShiftSwap] insert error:', error)
       showError(t('shifts.swap_failed'))
     } else {
       setSelectedShiftId(null)

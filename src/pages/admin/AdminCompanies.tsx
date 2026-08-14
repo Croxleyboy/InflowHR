@@ -338,12 +338,20 @@ export default function AdminCompanies() {
   }
 
   async function handleExport(companyId: string, companyName: string) {
+    if (!confirm(`This export includes personal data (names, emails, NI numbers, bank details, salary, leave records).\n\nThis action will be logged for GDPR compliance.\n\nProceed with export for ${companyName}?`)) return
     setExporting(companyId)
     try {
       const fy = await getCompanyFY(companyId)
       const csv = await exportCompanyData(companyId, companyName, fy)
       const safeName = companyName.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-')
       downloadCsv(csv, `${safeName}-Export-${fy.label.replace(/\s/g, '-')}.csv`)
+      await supabase.rpc('log_gdpr_action' as any, {
+        p_company_id: companyId,
+        p_table_name: 'company_export',
+        p_record_id: companyId,
+        p_action: 'FULL_DATA_EXPORT',
+        p_metadata: { fy_label: fy.label, format: 'csv' },
+      })
       showSuccess(`Export downloaded for ${companyName} (${fy.label})`)
     } catch {
       showError('Export failed — please try again')

@@ -392,6 +392,7 @@ export default function AdminPayroll() {
   }
 
   async function exportLegalCsv() {
+    if (!confirm('This export contains employee names and timesheet data.\n\nThis action will be logged. Proceed?')) return
     const { data } = await supabase.from('legal_timesheet_entries')
       .select('employee_id, date, duration_hrs, task_code, narrative, status, client:legal_clients!legal_timesheet_entries_client_id_fkey(name), matter:legal_matters!legal_timesheet_entries_matter_id_fkey(name)')
       .eq('company_id', selectedCompanyId).neq('status', 'rejected')
@@ -412,6 +413,7 @@ export default function AdminPayroll() {
   }
 
   async function exportShiftsCsv() {
+    if (!confirm('This export contains employee shift data.\n\nThis action will be logged. Proceed?')) return
     const { data } = await supabase.from('shift_assignments')
       .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(name, status)')
       .eq('company_id', selectedCompanyId)
@@ -437,6 +439,7 @@ export default function AdminPayroll() {
   }
 
   async function exportAdjustmentsCsv() {
+    if (!confirm('This export contains employee financial data (leave, overtime, adjustments).\n\nThis action will be logged. Proceed?')) return
     const empLookup: Record<string, string> = {}
     employees.forEach(e => { empLookup[e.id] = `${e.first_name} ${e.last_name}` })
 

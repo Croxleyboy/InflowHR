@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useFeatures, type Features } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
@@ -31,13 +31,35 @@ export default function Settings() {
   const { features, companyFeatures, setFeatures } = useFeatures()
   const { lang, setLang, t, fyStartMonth, setFyStartMonth } = useLanguage()
   const { employeeName, employeeEmail, companyUser, isSuperAdmin } = useAuth()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
   const navigate = useNavigate()
   const [draft, setDraft] = useState<Features>({ ...features })
   const [draftLang, setDraftLang] = useState<Lang>(lang)
   const [draftFy, setDraftFy] = useState(fyStartMonth)
   const [saved, setSaved] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const isCompanyAdmin = isSuperAdmin || companyUser?.role === 'admin'
+
+  const handleDownloadMyData = useCallback(async () => {
+    if (!companyUser?.employee_id) { showError('No employee record linked'); return }
+    setExporting(true)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await supabase.rpc('export_employee_data' as any, { p_employee_id: companyUser.employee_id })
+      if (error) { showError('Export failed: ' + error.message); setExporting(false); return }
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `my-data-export-${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      showSuccess('Your data has been downloaded')
+    } catch {
+      showError('Export failed — please try again')
+    }
+    setExporting(false)
+  }, [companyUser?.employee_id, showError, showSuccess])
 
   function handleToggle(key: keyof Features) {
     setDraft(d => ({ ...d, [key]: !d[key] }))
@@ -160,6 +182,19 @@ export default function Settings() {
           {saved ? t('settings.saved') : t('settings.save')}
         </button>
       )}
+
+      <section className="settings-section">
+        <h2>Your Data</h2>
+        <p className="settings-hint">Download a copy of all your personal data held in the system (GDPR Art. 20).</p>
+        <button className="settings-admin-btn settings-guide-btn" onClick={handleDownloadMyData} disabled={exporting}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          {exporting ? 'Exporting…' : 'Download My Data'}
+        </button>
+      </section>
 
       <section className="settings-section">
         <button className="settings-admin-btn settings-guide-btn" onClick={() => navigate('/user-guide')}>

@@ -174,6 +174,11 @@ export default function AdminEmployees() {
       { table: 'expense_line_items', column: 'claim_id', value: '__expense_claims__' },
       { table: 'expense_claims', column: 'employee_id', value: emp.id },
       { table: 'payslips', column: 'employee_id', value: emp.id },
+      { table: 'shift_assignments', column: 'employee_id', value: emp.id },
+      { table: 'space_bookings', column: 'booked_by', value: emp.id },
+      { table: 'legal_timesheet_entries', column: 'employee_id', value: emp.id },
+      { table: 'frozen_employees', column: 'employee_id', value: emp.id },
+      { table: 'offboarding', column: 'employee_id', value: emp.id },
       { table: 'user_settings', column: 'employee_id', value: emp.id },
       { table: 'company_users', column: 'employee_id', value: emp.id },
     ]
@@ -202,6 +207,10 @@ export default function AdminEmployees() {
     const { error: onboardingErr } = await supabase.from('onboarding').delete().eq('user_email', emp.email)
     if (onboardingErr) { showError('Failed to delete onboarding record: ' + onboardingErr.message); return }
 
+    // Delete avatar from storage
+    const ext = emp.avatar_url?.split('.').pop()?.split('?')[0] || 'jpg'
+    await supabase.storage.from('avatars').remove([`${emp.id}.${ext}`])
+
     const { error } = await supabase.from('employees').delete().eq('id', emp.id)
     if (error) {
       showError(`Failed to delete: ${error.message}`)
@@ -220,10 +229,8 @@ export default function AdminEmployees() {
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
     const avatarUrl = urlData.publicUrl + '?t=' + Date.now()
     const { error: empErr } = await supabase.from('employees').update({ avatar_url: avatarUrl }).eq('id', emp.id)
-    if (empErr) console.error('Employee update failed:', empErr)
     const { error: onbErr } = await supabase.from('onboarding').update({ avatar_url: avatarUrl }).eq('user_email', emp.email)
-    if (onbErr) console.error('Onboarding update failed:', onbErr)
-    if (empErr && onbErr) showError('Photo uploaded but database update failed. Check RLS policies.')
+    if (empErr || onbErr) showError('Photo uploaded but database update failed.')
     else showSuccess('Photo updated')
     setUploading(null)
     load()

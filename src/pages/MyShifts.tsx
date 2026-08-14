@@ -168,26 +168,13 @@ export default function MyShifts() {
   const fetchMyShifts = useCallback(async () => {
     if (!employeeId || !companyUser?.company_id) return
     setLoading(true)
-    const { data: rawCheck } = await supabase
-      .from('shift_assignments')
-      .select('id, date, employee_id, rota_id, shift_template_id')
-      .eq('employee_id', employeeId)
-      .eq('company_id', companyUser.company_id)
-    console.log('[MyShifts] RAW rows (no joins):', rawCheck?.length, rawCheck?.map((r: any) => ({ date: r.date, rota: r.rota_id, tpl: r.shift_template_id })))
-
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('shift_assignments')
       .select('*, shift_template:shift_templates(id, name, start_time, end_time, break_minutes, colour), rota:rotas(id, name, status)')
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
 
-    if (error) console.error('[MyShifts] fetch error:', error)
-    console.log('[MyShifts] with joins count:', data?.length, 'employeeId:', employeeId)
-    if (data) {
-      console.log('[MyShifts] all dates:', data.map((s: any) => `${s.date} rota=${s.rota?.name}(${s.rota?.status}) tpl=${s.shift_template?.name}`))
-    }
     const published = (data || []).filter((s: any) => s.rota?.status === 'published' || s.rota?.status === 'draft')
-    console.log('[MyShifts] after rota filter:', published.length, 'dates:', published.map((s: any) => s.date))
     setShifts(published as ShiftAssignment[])
     setLoading(false)
   }, [employeeId, companyUser?.company_id])

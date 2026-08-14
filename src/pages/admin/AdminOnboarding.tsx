@@ -292,7 +292,7 @@ export default function AdminOnboarding() {
       .eq('company_id', selectedCompanyId)
       .eq('is_active', true)
       .eq('is_frozen', false)
-      .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,email.ilike.%${query}%`)
+      .or(`first_name.ilike.%${query.replace(/[,.()"\\]/g, '')}%,last_name.ilike.%${query.replace(/[,.()"\\]/g, '')}%,email.ilike.%${query.replace(/[,.()"\\]/g, '')}%`)
       .limit(10)
     setOffboardEmployeeResults(data || [])
   }
