@@ -7,7 +7,7 @@ import { useToast } from '../../context/ToastContext'
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 type TicketStatus = 'open' | 'in-progress' | 'resolved' | 'closed'
-type TicketCategory = 'hr-query' | 'payroll' | 'leave' | 'onboarding' | 'offboarding' | 'system-access' | 'benefits' | 'other'
+type TicketCategory = 'hr-query' | 'payroll' | 'leave' | 'onboarding' | 'offboarding' | 'system-access' | 'benefits' | 'user-request' | 'other'
 
 interface Ticket {
   id: string
@@ -40,6 +40,7 @@ const CATEGORY_OPTIONS: { value: TicketCategory; label: string; labelDe: string 
   { value: 'offboarding', label: 'Offboarding', labelDe: 'Offboarding' },
   { value: 'system-access', label: 'System Access', labelDe: 'Systemzugang' },
   { value: 'benefits', label: 'Benefits', labelDe: 'Leistungen' },
+  { value: 'user-request', label: 'User Request', labelDe: 'Benutzeranfrage' },
   { value: 'other', label: 'Other', labelDe: 'Sonstiges' },
 ]
 

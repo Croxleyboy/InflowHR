@@ -2429,6 +2429,45 @@ body {
   cursor: pointer;
 }
 
+/* ── Profile Change Request Form ── */
+.my-profile-cr-form { display: flex; flex-direction: column; gap: 16px; }
+.my-profile-cr-select,
+.my-profile-cr-input {
+  width: 100%; padding: 10px 12px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--card-bg); color: var(--text);
+  font-size: 14px; font-family: var(--sans);
+  transition: border-color 0.2s;
+}
+.my-profile-cr-select:focus,
+.my-profile-cr-input:focus,
+.my-profile-cr-textarea:focus {
+  outline: none; border-color: #7b1fa2;
+}
+.my-profile-cr-textarea {
+  width: 100%; padding: 10px 12px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--card-bg); color: var(--text);
+  font-size: 14px; font-family: var(--sans);
+  resize: vertical; min-height: 70px; max-height: 140px;
+  transition: border-color 0.2s;
+}
+.my-profile-cr-charcount {
+  font-size: 11px; color: var(--text-muted);
+  text-align: right; display: block; margin-top: 2px;
+}
+.my-profile-cr-submit {
+  width: 100%; padding: 12px;
+  border: none; border-radius: 10px;
+  background: #7b1fa2; color: #fff;
+  font-size: 15px; font-weight: 700;
+  font-family: var(--sans); cursor: pointer;
+  transition: opacity 0.2s;
+}
+.my-profile-cr-submit:disabled {
+  opacity: 0.5; cursor: not-allowed;
+}
+
 /* ── Kudos Page ── */
 .kudos-page { padding: 0 0 100px; }
 

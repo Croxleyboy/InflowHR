@@ -47,7 +47,7 @@ export default function MyProfile() {
   const { employeeEmail: EMPLOYEE_EMAIL, employeeId, companyUser, updateAvatarUrl } = useAuth()
   const { showError, showSuccess } = useToast()
   const { features } = useFeatures()
-  const [tab, setTab] = useState<'personal' | 'job'>('personal')
+  const [tab, setTab] = useState<'personal' | 'job' | 'requests'>('personal')
   const [profile, setProfile] = useState<OnboardingRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [showMembers, setShowMembers] = useState(false)
@@ -66,6 +66,11 @@ export default function MyProfile() {
   } | null>(null)
   const [showAssets, setShowAssets] = useState(false)
   const [myAssets, setMyAssets] = useState<{ asset_name: string; asset_type: string }[]>([])
+  const [changeType, setChangeType] = useState('')
+  const [currentInfo, setCurrentInfo] = useState('')
+  const [newInfo, setNewInfo] = useState('')
+  const [additionalDetails, setAdditionalDetails] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!EMPLOYEE_EMAIL || !companyUser?.company_id) return
@@ -171,6 +176,64 @@ export default function MyProfile() {
     setShowMembers(true)
   }
 
+  const CHANGE_TYPES = [
+    { value: 'name', label: t('my_profile.cr_name') || 'Name' },
+    { value: 'address', label: t('my_profile.cr_address') || 'Address' },
+    { value: 'phone', label: t('my_profile.cr_phone') || 'Phone Number' },
+    { value: 'email', label: t('my_profile.cr_email') || 'Personal Email' },
+    { value: 'emergency-contact', label: t('my_profile.cr_emergency') || 'Emergency Contact' },
+    { value: 'bank-details', label: t('my_profile.cr_bank') || 'Bank Details' },
+    { value: 'marital-status', label: t('my_profile.cr_marital') || 'Marital Status' },
+    { value: 'other', label: t('my_profile.cr_other') || 'Other' },
+  ]
+
+  async function submitChangeRequest() {
+    if (!changeType || !currentInfo.trim() || !newInfo.trim() || !companyUser?.company_id) return
+    setSubmitting(true)
+
+    const { data: allRefs } = await supabase
+      .from('hr_tickets')
+      .select('ref')
+      .eq('company_id', companyUser.company_id)
+    const maxNum = (allRefs || []).reduce((max: number, r: { ref: string }) => {
+      const num = parseInt(r.ref.replace('HR-', ''), 10)
+      return isNaN(num) ? max : Math.max(max, num)
+    }, 0)
+    const ref = `HR-${String(maxNum + 1).padStart(3, '0')}`
+
+    const typeLabel = CHANGE_TYPES.find(c => c.value === changeType)?.label || changeType
+    const title = `Profile Change: ${typeLabel}`
+    const description = `Change Type: ${typeLabel}\n\nCurrent Info: ${currentInfo.trim()}\n\nChange To: ${newInfo.trim()}${additionalDetails.trim() ? `\n\nAdditional Details: ${additionalDetails.trim()}` : ''}`
+
+    const fullName = profile?.display_name || `${profile?.firstname} ${profile?.surname}`
+
+    const { error } = await supabase.from('hr_tickets').insert({
+      ref,
+      title,
+      description,
+      category: 'user-request',
+      priority: 'medium',
+      status: 'open',
+      submitted_by: fullName || 'Employee',
+      assigned_to: 'HR Team',
+      assigned_to_provider: false,
+      company_id: companyUser.company_id,
+    })
+
+    if (error) {
+      showError('Failed to submit request: ' + error.message)
+      setSubmitting(false)
+      return
+    }
+
+    setChangeType('')
+    setCurrentInfo('')
+    setNewInfo('')
+    setAdditionalDetails('')
+    showSuccess(t('my_profile.cr_submitted') || 'Your request has been submitted to HR')
+    setSubmitting(false)
+  }
+
   return (
     <div className="feature-page my-profile-page">
       <header className="my-profile-header">
@@ -184,10 +247,12 @@ export default function MyProfile() {
           <h1 className="my-profile-title">
             {tab === 'personal'
               ? t('my_profile.title')
-              : <>{t('my_profile.job_title_header')} <span className="my-profile-title-accent">{t('my_profile.job_title_accent')}</span></>
+              : tab === 'job'
+              ? <>{t('my_profile.job_title_header')} <span className="my-profile-title-accent">{t('my_profile.job_title_accent')}</span></>
+              : (t('my_profile.cr_title') || 'Profile Change Request')
             }
           </h1>
-          <p className="my-profile-subtitle">{tab === 'personal' ? t('my_profile.subtitle') : ''}</p>
+          <p className="my-profile-subtitle">{tab === 'personal' ? t('my_profile.subtitle') : tab === 'requests' ? (t('my_profile.cr_subtitle') || 'Request a change to your profile details') : ''}</p>
         </div>
         <button className="feature-refresh" onClick={fetchData}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -204,6 +269,9 @@ export default function MyProfile() {
         </button>
         <button className={`my-profile-tab ${tab === 'job' ? 'my-profile-tab-active' : ''}`} onClick={() => setTab('job')}>
           {t('my_profile.tab_job')}
+        </button>
+        <button className={`my-profile-tab ${tab === 'requests' ? 'my-profile-tab-active' : ''}`} onClick={() => setTab('requests')}>
+          {t('my_profile.tab_requests') || 'Change Request'}
         </button>
       </div>
 
@@ -364,6 +432,70 @@ export default function MyProfile() {
           </div>
         </div>
       )}
+      {tab === 'requests' && (
+        <div className="my-profile-card">
+          <div className="my-profile-details">
+            <div className="my-profile-cr-form">
+              <div className="my-profile-field">
+                <span className="my-profile-field-label">{t('my_profile.cr_change_type') || 'Change Type'} *</span>
+                <select
+                  className="my-profile-cr-select"
+                  value={changeType}
+                  onChange={e => setChangeType(e.target.value)}
+                >
+                  <option value="">{t('my_profile.cr_select_type') || '— Select change type —'}</option>
+                  {CHANGE_TYPES.map(ct => (
+                    <option key={ct.value} value={ct.value}>{ct.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="my-profile-field">
+                <span className="my-profile-field-label">{t('my_profile.cr_current') || "What's Wrong / Current Info"} *</span>
+                <input
+                  className="my-profile-cr-input"
+                  type="text"
+                  placeholder={t('my_profile.cr_current_placeholder') || 'Enter current/incorrect information'}
+                  value={currentInfo}
+                  onChange={e => setCurrentInfo(e.target.value)}
+                />
+              </div>
+
+              <div className="my-profile-field">
+                <span className="my-profile-field-label">{t('my_profile.cr_new') || 'Change To / Correct Info'} *</span>
+                <input
+                  className="my-profile-cr-input"
+                  type="text"
+                  placeholder={t('my_profile.cr_new_placeholder') || 'Enter new/correct information'}
+                  value={newInfo}
+                  onChange={e => setNewInfo(e.target.value)}
+                />
+              </div>
+
+              <div className="my-profile-field">
+                <span className="my-profile-field-label">{t('my_profile.cr_details') || 'Additional Details'}</span>
+                <textarea
+                  className="my-profile-cr-textarea"
+                  placeholder={t('my_profile.cr_details_placeholder') || 'Any extra context (optional)'}
+                  value={additionalDetails}
+                  onChange={e => { if (e.target.value.length <= 150) setAdditionalDetails(e.target.value) }}
+                  maxLength={150}
+                />
+                <span className="my-profile-cr-charcount">{additionalDetails.length}/150</span>
+              </div>
+
+              <button
+                className="my-profile-cr-submit"
+                onClick={submitChangeRequest}
+                disabled={submitting || !changeType || !currentInfo.trim() || !newInfo.trim()}
+              >
+                {submitting ? (t('my_profile.cr_submitting') || 'Submitting...') : (t('my_profile.cr_submit') || 'Submit Request')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAssets && (
         <div className="my-profile-modal-overlay" onClick={() => setShowAssets(false)}>
           <div className="my-profile-modal" onClick={e => e.stopPropagation()}>
