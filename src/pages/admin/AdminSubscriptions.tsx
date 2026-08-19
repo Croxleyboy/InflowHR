@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 import AdminCompanies from './AdminCompanies'
 import AdminDemoSeed from './AdminDemoSeed'
 import AdminSupportAccess from './AdminSupportAccess'
@@ -32,6 +33,7 @@ interface CompanyFeature {
 
 export default function AdminSubscriptions() {
   const { isSuperAdmin } = useAuth()
+  const { showSuccess, showError } = useToast()
   const [tab, setTab] = useState<'pricing' | 'features' | 'companies' | 'demo-seed' | 'support-access' | 'audit-log'>('pricing')
 
   // Pricing state
@@ -48,7 +50,9 @@ export default function AdminSubscriptions() {
   const [companyFeatures, setCompanyFeatures] = useState<CompanyFeature[]>([])
   const [featuresLoading, setFeaturesLoading] = useState(false)
   const [customPrices, setCustomPrices] = useState<Record<string, string>>({})
+  const [savedPrices, setSavedPrices] = useState<Record<string, string>>({})
   const [savingFeature, setSavingFeature] = useState<string | null>(null)
+  const [savingAllPrices, setSavingAllPrices] = useState(false)
 
   // Load pricing
   async function loadPricing() {
@@ -99,6 +103,7 @@ export default function AdminSubscriptions() {
       prices[f.feature_key] = f.custom_price != null ? String(f.custom_price) : ''
     })
     setCustomPrices(prices)
+    setSavedPrices({ ...prices })
     setFeaturesLoading(false)
   }
 
@@ -153,26 +158,44 @@ export default function AdminSubscriptions() {
     setSavingFeature(null)
   }
 
-  // Save custom price
-  async function saveCustomPrice(featureKey: string) {
+  // Save all custom prices at once
+  async function saveAllCustomPrices() {
     if (!selectedCompanyId) return
-    setSavingFeature(featureKey)
-    const existing = companyFeatures.find(f => f.feature_key === featureKey)
-    const customPrice = customPrices[featureKey]
-    await supabase
-      .from('company_features')
-      .upsert(
-        {
-          company_id: selectedCompanyId,
-          feature_key: featureKey,
-          is_enabled: existing?.is_enabled ?? false,
-          custom_price: customPrice ? parseFloat(customPrice) : null,
-        },
-        { onConflict: 'company_id,feature_key' }
-      )
+    setSavingAllPrices(true)
+
+    const allFeatureKeys = pricing.map(p => p.feature_key)
+    let errorCount = 0
+
+    for (const featureKey of allFeatureKeys) {
+      const existing = companyFeatures.find(f => f.feature_key === featureKey)
+      const customPrice = customPrices[featureKey]
+      const { error } = await supabase
+        .from('company_features')
+        .upsert(
+          {
+            company_id: selectedCompanyId,
+            feature_key: featureKey,
+            is_enabled: existing?.is_enabled ?? false,
+            custom_price: customPrice ? parseFloat(customPrice) : null,
+          },
+          { onConflict: 'company_id,feature_key' }
+        )
+      if (error) errorCount++
+    }
+
     await loadCompanyFeatures(selectedCompanyId)
-    setSavingFeature(null)
+    setSavingAllPrices(false)
+
+    if (errorCount > 0) {
+      showError(`Failed to save ${errorCount} price(s)`)
+    } else {
+      showSuccess(`Custom pricing saved for ${companyName}`)
+    }
   }
+
+  const hasPriceChanges = Object.keys(customPrices).some(
+    k => (customPrices[k] || '') !== (savedPrices[k] || '')
+  )
 
   // Helpers for cost table
   function getEffectivePrice(featureKey: string): number {
@@ -422,7 +445,6 @@ export default function AdminSubscriptions() {
                               [baseline.feature_key]: e.target.value,
                             }))
                           }
-                          onBlur={() => saveCustomPrice(baseline.feature_key)}
                         />
                       </div>
                     </div>
@@ -460,12 +482,24 @@ export default function AdminSubscriptions() {
                                 [addon.feature_key]: e.target.value,
                               }))
                             }
-                            onBlur={() => saveCustomPrice(addon.feature_key)}
                           />
                         </div>
                       </div>
                     )
                   })}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      onClick={saveAllCustomPrices}
+                      disabled={savingAllPrices || !hasPriceChanges}
+                    >
+                      {savingAllPrices ? 'Saving...' : 'Save Prices'}
+                    </button>
+                    {hasPriceChanges && (
+                      <span style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>Unsaved changes</span>
+                    )}
+                  </div>
 
                   {/* Monthly Financial Breakdown */}
                   <table className="sub-cost-table">
