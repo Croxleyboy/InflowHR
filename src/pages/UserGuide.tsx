@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 interface Feature {
@@ -132,6 +132,8 @@ const SECTIONS: GuideSection[] = [
 export default function UserGuide() {
   const navigate = useNavigate()
   const [openSections, setOpenSections] = useState<Record<number, boolean>>({})
+
+  useEffect(() => { window.scrollTo(0, 0) }, [])
 
   function toggleSection(idx: number) {
     setOpenSections(prev => ({ ...prev, [idx]: !prev[idx] }))

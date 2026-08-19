@@ -186,24 +186,23 @@ export default function Settings() {
       <section className="settings-section">
         <h2>Your Data</h2>
         <p className="settings-hint">Download a copy of all your personal data held in the system (GDPR Art. 20).</p>
-        <button className="settings-admin-btn settings-guide-btn" onClick={handleDownloadMyData} disabled={exporting}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="7 10 12 15 17 10"/>
-            <line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          {exporting ? 'Exporting…' : 'Download My Data'}
-        </button>
-      </section>
-
-      <section className="settings-section">
-        <button className="settings-admin-btn settings-guide-btn" onClick={() => navigate('/user-guide')}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
-            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-          </svg>
-          User Guide
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <button className="settings-admin-btn settings-guide-btn" onClick={handleDownloadMyData} disabled={exporting}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            {exporting ? 'Exporting…' : 'Download My Data'}
+          </button>
+          <button className="settings-admin-btn settings-guide-btn" onClick={() => navigate('/user-guide')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+            </svg>
+            User Guide
+          </button>
+        </div>
       </section>
 
       {isCompanyAdmin && (
