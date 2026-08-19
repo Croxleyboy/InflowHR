@@ -178,14 +178,14 @@ export default function MyProfile() {
   }
 
   const CHANGE_TYPES = [
-    { value: 'name', label: t('my_profile.cr_name') || 'Name' },
-    { value: 'address', label: t('my_profile.cr_address') || 'Address' },
-    { value: 'phone', label: t('my_profile.cr_phone') || 'Phone Number' },
-    { value: 'email', label: t('my_profile.cr_email') || 'Personal Email' },
-    { value: 'emergency-contact', label: t('my_profile.cr_emergency') || 'Emergency Contact' },
-    { value: 'bank-details', label: t('my_profile.cr_bank') || 'Bank Details' },
-    { value: 'marital-status', label: t('my_profile.cr_marital') || 'Marital Status' },
-    { value: 'other', label: t('my_profile.cr_other') || 'Other' },
+    { value: 'name', label: 'Name' },
+    { value: 'address', label: 'Address' },
+    { value: 'phone', label: 'Phone Number' },
+    { value: 'email', label: 'Personal Email' },
+    { value: 'emergency-contact', label: 'Emergency Contact' },
+    { value: 'bank-details', label: 'Bank Details' },
+    { value: 'marital-status', label: 'Marital Status' },
+    { value: 'other', label: 'Other' },
   ]
 
   async function submitChangeRequest() {
@@ -232,7 +232,7 @@ export default function MyProfile() {
     setNewInfo('')
     setAdditionalDetails('')
     setShowChangeRequest(false)
-    showSuccess(t('my_profile.cr_submitted') || 'Your request has been submitted to HR')
+    showSuccess('Your request has been submitted to HR')
     setSubmitting(false)
   }
 
