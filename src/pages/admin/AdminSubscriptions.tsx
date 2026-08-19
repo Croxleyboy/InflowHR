@@ -528,12 +528,12 @@ export default function AdminSubscriptions() {
                     )}
                   </div>
 
-                  {/* Baseline Subscription */}
+                  {/* HR Core Features */}
                   {baseline && (
                     <div style={{ background: '#f8faff', border: '2px solid #1565c0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                         <span style={{ fontSize: 16 }}>&#9733;</span>
-                        <span style={{ fontWeight: 700, fontSize: 15, color: '#1565c0' }}>Baseline Subscription</span>
+                        <span style={{ fontWeight: 700, fontSize: 15, color: '#1565c0' }}>HR Core Features</span>
                         {customPrices[baseline.feature_key] && customPrices[baseline.feature_key] !== '' && (
                           <span style={{ fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
                         )}
