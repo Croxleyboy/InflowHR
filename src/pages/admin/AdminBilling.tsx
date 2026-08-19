@@ -199,10 +199,27 @@ function generateInvoicePDF(
   doc.save(`Invoice-${safeCompany}-${monthLabel}-${year}.pdf`)
 }
 
+interface SnapshotFeatureDetail {
+  key: string
+  name: string
+  price: number
+}
+
+interface BillingSnapshot {
+  company_id: string
+  year: number
+  month: number
+  employee_count: number
+  core_per_user: number
+  addon_per_user: number
+  feature_details: SnapshotFeatureDetail[]
+}
+
 function CompanyBilling({ companyId, companyName }: { companyId: string; companyName: string }) {
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [features, setFeatures] = useState<CompanyFeature[]>([])
   const [employeeCount, setEmployeeCount] = useState(0)
+  const [snapshots, setSnapshots] = useState<BillingSnapshot[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -211,15 +228,77 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
 
   async function load() {
     setLoading(true)
-    const [pricingRes, featuresRes, metricsRes] = await Promise.all([
+    const now = new Date()
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+
+    const [pricingRes, featuresRes, metricsRes, snapshotsRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
       supabase.from('company_features').select('*').eq('company_id', companyId),
       supabase.rpc('get_company_metrics', { p_company_id: companyId }),
+      supabase.from('billing_snapshots')
+        .select('*')
+        .eq('company_id', companyId)
+        .gte('year', sixMonthsAgo.getFullYear())
+        .order('year')
+        .order('month'),
     ])
-    setPricing((pricingRes.data as PricingRow[]) || [])
-    setFeatures((featuresRes.data as CompanyFeature[]) || [])
-    setEmployeeCount(metricsRes.data?.employee_count ?? 0)
+    const pricingData = (pricingRes.data as PricingRow[]) || []
+    const featuresData = (featuresRes.data as CompanyFeature[]) || []
+    const empCount = metricsRes.data?.employee_count ?? 0
+    const snapshotData = (snapshotsRes.data as BillingSnapshot[]) || []
+
+    setPricing(pricingData)
+    setFeatures(featuresData)
+    setEmployeeCount(empCount)
+    setSnapshots(snapshotData)
+
+    upsertCurrentMonthSnapshot(companyId, pricingData, featuresData, empCount, now)
     setLoading(false)
+  }
+
+  async function upsertCurrentMonthSnapshot(
+    coId: string,
+    pricingData: PricingRow[],
+    featuresData: CompanyFeature[],
+    empCount: number,
+    now: Date,
+  ) {
+    const bl = pricingData.find(p => !p.is_addon)
+    const enabledKeys = new Set(featuresData.filter(f => f.is_enabled).map(f => f.feature_key))
+    const addons = pricingData.filter(p => p.is_addon && enabledKeys.has(p.feature_key))
+
+    function eff(pr: PricingRow): number {
+      const cf = featuresData.find(f => f.feature_key === pr.feature_key)
+      return cf?.custom_price != null ? cf.custom_price : pr.default_price
+    }
+
+    const corePerUser = bl ? eff(bl) : 0
+    const addonPerUser = addons.reduce((s, a) => s + eff(a), 0)
+    const yr = now.getFullYear()
+    const mo = now.getMonth() + 1
+
+    const featureDetails: SnapshotFeatureDetail[] = []
+    if (bl) featureDetails.push({ key: bl.feature_key, name: bl.display_name, price: corePerUser })
+    addons.forEach(a => featureDetails.push({ key: a.feature_key, name: a.display_name, price: eff(a) }))
+
+    await supabase.from('billing_snapshots').upsert(
+      {
+        company_id: coId,
+        year: yr,
+        month: mo,
+        employee_count: empCount,
+        core_per_user: corePerUser,
+        addon_per_user: addonPerUser,
+        feature_details: featureDetails,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'company_id,year,month' },
+    )
+
+    setSnapshots(prev => {
+      const filtered = prev.filter(s => !(s.year === yr && s.month === mo))
+      return [...filtered, { company_id: coId, year: yr, month: mo, employee_count: empCount, core_per_user: corePerUser, addon_per_user: addonPerUser, feature_details: featureDetails }]
+    })
   }
 
   const baseline = useMemo(() => pricing.find(p => !p.is_addon), [pricing])
@@ -242,32 +321,81 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
 
   const chartData = useMemo(() => {
     const now = new Date()
+    const curYear = now.getFullYear()
+    const curMonth = now.getMonth() + 1
+
     return Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+      const d = new Date(curYear, curMonth - 1 - (5 - i), 1)
+      const yr = d.getFullYear()
+      const mo = d.getMonth() + 1
+      const isCurrent = yr === curYear && mo === curMonth
+
+      if (isCurrent) {
+        return {
+          label: MONTH_LABELS[d.getMonth()],
+          month: MONTH_FULL[d.getMonth()],
+          year: yr,
+          core: baselinePrice * employeeCount,
+          addons: addonTotal * employeeCount,
+          isCurrent: true,
+        }
+      }
+
+      const snap = snapshots.find(s => s.year === yr && s.month === mo)
+      if (snap) {
+        return {
+          label: MONTH_LABELS[d.getMonth()],
+          month: MONTH_FULL[d.getMonth()],
+          year: yr,
+          core: snap.core_per_user * snap.employee_count,
+          addons: snap.addon_per_user * snap.employee_count,
+          isCurrent: false,
+        }
+      }
+
       return {
         label: MONTH_LABELS[d.getMonth()],
         month: MONTH_FULL[d.getMonth()],
-        year: d.getFullYear(),
+        year: yr,
         core: baselinePrice * employeeCount,
         addons: addonTotal * employeeCount,
-        isCurrent: i === 5,
+        isCurrent: false,
       }
     })
-  }, [baselinePrice, addonTotal, employeeCount])
+  }, [baselinePrice, addonTotal, employeeCount, snapshots])
 
   const maxAmount = Math.max(...chartData.map(m => m.core + m.addons), 1)
 
   function handleInvoice(month: string, year: number) {
     if (!baseline) return
-    generateInvoicePDF(
-      companyName,
-      month,
-      year,
-      baseline.display_name,
-      effectivePrice(baseline),
-      enabledAddons.map(a => ({ name: a.display_name, price: effectivePrice(a) })),
-      employeeCount,
-    )
+    const monthIdx = MONTH_FULL.indexOf(month)
+    const now = new Date()
+    const isCurrent = year === now.getFullYear() && monthIdx === now.getMonth()
+    const snap = snapshots.find(s => s.year === year && s.month === monthIdx + 1)
+
+    if (!isCurrent && snap && snap.feature_details?.length > 0) {
+      const coreDetail = snap.feature_details.find(d => d.key === baseline.feature_key)
+      const addonDetails = snap.feature_details.filter(d => d.key !== baseline.feature_key)
+      generateInvoicePDF(
+        companyName,
+        month,
+        year,
+        coreDetail?.name || baseline.display_name,
+        snap.core_per_user,
+        addonDetails.map(d => ({ name: d.name, price: d.price })),
+        snap.employee_count,
+      )
+    } else {
+      generateInvoicePDF(
+        companyName,
+        month,
+        year,
+        baseline.display_name,
+        effectivePrice(baseline),
+        enabledAddons.map(a => ({ name: a.display_name, price: effectivePrice(a) })),
+        employeeCount,
+      )
+    }
   }
 
   if (loading) return <div className="admin-section"><div className="admin-loading">Loading...</div></div>
