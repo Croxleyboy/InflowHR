@@ -4,7 +4,7 @@
 -- Baseline includes: Expenses, Leave, Kudos, Announcements, Onboarding, HR Tickets,
 --   E-Learning, Timesheets, Payroll/Payslips, Performance
 INSERT INTO subscription_pricing (feature_key, display_name, description, default_price, is_addon, is_active)
-SELECT 'hr_core', 'HR Core Platform', 'Expenses, Leave, Kudos, Announcements, Onboarding, HR Tickets, E-Learning, Timesheets, Payroll/Payslips, Performance', 5.00, false, true
+SELECT 'hr_core', 'HR Core Platform', 'Expenses, Leave, Kudos, Announcements, Onboarding, HR Tickets, E-Learning, Timesheets, Payroll/Payslips, Performance', 2.50, false, true
 WHERE NOT EXISTS (
   SELECT 1 FROM subscription_pricing WHERE feature_key = 'hr_core'
 );
