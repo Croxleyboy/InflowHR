@@ -523,36 +523,70 @@ export default function AdminSubscriptions() {
                     )}
                   </div>
 
-                  {/* HR Core baseline price override */}
+                  {/* Baseline Subscription */}
                   {baseline && (
-                    <div className="sub-feature-card" style={{ borderColor: '#1565c0', background: '#f8faff' }}>
-                      <div style={{ width: 44 }} />
-                      <div className="sub-feature-info">
-                        <div className="sub-feature-name">{baseline.display_name}</div>
-                        <div className="sub-feature-desc">{baseline.description}</div>
+                    <div style={{ background: '#f8faff', border: '2px solid #1565c0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                        <span style={{ fontSize: 16 }}>&#9733;</span>
+                        <span style={{ fontWeight: 700, fontSize: 15, color: '#1565c0' }}>Baseline Subscription</span>
+                        {customPrices[baseline.feature_key] && customPrices[baseline.feature_key] !== '' && (
+                          <span style={{ fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
+                        )}
                       </div>
-                      <div className="sub-feature-price">
-                        <label>Custom £</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder={String(baseline.default_price)}
-                          value={customPrices[baseline.feature_key] ?? ''}
-                          onChange={e =>
-                            setCustomPrices(prev => ({
-                              ...prev,
-                              [baseline.feature_key]: e.target.value,
-                            }))
-                          }
-                        />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{baseline.display_name}</div>
+                          <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{baseline.description}</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 11, color: '#999', fontWeight: 600 }}>Default</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: '#999' }}>&pound;{baseline.default_price.toFixed(2)}</div>
+                          </div>
+                          <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
+                          <div>
+                            <div style={{ fontSize: 11, color: '#1565c0', fontWeight: 600 }}>Company Price</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontWeight: 600 }}>&pound;</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                className="admin-input"
+                                style={{ width: 100, fontWeight: 700, fontSize: 16, textAlign: 'center' }}
+                                placeholder={baseline.default_price.toFixed(2)}
+                                value={customPrices[baseline.feature_key] ?? ''}
+                                onChange={e =>
+                                  setCustomPrices(prev => ({
+                                    ...prev,
+                                    [baseline.feature_key]: e.target.value,
+                                  }))
+                                }
+                              />
+                              <span style={{ fontSize: 12, color: '#666' }}>/user/month</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
+                      {customPrices[baseline.feature_key] && customPrices[baseline.feature_key] !== '' && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: '#1565c0' }}>
+                          Monthly baseline cost: &pound;{(parseFloat(customPrices[baseline.feature_key] || '0') * employeeCount).toFixed(2)} ({employeeCount} user{employeeCount !== 1 ? 's' : ''} &times; &pound;{parseFloat(customPrices[baseline.feature_key] || '0').toFixed(2)})
+                          {parseFloat(customPrices[baseline.feature_key]) < baseline.default_price && <span style={{ marginLeft: 8, color: '#43a047' }}>&#9660; {((1 - parseFloat(customPrices[baseline.feature_key]) / baseline.default_price) * 100).toFixed(0)}% discount</span>}
+                          {parseFloat(customPrices[baseline.feature_key]) > baseline.default_price && <span style={{ marginLeft: 8, color: '#e65100' }}>&#9650; {((parseFloat(customPrices[baseline.feature_key]) / baseline.default_price - 1) * 100).toFixed(0)}% premium</span>}
+                        </div>
+                      )}
+                      {(!customPrices[baseline.feature_key] || customPrices[baseline.feature_key] === '') && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+                          Using default rate: &pound;{(baseline.default_price * employeeCount).toFixed(2)}/month ({employeeCount} user{employeeCount !== 1 ? 's' : ''} &times; &pound;{baseline.default_price.toFixed(2)})
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {/* Add-on feature toggles */}
                   {addons.map(addon => {
                     const enabled = isFeatureEnabled(addon.feature_key)
+                    const hasCustom = customPrices[addon.feature_key] && customPrices[addon.feature_key] !== ''
                     return (
                       <div key={addon.feature_key} className="sub-feature-card">
                         <label className="admin-toggle-switch">
@@ -565,16 +599,20 @@ export default function AdminSubscriptions() {
                           <span className="admin-toggle-slider" />
                         </label>
                         <div className="sub-feature-info">
-                          <div className="sub-feature-name">{addon.display_name}</div>
+                          <div className="sub-feature-name">
+                            {addon.display_name}
+                            {hasCustom && <span style={{ marginLeft: 6, fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>Custom</span>}
+                          </div>
                           <div className="sub-feature-desc">{addon.description}</div>
                         </div>
-                        <div className="sub-feature-price">
+                        <div className="sub-feature-price" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, color: '#999' }}>Default £{addon.default_price.toFixed(2)}</span>
                           <label>Custom £</label>
                           <input
                             type="number"
                             step="0.01"
                             min="0"
-                            placeholder={String(addon.default_price)}
+                            placeholder={addon.default_price.toFixed(2)}
                             value={customPrices[addon.feature_key] ?? ''}
                             onChange={e =>
                               setCustomPrices(prev => ({
