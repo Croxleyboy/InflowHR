@@ -199,6 +199,154 @@ function generateInvoicePDF(
   doc.save(`Invoice-${safeCompany}-${monthLabel}-${year}.pdf`)
 }
 
+function generateAnnualInvoicePDF(
+  companyName: string,
+  fyLabel: string,
+  annualPrice: number,
+  subscribedFeatures: { name: string; type: string }[],
+) {
+  const doc = new jsPDF()
+  const pw = doc.internal.pageSize.getWidth()
+  const lm = 20
+  const rm = pw - 20
+  let y = 20
+
+  doc.setFontSize(22)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(21, 101, 192)
+  doc.text('KUMONIX', lm, y)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(120, 120, 120)
+  doc.text('kumonix.com', lm, y + 6)
+  doc.text('hello@kumonix.com', lm, y + 11)
+
+  doc.setFontSize(28)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(30, 30, 45)
+  doc.text('INVOICE', rm, y, { align: 'right' })
+  y += 24
+
+  const now = new Date()
+  const invoiceNum = `INV-${fyLabel.replace(/[^a-zA-Z0-9]/g, '')}-${companyName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()}-FP`
+  const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+  const dueDate = new Date(now)
+  dueDate.setDate(dueDate.getDate() + 30)
+
+  doc.setDrawColor(220, 220, 220)
+  doc.line(lm, y, rm, y)
+  y += 8
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(120, 120, 120)
+  doc.text('INVOICE NO', lm, y)
+  doc.text('ISSUE DATE', lm + 50, y)
+  doc.text('DUE DATE', lm + 100, y)
+  doc.text('PERIOD', lm + 145, y)
+  y += 5
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(30, 30, 45)
+  doc.text(invoiceNum, lm, y)
+  doc.text(fmtDate(now), lm + 50, y)
+  doc.text(fmtDate(dueDate), lm + 100, y)
+  doc.text(fyLabel, lm + 145, y)
+  y += 12
+
+  doc.setFillColor(245, 247, 250)
+  doc.roundedRect(lm, y, rm - lm, 24, 3, 3, 'F')
+  y += 7
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(120, 120, 120)
+  doc.text('BILL TO', lm + 6, y)
+  doc.text('FROM', rm / 2 + 10, y)
+  y += 6
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(30, 30, 45)
+  doc.text(companyName, lm + 6, y)
+  doc.text('Kumonix Ltd', rm / 2 + 10, y)
+  y += 5
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(100, 100, 100)
+  doc.text('kumonix.com', rm / 2 + 10, y)
+  y += 16
+
+  doc.setFillColor(21, 101, 192)
+  doc.roundedRect(lm, y, rm - lm, 9, 2, 2, 'F')
+  y += 6
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(255, 255, 255)
+  doc.text('Subscribed Feature', lm + 4, y)
+  doc.text('Type', lm + 110, y)
+  y += 7
+
+  doc.setTextColor(30, 30, 45)
+  doc.setFont('helvetica', 'normal')
+
+  subscribedFeatures.forEach((f, i) => {
+    if (i % 2 === 0) {
+      doc.setFillColor(248, 249, 252)
+      doc.rect(lm, y - 4, rm - lm, 8, 'F')
+    }
+    doc.setFontSize(9)
+    doc.text(f.name, lm + 4, y)
+    doc.text(f.type, lm + 110, y)
+    y += 8
+  })
+
+  y += 4
+  doc.setDrawColor(220, 220, 220)
+  doc.line(lm + 100, y, rm, y)
+  y += 8
+
+  const vatAmount = annualPrice * VAT_RATE
+  const total = annualPrice + vatAmount
+
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Fixed Annual Price', lm + 80, y)
+  doc.text(`£${annualPrice.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  y += 7
+  doc.setFont('helvetica', 'normal')
+  doc.text(`VAT (${(VAT_RATE * 100).toFixed(0)}%)`, lm + 80, y)
+  doc.text(`£${vatAmount.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  y += 3
+  doc.setDrawColor(21, 101, 192)
+  doc.setLineWidth(0.5)
+  doc.line(lm + 70, y, rm, y)
+  y += 8
+  doc.setFontSize(14)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(21, 101, 192)
+  doc.text('Total Due', lm + 80, y)
+  doc.text(`£${total.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  y += 16
+
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(150, 150, 150)
+  doc.text('Payment terms: Net 30 days from invoice date.', lm, y)
+  y += 5
+  doc.text('Fixed annual billing — covers all subscribed HR features for the financial year.', lm, y)
+  y += 10
+  doc.setDrawColor(230, 230, 230)
+  doc.line(lm, y, rm, y)
+  y += 6
+  doc.setTextColor(21, 101, 192)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Kumonix Ltd', lm, y)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(150, 150, 150)
+  doc.text('  |  kumonix.com  |  hello@kumonix.com', lm + 26, y)
+
+  const safeCompany = companyName.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-')
+  doc.save(`Invoice-${safeCompany}-Annual-${fyLabel.replace(/\s+/g, '-')}.pdf`)
+}
+
 interface SnapshotFeatureDetail {
   key: string
   name: string
@@ -221,6 +369,9 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   const [employeeCount, setEmployeeCount] = useState(0)
   const [snapshots, setSnapshots] = useState<BillingSnapshot[]>([])
   const [loading, setLoading] = useState(true)
+  const [billingType, setBillingType] = useState<'monthly' | 'fixed'>('monthly')
+  const [fixedAnnualPrice, setFixedAnnualPrice] = useState(0)
+  const [fyStartMonth, setFyStartMonth] = useState(4)
 
   useEffect(() => {
     if (companyId) load()
@@ -231,7 +382,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     const now = new Date()
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
-    const [pricingRes, featuresRes, metricsRes, snapshotsRes] = await Promise.all([
+    const [pricingRes, featuresRes, metricsRes, snapshotsRes, companyRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
       supabase.from('company_features').select('*').eq('company_id', companyId),
       supabase.rpc('get_company_metrics', { p_company_id: companyId }),
@@ -241,11 +392,21 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         .gte('year', sixMonthsAgo.getFullYear())
         .order('year')
         .order('month'),
+      supabase.from('companies')
+        .select('billing_type, fixed_annual_price, fy_start_month')
+        .eq('id', companyId)
+        .single(),
     ])
     const pricingData = (pricingRes.data as PricingRow[]) || []
     const featuresData = (featuresRes.data as CompanyFeature[]) || []
     const empCount = metricsRes.data?.employee_count ?? 0
     const snapshotData = (snapshotsRes.data as BillingSnapshot[]) || []
+
+    const co = companyRes.data as { billing_type: string; fixed_annual_price: number | null; fy_start_month: number } | null
+    const bt = co?.billing_type === 'fixed' ? 'fixed' : 'monthly'
+    setBillingType(bt as 'monthly' | 'fixed')
+    setFixedAnnualPrice(co?.fixed_annual_price ?? 0)
+    setFyStartMonth(co?.fy_start_month ?? 4)
 
     setPricing(pricingData)
     setFeatures(featuresData)
@@ -314,8 +475,10 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
 
   const baselinePrice = baseline ? effectivePrice(baseline) : 0
   const addonTotal = enabledAddons.reduce((sum, a) => sum + effectivePrice(a), 0)
+  const isFixed = billingType === 'fixed' && fixedAnnualPrice > 0
+  const fixedMonthly = isFixed ? fixedAnnualPrice / 12 : 0
   const perUserTotal = baselinePrice + addonTotal
-  const subtotal = perUserTotal * employeeCount
+  const subtotal = isFixed ? fixedMonthly : perUserTotal * employeeCount
   const vat = subtotal * VAT_RATE
   const monthlyTotal = subtotal + vat
 
@@ -329,6 +492,17 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       const yr = d.getFullYear()
       const mo = d.getMonth() + 1
       const isCurrent = yr === curYear && mo === curMonth
+
+      if (isFixed) {
+        return {
+          label: MONTH_LABELS[d.getMonth()],
+          month: MONTH_FULL[d.getMonth()],
+          year: yr,
+          core: fixedMonthly,
+          addons: 0,
+          isCurrent,
+        }
+      }
 
       if (isCurrent) {
         return {
@@ -362,7 +536,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         isCurrent: false,
       }
     })
-  }, [baselinePrice, addonTotal, employeeCount, snapshots])
+  }, [baselinePrice, addonTotal, employeeCount, snapshots, isFixed, fixedMonthly])
 
   const maxAmount = Math.max(...chartData.map(m => m.core + m.addons), 1)
 
@@ -398,6 +572,22 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     }
   }
 
+  function getFYLabel(): string {
+    const now = new Date()
+    const currentMonth = now.getMonth() + 1
+    let fyStartYear = now.getFullYear()
+    if (currentMonth < fyStartMonth) fyStartYear--
+    const fyEndYear = fyStartYear + 1
+    return `${fyStartYear}/${fyEndYear}`
+  }
+
+  function handleAnnualInvoice() {
+    const allFeatures: { name: string; type: string }[] = []
+    if (baseline) allFeatures.push({ name: baseline.display_name, type: 'Core' })
+    enabledAddons.forEach(a => allFeatures.push({ name: a.display_name, type: 'Add-on' }))
+    generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures)
+  }
+
   if (loading) return <div className="admin-section"><div className="admin-loading">Loading...</div></div>
 
   return (
@@ -407,30 +597,65 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         <p>Financial overview for {companyName || 'your company'}</p>
       </div>
 
+      {isFixed && (
+        <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>&#9679;</span>
+          <span style={{ fontWeight: 600, color: '#2e7d32' }}>Fixed Annual Billing</span>
+          <span style={{ color: '#555', fontSize: 13 }}>&mdash; &pound;{fixedAnnualPrice.toFixed(2)}/year (FY {getFYLabel()})</span>
+        </div>
+      )}
+
       <div className="billing-summary">
-        <div className="billing-card">
-          <span className="billing-card-label">Core Plan</span>
-          <span className="billing-card-value">&pound;{baselinePrice.toFixed(2)}</span>
-          <span className="billing-card-sub">per user / month</span>
-        </div>
-        <div className="billing-card">
-          <span className="billing-card-label">Feature Add-ons</span>
-          <span className="billing-card-value">&pound;{addonTotal.toFixed(2)}</span>
-          <span className="billing-card-sub">{enabledAddons.length} active</span>
-        </div>
-        <div className="billing-card">
-          <span className="billing-card-label">Active Users</span>
-          <span className="billing-card-value">{employeeCount}</span>
-          <span className="billing-card-sub">employees</span>
-        </div>
-        <div className="billing-card billing-card-highlight">
-          <span className="billing-card-label">Monthly Total (inc. VAT)</span>
-          <span className="billing-card-value">&pound;{monthlyTotal.toFixed(2)}</span>
-          <span className="billing-card-sub">&pound;{subtotal.toFixed(2)} + &pound;{vat.toFixed(2)} VAT</span>
-        </div>
+        {isFixed ? (
+          <>
+            <div className="billing-card">
+              <span className="billing-card-label">Annual Price</span>
+              <span className="billing-card-value">&pound;{fixedAnnualPrice.toFixed(2)}</span>
+              <span className="billing-card-sub">fixed / year</span>
+            </div>
+            <div className="billing-card">
+              <span className="billing-card-label">Monthly Equivalent</span>
+              <span className="billing-card-value">&pound;{fixedMonthly.toFixed(2)}</span>
+              <span className="billing-card-sub">excl. VAT</span>
+            </div>
+            <div className="billing-card">
+              <span className="billing-card-label">Active Users</span>
+              <span className="billing-card-value">{employeeCount}</span>
+              <span className="billing-card-sub">employees</span>
+            </div>
+            <div className="billing-card billing-card-highlight">
+              <span className="billing-card-label">Annual Total (inc. VAT)</span>
+              <span className="billing-card-value">&pound;{(fixedAnnualPrice + fixedAnnualPrice * VAT_RATE).toFixed(2)}</span>
+              <span className="billing-card-sub">&pound;{fixedAnnualPrice.toFixed(2)} + &pound;{(fixedAnnualPrice * VAT_RATE).toFixed(2)} VAT</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="billing-card">
+              <span className="billing-card-label">Core Plan</span>
+              <span className="billing-card-value">&pound;{baselinePrice.toFixed(2)}</span>
+              <span className="billing-card-sub">per user / month</span>
+            </div>
+            <div className="billing-card">
+              <span className="billing-card-label">Feature Add-ons</span>
+              <span className="billing-card-value">&pound;{addonTotal.toFixed(2)}</span>
+              <span className="billing-card-sub">{enabledAddons.length} active</span>
+            </div>
+            <div className="billing-card">
+              <span className="billing-card-label">Active Users</span>
+              <span className="billing-card-value">{employeeCount}</span>
+              <span className="billing-card-sub">employees</span>
+            </div>
+            <div className="billing-card billing-card-highlight">
+              <span className="billing-card-label">Monthly Total (inc. VAT)</span>
+              <span className="billing-card-value">&pound;{monthlyTotal.toFixed(2)}</span>
+              <span className="billing-card-sub">&pound;{subtotal.toFixed(2)} + &pound;{vat.toFixed(2)} VAT</span>
+            </div>
+          </>
+        )}
       </div>
 
-      {enabledAddons.length > 0 && (
+      {!isFixed && enabledAddons.length > 0 && (
         <div className="billing-addons">
           {enabledAddons.map(a => (
             <span key={a.feature_key} className="billing-addon-chip">
@@ -444,11 +669,17 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         <div className="billing-modern-chart-header">
           <div>
             <h3>Monthly Costs</h3>
-            <p>Last 6 months &middot; Core + Add-ons breakdown</p>
+            <p>Last 6 months {isFixed ? '· Fixed annual billing' : '· Core + Add-ons breakdown'}</p>
           </div>
           <div className="billing-chart-legend">
-            <span><span className="billing-legend-dot" style={{ background: 'var(--billing-core, #1565c0)' }} />Core</span>
-            <span><span className="billing-legend-dot" style={{ background: 'var(--billing-addon, #7b1fa2)' }} />Add-ons</span>
+            {isFixed ? (
+              <span><span className="billing-legend-dot" style={{ background: 'var(--billing-core, #1565c0)' }} />Fixed</span>
+            ) : (
+              <>
+                <span><span className="billing-legend-dot" style={{ background: 'var(--billing-core, #1565c0)' }} />Core</span>
+                <span><span className="billing-legend-dot" style={{ background: 'var(--billing-addon, #7b1fa2)' }} />Add-ons</span>
+              </>
+            )}
           </div>
         </div>
         <div className="billing-modern-bars">
@@ -466,18 +697,33 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                   <div className="billing-bar-core" style={{ height: `${corePct}%` }} />
                 </div>
                 <span className="billing-modern-label">{m.label}</span>
-                <button
-                  className="billing-invoice-btn"
-                  title={`Download invoice for ${m.month} ${m.year}`}
-                  onClick={() => handleInvoice(m.month, m.year)}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
-                </button>
+                {!isFixed && (
+                  <button
+                    className="billing-invoice-btn"
+                    title={`Download invoice for ${m.month} ${m.year}`}
+                    onClick={() => handleInvoice(m.month, m.year)}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+                  </button>
+                )}
               </div>
             )
           })}
         </div>
       </div>
+
+      {isFixed && (
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '16px 0' }}>
+          <button
+            className="admin-btn admin-btn-primary"
+            onClick={handleAnnualInvoice}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+            Download Annual Invoice (FY {getFYLabel()})
+          </button>
+        </div>
+      )}
 
       <div className="admin-table-wrap">
         <table className="admin-table">
@@ -485,8 +731,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
             <tr>
               <th>Feature</th>
               <th>Type</th>
-              <th>Price / User</th>
-              <th>Monthly Cost</th>
+              {!isFixed && <th>Price / User</th>}
+              <th>{isFixed ? 'Included' : 'Monthly Cost'}</th>
             </tr>
           </thead>
           <tbody>
@@ -494,49 +740,71 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
               <tr>
                 <td>{baseline.display_name}</td>
                 <td><span className="admin-badge admin-badge-approved">Core</span></td>
-                <td>&pound;{effectivePrice(baseline).toFixed(2)}</td>
-                <td>&pound;{(effectivePrice(baseline) * employeeCount).toFixed(2)}</td>
+                {!isFixed && <td>&pound;{effectivePrice(baseline).toFixed(2)}</td>}
+                <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(effectivePrice(baseline) * employeeCount).toFixed(2)}</>}</td>
               </tr>
             )}
             {enabledAddons.map(a => (
               <tr key={a.feature_key}>
                 <td>{a.display_name}</td>
                 <td><span className="admin-badge admin-badge-pending">Add-on</span></td>
-                <td>&pound;{effectivePrice(a).toFixed(2)}</td>
-                <td>&pound;{(effectivePrice(a) * employeeCount).toFixed(2)}</td>
+                {!isFixed && <td>&pound;{effectivePrice(a).toFixed(2)}</td>}
+                <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(effectivePrice(a) * employeeCount).toFixed(2)}</>}</td>
               </tr>
             ))}
-            <tr style={{ fontWeight: 600 }}>
-              <td>Subtotal</td>
-              <td></td>
-              <td></td>
-              <td>&pound;{subtotal.toFixed(2)}</td>
-            </tr>
-            <tr style={{ fontWeight: 600 }}>
-              <td>VAT (20%)</td>
-              <td></td>
-              <td></td>
-              <td>&pound;{vat.toFixed(2)}</td>
-            </tr>
-            <tr style={{ fontWeight: 700 }}>
-              <td>Monthly Total</td>
-              <td></td>
-              <td></td>
-              <td>&pound;{monthlyTotal.toFixed(2)}</td>
-            </tr>
-            <tr style={{ fontWeight: 700 }}>
-              <td>Annual Estimate</td>
-              <td></td>
-              <td></td>
-              <td>&pound;{(monthlyTotal * 12).toFixed(2)}</td>
-            </tr>
+            {isFixed ? (
+              <>
+                <tr style={{ fontWeight: 700 }}>
+                  <td>Annual Fixed Price</td>
+                  <td></td>
+                  <td>&pound;{fixedAnnualPrice.toFixed(2)}</td>
+                </tr>
+                <tr style={{ fontWeight: 600 }}>
+                  <td>VAT (20%)</td>
+                  <td></td>
+                  <td>&pound;{(fixedAnnualPrice * VAT_RATE).toFixed(2)}</td>
+                </tr>
+                <tr style={{ fontWeight: 700 }}>
+                  <td>Annual Total</td>
+                  <td></td>
+                  <td>&pound;{(fixedAnnualPrice + fixedAnnualPrice * VAT_RATE).toFixed(2)}</td>
+                </tr>
+              </>
+            ) : (
+              <>
+                <tr style={{ fontWeight: 600 }}>
+                  <td>Subtotal</td>
+                  <td></td>
+                  <td></td>
+                  <td>&pound;{subtotal.toFixed(2)}</td>
+                </tr>
+                <tr style={{ fontWeight: 600 }}>
+                  <td>VAT (20%)</td>
+                  <td></td>
+                  <td></td>
+                  <td>&pound;{vat.toFixed(2)}</td>
+                </tr>
+                <tr style={{ fontWeight: 700 }}>
+                  <td>Monthly Total</td>
+                  <td></td>
+                  <td></td>
+                  <td>&pound;{monthlyTotal.toFixed(2)}</td>
+                </tr>
+                <tr style={{ fontWeight: 700 }}>
+                  <td>Annual Estimate</td>
+                  <td></td>
+                  <td></td>
+                  <td>&pound;{(monthlyTotal * 12).toFixed(2)}</td>
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>
 
       <div className="billing-terms">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-        <span>All invoices are payable within <strong>30 days</strong> of the invoice date. Billed by <strong>Kumonix Ltd</strong> (kumonix.com). VAT charged at 20%.</span>
+        <span>All invoices are payable within <strong>30 days</strong> of the invoice date. Billed by <strong>Kumonix Ltd</strong> (kumonix.com). VAT charged at 20%.{isFixed && <> This company is on <strong>fixed annual billing</strong>.</>}</span>
       </div>
     </div>
   )

@@ -20,6 +20,10 @@ interface PricingItem {
 interface CompanyOption {
   id: string
   name: string
+  billing_type: string
+  fixed_annual_price: number | null
+  billing_type_locked_until: string | null
+  fy_start_month: number
 }
 
 interface CompanyFeature {
@@ -54,6 +58,14 @@ export default function AdminSubscriptions() {
   const [savingFeature, setSavingFeature] = useState<string | null>(null)
   const [savingAllPrices, setSavingAllPrices] = useState(false)
 
+  // Billing type state
+  const [billingType, setBillingType] = useState<'monthly' | 'fixed'>('monthly')
+  const [fixedAnnualPrice, setFixedAnnualPrice] = useState('')
+  const [billingTypeLocked, setBillingTypeLocked] = useState<string | null>(null)
+  const [savedBillingType, setSavedBillingType] = useState<'monthly' | 'fixed'>('monthly')
+  const [savedFixedPrice, setSavedFixedPrice] = useState('')
+  const [fyStartMonth, setFyStartMonth] = useState(4)
+
   // Load pricing
   async function loadPricing() {
     setPricingLoading(true)
@@ -73,7 +85,7 @@ export default function AdminSubscriptions() {
   async function loadCompanies() {
     const { data } = await supabase
       .from('companies')
-      .select('id, name')
+      .select('id, name, billing_type, fixed_annual_price, billing_type_locked_until, fy_start_month')
       .order('name')
     setCompanies((data as CompanyOption[]) || [])
   }
@@ -83,6 +95,15 @@ export default function AdminSubscriptions() {
     setFeaturesLoading(true)
     const company = companies.find(c => c.id === companyId)
     setCompanyName(company?.name || '')
+
+    const bt = (company?.billing_type === 'fixed' ? 'fixed' : 'monthly') as 'monthly' | 'fixed'
+    setBillingType(bt)
+    setSavedBillingType(bt)
+    const fp = company?.fixed_annual_price != null ? String(company.fixed_annual_price) : ''
+    setFixedAnnualPrice(fp)
+    setSavedFixedPrice(fp)
+    setBillingTypeLocked(company?.billing_type_locked_until || null)
+    setFyStartMonth(company?.fy_start_month ?? 4)
 
     const { count } = await supabase
       .from('employees')
@@ -158,7 +179,7 @@ export default function AdminSubscriptions() {
     setSavingFeature(null)
   }
 
-  // Save all custom prices at once
+  // Save all custom prices + billing type at once
   async function saveAllCustomPrices() {
     if (!selectedCompanyId) return
     setSavingAllPrices(true)
@@ -183,19 +204,46 @@ export default function AdminSubscriptions() {
       if (error) errorCount++
     }
 
+    // Save billing type and fixed price to companies table
+    const companyUpdate: Record<string, unknown> = {
+      billing_type: billingType,
+      fixed_annual_price: billingType === 'fixed' && fixedAnnualPrice ? parseFloat(fixedAnnualPrice) : null,
+    }
+
+    // When switching to fixed, lock until start of next FY
+    if (billingType === 'fixed' && savedBillingType === 'monthly') {
+      const now = new Date()
+      const currentMonth = now.getMonth() + 1
+      let lockYear = now.getFullYear()
+      if (currentMonth >= fyStartMonth) lockYear++
+      const lockDate = `${lockYear}-${String(fyStartMonth).padStart(2, '0')}-01`
+      companyUpdate.billing_type_locked_until = lockDate
+    }
+
+    const { error: coError } = await supabase
+      .from('companies')
+      .update(companyUpdate)
+      .eq('id', selectedCompanyId)
+    if (coError) errorCount++
+
+    await loadCompanies()
     await loadCompanyFeatures(selectedCompanyId)
     setSavingAllPrices(false)
 
     if (errorCount > 0) {
-      showError(`Failed to save ${errorCount} price(s)`)
+      showError(`Failed to save ${errorCount} item(s)`)
     } else {
-      showSuccess(`Custom pricing saved for ${companyName}`)
+      showSuccess(`Subscription settings saved for ${companyName}`)
     }
   }
 
   const hasPriceChanges = Object.keys(customPrices).some(
     k => (customPrices[k] || '') !== (savedPrices[k] || '')
   )
+  const hasBillingChanges = billingType !== savedBillingType || fixedAnnualPrice !== savedFixedPrice
+  const hasUnsavedChanges = hasPriceChanges || hasBillingChanges
+
+  const isLockedToFixed = billingType === 'fixed' && billingTypeLocked && new Date(billingTypeLocked) > new Date()
 
   // Helpers for cost table
   function getEffectivePrice(featureKey: string): number {
@@ -423,6 +471,56 @@ export default function AdminSubscriptions() {
                     <div className="sub-company-count">{employeeCount} active employee{employeeCount !== 1 ? 's' : ''}</div>
                   </div>
 
+                  {/* Billing Type */}
+                  <div style={{ background: billingType === 'fixed' ? '#e8f5e9' : '#f5f5f5', border: `1px solid ${billingType === 'fixed' ? '#43a047' : '#e0e0e0'}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>Billing Type</div>
+                      <label className="admin-toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={billingType === 'fixed'}
+                          onChange={() => {
+                            if (isLockedToFixed) return
+                            setBillingType(prev => prev === 'monthly' ? 'fixed' : 'monthly')
+                          }}
+                          disabled={!!isLockedToFixed}
+                        />
+                        <span className="admin-toggle-slider" />
+                      </label>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: billingType === 'fixed' ? '#2e7d32' : '#666' }}>
+                        {billingType === 'fixed' ? 'Fixed Annual Price' : 'Monthly Per-User'}
+                      </span>
+                      {isLockedToFixed && (
+                        <span style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>
+                          Locked until {new Date(billingTypeLocked!).toLocaleDateString('en-GB')}
+                        </span>
+                      )}
+                    </div>
+                    {billingType === 'fixed' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                        <label style={{ fontWeight: 600, fontSize: 13 }}>Annual Price £</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="admin-input"
+                          style={{ width: 140 }}
+                          value={fixedAnnualPrice}
+                          onChange={e => setFixedAnnualPrice(e.target.value)}
+                          placeholder="e.g. 5000.00"
+                        />
+                        <span style={{ fontSize: 12, color: '#666' }}>per year (all features included)</span>
+                      </div>
+                    )}
+                    {billingType === 'fixed' && savedBillingType === 'monthly' && (
+                      <p style={{ fontSize: 12, color: '#e65100', margin: '8px 0 0' }}>
+                        Switching to fixed billing is a one-off change locked until the start of the next financial year ({
+                          ['January','February','March','April','May','June','July','August','September','October','November','December'][fyStartMonth - 1]
+                        }).
+                      </p>
+                    )}
+                  </div>
+
                   {/* HR Core baseline price override */}
                   {baseline && (
                     <div className="sub-feature-card" style={{ borderColor: '#1565c0', background: '#f8faff' }}>
@@ -492,11 +590,11 @@ export default function AdminSubscriptions() {
                     <button
                       className="admin-btn admin-btn-primary"
                       onClick={saveAllCustomPrices}
-                      disabled={savingAllPrices || !hasPriceChanges}
+                      disabled={savingAllPrices || !hasUnsavedChanges}
                     >
-                      {savingAllPrices ? 'Saving...' : 'Save Prices'}
+                      {savingAllPrices ? 'Saving...' : 'Save Settings'}
                     </button>
-                    {hasPriceChanges && (
+                    {hasUnsavedChanges && (
                       <span style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>Unsaved changes</span>
                     )}
                   </div>

@@ -10,6 +10,7 @@ interface CompanyRow {
   name: string
   domain: string
   is_active: boolean
+  fy_start_month: number
 }
 
 interface SetupRow {
@@ -98,13 +99,14 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
   const [processing, setProcessing] = useState(false)
   const [processResult, setProcessResult] = useState<{ onboarding: number; employees: number; payslips: number; admin: string; errors: string[] } | null>(null)
   const setupFileRef = useRef<HTMLInputElement>(null)
+  const [fyStartMonth, setFyStartMonth] = useState(4)
 
   useEffect(() => {
     loadCompanies()
   }, [])
 
   async function loadCompanies() {
-    const { data } = await supabase.from('companies').select('id, name, domain, is_active').order('name')
+    const { data } = await supabase.from('companies').select('id, name, domain, is_active, fy_start_month').order('name')
     setCompanies((data as CompanyRow[]) || [])
   }
 
@@ -533,7 +535,11 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
             <>
               <div className="admin-form-field" style={{ maxWidth: 400 }}>
                 <label>Company</label>
-                <select className="admin-select" value={setupCompanyId} onChange={e => setSetupCompanyId(e.target.value)}>
+                <select className="admin-select" value={setupCompanyId} onChange={e => {
+                  setSetupCompanyId(e.target.value)
+                  const co = companies.find(c => c.id === e.target.value)
+                  setFyStartMonth(co?.fy_start_month ?? 4)
+                }}>
                   <option value="">-- Select a company --</option>
                   {companies.map(c => (
                     <option key={c.id} value={c.id}>
@@ -556,6 +562,32 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
                   )}
                 </div>
               )}
+              {setupCompanyId && (
+                <div style={{ background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 8, padding: 16, marginTop: 16 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>Financial Year Settings</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <label style={{ fontWeight: 600, fontSize: 13 }}>FY starts in</label>
+                    <select
+                      className="admin-select"
+                      style={{ width: 160 }}
+                      value={fyStartMonth}
+                      onChange={async e => {
+                        const month = parseInt(e.target.value)
+                        setFyStartMonth(month)
+                        await supabase.from('companies').update({ fy_start_month: month }).eq('id', setupCompanyId)
+                      }}
+                    >
+                      {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m, i) => (
+                        <option key={i + 1} value={i + 1}>{m}</option>
+                      ))}
+                    </select>
+                    <span style={{ fontSize: 12, color: '#555' }}>
+                      Sets billing periods, payslip dates, and expense reporting for this company
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
                 <button className="admin-btn admin-btn-primary" disabled={!setupCompanyId} onClick={() => setSetupStep(1)}>
                   Next: Upload Data
