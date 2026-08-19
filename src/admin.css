@@ -620,6 +620,54 @@
   color: #999; font-style: italic;
 }
 
+/* ===== Admin Companies responsive ===== */
+@media (max-width: 960px) {
+  .admin-co-table-wrap { border: none; background: transparent; overflow: visible; }
+  .admin-co-table thead { display: none; }
+  .admin-co-table,
+  .admin-co-table tbody { display: block; }
+  .admin-co-row {
+    display: flex; flex-wrap: wrap; gap: 0;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 12px;
+    position: relative;
+  }
+  .admin-co-row:hover { background: #fafbff; }
+  .admin-co-row td {
+    display: flex; align-items: flex-start; gap: 8px;
+    border: none; padding: 6px 0; width: 100%; box-sizing: border-box;
+  }
+  .admin-co-row td::before {
+    content: attr(data-label);
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    color: #8b8fa3; letter-spacing: 0.5px;
+    min-width: 120px; flex-shrink: 0; padding-top: 2px;
+  }
+  .admin-co-row td[data-label="Logo"] { width: auto; flex: 0 0 auto; }
+  .admin-co-row td[data-label="Logo"]::before { display: none; }
+  .admin-co-row td[data-label="Company"] {
+    flex: 1 1 auto; width: auto; font-size: 15px;
+    align-items: center; padding-left: 8px;
+  }
+  .admin-co-row td[data-label="Company"]::before { display: none; }
+  .admin-co-row td[data-label="Domain"] {
+    width: auto; flex: 0 0 auto;
+    color: #8b8fa3; font-size: 12px;
+    align-items: center; margin-left: auto; padding-left: 8px;
+  }
+  .admin-co-row td[data-label="Domain"]::before { display: none; }
+  .admin-co-row td[data-label="Status"] {
+    width: auto; flex: 0 0 auto;
+    align-items: center; padding-left: 8px;
+  }
+  .admin-co-row td[data-label="Status"]::before { display: none; }
+  .admin-co-row td[data-label="Actions"] {
+    border-top: 1px solid #f0f1f5; padding-top: 10px; margin-top: 4px;
+  }
+  .admin-co-row td[data-label="Actions"]::before { display: none; }
+  .admin-co-row td[data-label="Actions"].admin-actions { flex-wrap: wrap; }
+}
+
 /* ===== Admin Performance ===== */
 .admin-perf-manager-row {
   cursor: pointer;

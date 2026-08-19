@@ -496,8 +496,8 @@ export default function AdminCompanies() {
       </div>
 
       {loading ? <div className="admin-loading">Loading...</div> : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
+        <div className="admin-table-wrap admin-co-table-wrap">
+          <table className="admin-table admin-co-table">
             <thead>
               <tr>
                 <th>Logo</th>
@@ -516,8 +516,8 @@ export default function AdminCompanies() {
                 const isEditing = editingAdmin === c.id
                 const emps = employees[c.id] || []
                 return (
-                  <tr key={c.id}>
-                    <td>
+                  <tr key={c.id} className="admin-co-row">
+                    <td data-label="Logo">
                       <div className="admin-logo-cell">
                         {c.logo_url ? (
                           <div className="admin-logo-cell-wrap">
@@ -566,9 +566,9 @@ export default function AdminCompanies() {
                         )}
                       </div>
                     </td>
-                    <td><strong>{c.name}</strong></td>
-                    <td>{c.domain}</td>
-                    <td>
+                    <td data-label="Company"><strong>{c.name}</strong></td>
+                    <td data-label="Domain">{c.domain}</td>
+                    <td data-label="Company Admins">
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {(companyAdmins).map(a => (
                           <div key={a.employee_id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -619,19 +619,19 @@ export default function AdminCompanies() {
                         )}
                       </div>
                     </td>
-                    <td>
+                    <td data-label="Status">
                       <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
                         {c.is_active ? 'Active' : 'Disabled'}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Login">
                       <label className="admin-toggle-switch">
                         <input type="checkbox" checked={!c.login_disabled} onChange={() => toggleLoginDisabled(c.id, c.login_disabled)} />
                         <span className="admin-toggle-slider" />
                       </label>
                     </td>
-                    <td>{new Date(c.created_at).toLocaleDateString('en-GB')}</td>
-                    <td className="admin-actions">
+                    <td data-label="Registered">{new Date(c.created_at).toLocaleDateString('en-GB')}</td>
+                    <td data-label="Actions" className="admin-actions">
                       <button
                         className="admin-btn-sm"
                         style={{ background: '#1565c0', color: '#fff', border: 'none' }}
