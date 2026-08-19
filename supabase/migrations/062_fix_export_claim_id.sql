@@ -1,19 +1,29 @@
--- Fix export_employee_data: column is expense_claim_id not claim_id
+-- Fix export_employee_data: correct column names for kudos, expense_line_items,
+-- space_bookings, and notifications tables
 CREATE OR REPLACE FUNCTION export_employee_data(p_employee_id uuid)
 RETURNS jsonb
-LANGUAGE plpgsql SECURITY DEFINER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
-  v_emp   jsonb;
-  v_result jsonb;
+  v_result     jsonb;
+  v_company_id uuid;
+  v_emp        jsonb;
 BEGIN
-  SELECT to_jsonb(e) INTO v_emp
-  FROM employees e
-  WHERE e.id = p_employee_id;
+  SELECT company_id INTO v_company_id
+    FROM employees WHERE id = p_employee_id;
 
-  IF v_emp IS NULL THEN
+  IF v_company_id IS NULL THEN
     RAISE EXCEPTION 'Employee not found';
   END IF;
+
+  IF NOT (is_my_company(v_company_id) OR is_super_admin()) THEN
+    RAISE EXCEPTION 'Access denied';
+  END IF;
+
+  SELECT to_jsonb(e) INTO v_emp
+    FROM employees e WHERE e.id = p_employee_id;
 
   SELECT jsonb_build_object(
     'export_metadata', jsonb_build_object(
@@ -44,7 +54,11 @@ BEGIN
     'notifications',      COALESCE((SELECT jsonb_agg(to_jsonb(r)) FROM notifications       r WHERE r.employee_id = p_employee_id), '[]'::jsonb)
   ) INTO v_result;
 
-  PERFORM log_gdpr_action(p_employee_id, 'data_export', 'Employee data exported via GDPR Art. 20');
+  PERFORM log_gdpr_action(
+    v_company_id, 'employees', p_employee_id::text, 'EXPORT',
+    NULL, NULL, NULL,
+    jsonb_build_object('type', 'data_portability', 'article', 'Art. 20')
+  );
 
   RETURN v_result;
 END;
