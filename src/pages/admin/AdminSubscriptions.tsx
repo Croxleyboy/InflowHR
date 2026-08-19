@@ -189,6 +189,8 @@ export default function AdminSubscriptions() {
 
     for (const featureKey of allFeatureKeys) {
       const existing = companyFeatures.find(f => f.feature_key === featureKey)
+      const pricingItem = pricing.find(p => p.feature_key === featureKey)
+      const isCore = pricingItem && !pricingItem.is_addon
       const customPrice = customPrices[featureKey]
       const { error } = await supabase
         .from('company_features')
@@ -196,7 +198,7 @@ export default function AdminSubscriptions() {
           {
             company_id: selectedCompanyId,
             feature_key: featureKey,
-            is_enabled: existing?.is_enabled ?? false,
+            is_enabled: existing?.is_enabled ?? isCore ?? false,
             custom_price: customPrice ? parseFloat(customPrice) : null,
           },
           { onConflict: 'company_id,feature_key' }

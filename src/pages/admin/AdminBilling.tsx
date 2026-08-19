@@ -474,6 +474,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   }, [features])
 
   const baselinePrice = baseline ? effectivePrice(baseline) : 0
+  const hasCustomCore = baseline ? (baselinePrice !== baseline.default_price) : false
   const addonTotal = enabledAddons.reduce((sum, a) => sum + effectivePrice(a), 0)
   const isFixed = billingType === 'fixed' && fixedAnnualPrice > 0
   const fixedMonthly = isFixed ? fixedAnnualPrice / 12 : 0
@@ -632,7 +633,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         ) : (
           <>
             <div className="billing-card">
-              <span className="billing-card-label">Core Plan</span>
+              <span className="billing-card-label">Core Plan{hasCustomCore && <span style={{ marginLeft: 6, fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>Custom</span>}</span>
               <span className="billing-card-value">&pound;{baselinePrice.toFixed(2)}</span>
               <span className="billing-card-sub">per user / month</span>
             </div>
@@ -853,7 +854,13 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
       }
 
       const basePrice = baseline ? effectivePrice(baseline) : 0
+      const defaultBasePrice = baseline?.default_price ?? 0
+      const hasCustomCore = basePrice !== defaultBasePrice
       const enabledAddons = addons.filter(a => coFeatures.some(f => f.feature_key === a.feature_key && f.is_enabled))
+      const hasCustomAddons = enabledAddons.some(a => {
+        const cf = coFeatures.find(f => f.feature_key === a.feature_key)
+        return cf?.custom_price != null && cf.custom_price !== a.default_price
+      })
       const addonTotal = enabledAddons.reduce((s, a) => s + effectivePrice(a), 0)
       const subtotal = (basePrice + addonTotal) * empCount
       const vat = subtotal * VAT_RATE
@@ -864,6 +871,9 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         name: c.name,
         employees: empCount,
         core: basePrice * empCount,
+        corePerUser: basePrice,
+        hasCustomCore,
+        hasCustomAddons,
         addonsTotal: addonTotal * empCount,
         subtotal,
         vat,
@@ -944,7 +954,8 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
             <tr>
               <th>Company</th>
               <th>Users</th>
-              <th>Core</th>
+              <th>Core/User</th>
+              <th>Core Total</th>
               <th>Add-ons</th>
               <th>VAT</th>
               <th>Monthly Total</th>
@@ -957,6 +968,12 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
               <tr key={c.id}>
                 <td><strong>{c.name}</strong></td>
                 <td>{c.employees}</td>
+                <td>
+                  &pound;{c.corePerUser.toFixed(2)}
+                  {(c.hasCustomCore || c.hasCustomAddons) && (
+                    <span style={{ display: 'inline-block', marginLeft: 4, fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '1px 5px', borderRadius: 3, fontWeight: 600, verticalAlign: 'middle' }}>Custom</span>
+                  )}
+                </td>
                 <td>&pound;{c.core.toFixed(2)}</td>
                 <td>&pound;{c.addonsTotal.toFixed(2)}</td>
                 <td>&pound;{c.vat.toFixed(2)}</td>
@@ -981,6 +998,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
             <tr style={{ fontWeight: 700 }}>
               <td>Platform Total</td>
               <td>{totalEmployees}</td>
+              <td></td>
               <td>&pound;{platformCore.toFixed(2)}</td>
               <td>&pound;{platformAddons.toFixed(2)}</td>
               <td>&pound;{platformVat.toFixed(2)}</td>
