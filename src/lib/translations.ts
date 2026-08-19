@@ -658,7 +658,7 @@ const en: Translations = {
   'login.secure_access': 'Secure enterprise access',
   'login.badge_sso': 'SSO enabled',
   'login.badge_encrypted': 'Encrypted',
-  'login.badge_gdpr': 'GDPR compliant',
+  'login.badge_gdpr': 'GDPR data controls',
   'login.footer': 'Powered by Microsoft Entra ID',
 
   // Common
@@ -1543,7 +1543,7 @@ const de: Translations = {
   'login.secure_access': 'Sicherer Unternehmenszugang',
   'login.badge_sso': 'SSO aktiviert',
   'login.badge_encrypted': 'Verschlüsselt',
-  'login.badge_gdpr': 'DSGVO-konform',
+  'login.badge_gdpr': 'DSGVO-Datenschutz',
   'login.footer': 'Powered by Microsoft Entra ID',
 
   // Common

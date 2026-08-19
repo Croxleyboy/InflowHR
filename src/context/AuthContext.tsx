@@ -262,35 +262,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const INACTIVITY_TIMEOUT = 15 * 60 * 1000
+  const ACTIVITY_STORAGE_KEY = 'inflowhr_last_activity'
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const signOutInactive = useCallback(async () => {
+    sessionStorage.removeItem(ACTIVITY_STORAGE_KEY)
+    await supabase.auth.signOut()
+    setUser(null)
+    setSession(null)
+    setCompanyUser(null)
+    setCompany(null)
+    setEmployeeId(null)
+    setIsManager(false)
+    setCanPostNotifications(false)
+    window.location.href = '/'
+  }, [])
 
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimer.current) clearTimeout(inactivityTimer.current)
     if (!session) return
-    inactivityTimer.current = setTimeout(async () => {
-      await supabase.auth.signOut()
-      setUser(null)
-      setSession(null)
-      setCompanyUser(null)
-      setCompany(null)
-      setEmployeeId(null)
-      setIsManager(false)
-      setCanPostNotifications(false)
-      window.location.href = '/'
-    }, INACTIVITY_TIMEOUT)
-  }, [session])
+    sessionStorage.setItem(ACTIVITY_STORAGE_KEY, String(Date.now()))
+    inactivityTimer.current = setTimeout(() => { signOutInactive() }, INACTIVITY_TIMEOUT)
+  }, [session, signOutInactive])
 
   useEffect(() => {
     if (!session) return
+    const lastActivity = Number(sessionStorage.getItem(ACTIVITY_STORAGE_KEY) || 0)
+    if (lastActivity > 0 && Date.now() - lastActivity > INACTIVITY_TIMEOUT) {
+      signOutInactive()
+      return
+    }
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'mousemove']
     const handler = () => resetInactivityTimer()
     events.forEach(e => window.addEventListener(e, handler, { passive: true }))
     resetInactivityTimer()
+
+    const crossTabCheck = setInterval(() => {
+      const ts = Number(sessionStorage.getItem(ACTIVITY_STORAGE_KEY) || 0)
+      if (ts > 0 && Date.now() - ts > INACTIVITY_TIMEOUT) signOutInactive()
+    }, 30_000)
+
     return () => {
       events.forEach(e => window.removeEventListener(e, handler))
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current)
+      clearInterval(crossTabCheck)
     }
-  }, [session, resetInactivityTimer])
+  }, [session, resetInactivityTimer, signOutInactive])
 
   const employeeName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
   const employeeEmail = user?.email || ''
