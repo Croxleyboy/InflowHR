@@ -539,13 +539,14 @@ export default function AdminSubscriptions() {
                           <div style={{ fontSize: 12, color: '#666', marginTop: 2 }}>{baseline.description}</div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: 11, color: '#999', fontWeight: 600 }}>Default</div>
+                          <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '6px 12px' }}>
+                            <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
                             <div style={{ fontSize: 16, fontWeight: 700, color: '#999' }}>&pound;{baseline.default_price.toFixed(2)}</div>
+                            <div style={{ fontSize: 10, color: '#bbb' }}>from Pricing tab</div>
                           </div>
                           <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
-                          <div>
-                            <div style={{ fontSize: 11, color: '#1565c0', fontWeight: 600 }}>Company Price</div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: '#1565c0', fontWeight: 600, textTransform: 'uppercase' }}>Company Price</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                               <span style={{ fontWeight: 600 }}>&pound;</span>
                               <input
@@ -563,8 +564,9 @@ export default function AdminSubscriptions() {
                                   }))
                                 }
                               />
-                              <span style={{ fontSize: 12, color: '#666' }}>/user/month</span>
+                              <span style={{ fontSize: 12, color: '#666' }}>/user/mo</span>
                             </div>
+                            <div style={{ fontSize: 10, color: '#bbb' }}>leave empty to use default</div>
                           </div>
                         </div>
                       </div>
@@ -606,8 +608,8 @@ export default function AdminSubscriptions() {
                           <div className="sub-feature-desc">{addon.description}</div>
                         </div>
                         <div className="sub-feature-price" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 11, color: '#999' }}>Default £{addon.default_price.toFixed(2)}</span>
-                          <label>Custom £</label>
+                          <span style={{ fontSize: 11, color: '#999' }} title="Set on the Pricing tab">Default £{addon.default_price.toFixed(2)}</span>
+                          <label>Company £</label>
                           <input
                             type="number"
                             step="0.01"
