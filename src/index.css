@@ -5615,6 +5615,31 @@ body {
 .admin-table td { padding: 10px; border-bottom: 1px solid #f0f0f0; }
 .admin-table tr:hover { background: rgba(0,0,0,.02); }
 
+.admin-co-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.admin-co-table { min-width: 900px; }
+
+@media (max-width: 1024px) {
+  .admin-co-cards { display: flex; flex-direction: column; gap: 12px; }
+  .admin-co-card {
+    background: var(--card-bg, #fff); border: 1px solid var(--border-color, #e0e0e0);
+    border-radius: 12px; padding: 16px; position: relative;
+  }
+  .admin-co-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .admin-co-card-header img { width: 40px; height: 40px; border-radius: 8px; object-fit: contain; }
+  .admin-co-card-logo-placeholder {
+    width: 40px; height: 40px; border-radius: 8px; background: #f5f5f5;
+    display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 18px; flex-shrink: 0;
+  }
+  .admin-co-card-info { flex: 1; min-width: 0; }
+  .admin-co-card-name { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .admin-co-card-domain { font-size: 12px; color: #999; }
+  .admin-co-card-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+  .admin-co-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; }
+  .admin-co-card-field label { display: block; font-size: 11px; color: #999; text-transform: uppercase; font-weight: 600; margin-bottom: 2px; }
+  .admin-co-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color, #f0f0f0); }
+  .admin-co-card-admins { grid-column: 1 / -1; }
+}
+
 .admin-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
 .admin-badge-desk { background: #e8f5e9; color: #2e7d32; }
 .admin-badge-room { background: #e3f2fd; color: #1565c0; }

@@ -9,6 +9,7 @@ interface Company {
   is_active: boolean
   is_trial: boolean
   trial_end_date: string | null
+  auth_mode: 'sso' | 'non_sso'
 }
 
 interface AdminCompanyState {
@@ -31,13 +32,13 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
   const { isSuperAdmin, company } = useAuth()
 
   const [companies, setCompanies] = useState<Company[]>(() => {
-    if (company) return [{ id: company.id, name: company.name, domain: company.domain, is_active: true, is_trial: false, trial_end_date: null }]
+    if (company) return [{ id: company.id, name: company.name, domain: company.domain, is_active: true, is_trial: false, trial_end_date: null, auth_mode: 'sso' as const }]
     return []
   })
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => company?.id || '')
 
   const refreshCompanies = useCallback(async (selectCompanyId?: string) => {
-    const { data } = await supabase.from('companies').select('id, name, domain, is_active, is_trial, trial_end_date').order('name')
+    const { data } = await supabase.from('companies').select('id, name, domain, is_active, is_trial, trial_end_date, auth_mode').order('name')
     const list = (data as Company[]) || []
     setCompanies(list)
     if (selectCompanyId && list.some(c => c.id === selectCompanyId)) {

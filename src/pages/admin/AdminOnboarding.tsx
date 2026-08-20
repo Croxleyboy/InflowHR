@@ -110,7 +110,7 @@ const WORKFLOW_STEPS = [
 
 export default function AdminOnboarding() {
   const { isSuperAdmin } = useAuth()
-  const { selectedCompanyId, refreshCompanies } = useAdminCompany()
+  const { selectedCompanyId, selectedCompany, refreshCompanies } = useAdminCompany()
   const { fyStartMonth } = useLanguage()
   const { showError, showSuccess } = useToast()
   const [records, setRecords] = useState<OnboardRecord[]>([])
@@ -209,9 +209,13 @@ export default function AdminOnboarding() {
         }
         if (!out.firstname) errors.push(`Row ${i + 2}: Missing First Name`)
         if (!out.surname) errors.push(`Row ${i + 2}: Missing Surname`)
-        if (!out.user_email) errors.push(`Row ${i + 2}: Missing Work Email`)
-        else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.user_email))
-          errors.push(`Row ${i + 2}: Invalid email "${out.user_email}"`)
+        if (isNonSso) {
+          if (!out.employee_number) errors.push(`Row ${i + 2}: Missing Employee Number (required for Non-SSO)`)
+        } else {
+          if (!out.user_email) errors.push(`Row ${i + 2}: Missing Work Email`)
+          else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.user_email))
+            errors.push(`Row ${i + 2}: Invalid email "${out.user_email}"`)
+        }
         return out
       })
 
@@ -447,8 +451,13 @@ export default function AdminOnboarding() {
     return out
   }
 
+  const isNonSso = selectedCompany?.auth_mode === 'non_sso'
+
   async function createStarter() {
-    if (!newForm.firstname || !newForm.surname || !newForm.user_email || !selectedCompanyId) return
+    const emailRequired = !isNonSso
+    if (!newForm.firstname || !newForm.surname || !selectedCompanyId) return
+    if (emailRequired && !newForm.user_email) { showError('Work email is required for SSO companies'); return }
+    if (isNonSso && !newForm.employee_number) { showError('Unique Employee ID is required for Non-SSO companies'); return }
     const niErr = validateNINumber(newForm.ni_number || '')
     if (niErr) { showError(niErr); return }
     const scErr = validateSortCode(newForm.bank_sort_code || '')
@@ -568,16 +577,19 @@ export default function AdminOnboarding() {
     if (scErr) { showError(scErr); return false }
     const acErr = validateAccountNumber(record.bank_account_number || '')
     if (acErr) { showError(acErr); return false }
-    const { data: existing } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
+    const emailToUse = record.user_email || `${(record.employee_number || 'emp').toLowerCase()}@nonsso.local`
+    const { data: existing } = await supabase.from('employees').select('id').eq('email', emailToUse).eq('company_id', selectedCompanyId).maybeSingle()
     if (existing) return true
     let empNum = record.employee_number || `EMP-${Date.now().toString().slice(-8)}`
     const { data: numClash } = await supabase.from('employees').select('id').eq('employee_number', empNum).eq('company_id', selectedCompanyId).maybeSingle()
     if (numClash) empNum = `EMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+    const uniqueEid = isNonSso ? (record.employee_number || empNum) : null
     const { data: newEmp, error } = await supabase.from('employees').insert({
       employee_number: empNum,
       first_name: record.firstname,
       last_name: record.surname,
-      email: record.user_email,
+      email: emailToUse,
+      unique_employee_id: uniqueEid,
       job_title: record.job_title || '',
       department: record.department || '',
       start_date: record.start_date || new Date().toISOString().split('T')[0],
@@ -811,11 +823,15 @@ export default function AdminOnboarding() {
             <div className="admin-form-grid">
               {[
                 { key: 'firstname', label: 'First Name *' }, { key: 'surname', label: 'Surname *' },
-                { key: 'user_email', label: 'Work Email *' }, { key: 'personal_email', label: 'Personal Email' },
+                ...(isNonSso
+                  ? [{ key: 'employee_number', label: 'Unique Employee ID *' }]
+                  : [{ key: 'user_email', label: 'Work Email *' }]
+                ),
+                { key: 'personal_email', label: 'Personal Email' },
                 { key: 'job_title', label: 'Job Title' }, { key: 'department', label: 'Department' },
                 { key: 'manager', label: 'Manager Name' }, { key: 'manager_email', label: 'Manager Email' },
                 { key: 'location', label: 'Work Location' }, { key: 'telephone', label: 'Phone' },
-                { key: 'employee_number', label: 'Employee Number' },
+                ...(isNonSso ? [] : [{ key: 'employee_number', label: 'Employee Number' }]),
               ].map(f => (
                 <div key={f.key} className="admin-form-field">
                   <label>{f.label}</label>
@@ -1005,18 +1021,18 @@ export default function AdminOnboarding() {
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>#</th><th>Name</th><th>Work Email</th><th>Job Title</th>
+                      <th>#</th><th>Name</th><th>{isNonSso ? 'Employee ID' : 'Work Email'}</th><th>Job Title</th>
                       <th>Department</th><th>Start Date</th><th>Contract</th>
                     </tr>
                   </thead>
                   <tbody>
                     {uploadRows.map((row, i) => {
-                      const hasError = !row.firstname || !row.surname || !row.user_email
+                      const hasError = !row.firstname || !row.surname || (isNonSso ? !row.employee_number : !row.user_email)
                       return (
                         <tr key={i} style={hasError ? { background: '#fff3e0' } : undefined}>
                           <td>{i + 1}</td>
                           <td><strong>{row.firstname} {row.surname}</strong></td>
-                          <td>{row.user_email}</td>
+                          <td>{isNonSso ? (row.employee_number || '—') : row.user_email}</td>
                           <td>{row.job_title || '—'}</td>
                           <td>{row.department || '—'}</td>
                           <td>{row.start_date || '—'}</td>

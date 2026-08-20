@@ -21,6 +21,8 @@ interface Company {
   is_trial: boolean
   trial_start_date: string | null
   trial_end_date: string | null
+  auth_mode: 'sso' | 'non_sso'
+  nonsso_username: string | null
 }
 
 interface Employee {
@@ -38,6 +40,19 @@ interface CompanyAdminEntry {
   email: string
 }
 
+function generateUsername(companyName: string): string {
+  const base = companyName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12)
+  const suffix = Math.floor(1000 + Math.random() * 9000)
+  return `${base || 'user'}${suffix}`
+}
+
+function generatePassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%'
+  let pwd = ''
+  for (let i = 0; i < 16; i++) pwd += chars[Math.floor(Math.random() * chars.length)]
+  return pwd
+}
+
 async function uploadCompanyLogo(companyId: string, file: File): Promise<string | null> {
   const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
   const path = `${companyId}.${ext}`
@@ -49,6 +64,17 @@ async function uploadCompanyLogo(companyId: string, file: File): Promise<string 
   return data.publicUrl + '?t=' + Date.now()
 }
 
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const mql = window.matchMedia(query)
+    const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
+    mql.addEventListener('change', handler)
+    return () => mql.removeEventListener('change', handler)
+  }, [query])
+  return matches
+}
+
 export default function AdminCompanies() {
   const { company: myCompany } = useAuth()
   const { refreshCompanies } = useAdminCompany()
@@ -56,7 +82,7 @@ export default function AdminCompanies() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '' })
+  const [form, setForm] = useState({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' as 'sso' | 'non_sso' })
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -70,9 +96,15 @@ export default function AdminCompanies() {
   const [showArchiveConfirm, setShowArchiveConfirm] = useState<string | null>(null)
   const [importingFor, setImportingFor] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [editingCompany, setEditingCompany] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ name: '', domain: '' })
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [createdCredentials, setCreatedCredentials] = useState<{ username: string; password: string; companyName: string } | null>(null)
   const logoInputRef = useRef<HTMLInputElement>(null)
   const editLogoRef = useRef<HTMLInputElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
+
+  const isMobile = useMediaQuery('(max-width: 1024px)')
 
   async function load() {
     setLoading(true)
@@ -126,7 +158,11 @@ export default function AdminCompanies() {
   }
 
   async function addCompany() {
-    if (!form.name.trim() || !form.domain.trim()) return
+    if (!form.name.trim()) return
+    if (form.authMode === 'sso' && !form.domain.trim()) {
+      showError('Email domain is required for SSO companies')
+      return
+    }
     if (form.isTrial && (!form.trialStart || !form.trialEnd)) {
       showError('Trial companies require both start and end dates')
       return
@@ -136,13 +172,22 @@ export default function AdminCompanies() {
       return
     }
     setSaving(true)
-    const domain = form.domain.trim().toLowerCase().replace(/^@/, '')
+    const domain = form.authMode === 'sso' ? form.domain.trim().toLowerCase().replace(/^@/, '') : ''
+
+    const isNonSso = form.authMode === 'non_sso'
+    const username = isNonSso ? generateUsername(form.name) : null
+    const password = isNonSso ? generatePassword() : null
+
     const insertPayload: Record<string, unknown> = {
       name: form.name.trim(),
       domain,
-      microsoft_tenant_id: `pending-${Date.now()}`,
+      microsoft_tenant_id: isNonSso ? null : `pending-${Date.now()}`,
       is_active: true,
       is_trial: form.isTrial,
+      auth_mode: form.authMode,
+    }
+    if (isNonSso && username) {
+      insertPayload.nonsso_username = username
     }
     if (form.isTrial) {
       insertPayload.trial_start_date = form.trialStart
@@ -157,6 +202,20 @@ export default function AdminCompanies() {
     }
 
     if (newCo) {
+      if (isNonSso && username && password) {
+        const email = `${username}@nonsso.inflowhr.local`
+        const { error: authErr } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { company_id: newCo.id, auth_mode: 'non_sso' } },
+        })
+        if (authErr) {
+          showError('Company created but failed to create login account: ' + authErr.message)
+        } else {
+          setCreatedCredentials({ username: email, password, companyName: form.name.trim() })
+        }
+      }
+
       if (logoFile) {
         const logoUrl = await uploadCompanyLogo(newCo.id, logoFile)
         if (logoUrl) {
@@ -212,7 +271,7 @@ export default function AdminCompanies() {
       })
     }
 
-    setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '' })
+    setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' })
     setLogoFile(null)
     setLogoPreview(null)
     setShowForm(false)
@@ -366,6 +425,29 @@ export default function AdminCompanies() {
     showSuccess('Admin removed')
   }
 
+  function startEditCompany(c: Company) {
+    setEditingCompany(c.id)
+    setEditForm({ name: c.name, domain: c.domain })
+  }
+
+  async function saveEditCompany(id: string) {
+    if (!editForm.name.trim()) { showError('Company name is required'); return }
+    setSavingEdit(true)
+    const updates: Record<string, unknown> = { name: editForm.name.trim() }
+    const co = companies.find(c => c.id === id)
+    if (co?.auth_mode === 'sso') {
+      if (!editForm.domain.trim()) { showError('Email domain is required for SSO companies'); setSavingEdit(false); return }
+      updates.domain = editForm.domain.trim().toLowerCase().replace(/^@/, '')
+    }
+    const { error } = await supabase.from('companies').update(updates).eq('id', id)
+    if (error) { showError('Failed to update company: ' + error.message); setSavingEdit(false); return }
+    setEditingCompany(null)
+    setSavingEdit(false)
+    load()
+    refreshCompanies()
+    showSuccess('Company updated')
+  }
+
   async function handleExport(companyId: string, companyName: string) {
     if (!confirm(`This export includes personal data (names, emails, NI numbers, bank details, salary, leave records).\n\nThis action will be logged for GDPR compliance.\n\nProceed with export for ${companyName}?`)) return
     setExporting(companyId)
@@ -444,6 +526,384 @@ export default function AdminCompanies() {
     }
   }
 
+  function renderAdminsCell(c: Company) {
+    const companyAdmins = admins[c.id] || []
+    const isEditing = editingAdmin === c.id
+    const emps = employees[c.id] || []
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {companyAdmins.map(a => (
+          <div key={a.employee_id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 13 }}>{a.first_name} {a.last_name}</span>
+            <button
+              className="admin-btn-icon admin-btn-danger"
+              title={`Remove ${a.first_name} as admin`}
+              onClick={() => removeAdmin(c.id, a.employee_id)}
+              disabled={savingAdmin}
+              style={{ flexShrink: 0 }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        ))}
+        {companyAdmins.length === 0 && (
+          <span className="admin-no-admin">No admin assigned</span>
+        )}
+        {isEditing ? (
+          <div className="admin-edit-admin-cell">
+            <select
+              className="admin-inline-select admin-admin-select"
+              defaultValue=""
+              onChange={e => { if (e.target.value) addAdmin(c.id, e.target.value) }}
+              disabled={savingAdmin}
+            >
+              <option value="">Select employee...</option>
+              {emps.filter(emp => !companyAdmins.some(a => a.employee_id === emp.id)).map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.first_name} {emp.last_name} ({emp.email})
+                </option>
+              ))}
+            </select>
+            <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingAdmin(null)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            className="admin-btn-sm"
+            style={{ background: '#1565c0', color: '#fff', border: 'none', fontSize: 12, padding: '3px 8px', alignSelf: 'flex-start' }}
+            onClick={() => startEditAdmin(c.id)}
+          >
+            + Add Admin
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  function renderTrialBadge(c: Company) {
+    if (!c.is_trial) return <span style={{ color: '#bbb', fontSize: 12 }}>—</span>
+    const expired = c.trial_end_date && new Date(c.trial_end_date) < new Date()
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span className="admin-badge" style={{
+          background: expired ? '#ffebee' : '#e3f2fd',
+          color: expired ? '#c62828' : '#1565c0',
+          fontWeight: 600,
+        }}>
+          {expired ? 'Expired' : 'Trial'}
+        </span>
+        {c.trial_end_date && (
+          <span style={{ fontSize: 11, color: '#999' }}>
+            Ends {new Date(c.trial_end_date).toLocaleDateString('en-GB')}
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  function renderAuthBadge(c: Company) {
+    if (c.auth_mode === 'non_sso') {
+      return (
+        <span className="admin-badge" style={{ background: '#fff3e0', color: '#e65100', fontWeight: 600 }}>
+          Non-SSO
+        </span>
+      )
+    }
+    return (
+      <span className="admin-badge" style={{ background: '#e8f5e9', color: '#2e7d32', fontWeight: 600 }}>
+        SSO
+      </span>
+    )
+  }
+
+  function renderActionButtons(c: Company) {
+    return (
+      <>
+        <button
+          className="admin-btn-sm"
+          style={{ background: '#1565c0', color: '#fff', border: 'none' }}
+          title="Edit company details"
+          onClick={() => startEditCompany(c)}
+        >
+          Edit
+        </button>
+        <button
+          className="admin-btn-sm"
+          style={{ background: '#1565c0', color: '#fff', border: 'none' }}
+          title="Export company data as CSV"
+          onClick={() => handleExport(c.id, c.name)}
+          disabled={exporting === c.id}
+        >
+          {exporting === c.id ? 'Exporting...' : 'Export'}
+        </button>
+        <button
+          className="admin-btn-sm"
+          style={{ background: '#2e7d32', color: '#fff', border: 'none' }}
+          title="Import data from CSV"
+          onClick={() => {
+            setImportingFor(c.id)
+            importFileRef.current?.click()
+          }}
+        >
+          Import
+        </button>
+        <button
+          className="admin-btn-sm"
+          style={{ background: '#e65100', color: '#fff', border: 'none' }}
+          title="Archive company FY data"
+          onClick={() => setShowArchiveConfirm(c.id)}
+          disabled={archiving === c.id}
+        >
+          {archiving === c.id ? 'Archiving...' : 'Archive'}
+        </button>
+        <button
+          className={`admin-btn-sm ${c.is_active ? 'admin-btn-cancel' : 'admin-btn-save'}`}
+          onClick={() => toggleActive(c.id, c.is_active)}
+        >
+          {c.is_active ? 'Disable' : 'Enable'}
+        </button>
+        <button
+          className="admin-btn-icon admin-btn-danger"
+          onClick={() => deleteCompany(c.id)}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+        </button>
+      </>
+    )
+  }
+
+  function renderLogoCell(c: Company) {
+    return (
+      <div className="admin-logo-cell">
+        {c.logo_url ? (
+          <div className="admin-logo-cell-wrap">
+            <img src={c.logo_url} alt={c.name} className="admin-logo-thumb" />
+            <div className="admin-logo-cell-actions">
+              <button
+                className="admin-btn-icon"
+                title="Change logo"
+                onClick={() => {
+                  const input = editLogoRef.current
+                  if (input) {
+                    input.setAttribute('data-company-id', c.id)
+                    input.click()
+                  }
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+              </button>
+              <button
+                className="admin-btn-icon admin-btn-danger"
+                title="Remove logo"
+                onClick={() => removeLogo(c.id)}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            className="admin-logo-upload-sm"
+            onClick={() => {
+              const input = editLogoRef.current
+              if (input) {
+                input.setAttribute('data-company-id', c.id)
+                input.click()
+              }
+            }}
+          >
+            {uploadingLogo === c.id ? '...' : '+'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  function renderCardView() {
+    return (
+      <div className="admin-co-cards">
+        {companies.map(c => (
+          <div key={c.id} className="admin-co-card">
+            <div className="admin-co-card-header">
+              {c.logo_url ? (
+                <img src={c.logo_url} alt={c.name} style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'contain' }} />
+              ) : (
+                <div className="admin-co-card-logo-placeholder" onClick={() => {
+                  const input = editLogoRef.current
+                  if (input) { input.setAttribute('data-company-id', c.id); input.click() }
+                }} style={{ cursor: 'pointer' }}>
+                  {uploadingLogo === c.id ? '...' : '+'}
+                </div>
+              )}
+              <div className="admin-co-card-info">
+                {editingCompany === c.id ? (
+                  <input
+                    className="admin-input"
+                    value={editForm.name}
+                    onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                    style={{ fontSize: 14, fontWeight: 700, padding: '4px 8px' }}
+                  />
+                ) : (
+                  <div className="admin-co-card-name">{c.name}</div>
+                )}
+                {editingCompany === c.id && c.auth_mode === 'sso' ? (
+                  <input
+                    className="admin-input"
+                    value={editForm.domain}
+                    onChange={e => setEditForm(f => ({ ...f, domain: e.target.value }))}
+                    style={{ fontSize: 12, padding: '3px 8px', marginTop: 4 }}
+                  />
+                ) : (
+                  <div className="admin-co-card-domain">{c.auth_mode === 'non_sso' ? 'Non-SSO' : c.domain}</div>
+                )}
+              </div>
+              <div className="admin-co-card-badges">
+                <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
+                  {c.is_active ? 'Active' : 'Disabled'}
+                </span>
+                {renderAuthBadge(c)}
+              </div>
+            </div>
+
+            {editingCompany === c.id && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditCompany(c.id)} disabled={savingEdit}>
+                  {savingEdit ? 'Saving...' : 'Save'}
+                </button>
+                <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingCompany(null)}>Cancel</button>
+              </div>
+            )}
+
+            <div className="admin-co-card-grid">
+              <div className="admin-co-card-field">
+                <label>Trial</label>
+                {renderTrialBadge(c)}
+              </div>
+              <div className="admin-co-card-field">
+                <label>Login</label>
+                <label className="admin-toggle-switch">
+                  <input type="checkbox" checked={!c.login_disabled} onChange={() => toggleLoginDisabled(c.id, c.login_disabled)} />
+                  <span className="admin-toggle-slider" />
+                </label>
+              </div>
+              <div className="admin-co-card-field">
+                <label>Registered</label>
+                <span>{new Date(c.created_at).toLocaleDateString('en-GB')}</span>
+              </div>
+              {c.auth_mode === 'non_sso' && c.nonsso_username && (
+                <div className="admin-co-card-field">
+                  <label>Login Account</label>
+                  <span style={{ fontSize: 12, fontFamily: 'monospace', wordBreak: 'break-all' }}>{c.nonsso_username}</span>
+                </div>
+              )}
+              <div className="admin-co-card-admins admin-co-card-field">
+                <label>Company Admins</label>
+                {renderAdminsCell(c)}
+              </div>
+            </div>
+
+            <div className="admin-co-card-actions">
+              {renderActionButtons(c)}
+            </div>
+          </div>
+        ))}
+        {companies.length === 0 && <div className="admin-empty">No companies registered</div>}
+      </div>
+    )
+  }
+
+  function renderTableView() {
+    return (
+      <div className="admin-table-wrap admin-co-table-wrap">
+        <table className="admin-table admin-co-table">
+          <thead>
+            <tr>
+              <th>Logo</th>
+              <th>Company</th>
+              <th>Domain</th>
+              <th>Auth</th>
+              <th>Company Admins</th>
+              <th>Status</th>
+              <th>Trial</th>
+              <th>Login</th>
+              <th>Registered</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {companies.map(c => (
+              <tr key={c.id} className="admin-co-row">
+                <td data-label="Logo">{renderLogoCell(c)}</td>
+                <td data-label="Company">
+                  {editingCompany === c.id ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <input
+                        className="admin-input"
+                        value={editForm.name}
+                        onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                        style={{ fontSize: 13, padding: '4px 8px', fontWeight: 700 }}
+                      />
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditCompany(c.id)} disabled={savingEdit}>
+                          {savingEdit ? '...' : 'Save'}
+                        </button>
+                        <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingCompany(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <strong>{c.name}</strong>
+                  )}
+                </td>
+                <td data-label="Domain">
+                  {editingCompany === c.id && c.auth_mode === 'sso' ? (
+                    <input
+                      className="admin-input"
+                      value={editForm.domain}
+                      onChange={e => setEditForm(f => ({ ...f, domain: e.target.value }))}
+                      style={{ fontSize: 13, padding: '4px 8px' }}
+                    />
+                  ) : (
+                    c.auth_mode === 'non_sso' ? <span style={{ color: '#999', fontSize: 12 }}>—</span> : c.domain
+                  )}
+                </td>
+                <td data-label="Auth">{renderAuthBadge(c)}</td>
+                <td data-label="Company Admins">{renderAdminsCell(c)}</td>
+                <td data-label="Status">
+                  <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
+                    {c.is_active ? 'Active' : 'Disabled'}
+                  </span>
+                </td>
+                <td data-label="Trial">{renderTrialBadge(c)}</td>
+                <td data-label="Login">
+                  <label className="admin-toggle-switch">
+                    <input type="checkbox" checked={!c.login_disabled} onChange={() => toggleLoginDisabled(c.id, c.login_disabled)} />
+                    <span className="admin-toggle-slider" />
+                  </label>
+                </td>
+                <td data-label="Registered">{new Date(c.created_at).toLocaleDateString('en-GB')}</td>
+                <td data-label="Actions" className="admin-actions">
+                  {renderActionButtons(c)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {companies.length === 0 && <div className="admin-empty">No companies registered</div>}
+      </div>
+    )
+  }
+
   return (
     <div className="admin-section">
       <div className="admin-page-header">
@@ -459,13 +919,36 @@ export default function AdminCompanies() {
         ) : (
           <div className="admin-add-form">
             <h3>Register New Company</h3>
-            <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
-              Add a company domain to allow their employees to sign in with Microsoft SSO.
-              The Microsoft tenant ID will be captured automatically on first login.
-            </p>
+            <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>Authentication</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label className="admin-toggle-switch">
+                    <input type="checkbox" checked={form.authMode === 'non_sso'} onChange={e => setForm(f => ({ ...f, authMode: e.target.checked ? 'non_sso' : 'sso', domain: e.target.checked ? '' : f.domain }))} />
+                    <span className="admin-toggle-slider" />
+                  </label>
+                  <span style={{ fontSize: 13, color: form.authMode === 'non_sso' ? '#e65100' : '#2e7d32', fontWeight: 600 }}>
+                    {form.authMode === 'non_sso' ? 'Non-SSO' : 'SSO (Microsoft)'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {form.authMode === 'sso' && (
+              <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
+                Add a company domain to allow their employees to sign in with Microsoft SSO.
+                The Microsoft tenant ID will be captured automatically on first login.
+              </p>
+            )}
+            {form.authMode === 'non_sso' && (
+              <div style={{ background: '#fff3e0', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#e65100' }}>
+                Non-SSO mode will auto-generate a unique username and password for this company.
+                Employees will not require a work email — a unique employee ID will be used instead.
+              </div>
+            )}
             <div className="admin-form-grid">
               <div className="admin-form-field">
-                <label>Company Name</label>
+                <label>Company Name *</label>
                 <input
                   className="admin-input"
                   placeholder="e.g. Acme Corp"
@@ -473,15 +956,17 @@ export default function AdminCompanies() {
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 />
               </div>
-              <div className="admin-form-field">
-                <label>Email Domain</label>
-                <input
-                  className="admin-input"
-                  placeholder="e.g. acme.com"
-                  value={form.domain}
-                  onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
-                />
-              </div>
+              {form.authMode === 'sso' && (
+                <div className="admin-form-field">
+                  <label>Email Domain *</label>
+                  <input
+                    className="admin-input"
+                    placeholder="e.g. acme.com"
+                    value={form.domain}
+                    onChange={e => setForm(f => ({ ...f, domain: e.target.value }))}
+                  />
+                </div>
+              )}
               <div className="admin-form-field">
                 <label>Company Logo</label>
                 <div className="admin-logo-upload">
@@ -557,222 +1042,14 @@ export default function AdminCompanies() {
               <button className="admin-btn admin-btn-primary" onClick={addCompany} disabled={saving}>
                 {saving ? 'Saving...' : 'Register Company'}
               </button>
-              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null); setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '' }) }}>Cancel</button>
+              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null); setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' }) }}>Cancel</button>
             </div>
           </div>
         )}
       </div>
 
       {loading ? <div className="admin-loading">Loading...</div> : (
-        <div className="admin-table-wrap admin-co-table-wrap">
-          <table className="admin-table admin-co-table">
-            <thead>
-              <tr>
-                <th>Logo</th>
-                <th>Company</th>
-                <th>Domain</th>
-                <th>Company Admins</th>
-                <th>Status</th>
-                <th>Trial</th>
-                <th>Login</th>
-                <th>Registered</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {companies.map(c => {
-                const companyAdmins = admins[c.id] || []
-                const isEditing = editingAdmin === c.id
-                const emps = employees[c.id] || []
-                return (
-                  <tr key={c.id} className="admin-co-row">
-                    <td data-label="Logo">
-                      <div className="admin-logo-cell">
-                        {c.logo_url ? (
-                          <div className="admin-logo-cell-wrap">
-                            <img src={c.logo_url} alt={c.name} className="admin-logo-thumb" />
-                            <div className="admin-logo-cell-actions">
-                              <button
-                                className="admin-btn-icon"
-                                title="Change logo"
-                                onClick={() => {
-                                  const input = editLogoRef.current
-                                  if (input) {
-                                    input.setAttribute('data-company-id', c.id)
-                                    input.click()
-                                  }
-                                }}
-                              >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                </svg>
-                              </button>
-                              <button
-                                className="admin-btn-icon admin-btn-danger"
-                                title="Remove logo"
-                                onClick={() => removeLogo(c.id)}
-                              >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                                </svg>
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            className="admin-logo-upload-sm"
-                            onClick={() => {
-                              const input = editLogoRef.current
-                              if (input) {
-                                input.setAttribute('data-company-id', c.id)
-                                input.click()
-                              }
-                            }}
-                          >
-                            {uploadingLogo === c.id ? '...' : '+'}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td data-label="Company"><strong>{c.name}</strong></td>
-                    <td data-label="Domain">{c.domain}</td>
-                    <td data-label="Company Admins">
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        {(companyAdmins).map(a => (
-                          <div key={a.employee_id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 13 }}>{a.first_name} {a.last_name}</span>
-                            <button
-                              className="admin-btn-icon admin-btn-danger"
-                              title={`Remove ${a.first_name} as admin`}
-                              onClick={() => removeAdmin(c.id, a.employee_id)}
-                              disabled={savingAdmin}
-                              style={{ flexShrink: 0 }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                              </svg>
-                            </button>
-                          </div>
-                        ))}
-                        {companyAdmins.length === 0 && (
-                          <span className="admin-no-admin">No admin assigned</span>
-                        )}
-                        {isEditing ? (
-                          <div className="admin-edit-admin-cell">
-                            <select
-                              className="admin-inline-select admin-admin-select"
-                              defaultValue=""
-                              onChange={e => { if (e.target.value) addAdmin(c.id, e.target.value) }}
-                              disabled={savingAdmin}
-                            >
-                              <option value="">Select employee...</option>
-                              {emps.filter(emp => !companyAdmins.some(a => a.employee_id === emp.id)).map(emp => (
-                                <option key={emp.id} value={emp.id}>
-                                  {emp.first_name} {emp.last_name} ({emp.email})
-                                </option>
-                              ))}
-                            </select>
-                            <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingAdmin(null)}>
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            className="admin-btn-sm"
-                            style={{ background: '#1565c0', color: '#fff', border: 'none', fontSize: 12, padding: '3px 8px', alignSelf: 'flex-start' }}
-                            onClick={() => startEditAdmin(c.id)}
-                          >
-                            + Add Admin
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td data-label="Status">
-                      <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
-                        {c.is_active ? 'Active' : 'Disabled'}
-                      </span>
-                    </td>
-                    <td data-label="Trial">
-                      {c.is_trial ? (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          <span className="admin-badge" style={{
-                            background: c.trial_end_date && new Date(c.trial_end_date) < new Date() ? '#ffebee' : '#e3f2fd',
-                            color: c.trial_end_date && new Date(c.trial_end_date) < new Date() ? '#c62828' : '#1565c0',
-                            fontWeight: 600,
-                          }}>
-                            {c.trial_end_date && new Date(c.trial_end_date) < new Date() ? 'Expired' : 'Trial'}
-                          </span>
-                          {c.trial_end_date && (
-                            <span style={{ fontSize: 11, color: '#999' }}>
-                              Ends {new Date(c.trial_end_date).toLocaleDateString('en-GB')}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span style={{ color: '#bbb', fontSize: 12 }}>—</span>
-                      )}
-                    </td>
-                    <td data-label="Login">
-                      <label className="admin-toggle-switch">
-                        <input type="checkbox" checked={!c.login_disabled} onChange={() => toggleLoginDisabled(c.id, c.login_disabled)} />
-                        <span className="admin-toggle-slider" />
-                      </label>
-                    </td>
-                    <td data-label="Registered">{new Date(c.created_at).toLocaleDateString('en-GB')}</td>
-                    <td data-label="Actions" className="admin-actions">
-                      <button
-                        className="admin-btn-sm"
-                        style={{ background: '#1565c0', color: '#fff', border: 'none' }}
-                        title="Export company data as CSV"
-                        onClick={() => handleExport(c.id, c.name)}
-                        disabled={exporting === c.id}
-                      >
-                        {exporting === c.id ? 'Exporting...' : 'Export'}
-                      </button>
-                      <button
-                        className="admin-btn-sm"
-                        style={{ background: '#2e7d32', color: '#fff', border: 'none' }}
-                        title="Import data from CSV"
-                        onClick={() => {
-                          setImportingFor(c.id)
-                          importFileRef.current?.click()
-                        }}
-                      >
-                        Import
-                      </button>
-                      <button
-                        className="admin-btn-sm"
-                        style={{ background: '#e65100', color: '#fff', border: 'none' }}
-                        title="Archive company FY data"
-                        onClick={() => setShowArchiveConfirm(c.id)}
-                        disabled={archiving === c.id}
-                      >
-                        {archiving === c.id ? 'Archiving...' : 'Archive'}
-                      </button>
-                      <button
-                        className={`admin-btn-sm ${c.is_active ? 'admin-btn-cancel' : 'admin-btn-save'}`}
-                        onClick={() => toggleActive(c.id, c.is_active)}
-                      >
-                        {c.is_active ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
-                        className="admin-btn-icon admin-btn-danger"
-                        onClick={() => deleteCompany(c.id)}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {companies.length === 0 && <div className="admin-empty">No companies registered</div>}
-        </div>
+        isMobile ? renderCardView() : renderTableView()
       )}
 
       <input
@@ -848,6 +1125,35 @@ export default function AdminCompanies() {
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
               <button className="admin-btn admin-btn-primary" onClick={() => setImportResult(null)}>
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {createdCredentials && (
+        <div className="admin-modal-overlay" onClick={() => setCreatedCredentials(null)}>
+          <div className="admin-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+            <h3 style={{ margin: '0 0 12px', color: '#2e7d32' }}>
+              Non-SSO Account Created
+            </h3>
+            <p style={{ fontSize: 14, color: '#555', margin: '0 0 16px' }}>
+              Login credentials for <strong>{createdCredentials.companyName}</strong> have been created.
+              Save these details securely — the password cannot be retrieved later.
+            </p>
+            <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: '#999', textTransform: 'uppercase', fontWeight: 600, display: 'block', marginBottom: 2 }}>Username</label>
+                <code style={{ fontSize: 14, fontFamily: 'monospace', wordBreak: 'break-all' }}>{createdCredentials.username}</code>
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: '#999', textTransform: 'uppercase', fontWeight: 600, display: 'block', marginBottom: 2 }}>Password</label>
+                <code style={{ fontSize: 14, fontFamily: 'monospace', wordBreak: 'break-all' }}>{createdCredentials.password}</code>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="admin-btn admin-btn-primary" onClick={() => setCreatedCredentials(null)}>
+                I've Saved These Details
               </button>
             </div>
           </div>

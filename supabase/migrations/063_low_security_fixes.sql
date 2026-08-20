@@ -2,6 +2,8 @@
 -- Replace with authenticated-only policy scoped to the employee's own row
 DROP POLICY IF EXISTS "anon_company_read_user_settings" ON user_settings;
 DROP POLICY IF EXISTS "Anon can read user settings (temp)" ON user_settings;
+DROP POLICY IF EXISTS "Own settings read" ON user_settings;
+DROP POLICY IF EXISTS "Own settings write" ON user_settings;
 
 CREATE POLICY "Own settings read" ON user_settings
   FOR SELECT TO authenticated
