@@ -204,13 +204,16 @@ export default function AdminCompanies() {
     if (newCo) {
       if (isNonSso && username && password) {
         const email = `${username}@nonsso.inflowhr.local`
-        const { error: authErr } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { company_id: newCo.id, auth_mode: 'non_sso' } },
+        const { data: rpcResult, error: rpcErr } = await supabase.rpc('create_nonsso_account' as any, {
+          p_email: email,
+          p_password: password,
+          p_company_id: newCo.id,
         })
-        if (authErr) {
-          showError('Company created but failed to create login account: ' + authErr.message)
+        const rpcData = rpcResult as { success?: boolean; error?: string } | null
+        if (rpcErr) {
+          showError('Company created but failed to create login account: ' + rpcErr.message)
+        } else if (rpcData?.error) {
+          showError('Company created but failed to create login account: ' + rpcData.error)
         } else {
           setCreatedCredentials({ username: email, password, companyName: form.name.trim() })
         }
