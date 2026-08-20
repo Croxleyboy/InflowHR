@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase, createIsolatedClient } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
@@ -204,64 +204,51 @@ export default function AdminCompanies() {
     if (newCo) {
       if (isNonSso && username && password) {
         const email = `${username}@nonsso.inflowhr.local`
-        const isolated = createIsolatedClient()
-        const { data: signUpData, error: signUpErr } = await isolated.auth.signUp({
-          email,
-          password,
-          options: { data: { company_id: newCo.id, auth_mode: 'non_sso' } },
+        const { data: rpcResult, error: rpcErr } = await supabase.rpc('create_nonsso_account' as any, {
+          p_email: email,
+          p_password: password,
+          p_company_id: newCo.id,
+          p_company_name: form.name.trim(),
         })
-
-        if (signUpErr || !signUpData.user) {
-          showError('Company created but failed to create login account: ' + (signUpErr?.message || 'Unknown error'))
+        const rpcData = rpcResult as { success?: boolean; error?: string; employee_id?: string } | null
+        if (rpcErr) {
+          showError('Company created but failed to create login account: ' + rpcErr.message)
+        } else if (rpcData?.error) {
+          showError('Company created but failed to create login account: ' + rpcData.error)
         } else {
-          const authUserId = signUpData.user.id
-          const { data: rpcResult, error: rpcErr } = await supabase.rpc('setup_nonsso_admin' as any, {
-            p_user_id: authUserId,
-            p_email: email,
-            p_company_id: newCo.id,
-            p_company_name: form.name.trim(),
-          })
-          const rpcData = rpcResult as { success?: boolean; error?: string; employee_id?: string } | null
+          setCreatedCredentials({ username: email, password, companyName: form.name.trim() })
 
-          if (rpcErr) {
-            showError('Account created but failed to setup admin: ' + rpcErr.message)
-          } else if (rpcData?.error) {
-            showError('Account created but failed to setup admin: ' + rpcData.error)
-          } else {
-            setCreatedCredentials({ username: email, password, companyName: form.name.trim() })
+          if (form.isTrial && rpcData?.employee_id) {
+            await supabase.from('onboarding').insert({
+              firstname: form.name.trim(),
+              surname: 'Admin',
+              user_email: email,
+              job_title: 'Company Administrator',
+              department: 'Administration',
+              status: 'Onboarded',
+              appstatus: 'active',
+              is_complete: true,
+              first_day: true,
+              first_week: true,
+              first_month: true,
+              elearning: true,
+              company_id: newCo.id,
+            })
 
-            if (form.isTrial && rpcData?.employee_id) {
-              await supabase.from('onboarding').insert({
-                firstname: form.name.trim(),
-                surname: 'Admin',
-                user_email: email,
-                job_title: 'Company Administrator',
-                department: 'Administration',
-                status: 'Onboarded',
-                appstatus: 'active',
-                is_complete: true,
-                first_day: true,
-                first_week: true,
-                first_month: true,
-                elearning: true,
-                company_id: newCo.id,
-              })
-
-              const now = new Date()
-              const { data: leaveTypes } = await supabase.from('leave_types').select('id, deducts_from_allowance').eq('company_id', newCo.id)
-              if (leaveTypes && leaveTypes.length > 0) {
-                await supabase.from('leave_balances').insert(
-                  leaveTypes.map(lt => ({
-                    employee_id: rpcData.employee_id,
-                    leave_type_id: lt.id,
-                    year: now.getFullYear(),
-                    total_allowance: lt.deducts_from_allowance ? 25 : 0,
-                    used: 0,
-                    carried_over: 0,
-                    company_id: newCo.id,
-                  }))
-                )
-              }
+            const now = new Date()
+            const { data: leaveTypes } = await supabase.from('leave_types').select('id, deducts_from_allowance').eq('company_id', newCo.id)
+            if (leaveTypes && leaveTypes.length > 0) {
+              await supabase.from('leave_balances').insert(
+                leaveTypes.map(lt => ({
+                  employee_id: rpcData.employee_id,
+                  leave_type_id: lt.id,
+                  year: now.getFullYear(),
+                  total_allowance: lt.deducts_from_allowance ? 25 : 0,
+                  used: 0,
+                  carried_over: 0,
+                  company_id: newCo.id,
+                }))
+              )
             }
           }
         }
