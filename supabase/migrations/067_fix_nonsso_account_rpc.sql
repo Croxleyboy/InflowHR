@@ -18,7 +18,7 @@ DECLARE
   v_user_id uuid;
   v_encrypted_pw text;
   v_employee_id uuid;
-  v_cu_id bigint;
+  v_cu_id uuid;
 BEGIN
   IF NOT is_super_admin() THEN
     RETURN json_build_object('error', 'Only super admins can create non-SSO accounts');
