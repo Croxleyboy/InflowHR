@@ -378,6 +378,11 @@
 /* Payroll schedule */
 .admin-schedule h3 { font-size: 16px; font-weight: 700; margin: 0 0 12px; }
 
+/* Sidebar collapse toggle */
+.admin-sidebar-toggle {
+  display: none;
+}
+
 /* ── Desktop: persistent sidebar ── */
 @media (min-width: 769px) {
   .admin-shell { flex-direction: row; flex-wrap: wrap; }
@@ -388,7 +393,22 @@
     position: sticky; top: 56px;
     transform: translateX(0); height: calc(100vh - 56px);
     box-shadow: none;
+    transition: width 0.25s ease;
+    display: flex; flex-direction: column;
   }
+  .admin-sidebar .admin-nav { flex: 1; overflow-y: auto; }
+  .admin-sidebar-toggle {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; padding: 10px 14px;
+    background: none; border: none; border-top: 1px solid #e5e7eb;
+    color: #8b8fa3; cursor: pointer; font-size: 12px; font-weight: 600;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .admin-sidebar-toggle:hover { background: #f0f1f5; color: #4f46e5; }
+  .admin-sidebar-collapsed { width: 60px; }
+  .admin-sidebar-collapsed .admin-nav-label { display: none; }
+  .admin-sidebar-collapsed .admin-nav-item { justify-content: center; padding: 10px 0; }
+  .admin-sidebar-collapsed .admin-nav-icon { margin: 0; }
   .admin-main { flex: 1; padding: 24px 32px 40px; }
   .admin-stat-grid { grid-template-columns: repeat(4, 1fr); }
 }

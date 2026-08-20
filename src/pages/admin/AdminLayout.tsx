@@ -39,6 +39,7 @@ const MENU_ITEMS: MenuItem[] = [
 
 function AdminLayoutInner() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const navigate = useNavigate()
   const { isSuperAdmin, employeeEmail, companyUser } = useAuth()
   const { features } = useFeatures()
@@ -101,7 +102,7 @@ function AdminLayoutInner() {
 
       {sidebarOpen && <div className="admin-overlay" onClick={() => setSidebarOpen(false)} />}
 
-      <aside className={`admin-sidebar ${sidebarOpen ? 'admin-sidebar-open' : ''}`}>
+      <aside className={`admin-sidebar ${sidebarOpen ? 'admin-sidebar-open' : ''} ${sidebarCollapsed ? 'admin-sidebar-collapsed' : ''}`}>
         <nav className="admin-nav">
           {visibleItems.map(item => (
             <NavLink
@@ -110,12 +111,25 @@ function AdminLayoutInner() {
               end={item.end}
               className={({ isActive }) => `admin-nav-item ${isActive ? 'admin-nav-active' : ''}`}
               onClick={() => setSidebarOpen(false)}
+              title={sidebarCollapsed ? item.label : undefined}
             >
               <span className="admin-nav-icon">{item.icon}</span>
               <span className="admin-nav-label">{item.label}</span>
             </NavLink>
           ))}
         </nav>
+        <button
+          className="admin-sidebar-toggle"
+          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          title={sidebarCollapsed ? 'Expand menu' : 'Collapse menu'}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {sidebarCollapsed
+              ? <polyline points="9 18 15 12 9 6" />
+              : <polyline points="15 18 9 12 15 6" />
+            }
+          </svg>
+        </button>
       </aside>
 
       <main className="admin-main">
