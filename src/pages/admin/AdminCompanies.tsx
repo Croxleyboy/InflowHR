@@ -208,14 +208,49 @@ export default function AdminCompanies() {
           p_email: email,
           p_password: password,
           p_company_id: newCo.id,
+          p_company_name: form.name.trim(),
         })
-        const rpcData = rpcResult as { success?: boolean; error?: string } | null
+        const rpcData = rpcResult as { success?: boolean; error?: string; employee_id?: string } | null
         if (rpcErr) {
           showError('Company created but failed to create login account: ' + rpcErr.message)
         } else if (rpcData?.error) {
           showError('Company created but failed to create login account: ' + rpcData.error)
         } else {
           setCreatedCredentials({ username: email, password, companyName: form.name.trim() })
+
+          if (form.isTrial && rpcData?.employee_id) {
+            await supabase.from('onboarding').insert({
+              firstname: form.name.trim(),
+              surname: 'Admin',
+              user_email: email,
+              job_title: 'Company Administrator',
+              department: 'Administration',
+              status: 'Onboarded',
+              appstatus: 'active',
+              is_complete: true,
+              first_day: true,
+              first_week: true,
+              first_month: true,
+              elearning: true,
+              company_id: newCo.id,
+            })
+
+            const now = new Date()
+            const { data: leaveTypes } = await supabase.from('leave_types').select('id, deducts_from_allowance').eq('company_id', newCo.id)
+            if (leaveTypes && leaveTypes.length > 0) {
+              await supabase.from('leave_balances').insert(
+                leaveTypes.map(lt => ({
+                  employee_id: rpcData.employee_id,
+                  leave_type_id: lt.id,
+                  year: now.getFullYear(),
+                  total_allowance: lt.deducts_from_allowance ? 25 : 0,
+                  used: 0,
+                  carried_over: 0,
+                  company_id: newCo.id,
+                }))
+              )
+            }
+          }
         }
       }
 
