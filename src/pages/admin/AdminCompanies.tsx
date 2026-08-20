@@ -18,6 +18,9 @@ interface Company {
   login_disabled: boolean
   created_at: string
   logo_url: string | null
+  is_trial: boolean
+  trial_start_date: string | null
+  trial_end_date: string | null
 }
 
 interface Employee {
@@ -53,7 +56,7 @@ export default function AdminCompanies() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', domain: '' })
+  const [form, setForm] = useState({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '' })
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -124,14 +127,28 @@ export default function AdminCompanies() {
 
   async function addCompany() {
     if (!form.name.trim() || !form.domain.trim()) return
+    if (form.isTrial && (!form.trialStart || !form.trialEnd)) {
+      showError('Trial companies require both start and end dates')
+      return
+    }
+    if (form.isTrial && form.trialEnd <= form.trialStart) {
+      showError('Trial end date must be after start date')
+      return
+    }
     setSaving(true)
     const domain = form.domain.trim().toLowerCase().replace(/^@/, '')
-    const { data: newCo, error: insertError } = await supabase.from('companies').insert({
+    const insertPayload: Record<string, unknown> = {
       name: form.name.trim(),
       domain,
       microsoft_tenant_id: `pending-${Date.now()}`,
       is_active: true,
-    }).select('id').single()
+      is_trial: form.isTrial,
+    }
+    if (form.isTrial) {
+      insertPayload.trial_start_date = form.trialStart
+      insertPayload.trial_end_date = form.trialEnd
+    }
+    const { data: newCo, error: insertError } = await supabase.from('companies').insert(insertPayload).select('id').single()
 
     if (insertError) {
       alert(`Failed to add company: ${insertError.message}`)
@@ -160,19 +177,31 @@ export default function AdminCompanies() {
       ])
       if (leaveTypesError) showError('Failed to create default leave types: ' + leaveTypesError.message)
 
-      const { error: featuresError } = await supabase.from('company_features').insert([
-        { company_id: newCo.id, feature_key: 'expenses', is_enabled: true },
-        { company_id: newCo.id, feature_key: 'leave', is_enabled: true },
-        { company_id: newCo.id, feature_key: 'kudos', is_enabled: true },
-        { company_id: newCo.id, feature_key: 'elearning', is_enabled: true },
-        { company_id: newCo.id, feature_key: 'timesheets', is_enabled: true },
-        { company_id: newCo.id, feature_key: 'payroll', is_enabled: false },
-        { company_id: newCo.id, feature_key: 'performance', is_enabled: false },
-        { company_id: newCo.id, feature_key: 'shifts', is_enabled: false },
-        { company_id: newCo.id, feature_key: 'benefits', is_enabled: false },
-        { company_id: newCo.id, feature_key: 'legal_timesheets', is_enabled: false },
-      ])
+      const allFeatureKeys = [
+        'expenses', 'leave', 'kudos', 'elearning', 'timesheets',
+        'payroll', 'performance', 'shifts', 'benefits', 'legal_timesheets',
+        'space_booking', 'asset_management',
+      ]
+      const defaultEnabled = ['expenses', 'leave', 'kudos', 'elearning', 'timesheets']
+      const featureRows = allFeatureKeys.map(key => ({
+        company_id: newCo.id,
+        feature_key: key,
+        is_enabled: form.isTrial ? true : defaultEnabled.includes(key),
+        custom_price: form.isTrial ? 0 : null,
+      }))
+      const { error: featuresError } = await supabase.from('company_features').insert(featureRows)
       if (featuresError) showError('Failed to create default company features: ' + featuresError.message)
+
+      if (form.isTrial) {
+        const { data: pricingRows } = await supabase.from('subscription_pricing').select('feature_key').eq('is_addon', false)
+        const coreKey = pricingRows?.[0]?.feature_key || 'hr_core'
+        await supabase.from('company_features').upsert({
+          company_id: newCo.id,
+          feature_key: coreKey,
+          is_enabled: true,
+          custom_price: 0,
+        }, { onConflict: 'company_id,feature_key' })
+      }
 
       await supabase.from('announcements').insert({
         title: 'Welcome to your new HR App',
@@ -183,7 +212,7 @@ export default function AdminCompanies() {
       })
     }
 
-    setForm({ name: '', domain: '' })
+    setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '' })
     setLogoFile(null)
     setLogoPreview(null)
     setShowForm(false)
@@ -484,12 +513,51 @@ export default function AdminCompanies() {
                   />
                 </div>
               </div>
+              <div className="admin-form-field">
+                <label>Trial</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <label className="admin-toggle-switch">
+                    <input type="checkbox" checked={form.isTrial} onChange={e => setForm(f => ({ ...f, isTrial: e.target.checked }))} />
+                    <span className="admin-toggle-slider" />
+                  </label>
+                  <span style={{ fontSize: 13, color: form.isTrial ? '#1565c0' : '#999', fontWeight: 600 }}>
+                    {form.isTrial ? 'Yes' : 'No'}
+                  </span>
+                </div>
+              </div>
+              {form.isTrial && (
+                <>
+                  <div className="admin-form-field">
+                    <label>Trial Start Date</label>
+                    <input
+                      className="admin-input"
+                      type="date"
+                      value={form.trialStart}
+                      onChange={e => setForm(f => ({ ...f, trialStart: e.target.value }))}
+                    />
+                  </div>
+                  <div className="admin-form-field">
+                    <label>Trial End Date</label>
+                    <input
+                      className="admin-input"
+                      type="date"
+                      value={form.trialEnd}
+                      onChange={e => setForm(f => ({ ...f, trialEnd: e.target.value }))}
+                    />
+                  </div>
+                </>
+              )}
             </div>
+            {form.isTrial && (
+              <div style={{ background: '#e3f2fd', borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 13, color: '#1565c0' }}>
+                Trial companies receive all features (including add-ons) enabled at £0 for the trial period.
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button className="admin-btn admin-btn-primary" onClick={addCompany} disabled={saving}>
                 {saving ? 'Saving...' : 'Register Company'}
               </button>
-              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null) }}>Cancel</button>
+              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null); setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '' }) }}>Cancel</button>
             </div>
           </div>
         )}
@@ -505,6 +573,7 @@ export default function AdminCompanies() {
                 <th>Domain</th>
                 <th>Company Admins</th>
                 <th>Status</th>
+                <th>Trial</th>
                 <th>Login</th>
                 <th>Registered</th>
                 <th>Actions</th>
@@ -623,6 +692,26 @@ export default function AdminCompanies() {
                       <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
                         {c.is_active ? 'Active' : 'Disabled'}
                       </span>
+                    </td>
+                    <td data-label="Trial">
+                      {c.is_trial ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span className="admin-badge" style={{
+                            background: c.trial_end_date && new Date(c.trial_end_date) < new Date() ? '#ffebee' : '#e3f2fd',
+                            color: c.trial_end_date && new Date(c.trial_end_date) < new Date() ? '#c62828' : '#1565c0',
+                            fontWeight: 600,
+                          }}>
+                            {c.trial_end_date && new Date(c.trial_end_date) < new Date() ? 'Expired' : 'Trial'}
+                          </span>
+                          {c.trial_end_date && (
+                            <span style={{ fontSize: 11, color: '#999' }}>
+                              Ends {new Date(c.trial_end_date).toLocaleDateString('en-GB')}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#bbb', fontSize: 12 }}>—</span>
+                      )}
                     </td>
                     <td data-label="Login">
                       <label className="admin-toggle-switch">

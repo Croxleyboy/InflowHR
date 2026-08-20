@@ -811,7 +811,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   )
 }
 
-function SuperAdminBilling({ companies }: { companies: { id: string; name: string }[] }) {
+function SuperAdminBilling({ companies }: { companies: { id: string; name: string; is_trial?: boolean; trial_end_date?: string | null }[] }) {
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [allFeatures, setAllFeatures] = useState<CompanyFeature[]>([])
   const [employeeCounts, setEmployeeCounts] = useState<Record<string, number>>({})
@@ -882,6 +882,8 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         baselineName: baseline?.display_name || 'Core',
         baselinePrice: basePrice,
         addonDetails: enabledAddons.map(a => ({ name: a.display_name, price: effectivePrice(a) })),
+        isTrial: c.is_trial || false,
+        trialEndDate: c.trial_end_date || null,
       }
     }).sort((a, b) => b.monthly - a.monthly)
   }, [companies, pricing, allFeatures, employeeCounts])
@@ -966,7 +968,14 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
           <tbody>
             {companyData.map(c => (
               <tr key={c.id}>
-                <td><strong>{c.name}</strong></td>
+                <td>
+                  <strong>{c.name}</strong>
+                  {c.isTrial && (
+                    <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 10, background: c.trialEndDate && new Date(c.trialEndDate) < new Date() ? '#ffebee' : '#fff3e0', color: c.trialEndDate && new Date(c.trialEndDate) < new Date() ? '#c62828' : '#e65100', padding: '1px 6px', borderRadius: 3, fontWeight: 600, verticalAlign: 'middle' }}>
+                      {c.trialEndDate && new Date(c.trialEndDate) < new Date() ? 'Trial Expired' : 'Trial'}
+                    </span>
+                  )}
+                </td>
                 <td>{c.employees}</td>
                 <td>
                   &pound;{c.corePerUser.toFixed(2)}
