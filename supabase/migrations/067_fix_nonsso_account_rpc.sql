@@ -1,5 +1,8 @@
--- Fix create_nonsso_account to also insert auth.identities (required for signInWithPassword)
--- and create an employee record linked to the company_users row
+-- Drop ALL existing signatures first
+DROP FUNCTION IF EXISTS public.create_nonsso_account(TEXT, TEXT, UUID);
+DROP FUNCTION IF EXISTS public.create_nonsso_account(TEXT, TEXT, UUID, TEXT);
+
+-- Recreate with identity record support + employee creation
 CREATE OR REPLACE FUNCTION public.create_nonsso_account(
   p_email TEXT,
   p_password TEXT,
@@ -41,12 +44,12 @@ BEGIN
 
   -- Insert identity record (required for signInWithPassword)
   INSERT INTO auth.identities (
-    user_id, identity_data, provider, provider_id,
+    id, user_id, identity_data, provider, provider_id, email,
     last_sign_in_at, created_at, updated_at
   ) VALUES (
-    v_user_id,
+    gen_random_uuid(), v_user_id,
     jsonb_build_object('sub', v_user_id::text, 'email', p_email, 'email_verified', true),
-    'email', v_user_id::text,
+    'email', v_user_id::text, p_email,
     NOW(), NOW(), NOW()
   );
 
@@ -62,8 +65,7 @@ BEGIN
     p_email,
     'Company Administrator',
     'Administration',
-    true,
-    true,
+    true, true,
     p_company_id,
     CURRENT_DATE,
     'Full-time',
@@ -84,5 +86,3 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.create_nonsso_account(TEXT, TEXT, UUID, TEXT) TO authenticated;
--- Drop old 3-param signature if it exists
-DROP FUNCTION IF EXISTS public.create_nonsso_account(TEXT, TEXT, UUID);
