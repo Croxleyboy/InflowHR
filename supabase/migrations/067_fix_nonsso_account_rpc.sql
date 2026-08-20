@@ -27,18 +27,17 @@ BEGIN
   v_encrypted_pw := extensions.crypt(p_password, extensions.gen_salt('bf'));
   v_user_id := gen_random_uuid();
 
-  -- Insert the auth user
   INSERT INTO auth.users (
-    instance_id, id, aud, role, email, encrypted_password,
+    instance_id, id, aud, role, encrypted_password,
     email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
     created_at, updated_at, confirmation_token,
     email_change, email_change_token_new, recovery_token
   ) VALUES (
     '00000000-0000-0000-0000-000000000000', v_user_id,
-    'authenticated', 'authenticated', p_email, v_encrypted_pw,
+    'authenticated', 'authenticated', v_encrypted_pw,
     NOW(),
     jsonb_build_object('provider', 'email', 'providers', ARRAY['email']),
-    jsonb_build_object('company_id', p_company_id, 'auth_mode', 'non_sso'),
+    jsonb_build_object('sub', v_user_id::text, 'email', p_email, 'email_verified', true, 'company_id', p_company_id::text, 'auth_mode', 'non_sso'),
     NOW(), NOW(), '', '', '', ''
   );
 
