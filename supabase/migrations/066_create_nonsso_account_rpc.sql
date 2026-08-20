@@ -1,3 +1,6 @@
+-- Ensure pgcrypto is available for password hashing
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
 -- RPC to create a non-SSO auth account from the admin UI
 -- Uses SECURITY DEFINER to insert directly into auth.users
 -- Only callable by super admins
@@ -20,7 +23,7 @@ BEGIN
   END IF;
 
   -- Hash the password using bcrypt via pgcrypto
-  v_encrypted_pw := crypt(p_password, gen_salt('bf'));
+  v_encrypted_pw := extensions.crypt(p_password, extensions.gen_salt('bf'));
 
   -- Insert the auth user
   INSERT INTO auth.users (
