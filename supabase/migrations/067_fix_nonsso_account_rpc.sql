@@ -41,14 +41,13 @@ BEGIN
     NOW(), NOW(), '', '', '', ''
   );
 
-  -- Insert identity record (required for signInWithPassword)
   INSERT INTO auth.identities (
-    id, user_id, identity_data, provider, provider_id, email,
+    id, user_id, identity_data, provider, provider_id,
     last_sign_in_at, created_at, updated_at
   ) VALUES (
     gen_random_uuid(), v_user_id,
     jsonb_build_object('sub', v_user_id::text, 'email', p_email, 'email_verified', true),
-    'email', v_user_id::text, p_email,
+    'email', v_user_id::text,
     NOW(), NOW(), NOW()
   );
 
