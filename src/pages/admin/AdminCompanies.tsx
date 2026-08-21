@@ -100,6 +100,8 @@ export default function AdminCompanies() {
   const [editForm, setEditForm] = useState({ name: '', domain: '' })
   const [savingEdit, setSavingEdit] = useState(false)
   const [createdCredentials, setCreatedCredentials] = useState<{ username: string; password: string; companyName: string } | null>(null)
+  const [editingTrialEnd, setEditingTrialEnd] = useState<string | null>(null)
+  const [trialEndValue, setTrialEndValue] = useState('')
   const logoInputRef = useRef<HTMLInputElement>(null)
   const editLogoRef = useRef<HTMLInputElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
@@ -407,6 +409,15 @@ export default function AdminCompanies() {
     load()
   }
 
+  async function saveTrialEndDate(companyId: string) {
+    if (!trialEndValue) return
+    const { error } = await supabase.from('companies').update({ trial_end_date: trialEndValue }).eq('id', companyId)
+    if (error) { showError('Failed to update trial end date: ' + error.message); return }
+    showSuccess('Trial end date updated')
+    setEditingTrialEnd(null)
+    load()
+  }
+
   async function startEditAdmin(companyId: string) {
     await loadEmployees(companyId)
     setEditingAdmin(companyId)
@@ -639,8 +650,9 @@ export default function AdminCompanies() {
   function renderTrialBadge(c: Company) {
     if (!c.is_trial) return <span style={{ color: '#bbb', fontSize: 12 }}>—</span>
     const expired = c.trial_end_date && new Date(c.trial_end_date) < new Date()
+    const isEditing = editingTrialEnd === c.id
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span className="admin-badge" style={{
           background: expired ? '#ffebee' : '#e3f2fd',
           color: expired ? '#c62828' : '#1565c0',
@@ -648,9 +660,26 @@ export default function AdminCompanies() {
         }}>
           {expired ? 'Expired' : 'Trial'}
         </span>
-        {c.trial_end_date && (
-          <span style={{ fontSize: 11, color: '#999' }}>
-            Ends {new Date(c.trial_end_date).toLocaleDateString('en-GB')}
+        {isEditing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <input
+              type="date"
+              value={trialEndValue}
+              onChange={e => setTrialEndValue(e.target.value)}
+              style={{ fontSize: 12, padding: '2px 4px', border: '1px solid var(--border-color)', borderRadius: 4, background: 'var(--card-bg)', color: 'var(--text-primary)' }}
+            />
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button className="admin-btn-sm" style={{ background: '#2e7d32', color: '#fff', border: 'none', fontSize: 11, padding: '2px 6px' }} onClick={() => saveTrialEndDate(c.id)}>Save</button>
+              <button className="admin-btn-sm" style={{ fontSize: 11, padding: '2px 6px' }} onClick={() => setEditingTrialEnd(null)}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <span
+            style={{ fontSize: 11, color: expired ? '#c62828' : '#999', cursor: 'pointer', textDecoration: 'underline dotted' }}
+            title="Click to change trial end date"
+            onClick={() => { setEditingTrialEnd(c.id); setTrialEndValue(c.trial_end_date?.split('T')[0] || '') }}
+          >
+            {c.trial_end_date ? `Ends ${new Date(c.trial_end_date).toLocaleDateString('en-GB')}` : 'No end date set'}
           </span>
         )}
       </div>
