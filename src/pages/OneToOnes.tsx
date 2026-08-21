@@ -5,7 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDateFriendly as formatDate } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
-import { useMediaQuery } from '../hooks/useMediaQuery'
+
 
 type Tab = 'upcoming' | 'history' | 'reports'
 
@@ -63,7 +63,7 @@ export default function OneToOnes() {
   const { t } = useLanguage()
   const { employeeId, companyUser, isManager } = useAuth()
   const { showError } = useToast()
-  const isDesktop = useMediaQuery('(min-width: 769px)')
+
   const [tab, setTab] = useState<Tab>('upcoming')
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [directReports, setDirectReports] = useState<DirectReport[]>([])
