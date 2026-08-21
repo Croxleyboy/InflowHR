@@ -72,6 +72,7 @@ import AdminLegalTimesheets from './pages/admin/AdminLegalTimesheets'
 import AdminSpaceManagement from './pages/admin/AdminSpaceManagement'
 import AdminAssetManagement from './pages/admin/AdminAssetManagement'
 import AdminUserGuides from './pages/admin/AdminUserGuides'
+import AdminDashboardModern from './pages/admin/AdminDashboardModern'
 import UserGuide from './pages/UserGuide'
 
 function AdminGate() {
@@ -232,6 +233,7 @@ function AuthGate() {
           <Route path="billing" element={<AdminBilling />} />
           <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
           <Route path="user-guides" element={<AdminUserGuides />} />
+          <Route path="dashboard-v2" element={<AdminDashboardModern />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />

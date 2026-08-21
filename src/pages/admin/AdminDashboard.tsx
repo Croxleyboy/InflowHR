@@ -363,7 +363,10 @@ function CompanyDash({
     <div className="admin-dashboard">
       <div className="admin-page-header">
         <h2>{companyName}{trialLabel && <span style={{ fontWeight: 400, fontSize: 14, color: trialExpired ? '#c62828' : 'var(--text-secondary)' }}> ({trialLabel})</span>}</h2>
-        <p>Company dashboard overview</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <p>Company dashboard overview</p>
+          <button onClick={() => navigate('/admin/dashboard-v2')} style={{ background: 'linear-gradient(135deg, #1a1a2e, #533483)', color: '#fff', border: 'none', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>Try new dashboard</button>
+        </div>
       </div>
 
       {(expenseExportDaysAgo === -1 || (expenseExportDaysAgo !== null && expenseExportDaysAgo >= 25)) && (
