@@ -182,7 +182,7 @@ export default function OneToOnes() {
       </div>
 
       {tab === 'upcoming' && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '0 16px' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '0 16px', justifyContent: 'center' }}>
           {isManager && (
             <button className="oto-schedule-btn" style={{ margin: 0 }} onClick={() => navigate('/one-to-ones/new')}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
@@ -278,14 +278,14 @@ export default function OneToOnes() {
 
       {!loading && tab === 'reports' && isManager && (
         <div className="oto-list">
-          {isDesktop && (
-            <button className="oto-schedule-btn" style={{ marginBottom: 12 }} onClick={() => navigate('/performance/goals')}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <button className="oto-schedule-btn" style={{ margin: 0 }} onClick={() => navigate('/performance/goals')}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
               </svg>
               Manage Goals &amp; Objectives
             </button>
-          )}
+          </div>
           {directReports.map(dr => {
             const initials = `${dr.first_name[0]}${dr.last_name[0]}`
             const reportMeetings = meetings.filter(m => m.employee_id === dr.id && m.status === 'completed')

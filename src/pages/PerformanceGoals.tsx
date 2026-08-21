@@ -329,32 +329,47 @@ export default function PerformanceGoals() {
         </div>
 
         <div className="pg-layout">
-          {/* ── Left: employee list (manager mode only) ── */}
+          {/* ── Left sidebar (desktop) / dropdown (mobile) ── */}
           {isManagerMode && (
-            <div className="pg-sidebar">
-              <h3 className="pg-sidebar-title">Managed Employees</h3>
-              {reports.length === 0 && <p className="pg-sidebar-empty">No direct reports</p>}
-              {reports.map(r => {
-                const rGoals = allGoals.filter(g => g.employee_id === r.id)
-                return (
-                  <button
-                    key={r.id}
-                    className={`pg-emp-btn ${r.id === selectedEmpId ? 'pg-emp-active' : ''}`}
-                    onClick={() => { setSelectedEmpId(r.id); setShowForm(false); setExpandedGoal(null) }}
-                  >
-                    {r.avatar_url
-                      ? <img className="pg-emp-avatar" src={r.avatar_url} alt="" />
-                      : <div className="pg-emp-initials">{getInitials(r)}</div>
-                    }
-                    <div className="pg-emp-info">
-                      <span className="pg-emp-name">{r.first_name} {r.last_name}</span>
-                      <span className="pg-emp-role">{r.job_title || r.department || ''}</span>
-                    </div>
-                    <span className="pg-emp-count">{rGoals.length}</span>
-                  </button>
-                )
-              })}
-            </div>
+            <>
+              <div className="pg-sidebar pg-desktop-only">
+                <h3 className="pg-sidebar-title">Managed Employees</h3>
+                {reports.length === 0 && <p className="pg-sidebar-empty">No direct reports</p>}
+                {reports.map(r => {
+                  const rGoals = allGoals.filter(g => g.employee_id === r.id)
+                  return (
+                    <button
+                      key={r.id}
+                      className={`pg-emp-btn ${r.id === selectedEmpId ? 'pg-emp-active' : ''}`}
+                      onClick={() => { setSelectedEmpId(r.id); setShowForm(false); setExpandedGoal(null) }}
+                    >
+                      {r.avatar_url
+                        ? <img className="pg-emp-avatar" src={r.avatar_url} alt="" />
+                        : <div className="pg-emp-initials">{getInitials(r)}</div>
+                      }
+                      <div className="pg-emp-info">
+                        <span className="pg-emp-name">{r.first_name} {r.last_name}</span>
+                        <span className="pg-emp-role">{r.job_title || r.department || ''}</span>
+                      </div>
+                      <span className="pg-emp-count">{rGoals.length}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="pg-mobile-emp-select pg-mobile-only">
+                <select
+                  className="pg-form-input"
+                  value={selectedEmpId || ''}
+                  onChange={e => { setSelectedEmpId(e.target.value); setShowForm(false); setExpandedGoal(null) }}
+                >
+                  {reports.map(r => (
+                    <option key={r.id} value={r.id}>
+                      {r.first_name} {r.last_name} — {allGoals.filter(g => g.employee_id === r.id).length} goals
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
           )}
 
           {/* ── Right: goals panel ── */}
@@ -671,4 +686,53 @@ const CSS = `
 .pg-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .pg-cancel-btn { padding: 10px 24px; background: var(--border); color: var(--text); border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .pg-cancel-btn:hover { background: var(--text-muted); color: #fff; }
+
+/* Mobile / Desktop visibility */
+.pg-mobile-only { display: none; }
+.pg-mobile-emp-select { padding: 0 16px 12px; }
+
+@media (max-width: 768px) {
+  .pg-desktop-only { display: none !important; }
+  .pg-mobile-only { display: block !important; }
+
+  .pg-header { padding: 14px 16px; gap: 10px; flex-wrap: wrap; }
+  .pg-header-title { font-size: 17px; }
+  .pg-mode-toggle { width: 100%; justify-content: center; }
+  .pg-mode-btn { flex: 1; text-align: center; padding: 8px 12px; }
+
+  .pg-summary-bar { gap: 0; padding: 12px 16px; justify-content: space-around; }
+  .pg-summary-val { font-size: 20px; }
+  .pg-summary-lbl { font-size: 10px; }
+
+  .pg-layout { flex-direction: column; min-height: auto; }
+  .pg-main { padding: 16px; }
+
+  .pg-main-header { gap: 12px; }
+  .pg-main-person { gap: 10px; }
+  .pg-main-avatar, .pg-main-initials { width: 38px; height: 38px; }
+  .pg-main-name { font-size: 16px; }
+  .pg-add-btn { width: 100%; justify-content: center; padding: 12px; font-size: 14px; }
+
+  .pg-goal-card { padding: 14px 16px; border-radius: 12px; }
+  .pg-goal-top { flex-direction: column; gap: 10px; }
+  .pg-goal-title-row { flex-wrap: wrap; }
+  .pg-goal-title { font-size: 15px; }
+  .pg-goal-meta { gap: 8px; }
+  .pg-goal-grade-wrap { align-self: flex-start; }
+  .pg-goal-grade-readonly { align-self: flex-start; }
+  .pg-grade-val { font-size: 20px; }
+
+  .pg-goal-actions { flex-wrap: wrap; gap: 6px; }
+  .pg-comment-toggle { margin-left: 0; width: 100%; justify-content: center; }
+
+  .pg-comment-add { flex-direction: column; }
+  .pg-comment-submit { align-self: stretch; text-align: center; }
+
+  .pg-form-card { padding: 16px; border-radius: 12px; }
+  .pg-form-grid { grid-template-columns: 1fr; }
+  .pg-form-actions { flex-direction: column; }
+  .pg-save-btn, .pg-cancel-btn { width: 100%; text-align: center; }
+
+  .pg-empty { padding: 40px 16px; }
+}
 `
