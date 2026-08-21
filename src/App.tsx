@@ -193,6 +193,7 @@ function AuthGate() {
             <Route path="space-management" element={<AdminSpaceManagement />} />
             <Route path="assets" element={<AdminAssetManagement />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
+            <Route path="dashboard-v2" element={<AdminDashboardModern />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
