@@ -313,7 +313,10 @@ export default function AdminCompanies() {
         company_id: newCo.id,
       })
 
-      await callRpcDirect('ensure_super_admin_access', { p_hours: 48 })
+      const { error: grantErr } = await callRpcDirect('ensure_super_admin_access', { p_hours: 48 })
+      if (grantErr) {
+        showError('Failed to auto-grant support access: ' + grantErr)
+      }
     }
 
     setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' })
