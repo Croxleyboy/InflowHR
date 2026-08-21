@@ -15,6 +15,9 @@ interface Company {
   domain: string
   logo_url: string | null
   login_disabled: boolean
+  is_trial: boolean
+  trial_end_date: string | null
+  trial_expired?: boolean
 }
 
 const SUPER_ADMIN_EMAILS = [
@@ -145,13 +148,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: co } = await supabase
         .from('companies')
-        .select('id, name, domain, logo_url, login_disabled')
+        .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date')
         .eq('id', cu.company_id)
         .single()
       if (co) {
-        if (co.login_disabled) {
+        const trialExpired = co.is_trial && co.trial_end_date && new Date(co.trial_end_date) < new Date()
+        if (co.login_disabled || trialExpired) {
           setCompanyUser(null)
-          setCompany(co as Company)
+          setCompany({ ...co, trial_expired: !!trialExpired } as Company)
           setSetupComplete(null)
           return
         }
