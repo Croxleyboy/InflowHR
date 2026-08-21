@@ -40,8 +40,13 @@ interface ELCompletion {
   completed_at: string
 }
 
+interface GoalRow {
+  employee_id: string
+  status: string
+}
+
 export default function AdminPerformance() {
-  const { selectedCompanyId } = useAdminCompany()
+  const { selectedCompanyId, selectedCompany } = useAdminCompany()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,6 +60,7 @@ export default function AdminPerformance() {
   const [completions, setCompletions] = useState<ELCompletion[]>([])
   const [enabledCourseIds, setEnabledCourseIds] = useState<Set<string> | null>(null)
   const [elModal, setElModal] = useState<{ employee: Employee } | null>(null)
+  const [goals, setGoals] = useState<GoalRow[]>([])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -97,8 +103,27 @@ export default function AdminPerformance() {
       }
     }
 
+    if (selectedCompanyId) {
+      const fyStart = selectedCompany?.fy_start_month || 4
+      const now = new Date()
+      const curMonth = now.getMonth() + 1
+      const fyYear = curMonth >= fyStart ? now.getFullYear() : now.getFullYear() - 1
+      const fyStartDate = `${fyYear}-${String(fyStart).padStart(2, '0')}-01`
+      const endMonth = fyStart === 1 ? 12 : fyStart - 1
+      const endYear = fyStart === 1 ? fyYear : fyYear + 1
+      const endDay = new Date(endYear, endMonth, 0).getDate()
+      const fyEndDate = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
+
+      const { data: goalData } = await supabase.from('performance_goals')
+        .select('employee_id, status')
+        .eq('company_id', selectedCompanyId)
+        .gte('start_date', fyStartDate)
+        .lte('start_date', fyEndDate)
+      setGoals((goalData || []) as GoalRow[])
+    }
+
     setLoading(false)
-  }, [selectedCompanyId])
+  }, [selectedCompanyId, selectedCompany])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -119,6 +144,15 @@ export default function AdminPerformance() {
     const completedIds = new Set(empCompletions.map(c => c.course_id))
     const completed = mandatoryCourses.filter(c => completedIds.has(c.id)).length
     return { required, completed }
+  }
+
+  function getGoalStats(empId: string) {
+    const empGoals = goals.filter(g => g.employee_id === empId)
+    return {
+      total: empGoals.length,
+      active: empGoals.filter(g => g.status === 'active').length,
+      completed: empGoals.filter(g => g.status === 'completed').length,
+    }
   }
 
   function getELCourseList(empId: string): { course: ELCourse; completed: boolean; completedAt: string | null }[] {
@@ -254,6 +288,15 @@ export default function AdminPerformance() {
                                 Reassign
                               </button>
                               {renderELButton(rep)}
+                              {(() => {
+                                const gs = getGoalStats(rep.id)
+                                if (gs.total === 0) return null
+                                return (
+                                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: '#eff6ff', color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    🎯 {gs.total} goals · {gs.active} active · {gs.completed} done
+                                  </span>
+                                )
+                              })()}
                             </div>
                           </td>
                           <td>{repMeetings.length} meetings</td>
