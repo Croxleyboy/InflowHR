@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
@@ -204,15 +204,15 @@ export default function AdminCompanies() {
     if (newCo) {
       if (isNonSso && username && password) {
         const email = `${username}@nonsso.inflowhr.local`
-        const { data: rpcResult, error: rpcErr } = await supabase.rpc('create_nonsso_account' as any, {
+        const { data: rpcResult, error: rpcErrMsg } = await callRpcDirect('create_nonsso_account', {
           p_email: email,
           p_password: password,
           p_company_id: newCo.id,
           p_company_name: form.name.trim(),
         })
         const rpcData = rpcResult as { success?: boolean; error?: string; employee_id?: string } | null
-        if (rpcErr) {
-          showError('Company created but failed to create login account: ' + rpcErr.message)
+        if (rpcErrMsg) {
+          showError('Company created but failed to create login account: ' + rpcErrMsg)
         } else if (rpcData?.error) {
           showError('Company created but failed to create login account: ' + rpcData.error)
         } else {
