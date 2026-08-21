@@ -76,7 +76,7 @@ function useMediaQuery(query: string): boolean {
 }
 
 export default function AdminCompanies() {
-  const { company: myCompany } = useAuth()
+  const { company: myCompany, session } = useAuth()
   const { refreshCompanies } = useAdminCompany()
   const { showError, showSuccess } = useToast()
   const [companies, setCompanies] = useState<Company[]>([])
@@ -201,6 +201,8 @@ export default function AdminCompanies() {
       return
     }
 
+    let nonSsoEmployeeId: string | undefined
+
     if (newCo) {
       if (isNonSso && username && password) {
         const email = `${username}@nonsso.inflowhr.local`
@@ -217,6 +219,7 @@ export default function AdminCompanies() {
           showError('Company created but failed to create login account: ' + rpcData.error)
         } else {
           setCreatedCredentials({ username: email, password, companyName: form.name.trim() })
+          nonSsoEmployeeId = rpcData?.employee_id
 
           if (form.isTrial && rpcData?.employee_id) {
             await supabase.from('onboarding').insert({
@@ -234,22 +237,6 @@ export default function AdminCompanies() {
               elearning: true,
               company_id: newCo.id,
             })
-
-            const now = new Date()
-            const { data: leaveTypes } = await supabase.from('leave_types').select('id, deducts_from_allowance').eq('company_id', newCo.id)
-            if (leaveTypes && leaveTypes.length > 0) {
-              await supabase.from('leave_balances').insert(
-                leaveTypes.map(lt => ({
-                  employee_id: rpcData.employee_id,
-                  leave_type_id: lt.id,
-                  year: now.getFullYear(),
-                  total_allowance: lt.deducts_from_allowance ? 25 : 0,
-                  used: 0,
-                  carried_over: 0,
-                  company_id: newCo.id,
-                }))
-              )
-            }
           }
         }
       }
@@ -273,6 +260,24 @@ export default function AdminCompanies() {
         { name: 'Lieu Days', company_id: newCo.id, deducts_from_allowance: false },
       ])
       if (leaveTypesError) showError('Failed to create default leave types: ' + leaveTypesError.message)
+
+      if (form.isTrial && nonSsoEmployeeId) {
+        const now = new Date()
+        const { data: createdLeaveTypes } = await supabase.from('leave_types').select('id, deducts_from_allowance').eq('company_id', newCo.id)
+        if (createdLeaveTypes && createdLeaveTypes.length > 0) {
+          await supabase.from('leave_balances').insert(
+            createdLeaveTypes.map(lt => ({
+              employee_id: nonSsoEmployeeId,
+              leave_type_id: lt.id,
+              year: now.getFullYear(),
+              total_allowance: lt.deducts_from_allowance ? 25 : 0,
+              used: 0,
+              carried_over: 0,
+              company_id: newCo.id,
+            }))
+          )
+        }
+      }
 
       const allFeatureKeys = [
         'expenses', 'leave', 'kudos', 'elearning', 'timesheets',
@@ -307,6 +312,17 @@ export default function AdminCompanies() {
         is_pinned: true,
         company_id: newCo.id,
       })
+
+      if (session?.user?.id) {
+        await supabase.from('tenant_support_access').insert({
+          company_id: newCo.id,
+          granted_by: session.user.id,
+          granted_to: session.user.id,
+          reason: 'Auto-granted on company creation',
+          scope: 'full',
+          expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
+        })
+      }
     }
 
     setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' })
