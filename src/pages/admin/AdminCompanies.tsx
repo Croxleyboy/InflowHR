@@ -76,7 +76,7 @@ function useMediaQuery(query: string): boolean {
 }
 
 export default function AdminCompanies() {
-  const { company: myCompany, session } = useAuth()
+  const { company: myCompany } = useAuth()
   const { refreshCompanies } = useAdminCompany()
   const { showError, showSuccess } = useToast()
   const [companies, setCompanies] = useState<Company[]>([])
@@ -313,16 +313,7 @@ export default function AdminCompanies() {
         company_id: newCo.id,
       })
 
-      if (session?.user?.id) {
-        await supabase.from('tenant_support_access').insert({
-          company_id: newCo.id,
-          granted_by: session.user.id,
-          granted_to: session.user.id,
-          reason: 'Auto-granted on company creation',
-          scope: 'full',
-          expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
-        })
-      }
+      await callRpcDirect('ensure_super_admin_access', { p_hours: 48 })
     }
 
     setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' })
