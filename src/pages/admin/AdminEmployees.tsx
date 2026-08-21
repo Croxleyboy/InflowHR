@@ -141,6 +141,16 @@ export default function AdminEmployees() {
     }
     const { error } = await supabase.from('employees').update(payload).eq('id', id)
     if (error) { showError('Failed to save employee: ' + error.message); return }
+    const emp = employees.find(e => e.id === id)
+    if (emp && (editForm.first_name !== emp.first_name || editForm.last_name !== emp.last_name)) {
+      const onboardingUpdate: Record<string, string | null> = {}
+      if (editForm.first_name !== emp.first_name) onboardingUpdate.firstname = editForm.first_name || null
+      if (editForm.last_name !== emp.last_name) onboardingUpdate.surname = editForm.last_name || null
+      if (Object.keys(onboardingUpdate).length > 0) {
+        onboardingUpdate.display_name = `${editForm.first_name || ''} ${editForm.last_name || ''}`.trim()
+        await supabase.from('onboarding').update(onboardingUpdate).eq('user_email', emp.email).eq('company_id', selectedCompanyId)
+      }
+    }
     setEditingId(null)
     showSuccess('Employee updated')
     load()

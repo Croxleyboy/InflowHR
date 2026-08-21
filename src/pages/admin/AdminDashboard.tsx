@@ -173,6 +173,9 @@ export default function AdminDashboard() {
         navigate={navigate}
         empTrend={empTrend}
         ticketTrend={ticketTrend}
+        isTrial={selectedCompany?.is_trial || false}
+        trialStartDate={selectedCompany?.trial_start_date || null}
+        trialEndDate={selectedCompany?.trial_end_date || null}
       />
     )
   }
@@ -236,8 +239,15 @@ function MiniBarChart({ data, color, height = 48 }: { data: TrendPoint[]; color:
   )
 }
 
+function formatUkDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
 function CompanyDash({
   stats, companyName, companyId, navigate, empTrend, ticketTrend,
+  isTrial, trialStartDate, trialEndDate,
 }: {
   stats: CompanyStats
   companyName: string
@@ -245,7 +255,14 @@ function CompanyDash({
   navigate: (p: string) => void
   empTrend: TrendPoint[]
   ticketTrend: TrendPoint[]
+  isTrial: boolean
+  trialStartDate: string | null
+  trialEndDate: string | null
 }) {
+  const trialExpired = isTrial && trialEndDate ? new Date(trialEndDate) < new Date() : false
+  const trialLabel = isTrial
+    ? `Trial: ${formatUkDate(trialStartDate)} – ${formatUkDate(trialEndDate)}`
+    : ''
   const [archives, setArchives] = useState<{ name: string; url: string; created_at: string }[]>([])
   const [archivesLoading, setArchivesLoading] = useState(false)
   const [supportGrant, setSupportGrant] = useState<{ active: boolean; expires_at: string; reason: string } | null>(null)
@@ -345,7 +362,7 @@ function CompanyDash({
   return (
     <div className="admin-dashboard">
       <div className="admin-page-header">
-        <h2>{companyName}</h2>
+        <h2>{companyName}{trialLabel && <span style={{ fontWeight: 400, fontSize: 14, color: trialExpired ? '#c62828' : 'var(--text-secondary)' }}> ({trialLabel})</span>}</h2>
         <p>Company dashboard overview</p>
       </div>
 
