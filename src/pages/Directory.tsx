@@ -14,6 +14,7 @@ interface DirectoryEntry {
   telephone: string | null
   department: string | null
   avatar_url: string | null
+  employee_uuid: string | null
 }
 
 const WATCHLIST_KEY = 'inflowhr-kudos-watchlist'
@@ -43,7 +44,7 @@ export default function Directory() {
 
     const today = new Date().toISOString().split('T')[0]
 
-    const [dirRes, leaveRes] = await Promise.all([
+    const [dirRes, leaveRes, empRes] = await Promise.all([
       supabase
         .from('onboarding')
         .select('id, firstname, surname, display_name, job_title, user_email, telephone, department, avatar_url')
@@ -57,9 +58,21 @@ export default function Directory() {
         .eq('status', 'approved')
         .lte('start_date', today)
         .gte('end_date', today),
+      supabase
+        .from('employees')
+        .select('id, email')
+        .eq('company_id', companyUser.company_id)
+        .eq('is_active', true),
     ])
 
-    setEntries((dirRes.data || []) as DirectoryEntry[])
+    const emailToEmpId = new Map<string, string>()
+    ;(empRes.data || []).forEach((e: any) => emailToEmpId.set(e.email?.toLowerCase(), e.id))
+
+    const entriesWithUuid = ((dirRes.data || []) as any[]).map(d => ({
+      ...d,
+      employee_uuid: emailToEmpId.get(d.user_email?.toLowerCase()) || null,
+    })) as DirectoryEntry[]
+    setEntries(entriesWithUuid)
 
     const leaveSet = new Set<string>()
     ;(leaveRes.data || []).forEach((r: any) => leaveSet.add(r.employee_id))
@@ -86,12 +99,14 @@ export default function Directory() {
     return onLeaveIds.has(String(entry.id))
   }
 
-  function isOnWatchlist(entryId: number): boolean {
-    return watchlist.includes(String(entryId))
+  function isOnWatchlist(entry: DirectoryEntry): boolean {
+    if (!entry.employee_uuid) return false
+    return watchlist.includes(entry.employee_uuid)
   }
 
-  function toggleWatchlist(entryId: number) {
-    const id = String(entryId)
+  function toggleWatchlist(entry: DirectoryEntry) {
+    const id = entry.employee_uuid
+    if (!id) return
     let updated: string[]
     if (watchlist.includes(id)) {
       updated = watchlist.filter(w => w !== id)
@@ -175,11 +190,11 @@ export default function Directory() {
                 <span className="directory-card-email">{entry.user_email}</span>
               </div>
               <button
-                className={`directory-watchlist-btn ${isOnWatchlist(entry.id) ? 'directory-watchlist-active' : ''}`}
-                onClick={() => toggleWatchlist(entry.id)}
-                title={isOnWatchlist(entry.id) ? t('directory.remove_watchlist') : t('directory.add_watchlist')}
+                className={`directory-watchlist-btn ${isOnWatchlist(entry) ? 'directory-watchlist-active' : ''}`}
+                onClick={() => toggleWatchlist(entry)}
+                title={isOnWatchlist(entry) ? t('directory.remove_watchlist') : t('directory.add_watchlist')}
               >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill={isOnWatchlist(entry.id) ? '#e8a000' : 'none'} stroke="#e8a000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill={isOnWatchlist(entry) ? '#e8a000' : 'none'} stroke="#e8a000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                 </svg>
               </button>
