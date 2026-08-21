@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { listCompanyArchives, listAllCompanyArchives } from '../../lib/companyArchive'
@@ -296,12 +296,12 @@ function CompanyDash({
 
   async function grantPlatformAccess() {
     setGrantingAccess(true)
-    const { error } = await supabase.rpc('extend_support_access', {
+    const { error } = await callRpcDirect('extend_support_access', {
       p_company_id: companyId,
       p_hours: 48,
     })
     if (error) {
-      alert('Failed to grant access: ' + error.message)
+      alert('Failed to grant access: ' + error)
     }
     await loadSupportStatus()
     setGrantingAccess(false)
@@ -317,7 +317,7 @@ function CompanyDash({
       .gt('expires_at', new Date().toISOString())
     if (data) {
       for (const g of data) {
-        await supabase.rpc('revoke_support_access', { p_grant_id: g.id })
+        await callRpcDirect('revoke_support_access', { p_grant_id: g.id })
       }
     }
     await loadSupportStatus()

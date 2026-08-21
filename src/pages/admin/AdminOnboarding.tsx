@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -240,7 +240,7 @@ export default function AdminOnboarding() {
     setUploading(true)
     let success = 0, failed = 0
 
-    await supabase.rpc('ensure_super_admin_access', { p_hours: 48 })
+    await callRpcDirect('ensure_super_admin_access', { p_hours: 48 })
 
     const toInsert = uploadRows.map(row => {
       const s = sanitisePayload(row)

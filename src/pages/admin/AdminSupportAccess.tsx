@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 
@@ -86,9 +86,9 @@ export default function AdminSupportAccess() {
 
   async function grantAllAccess() {
     setGranting(true)
-    const { data, error } = await supabase.rpc('ensure_super_admin_access', { p_hours: 48 })
+    const { data, error } = await callRpcDirect('ensure_super_admin_access', { p_hours: 48 })
     if (error) {
-      showError('Failed to grant access: ' + error.message)
+      showError('Failed to grant access: ' + error)
     } else {
       showSuccess(`Granted access to ${data} additional company(s)`)
     }
@@ -97,12 +97,12 @@ export default function AdminSupportAccess() {
   }
 
   async function extendAccess(companyId: string) {
-    const { error } = await supabase.rpc('extend_support_access', {
+    const { error } = await callRpcDirect('extend_support_access', {
       p_company_id: companyId,
       p_hours: 48,
     })
     if (error) {
-      showError('Failed to extend access: ' + error.message)
+      showError('Failed to extend access: ' + error)
     } else {
       showSuccess('Access extended by 48 hours')
     }
@@ -110,11 +110,11 @@ export default function AdminSupportAccess() {
   }
 
   async function revokeAccess(grantId: string) {
-    const { error } = await supabase.rpc('revoke_support_access', {
+    const { error } = await callRpcDirect('revoke_support_access', {
       p_grant_id: grantId,
     })
     if (error) {
-      showError('Failed to revoke: ' + error.message)
+      showError('Failed to revoke: ' + error)
     } else {
       showSuccess('Access revoked')
     }

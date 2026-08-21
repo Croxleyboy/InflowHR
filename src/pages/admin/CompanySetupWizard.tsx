@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import * as XLSX from 'xlsx'
@@ -248,7 +248,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
     if (!setupCompanyId) return
     setProcessing(true)
 
-    await supabase.rpc('ensure_super_admin_access', { p_hours: 48 })
+    await callRpcDirect('ensure_super_admin_access', { p_hours: 48 })
 
     const company = companies.find(c => c.id === setupCompanyId)
     let onboardCount = 0, empCount = 0, payslipCount = 0
