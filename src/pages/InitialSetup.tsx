@@ -6,7 +6,7 @@ import { formatDateDisplay } from '../lib/formatters'
 
 export default function InitialSetup() {
   const { t } = useLanguage()
-  const { employeeEmail, employeeName, employeeId, companyUser, markSetupComplete } = useAuth()
+  const { employeeEmail, employeeName, employeeId, companyUser, markSetupComplete, updateAvatarUrl } = useAuth()
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   const [dob, setDob] = useState('')
@@ -94,6 +94,7 @@ export default function InitialSetup() {
         .eq('company_id', companyUser.company_id)
     }
 
+    if (avatarUrl) updateAvatarUrl(avatarUrl)
     markSetupComplete()
   }
 

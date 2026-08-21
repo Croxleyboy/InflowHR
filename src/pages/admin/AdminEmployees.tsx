@@ -309,7 +309,7 @@ export default function AdminEmployees() {
                         <input className="admin-inline-input" value={editForm.first_name} onChange={e => setEditForm(f => ({...f, first_name: e.target.value}))} placeholder="First" />
                         <input className="admin-inline-input" value={editForm.last_name} onChange={e => setEditForm(f => ({...f, last_name: e.target.value}))} placeholder="Last" />
                       </div>
-                    ) : `${emp.first_name} ${emp.last_name}`}</td>
+                    ) : <span className="admin-inline-avatar">{emp.avatar_url ? <img src={emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{emp.first_name[0]}{emp.last_name[0]}</span>}{emp.first_name} {emp.last_name}</span>}</td>
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.email} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} /> : emp.email}</td>
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(f => ({...f, department: e.target.value}))} /> : (emp.department || '—')}</td>
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.job_title} onChange={e => setEditForm(f => ({...f, job_title: e.target.value}))} /> : (emp.job_title || '—')}</td>

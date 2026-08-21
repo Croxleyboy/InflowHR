@@ -18,7 +18,7 @@ interface Timesheet {
   status: string
   created_at: string
   project_id: string | null
-  employee: { first_name: string; last_name: string; email: string } | null
+  employee: { first_name: string; last_name: string; email: string; avatar_url: string | null } | null
   project: { name: string; customer_name: string } | null
 }
 
@@ -66,7 +66,7 @@ export default function AdminTimesheets() {
     setLoading(true)
     const { data } = await supabase
       .from('timesheets')
-      .select('*, employee:employees!timesheets_employee_id_fkey(first_name, last_name, email), project:customer_projects!timesheets_project_id_fkey(name, customer_name)')
+      .select('*, employee:employees!timesheets_employee_id_fkey(first_name, last_name, email, avatar_url), project:customer_projects!timesheets_project_id_fkey(name, customer_name)')
       .eq('company_id', selectedCompanyId)
       .order('date', { ascending: false })
     setTimesheets((data as Timesheet[]) || [])
@@ -297,7 +297,7 @@ export default function AdminTimesheets() {
                 <tbody>
                   {filtered.map(ts => (
                     <tr key={ts.id}>
-                      <td>{ts.employee ? `${ts.employee.first_name} ${ts.employee.last_name}` : '—'}</td>
+                      <td>{ts.employee ? <span className="admin-inline-avatar">{ts.employee.avatar_url ? <img src={ts.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{ts.employee.first_name[0]}{ts.employee.last_name[0]}</span>}{ts.employee.first_name} {ts.employee.last_name}</span> : '—'}</td>
                       <td>{editingId === ts.id
                         ? <input type="date" className="admin-inline-input" value={editForm.date || ''} onChange={e => setEditForm(p => ({ ...p, date: e.target.value }))} />
                         : new Date(ts.date + 'T00:00:00').toLocaleDateString('en-GB')

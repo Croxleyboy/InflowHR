@@ -16,7 +16,7 @@ interface Claim {
   cost_center: string
   created_at: string
   submitted_at: string | null
-  employee: { first_name: string; last_name: string; email: string } | null
+  employee: { first_name: string; last_name: string; email: string; avatar_url: string | null } | null
   line_items?: LineItem[]
 }
 interface LineItem {
@@ -91,7 +91,7 @@ export default function AdminExpenses() {
 
       const { data: expClaims } = await supabase
         .from('expense_claims')
-        .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email)')
+        .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email, avatar_url)')
         .eq('company_id', selectedCompanyId)
         .in('status', ['pending', 'approved'])
         .gte('submitted_at', cutoff)
@@ -190,7 +190,7 @@ export default function AdminExpenses() {
     setLoading(true)
     const { data } = await supabase
       .from('expense_claims')
-      .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email)')
+      .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email, avatar_url)')
       .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
     setClaims((data as Claim[]) || [])
@@ -428,7 +428,7 @@ export default function AdminExpenses() {
                     <>
                       <tr key={claim.id} className={expandedId === claim.id ? 'admin-row-active' : ''}>
                         <td className="admin-td-mono">{claim.reference_number}</td>
-                        <td>{claim.employee ? `${claim.employee.first_name} ${claim.employee.last_name}` : '—'}</td>
+                        <td>{claim.employee ? <span className="admin-inline-avatar">{claim.employee.avatar_url ? <img src={claim.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{claim.employee.first_name[0]}{claim.employee.last_name[0]}</span>}{claim.employee.first_name} {claim.employee.last_name}</span> : '—'}</td>
                         <td>{editingId === claim.id ? <input className="admin-inline-input" value={editForm.title || ''} onChange={e => setEditForm(p => ({...p, title: e.target.value}))} /> : claim.title}</td>
                         <td>{editingId === claim.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={editForm.amount ?? ''} onChange={e => setEditForm(p => ({...p, amount: +e.target.value}))} /> : `£${Number(claim.amount).toFixed(2)}`}</td>
                         <td>{editingId === claim.id ? (

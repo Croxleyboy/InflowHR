@@ -49,6 +49,7 @@ interface EmployeeOption {
   id: string
   first_name: string
   last_name: string
+  avatar_url: string | null
 }
 
 const EMPTY_FORM = {
@@ -100,7 +101,7 @@ export default function AdminAssetManagement() {
     if (!companyId) return
     const { data } = await supabase
       .from('employees')
-      .select('id, first_name, last_name')
+      .select('id, first_name, last_name, avatar_url')
       .eq('company_id', companyId)
       .eq('is_active', true)
       .order('first_name')
@@ -113,6 +114,11 @@ export default function AdminAssetManagement() {
     if (!id) return ''
     const emp = employees.find(e => e.id === id)
     return emp ? `${emp.first_name} ${emp.last_name}` : ''
+  }
+
+  function getEmployeeAvatar(id: string | null): string | null {
+    if (!id) return null
+    return employees.find(e => e.id === id)?.avatar_url || null
   }
 
   let nextNumber = assets.length + 1
@@ -334,7 +340,7 @@ export default function AdminAssetManagement() {
       if (email) {
         const { data: emp } = await supabase
           .from('employees')
-          .select('id, first_name, last_name')
+          .select('id, first_name, last_name, avatar_url')
           .eq('company_id', companyId)
           .eq('email', email)
           .maybeSingle()
@@ -533,7 +539,7 @@ export default function AdminAssetManagement() {
                   <td>{asset.asset_type}</td>
                   <td>{asset.brand || '—'}</td>
                   <td><span className="admin-badge" style={{ background: statusColor[asset.status] || '#999', color: '#fff' }}>{asset.status}</span></td>
-                  <td>{asset.assigned_to_name || '—'}</td>
+                  <td>{asset.assigned_to_name ? <span className="admin-inline-avatar">{(() => { const av = getEmployeeAvatar(asset.assigned_to); const initials = asset.assigned_to_name.split(' ').map((n: string) => n[0]).join(''); return av ? <img src={av} alt="" /> : <span className="admin-avatar-initials">{initials}</span> })()}{asset.assigned_to_name}</span> : '—'}</td>
                   <td>{asset.warranty_expiry ? formatDate(asset.warranty_expiry) : '—'}</td>
                   <td>{formatDate(asset.created_at)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>

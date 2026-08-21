@@ -11,6 +11,7 @@ interface Employee {
   department: string | null
   email: string
   manager_id: string | null
+  avatar_url: string | null
 }
 
 interface Meeting {
@@ -58,7 +59,7 @@ export default function AdminPerformance() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     let q = supabase.from('employees')
-      .select('id, first_name, last_name, job_title, department, email, manager_id')
+      .select('id, first_name, last_name, job_title, department, email, manager_id, avatar_url')
       .eq('is_active', true)
       .order('first_name')
     if (selectedCompanyId) q = q.eq('company_id', selectedCompanyId)
@@ -229,7 +230,7 @@ export default function AdminPerformance() {
                       </svg>
                     </td>
                     <td>
-                      <strong>{mgr.first_name} {mgr.last_name}</strong>
+                      <span className="admin-inline-avatar">{mgr.avatar_url ? <img src={mgr.avatar_url} alt="" /> : <span className="admin-avatar-initials">{mgr.first_name[0]}{mgr.last_name[0]}</span>}<strong>{mgr.first_name} {mgr.last_name}</strong></span>
                       <br /><span style={{ fontSize: '0.8em', opacity: 0.7 }}>{mgr.job_title}</span>
                     </td>
                     <td>{mgr.department}</td>
@@ -243,7 +244,7 @@ export default function AdminPerformance() {
                         <tr key={`${mgr.id}-${rep.id}`} className="admin-perf-report-row">
                           <td></td>
                           <td style={{ paddingLeft: 32 }}>
-                            <span className="admin-perf-report-name">{rep.first_name} {rep.last_name}</span>
+                            <span className="admin-inline-avatar">{rep.avatar_url ? <img src={rep.avatar_url} alt="" /> : <span className="admin-avatar-initials">{rep.first_name[0]}{rep.last_name[0]}</span>}<span className="admin-perf-report-name">{rep.first_name} {rep.last_name}</span></span>
                             <br /><span style={{ fontSize: '0.8em', opacity: 0.7 }}>{rep.job_title}</span>
                           </td>
                           <td>{rep.department}</td>
@@ -306,7 +307,7 @@ export default function AdminPerformance() {
               <tbody>
                 {employees.filter(e => !e.manager_id).map(emp => (
                   <tr key={emp.id}>
-                    <td><strong>{emp.first_name} {emp.last_name}</strong></td>
+                    <td><span className="admin-inline-avatar">{emp.avatar_url ? <img src={emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{emp.first_name[0]}{emp.last_name[0]}</span>}<strong>{emp.first_name} {emp.last_name}</strong></span></td>
                     <td>{emp.job_title}</td>
                     <td>{emp.department}</td>
                     <td>{renderELButton(emp)}</td>

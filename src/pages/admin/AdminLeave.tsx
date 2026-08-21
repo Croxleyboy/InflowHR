@@ -15,7 +15,7 @@ interface LeaveRequest {
   reason: string | null
   created_at: string
   leave_type: { name: string } | null
-  employee: { first_name: string; last_name: string; email: string } | null
+  employee: { first_name: string; last_name: string; email: string; avatar_url: string | null } | null
 }
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
@@ -92,7 +92,7 @@ export default function AdminLeave() {
     setLoading(true)
     const { data } = await supabase
       .from('leave_requests')
-      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, email)')
+      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, email, avatar_url)')
       .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
     setRequests((data as LeaveRequest[]) || [])
@@ -429,7 +429,7 @@ export default function AdminLeave() {
             <tbody>
               {filtered.map(r => (
                 <tr key={r.id}>
-                  <td>{r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '—'}</td>
+                  <td>{r.employee ? <span className="admin-inline-avatar">{r.employee.avatar_url ? <img src={r.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{r.employee.first_name[0]}{r.employee.last_name[0]}</span>}{r.employee.first_name} {r.employee.last_name}</span> : '—'}</td>
                   <td>{r.leave_type?.name || '—'}</td>
                   <td>{editingId === r.id ? (
                     <div className="admin-date-inputs">

@@ -9,8 +9,8 @@ interface Kudo {
   category: string
   is_public: boolean
   created_at: string
-  from_emp: { first_name: string; last_name: string } | null
-  to_emp: { first_name: string; last_name: string } | null
+  from_emp: { first_name: string; last_name: string; avatar_url: string | null } | null
+  to_emp: { first_name: string; last_name: string; avatar_url: string | null } | null
 }
 
 const CATEGORIES = ['teamwork', 'innovation', 'leadership', 'customer_focus', 'going_above']
@@ -30,7 +30,7 @@ export default function AdminKudos() {
     setLoading(true)
     const { data } = await supabase
       .from('kudos')
-      .select('*, from_emp:employees!kudos_from_employee_id_fkey(first_name, last_name), to_emp:employees!kudos_to_employee_id_fkey(first_name, last_name)')
+      .select('*, from_emp:employees!kudos_from_employee_id_fkey(first_name, last_name, avatar_url), to_emp:employees!kudos_to_employee_id_fkey(first_name, last_name, avatar_url)')
       .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
     setKudos((data as Kudo[]) || [])
@@ -99,8 +99,8 @@ export default function AdminKudos() {
             <tbody>
               {filtered.map(k => (
                 <tr key={k.id}>
-                  <td>{k.from_emp ? `${k.from_emp.first_name} ${k.from_emp.last_name}` : '—'}</td>
-                  <td>{k.to_emp ? `${k.to_emp.first_name} ${k.to_emp.last_name}` : '—'}</td>
+                  <td>{k.from_emp ? <span className="admin-inline-avatar">{k.from_emp.avatar_url ? <img src={k.from_emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{k.from_emp.first_name[0]}{k.from_emp.last_name[0]}</span>}{k.from_emp.first_name} {k.from_emp.last_name}</span> : '—'}</td>
+                  <td>{k.to_emp ? <span className="admin-inline-avatar">{k.to_emp.avatar_url ? <img src={k.to_emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{k.to_emp.first_name[0]}{k.to_emp.last_name[0]}</span>}{k.to_emp.first_name} {k.to_emp.last_name}</span> : '—'}</td>
                   <td>{editingId === k.id ? (
                     <select className="admin-inline-select" value={editForm.category} onChange={e => setEditForm(f => ({...f, category: e.target.value}))}>
                       {CATEGORIES.map(c => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
