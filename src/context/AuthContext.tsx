@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, signInDirect } from '../lib/supabase'
 import type { User, Session } from '@supabase/supabase-js'
 
 interface CompanyUser {
@@ -246,8 +246,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signInWithPassword(email: string, password: string): Promise<string | null> {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return error ? error.message : null
+    const { error } = await signInDirect(email, password)
+    return error
   }
 
   async function signOut() {

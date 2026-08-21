@@ -26,3 +26,26 @@ export async function callRpcDirect(
   }
   return { data: body, error: null }
 }
+
+export async function signInDirect(
+  email: string,
+  password: string,
+): Promise<{ session: { access_token: string; refresh_token: string } | null; error: string | null }> {
+  const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': supabaseAnonKey,
+    },
+    body: JSON.stringify({ email, password }),
+  })
+  const body = await res.json().catch(() => null)
+  if (!res.ok) {
+    return { session: null, error: body?.error_description || body?.msg || body?.message || `HTTP ${res.status}` }
+  }
+  await supabase.auth.setSession({
+    access_token: body.access_token,
+    refresh_token: body.refresh_token,
+  })
+  return { session: { access_token: body.access_token, refresh_token: body.refresh_token }, error: null }
+}

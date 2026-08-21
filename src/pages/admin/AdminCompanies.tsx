@@ -313,7 +313,10 @@ export default function AdminCompanies() {
         company_id: newCo.id,
       })
 
-      const { error: grantErr } = await callRpcDirect('ensure_super_admin_access', { p_hours: 48 })
+      const { error: grantErr } = await callRpcDirect('grant_support_access_for_company', {
+        p_company_id: newCo.id,
+        p_hours: 48,
+      })
       if (grantErr) {
         showError('Failed to auto-grant support access: ' + grantErr)
       }
