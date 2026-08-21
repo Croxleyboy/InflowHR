@@ -162,12 +162,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCompany(co as Company)
       }
 
-      let { data: onb } = await supabase
+      let { data: onbRows } = await supabase
         .from('onboarding')
         .select('initial_setup_complete, avatar_url')
         .eq('user_email', email)
         .eq('company_id', cu.company_id)
-        .maybeSingle()
+        .order('id', { ascending: false })
+        .limit(1)
+      let onb = onbRows?.[0] || null
       if (!onb) {
         const lp = email.split('@')[0].toLowerCase()
         const { data: onbFuzzy } = await supabase
@@ -175,9 +177,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('initial_setup_complete, avatar_url')
           .eq('company_id', cu.company_id)
           .ilike('user_email', `${lp}@%`)
+          .order('id', { ascending: false })
           .limit(1)
-          .maybeSingle()
-        onb = onbFuzzy
+        onb = onbFuzzy?.[0] || null
       }
       setSetupComplete(onb ? onb.initial_setup_complete === true : true)
       setAvatarUrl(onb?.avatar_url || null)
