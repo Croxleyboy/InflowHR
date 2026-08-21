@@ -181,22 +181,22 @@ export default function OneToOnes() {
         )}
       </div>
 
-      {isManager && tab === 'upcoming' && (
+      {tab === 'upcoming' && (
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '0 16px' }}>
-          <button className="oto-schedule-btn" style={{ margin: 0 }} onClick={() => navigate('/one-to-ones/new')}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            {t('one_to_one.schedule_new')}
-          </button>
-          {isDesktop && (
-            <button className="oto-schedule-btn" style={{ margin: 0, background: '#1e3a5f' }} onClick={() => navigate('/performance/goals')}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+          {isManager && (
+            <button className="oto-schedule-btn" style={{ margin: 0 }} onClick={() => navigate('/one-to-ones/new')}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              Goals &amp; Objectives
+              {t('one_to_one.schedule_new')}
             </button>
           )}
+          <button className="oto-schedule-btn" style={{ margin: 0, background: '#1e3a5f' }} onClick={() => navigate('/performance/goals')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            Goals &amp; Objectives
+          </button>
         </div>
       )}
 
