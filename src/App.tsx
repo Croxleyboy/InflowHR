@@ -42,6 +42,7 @@ import TimesheetApproval from './pages/TimesheetApproval'
 import OneToOnes from './pages/OneToOnes'
 import NewOneToOne from './pages/NewOneToOne'
 import OneToOneDetail from './pages/OneToOneDetail'
+import PerformanceGoals from './pages/PerformanceGoals'
 import MyShifts from './pages/MyShifts'
 import ShiftSwap from './pages/ShiftSwap'
 import Availability from './pages/Availability'
@@ -126,6 +127,7 @@ function EmployeeRoutes() {
       <Route path="/one-to-ones/new" element={<NewOneToOne />} />
       <Route path="/one-to-ones/:id" element={<OneToOneDetail />} />
       <Route path="/performance" element={<OneToOnes />} />
+      <Route path="/performance/goals" element={<PerformanceGoals />} />
       <Route path="/shifts" element={<MyShifts />} />
       <Route path="/shifts/swap" element={<ShiftSwap />} />
       <Route path="/shifts/availability" element={<Availability />} />

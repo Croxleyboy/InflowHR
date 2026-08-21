@@ -29,7 +29,7 @@ function getWatchlist(): string[] {
 export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { companyUser } = useAuth()
+  const { companyUser, employeeId: currentEmployeeId } = useAuth()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -68,11 +68,20 @@ export default function Directory() {
     const emailToEmpId = new Map<string, string>()
     ;(empRes.data || []).forEach((e: any) => emailToEmpId.set(e.email?.toLowerCase(), e.id))
 
+    const validEmpIds = new Set(emailToEmpId.values())
+
     const entriesWithUuid = ((dirRes.data || []) as any[]).map(d => ({
       ...d,
       employee_uuid: emailToEmpId.get(d.user_email?.toLowerCase()) || null,
     })) as DirectoryEntry[]
     setEntries(entriesWithUuid)
+
+    const stored = getWatchlist()
+    const cleaned = stored.filter(id => validEmpIds.has(id) && id !== currentEmployeeId)
+    if (cleaned.length !== stored.length) {
+      setWatchlist(cleaned)
+      localStorage.setItem(WATCHLIST_KEY, JSON.stringify(cleaned))
+    }
 
     const leaveSet = new Set<string>()
     ;(leaveRes.data || []).forEach((r: any) => leaveSet.add(r.employee_id))
@@ -189,15 +198,17 @@ export default function Directory() {
                 <span className="directory-card-name">{entry.firstname} {entry.surname}</span>
                 <span className="directory-card-email">{entry.user_email}</span>
               </div>
-              <button
-                className={`directory-watchlist-btn ${isOnWatchlist(entry) ? 'directory-watchlist-active' : ''}`}
-                onClick={() => toggleWatchlist(entry)}
-                title={isOnWatchlist(entry) ? t('directory.remove_watchlist') : t('directory.add_watchlist')}
-              >
-                <svg width="22" height="22" viewBox="0 0 24 24" fill={isOnWatchlist(entry) ? '#e8a000' : 'none'} stroke="#e8a000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                </svg>
-              </button>
+              {entry.employee_uuid !== currentEmployeeId && (
+                <button
+                  className={`directory-watchlist-btn ${isOnWatchlist(entry) ? 'directory-watchlist-active' : ''}`}
+                  onClick={() => toggleWatchlist(entry)}
+                  title={isOnWatchlist(entry) ? t('directory.remove_watchlist') : t('directory.add_watchlist')}
+                >
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill={isOnWatchlist(entry) ? '#e8a000' : 'none'} stroke="#e8a000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                </button>
+              )}
               <a className="directory-card-phone" href={`tel:${entry.telephone || ''}`}>
                 <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
                   <circle cx="20" cy="20" r="19" fill="#1a1a2e" stroke="#1a1a2e" strokeWidth="2" />

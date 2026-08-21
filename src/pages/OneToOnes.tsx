@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDateFriendly as formatDate } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 
 type Tab = 'upcoming' | 'history' | 'reports'
 
@@ -33,14 +34,41 @@ interface DirectReport {
   avatar_url: string | null
 }
 
+interface Goal {
+  id: string
+  employee_id: string
+  title: string
+  status: string
+  grade: number | null
+  start_date: string
+  due_date: string | null
+}
+
+const GOAL_STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  active: { label: 'Active', color: '#2563eb' },
+  completed: { label: 'Completed', color: '#16a34a' },
+  edited: { label: 'Edited', color: '#d97706' },
+  on_hold: { label: 'On Hold', color: '#6b7280' },
+  cancelled: { label: 'Cancelled', color: '#dc2626' },
+}
+
+function fmtGoalDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
 export default function OneToOnes() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { employeeId, companyUser, isManager } = useAuth()
   const { showError } = useToast()
+  const isDesktop = useMediaQuery('(min-width: 769px)')
   const [tab, setTab] = useState<Tab>('upcoming')
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [directReports, setDirectReports] = useState<DirectReport[]>([])
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [expandedGoalsFor, setExpandedGoalsFor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
@@ -84,6 +112,15 @@ export default function OneToOnes() {
       setMeetings(enriched)
     } else {
       setMeetings([])
+    }
+
+    if (companyUser?.company_id) {
+      const { data: goalData } = await supabase.from('performance_goals')
+        .select('id, employee_id, title, status, grade, start_date, due_date')
+        .eq('company_id', companyUser.company_id)
+        .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
+        .order('created_at', { ascending: false })
+      setGoals((goalData || []) as Goal[])
     }
 
     setLoading(false)
@@ -145,12 +182,22 @@ export default function OneToOnes() {
       </div>
 
       {isManager && tab === 'upcoming' && (
-        <button className="oto-schedule-btn" onClick={() => navigate('/one-to-ones/new')}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          {t('one_to_one.schedule_new')}
-        </button>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '0 16px' }}>
+          <button className="oto-schedule-btn" style={{ margin: 0 }} onClick={() => navigate('/one-to-ones/new')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            {t('one_to_one.schedule_new')}
+          </button>
+          {isDesktop && (
+            <button className="oto-schedule-btn" style={{ margin: 0, background: '#1e3a5f' }} onClick={() => navigate('/performance/goals')}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              Goals &amp; Objectives
+            </button>
+          )}
+        </div>
       )}
 
       {loading && <p className="claims-empty">{t('common.loading')}</p>}
@@ -231,12 +278,22 @@ export default function OneToOnes() {
 
       {!loading && tab === 'reports' && isManager && (
         <div className="oto-list">
+          {isDesktop && (
+            <button className="oto-schedule-btn" style={{ marginBottom: 12 }} onClick={() => navigate('/performance/goals')}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              </svg>
+              Manage Goals &amp; Objectives
+            </button>
+          )}
           {directReports.map(dr => {
             const initials = `${dr.first_name[0]}${dr.last_name[0]}`
             const reportMeetings = meetings.filter(m => m.employee_id === dr.id && m.status === 'completed')
             const lastMeeting = reportMeetings[0]
+            const drGoals = goals.filter(g => g.employee_id === dr.id)
+            const goalsExpanded = expandedGoalsFor === dr.id
             return (
-              <div key={dr.id} className="oto-report-card">
+              <div key={dr.id} className="oto-report-card" style={{ flexWrap: 'wrap' }}>
                 {dr.avatar_url ? <img className="oto-card-avatar-img" src={dr.avatar_url} alt={`${dr.first_name} ${dr.last_name}`} /> : <div className="oto-card-avatar">{initials}</div>}
                 <div className="oto-report-info">
                   <span className="oto-report-name">{dr.first_name} {dr.last_name}</span>
@@ -251,6 +308,34 @@ export default function OneToOnes() {
                   </button>
                   <span className="oto-report-count">{reportMeetings.length} {t('one_to_one.meetings_count')}</span>
                 </div>
+                {drGoals.length > 0 && (
+                  <button
+                    className="oto-goals-expand"
+                    onClick={() => setExpandedGoalsFor(goalsExpanded ? null : dr.id)}
+                    style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0 0', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: '#2563eb' }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2.5"
+                      style={{ transform: goalsExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+                      <path d="M9 18l6-6-6-6" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    {drGoals.length} goal{drGoals.length !== 1 ? 's' : ''}
+                  </button>
+                )}
+                {goalsExpanded && (
+                  <div style={{ width: '100%', paddingTop: 8 }}>
+                    {drGoals.map(g => {
+                      const s = GOAL_STATUS_LABELS[g.status] || { label: g.status, color: '#6b7280' }
+                      return (
+                        <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderTop: '1px solid #f0f0f0', fontSize: 13 }}>
+                          <span style={{ flex: 1, fontWeight: 500 }}>{g.title}</span>
+                          <span style={{ color: s.color, fontWeight: 700, fontSize: 11, textTransform: 'uppercase' }}>{s.label}</span>
+                          <span style={{ color: '#6b7280', fontSize: 12 }}>{fmtGoalDate(g.start_date)}{g.due_date ? ` — ${fmtGoalDate(g.due_date)}` : ''}</span>
+                          {g.grade !== null && <span style={{ background: '#eff6ff', color: '#2563eb', padding: '2px 6px', borderRadius: 4, fontWeight: 800, fontSize: 12 }}>{g.grade}/10</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )
           })}
