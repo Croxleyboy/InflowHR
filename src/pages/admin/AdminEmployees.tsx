@@ -56,6 +56,7 @@ export default function AdminEmployees() {
   const { selectedCompanyId } = useAdminCompany()
   const { showError, showSuccess } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [setupMap, setSetupMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [filterDept, setFilterDept] = useState('')
   const [filterActive, setFilterActive] = useState('')
@@ -88,8 +89,14 @@ export default function AdminEmployees() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('employees').select('*').eq('company_id', selectedCompanyId).order('last_name')
+    const [{ data }, { data: onbData }] = await Promise.all([
+      supabase.from('employees').select('*').eq('company_id', selectedCompanyId).order('last_name'),
+      supabase.from('onboarding').select('user_email, initial_setup_complete').eq('company_id', selectedCompanyId),
+    ])
     setEmployees((data as Employee[]) || [])
+    const map: Record<string, boolean> = {}
+    ;(onbData || []).forEach((o: any) => { map[o.user_email?.toLowerCase()] = o.initial_setup_complete === true })
+    setSetupMap(map)
     setLoading(false)
   }
 
@@ -313,7 +320,12 @@ export default function AdminEmployees() {
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.email} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} /> : emp.email}</td>
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(f => ({...f, department: e.target.value}))} /> : (emp.department || '—')}</td>
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.job_title} onChange={e => setEditForm(f => ({...f, job_title: e.target.value}))} /> : (emp.job_title || '—')}</td>
-                    <td><span className={`admin-badge ${emp.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>{emp.is_active ? 'Active' : 'Inactive'}</span></td>
+                    <td>
+                      <span className={`admin-badge ${emp.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>{emp.is_active ? 'Active' : 'Inactive'}</span>
+                      {setupMap[emp.email?.toLowerCase()] === false && (
+                        <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#fff3e0', color: '#e65100' }}>Not logged in</span>
+                      )}
+                    </td>
                     <td className="admin-actions">
                       {editingId === emp.id ? (
                         <>
