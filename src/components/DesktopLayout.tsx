@@ -7,7 +7,7 @@ import { useNotificationBadge } from '../hooks/useNotificationBadge'
 
 export default function DesktopLayout() {
   const { t } = useLanguage()
-  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl, isManager } = useAuth()
+  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl } = useAuth()
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const navigate = useNavigate()
@@ -29,7 +29,7 @@ export default function DesktopLayout() {
     { to: '/space-booking', icon: 'space_booking', label: t('dashboard.space_booking'), feature: 'space_booking' },
     { to: '/my-profile', icon: 'profile', label: t('dashboard.my_profile'), feature: 'profile' },
     { to: '/directory', icon: 'directory', label: `${t('directory.title')} ${t('directory.title_accent')}` },
-    ...(isManager ? [{ to: '/one-to-ones', icon: 'one-to-ones', label: t('one_to_one.nav_label'), feature: 'performance' as keyof Features }] : []),
+    { to: '/one-to-ones', icon: 'one-to-ones', label: t('one_to_one.nav_label'), feature: 'performance' as keyof Features },
     { to: '/notifications', icon: 'notifications', label: t('footer.notifications'), badge: badgeCount },
     { to: '/settings', icon: 'settings', label: t('footer.settings') },
   ]
