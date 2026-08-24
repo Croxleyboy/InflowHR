@@ -22,7 +22,22 @@ interface Payslip {
   payroll_id: string
   overtime: number
   adjustments: number
+  source: string
+  xero_payslip_id: string | null
   employee: { id: string; first_name: string; last_name: string } | null
+}
+
+interface XeroConfig {
+  id: string
+  company_id: string
+  is_enabled: boolean
+  client_id: string
+  client_secret: string
+  tenant_id: string
+  redirect_uri: string
+  sync_status: string
+  sync_error: string | null
+  last_sync_at: string | null
 }
 
 interface Employee {
@@ -44,7 +59,7 @@ export default function AdminPayroll() {
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics'>('payslips')
+  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics' | 'xero_pay'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -54,6 +69,13 @@ export default function AdminPayroll() {
   const [empEditId, setEmpEditId] = useState<string | null>(null)
   const [empForm, setEmpForm] = useState<Record<string, any>>({})
   const [empBenefits, setEmpBenefits] = useState<Record<string, { title: string; enrolled_at: string; monthly_cost: number }[]>>({})
+
+  // Xero integration state
+  const [xeroConfig, setXeroConfig] = useState<XeroConfig | null>(null)
+  const [xeroForm, setXeroForm] = useState({ client_id: '', client_secret: '', tenant_id: '', redirect_uri: '' })
+  const [xeroSaving, setXeroSaving] = useState(false)
+  const [xeroSyncing, setXeroSyncing] = useState(false)
+  const [xeroAuthCode, setXeroAuthCode] = useState('')
 
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
@@ -95,12 +117,24 @@ export default function AdminPayroll() {
 
   async function loadAll() {
     setLoading(true)
-    const [pRes, eRes] = await Promise.all([
+    const [pRes, eRes, xRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).order('payment_date', { ascending: false }),
       supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('company_xero_config').select('id, company_id, is_enabled, client_id, client_secret, tenant_id, redirect_uri, sync_status, sync_error, last_sync_at').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
     setPayslips((pRes.data as Payslip[]) || [])
     setEmployees((eRes.data as Employee[]) || [])
+    if (xRes.data) {
+      setXeroConfig(xRes.data as XeroConfig)
+      setXeroForm({
+        client_id: xRes.data.client_id || '',
+        client_secret: xRes.data.client_secret || '',
+        tenant_id: xRes.data.tenant_id || '',
+        redirect_uri: xRes.data.redirect_uri || '',
+      })
+    } else {
+      setXeroConfig(null)
+    }
     setLoading(false)
   }
 
@@ -169,13 +203,17 @@ export default function AdminPayroll() {
     loadAll()
   }
 
+  const xeroPayslips = useMemo(() => payslips.filter(p => p.source === 'xero'), [payslips])
+  const inflowPayslips = useMemo(() => payslips.filter(p => p.source !== 'xero'), [payslips])
+
   const filtered = useMemo(() => {
-    return payslips.filter(p => {
+    const sourceFiltered = xeroConfig?.is_enabled ? xeroPayslips : inflowPayslips
+    return sourceFiltered.filter(p => {
       if (filterStatus && p.status !== filterStatus) return false
       if (filterEmployee && p.employee && `${p.employee.first_name} ${p.employee.last_name}` !== filterEmployee) return false
       return true
     })
-  }, [payslips, filterStatus, filterEmployee])
+  }, [payslips, filterStatus, filterEmployee, xeroConfig?.is_enabled, xeroPayslips, inflowPayslips])
 
   const empNames = useMemo(() => {
     const names = new Set<string>()
@@ -488,6 +526,107 @@ export default function AdminPayroll() {
     showSuccess('Adjustments CSV downloaded')
   }
 
+  // ── Xero helpers ──
+
+  async function saveXeroConfig() {
+    if (!selectedCompanyId) return
+    setXeroSaving(true)
+    if (xeroConfig) {
+      const { error } = await supabase.from('company_xero_config').update({
+        client_id: xeroForm.client_id,
+        client_secret: xeroForm.client_secret,
+        tenant_id: xeroForm.tenant_id,
+        redirect_uri: xeroForm.redirect_uri,
+        updated_at: new Date().toISOString(),
+      }).eq('id', xeroConfig.id)
+      if (error) { showError('Failed to save Xero config: ' + error.message); setXeroSaving(false); return }
+    } else {
+      const { error } = await supabase.from('company_xero_config').insert({
+        company_id: selectedCompanyId,
+        client_id: xeroForm.client_id,
+        client_secret: xeroForm.client_secret,
+        tenant_id: xeroForm.tenant_id,
+        redirect_uri: xeroForm.redirect_uri,
+      })
+      if (error) { showError('Failed to save Xero config: ' + error.message); setXeroSaving(false); return }
+    }
+    showSuccess('Xero configuration saved')
+    setXeroSaving(false)
+    loadAll()
+  }
+
+  async function toggleXeroEnabled(enabled: boolean) {
+    if (!selectedCompanyId) return
+    if (!xeroConfig) {
+      const { error } = await supabase.from('company_xero_config').insert({
+        company_id: selectedCompanyId,
+        is_enabled: enabled,
+      })
+      if (error) { showError('Failed to update: ' + error.message); return }
+    } else {
+      const { error } = await supabase.from('company_xero_config').update({
+        is_enabled: enabled,
+        updated_at: new Date().toISOString(),
+      }).eq('id', xeroConfig.id)
+      if (error) { showError('Failed to update: ' + error.message); return }
+    }
+    showSuccess(enabled ? 'Xero Payslips enabled' : 'InflowHR Payslips enabled')
+    loadAll()
+  }
+
+  async function callXeroProxy(action: string, extra: Record<string, unknown> = {}) {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { showError('Not authenticated'); return null }
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const res = await fetch(`${supabaseUrl}/functions/v1/xero-proxy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action, company_id: selectedCompanyId, ...extra }),
+    })
+    const data = await res.json()
+    if (!res.ok) { showError(data.error || 'Xero request failed'); return null }
+    return data
+  }
+
+  async function connectXero() {
+    const result = await callXeroProxy('get_auth_url')
+    if (result?.url) {
+      window.open(result.url, '_blank', 'width=600,height=700')
+    }
+  }
+
+  async function submitXeroAuthCode() {
+    if (!xeroAuthCode.trim()) { showError('Please enter the authorization code'); return }
+    setXeroSaving(true)
+    const result = await callXeroProxy('exchange_code', { code: xeroAuthCode.trim() })
+    setXeroSaving(false)
+    if (result?.success) {
+      showSuccess('Connected to Xero successfully')
+      setXeroAuthCode('')
+      loadAll()
+    }
+  }
+
+  async function syncXeroPayslips() {
+    setXeroSyncing(true)
+    const result = await callXeroProxy('sync_payslips')
+    setXeroSyncing(false)
+    if (result?.success) {
+      showSuccess(`Synced ${result.synced} payslip(s) from ${result.payRuns} pay run(s) (${result.skipped} skipped)`)
+      loadAll()
+    }
+  }
+
+  async function disconnectXero() {
+    if (!confirm('Disconnect from Xero? Existing synced payslips will remain.')) return
+    await callXeroProxy('disconnect')
+    showSuccess('Disconnected from Xero')
+    loadAll()
+  }
+
   function startEmpEdit(emp: Employee) {
     setEmpEditId(emp.id)
     const latest = payslips.find(p => p.employee?.id === emp.id)
@@ -510,6 +649,7 @@ export default function AdminPayroll() {
 
       <div className="admin-tabs">
         <button className={`admin-tab ${tab === 'payslips' ? 'admin-tab-active' : ''}`} onClick={() => setTab('payslips')}>Payslips</button>
+        <button className={`admin-tab ${tab === 'xero_pay' ? 'admin-tab-active' : ''}`} onClick={() => setTab('xero_pay')}>Xero Pay</button>
         <button className={`admin-tab ${tab === 'employees' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employees')}>Employee Pay</button>
         <button className={`admin-tab ${tab === 'schedule' ? 'admin-tab-active' : ''}`} onClick={() => setTab('schedule')}>Payroll Schedule</button>
         {(enabledFeatures.timesheets || enabledFeatures.shifts || enabledFeatures.legal_timesheets) && (
@@ -522,6 +662,40 @@ export default function AdminPayroll() {
 
       {tab === 'payslips' && (
         <>
+          {/* Payslip source toggle */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', marginBottom: 12,
+            background: 'var(--bg-card, #fff)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>Payslip Source:</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+              <input
+                type="radio"
+                name="payslipSource"
+                checked={!xeroConfig?.is_enabled}
+                onChange={() => toggleXeroEnabled(false)}
+              />
+              InflowHR Payslips
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+              <input
+                type="radio"
+                name="payslipSource"
+                checked={!!xeroConfig?.is_enabled}
+                onChange={() => toggleXeroEnabled(true)}
+              />
+              Xero Payslips
+            </label>
+            {xeroConfig?.is_enabled && xeroConfig.sync_status === 'connected' && (
+              <span className="admin-badge admin-badge-approved" style={{ marginLeft: 8 }}>Connected</span>
+            )}
+            {xeroConfig?.is_enabled && xeroConfig.sync_status !== 'connected' && (
+              <span className="admin-badge admin-badge-pending" style={{ marginLeft: 8 }}>
+                {xeroConfig.sync_status === 'not_connected' ? 'Not Connected' : xeroConfig.sync_status}
+              </span>
+            )}
+          </div>
+
           <div className="admin-filters">
             <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="admin-select">
               <option value="">All Employees</option>
@@ -531,9 +705,16 @@ export default function AdminPayroll() {
               <option value="">All Statuses</option>
               <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
             </select>
-            <button className="admin-btn admin-btn-primary" onClick={generateNextPayroll} disabled={generating}>
-              {generating ? 'Generating...' : '+ Generate Next Payroll'}
-            </button>
+            {!xeroConfig?.is_enabled && (
+              <button className="admin-btn admin-btn-primary" onClick={generateNextPayroll} disabled={generating}>
+                {generating ? 'Generating...' : '+ Generate Next Payroll'}
+              </button>
+            )}
+            {xeroConfig?.is_enabled && xeroConfig.sync_status === 'connected' && (
+              <button className="admin-btn admin-btn-primary" onClick={syncXeroPayslips} disabled={xeroSyncing}>
+                {xeroSyncing ? 'Syncing...' : '↻ Sync from Xero'}
+              </button>
+            )}
           </div>
 
           {loading ? <div className="admin-loading">Loading...</div> : (
@@ -974,6 +1155,231 @@ export default function AdminPayroll() {
                 </>
               )}
             </>
+          )}
+        </>
+      )}
+
+      {tab === 'xero_pay' && (
+        <>
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 16,
+          }}>
+            {/* Config panel */}
+            <div style={{
+              padding: 20, background: 'var(--bg-card, #fff)', borderRadius: 12,
+              border: '1px solid var(--border, #e5e7eb)',
+            }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>
+                Xero API Configuration
+              </h3>
+              <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-muted, #8b8fa3)' }}>
+                Enter your Xero app credentials from{' '}
+                <span style={{ fontWeight: 600 }}>developer.xero.com</span>.
+                Credentials are stored securely and never exposed to the browser.
+              </p>
+
+              <div style={{ display: 'grid', gap: 12 }}>
+                <div className="admin-form-field">
+                  <label>Client ID</label>
+                  <input
+                    className="admin-input"
+                    placeholder="Your Xero app Client ID"
+                    value={xeroForm.client_id}
+                    onChange={e => setXeroForm(f => ({ ...f, client_id: e.target.value }))}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Client Secret</label>
+                  <input
+                    className="admin-input"
+                    type="password"
+                    placeholder="Your Xero app Client Secret"
+                    value={xeroForm.client_secret}
+                    onChange={e => setXeroForm(f => ({ ...f, client_secret: e.target.value }))}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Tenant ID</label>
+                  <input
+                    className="admin-input"
+                    placeholder="Xero Organisation Tenant ID"
+                    value={xeroForm.tenant_id}
+                    onChange={e => setXeroForm(f => ({ ...f, tenant_id: e.target.value }))}
+                  />
+                </div>
+                <div className="admin-form-field">
+                  <label>Redirect URI</label>
+                  <input
+                    className="admin-input"
+                    placeholder="e.g. https://yourapp.com/xero/callback"
+                    value={xeroForm.redirect_uri}
+                    onChange={e => setXeroForm(f => ({ ...f, redirect_uri: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button
+                  className="admin-btn admin-btn-primary"
+                  onClick={saveXeroConfig}
+                  disabled={xeroSaving || !xeroForm.client_id || !xeroForm.client_secret || !xeroForm.tenant_id}
+                >
+                  {xeroSaving ? 'Saving...' : 'Save Configuration'}
+                </button>
+              </div>
+            </div>
+
+            {/* Connection panel */}
+            <div style={{
+              padding: 20, background: 'var(--bg-card, #fff)', borderRadius: 12,
+              border: '1px solid var(--border, #e5e7eb)',
+            }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>
+                Connection Status
+              </h3>
+              <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-muted, #8b8fa3)' }}>
+                Authorise InflowHR to access your Xero payroll data.
+              </p>
+
+              <div style={{
+                padding: 16, borderRadius: 8, marginBottom: 16,
+                background: xeroConfig?.sync_status === 'connected' ? '#e8f5e9' : xeroConfig?.sync_status === 'error' ? '#ffebee' : 'var(--bg, #f8f9fa)',
+                border: `1px solid ${xeroConfig?.sync_status === 'connected' ? '#a5d6a7' : xeroConfig?.sync_status === 'error' ? '#ef9a9a' : 'var(--border, #e5e7eb)'}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 20 }}>
+                    {xeroConfig?.sync_status === 'connected' ? '✅' : xeroConfig?.sync_status === 'error' ? '❌' : xeroConfig?.sync_status === 'syncing' ? '⏳' : '⚪'}
+                  </span>
+                  <strong style={{ fontSize: 14 }}>
+                    {xeroConfig?.sync_status === 'connected' ? 'Connected to Xero' :
+                     xeroConfig?.sync_status === 'error' ? 'Connection Error' :
+                     xeroConfig?.sync_status === 'syncing' ? 'Syncing...' : 'Not Connected'}
+                  </strong>
+                </div>
+                {xeroConfig?.last_sync_at && (
+                  <p style={{ margin: 0, fontSize: 12, color: '#666' }}>
+                    Last synced: {new Date(xeroConfig.last_sync_at).toLocaleString('en-GB')}
+                  </p>
+                )}
+                {xeroConfig?.sync_error && (
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
+                    {xeroConfig.sync_error}
+                  </p>
+                )}
+              </div>
+
+              {xeroConfig?.sync_status !== 'connected' && xeroConfig?.client_id && (
+                <>
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontSize: 13, margin: '0 0 8px', color: 'var(--text, #1a1a2e)' }}>
+                      <strong>Step 1:</strong> Click to open Xero authorisation:
+                    </p>
+                    <button className="admin-btn admin-btn-primary" onClick={connectXero}>
+                      Authorise with Xero
+                    </button>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 13, margin: '0 0 8px', color: 'var(--text, #1a1a2e)' }}>
+                      <strong>Step 2:</strong> Paste the authorisation code from Xero:
+                    </p>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input
+                        className="admin-input"
+                        placeholder="Paste authorisation code here"
+                        value={xeroAuthCode}
+                        onChange={e => setXeroAuthCode(e.target.value)}
+                        style={{ flex: 1 }}
+                      />
+                      <button
+                        className="admin-btn admin-btn-primary"
+                        onClick={submitXeroAuthCode}
+                        disabled={xeroSaving || !xeroAuthCode.trim()}
+                      >
+                        {xeroSaving ? 'Connecting...' : 'Connect'}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {xeroConfig?.sync_status === 'connected' && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    className="admin-btn admin-btn-primary"
+                    onClick={syncXeroPayslips}
+                    disabled={xeroSyncing}
+                  >
+                    {xeroSyncing ? 'Syncing...' : '↻ Sync Payslips Now'}
+                  </button>
+                  <button className="admin-btn" onClick={disconnectXero}>
+                    Disconnect
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Xero payslip list */}
+          {xeroPayslips.length > 0 && (
+            <>
+              <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>
+                Synced Xero Payslips ({xeroPayslips.length})
+              </h3>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Ref</th>
+                      <th>Employee</th>
+                      <th>Period</th>
+                      <th>Gross</th>
+                      <th>Tax</th>
+                      <th>NI</th>
+                      <th>Pension</th>
+                      <th>Net</th>
+                      <th>Status</th>
+                      <th>Payment Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {xeroPayslips.map(p => (
+                      <tr key={p.id}>
+                        <td className="admin-td-mono" style={{ fontSize: 11 }}>{p.reference_number}</td>
+                        <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
+                        <td>{new Date(p.pay_period_start).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</td>
+                        <td>£{Number(p.gross_pay).toFixed(2)}</td>
+                        <td>£{Number(p.tax).toFixed(2)}</td>
+                        <td>£{Number(p.national_insurance).toFixed(2)}</td>
+                        <td>£{Number(p.pension).toFixed(2)}</td>
+                        <td><strong>£{Number(p.net_pay).toFixed(2)}</strong></td>
+                        <td><span className={`admin-badge admin-badge-${p.status}`}>{p.status}</span></td>
+                        <td>{new Date(p.payment_date).toLocaleDateString('en-GB')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {xeroPayslips.length === 0 && xeroConfig?.sync_status === 'connected' && (
+            <div className="admin-empty" style={{ marginTop: 16 }}>
+              No payslips synced yet. Click "Sync Payslips Now" to pull data from Xero.
+            </div>
+          )}
+
+          {!xeroConfig?.client_id && (
+            <div style={{
+              padding: 32, textAlign: 'center', background: 'var(--bg-card, #fff)',
+              borderRadius: 12, border: '1px solid var(--border, #e5e7eb)',
+            }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>🔗</div>
+              <h3 style={{ margin: '0 0 8px', color: 'var(--text, #1a1a2e)' }}>Set Up Xero Integration</h3>
+              <p style={{ color: 'var(--text-muted, #8b8fa3)', fontSize: 14, maxWidth: 480, margin: '0 auto' }}>
+                Enter your Xero API credentials above to connect your Xero payroll account.
+                Payslips will be synced and matched to InflowHR employees by email address.
+              </p>
+            </div>
           )}
         </>
       )}
