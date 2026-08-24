@@ -46,6 +46,16 @@ interface AssetHistory {
   created_at: string
 }
 
+interface AssetUpdate {
+  id: string
+  asset_id: string
+  company_id: string
+  update_note: string
+  updated_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 interface EmployeeOption {
   id: string
   first_name: string
@@ -57,6 +67,11 @@ const EMPTY_FORM = {
   asset_name: '', asset_type: 'Laptop', brand: '', model: '', serial_number: '',
   purchase_date: '', warranty_expiry: '', status: 'Unassigned' as AssetStatus,
   assigned_to: '', notes: '', is_space_asset: false,
+}
+
+const statusColor: Record<string, string> = {
+  Assigned: '#2e7d32', Unassigned: '#1565c0', Maintenance: '#e65100',
+  Retired: '#616161', Sold: '#6a1b9a', Broken: '#c62828',
 }
 
 export default function AdminAssetManagement() {
@@ -84,6 +99,13 @@ export default function AdminAssetManagement() {
   const [swapAssetId, setSwapAssetId] = useState<string | null>(null)
   const [swapTo, setSwapTo] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Updates state
+  const [assetUpdates, setAssetUpdates] = useState<Record<string, AssetUpdate[]>>({})
+  const [newUpdateText, setNewUpdateText] = useState<Record<string, string>>({})
+  const [editingUpdateId, setEditingUpdateId] = useState<string | null>(null)
+  const [editingUpdateText, setEditingUpdateText] = useState('')
+  const [savingUpdate, setSavingUpdate] = useState(false)
 
   const spaceBookingEnabled = companyFeatures.space_booking
 
@@ -144,6 +166,57 @@ export default function AdminAssetManagement() {
     nextNumber++
     return name
   }
+
+  // ── Asset Updates CRUD ──
+
+  async function loadUpdates(assetId: string) {
+    const { data } = await supabase
+      .from('asset_updates')
+      .select('*')
+      .eq('asset_id', assetId)
+      .order('created_at', { ascending: false })
+    setAssetUpdates(prev => ({ ...prev, [assetId]: (data as AssetUpdate[]) || [] }))
+  }
+
+  async function addUpdate(assetId: string) {
+    const text = (newUpdateText[assetId] || '').trim()
+    if (!text || !companyId) return
+    setSavingUpdate(true)
+    const { error } = await supabase.from('asset_updates').insert({
+      asset_id: assetId,
+      company_id: companyId,
+      update_note: text,
+    })
+    if (error) { showError('Failed to add update: ' + error.message); setSavingUpdate(false); return }
+    setNewUpdateText(prev => ({ ...prev, [assetId]: '' }))
+    setSavingUpdate(false)
+    loadUpdates(assetId)
+  }
+
+  async function saveUpdateEdit(updateId: string, assetId: string) {
+    const text = editingUpdateText.trim()
+    if (!text) return
+    setSavingUpdate(true)
+    const { error } = await supabase.from('asset_updates').update({
+      update_note: text,
+      updated_at: new Date().toISOString(),
+    }).eq('id', updateId)
+    if (error) { showError('Failed to save update: ' + error.message); setSavingUpdate(false); return }
+    setEditingUpdateId(null)
+    setEditingUpdateText('')
+    setSavingUpdate(false)
+    showSuccess('Update saved')
+    loadUpdates(assetId)
+  }
+
+  async function deleteUpdate(updateId: string, assetId: string) {
+    if (!confirm('Delete this update?')) return
+    const { error } = await supabase.from('asset_updates').delete().eq('id', updateId)
+    if (error) { showError('Failed to delete'); return }
+    loadUpdates(assetId)
+  }
+
+  // ── Asset CRUD ──
 
   async function addAsset() {
     if (!companyId) return
@@ -306,8 +379,8 @@ export default function AdminAssetManagement() {
   }
 
   function downloadTemplate() {
-    const headers = ['asset_type', 'brand', 'model', 'serial_number', 'purchase_date', 'warranty_expiry', 'status', 'assigned_to_email', 'notes', 'is_space_asset']
-    const example = ['Laptop', 'Dell', 'Latitude 5540', 'SN123456', '2024-01-15', '2027-01-15', 'Assigned', 'john@company.com', 'Standard issue', 'No']
+    const headers = ['asset_type', 'brand', 'model', 'serial_number', 'purchase_date', 'warranty_expiry', 'status', 'assigned_to_email', 'notes', 'is_space_asset', 'updates']
+    const example = ['Laptop', 'Dell', 'Latitude 5540', 'SN123456', '2024-01-15', '2027-01-15', 'Assigned', 'john@company.com', 'Standard issue', 'No', 'Battery replaced; Screen cleaned']
     const csv = [headers.join(','), example.join(',')].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
@@ -335,6 +408,7 @@ export default function AdminAssetManagement() {
     const emailIdx = headers.indexOf('assigned_to_email')
     const notesIdx = headers.indexOf('notes')
     const spaceIdx = headers.indexOf('is_space_asset')
+    const updatesIdx = headers.indexOf('updates')
     if (typeIdx === -1) { showError('CSV must have an asset_type column'); return }
 
     let imported = 0
@@ -350,6 +424,7 @@ export default function AdminAssetManagement() {
       const email = emailIdx >= 0 ? cols[emailIdx] || '' : ''
       const notes = notesIdx >= 0 ? cols[notesIdx] || '' : ''
       const isSpace = spaceIdx >= 0 ? cols[spaceIdx]?.toLowerCase() === 'yes' : false
+      const updatesRaw = updatesIdx >= 0 ? cols[updatesIdx] || '' : ''
 
       let assignedTo: string | null = null
       let assignedName: string | null = null
@@ -367,7 +442,7 @@ export default function AdminAssetManagement() {
       }
 
       const assetName = generateAssetName(assetType)
-      await supabase.from('company_assets').insert({
+      const { data: inserted } = await supabase.from('company_assets').insert({
         company_id: companyId,
         asset_name: assetName,
         asset_type: assetType,
@@ -376,7 +451,19 @@ export default function AdminAssetManagement() {
         status: assignedTo ? 'Assigned' : status,
         assigned_to: assignedTo, assigned_to_name: assignedName,
         notes, is_space_asset: isSpace,
-      })
+      }).select('id').single()
+
+      if (inserted && updatesRaw) {
+        const updateNotes = updatesRaw.split(';').map(u => u.trim()).filter(Boolean)
+        for (const note of updateNotes) {
+          await supabase.from('asset_updates').insert({
+            asset_id: inserted.id,
+            company_id: companyId,
+            update_note: note,
+          })
+        }
+      }
+
       imported++
     }
     showSuccess(`Imported ${imported} asset${imported !== 1 ? 's' : ''}`)
@@ -396,11 +483,6 @@ export default function AdminAssetManagement() {
     acc[s] = assets.filter(a => a.status === s).length
     return acc
   }, {} as Record<string, number>)
-
-  const statusColor: Record<string, string> = {
-    Assigned: '#2e7d32', Unassigned: '#1565c0', Maintenance: '#e65100',
-    Retired: '#616161', Sold: '#6a1b9a', Broken: '#c62828',
-  }
 
   if (loading) return <div className="admin-section"><div className="admin-loading">Loading...</div></div>
 
@@ -447,7 +529,6 @@ export default function AdminAssetManagement() {
         ))}
       </div>
 
-      {/* Actions bar */}
       <div className="admin-filters" style={{ flexWrap: 'wrap' }}>
         <input
           className="admin-input"
@@ -477,7 +558,6 @@ export default function AdminAssetManagement() {
         </div>
       </div>
 
-      {/* Add form */}
       {showAdd && (
         <div className="admin-add-form" style={{ marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 8px' }}>Add New Asset</h4>
@@ -545,53 +625,105 @@ export default function AdminAssetManagement() {
         </div>
       )}
 
-      {/* Asset list */}
       <div className="admin-table-wrap">
-        <table className="admin-table">
+        <table className="admin-table" style={{ tableLayout: 'fixed', width: '100%' }}>
           <thead>
             <tr>
-              <th style={{ width: 30 }} />
-              <th>Asset Name</th>
-              <th>Type</th>
-              <th>Brand</th>
+              <th style={{ width: 36 }} />
+              <th style={{ width: '14%' }}>Asset</th>
+              <th style={{ width: '9%' }}>Type</th>
+              <th style={{ width: '10%' }}>Brand / Model</th>
               <th>Status</th>
-              <th>Assigned To</th>
-              <th>Warranty Expiry</th>
-              <th>Registered</th>
-              <th>Actions</th>
+              <th style={{ width: '12%' }}>Assigned To</th>
+              <th style={{ width: '9%' }}>Warranty</th>
+              <th style={{ width: '9%' }}>Registered</th>
+              <th style={{ width: 100 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map(asset => (
-              <>
-                <tr key={asset.id} className={expandedId === asset.id ? 'admin-row-active' : ''}>
-                  <td>
-                    <button
-                      className="admin-btn-icon"
-                      onClick={() => setExpandedId(expandedId === asset.id ? null : asset.id)}
-                      style={{ transform: expandedId === asset.id ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-                    </button>
-                  </td>
-                  <td style={{ fontWeight: 600 }}>{asset.asset_name}{asset.is_space_asset && <span style={{ marginLeft: 6, fontSize: 11, color: '#1565c0' }}>🏢</span>}</td>
-                  <td>{asset.asset_type}</td>
-                  <td>{asset.brand || '—'}</td>
-                  <td><span className="admin-badge" style={{ background: statusColor[asset.status] || '#999', color: '#fff' }}>{asset.status}</span></td>
-                  <td>{asset.assigned_to_name ? <span className="admin-inline-avatar">{(() => { const av = getEmployeeAvatar(asset.assigned_to); const initials = asset.assigned_to_name.split(' ').map((n: string) => n[0]).join(''); return av ? <img src={av} alt="" /> : <span className="admin-avatar-initials">{initials}</span> })()}{asset.assigned_to_name}</span> : '—'}</td>
-                  <td>{asset.warranty_expiry ? formatDate(asset.warranty_expiry) : '—'}</td>
-                  <td>{formatDate(asset.created_at)}</td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="admin-btn-icon" title="Edit" onClick={() => { setEditingId(asset.id); setExpandedId(asset.id); setEditForm({ asset_name: asset.asset_name, asset_type: asset.asset_type, brand: asset.brand, model: asset.model, serial_number: asset.serial_number, purchase_date: asset.purchase_date || '', warranty_expiry: asset.warranty_expiry || '', status: asset.status, assigned_to: asset.assigned_to || '', notes: asset.notes, is_space_asset: asset.is_space_asset }) }}>✏️</button>
-                    <button className="admin-btn-icon" title="Swap Owner" onClick={() => { setSwapAssetId(asset.id); setSwapTo('') }}>🔄</button>
-                    <button className="admin-btn-icon" title="History" onClick={() => loadHistory(asset.id)}>📋</button>
-                    <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteAsset(asset.id)}>🗑️</button>
-                  </td>
-                </tr>
-                {expandedId === asset.id && (
-                  <tr key={`${asset.id}-expanded`} className="admin-expanded-row">
-                    <td colSpan={9}>
-                      <div className="admin-expanded-content">
+            {filtered.map(asset => {
+              const isExpanded = expandedId === asset.id
+              return (
+                <>
+                  <tr key={asset.id} className={isExpanded ? 'admin-row-active' : ''}>
+                    <td>
+                      <button
+                        className="admin-btn-icon"
+                        onClick={() => {
+                          const next = isExpanded ? null : asset.id
+                          setExpandedId(next)
+                          if (next) loadUpdates(asset.id)
+                        }}
+                        style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                      </button>
+                    </td>
+                    <td style={{ fontWeight: 600, fontSize: 13 }}>
+                      {asset.asset_name}
+                      {asset.is_space_asset && <span style={{ marginLeft: 6, fontSize: 11, color: '#1565c0' }}>🏢</span>}
+                    </td>
+                    <td style={{ fontSize: 12 }}>{asset.asset_type}</td>
+                    <td style={{ fontSize: 12 }}>
+                      {asset.brand || '—'}
+                      {asset.model && <><br /><span style={{ color: 'var(--text-muted, #888)' }}>{asset.model}</span></>}
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                        {ASSET_STATUSES.map(s => (
+                          <button
+                            key={s}
+                            onClick={() => { if (s !== asset.status) changeStatus(asset, s) }}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              fontSize: 11,
+                              fontWeight: s === asset.status ? 700 : 500,
+                              border: `1.5px solid ${statusColor[s]}`,
+                              background: s === asset.status ? statusColor[s] : 'transparent',
+                              color: s === asset.status ? '#fff' : statusColor[s],
+                              cursor: s === asset.status ? 'default' : 'pointer',
+                              opacity: s === asset.status ? 1 : 0.7,
+                              transition: 'all .15s',
+                            }}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </td>
+                    <td style={{ fontSize: 12 }}>
+                      {asset.assigned_to_name ? (
+                        <span className="admin-inline-avatar">
+                          {(() => {
+                            const av = getEmployeeAvatar(asset.assigned_to)
+                            const initials = asset.assigned_to_name.split(' ').map((n: string) => n[0]).join('')
+                            return av ? <img src={av} alt="" /> : <span className="admin-avatar-initials">{initials}</span>
+                          })()}
+                          {asset.assigned_to_name}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td style={{ fontSize: 12 }}>{asset.warranty_expiry ? formatDate(asset.warranty_expiry) : '—'}</td>
+                    <td style={{ fontSize: 12 }}>{formatDate(asset.created_at)}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button className="admin-btn-icon" title="Edit" onClick={() => { setEditingId(asset.id); setExpandedId(asset.id); loadUpdates(asset.id); setEditForm({ asset_name: asset.asset_name, asset_type: asset.asset_type, brand: asset.brand, model: asset.model, serial_number: asset.serial_number, purchase_date: asset.purchase_date || '', warranty_expiry: asset.warranty_expiry || '', status: asset.status, assigned_to: asset.assigned_to || '', notes: asset.notes, is_space_asset: asset.is_space_asset }) }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button className="admin-btn-icon" title="Swap Owner" onClick={() => { setSwapAssetId(asset.id); setSwapTo('') }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/></svg>
+                      </button>
+                      <button className="admin-btn-icon" title="History" onClick={() => loadHistory(asset.id)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      </button>
+                      <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteAsset(asset.id)}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr key={`${asset.id}-expanded`} className="admin-expanded-row">
+                      <td colSpan={9} style={{ padding: '16px 20px' }}>
                         {editingId === asset.id ? (
                           <div className="admin-form-grid">
                             <div className="admin-form-field">
@@ -655,32 +787,102 @@ export default function AdminAssetManagement() {
                             </div>
                           </div>
                         ) : (
-                          <div className="admin-form-grid" style={{ gap: '8px 24px' }}>
-                            <div className="admin-form-field"><label>Asset Name</label><span>{asset.asset_name}</span></div>
-                            <div className="admin-form-field"><label>Type</label><span>{asset.asset_type}</span></div>
-                            <div className="admin-form-field"><label>Brand</label><span>{asset.brand || '—'}</span></div>
-                            <div className="admin-form-field"><label>Model</label><span>{asset.model || '—'}</span></div>
-                            <div className="admin-form-field"><label>Serial Number</label><span>{asset.serial_number || '—'}</span></div>
-                            <div className="admin-form-field"><label>Purchase Date</label><span>{asset.purchase_date ? formatDate(asset.purchase_date) : '—'}</span></div>
-                            <div className="admin-form-field"><label>Warranty Expiry</label><span>{asset.warranty_expiry ? formatDate(asset.warranty_expiry) : '—'}</span></div>
-                            <div className="admin-form-field"><label>Assigned To</label><span>{asset.assigned_to_name || 'Unassigned'}</span></div>
-                            <div className="admin-form-field"><label>Status</label><span className="admin-badge" style={{ background: statusColor[asset.status] || '#999', color: '#fff' }}>{asset.status}</span></div>
-                            {asset.is_space_asset && <div className="admin-form-field"><label>Space Asset</label><span>Yes — available for room/desk assignment</span></div>}
-                            <div className="admin-form-field" style={{ gridColumn: '1 / -1' }}><label>Notes</label><span>{asset.notes || '—'}</span></div>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              <button className="admin-btn-sm admin-btn-save" onClick={() => { setEditingId(asset.id); setEditForm({ asset_name: asset.asset_name, asset_type: asset.asset_type, brand: asset.brand, model: asset.model, serial_number: asset.serial_number, purchase_date: asset.purchase_date || '', warranty_expiry: asset.warranty_expiry || '', status: asset.status, assigned_to: asset.assigned_to || '', notes: asset.notes, is_space_asset: asset.is_space_asset }) }}>Edit</button>
-                              {ASSET_STATUSES.filter(s => s !== asset.status).map(s => (
-                                <button key={s} className="admin-btn-sm" style={{ borderColor: statusColor[s], color: statusColor[s] }} onClick={() => changeStatus(asset, s)}>→ {s}</button>
-                              ))}
-                            </div>
+                          <div className="admin-detail-grid admin-detail-grid-4" style={{ gap: '6px 24px' }}>
+                            <div><strong>Asset Name:</strong> {asset.asset_name}</div>
+                            <div><strong>Type:</strong> {asset.asset_type}</div>
+                            <div><strong>Brand:</strong> {asset.brand || '—'}</div>
+                            <div><strong>Model:</strong> {asset.model || '—'}</div>
+                            <div><strong>Serial Number:</strong> {asset.serial_number || '—'}</div>
+                            <div><strong>Purchase Date:</strong> {asset.purchase_date ? formatDate(asset.purchase_date) : '—'}</div>
+                            <div><strong>Warranty Expiry:</strong> {asset.warranty_expiry ? formatDate(asset.warranty_expiry) : '—'}</div>
+                            <div><strong>Assigned To:</strong> {asset.assigned_to_name || 'Unassigned'}</div>
+                            {asset.is_space_asset && <div><strong>Space Asset:</strong> Yes — available for room/desk assignment</div>}
+                            <div style={{ gridColumn: '1 / -1' }}><strong>Notes:</strong> {asset.notes || '—'}</div>
                           </div>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </>
-            ))}
+
+                        {/* Asset Updates section */}
+                        <div style={{ marginTop: 16, borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 12 }}>
+                          <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>
+                            Updates ({(assetUpdates[asset.id] || []).length})
+                          </h4>
+
+                          {(assetUpdates[asset.id] || []).map(upd => (
+                            <div key={upd.id} style={{
+                              display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0',
+                              borderBottom: '1px solid var(--border, #f0f0f0)',
+                            }}>
+                              {editingUpdateId === upd.id ? (
+                                <div style={{ flex: 1, display: 'flex', gap: 8, alignItems: 'center' }}>
+                                  <input
+                                    className="admin-input"
+                                    value={editingUpdateText}
+                                    onChange={e => setEditingUpdateText(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') saveUpdateEdit(upd.id, asset.id) }}
+                                    style={{ flex: 1, fontSize: 13 }}
+                                    autoFocus
+                                  />
+                                  <button className="admin-btn-sm admin-btn-save" onClick={() => saveUpdateEdit(upd.id, asset.id)} disabled={savingUpdate}>Save</button>
+                                  <button className="admin-btn-sm admin-btn-cancel" onClick={() => { setEditingUpdateId(null); setEditingUpdateText('') }}>Cancel</button>
+                                </div>
+                              ) : (
+                                <>
+                                  <div style={{ flex: 1 }}>
+                                    <span style={{ fontSize: 13, color: 'var(--text, #1a1a2e)' }}>{upd.update_note}</span>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)', marginTop: 2 }}>
+                                      {new Date(upd.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                      {upd.updated_at && upd.updated_at !== upd.created_at && (
+                                        <span style={{ marginLeft: 8, fontStyle: 'italic' }}>
+                                          (edited {new Date(upd.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })})
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <button
+                                    className="admin-btn-icon"
+                                    title="Edit update"
+                                    onClick={() => { setEditingUpdateId(upd.id); setEditingUpdateText(upd.update_note) }}
+                                    style={{ flexShrink: 0 }}
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                  </button>
+                                  <button
+                                    className="admin-btn-icon admin-btn-danger"
+                                    title="Delete update"
+                                    onClick={() => deleteUpdate(upd.id, asset.id)}
+                                    style={{ flexShrink: 0 }}
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          ))}
+
+                          <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                            <input
+                              className="admin-input"
+                              placeholder="Add an update..."
+                              value={newUpdateText[asset.id] || ''}
+                              onChange={e => setNewUpdateText(prev => ({ ...prev, [asset.id]: e.target.value }))}
+                              onKeyDown={e => { if (e.key === 'Enter' && (newUpdateText[asset.id] || '').trim()) addUpdate(asset.id) }}
+                              style={{ flex: 1, fontSize: 13 }}
+                            />
+                            <button
+                              className="admin-btn-sm admin-btn-save"
+                              onClick={() => addUpdate(asset.id)}
+                              disabled={!(newUpdateText[asset.id] || '').trim() || savingUpdate}
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              )
+            })}
             {filtered.length === 0 && (
               <tr><td colSpan={9}><div className="admin-empty">{assets.length === 0 ? 'No assets registered yet' : 'No assets match your filters'}</div></td></tr>
             )}
@@ -688,7 +890,6 @@ export default function AdminAssetManagement() {
         </table>
       </div>
 
-      {/* Swap ownership modal */}
       {swapAssetId && (
         <div className="my-profile-modal-overlay" onClick={() => setSwapAssetId(null)}>
           <div className="my-profile-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
@@ -715,7 +916,6 @@ export default function AdminAssetManagement() {
         </div>
       )}
 
-      {/* History modal */}
       {historyAssetId && (
         <div className="my-profile-modal-overlay" onClick={() => setHistoryAssetId(null)}>
           <div className="my-profile-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
@@ -733,7 +933,7 @@ export default function AdminAssetManagement() {
                     {h.to_employee_name && `To: ${h.to_employee_name}`}
                   </span>
                   {h.notes && <span style={{ fontSize: 12, color: '#666' }}>{h.notes}</span>}
-                  <span style={{ fontSize: 11, color: '#aaa' }}>{formatDate(h.created_at)}</span>
+                  <span style={{ fontSize: 11, color: '#aaa' }}>{new Date(h.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
               ))}
             </div>
