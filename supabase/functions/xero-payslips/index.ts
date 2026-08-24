@@ -43,8 +43,8 @@ Deno.serve(async (req) => {
       Accept: 'application/json',
     }
 
-    // Fetch pay runs (most recent first)
-    const payRunsRes = await fetch(`${XERO_PAYROLL}/PayRuns?order=PayRunPeriodEndDate DESC&page=1`, { headers })
+    // Fetch pay runs — UK Payroll API v2 returns camelCase fields
+    const payRunsRes = await fetch(`${XERO_PAYROLL}/PayRuns?page=1`, { headers })
     if (!payRunsRes.ok) {
       const errText = await payRunsRes.text()
       console.error('PayRuns fetch failed:', errText)
@@ -52,17 +52,21 @@ Deno.serve(async (req) => {
     }
 
     const payRunsData = await payRunsRes.json()
-    const payRuns = payRunsData.PayRuns || []
+    const payRuns = payRunsData.payRuns || []
 
     if (!payRuns.length) {
       return json({ payRun: null, payslips: [] })
     }
 
-    // Use the most recent completed pay run, or fall back to the first one
-    const completedRun = payRuns.find((r: Record<string, string>) => r.PayRunStatus === 'POSTED') || payRuns[0]
+    // Use the most recent posted pay run, or fall back to the first one
+    // Sort by periodEndDate descending to get the most recent
+    payRuns.sort((a: Record<string, string>, b: Record<string, string>) =>
+      (b.periodEndDate || '').localeCompare(a.periodEndDate || '')
+    )
+    const completedRun = payRuns.find((r: Record<string, string>) => r.payRunStatus === 'Posted') || payRuns[0]
 
     // Fetch payslips for this pay run
-    const payslipsRes = await fetch(`${XERO_PAYROLL}/Payslips?PayRunID=${completedRun.PayRunID}`, { headers })
+    const payslipsRes = await fetch(`${XERO_PAYROLL}/PaySlips?PayRunID=${completedRun.payRunID}`, { headers })
     if (!payslipsRes.ok) {
       const errText = await payslipsRes.text()
       console.error('Payslips fetch failed:', errText)
@@ -70,20 +74,20 @@ Deno.serve(async (req) => {
     }
 
     const payslipsData = await payslipsRes.json()
-    const rawSlips = payslipsData.Payslips || []
+    const rawSlips = payslipsData.paySlips || payslipsData.payslips || []
 
-    // Normalise to a clean shape for the frontend
+    // Normalise to a clean shape for the frontend (UK API uses camelCase)
     const payslips = rawSlips.map((s: Record<string, unknown>) => ({
-      payslip_id: s.PayslipID,
-      employee_id: s.EmployeeID,
-      first_name: s.FirstName,
-      last_name: s.LastName,
-      gross_earnings: s.GrossEarnings ?? s.TotalEarnings ?? 0,
-      net_pay: s.NetPay ?? 0,
-      tax: s.Tax ?? s.TotalTax ?? 0,
-      employee_ni: s.EmployeesNationalInsurance ?? s.EmployeeNI ?? 0,
-      employer_ni: s.EmployersNationalInsurance ?? s.EmployerNI ?? 0,
-      student_loan: s.StudentLoanDeductions ?? 0,
+      payslip_id: s.paySlipID || s.payslipID,
+      employee_id: s.employeeID,
+      first_name: s.firstName,
+      last_name: s.lastName,
+      gross_earnings: s.grossEarnings ?? s.totalEarnings ?? 0,
+      net_pay: s.netPay ?? 0,
+      tax: s.tax ?? s.totalTax ?? 0,
+      employee_ni: s.employeesNationalInsurance ?? s.employeeNI ?? 0,
+      employer_ni: s.employersNationalInsurance ?? s.employerNI ?? 0,
+      student_loan: s.studentLoanDeductions ?? 0,
     }))
 
     // Update last_sync_at
@@ -96,11 +100,11 @@ Deno.serve(async (req) => {
 
     return json({
       payRun: {
-        id: completedRun.PayRunID,
-        period_start: completedRun.PayRunPeriodStartDate,
-        period_end: completedRun.PayRunPeriodEndDate,
-        payment_date: completedRun.PaymentDate,
-        status: completedRun.PayRunStatus,
+        id: completedRun.payRunID,
+        period_start: completedRun.periodStartDate,
+        period_end: completedRun.periodEndDate,
+        payment_date: completedRun.paymentDate,
+        status: completedRun.payRunStatus,
       },
       payslips,
     })
