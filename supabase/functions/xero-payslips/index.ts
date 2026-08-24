@@ -1,7 +1,3 @@
-// POST /functions/v1/xero-payslips  { company_id }
-// Fetches the most recent completed pay run and its payslips from Xero Payroll UK.
-// Returns { payRun, payslips } with normalised fields.
-
 import { getSupabase, getValidXeroToken, corsHeaders, json } from '../_shared/xero.ts'
 
 const XERO_PAYROLL = 'https://api.xero.com/payroll.xro/2.0'
@@ -12,7 +8,6 @@ Deno.serve(async (req) => {
   try {
     const sb = getSupabase()
 
-    // Authenticate caller
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return json({ error: 'Unauthorized' }, 401)
     const { data: { user }, error: authErr } = await sb.auth.getUser(
@@ -23,7 +18,6 @@ Deno.serve(async (req) => {
     const { company_id } = await req.json()
     if (!company_id) return json({ error: 'company_id required' }, 400)
 
-    // Verify caller has access to this company
     const { data: cu } = await sb
       .from('company_users')
       .select('role')
@@ -33,7 +27,6 @@ Deno.serve(async (req) => {
       .maybeSingle()
     if (!cu) return json({ error: 'Access denied' }, 403)
 
-    // Get valid token (auto-refreshes if expired)
     const creds = await getValidXeroToken(company_id)
     if (!creds) return json({ error: 'Xero not connected — please connect first' }, 400)
 
@@ -43,23 +36,15 @@ Deno.serve(async (req) => {
       Accept: 'application/json',
     }
 
-    // Fetch pay runs — UK Payroll API v2 returns camelCase fields
+    // Fetch pay runs
     const payRunsRes = await fetch(`${XERO_PAYROLL}/PayRuns?page=1`, { headers })
     if (!payRunsRes.ok) {
-      const errText = await payRunsRes.text()
-      console.error('PayRuns fetch failed:', errText)
+      console.error('PayRuns fetch failed:', await payRunsRes.text())
       return json({ error: 'Failed to fetch pay runs from Xero' }, 502)
     }
+    const payRuns = (await payRunsRes.json()).payRuns || []
+    if (!payRuns.length) return json({ payRun: null, payslips: [] })
 
-    const payRunsData = await payRunsRes.json()
-    const payRuns = payRunsData.payRuns || []
-
-    if (!payRuns.length) {
-      return json({ payRun: null, payslips: [] })
-    }
-
-    // Use the most recent posted pay run, or fall back to the first one
-    // Sort by periodEndDate descending to get the most recent
     payRuns.sort((a: Record<string, string>, b: Record<string, string>) =>
       (b.periodEndDate || '').localeCompare(a.periodEndDate || '')
     )
@@ -68,44 +53,117 @@ Deno.serve(async (req) => {
     // Fetch payslips for this pay run
     const payslipsRes = await fetch(`${XERO_PAYROLL}/PaySlips?PayRunID=${completedRun.payRunID}`, { headers })
     if (!payslipsRes.ok) {
-      const errText = await payslipsRes.text()
-      console.error('Payslips fetch failed:', errText)
+      console.error('Payslips fetch failed:', await payslipsRes.text())
       return json({ error: 'Failed to fetch payslips from Xero' }, 502)
     }
+    const rawSlips = (await payslipsRes.json()).paySlips || []
 
-    const payslipsData = await payslipsRes.json()
-    const rawSlips = payslipsData.paySlips || []
+    // Fetch Xero employees to get their email addresses for matching
+    const xeroEmployees: Record<string, string> = {}
+    let empPage = 1
+    while (true) {
+      const empRes = await fetch(`${XERO_PAYROLL}/Employees?page=${empPage}`, { headers })
+      if (!empRes.ok) break
+      const empData = await empRes.json()
+      const employees = empData.employees || []
+      if (!employees.length) break
+      for (const e of employees) {
+        if (e.employeeID && e.email) {
+          xeroEmployees[e.employeeID] = e.email.toLowerCase()
+        }
+      }
+      if (employees.length < 100) break
+      empPage++
+    }
 
-    // Normalise to a clean shape for the frontend
-    // Tax and NI are in nested arrays (employeeTaxLines, employerTaxLines)
+    // Load InflowHR employees for this company to match by email
+    const { data: inflowEmployees } = await sb
+      .from('employees')
+      .select('id, email')
+      .eq('company_id', company_id)
+    const emailToInflowId: Record<string, string> = {}
+    for (const e of (inflowEmployees || [])) {
+      if (e.email) emailToInflowId[e.email.toLowerCase()] = e.id
+    }
+
+    // Parse payslips with full breakdown
     const payslips = rawSlips.map((s: Record<string, unknown>) => {
       const empTaxLines = (s.employeeTaxLines || []) as { description: string; amount: number }[]
       const errTaxLines = (s.employerTaxLines || []) as { description: string; amount: number }[]
-      const courtOrders = (s.courtOrderLines || []) as { amount: number }[]
+      const deductionLines = (s.deductionLines || []) as { displayName: string; amount: number }[]
+      const benefitLines = (s.benefitLines || []) as { displayName: string; amount: number }[]
 
       const paye = empTaxLines.find(t => t.description === 'PAYE')?.amount ?? 0
       const employeeNI = empTaxLines.find(t => t.description?.includes('Employee National Insurance'))?.amount ?? 0
       const employerNI = errTaxLines.find(t => t.description?.includes('Employer National Insurance'))?.amount ?? 0
       const studentLoan = empTaxLines.find(t => t.description?.includes('Student Loan'))?.amount ?? 0
-      const courtOrderTotal = courtOrders.reduce((sum, c) => sum + (c.amount || 0), 0)
+
+      const xeroEmail = xeroEmployees[s.employeeID as string] || null
+      const inflowEmployeeId = xeroEmail ? emailToInflowId[xeroEmail] : null
 
       return {
-        payslip_id: s.paySlipID,
-        employee_id: s.employeeID,
-        first_name: s.firstName,
-        last_name: s.lastName,
-        gross_earnings: s.totalEarnings ?? 0,
-        net_pay: s.totalPay ?? 0,
+        payslip_id: s.paySlipID as string,
+        xero_employee_id: s.employeeID as string,
+        inflow_employee_id: inflowEmployeeId,
+        first_name: s.firstName as string,
+        last_name: s.lastName as string,
+        email: xeroEmail,
+        total_earnings: (s.totalEarnings as number) ?? 0,
+        gross_earnings: (s.grossEarnings as number) ?? 0,
+        net_pay: (s.totalPay as number) ?? 0,
         tax: paye,
         employee_ni: employeeNI,
         employer_ni: employerNI,
         student_loan: studentLoan,
-        total_deductions: s.totalDeductions ?? 0,
-        total_benefits: s.totalBenefits ?? 0,
-        court_orders: courtOrderTotal,
-        payment_method: s.paymentMethod ?? '',
+        deductions: deductionLines.map(d => ({ name: d.displayName, amount: d.amount })),
+        employer_pension: benefitLines.reduce((sum, b) => sum + (b.amount || 0), 0),
+        employer_pension_lines: benefitLines.map(b => ({ name: b.displayName, amount: b.amount })),
+        payment_method: (s.paymentMethod as string) ?? '',
       }
     })
+
+    // Upsert matched payslips into the payslips table so employees see them
+    const periodStart = completedRun.periodStartDate?.split('T')[0]
+    const periodEnd = completedRun.periodEndDate?.split('T')[0]
+    const paymentDate = completedRun.paymentDate?.split('T')[0]
+
+    for (const ps of payslips) {
+      if (!ps.inflow_employee_id) continue
+
+      const totalDeductions = ps.deductions.reduce((s: number, d: { amount: number }) => s + d.amount, 0)
+      const ref = `XERO-${ps.payslip_id}`
+
+      const { data: existing } = await sb
+        .from('payslips')
+        .select('id')
+        .eq('reference_number', ref)
+        .eq('company_id', company_id)
+        .maybeSingle()
+
+      const row = {
+        employee_id: ps.inflow_employee_id,
+        company_id: company_id,
+        reference_number: ref,
+        pay_period_start: periodStart,
+        pay_period_end: periodEnd,
+        gross_pay: ps.total_earnings,
+        tax: ps.tax,
+        national_insurance: ps.employee_ni,
+        pension: totalDeductions,
+        other_deductions: 0,
+        net_pay: ps.net_pay,
+        payment_date: paymentDate,
+        status: 'paid',
+        source: 'xero',
+        xero_payslip_id: ps.payslip_id,
+      }
+
+      if (existing) {
+        await sb.from('payslips').update(row).eq('id', existing.id)
+      } else {
+        await sb.from('payslips').insert(row)
+      }
+    }
 
     // Update last_sync_at
     await sb.from('xero_integrations').update({

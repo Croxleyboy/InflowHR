@@ -39,15 +39,22 @@ interface XeroIntegration {
 
 interface XeroPayslipRow {
   payslip_id: string
-  employee_id: string
+  xero_employee_id: string
+  inflow_employee_id: string | null
   first_name: string
   last_name: string
+  email: string | null
+  total_earnings: number
   gross_earnings: number
   net_pay: number
   tax: number
   employee_ni: number
   employer_ni: number
   student_loan: number
+  deductions: { name: string; amount: number }[]
+  employer_pension: number
+  employer_pension_lines: { name: string; amount: number }[]
+  payment_method: string
 }
 
 interface XeroPayRun {
@@ -1261,10 +1268,13 @@ export default function AdminPayroll() {
                   <thead>
                     <tr>
                       <th>Employee</th>
-                      <th>Gross Earnings</th>
-                      <th>Tax</th>
+                      <th>Matched</th>
+                      <th>Total Earnings</th>
+                      <th>Tax (PAYE)</th>
                       <th>Employee NI</th>
+                      <th>Deductions</th>
                       <th>Employer NI</th>
+                      <th>Employer Pension</th>
                       <th>Student Loan</th>
                       <th>Net Pay</th>
                     </tr>
@@ -1273,10 +1283,17 @@ export default function AdminPayroll() {
                     {xeroLivePayslips.map(s => (
                       <tr key={s.payslip_id}>
                         <td><strong>{s.first_name} {s.last_name}</strong></td>
-                        <td>£{Number(s.gross_earnings).toFixed(2)}</td>
+                        <td>{s.inflow_employee_id ? <span style={{ color: '#16a34a' }}>Yes</span> : <span style={{ color: '#dc2626' }}>No</span>}</td>
+                        <td>£{Number(s.total_earnings).toFixed(2)}</td>
                         <td>£{Number(s.tax).toFixed(2)}</td>
                         <td>£{Number(s.employee_ni).toFixed(2)}</td>
+                        <td title={s.deductions.map(d => `${d.name}: £${d.amount.toFixed(2)}`).join('\n')}>
+                          £{s.deductions.reduce((sum, d) => sum + d.amount, 0).toFixed(2)}
+                        </td>
                         <td>£{Number(s.employer_ni).toFixed(2)}</td>
+                        <td title={s.employer_pension_lines.map(b => `${b.name}: £${b.amount.toFixed(2)}`).join('\n')}>
+                          £{Number(s.employer_pension).toFixed(2)}
+                        </td>
                         <td>£{Number(s.student_loan).toFixed(2)}</td>
                         <td><strong>£{Number(s.net_pay).toFixed(2)}</strong></td>
                       </tr>
@@ -1285,10 +1302,13 @@ export default function AdminPayroll() {
                   <tfoot>
                     <tr style={{ fontWeight: 700 }}>
                       <td>Totals</td>
-                      <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.gross_earnings), 0).toFixed(2)}</td>
+                      <td></td>
+                      <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.total_earnings), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.employee_ni), 0).toFixed(2)}</td>
+                      <td>£{xeroLivePayslips.reduce((s, p) => s + p.deductions.reduce((sum, d) => sum + d.amount, 0), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.employer_ni), 0).toFixed(2)}</td>
+                      <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.employer_pension), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.student_loan), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
                     </tr>
