@@ -318,7 +318,8 @@ export default function AdminPayroll() {
     const ref = `PAY-${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
 
     const errors: string[] = []
-    for (const emp of employees) {
+    for (let idx = 0; idx < employees.length; idx++) {
+      const emp = employees[idx]
       const latest = payslips.find(p => p.employee?.id === emp.id)
       const salary = emp.annual_salary || latest?.annual_salary || 42000
       const gross = Math.round((salary / 12) * 100) / 100
@@ -329,7 +330,7 @@ export default function AdminPayroll() {
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
         company_id: selectedCompanyId,
-        reference_number: `${ref}-${emp.id.slice(0, 4)}`,
+        reference_number: `${ref}-${String(idx + 1).padStart(3, '0')}`,
         pay_period_start: nextMonth.toISOString().split('T')[0],
         pay_period_end: endOfMonth.toISOString().split('T')[0],
         gross_pay: gross, tax, national_insurance: ni, pension,
