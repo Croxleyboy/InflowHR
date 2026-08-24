@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
@@ -60,12 +61,14 @@ const EMPTY_FORM = {
 
 export default function AdminAssetManagement() {
   const { selectedCompanyId: companyId } = useAdminCompany()
+  const { isSuperAdmin } = useAuth()
   const { companyFeatures } = useFeatures()
   const { showError, showSuccess } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
+  const [accessGranted, setAccessGranted] = useState(true)
   const [search, setSearch] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
@@ -84,9 +87,22 @@ export default function AdminAssetManagement() {
 
   const spaceBookingEnabled = companyFeatures.space_booking
 
+  const checkAccess = useCallback(async () => {
+    if (!companyId || !isSuperAdmin) { setAccessGranted(true); return }
+    const { data } = await supabase
+      .from('tenant_support_access')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+      .limit(1)
+    setAccessGranted((data || []).length > 0)
+  }, [companyId, isSuperAdmin])
+
   const loadAssets = useCallback(async () => {
     if (!companyId) return
     setLoading(true)
+    if (isSuperAdmin) await checkAccess()
     const { data, error } = await supabase
       .from('company_assets')
       .select('*')
@@ -95,7 +111,7 @@ export default function AdminAssetManagement() {
     if (error) { showError('Failed to load assets'); setLoading(false); return }
     setAssets((data as Asset[]) || [])
     setLoading(false)
-  }, [companyId])
+  }, [companyId, isSuperAdmin, checkAccess])
 
   const loadEmployees = useCallback(async () => {
     if (!companyId) return
@@ -387,6 +403,29 @@ export default function AdminAssetManagement() {
   }
 
   if (loading) return <div className="admin-section"><div className="admin-loading">Loading...</div></div>
+
+  if (isSuperAdmin && !accessGranted) return (
+    <div className="admin-section">
+      <div className="admin-page-header">
+        <h2>Asset Management</h2>
+        <p>Register, track and manage company assets</p>
+      </div>
+      <div style={{
+        padding: 32, textAlign: 'center', background: 'var(--bg-card, #fff)',
+        borderRadius: 12, border: '1px solid var(--border, #e5e7eb)', marginTop: 16,
+      }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>🔒</div>
+        <h3 style={{ margin: '0 0 8px', color: 'var(--text, #1a1a2e)' }}>GDPR Access Required</h3>
+        <p style={{ color: 'var(--text-muted, #8b8fa3)', fontSize: 14, maxWidth: 480, margin: '0 auto 16px' }}>
+          Asset data is classified as company-sensitive under GDPR Art. 28. Super Admin access requires
+          an active support grant from the company admin or via the Support Access page.
+        </p>
+        <p style={{ color: 'var(--text-muted, #8b8fa3)', fontSize: 13 }}>
+          Navigate to <strong>Support Access</strong> in the sidebar to request or grant access.
+        </p>
+      </div>
+    </div>
+  )
 
   return (
     <div className="admin-section">

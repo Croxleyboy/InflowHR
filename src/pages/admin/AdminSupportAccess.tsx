@@ -27,6 +27,7 @@ const RESTRICTED_TABLES = [
   'space_bookings', 'timesheets',
   'one_to_one_meetings', 'one_to_one_comments',
   'performance_reviews',
+  'company_assets', 'asset_history',
 ]
 
 const CONFIG_TABLES = [
