@@ -315,7 +315,8 @@ export default function AdminPayroll() {
 
     const paymentDate = new Date(endOfMonth)
     paymentDate.setDate(paymentDate.getDate() - 3)
-    const ref = `PAY-${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
+    const refPrefix = `PAY-${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
+    const batch = Date.now().toString(36).slice(-4)
 
     const errors: string[] = []
     for (let idx = 0; idx < employees.length; idx++) {
@@ -330,7 +331,7 @@ export default function AdminPayroll() {
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
         company_id: selectedCompanyId,
-        reference_number: `${ref}-${String(idx + 1).padStart(3, '0')}`,
+        reference_number: `${refPrefix}-${batch}-${String(idx + 1).padStart(3, '0')}`,
         pay_period_start: nextMonth.toISOString().split('T')[0],
         pay_period_end: endOfMonth.toISOString().split('T')[0],
         gross_pay: gross, tax, national_insurance: ni, pension,
