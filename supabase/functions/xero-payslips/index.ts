@@ -74,25 +74,38 @@ Deno.serve(async (req) => {
     }
 
     const payslipsData = await payslipsRes.json()
-    console.log('RAW payslipsData keys:', Object.keys(payslipsData))
-    const rawSlips = payslipsData.paySlips || payslipsData.payslips || []
-    if (rawSlips.length > 0) {
-      console.log('RAW first payslip:', JSON.stringify(rawSlips[0], null, 2))
-    }
+    const rawSlips = payslipsData.paySlips || []
 
-    // Normalise to a clean shape for the frontend (UK API uses camelCase)
-    const payslips = rawSlips.map((s: Record<string, unknown>) => ({
-      payslip_id: s.paySlipID || s.payslipID,
-      employee_id: s.employeeID,
-      first_name: s.firstName,
-      last_name: s.lastName,
-      gross_earnings: s.grossEarnings ?? s.totalEarnings ?? 0,
-      net_pay: s.netPay ?? 0,
-      tax: s.tax ?? s.totalTax ?? 0,
-      employee_ni: s.employeesNationalInsurance ?? s.employeeNI ?? 0,
-      employer_ni: s.employersNationalInsurance ?? s.employerNI ?? 0,
-      student_loan: s.studentLoanDeductions ?? 0,
-    }))
+    // Normalise to a clean shape for the frontend
+    // Tax and NI are in nested arrays (employeeTaxLines, employerTaxLines)
+    const payslips = rawSlips.map((s: Record<string, unknown>) => {
+      const empTaxLines = (s.employeeTaxLines || []) as { description: string; amount: number }[]
+      const errTaxLines = (s.employerTaxLines || []) as { description: string; amount: number }[]
+      const courtOrders = (s.courtOrderLines || []) as { amount: number }[]
+
+      const paye = empTaxLines.find(t => t.description === 'PAYE')?.amount ?? 0
+      const employeeNI = empTaxLines.find(t => t.description?.includes('Employee National Insurance'))?.amount ?? 0
+      const employerNI = errTaxLines.find(t => t.description?.includes('Employer National Insurance'))?.amount ?? 0
+      const studentLoan = empTaxLines.find(t => t.description?.includes('Student Loan'))?.amount ?? 0
+      const courtOrderTotal = courtOrders.reduce((sum, c) => sum + (c.amount || 0), 0)
+
+      return {
+        payslip_id: s.paySlipID,
+        employee_id: s.employeeID,
+        first_name: s.firstName,
+        last_name: s.lastName,
+        gross_earnings: s.totalEarnings ?? 0,
+        net_pay: s.totalPay ?? 0,
+        tax: paye,
+        employee_ni: employeeNI,
+        employer_ni: employerNI,
+        student_loan: studentLoan,
+        total_deductions: s.totalDeductions ?? 0,
+        total_benefits: s.totalBenefits ?? 0,
+        court_orders: courtOrderTotal,
+        payment_method: s.paymentMethod ?? '',
+      }
+    })
 
     // Update last_sync_at
     await sb.from('xero_integrations').update({
