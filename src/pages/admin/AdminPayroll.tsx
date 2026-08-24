@@ -668,23 +668,23 @@ export default function AdminPayroll() {
             background: 'var(--bg-card, #fff)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
           }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>Payslip Source:</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
               <input
                 type="radio"
                 name="payslipSource"
                 checked={!xeroConfig?.is_enabled}
                 onChange={() => toggleXeroEnabled(false)}
               />
-              InflowHR Payslips
+              <span>InflowHR Payslips</span>
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
               <input
                 type="radio"
                 name="payslipSource"
                 checked={!!xeroConfig?.is_enabled}
                 onChange={() => toggleXeroEnabled(true)}
               />
-              Xero Payslips
+              <span>Xero Payslips</span>
             </label>
             {xeroConfig?.is_enabled && xeroConfig.sync_status === 'connected' && (
               <span className="admin-badge admin-badge-approved" style={{ marginLeft: 8 }}>Connected</span>
