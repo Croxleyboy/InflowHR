@@ -23,6 +23,9 @@ interface Payslip {
   payroll_id: string
   overtime: number
   adjustments: number
+  monthly_deductions: number
+  bank_account: string
+  payroll_office: string
   source: string
   xero_payslip_id: string | null
   employee: { id: string; first_name: string; last_name: string } | null
@@ -78,10 +81,30 @@ interface Employee {
   payroll_id: string | null
 }
 
-const PAYROLL_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+function getFYRange(fyStartMonth: number) {
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const startYear = currentMonth >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+  const startDate = new Date(startYear, fyStartMonth - 1, 1)
+  const endDate = new Date(startYear + 1, fyStartMonth - 1, 0)
+  return { startDate, endDate, startYear }
+}
+
+function getFYMonths(fyStartMonth: number): { year: number; month: number; label: string }[] {
+  const { startYear } = getFYRange(fyStartMonth)
+  const months: { year: number; month: number; label: string }[] = []
+  for (let i = 0; i < 12; i++) {
+    const m = (fyStartMonth - 1 + i) % 12
+    const y = startYear + (fyStartMonth - 1 + i >= 12 ? 1 : 0)
+    months.push({ year: y, month: m, label: `${MONTH_NAMES[m]} ${y}` })
+  }
+  return months
+}
 
 export default function AdminPayroll() {
-  const { selectedCompanyId } = useAdminCompany()
+  const { selectedCompanyId, selectedCompany } = useAdminCompany()
   const { showError, showSuccess } = useToast()
   const { session } = useAuth()
   const [payslips, setPayslips] = useState<Payslip[]>([])
@@ -94,8 +117,6 @@ export default function AdminPayroll() {
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [generating, setGenerating] = useState(false)
-  const [empEditId, setEmpEditId] = useState<string | null>(null)
-  const [empForm, setEmpForm] = useState<Record<string, any>>({})
   const [empBenefits, setEmpBenefits] = useState<Record<string, { title: string; enrolled_at: string; monthly_cost: number }[]>>({})
 
   // Xero integration state
@@ -104,6 +125,10 @@ export default function AdminPayroll() {
   const [xeroSyncing, setXeroSyncing] = useState(false)
   const [xeroLivePayslips, setXeroLivePayslips] = useState<XeroPayslipRow[]>([])
   const [xeroPayRun, setXeroPayRun] = useState<XeroPayRun | null>(null)
+  const [showXeroDisconnectModal, setShowXeroDisconnectModal] = useState(false)
+
+  // Employee Pay tab month navigation
+  const [empPayMonthIdx, setEmpPayMonthIdx] = useState(0)
 
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
@@ -131,6 +156,17 @@ export default function AdminPayroll() {
     weeklySubmissions: { week: string; count: number; hours: number }[]
   }>({ empMetrics: [], projectBreakdown: [], legalClientBreakdown: [], weeklySubmissions: [] })
 
+  const fyStartMonth = selectedCompany?.fy_start_month || 4
+  const fyMonths = useMemo(() => getFYMonths(fyStartMonth), [fyStartMonth])
+  const fyRange = useMemo(() => getFYRange(fyStartMonth), [fyStartMonth])
+
+  // Set empPayMonthIdx to current month on load
+  useEffect(() => {
+    const now = new Date()
+    const idx = fyMonths.findIndex(m => m.year === now.getFullYear() && m.month === now.getMonth())
+    if (idx >= 0) setEmpPayMonthIdx(idx)
+  }, [fyMonths])
+
   useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId])
 
   useEffect(() => {
@@ -145,8 +181,10 @@ export default function AdminPayroll() {
 
   async function loadAll() {
     setLoading(true)
+    const fyStart = fyRange.startDate.toISOString().split('T')[0]
+    const fyEnd = fyRange.endDate.toISOString().split('T')[0]
     const [pRes, eRes, xRes] = await Promise.all([
-      supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).order('payment_date', { ascending: false }),
+      supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
       supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
@@ -161,16 +199,55 @@ export default function AdminPayroll() {
 
   function startEdit(p: Payslip) {
     setEditingId(p.id)
-    setEditForm({ gross_pay: p.gross_pay, tax: p.tax, national_insurance: p.national_insurance, pension: p.pension, other_deductions: p.other_deductions, net_pay: p.net_pay, status: p.status, tax_code: p.tax_code, overtime: p.overtime, adjustments: p.adjustments })
+    setEditForm({
+      gross_pay: p.gross_pay, tax: p.tax, national_insurance: p.national_insurance,
+      pension: p.pension, other_deductions: p.other_deductions, net_pay: p.net_pay,
+      status: p.status, tax_code: p.tax_code, overtime: p.overtime,
+      adjustments: p.adjustments, annual_salary: p.annual_salary,
+      monthly_deductions: p.monthly_deductions || 0,
+      payroll_id: p.payroll_id || '', bank_account: p.bank_account || '',
+      payroll_office: p.payroll_office || '',
+    })
   }
 
   async function saveEdit(id: number) {
-    const net = Number(editForm.gross_pay) + Number(editForm.overtime) + Number(editForm.adjustments) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions)
+    const gross = Number(editForm.gross_pay)
+    const ot = Number(editForm.overtime) || 0
+    const adj = Number(editForm.adjustments) || 0
+    const tax = Number(editForm.tax)
+    const ni = Number(editForm.national_insurance)
+    const pen = Number(editForm.pension)
+    const other = Number(editForm.other_deductions)
+    const monthly = Number(editForm.monthly_deductions) || 0
+    const net = gross + ot + adj - tax - ni - pen - other - monthly
+
+    const payslip = payslips.find(p => p.id === id)
+    const wasPaid = payslip?.status === 'paid'
+
     const { error } = await supabase.from('payslips').update({ ...editForm, net_pay: net }).eq('id', id)
     if (error) { showError('Failed to save payslip: ' + error.message); return }
+
+    // If editing a paid payslip, mark the month's schedule as needing re-download
+    if (wasPaid && payslip) {
+      await markMonthEdited(payslip.pay_period_start)
+    }
+
     setEditingId(null)
     loadAll()
     showSuccess('Payslip saved')
+  }
+
+  async function markMonthEdited(payPeriodStart: string) {
+    const d = new Date(payPeriodStart + 'T00:00:00')
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const existing = payrollScheduleStatuses[monthKey]
+    if (existing === 'completed') {
+      const updated = { ...payrollScheduleStatuses, [monthKey]: 'edited' }
+      setPayrollScheduleStatuses(updated)
+      await supabase.from('xero_integrations').update({
+        cached_pay_run: { ...( xeroIntegration as any)?.cached_pay_run, schedule_statuses: updated },
+      }).eq('company_id', selectedCompanyId)
+    }
   }
 
   async function deletePayslip(id: number) {
@@ -181,11 +258,61 @@ export default function AdminPayroll() {
     showSuccess('Payslip deleted')
   }
 
+  // Payroll schedule statuses stored in xero_integrations.cached_pay_run.schedule_statuses
+  const [payrollScheduleStatuses, setPayrollScheduleStatuses] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!selectedCompanyId) return
+    supabase.from('xero_integrations').select('cached_pay_run').eq('company_id', selectedCompanyId).maybeSingle()
+      .then(({ data }) => {
+        const statuses = (data?.cached_pay_run as any)?.schedule_statuses || {}
+        setPayrollScheduleStatuses(statuses)
+      })
+  }, [selectedCompanyId])
+
+  async function saveScheduleStatuses(statuses: Record<string, string>) {
+    setPayrollScheduleStatuses(statuses)
+    const { data: existing } = await supabase.from('xero_integrations')
+      .select('id, cached_pay_run').eq('company_id', selectedCompanyId).maybeSingle()
+    if (existing) {
+      await supabase.from('xero_integrations').update({
+        cached_pay_run: { ...(existing.cached_pay_run as any || {}), schedule_statuses: statuses },
+      }).eq('id', existing.id)
+    } else {
+      await supabase.from('xero_integrations').insert({
+        company_id: selectedCompanyId,
+        cached_pay_run: { schedule_statuses: statuses },
+        sync_status: 'not_connected',
+      })
+    }
+  }
+
   async function generateNextPayroll() {
     setGenerating(true)
+
+    // Find the latest month that has payslips
     const now = new Date()
+    const currentMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    const currentPayslips = payslips.filter(p => p.pay_period_start.startsWith(currentMonthStart.slice(0, 7)))
+
+    if (currentPayslips.length === 0) {
+      showError('Current month payslips must exist before generating the next month')
+      setGenerating(false)
+      return
+    }
+
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     const endOfMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0)
+
+    // Check next month doesn't already have payslips
+    const nextKey = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
+    const existingNext = payslips.filter(p => p.pay_period_start.startsWith(nextKey))
+    if (existingNext.length > 0) {
+      showError(`Payslips for ${MONTH_NAMES[nextMonth.getMonth()]} ${nextMonth.getFullYear()} already exist`)
+      setGenerating(false)
+      return
+    }
+
     const paymentDate = new Date(endOfMonth)
     paymentDate.setDate(paymentDate.getDate() - 3)
     const ref = `PAY-${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
@@ -201,6 +328,7 @@ export default function AdminPayroll() {
 
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
+        company_id: selectedCompanyId,
         reference_number: `${ref}-${emp.id.slice(0, 4)}`,
         pay_period_start: nextMonth.toISOString().split('T')[0],
         pay_period_end: endOfMonth.toISOString().split('T')[0],
@@ -219,7 +347,7 @@ export default function AdminPayroll() {
     if (errors.length > 0) {
       showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
     } else {
-      showSuccess('Next payroll generated')
+      showSuccess(`Payroll generated for ${MONTH_NAMES[nextMonth.getMonth()]} ${nextMonth.getFullYear()}`)
     }
     loadAll()
   }
@@ -246,13 +374,21 @@ export default function AdminPayroll() {
   }, [payslips])
 
   const stats = useMemo(() => ({
-    total: payslips.length,
-    draft: payslips.filter(p => p.status === 'draft').length,
-    processed: payslips.filter(p => p.status === 'processed').length,
-    paid: payslips.filter(p => p.status === 'paid').length,
-    totalGross: payslips.reduce((s, p) => s + Number(p.gross_pay), 0),
-    totalNet: payslips.reduce((s, p) => s + Number(p.net_pay), 0),
-  }), [payslips])
+    total: sourcePayslips.length,
+    draft: sourcePayslips.filter(p => p.status === 'draft').length,
+    processed: sourcePayslips.filter(p => p.status === 'processed').length,
+    paid: sourcePayslips.filter(p => p.status === 'paid').length,
+    totalGross: sourcePayslips.reduce((s, p) => s + Number(p.gross_pay), 0),
+    totalNet: sourcePayslips.reduce((s, p) => s + Number(p.net_pay), 0),
+  }), [sourcePayslips])
+
+  // Employee Pay tab: payslips for selected month
+  const empPayMonth = fyMonths[empPayMonthIdx]
+  const empPayPayslips = useMemo(() => {
+    if (!empPayMonth) return []
+    const key = `${empPayMonth.year}-${String(empPayMonth.month + 1).padStart(2, '0')}`
+    return sourcePayslips.filter(p => p.pay_period_start.startsWith(key))
+  }, [sourcePayslips, empPayMonth])
 
   const loadTimeBreakdown = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -347,102 +483,74 @@ export default function AdminPayroll() {
     const legalMap: Record<string, { matter: string; hours: number }> = {}
     const weekMap: Record<string, { count: number; hours: number }> = {}
 
-    const queries: Promise<void>[] = []
-
     if (enabledFeatures.timesheets) {
-      queries.push((async () => {
-        const { data } = await supabase.from('timesheets')
-          .select('employee_id, date, hours, project_id, customer, project:customer_projects!timesheets_project_id_fkey(name, customer_name)')
-          .eq('company_id', selectedCompanyId).neq('status', 'rejected')
-          .gte('date', anPeriodStart).lte('date', anPeriodEnd)
-        if (data) for (const row of data as any[]) {
-          if (empMap[row.employee_id]) empMap[row.employee_id].tsHrs += Number(row.hours) || 0
-          const projName = row.project?.name || row.customer || 'Unassigned'
-          const custName = row.project?.customer_name || row.customer || 'Unassigned'
-          const pKey = `${custName}|||${projName}`
-          if (!projectMap[pKey]) projectMap[pKey] = { customer: custName, hours: 0 }
-          projectMap[pKey].hours += Number(row.hours) || 0
-
-          const weekStart = getWeekStart(row.date)
-          if (!weekMap[weekStart]) weekMap[weekStart] = { count: 0, hours: 0 }
-          weekMap[weekStart].count++
-          weekMap[weekStart].hours += Number(row.hours) || 0
-        }
-      })())
+      const { data } = await supabase.from('timesheets')
+        .select('employee_id, date, hours, project:projects(name, customer:customers(name))')
+        .eq('company_id', selectedCompanyId).neq('status', 'rejected')
+        .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+      if (data) for (const r of data as any[]) {
+        if (empMap[r.employee_id]) empMap[r.employee_id].tsHrs += Number(r.hours) || 0
+        const pName = r.project?.name || 'No Project'
+        const cName = r.project?.customer?.name || 'No Customer'
+        const pk = `${cName}|||${pName}`
+        if (!projectMap[pk]) projectMap[pk] = { customer: cName, hours: 0 }
+        projectMap[pk].hours += Number(r.hours) || 0
+        const weekStart = new Date(r.date + 'T00:00:00')
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
+        const wk = weekStart.toISOString().split('T')[0]
+        if (!weekMap[wk]) weekMap[wk] = { count: 0, hours: 0 }
+        weekMap[wk].count++
+        weekMap[wk].hours += Number(r.hours) || 0
+      }
     }
 
     if (enabledFeatures.shifts) {
-      queries.push((async () => {
-        const { data } = await supabase.from('shift_assignments')
-          .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(status)')
-          .eq('company_id', selectedCompanyId)
-          .gte('date', anPeriodStart).lte('date', anPeriodEnd)
-        if (data) for (const row of data as any[]) {
-          if (row.rotas?.status === 'draft') continue
-          const tmpl = row.shift_templates as any
-          if (!tmpl || !empMap[row.employee_id]) continue
-          const startMins = parseInt(tmpl.start_time?.split(':')[0]) * 60 + parseInt(tmpl.start_time?.split(':')[1] || '0')
-          const endMins = parseInt(tmpl.end_time?.split(':')[0]) * 60 + parseInt(tmpl.end_time?.split(':')[1] || '0')
-          const hrs = Math.max(0, (endMins - startMins - (tmpl.break_minutes || 0)) / 60)
-          empMap[row.employee_id].shiftHrs += hrs
-        }
-      })())
+      const { data } = await supabase.from('shift_assignments')
+        .select('employee_id, date, shift_templates(start_time, end_time, break_minutes), rotas(status)')
+        .eq('company_id', selectedCompanyId)
+        .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+      if (data) for (const r of data as any[]) {
+        if (r.rotas?.status === 'draft') continue
+        const tmpl = r.shift_templates as any
+        if (!tmpl || !empMap[r.employee_id]) continue
+        const startMins = parseInt(tmpl.start_time?.split(':')[0]) * 60 + parseInt(tmpl.start_time?.split(':')[1] || '0')
+        const endMins = parseInt(tmpl.end_time?.split(':')[0]) * 60 + parseInt(tmpl.end_time?.split(':')[1] || '0')
+        empMap[r.employee_id].shiftHrs += Math.max(0, (endMins - startMins - (tmpl.break_minutes || 0)) / 60)
+      }
     }
 
     if (enabledFeatures.legal_timesheets) {
-      queries.push((async () => {
-        const { data } = await supabase.from('legal_timesheet_entries')
-          .select('employee_id, date, duration_hrs, client:legal_clients!legal_timesheet_entries_client_id_fkey(name), matter:legal_matters!legal_timesheet_entries_matter_id_fkey(name)')
-          .eq('company_id', selectedCompanyId).neq('status', 'rejected')
-          .gte('date', anPeriodStart).lte('date', anPeriodEnd)
-        if (data) for (const row of data as any[]) {
-          if (empMap[row.employee_id]) empMap[row.employee_id].legalHrs += Number(row.duration_hrs) || 0
-          const cName = row.client?.name || 'Unknown'
-          const mName = row.matter?.name || 'Unknown'
-          const lKey = `${cName}|||${mName}`
-          if (!legalMap[lKey]) legalMap[lKey] = { matter: mName, hours: 0 }
-          legalMap[lKey].hours += Number(row.duration_hrs) || 0
-        }
-      })())
+      const { data } = await supabase.from('legal_timesheet_entries')
+        .select('employee_id, date, duration_hrs, client:legal_clients!legal_timesheet_entries_client_id_fkey(name), matter:legal_matters!legal_timesheet_entries_matter_id_fkey(name)')
+        .eq('company_id', selectedCompanyId).neq('status', 'rejected')
+        .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+      if (data) for (const r of data as any[]) {
+        if (empMap[r.employee_id]) empMap[r.employee_id].legalHrs += Number(r.duration_hrs) || 0
+        const cn = r.client?.name || 'No Client'
+        const mn = r.matter?.name || 'No Matter'
+        const lk = `${cn}|||${mn}`
+        if (!legalMap[lk]) legalMap[lk] = { matter: mn, hours: 0 }
+        legalMap[lk].hours += Number(r.duration_hrs) || 0
+      }
     }
 
-    await Promise.all(queries)
+    const startD = new Date(anPeriodStart + 'T00:00:00')
+    const endD = new Date(anPeriodEnd + 'T00:00:00')
+    const weeks = Math.max(1, (endD.getTime() - startD.getTime()) / (7 * 86400000))
 
-    const periodDays = Math.max(1, (new Date(anPeriodEnd).getTime() - new Date(anPeriodStart).getTime()) / 86400000 + 1)
-    const periodWeeks = periodDays / 7
-
-    const empMetrics = Object.entries(empMap).map(([id, d]) => ({
-      id, name: d.name, dept: d.dept, weeklyHrs: d.weeklyHrs,
-      tsHrs: d.tsHrs, shiftHrs: d.shiftHrs, legalHrs: d.legalHrs,
-      totalHrs: d.tsHrs + d.shiftHrs + d.legalHrs,
-      contractedPeriodHrs: d.weeklyHrs * periodWeeks,
-    })).filter(e => e.totalHrs > 0).sort((a, b) => b.totalHrs - a.totalHrs)
-
-    const projectBreakdown = Object.entries(projectMap).map(([key, v]) => {
-      const [customer, project] = key.split('|||')
-      return { project, customer, hours: v.hours }
-    }).sort((a, b) => b.hours - a.hours)
-
-    const legalClientBreakdown = Object.entries(legalMap).map(([key, v]) => {
-      const [client] = key.split('|||')
-      return { client, matter: v.matter, hours: v.hours }
-    }).sort((a, b) => b.hours - a.hours)
-
-    const weeklySubmissions = Object.entries(weekMap)
-      .map(([week, v]) => ({ week, ...v }))
-      .sort((a, b) => a.week.localeCompare(b.week))
-
-    setAnData({ empMetrics, projectBreakdown, legalClientBreakdown, weeklySubmissions })
+    setAnData({
+      empMetrics: Object.entries(empMap).map(([id, e]) => ({
+        id, name: e.name, dept: e.dept, weeklyHrs: e.weeklyHrs,
+        tsHrs: e.tsHrs, shiftHrs: e.shiftHrs, legalHrs: e.legalHrs,
+        totalHrs: e.tsHrs + e.shiftHrs + e.legalHrs,
+        contractedPeriodHrs: e.weeklyHrs * weeks,
+      })),
+      projectBreakdown: Object.entries(projectMap).map(([k, v]) => ({ project: k.split('|||')[1], customer: v.customer, hours: v.hours })).sort((a, b) => b.hours - a.hours),
+      legalClientBreakdown: Object.entries(legalMap).map(([k, v]) => ({ client: k.split('|||')[0], matter: v.matter, hours: v.hours })).sort((a, b) => b.hours - a.hours),
+      weeklySubmissions: Object.entries(weekMap).map(([w, v]) => ({ week: w, ...v })).sort((a, b) => a.week.localeCompare(b.week)),
+    })
     setAnLoading(false)
   }, [selectedCompanyId, anPeriodStart, anPeriodEnd, employees, enabledFeatures])
-
-  function getWeekStart(dateStr: string) {
-    const d = new Date(dateStr + 'T00:00:00')
-    const day = d.getDay()
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-    d.setDate(diff)
-    return d.toISOString().split('T')[0]
-  }
 
   function downloadCsv(filename: string, headers: string[], rows: string[][]) {
     const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(','))].join('\n')
@@ -465,9 +573,10 @@ export default function AdminPayroll() {
     employees.forEach(e => { empLookup[e.id] = `${e.first_name} ${e.last_name}` })
     const rows = (data as any[]).map(r => [
       empLookup[r.employee_id] || r.employee_id,
-      new Date(r.date + 'T00:00:00').toLocaleDateString('en-GB'),
-      (r.client as any)?.name || '', (r.matter as any)?.name || '',
-      r.task_code, String(r.duration_hrs), r.narrative || '', r.status,
+      formatDate(r.date),
+      r.client?.name || '', r.matter?.name || '',
+      r.task_code || '', String(Number(r.duration_hrs).toFixed(2)),
+      r.narrative || '', r.status,
     ])
     downloadCsv(`legal-timesheets-${anPeriodStart}-to-${anPeriodEnd}.csv`,
       ['Employee', 'Date', 'Client', 'Matter', 'Task Code', 'Hours', 'Narrative', 'Status'], rows)
@@ -475,9 +584,9 @@ export default function AdminPayroll() {
   }
 
   async function exportShiftsCsv() {
-    if (!confirm('This export contains employee shift data.\n\nThis action will be logged. Proceed?')) return
+    if (!confirm('This export contains employee names and shift data.\n\nThis action will be logged. Proceed?')) return
     const { data } = await supabase.from('shift_assignments')
-      .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(name, status)')
+      .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(status)')
       .eq('company_id', selectedCompanyId)
       .gte('date', anPeriodStart).lte('date', anPeriodEnd)
     if (!data || data.length === 0) { showError('No shift data for this period'); return }
@@ -490,47 +599,48 @@ export default function AdminPayroll() {
       const hrs = Math.max(0, (endMins - startMins - (tmpl?.break_minutes || 0)) / 60)
       return [
         empLookup[r.employee_id] || r.employee_id,
-        new Date(r.date + 'T00:00:00').toLocaleDateString('en-GB'),
+        formatDate(r.date),
         tmpl?.name || '', tmpl?.start_time?.slice(0, 5) || '', tmpl?.end_time?.slice(0, 5) || '',
-        String(hrs.toFixed(1)), r.rotas?.name || '',
+        String(tmpl?.break_minutes || 0), String(hrs.toFixed(2)),
       ]
     })
-    downloadCsv(`shifts-rotas-${anPeriodStart}-to-${anPeriodEnd}.csv`,
-      ['Employee', 'Date', 'Shift', 'Start', 'End', 'Hours', 'Rota'], rows)
-    showSuccess('Shifts & rotas CSV downloaded')
+    downloadCsv(`shifts-${anPeriodStart}-to-${anPeriodEnd}.csv`,
+      ['Employee', 'Date', 'Shift', 'Start', 'End', 'Break (mins)', 'Hours'], rows)
+    showSuccess('Shifts CSV downloaded')
   }
 
   async function exportAdjustmentsCsv() {
-    if (!confirm('This export contains employee financial data (leave, overtime, adjustments).\n\nThis action will be logged. Proceed?')) return
+    if (!confirm('This export contains employee payroll adjustment data.\n\nThis action will be logged. Proceed?')) return
     const empLookup: Record<string, string> = {}
     employees.forEach(e => { empLookup[e.id] = `${e.first_name} ${e.last_name}` })
-
     const rows: string[][] = []
 
-    const [leaveRes, payslipRes] = await Promise.all([
-      supabase.from('leave_requests')
-        .select('employee_id, start_date, end_date, leave_type, status, total_days')
-        .eq('company_id', selectedCompanyId).eq('status', 'approved')
-        .gte('start_date', anPeriodStart).lte('start_date', anPeriodEnd),
-      supabase.from('payslips')
-        .select('employee_id, pay_period_start, overtime, adjustments, employee:employees!payslips_employee_id_fkey(first_name, last_name)')
+    if (enabledFeatures.shifts) {
+      const { data } = await supabase.from('shift_assignments')
+        .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(status)')
         .eq('company_id', selectedCompanyId)
-        .gte('pay_period_start', anPeriodStart).lte('pay_period_start', anPeriodEnd),
-    ])
-
-    if (leaveRes.data) {
-      for (const r of leaveRes.data as any[]) {
-        const lType = (r.leave_type || '').toLowerCase()
-        if (lType.includes('unpaid') || lType.includes('sick') || lType.includes('compassionate')) {
+        .gte('date', anPeriodStart).lte('date', anPeriodEnd)
+      if (data) {
+        for (const r of data as any[]) {
+          if (r.rotas?.status === 'draft') continue
+          const tmpl = r.shift_templates as any
+          if (!tmpl) continue
+          const startMins = parseInt(tmpl.start_time?.split(':')[0]) * 60 + parseInt(tmpl.start_time?.split(':')[1] || '0')
+          const endMins = parseInt(tmpl.end_time?.split(':')[0]) * 60 + parseInt(tmpl.end_time?.split(':')[1] || '0')
+          const hrs = Math.max(0, (endMins - startMins - (tmpl.break_minutes || 0)) / 60)
           rows.push([
             empLookup[r.employee_id] || r.employee_id,
-            new Date(r.start_date + 'T00:00:00').toLocaleDateString('en-GB'),
-            new Date(r.end_date + 'T00:00:00').toLocaleDateString('en-GB'),
-            'Leave', r.leave_type, String(r.total_days || 0), '0', '',
+            formatDate(r.date), '', 'Shift', tmpl.name,
+            '', String(hrs.toFixed(2)), '',
           ])
         }
       }
     }
+
+    const payslipRes = await supabase.from('payslips')
+      .select('employee_id, pay_period_start, overtime, adjustments, employee:employees!payslips_employee_id_fkey(first_name, last_name)')
+      .eq('company_id', selectedCompanyId)
+      .gte('pay_period_start', anPeriodStart).lte('pay_period_start', anPeriodEnd)
 
     if (payslipRes.data) {
       for (const r of payslipRes.data as any[]) {
@@ -554,6 +664,13 @@ export default function AdminPayroll() {
 
   async function togglePayslipSource(source: 'inflowhr' | 'xero') {
     if (!selectedCompanyId) return
+
+    // Switching from Xero to InflowHR — show confirmation modal
+    if (source === 'inflowhr' && activeSource === 'xero') {
+      setShowXeroDisconnectModal(true)
+      return
+    }
+
     if (xeroIntegration) {
       const { error } = await supabase.from('xero_integrations').update({
         payslip_source: source,
@@ -571,9 +688,74 @@ export default function AdminPayroll() {
     loadAll()
   }
 
+  async function confirmSwitchToInflowHR() {
+    if (!selectedCompanyId) return
+    setShowXeroDisconnectModal(false)
+
+    // Delete all Xero-sourced payslips for this company
+    await supabase.from('payslips').delete()
+      .eq('company_id', selectedCompanyId)
+      .eq('source', 'xero')
+
+    // Delete the xero_integrations row (disconnects and clears cached data)
+    await supabase.from('xero_integrations').delete().eq('company_id', selectedCompanyId)
+
+    setXeroIntegration(null)
+    setXeroLivePayslips([])
+    setXeroPayRun(null)
+    showSuccess('Switched to InflowHR Payslips. Xero disconnected and Xero payslip data cleared.')
+    loadAll()
+  }
+
+  // ── Payroll Schedule: Submit / Download ──
+
+  async function submitPayroll(monthKey: string) {
+    const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey))
+    if (monthPayslips.length === 0) {
+      showError('No payslips found for this month')
+      return
+    }
+
+    const [yearStr, monthStr] = monthKey.split('-')
+    const monthName = MONTH_NAMES[parseInt(monthStr) - 1]
+
+    // Build CSV rows with all payslip data
+    const headers = ['Employee', 'Payroll ID', 'Tax Code', 'Annual Salary', 'Gross Pay', 'Tax', 'National Insurance', 'Pension', 'Other Deductions', 'Monthly Deductions', 'Overtime', 'Adjustments', 'Net Pay', 'Pay Period Start', 'Pay Period End', 'Payment Date', 'Status']
+    const rows = monthPayslips.map(p => [
+      p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—',
+      p.payroll_id || '', p.tax_code || '',
+      String(Number(p.annual_salary || 0).toFixed(2)),
+      String(Number(p.gross_pay).toFixed(2)),
+      String(Number(p.tax).toFixed(2)),
+      String(Number(p.national_insurance).toFixed(2)),
+      String(Number(p.pension).toFixed(2)),
+      String(Number(p.other_deductions).toFixed(2)),
+      String(Number(p.monthly_deductions || 0).toFixed(2)),
+      String(Number(p.overtime || 0).toFixed(2)),
+      String(Number(p.adjustments || 0).toFixed(2)),
+      String(Number(p.net_pay).toFixed(2)),
+      new Date(p.pay_period_start + 'T00:00:00').toLocaleDateString('en-GB'),
+      new Date(p.pay_period_end + 'T00:00:00').toLocaleDateString('en-GB'),
+      new Date(p.payment_date + 'T00:00:00').toLocaleDateString('en-GB'),
+      p.status,
+    ])
+
+    downloadCsv(`payroll-${monthKey}-${monthName}.csv`, headers, rows)
+
+    // Mark all payslips in this month as paid
+    const ids = monthPayslips.map(p => p.id)
+    await supabase.from('payslips').update({ status: 'paid' }).in('id', ids).eq('company_id', selectedCompanyId)
+
+    // Update schedule status to completed
+    const updated = { ...payrollScheduleStatuses, [monthKey]: 'completed' }
+    await saveScheduleStatuses(updated)
+
+    showSuccess(`${monthName} ${yearStr} payroll downloaded and marked as paid`)
+    loadAll()
+  }
+
   // ── Xero helpers ──
 
-  // Detect OAuth callback redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const xeroParam = params.get('xero')
@@ -637,17 +819,45 @@ export default function AdminPayroll() {
     showSuccess('Disconnected from Xero')
   }
 
-  function startEmpEdit(emp: Employee) {
-    setEmpEditId(emp.id)
-    const latest = payslips.find(p => p.employee?.id === emp.id)
-    setEmpForm({ annual_salary: emp.annual_salary || latest?.annual_salary || 0, tax_code: emp.tax_code || latest?.tax_code || '1257L', pension_pct: latest ? (Number(latest.pension) / Number(latest.gross_pay) * 100).toFixed(1) : '5.0' })
-  }
+  const fyLabel = `FY ${fyRange.startYear}/${fyRange.startYear + 1}`
 
   return (
     <div className="admin-section">
+      {/* Xero disconnect confirmation modal */}
+      {showXeroDisconnectModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: 'var(--bg-card, #fff)', borderRadius: 12, padding: 24, maxWidth: 480, width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#dc2626' }}>Switch to InflowHR Payslips?</h3>
+            <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text, #1a1a2e)', lineHeight: 1.5 }}>
+              This will:
+            </p>
+            <ul style={{ margin: '0 0 16px', paddingLeft: 20, fontSize: 13, color: 'var(--text, #1a1a2e)', lineHeight: 1.8 }}>
+              <li><strong>Disconnect</strong> the Xero integration</li>
+              <li><strong>Delete all Xero payslip data</strong> for this company</li>
+              <li>Switch employees to see InflowHR payslips only</li>
+            </ul>
+            <p style={{ margin: '0 0 16px', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+              This action cannot be undone. You will need to reconnect to Xero to use Xero payslips again.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="admin-btn" onClick={() => setShowXeroDisconnectModal(false)}>Cancel</button>
+              <button className="admin-btn admin-btn-danger" onClick={confirmSwitchToInflowHR} style={{ background: '#dc2626', color: '#fff', border: 'none' }}>
+                Continue — Disconnect Xero
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="admin-page-header">
         <h2>Payroll Management</h2>
-        <p>{payslips.length} payslips · {employees.length} employees</p>
+        <p>{sourcePayslips.length} payslips · {employees.length} employees · {fyLabel}</p>
       </div>
 
       <div className="admin-mini-stats">
@@ -672,7 +882,6 @@ export default function AdminPayroll() {
 
       {tab === 'payslips' && (
         <>
-          {/* Payslip source toggle — only show when Xero is connected */}
           {xeroIntegration?.sync_status === 'connected' && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', marginBottom: 12,
@@ -680,21 +889,11 @@ export default function AdminPayroll() {
             }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>Payslip Source:</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
-                <input
-                  type="radio"
-                  name="payslipSource"
-                  checked={activeSource === 'inflowhr'}
-                  onChange={() => togglePayslipSource('inflowhr')}
-                />
+                <input type="radio" name="payslipSource" checked={activeSource === 'inflowhr'} onChange={() => togglePayslipSource('inflowhr')} />
                 <span>InflowHR Payslips</span>
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
-                <input
-                  type="radio"
-                  name="payslipSource"
-                  checked={activeSource === 'xero'}
-                  onChange={() => togglePayslipSource('xero')}
-                />
+                <input type="radio" name="payslipSource" checked={activeSource === 'xero'} onChange={() => togglePayslipSource('xero')} />
                 <span>Xero Payslips</span>
               </label>
               <span className="admin-badge admin-badge-approved" style={{ marginLeft: 'auto' }}>
@@ -722,21 +921,20 @@ export default function AdminPayroll() {
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Gross</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {filtered.map(p => (
                     <>
                       <tr key={p.id} className={expandedId === p.id ? 'admin-row-active' : ''}>
                         <td className="admin-td-mono">{p.reference_number}</td>
                         <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
-                        <td>{new Date(p.pay_period_start).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</td>
-                        <td>{editingId === p.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={editForm.gross_pay} onChange={e => setEditForm(f => ({...f, gross_pay: +e.target.value}))} /> : `£${Number(p.gross_pay).toFixed(2)}`}</td>
-                        <td>£{Number(p.net_pay).toFixed(2)}</td>
-                        <td>{editingId === p.id ? (
-                          <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(f => ({...f, status: e.target.value}))}>
-                            <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
-                          </select>
-                        ) : <span className={`admin-badge admin-badge-${p.status}`}>{p.status}</span>}</td>
+                        <td>{new Date(p.pay_period_start + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</td>
+                        <td>£{Number(p.gross_pay).toFixed(2)}</td>
+                        <td>£{Number(p.tax).toFixed(2)}</td>
+                        <td>£{Number(p.national_insurance).toFixed(2)}</td>
+                        <td>£{Number(p.pension).toFixed(2)}</td>
+                        <td><strong>£{Number(p.net_pay).toFixed(2)}</strong></td>
+                        <td><span className={`admin-badge admin-badge-${p.status}`}>{p.status}</span></td>
                         <td className="admin-actions">
                           {editingId === p.id ? (
                             <>
@@ -760,28 +958,62 @@ export default function AdminPayroll() {
                       </tr>
                       {expandedId === p.id && (
                         <tr key={`exp-${p.id}`} className="admin-expanded-row">
-                          <td colSpan={7}>
-                            <div className="admin-detail-grid admin-detail-grid-4">
-                              <div><strong>Tax Code:</strong> {p.tax_code}</div>
-                              <div><strong>Annual Salary:</strong> £{Number(p.annual_salary || 0).toLocaleString()}</div>
-                              <div><strong>Tax:</strong> £{Number(p.tax).toFixed(2)}</div>
-                              <div><strong>NI:</strong> £{Number(p.national_insurance).toFixed(2)}</div>
-                              <div><strong>Pension:</strong> £{Number(p.pension).toFixed(2)}</div>
-                              <div><strong>Overtime:</strong> £{Number(p.overtime || 0).toFixed(2)}</div>
-                              <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
-                              <div><strong>Payment Date:</strong> {new Date(p.payment_date).toLocaleDateString('en-GB')}</div>
-                            </div>
-                            {p.employee?.id && (empBenefits[p.employee.id] || []).length > 0 && (
-                              <div style={{ marginTop: '12px' }}>
-                                <strong style={{ fontSize: '13px' }}>Benefit Subscriptions:</strong>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
-                                  {empBenefits[p.employee.id].map((b, i) => (
-                                    <span key={i} style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px' }}>
-                                      {b.title} — £{b.monthly_cost.toFixed(2)}/mo (since {new Date(b.enrolled_at).toLocaleDateString('en-GB')})
-                                    </span>
-                                  ))}
+                          <td colSpan={10}>
+                            {editingId === p.id ? (
+                              <div className="admin-detail-grid admin-detail-grid-4">
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Gross Pay</label><input type="number" className="admin-inline-input" value={editForm.gross_pay} onChange={e => setEditForm(f => ({...f, gross_pay: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax</label><input type="number" className="admin-inline-input" value={editForm.tax} onChange={e => setEditForm(f => ({...f, tax: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>National Insurance</label><input type="number" className="admin-inline-input" value={editForm.national_insurance} onChange={e => setEditForm(f => ({...f, national_insurance: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Pension</label><input type="number" className="admin-inline-input" value={editForm.pension} onChange={e => setEditForm(f => ({...f, pension: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Other Deductions</label><input type="number" className="admin-inline-input" value={editForm.other_deductions} onChange={e => setEditForm(f => ({...f, other_deductions: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Monthly Deductions</label><input type="number" className="admin-inline-input" value={editForm.monthly_deductions} onChange={e => setEditForm(f => ({...f, monthly_deductions: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Overtime</label><input type="number" className="admin-inline-input" value={editForm.overtime} onChange={e => setEditForm(f => ({...f, overtime: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Adjustments</label><input type="number" className="admin-inline-input" value={editForm.adjustments} onChange={e => setEditForm(f => ({...f, adjustments: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax Code</label><input className="admin-inline-input" value={editForm.tax_code} onChange={e => setEditForm(f => ({...f, tax_code: e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Annual Salary</label><input type="number" className="admin-inline-input" value={editForm.annual_salary} onChange={e => setEditForm(f => ({...f, annual_salary: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Payroll ID</label><input className="admin-inline-input" value={editForm.payroll_id} onChange={e => setEditForm(f => ({...f, payroll_id: e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Status</label>
+                                  <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(f => ({...f, status: e.target.value}))}>
+                                    <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
+                                  </select>
+                                </div>
+                                <div style={{ gridColumn: 'span 4', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 600, marginRight: 'auto', color: 'var(--text, #1a1a2e)' }}>
+                                    Calculated Net: £{(Number(editForm.gross_pay) + Number(editForm.overtime || 0) + Number(editForm.adjustments || 0) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions) - Number(editForm.monthly_deductions || 0)).toFixed(2)}
+                                  </span>
+                                  <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(p.id)}>Save</button>
+                                  <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
                                 </div>
                               </div>
+                            ) : (
+                              <>
+                                <div className="admin-detail-grid admin-detail-grid-4">
+                                  <div><strong>Tax Code:</strong> {p.tax_code}</div>
+                                  <div><strong>Annual Salary:</strong> £{Number(p.annual_salary || 0).toLocaleString()}</div>
+                                  <div><strong>Tax:</strong> £{Number(p.tax).toFixed(2)}</div>
+                                  <div><strong>NI:</strong> £{Number(p.national_insurance).toFixed(2)}</div>
+                                  <div><strong>Pension:</strong> £{Number(p.pension).toFixed(2)}</div>
+                                  <div><strong>Overtime:</strong> £{Number(p.overtime || 0).toFixed(2)}</div>
+                                  <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
+                                  <div><strong>Other Deductions:</strong> £{Number(p.other_deductions || 0).toFixed(2)}</div>
+                                  <div><strong>Monthly Deductions:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
+                                  <div><strong>Payment Date:</strong> {new Date(p.payment_date + 'T00:00:00').toLocaleDateString('en-GB')}</div>
+                                  <div><strong>Payroll ID:</strong> {p.payroll_id || '—'}</div>
+                                  <div><strong>Bank Account:</strong> {p.bank_account || '—'}</div>
+                                </div>
+                                {p.employee?.id && (empBenefits[p.employee.id] || []).length > 0 && (
+                                  <div style={{ marginTop: '12px' }}>
+                                    <strong style={{ fontSize: '13px' }}>Benefit Subscriptions:</strong>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
+                                      {empBenefits[p.employee.id].map((b, i) => (
+                                        <span key={i} style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px' }}>
+                                          {b.title} — £{b.monthly_cost.toFixed(2)}/mo (since {new Date(b.enrolled_at).toLocaleDateString('en-GB')})
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
                             )}
                           </td>
                         </tr>
@@ -797,65 +1029,128 @@ export default function AdminPayroll() {
       )}
 
       {tab === 'employees' && (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead><tr><th>Employee</th><th>Department</th><th>Role</th><th>Annual Salary</th><th>Tax Code</th><th>Pension %</th><th></th></tr></thead>
-            <tbody>
-              {employees.map(emp => {
-                const latest = payslips.find(p => p.employee?.id === emp.id)
-                return (
-                  <tr key={emp.id}>
-                    <td>{emp.first_name} {emp.last_name}</td>
-                    <td>{emp.department || '—'}</td>
-                    <td>{emp.job_title || '—'}</td>
-                    <td>{empEditId === emp.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={empForm.annual_salary} onChange={e => setEmpForm(f => ({...f, annual_salary: +e.target.value}))} /> : `£${Number(emp.annual_salary || latest?.annual_salary || 0).toLocaleString()}`}</td>
-                    <td>{empEditId === emp.id ? <input className="admin-inline-input admin-inline-sm" value={empForm.tax_code} onChange={e => setEmpForm(f => ({...f, tax_code: e.target.value}))} /> : (emp.tax_code || latest?.tax_code || '—')}</td>
-                    <td>{empEditId === emp.id ? <input type="number" step="0.1" className="admin-inline-input admin-inline-sm" value={empForm.pension_pct} onChange={e => setEmpForm(f => ({...f, pension_pct: e.target.value}))} /> : (latest ? `${(Number(latest.pension) / Number(latest.gross_pay) * 100).toFixed(1)}%` : '—')}</td>
-                    <td className="admin-actions">
-                      {empEditId === emp.id ? (
-                        <>
-                          <button className="admin-btn-sm admin-btn-save" onClick={() => setEmpEditId(null)}>Save</button>
-                          <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEmpEditId(null)}>Cancel</button>
-                        </>
-                      ) : (
-                        <button className="admin-btn-icon" onClick={() => startEmpEdit(emp)}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
-                      )}
-                    </td>
+        <>
+          {/* Month navigation */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, padding: '12px 0', marginBottom: 12,
+          }}>
+            <button className="admin-btn-icon" disabled={empPayMonthIdx <= 0} onClick={() => setEmpPayMonthIdx(i => i - 1)}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text, #1a1a2e)', minWidth: 160, textAlign: 'center' }}>
+              {empPayMonth?.label || ''}
+            </span>
+            <button className="admin-btn-icon" disabled={empPayMonthIdx >= fyMonths.length - 1} onClick={() => setEmpPayMonthIdx(i => i + 1)}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Employee</th><th>Department</th><th>Gross Pay</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net Pay</th><th>Status</th></tr></thead>
+              <tbody>
+                {employees.map(emp => {
+                  const ps = empPayPayslips.find(p => p.employee?.id === emp.id)
+                  return (
+                    <tr key={emp.id}>
+                      <td><strong>{emp.first_name} {emp.last_name}</strong><br /><span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>{emp.job_title || ''}</span></td>
+                      <td>{emp.department || '—'}</td>
+                      <td>{ps ? `£${Number(ps.gross_pay).toFixed(2)}` : '—'}</td>
+                      <td>{ps ? `£${Number(ps.tax).toFixed(2)}` : '—'}</td>
+                      <td>{ps ? `£${Number(ps.national_insurance).toFixed(2)}` : '—'}</td>
+                      <td>{ps ? `£${Number(ps.pension).toFixed(2)}` : '—'}</td>
+                      <td>{ps ? <strong>£{Number(ps.net_pay).toFixed(2)}</strong> : '—'}</td>
+                      <td>{ps ? <span className={`admin-badge admin-badge-${ps.status}`}>{ps.status}</span> : <span className="admin-badge admin-badge-pending">No payslip</span>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              {empPayPayslips.length > 0 && (
+                <tfoot>
+                  <tr style={{ fontWeight: 700 }}>
+                    <td>Totals ({empPayPayslips.length})</td>
+                    <td></td>
+                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.gross_pay), 0).toFixed(2)}</td>
+                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
+                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.national_insurance), 0).toFixed(2)}</td>
+                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.pension), 0).toFixed(2)}</td>
+                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
+                    <td></td>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                </tfoot>
+              )}
+            </table>
+            {empPayPayslips.length === 0 && <div className="admin-empty">No payslips for {empPayMonth?.label}</div>}
+          </div>
+        </>
       )}
 
       {tab === 'schedule' && (
         <div className="admin-schedule">
-          <h3>Payroll Calendar — FY 2026/2027</h3>
+          <h3>Payroll Calendar — {fyLabel}</h3>
           <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Payment Date</th><th>Cutoff</th><th>Status</th></tr></thead>
+              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Payment Date</th><th>Cutoff</th><th>Payslips</th><th>Status</th></tr></thead>
               <tbody>
-                {PAYROLL_MONTHS.map((month, i) => {
-                  const fyMonth = (i + 3) % 12
-                  const year = fyMonth >= 3 ? 2026 : 2027
-                  const start = new Date(year, fyMonth, 1)
-                  const end = new Date(year, fyMonth + 1, 0)
-                  const payDate = new Date(end)
-                  payDate.setDate(payDate.getDate() - 2)
-                  const cutoff = new Date(end)
-                  cutoff.setDate(cutoff.getDate() - 5)
+                {fyMonths.map(({ year, month }) => {
+                  const start = new Date(year, month, 1)
+                  const end = new Date(year, month + 1, 0)
+                  const payDate = new Date(end); payDate.setDate(payDate.getDate() - 2)
+                  const cutoff = new Date(end); cutoff.setDate(cutoff.getDate() - 5)
+                  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
+                  const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey))
                   const isPast = end < new Date()
+                  const schedStatus = payrollScheduleStatuses[monthKey]
+                  const hasPayslips = monthPayslips.length > 0
+                  const allPaid = hasPayslips && monthPayslips.every(p => p.status === 'paid')
+
+                  let statusLabel: string
+                  let statusClass: string
+                  let isClickable = false
+
+                  if (schedStatus === 'completed' && allPaid) {
+                    statusLabel = 'Completed'
+                    statusClass = 'admin-badge-paid'
+                  } else if (schedStatus === 'edited') {
+                    statusLabel = 'Edited — Download'
+                    statusClass = 'admin-badge-rejected'
+                    isClickable = true
+                  } else if (hasPayslips && !allPaid) {
+                    statusLabel = 'Submit Payroll'
+                    statusClass = 'admin-badge-pending'
+                    isClickable = true
+                  } else if (!hasPayslips && isPast) {
+                    statusLabel = 'No Payslips'
+                    statusClass = 'admin-badge-pending'
+                  } else if (!hasPayslips) {
+                    statusLabel = 'Upcoming'
+                    statusClass = 'admin-badge-pending'
+                  } else {
+                    statusLabel = 'Completed'
+                    statusClass = 'admin-badge-paid'
+                  }
+
                   return (
-                    <tr key={month} className={isPast ? 'admin-row-muted' : ''}>
-                      <td><strong>{PAYROLL_MONTHS[fyMonth]}</strong></td>
+                    <tr key={monthKey} className={isPast && !isClickable ? 'admin-row-muted' : ''}>
+                      <td><strong>{MONTH_NAMES[month]}</strong></td>
                       <td>{start.toLocaleDateString('en-GB')}</td>
                       <td>{end.toLocaleDateString('en-GB')}</td>
                       <td>{payDate.toLocaleDateString('en-GB')}</td>
                       <td>{cutoff.toLocaleDateString('en-GB')}</td>
-                      <td><span className={`admin-badge ${isPast ? 'admin-badge-paid' : 'admin-badge-pending'}`}>{isPast ? 'Completed' : 'Upcoming'}</span></td>
+                      <td>{monthPayslips.length}</td>
+                      <td>
+                        {isClickable ? (
+                          <button
+                            className={`admin-badge ${statusClass}`}
+                            style={{ cursor: 'pointer', border: 'none', fontWeight: 600 }}
+                            onClick={() => submitPayroll(monthKey)}
+                          >
+                            {statusLabel}
+                          </button>
+                        ) : (
+                          <span className={`admin-badge ${statusClass}`}>{statusLabel}</span>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -1163,7 +1458,6 @@ export default function AdminPayroll() {
 
       {tab === 'xero_pay' && (
         <>
-          {/* Connection status card */}
           <div style={{
             padding: 20, background: 'var(--bg-card, #fff)', borderRadius: 12,
             border: '1px solid var(--border, #e5e7eb)', marginBottom: 16,
@@ -1190,7 +1484,6 @@ export default function AdminPayroll() {
               </div>
             </div>
 
-            {/* Status details */}
             {xeroIntegration?.sync_status === 'connected' && (
               <div style={{
                 marginTop: 16, padding: 12, borderRadius: 8, background: '#e8f5e9',
@@ -1247,7 +1540,6 @@ export default function AdminPayroll() {
             )}
           </div>
 
-          {/* Pay run info */}
           {xeroPayRun && (
             <div style={{
               padding: '10px 14px', marginBottom: 12, background: 'var(--bg-card, #fff)',
@@ -1262,7 +1554,6 @@ export default function AdminPayroll() {
             </div>
           )}
 
-          {/* Xero payslip table (live from API) */}
           {xeroLivePayslips.length > 0 && (
             <>
               <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>
@@ -1293,11 +1584,11 @@ export default function AdminPayroll() {
                         <td>£{Number(s.total_earnings).toFixed(2)}</td>
                         <td>£{Number(s.tax).toFixed(2)}</td>
                         <td>£{Number(s.employee_ni).toFixed(2)}</td>
-                        <td title={s.deductions.map(d => `${d.name}: £${d.amount.toFixed(2)}`).join('\n')}>
-                          £{s.deductions.reduce((sum, d) => sum + d.amount, 0).toFixed(2)}
+                        <td title={(s.deductions || []).map(d => `${d.name}: £${d.amount.toFixed(2)}`).join('\n')}>
+                          £{(s.deductions || []).reduce((sum, d) => sum + d.amount, 0).toFixed(2)}
                         </td>
                         <td>£{Number(s.employer_ni).toFixed(2)}</td>
-                        <td title={s.employer_pension_lines.map(b => `${b.name}: £${b.amount.toFixed(2)}`).join('\n')}>
+                        <td title={(s.employer_pension_lines || []).map(b => `${b.name}: £${b.amount.toFixed(2)}`).join('\n')}>
                           £{Number(s.employer_pension).toFixed(2)}
                         </td>
                         <td title={(s.reimbursements || []).map(r => `${r.name}: £${r.amount.toFixed(2)}`).join('\n')}>
@@ -1315,7 +1606,7 @@ export default function AdminPayroll() {
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.total_earnings), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.employee_ni), 0).toFixed(2)}</td>
-                      <td>£{xeroLivePayslips.reduce((s, p) => s + p.deductions.reduce((sum, d) => sum + d.amount, 0), 0).toFixed(2)}</td>
+                      <td>£{xeroLivePayslips.reduce((s, p) => s + (p.deductions || []).reduce((sum, d) => sum + d.amount, 0), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.employer_ni), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.employer_pension), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.total_reimbursements || 0), 0).toFixed(2)}</td>
