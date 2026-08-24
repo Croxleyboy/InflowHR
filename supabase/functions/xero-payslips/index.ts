@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     }
     const rawSlips = (await payslipsRes.json()).paySlips || []
 
-    // Fetch Xero employees to get their email addresses for matching
+    // Fetch Xero employees to get email addresses for matching
     const xeroEmployees: Record<string, string> = {}
     let empPage = 1
     while (true) {
@@ -92,11 +92,13 @@ Deno.serve(async (req) => {
       const errTaxLines = (s.employerTaxLines || []) as { description: string; amount: number }[]
       const deductionLines = (s.deductionLines || []) as { displayName: string; amount: number }[]
       const benefitLines = (s.benefitLines || []) as { displayName: string; amount: number }[]
+      const reimbursementLines = (s.reimbursementLines || []) as { displayName: string; amount: number }[]
 
       const paye = empTaxLines.find(t => t.description === 'PAYE')?.amount ?? 0
       const employeeNI = empTaxLines.find(t => t.description?.includes('Employee National Insurance'))?.amount ?? 0
       const employerNI = errTaxLines.find(t => t.description?.includes('Employer National Insurance'))?.amount ?? 0
       const studentLoan = empTaxLines.find(t => t.description?.includes('Student Loan'))?.amount ?? 0
+      const totalReimbursements = (s.totalReimbursements as number) ?? 0
 
       const xeroEmail = xeroEmployees[s.employeeID as string] || null
       const inflowEmployeeId = xeroEmail ? emailToInflowId[xeroEmail] : null
@@ -116,6 +118,8 @@ Deno.serve(async (req) => {
         employer_ni: employerNI,
         student_loan: studentLoan,
         deductions: deductionLines.map(d => ({ name: d.displayName, amount: d.amount })),
+        reimbursements: reimbursementLines.map(r => ({ name: r.displayName, amount: r.amount })),
+        total_reimbursements: totalReimbursements,
         employer_pension: benefitLines.reduce((sum, b) => sum + (b.amount || 0), 0),
         employer_pension_lines: benefitLines.map(b => ({ name: b.displayName, amount: b.amount })),
         payment_method: (s.paymentMethod as string) ?? '',
@@ -151,6 +155,7 @@ Deno.serve(async (req) => {
         national_insurance: ps.employee_ni,
         pension: totalDeductions,
         other_deductions: 0,
+        adjustments: ps.total_reimbursements,
         net_pay: ps.net_pay,
         payment_date: paymentDate,
         status: 'paid',
@@ -165,24 +170,25 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Update last_sync_at
+    const payRunData = {
+      id: completedRun.payRunID,
+      period_start: completedRun.periodStartDate,
+      period_end: completedRun.periodEndDate,
+      payment_date: completedRun.paymentDate,
+      status: completedRun.payRunStatus,
+    }
+
+    // Cache the response and update sync timestamp
     await sb.from('xero_integrations').update({
       last_sync_at: new Date().toISOString(),
       sync_status: 'connected',
       sync_error: null,
+      cached_pay_run: payRunData,
+      cached_payslips: payslips,
       updated_at: new Date().toISOString(),
     }).eq('company_id', company_id)
 
-    return json({
-      payRun: {
-        id: completedRun.payRunID,
-        period_start: completedRun.periodStartDate,
-        period_end: completedRun.periodEndDate,
-        payment_date: completedRun.paymentDate,
-        status: completedRun.payRunStatus,
-      },
-      payslips,
-    })
+    return json({ payRun: payRunData, payslips })
   } catch (err) {
     console.error('xero-payslips error:', err)
     return json({ error: (err as Error).message }, 500)

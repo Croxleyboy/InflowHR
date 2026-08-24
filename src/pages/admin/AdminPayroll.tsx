@@ -52,6 +52,8 @@ interface XeroPayslipRow {
   employer_ni: number
   student_loan: number
   deductions: { name: string; amount: number }[]
+  reimbursements: { name: string; amount: number }[]
+  total_reimbursements: number
   employer_pension: number
   employer_pension_lines: { name: string; amount: number }[]
   payment_method: string
@@ -146,11 +148,14 @@ export default function AdminPayroll() {
     const [pRes, eRes, xRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).order('payment_date', { ascending: false }),
       supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
-      supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
     setPayslips((pRes.data as Payslip[]) || [])
     setEmployees((eRes.data as Employee[]) || [])
-    setXeroIntegration(xRes.data as XeroIntegration | null)
+    const xero = xRes.data as (XeroIntegration & { cached_pay_run?: XeroPayRun; cached_payslips?: XeroPayslipRow[] }) | null
+    setXeroIntegration(xero)
+    if (xero?.cached_pay_run) setXeroPayRun(xero.cached_pay_run)
+    if (xero?.cached_payslips?.length) setXeroLivePayslips(xero.cached_payslips)
     setLoading(false)
   }
 
@@ -1275,6 +1280,7 @@ export default function AdminPayroll() {
                       <th>Deductions</th>
                       <th>Employer NI</th>
                       <th>Employer Pension</th>
+                      <th>Reimbursements</th>
                       <th>Student Loan</th>
                       <th>Net Pay</th>
                     </tr>
@@ -1294,6 +1300,9 @@ export default function AdminPayroll() {
                         <td title={s.employer_pension_lines.map(b => `${b.name}: £${b.amount.toFixed(2)}`).join('\n')}>
                           £{Number(s.employer_pension).toFixed(2)}
                         </td>
+                        <td title={(s.reimbursements || []).map(r => `${r.name}: £${r.amount.toFixed(2)}`).join('\n')}>
+                          £{Number(s.total_reimbursements || 0).toFixed(2)}
+                        </td>
                         <td>£{Number(s.student_loan).toFixed(2)}</td>
                         <td><strong>£{Number(s.net_pay).toFixed(2)}</strong></td>
                       </tr>
@@ -1309,6 +1318,7 @@ export default function AdminPayroll() {
                       <td>£{xeroLivePayslips.reduce((s, p) => s + p.deductions.reduce((sum, d) => sum + d.amount, 0), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.employer_ni), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.employer_pension), 0).toFixed(2)}</td>
+                      <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.total_reimbursements || 0), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.student_loan), 0).toFixed(2)}</td>
                       <td>£{xeroLivePayslips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
                     </tr>
