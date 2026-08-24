@@ -74,7 +74,11 @@ Deno.serve(async (req) => {
     }
 
     const payslipsData = await payslipsRes.json()
+    console.log('RAW payslipsData keys:', Object.keys(payslipsData))
     const rawSlips = payslipsData.paySlips || payslipsData.payslips || []
+    if (rawSlips.length > 0) {
+      console.log('RAW first payslip:', JSON.stringify(rawSlips[0], null, 2))
+    }
 
     // Normalise to a clean shape for the frontend (UK API uses camelCase)
     const payslips = rawSlips.map((s: Record<string, unknown>) => ({
