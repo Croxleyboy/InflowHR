@@ -118,6 +118,9 @@ export default function AdminPayroll() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [generating, setGenerating] = useState(false)
   const [empBenefits, setEmpBenefits] = useState<Record<string, { title: string; enrolled_at: string; monthly_cost: number }[]>>({})
+  const [showAddSingle, setShowAddSingle] = useState(false)
+  const [singleEmpId, setSingleEmpId] = useState('')
+  const [singleMonth, setSingleMonth] = useState('')
 
   // Xero integration state
   const [xeroIntegration, setXeroIntegration] = useState<XeroIntegration | null>(null)
@@ -287,41 +290,67 @@ export default function AdminPayroll() {
     }
   }
 
+  function findLatestMonthWithPayslips(): string | null {
+    const monthKeys = new Set<string>()
+    sourcePayslips.forEach(p => {
+      const d = new Date(p.pay_period_start + 'T00:00:00')
+      monthKeys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    })
+    const sorted = Array.from(monthKeys).sort()
+    return sorted.length > 0 ? sorted[sorted.length - 1] : null
+  }
+
+  function getNextMonthKey(monthKey: string): { year: number; month: number; key: string } {
+    const [y, m] = monthKey.split('-').map(Number)
+    const next = new Date(y, m, 1)
+    return { year: next.getFullYear(), month: next.getMonth(), key: `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}` }
+  }
+
+  function countPayslipsForMonth(monthKey: string): number {
+    return sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey)).length
+  }
+
   async function generateNextPayroll() {
     setGenerating(true)
 
-    // Find the latest month that has payslips
-    const now = new Date()
-    const currentMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-    const currentPayslips = payslips.filter(p => p.pay_period_start.startsWith(currentMonthStart.slice(0, 7)))
-
-    if (currentPayslips.length === 0) {
-      showError('Current month payslips must exist before generating the next month')
+    const latestKey = findLatestMonthWithPayslips()
+    if (!latestKey) {
+      showError('No existing payslips found. Add a single payslip first to establish the current month.')
       setGenerating(false)
       return
     }
 
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const endOfMonth = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0)
+    const next = getNextMonthKey(latestKey)
+
+    // Check we're within the FY
+    const fyEnd = fyRange.endDate
+    const nextStart = new Date(next.year, next.month, 1)
+    if (nextStart > fyEnd) {
+      showError(`${MONTH_NAMES[next.month]} ${next.year} is outside the current financial year`)
+      setGenerating(false)
+      return
+    }
 
     // Check next month doesn't already have payslips
-    const nextKey = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
-    const existingNext = payslips.filter(p => p.pay_period_start.startsWith(nextKey))
-    if (existingNext.length > 0) {
-      showError(`Payslips for ${MONTH_NAMES[nextMonth.getMonth()]} ${nextMonth.getFullYear()} already exist`)
+    if (countPayslipsForMonth(next.key) > 0) {
+      showError(`Payslips for ${MONTH_NAMES[next.month]} ${next.year} already exist`)
       setGenerating(false)
       return
     }
 
+    const startDate = new Date(next.year, next.month, 1)
+    const endOfMonth = new Date(next.year, next.month + 1, 0)
     const paymentDate = new Date(endOfMonth)
     paymentDate.setDate(paymentDate.getDate() - 3)
-    const refPrefix = `PAY-${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`
     const batch = Date.now().toString(36).slice(-4)
 
     const errors: string[] = []
     for (let idx = 0; idx < employees.length; idx++) {
       const emp = employees[idx]
-      const latest = payslips.find(p => p.employee?.id === emp.id)
+      const existing = sourcePayslips.find(p => p.employee?.id === emp.id && p.pay_period_start.startsWith(next.key))
+      if (existing) continue
+
+      const latest = sourcePayslips.find(p => p.employee?.id === emp.id)
       const salary = emp.annual_salary || latest?.annual_salary || 42000
       const gross = Math.round((salary / 12) * 100) / 100
       const tax = latest ? Number(latest.tax) : Math.round(gross * 0.2 * 100) / 100
@@ -331,8 +360,8 @@ export default function AdminPayroll() {
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
         company_id: selectedCompanyId,
-        reference_number: `${refPrefix}-${batch}-${String(idx + 1).padStart(3, '0')}`,
-        pay_period_start: nextMonth.toISOString().split('T')[0],
+        reference_number: `PAY-${next.key}-${batch}-${String(idx + 1).padStart(3, '0')}`,
+        pay_period_start: startDate.toISOString().split('T')[0],
         pay_period_end: endOfMonth.toISOString().split('T')[0],
         gross_pay: gross, tax, national_insurance: ni, pension,
         other_deductions: 0,
@@ -342,17 +371,77 @@ export default function AdminPayroll() {
         tax_code: emp.tax_code || latest?.tax_code || '1257L',
         annual_salary: salary,
         payroll_id: emp.payroll_id || latest?.payroll_id || '',
-      }).select()
+      })
       if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
     }
     setGenerating(false)
     if (errors.length > 0) {
       showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
     } else {
-      showSuccess(`Payroll generated for ${MONTH_NAMES[nextMonth.getMonth()]} ${nextMonth.getFullYear()}`)
+      showSuccess(`Payroll generated for ${MONTH_NAMES[next.month]} ${next.year}`)
     }
     loadAll()
   }
+
+  async function addSinglePayslip() {
+    if (!singleEmpId || !singleMonth || !selectedCompanyId) return
+    setSaving(true)
+
+    const [y, m] = singleMonth.split('-').map(Number)
+    const monthKey = `${y}-${String(m).padStart(2, '0')}`
+
+    const existing = sourcePayslips.find(p =>
+      p.employee?.id === singleEmpId && p.pay_period_start.startsWith(monthKey)
+    )
+    if (existing) {
+      showError('A payslip already exists for this employee in this month')
+      setSaving(false)
+      return
+    }
+
+    const emp = employees.find(e => e.id === singleEmpId)
+    if (!emp) { showError('Employee not found'); setSaving(false); return }
+
+    const startDate = new Date(y, m - 1, 1)
+    const endOfMonth = new Date(y, m, 0)
+    const paymentDate = new Date(endOfMonth)
+    paymentDate.setDate(paymentDate.getDate() - 3)
+
+    const latest = sourcePayslips.find(p => p.employee?.id === emp.id)
+    const salary = emp.annual_salary || latest?.annual_salary || 42000
+    const gross = Math.round((salary / 12) * 100) / 100
+    const tax = latest ? Number(latest.tax) : Math.round(gross * 0.2 * 100) / 100
+    const ni = latest ? Number(latest.national_insurance) : Math.round(gross * 0.12 * 100) / 100
+    const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
+
+    const existingCount = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey)).length
+    const batch = Date.now().toString(36).slice(-4)
+
+    const { error } = await supabase.from('payslips').insert({
+      employee_id: emp.id,
+      company_id: selectedCompanyId,
+      reference_number: `PAY-${monthKey}-${batch}-${String(existingCount + 1).padStart(3, '0')}`,
+      pay_period_start: startDate.toISOString().split('T')[0],
+      pay_period_end: endOfMonth.toISOString().split('T')[0],
+      gross_pay: gross, tax, national_insurance: ni, pension,
+      other_deductions: 0,
+      net_pay: gross - tax - ni - pension,
+      payment_date: paymentDate.toISOString().split('T')[0],
+      status: 'draft',
+      tax_code: emp.tax_code || latest?.tax_code || '1257L',
+      annual_salary: salary,
+      payroll_id: emp.payroll_id || latest?.payroll_id || '',
+    })
+    if (error) { showError('Failed to add payslip: ' + error.message); setSaving(false); return }
+    showSuccess(`Payslip added for ${emp.first_name} ${emp.last_name} — ${MONTH_NAMES[m - 1]} ${y}`)
+    setShowAddSingle(false)
+    setSingleEmpId('')
+    setSingleMonth('')
+    setSaving(false)
+    loadAll()
+  }
+
+  const [saving, setSaving] = useState(false)
 
   const activeSource = xeroIntegration?.payslip_source || 'inflowhr'
 
@@ -375,14 +464,27 @@ export default function AdminPayroll() {
     return Array.from(names).sort()
   }, [payslips])
 
-  const stats = useMemo(() => ({
-    total: sourcePayslips.length,
-    draft: sourcePayslips.filter(p => p.status === 'draft').length,
-    processed: sourcePayslips.filter(p => p.status === 'processed').length,
-    paid: sourcePayslips.filter(p => p.status === 'paid').length,
-    totalGross: sourcePayslips.reduce((s, p) => s + Number(p.gross_pay), 0),
-    totalNet: sourcePayslips.reduce((s, p) => s + Number(p.net_pay), 0),
-  }), [sourcePayslips])
+  const stats = useMemo(() => {
+    const monthsWithPayslips = new Set<string>()
+    sourcePayslips.forEach(p => {
+      const d = new Date(p.pay_period_start + 'T00:00:00')
+      monthsWithPayslips.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+    })
+    return {
+      total: sourcePayslips.length,
+      draft: sourcePayslips.filter(p => p.status === 'draft').length,
+      processed: sourcePayslips.filter(p => p.status === 'processed').length,
+      paid: sourcePayslips.filter(p => p.status === 'paid').length,
+      totalGross: sourcePayslips.reduce((s, p) => s + Number(p.gross_pay), 0),
+      totalNet: sourcePayslips.reduce((s, p) => s + Number(p.net_pay), 0),
+      totalTax: sourcePayslips.reduce((s, p) => s + Number(p.tax), 0),
+      totalNI: sourcePayslips.reduce((s, p) => s + Number(p.national_insurance), 0),
+      totalPension: sourcePayslips.reduce((s, p) => s + Number(p.pension), 0),
+      activeEmployees: employees.length,
+      monthsProcessed: monthsWithPayslips.size,
+      avgGrossPerEmp: employees.length > 0 ? sourcePayslips.reduce((s, p) => s + Number(p.gross_pay), 0) / Math.max(1, sourcePayslips.length) : 0,
+    }
+  }, [sourcePayslips, employees])
 
   // Employee Pay tab: payslips for selected month
   const empPayMonth = fyMonths[empPayMonthIdx]
@@ -859,14 +961,18 @@ export default function AdminPayroll() {
 
       <div className="admin-page-header">
         <h2>Payroll Management</h2>
-        <p>{sourcePayslips.length} payslips · {employees.length} employees · {fyLabel}</p>
+        <p>{stats.activeEmployees} active employees · {stats.total} payslips · {stats.monthsProcessed} months · {fyLabel}</p>
       </div>
 
       <div className="admin-mini-stats">
-        <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Total</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value">{stats.activeEmployees}</span><span>Active Employees</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Payslips</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>{stats.draft}</span><span>Draft</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.processed}</span><span>Processed</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{stats.paid}</span><span>Paid</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value">£{stats.totalGross.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span><span>Total Gross</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value">£{stats.totalNet.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span><span>Total Net</span></div>
+        <div className="admin-mini-stat"><span className="admin-mini-value">£{stats.totalTax.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span><span>Total Tax</span></div>
       </div>
 
       <div className="admin-tabs">
@@ -904,7 +1010,7 @@ export default function AdminPayroll() {
             </div>
           )}
 
-          <div className="admin-filters">
+          <div className="admin-filters" style={{ flexWrap: 'wrap' }}>
             <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="admin-select">
               <option value="">All Employees</option>
               {empNames.map(n => <option key={n} value={n}>{n}</option>)}
@@ -914,11 +1020,60 @@ export default function AdminPayroll() {
               <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
             </select>
             {activeSource === 'inflowhr' && (
-              <button className="admin-btn admin-btn-primary" onClick={generateNextPayroll} disabled={generating}>
-                {generating ? 'Generating...' : '+ Generate Next Payroll'}
-              </button>
+              <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+                <button className="admin-btn" onClick={() => setShowAddSingle(true)}>
+                  + Add Payslip
+                </button>
+                <button className="admin-btn admin-btn-primary" onClick={generateNextPayroll} disabled={generating}>
+                  {generating ? 'Generating...' : '+ Generate Next Month'}
+                </button>
+              </div>
             )}
           </div>
+
+          {showAddSingle && (
+            <div style={{
+              padding: 16, marginBottom: 12, background: 'var(--bg-card, #fff)',
+              borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
+            }}>
+              <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Add Single Payslip</h4>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1, minWidth: 180 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee</label>
+                  <select className="admin-select" value={singleEmpId} onChange={e => setSingleEmpId(e.target.value)} style={{ width: '100%' }}>
+                    <option value="">Select employee...</option>
+                    {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>)}
+                  </select>
+                </div>
+                <div style={{ minWidth: 160 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Month</label>
+                  <select className="admin-select" value={singleMonth} onChange={e => setSingleMonth(e.target.value)} style={{ width: '100%' }}>
+                    <option value="">Select month...</option>
+                    {fyMonths.map(m => {
+                      const key = `${m.year}-${String(m.month + 1).padStart(2, '0')}`
+                      return <option key={key} value={key}>{m.label}</option>
+                    })}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="admin-btn admin-btn-primary" onClick={addSinglePayslip} disabled={!singleEmpId || !singleMonth || saving}>
+                    {saving ? 'Adding...' : 'Add Payslip'}
+                  </button>
+                  <button className="admin-btn" onClick={() => { setShowAddSingle(false); setSingleEmpId(''); setSingleMonth('') }}>Cancel</button>
+                </div>
+              </div>
+              {singleEmpId && singleMonth && (() => {
+                const emp = employees.find(e => e.id === singleEmpId)
+                const existing = sourcePayslips.find(p => p.employee?.id === singleEmpId && p.pay_period_start.startsWith(singleMonth))
+                if (existing) return <p style={{ margin: '8px 0 0', fontSize: 12, color: '#dc2626' }}>A payslip already exists for this employee in this month.</p>
+                if (emp) {
+                  const salary = emp.annual_salary || 42000
+                  return <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text-muted, #888)' }}>Will create draft payslip based on annual salary of £{salary.toLocaleString()} (£{(salary / 12).toFixed(2)}/month gross)</p>
+                }
+                return null
+              })()}
+            </div>
+          )}
 
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
