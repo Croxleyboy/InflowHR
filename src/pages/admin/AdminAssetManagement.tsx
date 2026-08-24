@@ -472,7 +472,11 @@ export default function AdminAssetManagement() {
   }
 
   const filtered = assets.filter(a => {
-    if (search && !a.asset_name.toLowerCase().includes(search.toLowerCase()) && !a.brand.toLowerCase().includes(search.toLowerCase()) && !a.model.toLowerCase().includes(search.toLowerCase()) && !(a.assigned_to_name || '').toLowerCase().includes(search.toLowerCase())) return false
+    if (search) {
+      const q = search.toLowerCase()
+      const haystack = [a.asset_name, a.brand, a.model, a.serial_number, a.assigned_to_name || '', a.notes, a.asset_type].join(' ').toLowerCase()
+      if (!haystack.includes(q)) return false
+    }
     if (filterType && a.asset_type !== filterType) return false
     if (filterStatus && a.status !== filterStatus) return false
     if (filterOwner && a.assigned_to !== filterOwner) return false
@@ -517,22 +521,48 @@ export default function AdminAssetManagement() {
       </div>
 
       <div className="admin-mini-stats">
-        <div className="admin-mini-stat">
+        <div
+          className="admin-mini-stat"
+          style={{ cursor: 'pointer', outline: !filterStatus ? '2px solid var(--text, #1a1a2e)' : 'none', borderRadius: 8 }}
+          onClick={() => setFilterStatus('')}
+        >
           <span className="admin-mini-value">{assets.length}</span>
           <span>Total Assets</span>
         </div>
         {ASSET_STATUSES.map(s => statusCounts[s] > 0 && (
-          <div className="admin-mini-stat" key={s}>
+          <div
+            className="admin-mini-stat"
+            key={s}
+            style={{ cursor: 'pointer', outline: filterStatus === s ? `2px solid ${statusColor[s]}` : 'none', borderRadius: 8 }}
+            onClick={() => setFilterStatus(filterStatus === s ? '' : s)}
+          >
             <span className="admin-mini-value" style={{ color: statusColor[s] }}>{statusCounts[s]}</span>
             <span>{s}</span>
           </div>
         ))}
       </div>
 
+      {(search || filterType || filterStatus || filterOwner) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', fontSize: 13, color: 'var(--text-muted, #888)' }}>
+          <span>Showing {filtered.length} of {assets.length} assets</span>
+          {filterStatus && <span className="admin-badge" style={{ background: statusColor[filterStatus] || '#999', color: '#fff' }}>{filterStatus}</span>}
+          {filterOwner && <span className="admin-badge admin-badge-approved">{employees.find(e => e.id === filterOwner)?.first_name} {employees.find(e => e.id === filterOwner)?.last_name}</span>}
+          {filterType && <span className="admin-badge admin-badge-pending">{filterType}</span>}
+          {search && <span className="admin-badge admin-badge-pending">"{search}"</span>}
+          <button
+            className="admin-btn-sm"
+            style={{ marginLeft: 4, fontSize: 11 }}
+            onClick={() => { setSearch(''); setFilterType(''); setFilterStatus(''); setFilterOwner('') }}
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
+
       <div className="admin-filters" style={{ flexWrap: 'wrap' }}>
         <input
           className="admin-input"
-          placeholder="Search assets..."
+          placeholder="Search name, brand, model, serial, owner, notes..."
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{ minWidth: 200 }}
