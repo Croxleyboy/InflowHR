@@ -83,6 +83,10 @@ interface Employee {
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function getFYRange(fyStartMonth: number) {
   const now = new Date()
   const currentMonth = now.getMonth() + 1
@@ -135,10 +139,10 @@ export default function AdminPayroll() {
 
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
-    const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]
+    const d = new Date(); d.setDate(1); return localDateStr(d)
   })
   const [tbPeriodEnd, setTbPeriodEnd] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return d.toISOString().split('T')[0]
+    const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return localDateStr(d)
   })
   const [tbData, setTbData] = useState<Record<string, { shiftHrs: number; shiftEntries: any[]; tsHrs: number; tsEntries: any[]; legalHrs: number; legalEntries: any[] }>>({})
   const [tbLoading, setTbLoading] = useState(false)
@@ -146,10 +150,10 @@ export default function AdminPayroll() {
   const [tbFilterEmp, setTbFilterEmp] = useState('')
 
   const [anPeriodStart, setAnPeriodStart] = useState(() => {
-    const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]
+    const d = new Date(); d.setDate(1); return localDateStr(d)
   })
   const [anPeriodEnd, setAnPeriodEnd] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return d.toISOString().split('T')[0]
+    const d = new Date(); d.setMonth(d.getMonth() + 1, 0); return localDateStr(d)
   })
   const [anLoading, setAnLoading] = useState(false)
   const [anData, setAnData] = useState<{
@@ -184,8 +188,8 @@ export default function AdminPayroll() {
 
   async function loadAll() {
     setLoading(true)
-    const fyStart = fyRange.startDate.toISOString().split('T')[0]
-    const fyEnd = fyRange.endDate.toISOString().split('T')[0]
+    const fyStart = localDateStr(fyRange.startDate)
+    const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
       supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
@@ -347,12 +351,12 @@ export default function AdminPayroll() {
         employee_id: emp.id,
         company_id: selectedCompanyId,
         reference_number: `PAY-${nextKey}-${batch}-${String(idx + 1).padStart(3, '0')}`,
-        pay_period_start: startDate.toISOString().split('T')[0],
-        pay_period_end: endOfMonth.toISOString().split('T')[0],
+        pay_period_start: localDateStr(startDate),
+        pay_period_end: localDateStr(endOfMonth),
         gross_pay: gross, tax, national_insurance: ni, pension,
         other_deductions: 0,
         net_pay: gross - tax - ni - pension,
-        payment_date: paymentDate.toISOString().split('T')[0],
+        payment_date: localDateStr(paymentDate),
         status: 'draft',
         tax_code: emp.tax_code || latest?.tax_code || '1257L',
         annual_salary: salary,
@@ -407,12 +411,12 @@ export default function AdminPayroll() {
       employee_id: emp.id,
       company_id: selectedCompanyId,
       reference_number: `PAY-${monthKey}-${batch}-${String(existingCount + 1).padStart(3, '0')}`,
-      pay_period_start: startDate.toISOString().split('T')[0],
-      pay_period_end: endOfMonth.toISOString().split('T')[0],
+      pay_period_start: localDateStr(startDate),
+      pay_period_end: localDateStr(endOfMonth),
       gross_pay: gross, tax, national_insurance: ni, pension,
       other_deductions: 0,
       net_pay: gross - tax - ni - pension,
-      payment_date: paymentDate.toISOString().split('T')[0],
+      payment_date: localDateStr(paymentDate),
       status: 'draft',
       tax_code: emp.tax_code || latest?.tax_code || '1257L',
       annual_salary: salary,
@@ -587,7 +591,7 @@ export default function AdminPayroll() {
         projectMap[pk].hours += Number(r.hours) || 0
         const weekStart = new Date(r.date + 'T00:00:00')
         weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
-        const wk = weekStart.toISOString().split('T')[0]
+        const wk = localDateStr(weekStart)
         if (!weekMap[wk]) weekMap[wk] = { count: 0, hours: 0 }
         weekMap[wk].count++
         weekMap[wk].hours += Number(r.hours) || 0
