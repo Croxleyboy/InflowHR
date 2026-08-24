@@ -290,56 +290,42 @@ export default function AdminPayroll() {
     }
   }
 
-  function findLatestMonthWithPayslips(): string | null {
-    const monthKeys = new Set<string>()
-    sourcePayslips.forEach(p => {
-      const d = new Date(p.pay_period_start + 'T00:00:00')
-      monthKeys.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-    })
-    const sorted = Array.from(monthKeys).sort()
-    return sorted.length > 0 ? sorted[sorted.length - 1] : null
-  }
-
-  function getNextMonthKey(monthKey: string): { year: number; month: number; key: string } {
-    const [y, m] = monthKey.split('-').map(Number)
-    const next = new Date(y, m, 1)
-    return { year: next.getFullYear(), month: next.getMonth(), key: `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}` }
-  }
-
-  function countPayslipsForMonth(monthKey: string): number {
-    return sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey)).length
-  }
-
   async function generateNextPayroll() {
     setGenerating(true)
 
-    const latestKey = findLatestMonthWithPayslips()
-    if (!latestKey) {
-      showError('No existing payslips found. Add a single payslip first to establish the current month.')
+    const now = new Date()
+    const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const currentPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(currentKey))
+
+    if (currentPayslips.length === 0) {
+      showError(`${MONTH_NAMES[now.getMonth()]} ${now.getFullYear()} must have payslips before generating next month. Use "Add Payslip" to create them.`)
       setGenerating(false)
       return
     }
 
-    const next = getNextMonthKey(latestKey)
+    // Target is exactly 1 month ahead of the current calendar month
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextYear = nextDate.getFullYear()
+    const nextMonth = nextDate.getMonth()
+    const nextKey = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}`
 
     // Check we're within the FY
-    const fyEnd = fyRange.endDate
-    const nextStart = new Date(next.year, next.month, 1)
-    if (nextStart > fyEnd) {
-      showError(`${MONTH_NAMES[next.month]} ${next.year} is outside the current financial year`)
+    if (nextDate > fyRange.endDate) {
+      showError(`${MONTH_NAMES[nextMonth]} ${nextYear} is outside the current financial year`)
       setGenerating(false)
       return
     }
 
     // Check next month doesn't already have payslips
-    if (countPayslipsForMonth(next.key) > 0) {
-      showError(`Payslips for ${MONTH_NAMES[next.month]} ${next.year} already exist`)
+    const existingNext = sourcePayslips.filter(p => p.pay_period_start.startsWith(nextKey))
+    if (existingNext.length > 0) {
+      showError(`Payslips for ${MONTH_NAMES[nextMonth]} ${nextYear} already exist`)
       setGenerating(false)
       return
     }
 
-    const startDate = new Date(next.year, next.month, 1)
-    const endOfMonth = new Date(next.year, next.month + 1, 0)
+    const startDate = new Date(nextYear, nextMonth, 1)
+    const endOfMonth = new Date(nextYear, nextMonth + 1, 0)
     const paymentDate = new Date(endOfMonth)
     paymentDate.setDate(paymentDate.getDate() - 3)
     const batch = Date.now().toString(36).slice(-4)
@@ -347,7 +333,7 @@ export default function AdminPayroll() {
     const errors: string[] = []
     for (let idx = 0; idx < employees.length; idx++) {
       const emp = employees[idx]
-      const existing = sourcePayslips.find(p => p.employee?.id === emp.id && p.pay_period_start.startsWith(next.key))
+      const existing = sourcePayslips.find(p => p.employee?.id === emp.id && p.pay_period_start.startsWith(nextKey))
       if (existing) continue
 
       const latest = sourcePayslips.find(p => p.employee?.id === emp.id)
@@ -360,7 +346,7 @@ export default function AdminPayroll() {
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
         company_id: selectedCompanyId,
-        reference_number: `PAY-${next.key}-${batch}-${String(idx + 1).padStart(3, '0')}`,
+        reference_number: `PAY-${nextKey}-${batch}-${String(idx + 1).padStart(3, '0')}`,
         pay_period_start: startDate.toISOString().split('T')[0],
         pay_period_end: endOfMonth.toISOString().split('T')[0],
         gross_pay: gross, tax, national_insurance: ni, pension,
@@ -378,7 +364,7 @@ export default function AdminPayroll() {
     if (errors.length > 0) {
       showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
     } else {
-      showSuccess(`Payroll generated for ${MONTH_NAMES[next.month]} ${next.year}`)
+      showSuccess(`Payroll generated for ${MONTH_NAMES[nextMonth]} ${nextYear}`)
     }
     loadAll()
   }
