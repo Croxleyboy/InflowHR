@@ -57,12 +57,24 @@ export default function Payslips() {
   const [employeeRole, setEmployeeRole] = useState('')
   const [benefitDeductions, setBenefitDeductions] = useState<BenefitDeduction[]>([])
   const [initialised, setInitialised] = useState(false)
+  const [payslipSource, setPayslipSource] = useState<'inflowhr' | 'xero'>('inflowhr')
   const monthNames = lang === 'de' ? MONTH_NAMES_DE : MONTH_NAMES_EN
 
   const fyMonths = getFYMonths()
   const [monthIdx, setMonthIdx] = useState(fyMonths.length - 1)
 
   const current = fyMonths[monthIdx]
+
+  useEffect(() => {
+    if (!companyUser?.company_id) return
+    supabase.from('xero_integrations')
+      .select('payslip_source')
+      .eq('company_id', companyUser.company_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.payslip_source) setPayslipSource(data.payslip_source as 'inflowhr' | 'xero')
+      })
+  }, [companyUser?.company_id])
 
   const loadPayslip = useCallback(async () => {
     if (!current || !EMPLOYEE_ID) return
@@ -71,14 +83,20 @@ export default function Payslips() {
     const endOfMonth = new Date(current.year, current.month + 1, 0)
     const endStr = `${current.year}-${String(current.month + 1).padStart(2, '0')}-${String(endOfMonth.getDate()).padStart(2, '0')}`
 
-    const { data } = await supabase.from('payslips')
+    let query = supabase.from('payslips')
       .select('*')
       .eq('employee_id', EMPLOYEE_ID)
       .eq('company_id', companyUser?.company_id)
       .gte('pay_period_start', startOfMonth)
       .lte('pay_period_start', endStr)
-      .limit(1)
-      .single()
+
+    if (payslipSource === 'xero') {
+      query = query.eq('source', 'xero')
+    } else {
+      query = query.neq('source', 'xero')
+    }
+
+    const { data } = await query.limit(1).single()
     setPayslip(data as PayslipData | null)
 
     if (!data && !initialised && monthIdx > 0) {
@@ -88,7 +106,7 @@ export default function Payslips() {
     }
     setInitialised(true)
     setLoading(false)
-  }, [EMPLOYEE_ID, current?.year, current?.month, companyUser?.company_id, initialised, monthIdx])
+  }, [EMPLOYEE_ID, current?.year, current?.month, companyUser?.company_id, initialised, monthIdx, payslipSource])
 
   useEffect(() => { loadPayslip() }, [loadPayslip])
 

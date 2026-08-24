@@ -34,6 +34,7 @@ interface XeroIntegration {
   sync_status: string
   sync_error: string | null
   last_sync_at: string | null
+  payslip_source: 'inflowhr' | 'xero'
 }
 
 interface XeroPayslipRow {
@@ -138,7 +139,7 @@ export default function AdminPayroll() {
     const [pRes, eRes, xRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).order('payment_date', { ascending: false }),
       supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
-      supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at').eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
     setPayslips((pRes.data as Payslip[]) || [])
     setEmployees((eRes.data as Employee[]) || [])
@@ -211,15 +212,20 @@ export default function AdminPayroll() {
     loadAll()
   }
 
-  const inflowPayslips = useMemo(() => payslips.filter(p => p.source !== 'xero'), [payslips])
+  const activeSource = xeroIntegration?.payslip_source || 'inflowhr'
+
+  const sourcePayslips = useMemo(() => {
+    if (activeSource === 'xero') return payslips.filter(p => p.source === 'xero')
+    return payslips.filter(p => p.source !== 'xero')
+  }, [payslips, activeSource])
 
   const filtered = useMemo(() => {
-    return inflowPayslips.filter(p => {
+    return sourcePayslips.filter(p => {
       if (filterStatus && p.status !== filterStatus) return false
       if (filterEmployee && p.employee && `${p.employee.first_name} ${p.employee.last_name}` !== filterEmployee) return false
       return true
     })
-  }, [filterStatus, filterEmployee, inflowPayslips])
+  }, [filterStatus, filterEmployee, sourcePayslips])
 
   const empNames = useMemo(() => {
     const names = new Set<string>()
@@ -532,6 +538,27 @@ export default function AdminPayroll() {
     showSuccess('Adjustments CSV downloaded')
   }
 
+  // ── Payslip source toggle ──
+
+  async function togglePayslipSource(source: 'inflowhr' | 'xero') {
+    if (!selectedCompanyId) return
+    if (xeroIntegration) {
+      const { error } = await supabase.from('xero_integrations').update({
+        payslip_source: source,
+        updated_at: new Date().toISOString(),
+      }).eq('company_id', selectedCompanyId)
+      if (error) { showError('Failed to update: ' + error.message); return }
+    } else {
+      const { error } = await supabase.from('xero_integrations').insert({
+        company_id: selectedCompanyId,
+        payslip_source: source,
+      })
+      if (error) { showError('Failed to update: ' + error.message); return }
+    }
+    showSuccess(source === 'xero' ? 'Switched to Xero Payslips' : 'Switched to InflowHR Payslips')
+    loadAll()
+  }
+
   // ── Xero helpers ──
 
   // Detect OAuth callback redirect
@@ -633,6 +660,37 @@ export default function AdminPayroll() {
 
       {tab === 'payslips' && (
         <>
+          {/* Payslip source toggle — only show when Xero is connected */}
+          {xeroIntegration?.sync_status === 'connected' && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', marginBottom: 12,
+              background: 'var(--bg-card, #fff)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>Payslip Source:</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
+                <input
+                  type="radio"
+                  name="payslipSource"
+                  checked={activeSource === 'inflowhr'}
+                  onChange={() => togglePayslipSource('inflowhr')}
+                />
+                <span>InflowHR Payslips</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
+                <input
+                  type="radio"
+                  name="payslipSource"
+                  checked={activeSource === 'xero'}
+                  onChange={() => togglePayslipSource('xero')}
+                />
+                <span>Xero Payslips</span>
+              </label>
+              <span className="admin-badge admin-badge-approved" style={{ marginLeft: 'auto' }}>
+                {activeSource === 'xero' ? 'Xero Active' : 'InflowHR Active'}
+              </span>
+            </div>
+          )}
+
           <div className="admin-filters">
             <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="admin-select">
               <option value="">All Employees</option>
@@ -642,11 +700,10 @@ export default function AdminPayroll() {
               <option value="">All Statuses</option>
               <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
             </select>
-            <button className="admin-btn admin-btn-primary" onClick={generateNextPayroll} disabled={generating}>
-              {generating ? 'Generating...' : '+ Generate Next Payroll'}
-            </button>
-            {xeroIntegration?.sync_status === 'connected' && (
-              <span className="admin-badge admin-badge-approved" style={{ marginLeft: 'auto' }}>Xero Connected</span>
+            {activeSource === 'inflowhr' && (
+              <button className="admin-btn admin-btn-primary" onClick={generateNextPayroll} disabled={generating}>
+                {generating ? 'Generating...' : '+ Generate Next Payroll'}
+              </button>
             )}
           </div>
 
