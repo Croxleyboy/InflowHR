@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useFeatures } from '../../context/FeatureContext'
+import { useToast } from '../../context/ToastContext'
 import { formatDate } from '../../lib/formatters'
 
 interface Employee {
@@ -46,6 +47,49 @@ interface GoalRow {
   status: string
 }
 
+interface AdminGoal {
+  id: string
+  employee_id: string
+  manager_id: string | null
+  title: string
+  description: string | null
+  status: string
+  grade: number | null
+  start_date: string
+  due_date: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface AdminGoalComment {
+  id: string
+  goal_id: string
+  author_id: string
+  body: string
+  created_at: string
+  author_name?: string
+}
+
+const GOAL_STATUS_OPTIONS = [
+  { value: 'active', label: 'Active', color: '#2563eb', bg: '#dbeafe' },
+  { value: 'completed', label: 'Completed', color: '#16a34a', bg: '#dcfce7' },
+  { value: 'edited', label: 'Edited', color: '#d97706', bg: '#fef3c7' },
+  { value: 'on_hold', label: 'On Hold', color: '#6b7280', bg: '#f3f4f6' },
+  { value: 'cancelled', label: 'Cancelled', color: '#dc2626', bg: '#fee2e2' },
+]
+
+function goalStatusStyle(status: string) {
+  const s = GOAL_STATUS_OPTIONS.find(o => o.value === status)
+  return s ? { background: s.bg, color: s.color } : {}
+}
+
+function fmtDateUK(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
 const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 function getFYMonths(fyStartMonth: number): { year: number; month: number; label: string }[] {
@@ -72,13 +116,15 @@ export default function AdminPerformance() {
   const [reassignModal, setReassignModal] = useState<{ employee: Employee; currentManagerId: string | null } | null>(null)
   const [newManagerId, setNewManagerId] = useState('')
   const [saving, setSaving] = useState(false)
-  const [tab, setTab] = useState<'overview' | 'reports'>('overview')
+  const [tab, setTab] = useState<'overview' | 'reports' | 'goals'>('overview')
 
   const [courses, setCourses] = useState<ELCourse[]>([])
   const [completions, setCompletions] = useState<ELCompletion[]>([])
   const [enabledCourseIds, setEnabledCourseIds] = useState<Set<string> | null>(null)
   const [elModal, setElModal] = useState<{ employee: Employee } | null>(null)
   const [goals, setGoals] = useState<GoalRow[]>([])
+  const [adminGoals, setAdminGoals] = useState<AdminGoal[]>([])
+  const [goalComments, setGoalComments] = useState<AdminGoalComment[]>([])
 
   const elearningEnabled = companyFeatures.elearning
 
@@ -142,6 +188,36 @@ export default function AdminPerformance() {
         .gte('start_date', fyStartDate)
         .lte('start_date', fyEndDate)
       setGoals((goalData || []) as GoalRow[])
+
+      const { data: fullGoals } = await supabase.from('performance_goals')
+        .select('*')
+        .eq('company_id', selectedCompanyId)
+        .order('created_at', { ascending: false })
+      setAdminGoals((fullGoals || []) as AdminGoal[])
+
+      if (fullGoals && fullGoals.length > 0) {
+        const goalIds = fullGoals.map((g: any) => g.id)
+        const { data: cmts } = await supabase.from('performance_goal_comments')
+          .select('*')
+          .eq('company_id', selectedCompanyId)
+          .in('goal_id', goalIds)
+          .order('created_at', { ascending: true })
+        if (cmts) {
+          const authorIds = [...new Set(cmts.map((c: any) => c.author_id))]
+          if (authorIds.length > 0) {
+            const { data: authors } = await supabase.from('employees')
+              .select('id, first_name, last_name')
+              .in('id', authorIds)
+            const aMap: Record<string, string> = {}
+            ;(authors || []).forEach((a: any) => { aMap[a.id] = `${a.first_name} ${a.last_name}` })
+            setGoalComments(cmts.map((c: any) => ({ ...c, author_name: aMap[c.author_id] || 'Unknown' })))
+          } else {
+            setGoalComments(cmts as AdminGoalComment[])
+          }
+        }
+      } else {
+        setGoalComments([])
+      }
     }
 
     setLoading(false)
@@ -233,6 +309,7 @@ export default function AdminPerformance() {
       <div className="admin-tabs" style={{ marginBottom: 16 }}>
         <button className={`admin-tab ${tab === 'overview' ? 'admin-tab-active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
         <button className={`admin-tab ${tab === 'reports' ? 'admin-tab-active' : ''}`} onClick={() => setTab('reports')}>Reports</button>
+        <button className={`admin-tab ${tab === 'goals' ? 'admin-tab-active' : ''}`} onClick={() => setTab('goals')}>Goals</button>
       </div>
 
       {tab === 'overview' && (
@@ -406,6 +483,17 @@ export default function AdminPerformance() {
           managers={managers}
           nameMap={nameMap}
           fyStartMonth={selectedCompany?.fy_start_month || 4}
+        />
+      )}
+
+      {tab === 'goals' && (
+        <GoalsReport
+          employees={employees}
+          goals={adminGoals}
+          comments={goalComments}
+          nameMap={nameMap}
+          companyId={selectedCompanyId}
+          onRefresh={fetchData}
         />
       )}
 
@@ -595,6 +683,236 @@ function PendingApprovalsReport({ meetings, nameMap, managers }: {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─── Goals Report ─── */
+
+function GoalsReport({ employees, goals, comments, nameMap, companyId, onRefresh }: {
+  employees: Employee[]
+  goals: AdminGoal[]
+  comments: AdminGoalComment[]
+  nameMap: Record<string, string>
+  companyId: string | null
+  onRefresh: () => void
+}) {
+  const { showError, showSuccess } = useToast()
+  const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
+  const [editingGoal, setEditingGoal] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<Partial<AdminGoal>>({})
+  const [saving, setSaving] = useState(false)
+
+  const employeesWithGoals = useMemo(() => {
+    const empIds = [...new Set(goals.map(g => g.employee_id))]
+    return empIds.map(id => {
+      const emp = employees.find(e => e.id === id)
+      const empGoals = goals.filter(g => g.employee_id === id)
+      return {
+        id,
+        name: emp ? `${emp.first_name} ${emp.last_name}` : nameMap[id] || 'Unknown',
+        job_title: emp?.job_title || '',
+        department: emp?.department || '',
+        avatar_url: emp?.avatar_url || null,
+        goals: empGoals,
+        activeCount: empGoals.filter(g => g.status === 'active').length,
+        completedCount: empGoals.filter(g => g.status === 'completed').length,
+      }
+    }).sort((a, b) => a.name.localeCompare(b.name))
+  }, [employees, goals, nameMap])
+
+  function startEdit(goal: AdminGoal) {
+    setEditingGoal(goal.id)
+    setEditDraft({
+      title: goal.title,
+      description: goal.description,
+      status: goal.status,
+      grade: goal.grade,
+      start_date: goal.start_date,
+      due_date: goal.due_date,
+    })
+  }
+
+  async function saveEdit(goalId: string) {
+    if (!companyId) return
+    setSaving(true)
+    const { error } = await supabase.from('performance_goals').update({
+      title: editDraft.title,
+      description: editDraft.description || null,
+      status: editDraft.status,
+      grade: editDraft.grade,
+      start_date: editDraft.start_date,
+      due_date: editDraft.due_date || null,
+      completed_at: editDraft.status === 'completed' ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', goalId).eq('company_id', companyId)
+    setSaving(false)
+    if (error) { showError('Failed to save: ' + error.message); return }
+    showSuccess('Goal updated')
+    setEditingGoal(null)
+    onRefresh()
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 12 }}>
+        All performance goals across employees — both manager-set and self-set. Click an employee to view and edit their goals.
+      </p>
+
+      {employeesWithGoals.length === 0 ? (
+        <div className="admin-empty">No goals found</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {employeesWithGoals.map(emp => {
+            const isExpanded = expandedEmp === emp.id
+            return (
+              <div key={emp.id} style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, overflow: 'hidden' }}>
+                <button
+                  onClick={() => setExpandedEmp(isExpanded ? null : emp.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                    padding: '12px 16px', background: 'var(--bg-card, #fff)',
+                    border: 'none', cursor: 'pointer', textAlign: 'left',
+                    color: 'var(--text, #1a1a1a)',
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                    style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }}>
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                  {emp.avatar_url
+                    ? <img src={emp.avatar_url} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+                    : <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#7c3aed', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>
+                        {emp.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                      </div>
+                  }
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <strong style={{ fontSize: 14 }}>{emp.name}</strong>
+                    {emp.job_title && <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 8 }}>{emp.job_title}</span>}
+                    {emp.department && <span style={{ fontSize: 12, opacity: 0.5, marginLeft: 8 }}>({emp.department})</span>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: '#dbeafe', color: '#2563eb' }}>
+                      {emp.goals.length} goal{emp.goals.length !== 1 ? 's' : ''}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: '#dcfce7', color: '#16a34a' }}>
+                      {emp.completedCount} done
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: '#fef3c7', color: '#d97706' }}>
+                      {emp.activeCount} active
+                    </span>
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div style={{ padding: '0 16px 16px', background: 'var(--bg-card, #fff)' }}>
+                    {emp.goals.map(goal => {
+                      const isEditing = editingGoal === goal.id
+                      const goalCmts = comments.filter(c => c.goal_id === goal.id)
+                      const setBy = goal.manager_id ? (nameMap[goal.manager_id] || 'Manager') : 'Self-set'
+                      return (
+                        <div key={goal.id} style={{
+                          border: '1px solid var(--border, #e5e7eb)', borderRadius: 8,
+                          padding: 16, marginTop: 8, background: 'var(--bg, #fafafa)',
+                        }}>
+                          {isEditing ? (
+                            <>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Title</label>
+                                  <input className="ts-input" value={editDraft.title || ''} onChange={e => setEditDraft(d => ({ ...d, title: e.target.value }))} style={{ width: '100%' }} />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</label>
+                                  <select className="ts-input" value={editDraft.status || ''} onChange={e => setEditDraft(d => ({ ...d, status: e.target.value }))}>
+                                    {GOAL_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Date</label>
+                                  <input className="ts-input" type="date" value={editDraft.start_date || ''} onChange={e => setEditDraft(d => ({ ...d, start_date: e.target.value }))} />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>End Date</label>
+                                  <input className="ts-input" type="date" value={editDraft.due_date || ''} onChange={e => setEditDraft(d => ({ ...d, due_date: e.target.value }))} />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Score (1–10)</label>
+                                  <select className="ts-input" value={editDraft.grade ?? ''} onChange={e => setEditDraft(d => ({ ...d, grade: e.target.value ? Number(e.target.value) : null }))}>
+                                    <option value="">No score</option>
+                                    {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}</option>)}
+                                  </select>
+                                </div>
+                              </div>
+                              <div style={{ marginBottom: 12 }}>
+                                <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</label>
+                                <textarea className="ts-input" rows={3} value={editDraft.description || ''} onChange={e => setEditDraft(d => ({ ...d, description: e.target.value }))} style={{ width: '100%', resize: 'vertical' }} />
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <button className="leave-approve-btn" onClick={() => saveEdit(goal.id)} disabled={saving || !editDraft.title?.trim()} style={{ fontSize: 12, padding: '6px 16px' }}>
+                                  {saving ? 'Saving...' : 'Save'}
+                                </button>
+                                <button className="leave-decline-btn" onClick={() => setEditingGoal(null)} style={{ fontSize: 12, padding: '6px 16px' }}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                                <div style={{ flex: 1 }}>
+                                  <strong style={{ fontSize: 14 }}>{goal.title}</strong>
+                                  <span style={{ fontSize: 11, opacity: 0.5, marginLeft: 8 }}>Set by: {setBy}</span>
+                                </div>
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 4, ...goalStatusStyle(goal.status) }}>
+                                    {GOAL_STATUS_OPTIONS.find(o => o.value === goal.status)?.label || goal.status}
+                                  </span>
+                                  <button onClick={() => startEdit(goal)} style={{
+                                    background: 'none', border: '1px solid var(--border, #d1d5db)',
+                                    borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer',
+                                    color: 'var(--text, #333)', fontWeight: 600,
+                                  }}>
+                                    Edit
+                                  </button>
+                                </div>
+                              </div>
+
+                              {goal.description && (
+                                <p style={{ fontSize: 13, opacity: 0.8, margin: '0 0 8px', lineHeight: 1.5 }}>{goal.description}</p>
+                              )}
+
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 12, opacity: 0.7, marginBottom: goalCmts.length > 0 ? 12 : 0 }}>
+                                <span>Start: {fmtDateUK(goal.start_date)}</span>
+                                <span>End: {fmtDateUK(goal.due_date)}</span>
+                                {goal.grade !== null && <span>Score: <strong>{goal.grade}/10</strong></span>}
+                                {goal.completed_at && <span>Completed: {fmtDateUK(goal.completed_at)}</span>}
+                              </div>
+
+                              {goalCmts.length > 0 && (
+                                <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 8, marginTop: 4 }}>
+                                  <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.6, display: 'block', marginBottom: 6 }}>Updates ({goalCmts.length})</span>
+                                  {goalCmts.map(c => (
+                                    <div key={c.id} style={{ fontSize: 12, padding: '4px 0', display: 'flex', gap: 8 }}>
+                                      <span style={{ fontWeight: 600, flexShrink: 0 }}>{c.author_name || 'Unknown'}</span>
+                                      <span style={{ opacity: 0.5, flexShrink: 0 }}>{fmtDateUK(c.created_at)}</span>
+                                      <span style={{ opacity: 0.8 }}>{c.body}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

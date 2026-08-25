@@ -128,6 +128,33 @@ export default function OneToOnes() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // Auto-update past meetings: accepted → completed, pending → not_confirmed
+  useEffect(() => {
+    if (!companyUser?.company_id || meetings.length === 0) return
+    const now = new Date()
+    const todayStr = now.toISOString().split('T')[0]
+    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+    const pastMeetings = meetings.filter(m => {
+      if (!['pending', 'accepted'].includes(m.status)) return false
+      if (m.scheduled_date < todayStr) return true
+      if (m.scheduled_date === todayStr && m.scheduled_time.slice(0, 5) < currentTime) return true
+      return false
+    })
+    if (pastMeetings.length === 0) return
+
+    ;(async () => {
+      for (const m of pastMeetings) {
+        const newStatus = m.status === 'accepted' ? 'completed' : 'not_confirmed'
+        await supabase.from('one_to_one_meetings').update({
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        }).eq('id', m.id).eq('company_id', companyUser.company_id)
+      }
+      fetchData()
+    })()
+  }, [meetings.length > 0 && meetings[0]?.id, companyUser?.company_id])
+
   async function handleAccept(meetingId: number) {
     const { error } = await supabase.from('one_to_one_meetings').update({ status: 'accepted', updated_at: new Date().toISOString() }).eq('id', meetingId).eq('company_id', companyUser?.company_id)
     if (error) { showError('Failed to accept meeting: ' + error.message); return }
@@ -148,9 +175,18 @@ export default function OneToOnes() {
     fetchData()
   }
 
-  const today = new Date().toISOString().split('T')[0]
-  const upcoming = meetings.filter(m => ['pending', 'accepted'].includes(m.status) && m.scheduled_date >= today)
-  const history = meetings.filter(m => m.status === 'completed' || m.scheduled_date < today)
+  const now = new Date()
+  const today = now.toISOString().split('T')[0]
+  const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+
+  function isFutureMeeting(m: Meeting): boolean {
+    if (m.scheduled_date > today) return true
+    if (m.scheduled_date === today && m.scheduled_time.slice(0, 5) >= currentTime) return true
+    return false
+  }
+
+  const upcoming = meetings.filter(m => ['pending', 'accepted'].includes(m.status) && isFutureMeeting(m))
+  const history = meetings.filter(m => ['completed', 'not_confirmed', 'cancelled', 'declined'].includes(m.status) || !isFutureMeeting(m))
 
   return (
     <div className="oto-page">
@@ -255,7 +291,9 @@ export default function OneToOnes() {
                   <span className="oto-card-name">{otherName}</span>
                   <span className="oto-card-date">{formatDate(m.scheduled_date)}</span>
                   <span className={`oto-card-status oto-status-${m.status}`}>
-                    {m.status === 'completed' ? t('one_to_one.completed') :
+                    {m.status === 'completed' && !m.summary ? 'Update and Complete' :
+                     m.status === 'completed' ? t('one_to_one.completed') :
+                     m.status === 'not_confirmed' ? 'Not Confirmed' :
                      m.status === 'cancelled' ? t('one_to_one.cancelled') :
                      m.status === 'declined' ? t('one_to_one.declined') : m.status}
                   </span>

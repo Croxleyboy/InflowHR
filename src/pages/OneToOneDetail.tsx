@@ -196,7 +196,9 @@ export default function OneToOneDetail() {
           <span className={`oto-detail-badge oto-status-${meeting.status}`}>
             {meeting.status === 'pending' ? t('one_to_one.awaiting_response') :
              meeting.status === 'accepted' ? t('one_to_one.confirmed') :
+             meeting.status === 'completed' && !meeting.summary ? 'Update and Complete' :
              meeting.status === 'completed' ? t('one_to_one.completed') :
+             meeting.status === 'not_confirmed' ? 'Not Confirmed' :
              meeting.status === 'cancelled' ? t('one_to_one.cancelled') :
              meeting.status === 'declined' ? t('one_to_one.declined') : meeting.status}
           </span>

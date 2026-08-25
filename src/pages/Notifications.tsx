@@ -17,6 +17,7 @@ interface PersonalReminder {
   title: string
   subtitle: string
   date: string
+  time?: string
   navigateTo?: string
 }
 
@@ -416,6 +417,7 @@ export default function Notifications() {
             title: `1-to-1 meeting with ${otherName}`,
             subtitle: `${dateLabel}${m.scheduled_time ? ` at ${m.scheduled_time.slice(0, 5)}` : ''} · ${m.status}`,
             date: m.scheduled_date,
+            time: m.scheduled_time?.slice(0, 5) || undefined,
             navigateTo: `/one-to-ones/${m.id}`,
           })
         })
@@ -545,7 +547,16 @@ export default function Notifications() {
       }
     }
 
-    const activeReminders = personalReminders.filter(r => r.date >= todayStr || r.type === 'confirm_booking' || r.type === 'confirm_shift')
+    const currentTime = `${String(todayDate.getHours()).padStart(2, '0')}:${String(todayDate.getMinutes()).padStart(2, '0')}`
+    const activeReminders = personalReminders.filter(r => {
+      if (r.type === 'confirm_booking' || r.type === 'confirm_shift') return true
+      if (r.date > todayStr) return true
+      if (r.date === todayStr) {
+        if (r.time) return r.time >= currentTime
+        return true
+      }
+      return false
+    })
     activeReminders.sort((a, b) => a.date.localeCompare(b.date))
     setReminders(activeReminders)
 

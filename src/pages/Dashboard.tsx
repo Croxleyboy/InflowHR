@@ -108,16 +108,22 @@ export default function Dashboard() {
           .gte('booking_date', today).lte('booking_date', weekAheadStr)
         count += bookingCount || 0
 
-        // 1:1 meetings in next 14 days (matches Notifications page)
+        // 1:1 meetings in next 14 days — exclude past-time meetings for today
         const twoWeeksAhead = new Date(now); twoWeeksAhead.setDate(twoWeeksAhead.getDate() + 14)
-        const { count: meetingCount } = await supabase.from('one_to_one_meetings')
-          .select('id', { count: 'exact', head: true })
+        const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+        const { data: upcomingMeetings } = await supabase.from('one_to_one_meetings')
+          .select('id, scheduled_date, scheduled_time')
           .eq('company_id', companyUser.company_id)
           .in('status', ['pending', 'accepted'])
           .gte('scheduled_date', today)
           .lte('scheduled_date', twoWeeksAhead.toISOString().split('T')[0])
           .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
-        count += meetingCount || 0
+        if (upcomingMeetings) {
+          count += upcomingMeetings.filter((m: any) => {
+            if (m.scheduled_date > today) return true
+            return m.scheduled_time?.slice(0, 5) >= currentTime
+          }).length
+        }
 
         // Booking confirmations in last 3 days — exclude those already counted as upcoming
         const threeDaysAgo = new Date(now); threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
