@@ -177,7 +177,7 @@ body {
 }
 .card-benefits { background: linear-gradient(135deg, #b2ebf2, #80deea); color: #00695c; }
 .card-elearning { background: linear-gradient(135deg, #fdd835, #f9a825); color: #333; }
-.card-performance { background: linear-gradient(135deg, #ec407a, #c2185b); }
+.card-performance { background: linear-gradient(135deg, #ec407a, #c2185b); position: relative; }
 .card-timesheets { background: linear-gradient(135deg, #42a5f5, #1565c0); }
 .card-shifts { background: linear-gradient(135deg, #ff8a65, #e65100); }
 .card-legal-ts { background: linear-gradient(135deg, #00897b, #00695c); }
