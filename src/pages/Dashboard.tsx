@@ -188,14 +188,11 @@ export default function Dashboard() {
   return (
     <div className="dashboard">
       <header className="dash-header">
-        <div className="dash-avatar-wrap" onClick={() => reminderCount > 0 ? navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } }) : undefined} style={{ cursor: reminderCount > 0 ? 'pointer' : 'default' }}>
-          {avatarUrl ? (
-            <img className="profile-avatar-img" src={avatarUrl} alt={initials} />
-          ) : (
-            <div className="profile-avatar">{initials}</div>
-          )}
-          {reminderCount > 0 && <span className="dash-avatar-badge">{reminderCount}</span>}
-        </div>
+        {avatarUrl ? (
+          <img className="profile-avatar-img" src={avatarUrl} alt={initials} />
+        ) : (
+          <div className="profile-avatar">{initials}</div>
+        )}
         <div className="header-center">
           <p className="header-tagline">{t('dashboard.tagline')}</p>
           <p className="header-date">{getDateString(lang)}</p>
@@ -208,6 +205,13 @@ export default function Dashboard() {
           )}
         </div>
       </header>
+
+      {reminderCount > 0 && (
+        <button className="dash-reminder-bar" onClick={() => navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } })}>
+          <span>You have {reminderCount} reminder{reminderCount !== 1 ? 's' : ''}</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      )}
 
       <div className="greeting-row">
         <h2 className="greeting">{greeting} {'\u{1F44B}'} {employeeName}</h2>
