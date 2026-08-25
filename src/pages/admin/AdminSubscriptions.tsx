@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import AdminCompanies from './AdminCompanies'
@@ -110,12 +110,9 @@ export default function AdminSubscriptions() {
     setBillingTypeLocked(company?.billing_type_locked_until || null)
     setFyStartMonth(company?.fy_start_month ?? 4)
 
-    const { count } = await supabase
-      .from('employees')
-      .select('id', { count: 'exact', head: true })
-      .eq('company_id', companyId)
-      .eq('is_active', true)
-    setEmployeeCount(count || 0)
+    const { data: metrics } = await callRpcDirect('get_company_metrics', { p_company_id: companyId })
+    const m = metrics as Record<string, number> | null
+    setEmployeeCount(m?.employee_count ?? 0)
 
     const { data } = await supabase
       .from('company_features')
