@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useFeatures } from '../../context/FeatureContext'
 import { formatDate } from '../../lib/formatters'
 
 interface Employee {
@@ -45,8 +46,24 @@ interface GoalRow {
   status: string
 }
 
+const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+function getFYMonths(fyStartMonth: number): { year: number; month: number; label: string }[] {
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const startYear = currentMonth >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+  const months: { year: number; month: number; label: string }[] = []
+  for (let i = 0; i < 12; i++) {
+    const m = (fyStartMonth - 1 + i) % 12
+    const y = startYear + (fyStartMonth - 1 + i >= 12 ? 1 : 0)
+    months.push({ year: y, month: m, label: `${MONTH_NAMES_FULL[m]} ${y}` })
+  }
+  return months
+}
+
 export default function AdminPerformance() {
   const { selectedCompanyId, selectedCompany } = useAdminCompany()
+  const { companyFeatures } = useFeatures()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [meetings, setMeetings] = useState<Meeting[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,12 +72,15 @@ export default function AdminPerformance() {
   const [reassignModal, setReassignModal] = useState<{ employee: Employee; currentManagerId: string | null } | null>(null)
   const [newManagerId, setNewManagerId] = useState('')
   const [saving, setSaving] = useState(false)
+  const [tab, setTab] = useState<'overview' | 'reports'>('overview')
 
   const [courses, setCourses] = useState<ELCourse[]>([])
   const [completions, setCompletions] = useState<ELCompletion[]>([])
   const [enabledCourseIds, setEnabledCourseIds] = useState<Set<string> | null>(null)
   const [elModal, setElModal] = useState<{ employee: Employee } | null>(null)
   const [goals, setGoals] = useState<GoalRow[]>([])
+
+  const elearningEnabled = companyFeatures.elearning
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -80,26 +100,28 @@ export default function AdminPerformance() {
     setEmployees((emps || []) as Employee[])
     setMeetings((mtgs || []) as Meeting[])
 
-    const { data: courseData } = await supabase
-      .from('elearning_courses')
-      .select('id, title, required, category, type, duration')
-      .eq('is_active', true)
-      .order('title')
-    setCourses((courseData || []) as ELCourse[])
+    if (elearningEnabled) {
+      const { data: courseData } = await supabase
+        .from('elearning_courses')
+        .select('id, title, required, category, type, duration')
+        .eq('is_active', true)
+        .order('title')
+      setCourses((courseData || []) as ELCourse[])
 
-    if (selectedCompanyId) {
-      const [compRes, enRes] = await Promise.all([
-        supabase.from('elearning_completions')
-          .select('employee_id, course_id, completed_at')
-          .eq('company_id', selectedCompanyId),
-        supabase.from('company_elearning_courses')
-          .select('course_id')
-          .eq('company_id', selectedCompanyId)
-          .eq('is_enabled', true),
-      ])
-      setCompletions((compRes.data || []) as ELCompletion[])
-      if (enRes.data) {
-        setEnabledCourseIds(new Set(enRes.data.map((r: any) => r.course_id)))
+      if (selectedCompanyId) {
+        const [compRes, enRes] = await Promise.all([
+          supabase.from('elearning_completions')
+            .select('employee_id, course_id, completed_at')
+            .eq('company_id', selectedCompanyId),
+          supabase.from('company_elearning_courses')
+            .select('course_id')
+            .eq('company_id', selectedCompanyId)
+            .eq('is_enabled', true),
+        ])
+        setCompletions((compRes.data || []) as ELCompletion[])
+        if (enRes.data) {
+          setEnabledCourseIds(new Set(enRes.data.map((r: any) => r.course_id)))
+        }
       }
     }
 
@@ -123,7 +145,7 @@ export default function AdminPerformance() {
     }
 
     setLoading(false)
-  }, [selectedCompanyId, selectedCompany])
+  }, [selectedCompanyId, selectedCompany, elearningEnabled])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -178,6 +200,7 @@ export default function AdminPerformance() {
   }
 
   function renderELButton(emp: Employee) {
+    if (!elearningEnabled) return null
     const stats = getELStats(emp.id)
     const allDone = stats.completed === stats.required && stats.required > 0
     return (
@@ -207,164 +230,183 @@ export default function AdminPerformance() {
         <p className="admin-page-subtitle">Manager hierarchy, direct reports, and meeting history</p>
       </div>
 
-      <div className="admin-stat-grid">
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon" style={{ background: '#7c3aed' }}>👥</div>
-          <div className="admin-stat-info">
-            <span className="admin-stat-value">{managers.length}</span>
-            <span className="admin-stat-label">Managers</span>
-          </div>
-        </div>
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon" style={{ background: '#2563eb' }}>👤</div>
-          <div className="admin-stat-info">
-            <span className="admin-stat-value">{employees.filter(e => e.manager_id).length}</span>
-            <span className="admin-stat-label">Managed Employees</span>
-          </div>
-        </div>
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon" style={{ background: '#059669' }}>✅</div>
-          <div className="admin-stat-info">
-            <span className="admin-stat-value">{meetings.filter(m => m.status === 'completed').length}</span>
-            <span className="admin-stat-label">Completed 1:1s</span>
-          </div>
-        </div>
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon" style={{ background: '#d97706' }}>📅</div>
-          <div className="admin-stat-info">
-            <span className="admin-stat-value">{meetings.filter(m => ['pending', 'accepted'].includes(m.status)).length}</span>
-            <span className="admin-stat-label">Upcoming 1:1s</span>
-          </div>
-        </div>
+      <div className="admin-tabs" style={{ marginBottom: 16 }}>
+        <button className={`admin-tab ${tab === 'overview' ? 'admin-tab-active' : ''}`} onClick={() => setTab('overview')}>Overview</button>
+        <button className={`admin-tab ${tab === 'reports' ? 'admin-tab-active' : ''}`} onClick={() => setTab('reports')}>Reports</button>
       </div>
 
-      <div className="admin-table-wrapper">
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th style={{ width: 40 }}></th>
-              <th>Manager</th>
-              <th>Department</th>
-              <th>Direct Reports</th>
-              <th>Total 1:1s</th>
-            </tr>
-          </thead>
-          <tbody>
-            {managers.map(mgr => {
-              const reports = getReports(mgr.id)
-              const mgrMeetings = meetings.filter(m => m.manager_id === mgr.id)
-              const isExpanded = expandedManager === mgr.id
-              return (
-                <>
-                  <tr key={mgr.id} className="admin-perf-manager-row" onClick={() => setExpandedManager(isExpanded ? null : mgr.id)}>
-                    <td>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                        style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
-                        <path d="M9 18l6-6-6-6" />
-                      </svg>
-                    </td>
-                    <td>
-                      <span className="admin-inline-avatar">{mgr.avatar_url ? <img src={mgr.avatar_url} alt="" /> : <span className="admin-avatar-initials">{mgr.first_name[0]}{mgr.last_name[0]}</span>}<strong>{mgr.first_name} {mgr.last_name}</strong></span>
-                      <br /><span style={{ fontSize: '0.8em', opacity: 0.7 }}>{mgr.job_title}</span>
-                    </td>
-                    <td>{mgr.department}</td>
-                    <td>{reports.length}</td>
-                    <td>{mgrMeetings.length}</td>
-                  </tr>
-                  {isExpanded && reports.map(rep => {
-                    const repMeetings = getManagerMeetings(mgr.id, rep.id)
-                    return (
-                      <>
-                        <tr key={`${mgr.id}-${rep.id}`} className="admin-perf-report-row">
-                          <td></td>
-                          <td style={{ paddingLeft: 32 }}>
-                            <span className="admin-inline-avatar">{rep.avatar_url ? <img src={rep.avatar_url} alt="" /> : <span className="admin-avatar-initials">{rep.first_name[0]}{rep.last_name[0]}</span>}<span className="admin-perf-report-name">{rep.first_name} {rep.last_name}</span></span>
-                            <br /><span style={{ fontSize: '0.8em', opacity: 0.7 }}>{rep.job_title}</span>
-                          </td>
-                          <td>{rep.department}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                              <button className="admin-perf-reassign-btn" onClick={e => { e.stopPropagation(); setReassignModal({ employee: rep, currentManagerId: mgr.id }); setNewManagerId('') }}>
-                                Reassign
-                              </button>
-                              {renderELButton(rep)}
-                              {(() => {
-                                const gs = getGoalStats(rep.id)
-                                if (gs.total === 0) return null
-                                return (
-                                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: '#eff6ff', color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                    🎯 {gs.total} goals · {gs.active} active · {gs.completed} done
-                                  </span>
-                                )
-                              })()}
-                            </div>
-                          </td>
-                          <td>{repMeetings.length} meetings</td>
-                        </tr>
-                        {repMeetings.map(mtg => (
-                          <tr key={`mtg-${mtg.id}`} className="admin-perf-meeting-row">
-                            <td></td>
-                            <td style={{ paddingLeft: 56 }}>
-                              <span className={`admin-perf-meeting-status admin-perf-status-${mtg.status}`}>{mtg.status}</span>
-                              <span className="admin-perf-meeting-date">{formatDate(mtg.scheduled_date)} {mtg.scheduled_time.slice(0, 5)}</span>
-                            </td>
-                            <td colSpan={3}>
-                              {mtg.summary ? (
-                                <button className="admin-perf-summary-toggle" onClick={() => setExpandedMeeting(expandedMeeting === mtg.id ? null : mtg.id)}>
-                                  {expandedMeeting === mtg.id ? 'Hide notes' : 'View notes'}
-                                </button>
-                              ) : (
-                                <span style={{ opacity: 0.5, fontSize: '0.85em' }}>No notes</span>
-                              )}
-                              {expandedMeeting === mtg.id && mtg.summary && (
-                                <div className="admin-perf-summary-text">{mtg.summary}</div>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </>
-                    )
-                  })}
-                </>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Unmanaged employees */}
-      {employees.filter(e => !e.manager_id).length > 0 && (
+      {tab === 'overview' && (
         <>
-          <h2 style={{ margin: '24px 0 12px', fontSize: '1.1em' }}>Unmanaged Employees</h2>
+          <div className="admin-stat-grid">
+            <div className="admin-stat-card">
+              <div className="admin-stat-icon" style={{ background: '#7c3aed' }}>👥</div>
+              <div className="admin-stat-info">
+                <span className="admin-stat-value">{managers.length}</span>
+                <span className="admin-stat-label">Managers</span>
+              </div>
+            </div>
+            <div className="admin-stat-card">
+              <div className="admin-stat-icon" style={{ background: '#2563eb' }}>👤</div>
+              <div className="admin-stat-info">
+                <span className="admin-stat-value">{employees.filter(e => e.manager_id).length}</span>
+                <span className="admin-stat-label">Managed Employees</span>
+              </div>
+            </div>
+            <div className="admin-stat-card">
+              <div className="admin-stat-icon" style={{ background: '#059669' }}>✅</div>
+              <div className="admin-stat-info">
+                <span className="admin-stat-value">{meetings.filter(m => m.status === 'completed').length}</span>
+                <span className="admin-stat-label">Completed 1:1s</span>
+              </div>
+            </div>
+            <div className="admin-stat-card">
+              <div className="admin-stat-icon" style={{ background: '#d97706' }}>📅</div>
+              <div className="admin-stat-info">
+                <span className="admin-stat-value">{meetings.filter(m => ['pending', 'accepted'].includes(m.status)).length}</span>
+                <span className="admin-stat-label">Upcoming 1:1s</span>
+              </div>
+            </div>
+          </div>
+
           <div className="admin-table-wrapper">
             <table className="admin-table">
               <thead>
                 <tr>
-                  <th>Employee</th>
-                  <th>Job Title</th>
+                  <th style={{ width: 40 }}></th>
+                  <th>Manager</th>
                   <th>Department</th>
-                  <th>E-Learning</th>
-                  <th>Action</th>
+                  <th>Direct Reports</th>
+                  <th>Total 1:1s</th>
                 </tr>
               </thead>
               <tbody>
-                {employees.filter(e => !e.manager_id).map(emp => (
-                  <tr key={emp.id}>
-                    <td><span className="admin-inline-avatar">{emp.avatar_url ? <img src={emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{emp.first_name[0]}{emp.last_name[0]}</span>}<strong>{emp.first_name} {emp.last_name}</strong></span></td>
-                    <td>{emp.job_title}</td>
-                    <td>{emp.department}</td>
-                    <td>{renderELButton(emp)}</td>
-                    <td>
-                      <button className="admin-perf-reassign-btn" onClick={() => { setReassignModal({ employee: emp, currentManagerId: null }); setNewManagerId('') }}>
-                        Assign Manager
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {managers.map(mgr => {
+                  const reports = getReports(mgr.id)
+                  const mgrMeetings = meetings.filter(m => m.manager_id === mgr.id)
+                  const isExpanded = expandedManager === mgr.id
+                  return (
+                    <>
+                      <tr key={mgr.id} className="admin-perf-manager-row" onClick={() => setExpandedManager(isExpanded ? null : mgr.id)}>
+                        <td>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                            style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </td>
+                        <td>
+                          <span className="admin-inline-avatar">{mgr.avatar_url ? <img src={mgr.avatar_url} alt="" /> : <span className="admin-avatar-initials">{mgr.first_name[0]}{mgr.last_name[0]}</span>}<strong>{mgr.first_name} {mgr.last_name}</strong></span>
+                          <br /><span style={{ fontSize: '0.8em', opacity: 0.7 }}>{mgr.job_title}</span>
+                        </td>
+                        <td>{mgr.department}</td>
+                        <td>{reports.length}</td>
+                        <td>{mgrMeetings.length}</td>
+                      </tr>
+                      {isExpanded && reports.map(rep => {
+                        const repMeetings = getManagerMeetings(mgr.id, rep.id)
+                        return (
+                          <>
+                            <tr key={`${mgr.id}-${rep.id}`} className="admin-perf-report-row">
+                              <td></td>
+                              <td style={{ paddingLeft: 32 }}>
+                                <span className="admin-inline-avatar">{rep.avatar_url ? <img src={rep.avatar_url} alt="" /> : <span className="admin-avatar-initials">{rep.first_name[0]}{rep.last_name[0]}</span>}<span className="admin-perf-report-name">{rep.first_name} {rep.last_name}</span></span>
+                                <br /><span style={{ fontSize: '0.8em', opacity: 0.7 }}>{rep.job_title}</span>
+                              </td>
+                              <td>{rep.department}</td>
+                              <td>
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <button className="admin-perf-reassign-btn" onClick={e => { e.stopPropagation(); setReassignModal({ employee: rep, currentManagerId: mgr.id }); setNewManagerId('') }}>
+                                    Reassign
+                                  </button>
+                                  {renderELButton(rep)}
+                                  {(() => {
+                                    const gs = getGoalStats(rep.id)
+                                    if (gs.total === 0) return null
+                                    return (
+                                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6, background: '#eff6ff', color: '#2563eb', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                        🎯 {gs.total} goals · {gs.active} active · {gs.completed} done
+                                      </span>
+                                    )
+                                  })()}
+                                </div>
+                              </td>
+                              <td>{repMeetings.length} meetings</td>
+                            </tr>
+                            {repMeetings.map(mtg => (
+                              <tr key={`mtg-${mtg.id}`} className="admin-perf-meeting-row">
+                                <td></td>
+                                <td style={{ paddingLeft: 56 }}>
+                                  <span className={`admin-perf-meeting-status admin-perf-status-${mtg.status}`}>{mtg.status}</span>
+                                  <span className="admin-perf-meeting-date">{formatDate(mtg.scheduled_date)} {mtg.scheduled_time.slice(0, 5)}</span>
+                                </td>
+                                <td colSpan={3}>
+                                  {mtg.summary ? (
+                                    <button className="admin-perf-summary-toggle" onClick={() => setExpandedMeeting(expandedMeeting === mtg.id ? null : mtg.id)}>
+                                      {expandedMeeting === mtg.id ? 'Hide notes' : 'View notes'}
+                                    </button>
+                                  ) : (
+                                    <span style={{ opacity: 0.5, fontSize: '0.85em' }}>No notes</span>
+                                  )}
+                                  {expandedMeeting === mtg.id && mtg.summary && (
+                                    <div className="admin-perf-summary-text">{mtg.summary}</div>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </>
+                        )
+                      })}
+                    </>
+                  )
+                })}
               </tbody>
             </table>
           </div>
+
+          {/* Unmanaged employees */}
+          {employees.filter(e => !e.manager_id).length > 0 && (
+            <>
+              <h2 style={{ margin: '24px 0 12px', fontSize: '1.1em' }}>Unmanaged Employees</h2>
+              <div className="admin-table-wrapper">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Job Title</th>
+                      <th>Department</th>
+                      {elearningEnabled && <th>E-Learning</th>}
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.filter(e => !e.manager_id).map(emp => (
+                      <tr key={emp.id}>
+                        <td><span className="admin-inline-avatar">{emp.avatar_url ? <img src={emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{emp.first_name[0]}{emp.last_name[0]}</span>}<strong>{emp.first_name} {emp.last_name}</strong></span></td>
+                        <td>{emp.job_title}</td>
+                        <td>{emp.department}</td>
+                        {elearningEnabled && <td>{renderELButton(emp)}</td>}
+                        <td>
+                          <button className="admin-perf-reassign-btn" onClick={() => { setReassignModal({ employee: emp, currentManagerId: null }); setNewManagerId('') }}>
+                            Assign Manager
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </>
+      )}
+
+      {tab === 'reports' && (
+        <PerformanceReports
+          employees={employees}
+          meetings={meetings}
+          managers={managers}
+          nameMap={nameMap}
+          fyStartMonth={selectedCompany?.fy_start_month || 4}
+        />
       )}
 
       {/* Reassign modal */}
@@ -455,6 +497,211 @@ export default function AdminPerformance() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ─── Performance Reports ─── */
+
+function PerformanceReports({ employees, meetings, managers, nameMap, fyStartMonth }: {
+  employees: Employee[]
+  meetings: Meeting[]
+  managers: Employee[]
+  nameMap: Record<string, string>
+  fyStartMonth: number
+}) {
+  const [reportTab, setReportTab] = useState<'pending' | 'no_meetings'>('pending')
+
+  return (
+    <div>
+      <div className="admin-tabs" style={{ marginBottom: 12 }}>
+        <button className={`admin-tab ${reportTab === 'pending' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('pending')}>Pending 1:1 Approvals</button>
+        <button className={`admin-tab ${reportTab === 'no_meetings' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('no_meetings')}>No 1:1s by Month</button>
+      </div>
+
+      {reportTab === 'pending' && (
+        <PendingApprovalsReport meetings={meetings} nameMap={nameMap} managers={managers} />
+      )}
+      {reportTab === 'no_meetings' && (
+        <NoMeetingsReport employees={employees} meetings={meetings} fyStartMonth={fyStartMonth} />
+      )}
+    </div>
+  )
+}
+
+/* ─── Report: Pending 1:1 Approvals ─── */
+
+function PendingApprovalsReport({ meetings, nameMap, managers }: {
+  meetings: Meeting[]
+  nameMap: Record<string, string>
+  managers: Employee[]
+}) {
+  const pendingMeetings = meetings.filter(m => m.status === 'pending')
+
+  const managerPending = useMemo(() => {
+    const map: Record<string, { manager: Employee; meetings: Meeting[] }> = {}
+    pendingMeetings.forEach(m => {
+      const mgr = managers.find(e => e.id === m.manager_id)
+      if (!mgr) return
+      if (!map[mgr.id]) map[mgr.id] = { manager: mgr, meetings: [] }
+      map[mgr.id].meetings.push(m)
+    })
+    return Object.values(map).sort((a, b) => b.meetings.length - a.meetings.length)
+  }, [pendingMeetings, managers])
+
+  return (
+    <div>
+      <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 12 }}>
+        Managers who have scheduled 1:1 meetings awaiting response from employees.
+      </p>
+
+      {managerPending.length === 0 ? (
+        <div className="admin-empty">No pending 1:1 approvals</div>
+      ) : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Manager</th>
+                <th>Department</th>
+                <th>Pending Count</th>
+                <th>Employees Awaiting</th>
+              </tr>
+            </thead>
+            <tbody>
+              {managerPending.map(({ manager, meetings: mts }) => (
+                <tr key={manager.id}>
+                  <td>
+                    <span className="admin-inline-avatar">
+                      {manager.avatar_url ? <img src={manager.avatar_url} alt="" /> : <span className="admin-avatar-initials">{manager.first_name[0]}{manager.last_name[0]}</span>}
+                      <strong>{manager.first_name} {manager.last_name}</strong>
+                    </span>
+                  </td>
+                  <td>{manager.department || '—'}</td>
+                  <td><span style={{ fontWeight: 700, color: '#d97706' }}>{mts.length}</span></td>
+                  <td>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {mts.map(m => (
+                        <span key={m.id} style={{
+                          fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                          background: '#fff3e0', color: '#e65100', fontWeight: 600,
+                        }}>
+                          {nameMap[m.employee_id] || 'Unknown'} — {formatDate(m.scheduled_date)}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─── Report: No 1:1s by FY Month ─── */
+
+function NoMeetingsReport({ employees, meetings, fyStartMonth }: {
+  employees: Employee[]
+  meetings: Meeting[]
+  fyStartMonth: number
+}) {
+  const fyMonths = useMemo(() => getFYMonths(fyStartMonth), [fyStartMonth])
+
+  const monthData = useMemo(() => {
+    return fyMonths.map(({ year, month, label }) => {
+      const startStr = `${year}-${String(month + 1).padStart(2, '0')}-01`
+      const endDate = new Date(year, month + 1, 0)
+      const endStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
+
+      const monthMeetings = meetings.filter(m => {
+        return m.scheduled_date >= startStr && m.scheduled_date <= endStr &&
+          ['completed', 'accepted', 'pending'].includes(m.status)
+      })
+
+      const employeesWithMeetings = new Set<string>()
+      monthMeetings.forEach(m => {
+        employeesWithMeetings.add(m.employee_id)
+      })
+
+      const managedEmployees = employees.filter(e => e.manager_id)
+      const noMeetings = managedEmployees.filter(e => !employeesWithMeetings.has(e.id))
+
+      return { label, noMeetings, total: managedEmployees.length }
+    })
+  }, [fyMonths, employees, meetings])
+
+  const now = new Date()
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  return (
+    <div>
+      <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 12 }}>
+        Managed employees who have not had any 1:1 meetings (completed, accepted, or pending) in each month of the financial year.
+      </p>
+
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>No 1:1s</th>
+              <th>Coverage</th>
+              <th>Employees Without 1:1</th>
+            </tr>
+          </thead>
+          <tbody>
+            {monthData.map((m, i) => {
+              const fyMonth = fyMonths[i]
+              const monthKey = `${fyMonth.year}-${String(fyMonth.month + 1).padStart(2, '0')}`
+              const isFuture = monthKey > currentMonthStr
+              if (isFuture) return (
+                <tr key={i} style={{ opacity: 0.4 }}>
+                  <td>{m.label}</td>
+                  <td colSpan={3} style={{ fontStyle: 'italic', fontSize: 12 }}>Future month</td>
+                </tr>
+              )
+              const coveragePct = m.total > 0 ? ((m.total - m.noMeetings.length) / m.total * 100) : 100
+              const coverageColor = coveragePct >= 80 ? '#16a34a' : coveragePct >= 50 ? '#d97706' : '#dc2626'
+              return (
+                <tr key={i}>
+                  <td><strong>{m.label}</strong></td>
+                  <td>
+                    <span style={{ fontWeight: 700, color: m.noMeetings.length > 0 ? '#dc2626' : '#16a34a' }}>
+                      {m.noMeetings.length}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}> / {m.total}</span>
+                  </td>
+                  <td>
+                    <span style={{ fontWeight: 600, color: coverageColor }}>{coveragePct.toFixed(0)}%</span>
+                  </td>
+                  <td>
+                    {m.noMeetings.length === 0 ? (
+                      <span style={{ color: '#16a34a', fontSize: 12 }}>All covered</span>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, maxHeight: 60, overflowY: 'auto' }}>
+                        {m.noMeetings.slice(0, 10).map(emp => (
+                          <span key={emp.id} style={{
+                            fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                            background: '#fef2f2', color: '#dc2626', fontWeight: 500,
+                          }}>
+                            {emp.first_name} {emp.last_name}
+                          </span>
+                        ))}
+                        {m.noMeetings.length > 10 && (
+                          <span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>+{m.noMeetings.length - 10} more</span>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

@@ -160,19 +160,24 @@ export default function Settings() {
           <h2>{t('settings.features')}</h2>
           <p className="settings-hint">{t('settings.features_hint')}</p>
           <div className="feature-toggles">
-            {featureLabels.filter(({ key }) => companyFeatures[key]).map(({ key, tKey }) => (
-              <div className="toggle-row" key={key}>
-                <span>{t(tKey)}</span>
-                <button
-                  className={`toggle-switch ${draft[key] ? 'toggle-on' : 'toggle-off'}`}
-                  onClick={() => handleToggle(key)}
-                  role="switch"
-                  aria-checked={draft[key]}
-                >
-                  <span className="toggle-knob" />
-                </button>
-              </div>
-            ))}
+            {featureLabels.filter(({ key }) => companyFeatures[key] || key === 'elearning').map(({ key, tKey }) => {
+              const disabled = !companyFeatures[key]
+              return (
+                <div className="toggle-row" key={key} style={disabled ? { opacity: 0.5 } : undefined}>
+                  <span>{t(tKey)}{disabled ? ' (disabled)' : ''}</span>
+                  <button
+                    className={`toggle-switch ${draft[key] && !disabled ? 'toggle-on' : 'toggle-off'}`}
+                    onClick={() => !disabled && handleToggle(key)}
+                    role="switch"
+                    aria-checked={draft[key] && !disabled}
+                    disabled={disabled}
+                    style={disabled ? { cursor: 'not-allowed' } : undefined}
+                  >
+                    <span className="toggle-knob" />
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </section>
       )}

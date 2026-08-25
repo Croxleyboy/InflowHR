@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useFeatures } from '../context/FeatureContext'
 import { useToast } from '../context/ToastContext'
 import { COURSES } from './ELearning'
 
@@ -224,6 +225,7 @@ export default function Notifications() {
   const location = useLocation()
   const { t } = useLanguage()
   const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser, isSuperAdmin, canPostNotifications: canPost } = useAuth()
+  const { features } = useFeatures()
   const { showError } = useToast()
   const locState = location.state as { tab?: Tab; expandReminders?: boolean } | null
   const initialTab = locState?.tab || 'actions'
@@ -450,32 +452,34 @@ export default function Notifications() {
     }
 
     // E-learning — courses with deadlines expiring in next 30 days
-    const elearningKey = 'inflowhr-elearning'
-    try {
-      const raw = localStorage.getItem(elearningKey)
-      const progress = raw ? JSON.parse(raw) : { completed: [] }
-      const completedSet = new Set(progress.completed || [])
-      const thirtyDaysAhead = new Date(todayDate)
-      thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30)
+    if (features.elearning) {
+      const elearningKey = 'inflowhr-elearning'
+      try {
+        const raw = localStorage.getItem(elearningKey)
+        const progress = raw ? JSON.parse(raw) : { completed: [] }
+        const completedSet = new Set(progress.completed || [])
+        const thirtyDaysAhead = new Date(todayDate)
+        thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30)
 
-      COURSES.forEach(course => {
-        if (!course.deadline || completedSet.has(course.id)) return
-        const deadlineDate = new Date(course.deadline)
-        if (deadlineDate >= todayDate && deadlineDate <= thirtyDaysAhead) {
-          const daysLeft = Math.floor((deadlineDate.getTime() - todayDate.getTime()) / 86400000)
-          personalReminders.push({
-            id: `elearn-${course.id}`,
-            type: 'elearning',
-            title: daysLeft <= 7
-              ? `Course expiring soon: ${course.id.replace(/^[a-z]+-/, '').replace(/-/g, ' ')}`
-              : `Course deadline approaching`,
-            subtitle: `Due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left) · ${course.duration}`,
-            date: course.deadline,
-            navigateTo: `/elearning?course=${course.id}`,
-          })
-        }
-      })
-    } catch {}
+        COURSES.forEach(course => {
+          if (!course.deadline || completedSet.has(course.id)) return
+          const deadlineDate = new Date(course.deadline)
+          if (deadlineDate >= todayDate && deadlineDate <= thirtyDaysAhead) {
+            const daysLeft = Math.floor((deadlineDate.getTime() - todayDate.getTime()) / 86400000)
+            personalReminders.push({
+              id: `elearn-${course.id}`,
+              type: 'elearning',
+              title: daysLeft <= 7
+                ? `Course expiring soon: ${course.id.replace(/^[a-z]+-/, '').replace(/-/g, ' ')}`
+                : `Course deadline approaching`,
+              subtitle: `Due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left) · ${course.duration}`,
+              date: course.deadline,
+              navigateTo: `/elearning?course=${course.id}`,
+            })
+          }
+        })
+      } catch {}
+    }
 
     // Booking confirmations — bookings confirmed in last 3 days
     if (HARDCODED_EMPLOYEE_ID && companyId) {

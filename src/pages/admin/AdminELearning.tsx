@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
+import { useFeatures } from '../../context/FeatureContext'
 import { useToast } from '../../context/ToastContext'
 import type { CourseType } from '../ELearning'
 
@@ -67,8 +68,46 @@ type TabKey = 'courses' | 'visibility' | 'company_courses' | 'library'
 export default function AdminELearning() {
   const { selectedCompanyId } = useAdminCompany()
   const { isSuperAdmin } = useAuth()
+  const { companyFeatures, loadCompanyFeatures } = useFeatures()
   const { showError, showSuccess } = useToast()
   const [tab, setTab] = useState<TabKey>(isSuperAdmin ? 'courses' : 'library')
+  const [elEnabled, setElEnabled] = useState(true)
+  const [toggling, setToggling] = useState(false)
+
+  useEffect(() => {
+    if (!selectedCompanyId) return
+    ;(async () => {
+      const { data } = await supabase.from('company_features')
+        .select('is_enabled, is_visible')
+        .eq('company_id', selectedCompanyId)
+        .eq('feature_key', 'elearning')
+        .maybeSingle()
+      setElEnabled(data ? (isSuperAdmin ? data.is_enabled : data.is_enabled && data.is_visible) : false)
+    })()
+  }, [selectedCompanyId, isSuperAdmin])
+
+  async function toggleELearning() {
+    if (!selectedCompanyId || toggling) return
+    setToggling(true)
+    const newVal = !elEnabled
+    if (isSuperAdmin) {
+      const updateFields: Record<string, boolean> = { is_enabled: newVal }
+      if (!newVal) updateFields.is_visible = false
+      await supabase.from('company_features')
+        .update(updateFields)
+        .eq('company_id', selectedCompanyId)
+        .eq('feature_key', 'elearning')
+    } else {
+      await supabase.from('company_features')
+        .update({ is_visible: newVal })
+        .eq('company_id', selectedCompanyId)
+        .eq('feature_key', 'elearning')
+    }
+    setElEnabled(newVal)
+    if (companyFeatures) await loadCompanyFeatures(selectedCompanyId)
+    setToggling(false)
+    showSuccess(`E-Learning ${newVal ? 'enabled' : 'disabled'}`)
+  }
 
   const tabs: { key: TabKey; label: string; show: boolean }[] = isSuperAdmin
     ? [
@@ -83,12 +122,29 @@ export default function AdminELearning() {
   return (
     <div className="admin-section">
       <div className="admin-page-header">
-        <h2>E-Learning Content Management</h2>
-        <p>
-          {isSuperAdmin
-            ? 'Manage core courses and company visibility'
-            : 'Manage your company courses and configure the course library'}
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h2>E-Learning Content Management</h2>
+            <p>
+              {isSuperAdmin
+                ? 'Manage core courses and company visibility'
+                : 'Manage your company courses and configure the course library'}
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted, #8b8fa3)' }}>
+              E-Learning {elEnabled ? 'On' : 'Off'}
+            </span>
+            <button
+              className={`ts-toggle ${elEnabled ? 'ts-toggle-on' : ''}`}
+              onClick={toggleELearning}
+              disabled={toggling}
+              aria-label="Toggle e-learning"
+            >
+              <span className="ts-toggle-knob" />
+            </button>
+          </div>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid var(--border, #e5e7eb)' }}>

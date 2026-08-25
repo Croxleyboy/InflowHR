@@ -108,17 +108,19 @@ export default function Dashboard() {
           .gte('booking_date', today).lte('booking_date', weekAheadStr)
         count += bookingCount || 0
 
-        try {
-          const raw = localStorage.getItem('inflowhr-elearning')
-          const progress = raw ? JSON.parse(raw) : { completed: [] }
-          const completedSet = new Set(progress.completed || [])
-          const thirtyDaysAhead = new Date(now); thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30)
-          COURSES.forEach(course => {
-            if (!course.deadline || completedSet.has(course.id)) return
-            const dl = new Date(course.deadline)
-            if (dl >= now && dl <= thirtyDaysAhead) count++
-          })
-        } catch {}
+        if (features.elearning) {
+          try {
+            const raw = localStorage.getItem('inflowhr-elearning')
+            const progress = raw ? JSON.parse(raw) : { completed: [] }
+            const completedSet = new Set(progress.completed || [])
+            const thirtyDaysAhead = new Date(now); thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30)
+            COURSES.forEach(course => {
+              if (!course.deadline || completedSet.has(course.id)) return
+              const dl = new Date(course.deadline)
+              if (dl >= now && dl <= thirtyDaysAhead) count++
+            })
+          } catch {}
+        }
 
         setReminderCount(count)
       })()
