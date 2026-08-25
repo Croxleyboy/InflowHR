@@ -76,7 +76,7 @@ export default function Dashboard() {
         .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
         .then(({ count }) => { if (count && count > 0) setPendingOneToOnes(count) })
 
-      // Count open reminders (birthdays, shifts, bookings, e-learning deadlines)
+      // Count open reminders — must match what Notifications page shows
       ;(async () => {
         let count = 0
         const now = new Date()
@@ -107,6 +107,36 @@ export default function Dashboard() {
           .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
           .gte('booking_date', today).lte('booking_date', weekAheadStr)
         count += bookingCount || 0
+
+        // 1:1 meetings in next 14 days (matches Notifications page)
+        const twoWeeksAhead = new Date(now); twoWeeksAhead.setDate(twoWeeksAhead.getDate() + 14)
+        const { count: meetingCount } = await supabase.from('one_to_one_meetings')
+          .select('id', { count: 'exact', head: true })
+          .eq('company_id', companyUser.company_id)
+          .in('status', ['pending', 'accepted'])
+          .gte('scheduled_date', today)
+          .lte('scheduled_date', twoWeeksAhead.toISOString().split('T')[0])
+          .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
+        count += meetingCount || 0
+
+        // Booking confirmations in last 3 days
+        const threeDaysAgo = new Date(now); threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
+        const { count: confirmCount } = await supabase.from('space_bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
+          .eq('status', 'confirmed')
+          .gte('created_at', threeDaysAgo.toISOString())
+        count += confirmCount || 0
+
+        // Shift confirmations in last 3 days (published rotas only)
+        const { data: recentShifts } = await supabase.from('shift_assignments')
+          .select('id, rota:rotas(status)')
+          .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
+          .gte('created_at', threeDaysAgo.toISOString())
+          .limit(10)
+        if (recentShifts) {
+          count += recentShifts.filter((s: any) => s.rota?.status === 'published').length
+        }
 
         if (features.elearning) {
           try {
@@ -182,7 +212,7 @@ export default function Dashboard() {
           setLeavePending(pendingDays)
         })
     }
-  }, [employeeId, employeeEmail, companyUser?.company_id])
+  }, [employeeId, employeeEmail, companyUser?.company_id, features.elearning])
 
   const h = new Date().getHours()
   const greeting = h < 12 ? t('dashboard.greeting_morning') : h < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening')

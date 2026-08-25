@@ -550,7 +550,7 @@ export default function Notifications() {
     setReminders(activeReminders)
 
     setLoading(false)
-  }, [HARDCODED_EMPLOYEE_ID, HARDCODED_EMAIL, companyUser?.company_id])
+  }, [HARDCODED_EMPLOYEE_ID, HARDCODED_EMAIL, companyUser?.company_id, features.elearning])
 
   useEffect(() => {
     if (!HARDCODED_EMAIL) return
