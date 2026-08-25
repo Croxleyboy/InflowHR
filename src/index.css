@@ -90,13 +90,13 @@ body {
 .dash-reminder-bar {
   display: flex; align-items: center; justify-content: center; gap: 6px;
   width: 100%; padding: 8px 16px;
-  background: #dc2626; color: #fff;
+  background: #7f1d1d; color: #fff;
   border: none; cursor: pointer;
   font-size: 13px; font-weight: 700;
   font-family: inherit;
   transition: background 0.15s;
 }
-.dash-reminder-bar:hover { background: #b91c1c; }
+.dash-reminder-bar:hover { background: #641717; }
 
 .header-center { flex: 1; text-align: center; }
 .header-tagline { font-size: 14px; color: var(--text-muted); font-weight: 500; }
@@ -5838,3 +5838,17 @@ body {
 [data-theme="dark"] .user-guide-callout-note { background: #2a2215; border-color: #e0a020; color: #a8acc2; }
 
 .settings-guide-btn { background: var(--card-bg) !important; color: var(--text-primary) !important; border: 1px solid var(--border-color) !important; }
+
+/* Toggle switch */
+.ts-toggle {
+  position: relative; width: 40px; height: 22px; border-radius: 11px;
+  background: var(--border, #d1d5db); border: none; cursor: pointer;
+  transition: background 0.2s;
+}
+.ts-toggle-on { background: #16a34a; }
+.ts-toggle-knob {
+  position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; transition: transform 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.ts-toggle-on .ts-toggle-knob { transform: translateX(18px); }

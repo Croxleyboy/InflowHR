@@ -33,19 +33,96 @@ interface CustomerProject {
   created_at: string
 }
 
+interface ReportEmployee {
+  id: string
+  first_name: string
+  last_name: string
+  department: string | null
+  weekly_hours: number | null
+  working_pattern: string | null
+  is_active: boolean
+}
+
 const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected']
-const MONTH_NAMES = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar']
 const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const MONTH_NAMES_CAL = MONTH_NAMES_FULL
 
 const BAR_COLORS = [
   '#5c6bc0','#26a69a','#ef5350','#ab47bc','#ffa726','#42a5f5',
   '#66bb6a','#ec407a','#7e57c2','#78909c','#8d6e63','#d4e157',
 ]
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function formatDateUK(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString('en-GB')
+}
+
+function getWeekRange(offset: number): { start: string; end: string; label: string } {
+  const now = new Date()
+  const day = now.getDay()
+  const mondayOffset = day === 0 ? -6 : 1 - day
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + mondayOffset + offset * 7)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  return {
+    start: localDateStr(monday),
+    end: localDateStr(sunday),
+    label: `${monday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${sunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+  }
+}
+
+function getMonthRange(offset: number): { start: string; end: string; label: string } {
+  const now = new Date()
+  const d = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  return {
+    start: localDateStr(d),
+    end: localDateStr(end),
+    label: `${MONTH_NAMES_CAL[d.getMonth()]} ${d.getFullYear()}`,
+  }
+}
+
+function getFYRange(fyStartMonth: number) {
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  const startYear = currentMonth >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+  const startDate = new Date(startYear, fyStartMonth - 1, 1)
+  const endDate = new Date(startYear + 1, fyStartMonth - 1, 0)
+  return { startDate, endDate, startYear }
+}
+
+function getFYMonths(fyStartMonth: number): { year: number; month: number; label: string }[] {
+  const { startYear } = getFYRange(fyStartMonth)
+  const months: { year: number; month: number; label: string }[] = []
+  for (let i = 0; i < 12; i++) {
+    const m = (fyStartMonth - 1 + i) % 12
+    const y = startYear + (fyStartMonth - 1 + i >= 12 ? 1 : 0)
+    months.push({ year: y, month: m, label: `${MONTH_NAMES_CAL[m]} ${y}` })
+  }
+  return months
+}
+
+function getWorkingDaysInRange(start: string, end: string): number {
+  let count = 0
+  const d = new Date(start + 'T00:00:00')
+  const e = new Date(end + 'T00:00:00')
+  while (d <= e) {
+    const day = d.getDay()
+    if (day !== 0 && day !== 6) count++
+    d.setDate(d.getDate() + 1)
+  }
+  return count
+}
+
 export default function AdminTimesheets() {
-  const { selectedCompanyId } = useAdminCompany()
+  const { selectedCompanyId, selectedCompany, refreshCompanies } = useAdminCompany()
   const { showError, showSuccess } = useToast()
-  const [tsTab, setTsTab] = useState<'entries' | 'projects' | 'timeline'>('entries')
+  const [tsTab, setTsTab] = useState<'entries' | 'projects' | 'timeline' | 'reports'>('entries')
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -59,6 +136,10 @@ export default function AdminTimesheets() {
   const [projEditId, setProjEditId] = useState<string | null>(null)
   const [projForm, setProjForm] = useState({ name: '', customer_name: '', description: '', start_date: '', end_date: '', is_active: true })
   const [projAdding, setProjAdding] = useState(false)
+
+  const monitoringEnabled = selectedCompany?.timesheet_monitoring_enabled ?? false
+  const monitoringPeriod = selectedCompany?.timesheet_monitoring_period ?? 'weekly'
+  const [savingMonitoring, setSavingMonitoring] = useState(false)
 
   useEffect(() => { if (selectedCompanyId) { load(); loadProjects() } }, [selectedCompanyId])
 
@@ -186,7 +267,7 @@ export default function AdminTimesheets() {
 
   function startProjAdd() {
     setProjAdding(true)
-    setProjForm({ name: '', customer_name: '', description: '', start_date: new Date().toISOString().split('T')[0], end_date: '', is_active: true })
+    setProjForm({ name: '', customer_name: '', description: '', start_date: localDateStr(new Date()), end_date: '', is_active: true })
   }
 
   async function saveProjEdit(id: string) {
@@ -225,6 +306,22 @@ export default function AdminTimesheets() {
     showSuccess('Project deleted')
   }
 
+  async function toggleMonitoring(enabled: boolean) {
+    setSavingMonitoring(true)
+    const { error } = await supabase.from('companies').update({ timesheet_monitoring_enabled: enabled }).eq('id', selectedCompanyId)
+    if (error) { showError('Failed to update monitoring: ' + error.message) }
+    else { showSuccess(enabled ? 'Time monitoring enabled' : 'Time monitoring disabled'); refreshCompanies(selectedCompanyId) }
+    setSavingMonitoring(false)
+  }
+
+  async function setPeriod(period: 'weekly' | 'monthly') {
+    setSavingMonitoring(true)
+    const { error } = await supabase.from('companies').update({ timesheet_monitoring_period: period }).eq('id', selectedCompanyId)
+    if (error) { showError('Failed to update period: ' + error.message) }
+    else { showSuccess(`Monitoring period set to ${period}`); refreshCompanies(selectedCompanyId) }
+    setSavingMonitoring(false)
+  }
+
   const employees = useMemo(() => {
     const names = new Set<string>()
     timesheets.forEach(t => { if (t.employee) names.add(`${t.employee.first_name} ${t.employee.last_name}`) })
@@ -253,10 +350,39 @@ export default function AdminTimesheets() {
         <p>{timesheets.length} total entries &middot; {totalHours.toFixed(1)} hours</p>
       </div>
 
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '8px 0 4px', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
+          <span>Time Monitoring</span>
+          <button
+            className={`ts-toggle ${monitoringEnabled ? 'ts-toggle-on' : ''}`}
+            onClick={() => toggleMonitoring(!monitoringEnabled)}
+            disabled={savingMonitoring}
+            aria-label="Toggle time monitoring"
+          >
+            <span className="ts-toggle-knob" />
+          </button>
+        </label>
+        {monitoringEnabled && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              className={`admin-btn-sm ${monitoringPeriod === 'weekly' ? 'admin-btn-save' : 'admin-btn-cancel'}`}
+              onClick={() => setPeriod('weekly')}
+              disabled={savingMonitoring}
+            >Weekly</button>
+            <button
+              className={`admin-btn-sm ${monitoringPeriod === 'monthly' ? 'admin-btn-save' : 'admin-btn-cancel'}`}
+              onClick={() => setPeriod('monthly')}
+              disabled={savingMonitoring}
+            >Monthly</button>
+          </div>
+        )}
+      </div>
+
       <div className="admin-tabs">
         <button className={`admin-tab ${tsTab === 'entries' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('entries')}>Entries</button>
         <button className={`admin-tab ${tsTab === 'projects' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('projects')}>Customer Projects</button>
         <button className={`admin-tab ${tsTab === 'timeline' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('timeline')}>Project Timeline</button>
+        <button className={`admin-tab ${tsTab === 'reports' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('reports')}>Timesheet Reports</button>
       </div>
 
       {tsTab === 'entries' && (
@@ -300,7 +426,7 @@ export default function AdminTimesheets() {
                       <td>{ts.employee ? <span className="admin-inline-avatar">{ts.employee.avatar_url ? <img src={ts.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{ts.employee.first_name[0]}{ts.employee.last_name[0]}</span>}{ts.employee.first_name} {ts.employee.last_name}</span> : '—'}</td>
                       <td>{editingId === ts.id
                         ? <input type="date" className="admin-inline-input" value={editForm.date || ''} onChange={e => setEditForm(p => ({ ...p, date: e.target.value }))} />
-                        : new Date(ts.date + 'T00:00:00').toLocaleDateString('en-GB')
+                        : formatDateUK(ts.date)
                       }</td>
                       <td>{editingId === ts.id
                         ? <><input type="time" className="admin-inline-input admin-inline-sm" value={editForm.start_time?.slice(0, 5) || ''} onChange={e => setEditForm(p => ({ ...p, start_time: e.target.value }))} /> - <input type="time" className="admin-inline-input admin-inline-sm" value={editForm.end_time?.slice(0, 5) || ''} onChange={e => setEditForm(p => ({ ...p, end_time: e.target.value }))} /></>
@@ -394,8 +520,8 @@ export default function AdminTimesheets() {
                       <td>{projEditId === p.id ? <input className="admin-inline-input" value={projForm.customer_name} onChange={e => setProjForm(f => ({ ...f, customer_name: e.target.value }))} /> : p.customer_name}</td>
                       <td>{projEditId === p.id ? <input className="admin-inline-input" value={projForm.name} onChange={e => setProjForm(f => ({ ...f, name: e.target.value }))} /> : p.name}</td>
                       <td>{projEditId === p.id ? <input className="admin-inline-input" value={projForm.description} onChange={e => setProjForm(f => ({ ...f, description: e.target.value }))} placeholder="Description (optional)" /> : (p.description || '—')}</td>
-                      <td>{projEditId === p.id ? <input type="date" className="admin-inline-input" value={projForm.start_date} onChange={e => setProjForm(f => ({ ...f, start_date: e.target.value }))} /> : new Date(p.start_date + 'T00:00:00').toLocaleDateString('en-GB')}</td>
-                      <td>{projEditId === p.id ? <input type="date" className="admin-inline-input" value={projForm.end_date} onChange={e => setProjForm(f => ({ ...f, end_date: e.target.value }))} /> : (p.end_date ? new Date(p.end_date + 'T00:00:00').toLocaleDateString('en-GB') : '—')}</td>
+                      <td>{projEditId === p.id ? <input type="date" className="admin-inline-input" value={projForm.start_date} onChange={e => setProjForm(f => ({ ...f, start_date: e.target.value }))} /> : formatDateUK(p.start_date)}</td>
+                      <td>{projEditId === p.id ? <input type="date" className="admin-inline-input" value={projForm.end_date} onChange={e => setProjForm(f => ({ ...f, end_date: e.target.value }))} /> : (p.end_date ? formatDateUK(p.end_date) : '—')}</td>
                       <td>{projEditId === p.id ? (
                         <select className="admin-inline-select" value={projForm.is_active ? 'active' : 'inactive'} onChange={e => setProjForm(f => ({ ...f, is_active: e.target.value === 'active' }))}>
                           <option value="active">Active</option>
@@ -430,26 +556,356 @@ export default function AdminTimesheets() {
       )}
 
       {tsTab === 'timeline' && (
-        <ProjectTimeline projects={projects} loading={projLoading} />
+        <ProjectTimeline projects={projects} loading={projLoading} fyStartMonth={selectedCompany?.fy_start_month || 4} />
+      )}
+
+      {tsTab === 'reports' && (
+        <TimesheetReports
+          companyId={selectedCompanyId}
+          period={monitoringPeriod}
+          fyStartMonth={selectedCompany?.fy_start_month || 4}
+        />
       )}
     </div>
   )
 }
 
-function ProjectTimeline({ projects, loading }: { projects: CustomerProject[]; loading: boolean }) {
-  const now = new Date()
-  const fyStartMonth = 3
-  const fyStartYear = now.getMonth() >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+/* ─── Reports ─── */
 
-  const fyMonths: { year: number; month: number; label: string }[] = []
-  for (let i = 0; i < 12; i++) {
-    const m = (fyStartMonth + i) % 12
-    const y = fyStartYear + Math.floor((fyStartMonth + i) / 12)
-    fyMonths.push({ year: y, month: m, label: MONTH_NAMES[i] })
+function TimesheetReports({ companyId, period, fyStartMonth }: { companyId: string; period: 'weekly' | 'monthly'; fyStartMonth: number }) {
+  const [reportTab, setReportTab] = useState<'not_submitted' | 'missing_time' | 'metrics'>('not_submitted')
+
+  return (
+    <div style={{ paddingTop: 8 }}>
+      <div className="admin-tabs" style={{ marginBottom: 12 }}>
+        <button className={`admin-tab ${reportTab === 'not_submitted' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('not_submitted')}>Not Submitted</button>
+        <button className={`admin-tab ${reportTab === 'missing_time' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('missing_time')}>Missing Time</button>
+        <button className={`admin-tab ${reportTab === 'metrics' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('metrics')}>Metrics</button>
+      </div>
+
+      {reportTab === 'not_submitted' && <NotSubmittedReport companyId={companyId} period={period} />}
+      {reportTab === 'missing_time' && <MissingTimeReport companyId={companyId} period={period} />}
+      {reportTab === 'metrics' && <MetricsReport companyId={companyId} fyStartMonth={fyStartMonth} />}
+    </div>
+  )
+}
+
+/* ─── Report 1: Not Submitted ─── */
+
+function NotSubmittedReport({ companyId, period }: { companyId: string; period: 'weekly' | 'monthly' }) {
+  const [offset, setOffset] = useState(0)
+  const [allEmployees, setAllEmployees] = useState<ReportEmployee[]>([])
+  const [submittedIds, setSubmittedIds] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(true)
+
+  const range = period === 'weekly' ? getWeekRange(offset) : getMonthRange(offset)
+
+  useEffect(() => {
+    loadReport()
+  }, [companyId, offset, period])
+
+  async function loadReport() {
+    setLoading(true)
+    const [empRes, tsRes] = await Promise.all([
+      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, working_pattern, is_active').eq('company_id', companyId).eq('is_active', true).order('last_name'),
+      supabase.from('timesheets').select('employee_id').eq('company_id', companyId).gte('date', range.start).lte('date', range.end),
+    ])
+    setAllEmployees((empRes.data as ReportEmployee[]) || [])
+    const ids = new Set<string>()
+    ;(tsRes.data || []).forEach((t: any) => ids.add(t.employee_id))
+    setSubmittedIds(ids)
+    setLoading(false)
   }
 
-  const fyStart = new Date(fyStartYear, fyStartMonth, 1)
-  const fyEnd = new Date(fyStartYear + 1, fyStartMonth, 0)
+  const notSubmitted = allEmployees.filter(e => !submittedIds.has(e.id))
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <button className="admin-btn-icon" onClick={() => setOffset(o => o - 1)}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span style={{ fontSize: 14, fontWeight: 600, minWidth: 200, textAlign: 'center' }}>{range.label}</span>
+        <button className="admin-btn-icon" onClick={() => setOffset(o => o + 1)} disabled={offset >= 0}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button className="admin-btn-sm admin-btn-cancel" onClick={() => setOffset(0)} style={{ marginLeft: 4 }}>Current</button>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 8 }}>
+        Employees who have not submitted any time entries for this {period === 'weekly' ? 'week' : 'month'}.
+      </p>
+
+      {loading ? <div className="admin-loading">Loading...</div> : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Department</th>
+                <th>Contracted Hours ({period === 'weekly' ? 'Weekly' : 'Monthly'})</th>
+                <th>Working Pattern</th>
+              </tr>
+            </thead>
+            <tbody>
+              {notSubmitted.map(emp => {
+                const weeklyHrs = emp.weekly_hours || 37.5
+                const displayHrs = period === 'monthly'
+                  ? (weeklyHrs / 5) * getWorkingDaysInRange(range.start, range.end)
+                  : weeklyHrs
+                return (
+                  <tr key={emp.id}>
+                    <td><strong>{emp.first_name} {emp.last_name}</strong></td>
+                    <td>{emp.department || '—'}</td>
+                    <td>{displayHrs.toFixed(1)}</td>
+                    <td>{emp.working_pattern || 'Full-time'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {notSubmitted.length === 0 && <div className="admin-empty">All employees have submitted time for this period</div>}
+          <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 8 }}>
+            {notSubmitted.length} of {allEmployees.length} employees have not submitted
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─── Report 2: Missing Time ─── */
+
+function MissingTimeReport({ companyId, period }: { companyId: string; period: 'weekly' | 'monthly' }) {
+  const [offset, setOffset] = useState(0)
+  const [data, setData] = useState<{ emp: ReportEmployee; submitted: number; required: number }[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const range = period === 'weekly' ? getWeekRange(offset) : getMonthRange(offset)
+
+  useEffect(() => {
+    loadReport()
+  }, [companyId, offset, period])
+
+  async function loadReport() {
+    setLoading(true)
+    const [empRes, tsRes] = await Promise.all([
+      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, working_pattern, is_active').eq('company_id', companyId).eq('is_active', true).order('last_name'),
+      supabase.from('timesheets').select('employee_id, hours').eq('company_id', companyId).gte('date', range.start).lte('date', range.end),
+    ])
+    const emps = (empRes.data as ReportEmployee[]) || []
+    const hoursByEmp: Record<string, number> = {}
+    ;(tsRes.data || []).forEach((t: any) => {
+      hoursByEmp[t.employee_id] = (hoursByEmp[t.employee_id] || 0) + Number(t.hours)
+    })
+
+    const workingDays = getWorkingDaysInRange(range.start, range.end)
+    const rows = emps.map(emp => {
+      const weeklyHrs = emp.weekly_hours || 37.5
+      const required = period === 'monthly' ? (weeklyHrs / 5) * workingDays : weeklyHrs
+      const submitted = hoursByEmp[emp.id] || 0
+      return { emp, submitted, required }
+    }).filter(r => r.submitted < r.required)
+
+    setData(rows)
+    setLoading(false)
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <button className="admin-btn-icon" onClick={() => setOffset(o => o - 1)}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span style={{ fontSize: 14, fontWeight: 600, minWidth: 200, textAlign: 'center' }}>{range.label}</span>
+        <button className="admin-btn-icon" onClick={() => setOffset(o => o + 1)} disabled={offset >= 0}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button className="admin-btn-sm admin-btn-cancel" onClick={() => setOffset(0)} style={{ marginLeft: 4 }}>Current</button>
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 8 }}>
+        Employees who have submitted less time than their contracted {period === 'weekly' ? 'weekly' : 'monthly'} hours.
+      </p>
+
+      {loading ? <div className="admin-loading">Loading...</div> : (
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Department</th>
+                <th>Contracted</th>
+                <th>Submitted</th>
+                <th>Shortfall</th>
+                <th>Working Pattern</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map(({ emp, submitted, required }) => (
+                <tr key={emp.id}>
+                  <td><strong>{emp.first_name} {emp.last_name}</strong></td>
+                  <td>{emp.department || '—'}</td>
+                  <td>{required.toFixed(1)}h</td>
+                  <td>{submitted.toFixed(1)}h</td>
+                  <td style={{ color: '#dc2626', fontWeight: 600 }}>{(required - submitted).toFixed(1)}h</td>
+                  <td>{emp.working_pattern || 'Full-time'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.length === 0 && <div className="admin-empty">All employees have met their contracted hours</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─── Report 3: Metrics ─── */
+
+function MetricsReport({ companyId, fyStartMonth }: { companyId: string; fyStartMonth: number }) {
+  const [loading, setLoading] = useState(true)
+  const [employees, setEmployees] = useState<ReportEmployee[]>([])
+  const [allTimesheets, setAllTimesheets] = useState<{ employee_id: string; date: string; hours: number; project_id: string | null }[]>([])
+
+  const fyMonths = useMemo(() => getFYMonths(fyStartMonth), [fyStartMonth])
+  const fyRange = useMemo(() => getFYRange(fyStartMonth), [fyStartMonth])
+
+  useEffect(() => {
+    loadMetrics()
+  }, [companyId, fyStartMonth])
+
+  async function loadMetrics() {
+    setLoading(true)
+    const fyStart = localDateStr(fyRange.startDate)
+    const fyEnd = localDateStr(fyRange.endDate)
+    const [empRes, tsRes] = await Promise.all([
+      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, working_pattern, is_active').eq('company_id', companyId).eq('is_active', true),
+      supabase.from('timesheets').select('employee_id, date, hours, project_id').eq('company_id', companyId).gte('date', fyStart).lte('date', fyEnd),
+    ])
+    setEmployees((empRes.data as ReportEmployee[]) || [])
+    setAllTimesheets((tsRes.data || []) as any[])
+    setLoading(false)
+  }
+
+  const monthData = useMemo(() => {
+    return fyMonths.map(({ year, month, label }) => {
+      const monthStart = new Date(year, month, 1)
+      const monthEnd = new Date(year, month + 1, 0)
+      const startStr = localDateStr(monthStart)
+      const endStr = localDateStr(monthEnd)
+
+      const monthTs = allTimesheets.filter(t => t.date >= startStr && t.date <= endStr)
+
+      const submittedEmployees = new Set<string>()
+      let totalBooked = 0
+      const projectSet = new Set<string>()
+      let fullTimeContracted = 0
+      let partTimeBooked = 0
+
+      monthTs.forEach(t => {
+        submittedEmployees.add(t.employee_id)
+        totalBooked += Number(t.hours)
+        if (t.project_id) projectSet.add(t.project_id)
+      })
+
+      const workingDays = getWorkingDaysInRange(startStr, endStr)
+
+      employees.forEach(emp => {
+        const weeklyHrs = emp.weekly_hours || 37.5
+        const monthlyHrs = (weeklyHrs / 5) * workingDays
+        const pattern = (emp.working_pattern || 'Full-time').toLowerCase()
+        if (pattern === 'full-time') {
+          fullTimeContracted += monthlyHrs
+        } else {
+          const empTs = monthTs.filter(t => t.employee_id === emp.id)
+          empTs.forEach(t => { partTimeBooked += Number(t.hours) })
+        }
+      })
+
+      return {
+        label,
+        submissions: submittedEmployees.size,
+        totalBooked,
+        fullTimeContracted,
+        partTimeBooked,
+        projectCount: projectSet.size,
+      }
+    })
+  }, [fyMonths, allTimesheets, employees])
+
+  if (loading) return <div className="admin-loading">Loading...</div>
+
+  const fyLabel = `${MONTH_NAMES_FULL[(fyStartMonth - 1) % 12]} ${fyRange.startYear} – ${MONTH_NAMES_FULL[(fyStartMonth - 2 + 12) % 12]} ${fyRange.startYear + 1}`
+
+  return (
+    <div>
+      <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Financial Year: {fyLabel}</h3>
+      <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 12 }}>
+        Monthly overview of timesheet submissions across the financial year. An employee counts as 1 submission if they have 1 or more entries in a month.
+      </p>
+
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Submissions</th>
+              <th>Total Booked</th>
+              <th>FT Contracted</th>
+              <th>FT Utilisation</th>
+              <th>PT/Contract Booked</th>
+              <th>Projects</th>
+            </tr>
+          </thead>
+          <tbody>
+            {monthData.map((m, i) => {
+              const util = m.fullTimeContracted > 0 ? (m.totalBooked / m.fullTimeContracted * 100) : 0
+              const utilColor = util >= 90 ? '#16a34a' : util >= 70 ? '#d97706' : '#dc2626'
+              return (
+                <tr key={i}>
+                  <td><strong>{m.label}</strong></td>
+                  <td>{m.submissions} / {employees.length}</td>
+                  <td>{m.totalBooked.toFixed(1)}h</td>
+                  <td>{m.fullTimeContracted.toFixed(0)}h</td>
+                  <td>
+                    <span style={{ color: m.totalBooked > 0 ? utilColor : 'var(--text-muted, #888)', fontWeight: 600 }}>
+                      {m.totalBooked > 0 ? `${util.toFixed(0)}%` : '—'}
+                    </span>
+                  </td>
+                  <td>{m.partTimeBooked > 0 ? `${m.partTimeBooked.toFixed(1)}h` : '—'}</td>
+                  <td>{m.projectCount || '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr style={{ fontWeight: 700 }}>
+              <td>Total</td>
+              <td>—</td>
+              <td>{monthData.reduce((s, m) => s + m.totalBooked, 0).toFixed(1)}h</td>
+              <td>{monthData.reduce((s, m) => s + m.fullTimeContracted, 0).toFixed(0)}h</td>
+              <td>
+                {(() => {
+                  const totalBooked = monthData.reduce((s, m) => s + m.totalBooked, 0)
+                  const totalContracted = monthData.reduce((s, m) => s + m.fullTimeContracted, 0)
+                  const util = totalContracted > 0 ? (totalBooked / totalContracted * 100) : 0
+                  return totalBooked > 0 ? `${util.toFixed(0)}%` : '—'
+                })()}
+              </td>
+              <td>{monthData.reduce((s, m) => s + m.partTimeBooked, 0).toFixed(1)}h</td>
+              <td>—</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/* ─── Project Timeline ─── */
+
+function ProjectTimeline({ projects, loading, fyStartMonth }: { projects: CustomerProject[]; loading: boolean; fyStartMonth: number }) {
+  const { startDate: fyStart, endDate: fyEnd, startYear: fyStartYear } = getFYRange(fyStartMonth)
+  const fyMonths = getFYMonths(fyStartMonth)
   const fyRange = fyEnd.getTime() - fyStart.getTime()
 
   function getBarStyle(p: CustomerProject): { left: string; width: string } {
@@ -469,7 +925,7 @@ function ProjectTimeline({ projects, loading }: { projects: CustomerProject[]; l
   return (
     <div style={{ padding: '16px 0' }}>
       <h3 style={{ margin: '0 0 16px', fontSize: 15 }}>
-        Financial Year {MONTH_NAMES_FULL[fyStartMonth]} {fyStartYear} — {MONTH_NAMES_FULL[(fyStartMonth - 1 + 12) % 12]} {fyStartYear + 1}
+        Financial Year {MONTH_NAMES_FULL[(fyStartMonth - 1) % 12]} {fyStartYear} — {MONTH_NAMES_FULL[(fyStartMonth - 2 + 12) % 12]} {fyStartYear + 1}
       </h3>
 
       <div style={{ overflowX: 'auto' }}>
@@ -483,7 +939,7 @@ function ProjectTimeline({ projects, loading }: { projects: CustomerProject[]; l
                   color: 'var(--text-muted)', padding: '6px 0',
                   borderLeft: '1px solid var(--border, #e5e7eb)',
                 }}>
-                  {m.label}
+                  {MONTH_NAMES_CAL[m.month].slice(0, 3)}
                 </div>
               ))}
             </div>
@@ -511,7 +967,7 @@ function ProjectTimeline({ projects, loading }: { projects: CustomerProject[]; l
                     left: bar.left, width: bar.width,
                     background: color, borderRadius: 4, opacity: p.is_active ? 1 : 0.4,
                     minWidth: bar.width !== '0%' ? 4 : 0,
-                  }} title={`${p.customer_name} — ${p.name}: ${new Date(p.start_date).toLocaleDateString('en-GB')} → ${p.end_date ? new Date(p.end_date).toLocaleDateString('en-GB') : 'Ongoing'}`} />
+                  }} title={`${p.customer_name} — ${p.name}: ${formatDateUK(p.start_date)} → ${p.end_date ? formatDateUK(p.end_date) : 'Ongoing'}`} />
                 </div>
               </div>
             )
