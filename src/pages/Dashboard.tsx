@@ -37,6 +37,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
+  const [pendingOneToOnes, setPendingOneToOnes] = useState(0)
   const [lastExpense, setLastExpense] = useState<number | null>(null)
   const [lastExpenseHasReceipt, setLastExpenseHasReceipt] = useState(false)
   const [pendingExpense, setPendingExpense] = useState<number | null>(null)
@@ -63,6 +64,15 @@ export default function Dashboard() {
         .eq('company_id', companyUser.company_id)
         .gt('created_at', lastSeen)
         .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
+
+      const today = new Date().toISOString().split('T')[0]
+      supabase.from('one_to_one_meetings')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'pending')
+        .gte('scheduled_date', today)
+        .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
+        .then(({ count }) => { if (count && count > 0) setPendingOneToOnes(count) })
 
       supabase.from('expense_claims')
         .select('id, amount, status')
@@ -239,6 +249,7 @@ export default function Dashboard() {
             <div className="card-content">
               <span className="card-label">{t('one_to_one.nav_label')}</span>
             </div>
+            {pendingOneToOnes > 0 && <span className="kudos-unread-badge">{pendingOneToOnes}</span>}
             <Chevron color="#ad1457" />
           </button>
         )}

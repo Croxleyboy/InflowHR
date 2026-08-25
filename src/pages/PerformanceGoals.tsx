@@ -601,7 +601,7 @@ const CSS = `
 .pg-emp-count { background: var(--border); color: var(--text); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 100px; flex-shrink: 0; }
 .pg-emp-active .pg-emp-count { background: #2563eb; color: #fff; }
 
-.pg-main { flex: 1; padding: 24px; overflow-y: auto; max-width: 100%; }
+.pg-main { flex: 1; padding: 24px; overflow-y: auto; max-width: 100%; min-width: 0; }
 
 .pg-main-header { display: flex; align-items: center; gap: 20px; margin-bottom: 24px; flex-wrap: wrap; }
 .pg-main-person { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
@@ -672,14 +672,14 @@ const CSS = `
 .pg-comment-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Form */
-.pg-form-card { background: var(--bg-card); border: 2px solid #2563eb; border-radius: 14px; padding: 24px; margin-top: 16px; }
+.pg-form-card { background: var(--bg-card); border: 2px solid #2563eb; border-radius: 14px; padding: 24px; margin-top: 16px; overflow: hidden; }
 .pg-form-title { margin: 0 0 16px; font-size: 16px; font-weight: 700; color: var(--text); }
-.pg-form-row { margin-bottom: 14px; }
+.pg-form-row { margin-bottom: 14px; min-width: 0; }
 .pg-form-label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 4px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.pg-form-input, .pg-form-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg); box-sizing: border-box; }
+.pg-form-input, .pg-form-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg); box-sizing: border-box; min-width: 0; }
 .pg-form-input:focus, .pg-form-textarea:focus { border-color: #2563eb; outline: none; }
 .pg-form-textarea { resize: vertical; }
-.pg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; }
 .pg-form-actions { display: flex; gap: 10px; margin-top: 16px; }
 .pg-save-btn { padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.2s; }
 .pg-save-btn:hover:not(:disabled) { background: #1d4ed8; }

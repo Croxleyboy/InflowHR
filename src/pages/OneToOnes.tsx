@@ -176,13 +176,13 @@ export default function OneToOnes() {
         </button>
         {isManager && (
           <button className={`oto-tab ${tab === 'reports' ? 'oto-tab-active' : ''}`} onClick={() => setTab('reports')}>
-            {t('one_to_one.direct_reports')}
+            Reports
           </button>
         )}
       </div>
 
       {tab === 'upcoming' && (
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '0 16px', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', padding: '0 16px', justifyContent: 'center', marginTop: 12 }}>
           {isManager && (
             <button className="oto-schedule-btn" style={{ margin: 0 }} onClick={() => navigate('/one-to-ones/new')}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round">

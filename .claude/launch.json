@@ -5,8 +5,7 @@
       "name": "dev",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "--port", "3003"],
-      "port": 3003,
-      "cwd": "/Users/andyjones/Documents/GitHub/eventpulse-powerapps"
+      "port": 3003
     }
   ]
 }
