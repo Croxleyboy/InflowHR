@@ -119,23 +119,30 @@ export default function Dashboard() {
           .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
         count += meetingCount || 0
 
-        // Booking confirmations in last 3 days
+        // Booking confirmations in last 3 days — exclude those already counted as upcoming
         const threeDaysAgo = new Date(now); threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
-        const { count: confirmCount } = await supabase.from('space_bookings')
-          .select('id', { count: 'exact', head: true })
+        const { data: confirmBookings } = await supabase.from('space_bookings')
+          .select('id, booking_date')
           .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
           .eq('status', 'confirmed')
           .gte('created_at', threeDaysAgo.toISOString())
-        count += confirmCount || 0
+          .limit(10)
+        if (confirmBookings) {
+          count += confirmBookings.filter((b: any) =>
+            !(b.booking_date >= today && b.booking_date <= weekAheadStr)
+          ).length
+        }
 
-        // Shift confirmations in last 3 days (published rotas only)
+        // Shift confirmations in last 3 days — exclude those already counted as upcoming
         const { data: recentShifts } = await supabase.from('shift_assignments')
-          .select('id, rota:rotas(status)')
+          .select('id, date, rota:rotas(status)')
           .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
           .gte('created_at', threeDaysAgo.toISOString())
           .limit(10)
         if (recentShifts) {
-          count += recentShifts.filter((s: any) => s.rota?.status === 'published').length
+          count += recentShifts.filter((s: any) =>
+            s.rota?.status === 'published' && !(s.date >= today && s.date <= weekAheadStr)
+          ).length
         }
 
         if (features.elearning) {
