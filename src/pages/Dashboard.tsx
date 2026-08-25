@@ -6,6 +6,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import Chevron from '../components/Chevron'
+import { COURSES } from './ELearning'
 
 function getDateString(lang: string) {
   const d = new Date()
@@ -43,6 +44,7 @@ export default function Dashboard() {
   const [pendingExpense, setPendingExpense] = useState<number | null>(null)
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const [leavePending, setLeavePending] = useState<number | null>(null)
+  const [reminderCount, setReminderCount] = useState(0)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   useEffect(() => {
@@ -73,6 +75,53 @@ export default function Dashboard() {
         .gte('scheduled_date', today)
         .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
         .then(({ count }) => { if (count && count > 0) setPendingOneToOnes(count) })
+
+      // Count open reminders (birthdays, shifts, bookings, e-learning deadlines)
+      ;(async () => {
+        let count = 0
+        const now = new Date()
+        const weekAhead = new Date(now); weekAhead.setDate(weekAhead.getDate() + 7)
+        const weekAheadStr = weekAhead.toISOString().split('T')[0]
+
+        const { data: colleagues } = await supabase.from('employees')
+          .select('id, date_of_birth').eq('company_id', companyUser.company_id).eq('is_active', true).not('date_of_birth', 'is', null)
+        if (colleagues) {
+          const yr = now.getFullYear()
+          colleagues.forEach((c: any) => {
+            if (!c.date_of_birth || c.id === employeeId) return
+            const dob = new Date(c.date_of_birth)
+            const bday = new Date(yr, dob.getMonth(), dob.getDate())
+            if (bday < now) bday.setFullYear(yr + 1)
+            if (Math.floor((bday.getTime() - now.getTime()) / 86400000) <= 7) count++
+          })
+        }
+
+        const { count: shiftCount } = await supabase.from('shift_assignments')
+          .select('id', { count: 'exact', head: true })
+          .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
+          .gte('date', today).lte('date', weekAheadStr)
+        count += shiftCount || 0
+
+        const { count: bookingCount } = await supabase.from('space_bookings')
+          .select('id', { count: 'exact', head: true })
+          .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
+          .gte('booking_date', today).lte('booking_date', weekAheadStr)
+        count += bookingCount || 0
+
+        try {
+          const raw = localStorage.getItem('inflowhr-elearning')
+          const progress = raw ? JSON.parse(raw) : { completed: [] }
+          const completedSet = new Set(progress.completed || [])
+          const thirtyDaysAhead = new Date(now); thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30)
+          COURSES.forEach(course => {
+            if (!course.deadline || completedSet.has(course.id)) return
+            const dl = new Date(course.deadline)
+            if (dl >= now && dl <= thirtyDaysAhead) count++
+          })
+        } catch {}
+
+        setReminderCount(count)
+      })()
 
       supabase.from('expense_claims')
         .select('id, amount, status')
@@ -139,11 +188,14 @@ export default function Dashboard() {
   return (
     <div className="dashboard">
       <header className="dash-header">
-        {avatarUrl ? (
-          <img className="profile-avatar-img" src={avatarUrl} alt={initials} />
-        ) : (
-          <div className="profile-avatar">{initials}</div>
-        )}
+        <div className="dash-avatar-wrap" onClick={() => reminderCount > 0 ? navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } }) : undefined} style={{ cursor: reminderCount > 0 ? 'pointer' : 'default' }}>
+          {avatarUrl ? (
+            <img className="profile-avatar-img" src={avatarUrl} alt={initials} />
+          ) : (
+            <div className="profile-avatar">{initials}</div>
+          )}
+          {reminderCount > 0 && <span className="dash-avatar-badge">{reminderCount}</span>}
+        </div>
         <div className="header-center">
           <p className="header-tagline">{t('dashboard.tagline')}</p>
           <p className="header-date">{getDateString(lang)}</p>

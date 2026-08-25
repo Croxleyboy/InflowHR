@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
@@ -146,12 +146,15 @@ function isRenewalDue(courseId: string, completedDates: Record<string, string>):
 
 export default function ELearning() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { t } = useLanguage()
   const { companyUser, employeeId: EMPLOYEE_ID } = useAuth()
   const [progress, setProgress] = useState<CourseProgress>(loadProgress)
   const [filter, setFilter] = useState<Category>('all')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
-  const [expandedCourse, setExpandedCourse] = useState<string | null>(null)
+
+  const courseParam = new URLSearchParams(location.search).get('course')
+  const [expandedCourse, setExpandedCourse] = useState<string | null>(courseParam)
   const [showComplete, setShowComplete] = useState<string | null>(null)
   const [allCourses, setAllCourses] = useState<Course[]>(COURSES)
   const [enabledCourseIds, setEnabledCourseIds] = useState<Set<string> | null>(null)
@@ -468,7 +471,8 @@ export default function ELearning() {
           const pct = progress.inProgress[course.id] ?? 0
 
           return (
-            <div key={course.id} className={`elearning-card ${status === 'completed' ? 'elearning-card-done' : ''} ${status === 'renewal-due' ? 'elearning-card-renewal' : ''} ${isExpanded ? 'elearning-card-expanded' : ''}`}>
+            <div key={course.id} className={`elearning-card ${status === 'completed' ? 'elearning-card-done' : ''} ${status === 'renewal-due' ? 'elearning-card-renewal' : ''} ${status === 'in-progress' ? 'elearning-card-inprogress' : ''} ${status === 'completed' && !course.annualReminder ? 'elearning-card-complete-border' : ''} ${isExpanded ? 'elearning-card-expanded' : ''}`}>
+              {course.required && <span className="elearning-required-badge">R</span>}
               {showComplete === course.id && (
                 <div className="elearning-complete-overlay">
                   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>

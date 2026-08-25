@@ -225,7 +225,8 @@ export default function Notifications() {
   const { t } = useLanguage()
   const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser, isSuperAdmin, canPostNotifications: canPost } = useAuth()
   const { showError } = useToast()
-  const initialTab = (location.state as { tab?: Tab } | null)?.tab || 'actions'
+  const locState = location.state as { tab?: Tab; expandReminders?: boolean } | null
+  const initialTab = locState?.tab || 'actions'
   const [tab, setTab] = useState<Tab>(initialTab)
   const [actions, setActions] = useState<WorkflowItem[]>([])
   const [myNotifs, setMyNotifs] = useState<WorkflowItem[]>([])
@@ -234,7 +235,7 @@ export default function Notifications() {
   const [swapActions, setSwapActions] = useState<SwapAction[]>([])
   const [expenseReceipts, setExpenseReceipts] = useState<Set<number>>(new Set())
   const [reminders, setReminders] = useState<PersonalReminder[]>([])
-  const [remindersExpanded, setRemindersExpanded] = useState(false)
+  const [remindersExpanded, setRemindersExpanded] = useState(locState?.expandReminders || false)
   const [notifSearch, setNotifSearch] = useState('')
 
   const fetchData = useCallback(async () => {
@@ -470,7 +471,7 @@ export default function Notifications() {
               : `Course deadline approaching`,
             subtitle: `Due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left) · ${course.duration}`,
             date: course.deadline,
-            navigateTo: '/elearning',
+            navigateTo: `/elearning?course=${course.id}`,
           })
         }
       })
@@ -540,8 +541,9 @@ export default function Notifications() {
       }
     }
 
-    personalReminders.sort((a, b) => a.date.localeCompare(b.date))
-    setReminders(personalReminders)
+    const activeReminders = personalReminders.filter(r => r.date >= todayStr || r.type === 'confirm_booking' || r.type === 'confirm_shift')
+    activeReminders.sort((a, b) => a.date.localeCompare(b.date))
+    setReminders(activeReminders)
 
     setLoading(false)
   }, [HARDCODED_EMPLOYEE_ID, HARDCODED_EMAIL, companyUser?.company_id])
@@ -792,10 +794,13 @@ export default function Notifications() {
               </button>
               {remindersExpanded && (
                 <div className="notif-reminders-body">
-                  {reminders.map(r => (
+                  {reminders.map(r => {
+                    const daysUntil = Math.floor((new Date(r.date).getTime() - Date.now()) / 86400000)
+                    const urgent = daysUntil <= 2 && daysUntil >= 0 && r.type !== 'confirm_booking' && r.type !== 'confirm_shift'
+                    return (
                     <div
                       key={r.id}
-                      className={`notif-card notif-reminder-card ${r.navigateTo ? 'notif-card-clickable' : ''}`}
+                      className={`notif-card notif-reminder-card ${r.navigateTo ? 'notif-card-clickable' : ''} ${urgent ? 'notif-reminder-urgent' : ''}`}
                       onClick={() => r.navigateTo && navigate(r.navigateTo)}
                     >
                       <NotifIcon
@@ -821,7 +826,8 @@ export default function Notifications() {
                         </svg>
                       )}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
