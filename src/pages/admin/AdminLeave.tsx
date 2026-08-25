@@ -38,8 +38,9 @@ export default function AdminLeave() {
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [weekendsAsWorkdays, setWeekendsAsWorkdays] = useState(false)
   const [savingWeekend, setSavingWeekend] = useState(false)
-  const [leaveTypeSettings, setLeaveTypeSettings] = useState<{ id: number; name: string; deducts_from_allowance: boolean }[]>([])
+  const [leaveTypeSettings, setLeaveTypeSettings] = useState<{ id: number; name: string; deducts_from_allowance: boolean; max_carry_over_days: number }[]>([])
   const [savingDeduct, setSavingDeduct] = useState<number | null>(null)
+  const [savingCarry, setSavingCarry] = useState<number | null>(null)
   const [fyStartMonth, setFyStartMonth] = useState(4)
 
   const loadWeekendSetting = useCallback(async () => {
@@ -66,10 +67,10 @@ export default function AdminLeave() {
     if (!selectedCompanyId) return
     const { data } = await supabase
       .from('leave_types')
-      .select('id, name, deducts_from_allowance')
+      .select('id, name, deducts_from_allowance, max_carry_over_days')
       .eq('company_id', selectedCompanyId)
       .order('name')
-    if (data) setLeaveTypeSettings(data.map(r => ({ ...r, deducts_from_allowance: r.deducts_from_allowance !== false })))
+    if (data) setLeaveTypeSettings(data.map(r => ({ ...r, deducts_from_allowance: r.deducts_from_allowance !== false, max_carry_over_days: r.max_carry_over_days ?? 0 })))
   }, [selectedCompanyId])
 
   async function toggleDeductsFromAllowance(typeId: number, currentVal: boolean) {
@@ -78,6 +79,14 @@ export default function AdminLeave() {
     if (error) { showError('Failed to update leave type: ' + error.message); setSavingDeduct(null); return }
     setLeaveTypeSettings(prev => prev.map(t => t.id === typeId ? { ...t, deducts_from_allowance: !currentVal } : t))
     setSavingDeduct(null)
+  }
+
+  async function updateCarryOverDays(typeId: number, days: number) {
+    setSavingCarry(typeId)
+    const { error } = await supabase.from('leave_types').update({ max_carry_over_days: days }).eq('id', typeId)
+    if (error) { showError('Failed to update carry-over days: ' + error.message); setSavingCarry(null); return }
+    setLeaveTypeSettings(prev => prev.map(t => t.id === typeId ? { ...t, max_carry_over_days: days } : t))
+    setSavingCarry(null)
   }
 
   useEffect(() => {
@@ -408,6 +417,35 @@ export default function AdminLeave() {
                 <span>{lt.name} — {lt.deducts_from_allowance ? t('leave.deducts_from_allowance') : t('leave.does_not_deduct')}</span>
               </label>
             ))}
+        </div>
+      )}
+
+      {leaveTypeSettings.length > 0 && (
+        <div className="admin-weekend-toggle" style={{ marginTop: 12 }}>
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Carry-Over Days</h4>
+          <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
+            Set the maximum number of unused leave days that can be carried over into the next financial year per leave type. Set to 0 for no carry-over.
+          </span>
+          {leaveTypeSettings.filter(lt => lt.deducts_from_allowance).map(lt => (
+            <div key={lt.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ minWidth: 140, fontSize: 13 }}>{lt.name}</span>
+              <input
+                type="number"
+                min={0}
+                max={365}
+                className="admin-inline-input admin-inline-sm"
+                value={lt.max_carry_over_days}
+                onChange={e => {
+                  const val = Math.max(0, Number(e.target.value) || 0)
+                  setLeaveTypeSettings(prev => prev.map(t => t.id === lt.id ? { ...t, max_carry_over_days: val } : t))
+                }}
+                onBlur={e => updateCarryOverDays(lt.id, Math.max(0, Number(e.target.value) || 0))}
+                disabled={savingCarry === lt.id}
+                style={{ width: 70, textAlign: 'center' }}
+              />
+              <span style={{ fontSize: 12, color: '#888' }}>days max</span>
+            </div>
+          ))}
         </div>
       )}
 
