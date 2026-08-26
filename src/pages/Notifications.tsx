@@ -623,8 +623,8 @@ export default function Notifications() {
   async function handleSkillValidation(item: WorkflowItem, approve: boolean) {
     const esId = item.extra_info || ''
     if (esId) {
-      await supabase.from('employee_skills').update({ status: approve ? 'validated' : 'rejected' }).eq('id', esId)
-      await supabase.from('skill_validations').update({ status: approve ? 'approved' : 'rejected', validated_at: new Date().toISOString() }).eq('employee_skill_id', esId)
+      await supabase.from('employee_skills').update({ status: approve ? 'validated' : 'rejected', validated_at: approve ? new Date().toISOString() : null }).eq('id', esId)
+      await supabase.from('skill_validations').update({ status: approve ? 'approved' : 'rejected', responded_at: new Date().toISOString() }).eq('employee_skill_id', esId)
     }
     await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: approve ? 'Approved' : 'Declined' }).eq('id', item.id)
     showSuccess(approve ? 'Skill validated' : 'Skill validation rejected')
