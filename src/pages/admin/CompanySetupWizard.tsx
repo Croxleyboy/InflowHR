@@ -53,26 +53,53 @@ interface SetupRow {
   working_pattern: string
   weekly_hours: number
   leave_allowance: number | null
+  qualifications: string
+  religion: string
+  salary_group: string
 }
 
 const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
-  'first name': 'firstname', 'surname': 'surname', 'work email': 'user_email',
-  'personal email': 'personal_email', 'job title': 'job_title', 'department': 'department',
-  'manager name': 'manager', 'manager email': 'manager_email', 'location': 'location',
-  'phone': 'telephone', 'employee number': 'employee_number', 'start date': 'start_date',
-  'contract type': 'contract_type', 'annual salary': 'annual_salary',
-  'tax code': 'tax_code', 'payroll id': 'payroll_id', 'role': 'role',
-  'date of birth': 'date_of_birth', 'gender': 'gender', 'nationality': 'nationality',
-  'marital status': 'marital_status', 'address line 1': 'address_line1',
-  'address line 2': 'address_line2', 'city': 'city', 'county': 'county',
+  'first name': 'firstname', 'firstname': 'firstname', 'first_name': 'firstname',
+  'surname': 'surname', 'last name': 'surname', 'last_name': 'surname', 'lastname': 'surname',
+  'work email': 'user_email', 'user_email': 'user_email', 'email': 'user_email', 'work_email': 'user_email',
+  'personal email': 'personal_email', 'personal_email': 'personal_email',
+  'job title': 'job_title', 'job_title': 'job_title',
+  'department': 'department',
+  'manager name': 'manager', 'manager': 'manager',
+  'manager email': 'manager_email', 'manager_email': 'manager_email',
+  'location': 'location',
+  'phone': 'telephone', 'telephone': 'telephone',
+  'employee number': 'employee_number', 'employee_number': 'employee_number',
+  'start date': 'start_date', 'start_date': 'start_date',
+  'contract type': 'contract_type', 'contract_type': 'contract_type',
+  'annual salary': 'annual_salary', 'annual_salary': 'annual_salary', 'salary': 'annual_salary',
+  'tax code': 'tax_code', 'tax_code': 'tax_code',
+  'payroll id': 'payroll_id', 'payroll_id': 'payroll_id',
+  'role': 'role',
+  'date of birth': 'date_of_birth', 'date_of_birth': 'date_of_birth', 'dob': 'date_of_birth',
+  'gender': 'gender', 'nationality': 'nationality',
+  'marital status': 'marital_status', 'marital_status': 'marital_status',
+  'address line 1': 'address_line1', 'address_line_1': 'address_line1',
+  'address line 2': 'address_line2', 'address_line_2': 'address_line2',
+  'address line 3': 'city', 'address_line_3': 'city',
+  'address line 4': 'postcode', 'address_line_4': 'postcode',
+  'city': 'city', 'county': 'county',
   'postcode': 'postcode', 'country': 'country',
-  'emergency contact name': 'emergency_contact_name', 'emergency contact phone': 'emergency_contact_phone',
+  'emergency contact name': 'emergency_contact_name', 'emergency_contact_name': 'emergency_contact_name',
+  'emergency contact phone': 'emergency_contact_phone', 'emergency_contact_number': 'emergency_contact_phone', 'emergency_contact_phone': 'emergency_contact_phone',
   'emergency contact relationship': 'emergency_contact_relationship',
-  'ni number': 'ni_number', 'bank sort code': 'bank_sort_code',
-  'bank account number': 'bank_account_number', 'bank account name': 'bank_account_name',
-  'probation end date': 'probation_end_date', 'notice period': 'notice_period',
-  'working pattern': 'working_pattern', 'weekly hours': 'weekly_hours',
+  'ni number': 'ni_number', 'ni_number': 'ni_number',
+  'bank sort code': 'bank_sort_code', 'bank_sort_code': 'bank_sort_code',
+  'bank account number': 'bank_account_number', 'bank_account_number': 'bank_account_number',
+  'bank account name': 'bank_account_name', 'bank_account_name': 'bank_account_name',
+  'probation end date': 'probation_end_date', 'probation_end_date': 'probation_end_date',
+  'notice period': 'notice_period', 'notice_period': 'notice_period',
+  'working pattern': 'working_pattern', 'working_pattern': 'working_pattern',
+  'weekly hours': 'weekly_hours', 'weekly_hours': 'weekly_hours',
   'leave allowance': 'leave_allowance', 'assigned leave days': 'leave_allowance',
+  'qualifications': 'qualifications', 'qualification': 'qualifications',
+  'religion': 'religion', 'faith': 'religion',
+  'salary group': 'salary_group', 'salary_group': 'salary_group', 'pay grade': 'salary_group', 'pay band': 'salary_group',
 }
 
 const SETUP_STEPS = [
@@ -129,7 +156,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
       const errors: string[] = []
       const mapped: SetupRow[] = raw.map((row, i) => {
-        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: 37.5, leave_allowance: null }
+        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: 37.5, leave_allowance: null, qualifications: '', religion: '', salary_group: '' }
         for (const [excelCol, val] of Object.entries(row)) {
           const key = SETUP_COLUMN_MAP[excelCol.toLowerCase().trim()]
           if (key) {
@@ -173,7 +200,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
   }
 
   function generateTemplate() {
-    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number', 'Role']
+    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'Religion', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Salary Group', 'Qualifications', 'Assigned Leave Days', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number', 'Role']
     const ws = XLSX.utils.aoa_to_sheet([headers])
     ws['!cols'] = headers.map(() => ({ wch: 20 }))
     const wb = XLSX.utils.book_new()
@@ -325,6 +352,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           annual_salary: row.annual_salary || null,
           tax_code: row.tax_code || null,
           payroll_id: row.payroll_id || null,
+          religion: row.religion || null,
         })
         if (!onbErr) {
           onboardCount++
@@ -382,6 +410,9 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           tax_code: row.tax_code || null,
           payroll_id: row.payroll_id || null,
           leave_allowance: row.leave_allowance ?? 15,
+          qualifications: row.qualifications || null,
+          religion: row.religion || null,
+          salary_group: row.salary_group || null,
         }).select('id').single()
         if (!empErr && newEmp) {
           empCount++
