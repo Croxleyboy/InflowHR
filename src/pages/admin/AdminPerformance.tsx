@@ -832,11 +832,11 @@ function GoalsReport({ employees, goals, comments, nameMap, companyId, onRefresh
                                 </div>
                                 <div>
                                   <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Date</label>
-                                  <input className="ts-input" type="date" value={editDraft.start_date || ''} onChange={e => setEditDraft(d => ({ ...d, start_date: e.target.value }))} />
+                                  <input className="ts-input" type="date" value={editDraft.start_date || ''} onChange={e => setEditDraft(d => ({ ...d, start_date: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box' }} />
                                 </div>
                                 <div>
                                   <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>End Date</label>
-                                  <input className="ts-input" type="date" value={editDraft.due_date || ''} onChange={e => setEditDraft(d => ({ ...d, due_date: e.target.value }))} />
+                                  <input className="ts-input" type="date" value={editDraft.due_date || ''} onChange={e => setEditDraft(d => ({ ...d, due_date: e.target.value }))} style={{ width: '100%', boxSizing: 'border-box' }} />
                                 </div>
                                 <div>
                                   <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Score (1–10)</label>

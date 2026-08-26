@@ -676,10 +676,12 @@ const CSS = `
 .pg-form-title { margin: 0 0 16px; font-size: 16px; font-weight: 700; color: var(--text); }
 .pg-form-row { margin-bottom: 14px; min-width: 0; }
 .pg-form-label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 4px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.pg-form-input, .pg-form-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg); box-sizing: border-box; min-width: 0; }
+.pg-form-input, .pg-form-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg); box-sizing: border-box; min-width: 0; max-width: 100%; }
 .pg-form-input:focus, .pg-form-textarea:focus { border-color: #2563eb; outline: none; }
+.pg-form-input[type="date"] { appearance: none; -webkit-appearance: none; color-scheme: light dark; }
+.pg-form-input[type="date"]:invalid, .pg-form-input[type="date"][value=""] { color: var(--text-muted); }
 .pg-form-textarea { resize: vertical; }
-.pg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; }
+.pg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; overflow: hidden; }
 .pg-form-actions { display: flex; gap: 10px; margin-top: 16px; }
 .pg-save-btn { padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.2s; }
 .pg-save-btn:hover:not(:disabled) { background: #1d4ed8; }

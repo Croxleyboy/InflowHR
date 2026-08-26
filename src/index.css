@@ -5708,6 +5708,9 @@ body {
 .admin-inline-form { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid #e0e0e0; background: #fafafa; margin-bottom: 12px; align-items: flex-end; }
 .admin-inline-form .admin-input { flex: 1; min-width: 140px; }
 .admin-input { padding: 8px 10px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px; }
+.ts-input { padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border, #ddd); font-size: 13px; font-family: inherit; color: var(--text); background: var(--bg, #fff); box-sizing: border-box; min-width: 0; max-width: 100%; }
+.ts-input:focus { border-color: #2563eb; outline: none; }
+.ts-input[type="date"] { appearance: none; -webkit-appearance: none; color-scheme: light dark; }
 
 .admin-form-actions { display: flex; gap: 6px; }
 .admin-save-btn { padding: 8px 16px; border-radius: 6px; border: none; background: #43a047; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
