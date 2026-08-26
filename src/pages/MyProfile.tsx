@@ -66,6 +66,7 @@ export default function MyProfile() {
   } | null>(null)
   const [showAssets, setShowAssets] = useState(false)
   const [myAssets, setMyAssets] = useState<{ asset_name: string; asset_type: string }[]>([])
+  const [showSkills, setShowSkills] = useState(false)
   const [showChangeRequest, setShowChangeRequest] = useState(false)
   const [changeType, setChangeType] = useState('')
   const [currentInfo, setCurrentInfo] = useState('')
@@ -399,7 +400,10 @@ export default function MyProfile() {
               </div>
             </div>
 
-            <div style={{ textAlign: 'right', padding: '8px 0 4px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <div style={{ textAlign: 'right', padding: '8px 0 4px', display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              {features.skills_passport && (
+                <button className="my-profile-members-btn" onClick={() => setShowSkills(true)}>My Skills</button>
+              )}
               {features.asset_management && (
                 <button className="my-profile-members-btn" onClick={openAssets}>My Assets</button>
               )}
@@ -564,6 +568,345 @@ export default function MyProfile() {
           </div>
         </div>
       )}
+      {showSkills && (
+        <div className="my-profile-modal-overlay" onClick={() => setShowSkills(false)}>
+          <div className="my-profile-cr-modal" style={{ maxHeight: '85vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header">
+              <span className="my-profile-modal-dept">My Skills Passport</span>
+              <button className="my-profile-cr-close-btn" onClick={() => setShowSkills(false)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <SkillsPassportEmbed companyId={companyUser?.company_id || ''} employeeId={employeeId || ''} showSuccess={showSuccess} showError={showError} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const PROFICIENCY_LABELS = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert']
+const PROFICIENCY_COLORS = ['', '#6b7280', '#3b82f6', '#8b5cf6', '#f59e0b', '#10b981']
+const STATUS_LABELS: Record<string, string> = { self_declared: 'Self-declared', pending_validation: 'Pending', validated: 'Validated', rejected: 'Rejected' }
+const STATUS_COLORS: Record<string, string> = { self_declared: '#6b7280', pending_validation: '#f59e0b', validated: '#16a34a', rejected: '#dc2626' }
+const TIMEFRAME_LABELS: Record<string, string> = { '6_months': 'Within 6 months', '1_year': 'Within 1 year', '2_years': 'Within 2 years', '3_plus_years': '3+ years' }
+
+interface SkillCategory { id: string; name: string }
+interface SkillOption { id: string; category_id: string; name: string }
+interface EmployeeSkillItem { id: string; skill_id: string; proficiency: number; status: string; skill_name?: string; category_name?: string }
+
+function SkillsPassportEmbed({ companyId, employeeId, showSuccess, showError }: { companyId: string; employeeId: string; showSuccess: (m: string) => void; showError: (m: string) => void }) {
+  const [tab, setTab] = useState<'skills' | 'certs' | 'goals'>('skills')
+  const [categories, setCategories] = useState<SkillCategory[]>([])
+  const [allSkills, setAllSkills] = useState<SkillOption[]>([])
+  const [mySkills, setMySkills] = useState<EmployeeSkillItem[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadData = useCallback(async () => {
+    if (!companyId || !employeeId) return
+    setLoading(true)
+    const [catRes, skillRes, myRes] = await Promise.all([
+      supabase.from('skill_categories').select('id, name').eq('company_id', companyId).order('sort_order, name'),
+      supabase.from('skills').select('id, category_id, name').eq('company_id', companyId).eq('is_active', true).order('name'),
+      supabase.from('employee_skills').select('*').eq('employee_id', employeeId).eq('company_id', companyId),
+    ])
+    const cats = catRes.data || []
+    const sks = skillRes.data || []
+    setCategories(cats)
+    setAllSkills(sks)
+    const catMap = new Map(cats.map(c => [c.id, c.name]))
+    const skMap = new Map(sks.map(s => [s.id, s]))
+    setMySkills((myRes.data || []).map(es => {
+      const sk = skMap.get(es.skill_id)
+      return { ...es, skill_name: sk?.name || 'Unknown', category_name: sk ? catMap.get(sk.category_id) || '' : '' }
+    }))
+    setLoading(false)
+  }, [companyId, employeeId])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  return (
+    <div style={{ padding: 16 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+        {(['skills', 'certs', 'goals'] as const).map(t => (
+          <button key={t} onClick={() => setTab(t)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: tab === t ? 600 : 400, border: tab === t ? '2px solid var(--text)' : '1px solid var(--border)', background: tab === t ? 'var(--text)' : 'transparent', color: tab === t ? 'var(--bg)' : 'var(--text)', cursor: 'pointer' }}>
+            {t === 'skills' ? 'My Skills' : t === 'certs' ? 'Certifications' : 'Career Goals'}
+          </button>
+        ))}
+      </div>
+      {loading && <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>Loading...</p>}
+      {!loading && tab === 'skills' && <SkillsTab companyId={companyId} employeeId={employeeId} categories={categories} allSkills={allSkills} mySkills={mySkills} onRefresh={loadData} showSuccess={showSuccess} showError={showError} />}
+      {!loading && tab === 'certs' && <CertsTab companyId={companyId} employeeId={employeeId} showSuccess={showSuccess} showError={showError} />}
+      {!loading && tab === 'goals' && <GoalsTab companyId={companyId} employeeId={employeeId} showSuccess={showSuccess} showError={showError} />}
+    </div>
+  )
+}
+
+function SkillsTab({ companyId, employeeId, categories, allSkills, mySkills, onRefresh, showSuccess, showError }: {
+  companyId: string; employeeId: string; categories: SkillCategory[]; allSkills: SkillOption[]; mySkills: EmployeeSkillItem[]
+  onRefresh: () => void; showSuccess: (m: string) => void; showError: (m: string) => void
+}) {
+  const [showAdd, setShowAdd] = useState(false)
+  const [addSkillId, setAddSkillId] = useState('')
+  const [addProf, setAddProf] = useState(3)
+  const [saving, setSaving] = useState(false)
+
+  const existingIds = new Set(mySkills.map(s => s.skill_id))
+  const available = allSkills.filter(s => !existingIds.has(s.id))
+
+  async function addSkill() {
+    if (!addSkillId) return
+    setSaving(true)
+    const { error } = await supabase.from('employee_skills').insert({ company_id: companyId, employee_id: employeeId, skill_id: addSkillId, proficiency: addProf, status: 'self_declared' })
+    setSaving(false)
+    if (error) { showError(error.message); return }
+    showSuccess('Skill added')
+    setAddSkillId(''); setAddProf(3); setShowAdd(false)
+    onRefresh()
+  }
+
+  async function removeSkill(esId: string) {
+    await supabase.from('skill_evidence').delete().eq('employee_skill_id', esId)
+    await supabase.from('employee_skills').delete().eq('id', esId)
+    showSuccess('Skill removed')
+    onRefresh()
+  }
+
+  async function requestValidation(es: EmployeeSkillItem) {
+    const { data: emp } = await supabase.from('employees').select('manager_id').eq('id', employeeId).single()
+    if (!emp?.manager_id) { showError('No manager assigned'); return }
+    await supabase.from('employee_skills').update({ status: 'pending_validation' }).eq('id', es.id)
+    await supabase.from('skill_validations').insert({ company_id: companyId, employee_skill_id: es.id, requested_by: employeeId, assigned_to: emp.manager_id })
+    const { data: mgr } = await supabase.from('employees').select('email').eq('id', emp.manager_id).single()
+    if (mgr?.email) {
+      await supabase.from('workflow_tracker').insert({ company_id: companyId, type: 'Skill Validation', reference_id: es.id, assigned_to: mgr.email, status: 'Pending', description: `Skill validation requested for ${es.skill_name}` })
+      window.dispatchEvent(new Event('notifications-updated'))
+    }
+    showSuccess('Validation request sent')
+    onRefresh()
+  }
+
+  async function updateProf(esId: string, prof: number) {
+    await supabase.from('employee_skills').update({ proficiency: prof, updated_at: new Date().toISOString() }).eq('id', esId)
+    onRefresh()
+  }
+
+  const grouped = categories.map(c => ({ ...c, skills: mySkills.filter(s => s.category_name === c.name) })).filter(g => g.skills.length > 0)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{mySkills.length} skill{mySkills.length !== 1 ? 's' : ''}</span>
+        <button onClick={() => setShowAdd(true)} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}>+ Add Skill</button>
+      </div>
+      {showAdd && (
+        <div style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
+          <select value={addSkillId} onChange={e => setAddSkillId(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8 }}>
+            <option value="">Select a skill...</option>
+            {categories.map(cat => {
+              const cs = available.filter(s => s.category_id === cat.id)
+              if (cs.length === 0) return null
+              return <optgroup key={cat.id} label={cat.name}>{cs.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</optgroup>
+            })}
+          </select>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+            {[1,2,3,4,5].map(n => (
+              <button key={n} onClick={() => setAddProf(n)} style={{ flex: 1, padding: '4px 2px', borderRadius: 6, fontSize: 11, fontWeight: addProf === n ? 600 : 400, border: `2px solid ${addProf === n ? PROFICIENCY_COLORS[n] : 'var(--border)'}`, background: addProf === n ? PROFICIENCY_COLORS[n] + '20' : 'transparent', color: addProf === n ? PROFICIENCY_COLORS[n] : 'var(--text-muted)', cursor: 'pointer' }}>
+                {PROFICIENCY_LABELS[n]}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={addSkill} disabled={saving} style={{ padding: '6px 16px', borderRadius: 8, background: '#1565c0', color: '#fff', border: 'none', cursor: 'pointer' }}>{saving ? 'Adding...' : 'Add'}</button>
+            <button onClick={() => setShowAdd(false)} style={{ padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {mySkills.length === 0 && !showAdd && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No skills recorded yet. Add your first skill to start building your passport.</p>}
+      {grouped.map(g => (
+        <div key={g.id} style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{g.name}</div>
+          {g.skills.map(es => (
+            <div key={es.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 120 }}>
+                <div style={{ fontWeight: 500, fontSize: 14 }}>{es.skill_name}</div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+                  <select value={es.proficiency} onChange={e => updateProf(es.id, Number(e.target.value))} style={{ padding: '1px 6px', borderRadius: 10, fontSize: 11, border: `1px solid ${PROFICIENCY_COLORS[es.proficiency]}`, color: PROFICIENCY_COLORS[es.proficiency], background: 'transparent', cursor: 'pointer' }}>
+                    {[1,2,3,4,5].map(n => <option key={n} value={n}>{PROFICIENCY_LABELS[n]}</option>)}
+                  </select>
+                  <span style={{ padding: '1px 6px', borderRadius: 10, fontSize: 11, background: STATUS_COLORS[es.status] + '20', color: STATUS_COLORS[es.status] }}>{STATUS_LABELS[es.status]}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(es.status === 'self_declared' || es.status === 'rejected') && (
+                  <button onClick={() => requestValidation(es)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid #3b82f6', color: '#3b82f6', background: 'transparent', cursor: 'pointer' }}>Validate</button>
+                )}
+                <button onClick={() => removeSkill(es.id)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid #dc2626', color: '#dc2626', background: 'transparent', cursor: 'pointer' }}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CertsTab({ companyId, employeeId, showSuccess, showError }: { companyId: string; employeeId: string; showSuccess: (m: string) => void; showError: (m: string) => void }) {
+  const [certs, setCerts] = useState<{ id: string; name: string; issuing_body: string; issue_date: string; expiry_date: string | null; credential_id: string | null; status: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [form, setForm] = useState({ name: '', issuing_body: '', issue_date: '', expiry_date: '', credential_id: '' })
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.from('employee_certifications').select('id, name, issuing_body, issue_date, expiry_date, credential_id, status').eq('employee_id', employeeId).eq('company_id', companyId).order('issue_date', { ascending: false })
+    setCerts(data || [])
+    setLoading(false)
+  }, [companyId, employeeId])
+
+  useEffect(() => { load() }, [load])
+
+  async function addCert() {
+    if (!form.name.trim() || !form.issuing_body.trim() || !form.issue_date) return
+    setSaving(true)
+    const today = new Date().toISOString().split('T')[0]
+    const { error } = await supabase.from('employee_certifications').insert({ company_id: companyId, employee_id: employeeId, name: form.name.trim(), issuing_body: form.issuing_body.trim(), issue_date: form.issue_date, expiry_date: form.expiry_date || null, credential_id: form.credential_id.trim() || null, status: form.expiry_date && form.expiry_date < today ? 'expired' : 'active' })
+    setSaving(false)
+    if (error) { showError(error.message); return }
+    showSuccess('Certification added')
+    setForm({ name: '', issuing_body: '', issue_date: '', expiry_date: '', credential_id: '' })
+    setShowAdd(false)
+    load()
+  }
+
+  if (loading) return <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>Loading...</p>
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{certs.length} certification{certs.length !== 1 ? 's' : ''}</span>
+        <button onClick={() => setShowAdd(true)} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}>+ Add</button>
+      </div>
+      {showAdd && (
+        <div style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
+          <input placeholder="Certification name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8, boxSizing: 'border-box' }} />
+          <input placeholder="Issuing body" value={form.issuing_body} onChange={e => setForm({ ...form, issuing_body: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8, boxSizing: 'border-box' }} />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Issue Date</label>
+              <input type="date" value={form.issue_date} onChange={e => setForm({ ...form, issue_date: e.target.value })} style={{ width: '100%', padding: 6, borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>Expiry (optional)</label>
+              <input type="date" value={form.expiry_date} onChange={e => setForm({ ...form, expiry_date: e.target.value })} style={{ width: '100%', padding: 6, borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={addCert} disabled={saving} style={{ padding: '6px 16px', borderRadius: 8, background: '#1565c0', color: '#fff', border: 'none', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Add'}</button>
+            <button onClick={() => setShowAdd(false)} style={{ padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {certs.length === 0 && !showAdd && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No certifications recorded.</p>}
+      {certs.map(c => (
+        <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>{c.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.issuing_body} · {formatDate(c.issue_date)}{c.expiry_date ? ` — ${formatDate(c.expiry_date)}` : ''}</div>
+          </div>
+          <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 11, background: c.status === 'active' ? '#dcfce7' : '#fee2e2', color: c.status === 'active' ? '#16a34a' : '#dc2626' }}>{c.status === 'active' ? 'Active' : 'Expired'}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function GoalsTab({ companyId, employeeId, showSuccess, showError }: { companyId: string; employeeId: string; showSuccess: (m: string) => void; showError: (m: string) => void }) {
+  const [aspiration, setAspiration] = useState<{ id: string; target_role: string | null; target_department: string | null; timeframe: string | null; notes: string | null } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState(false)
+  const [form, setForm] = useState({ target_role: '', target_department: '', timeframe: '', notes: '' })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const { data } = await supabase.from('employee_career_aspirations').select('*').eq('employee_id', employeeId).eq('company_id', companyId).maybeSingle()
+      setAspiration(data)
+      if (data) setForm({ target_role: data.target_role || '', target_department: data.target_department || '', timeframe: data.timeframe || '', notes: data.notes || '' })
+      setLoading(false)
+    }
+    load()
+  }, [companyId, employeeId])
+
+  async function save() {
+    setSaving(true)
+    const payload = { company_id: companyId, employee_id: employeeId, target_role: form.target_role.trim() || null, target_department: form.target_department.trim() || null, timeframe: form.timeframe || null, notes: form.notes.trim() || null, updated_at: new Date().toISOString() }
+    const { error } = aspiration
+      ? await supabase.from('employee_career_aspirations').update(payload).eq('id', aspiration.id)
+      : await supabase.from('employee_career_aspirations').insert(payload)
+    setSaving(false)
+    if (error) { showError(error.message); return }
+    showSuccess('Career goals saved')
+    setEditing(false)
+    const { data } = await supabase.from('employee_career_aspirations').select('*').eq('employee_id', employeeId).eq('company_id', companyId).maybeSingle()
+    setAspiration(data)
+  }
+
+  if (loading) return <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>Loading...</p>
+
+  if (!aspiration && !editing) {
+    return (
+      <div style={{ textAlign: 'center', padding: 16 }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Share your career aspirations to help your organisation understand your development interests.</p>
+        <button onClick={() => setEditing(true)} style={{ padding: '8px 20px', borderRadius: 8, background: '#1565c0', color: '#fff', border: 'none', cursor: 'pointer' }}>Set Career Goals</button>
+      </div>
+    )
+  }
+
+  if (editing) {
+    return (
+      <div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 2, fontWeight: 500 }}>Target Role</label>
+          <input value={form.target_role} onChange={e => setForm({ ...form, target_role: e.target.value })} placeholder="e.g. Senior Developer" style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }} />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 2, fontWeight: 500 }}>Department</label>
+          <input value={form.target_department} onChange={e => setForm({ ...form, target_department: e.target.value })} placeholder="e.g. Engineering" style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }} />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 2, fontWeight: 500 }}>Timeframe</label>
+          <select value={form.timeframe} onChange={e => setForm({ ...form, timeframe: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }}>
+            <option value="">Select...</option>
+            {Object.entries(TIMEFRAME_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 2, fontWeight: 500 }}>Notes</label>
+          <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} placeholder="Additional details..." style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', boxSizing: 'border-box' }} />
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={save} disabled={saving} style={{ padding: '6px 16px', borderRadius: 8, background: '#1565c0', color: '#fff', border: 'none', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Save'}</button>
+          <button onClick={() => setEditing(false)} style={{ padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+        <strong>Career Goals</strong>
+        <button onClick={() => setEditing(true)} style={{ padding: '4px 12px', borderRadius: 6, fontSize: 12, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}>Edit</button>
+      </div>
+      {aspiration?.target_role && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Target Role</span><div style={{ fontWeight: 500 }}>{aspiration.target_role}</div></div>}
+      {aspiration?.target_department && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Department</span><div style={{ fontWeight: 500 }}>{aspiration.target_department}</div></div>}
+      {aspiration?.timeframe && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Timeframe</span><div style={{ fontWeight: 500 }}>{TIMEFRAME_LABELS[aspiration.timeframe] || aspiration.timeframe}</div></div>}
+      {aspiration?.notes && <div><span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Notes</span><div>{aspiration.notes}</div></div>}
     </div>
   )
 }

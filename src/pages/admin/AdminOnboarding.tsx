@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
+import { useFeatures } from '../../context/FeatureContext'
 import * as XLSX from 'xlsx'
 import CompanySetupWizard from './CompanySetupWizard'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
@@ -113,6 +114,7 @@ export default function AdminOnboarding() {
   const { selectedCompanyId, selectedCompany, refreshCompanies } = useAdminCompany()
   const { fyStartMonth } = useLanguage()
   const { showError, showSuccess } = useToast()
+  const { features } = useFeatures()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow'>('dashboard')
@@ -545,6 +547,16 @@ export default function AdminOnboarding() {
             employee_id: emp.id,
             role: 'employee',
             is_active: true,
+          })
+        }
+        if (features.skills_passport) {
+          await supabase.from('workflow_tracker').insert({
+            company_id: selectedCompanyId,
+            type: 'Skills Mapping',
+            reference_id: emp.id,
+            assigned_to: record.user_email,
+            status: 'Pending',
+            description: 'Complete your skills passport — add your skills, certifications and career goals to help your organisation understand your capabilities.',
           })
         }
       }

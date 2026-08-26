@@ -81,7 +81,7 @@ export default function SkillsPassport() {
     setLoading(true)
     const [catRes, skillRes, myRes] = await Promise.all([
       supabase.from('skill_categories').select('id, name').eq('company_id', companyId).order('sort_order, name'),
-      supabase.from('skills').select('*').eq('company_id', companyId).order('name'),
+      supabase.from('skills').select('*').eq('company_id', companyId).eq('is_active', true).order('name'),
       supabase.from('employee_skills').select('*').eq('employee_id', employeeId).eq('company_id', companyId),
     ])
     setCategories(catRes.data || [])

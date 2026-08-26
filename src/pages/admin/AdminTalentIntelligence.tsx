@@ -18,6 +18,7 @@ interface Skill {
   name: string
   description: string | null
   is_system: boolean
+  is_active: boolean
 }
 
 interface ValidationRequest {
@@ -130,6 +131,39 @@ function SkillsLibraryTab({ companyId, categories, skills, loading, onRefresh, s
   const [newSkillDesc, setNewSkillDesc] = useState('')
   const [saving, setSaving] = useState(false)
   const [expandedCat, setExpandedCat] = useState<string | null>(null)
+  const [seeding, setSeeding] = useState(false)
+  const [showDisabled, setShowDisabled] = useState(false)
+
+  const DEFAULT_LIBRARY: Record<string, { description: string; skills: string[] }> = {
+    'Technical': { description: 'Software, data, infrastructure and engineering skills', skills: ['Python','JavaScript / TypeScript','SQL & Database Management','Cloud Computing (AWS / Azure / GCP)','API Design & Integration','DevOps & CI/CD','Data Analysis & Visualisation','Cybersecurity Fundamentals'] },
+    'Leadership & Management': { description: 'People management, strategy and decision-making', skills: ['Team Leadership','Strategic Planning','Performance Management','Change Management','Coaching & Mentoring','Conflict Resolution','Delegation','Budget Management'] },
+    'Communication': { description: 'Written, verbal and presentation skills', skills: ['Report Writing','Presentation Skills','Stakeholder Communication','Active Listening','Meeting Facilitation','Technical Writing'] },
+    'Digital & IT': { description: 'Digital literacy, tools and platforms', skills: ['Microsoft 365 Suite','Google Workspace','CRM Systems (Salesforce / HubSpot)','ERP Systems','Business Intelligence Tools','Video Conferencing & Collaboration'] },
+    'Project Management': { description: 'Planning, delivery and methodology skills', skills: ['Agile / Scrum','Waterfall Methodology','Risk Management','Requirements Gathering','Stakeholder Management','Resource Planning','PRINCE2'] },
+    'Industry Knowledge': { description: 'Sector-specific expertise and regulations', skills: ['Regulatory Compliance','Health & Safety','GDPR & Data Protection','Financial Regulations','Industry Standards & Frameworks','Procurement & Supply Chain'] },
+    'Interpersonal': { description: 'Teamwork, collaboration and emotional intelligence', skills: ['Teamwork & Collaboration','Emotional Intelligence','Negotiation','Networking','Cross-cultural Awareness','Customer Service'] },
+    'Analytical': { description: 'Problem solving, data analysis and critical thinking', skills: ['Critical Thinking','Problem Solving','Statistical Analysis','Process Improvement','Root Cause Analysis','Decision Making'] },
+  }
+
+  async function seedDefaults() {
+    setSeeding(true)
+    const catEntries = Object.entries(DEFAULT_LIBRARY)
+    const { data: catData, error: catErr } = await supabase.from('skill_categories').insert(
+      catEntries.map(([name, val], i) => ({ company_id: companyId, name, description: val.description, sort_order: i, is_system: true }))
+    ).select('id, name')
+    if (catErr || !catData) { showError(catErr?.message || 'Failed to seed categories'); setSeeding(false); return }
+
+    const skillRows: { company_id: string; category_id: string; name: string; is_system: boolean }[] = []
+    catData.forEach(cat => {
+      const entry = DEFAULT_LIBRARY[cat.name]
+      if (entry) entry.skills.forEach(s => skillRows.push({ company_id: companyId, category_id: cat.id, name: s, is_system: true }))
+    })
+    const { error: skErr } = await supabase.from('skills').insert(skillRows)
+    setSeeding(false)
+    if (skErr) { showError(skErr.message); return }
+    showSuccess(`Seeded ${catData.length} categories with ${skillRows.length} skills`)
+    onRefresh()
+  }
 
   async function addCategory() {
     if (!newCatName.trim()) return
@@ -167,10 +201,19 @@ function SkillsLibraryTab({ companyId, categories, skills, loading, onRefresh, s
     onRefresh()
   }
 
+  async function toggleSkillActive(skillId: string, currentlyActive: boolean) {
+    const { error } = await supabase.from('skills').update({ is_active: !currentlyActive }).eq('id', skillId)
+    if (error) { showError(error.message); return }
+    showSuccess(currentlyActive ? 'Skill disabled' : 'Skill enabled')
+    onRefresh()
+  }
+
   async function deleteSkill(skillId: string) {
+    const { count } = await supabase.from('employee_skills').select('id', { count: 'exact', head: true }).eq('skill_id', skillId)
+    if (count && count > 0) { showError(`Cannot delete — ${count} employee(s) have this skill recorded. Disable it instead.`); return }
     const { error } = await supabase.from('skills').delete().eq('id', skillId)
     if (error) { showError(error.message); return }
-    showSuccess('Skill removed')
+    showSuccess('Skill deleted')
     onRefresh()
   }
 
@@ -187,9 +230,15 @@ function SkillsLibraryTab({ companyId, categories, skills, loading, onRefresh, s
 
   return (
     <div className="admin-section">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
         <h2 style={{ margin: 0 }}>Categories &amp; Skills</h2>
-        <button className="admin-btn admin-btn-primary" onClick={() => setShowAddCat(true)}>+ Add Category</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={showDisabled} onChange={e => setShowDisabled(e.target.checked)} />
+            Show disabled
+          </label>
+          <button className="admin-btn admin-btn-primary" onClick={() => setShowAddCat(true)}>+ Add Category</button>
+        </div>
       </div>
 
       {showAddCat && (
@@ -204,30 +253,16 @@ function SkillsLibraryTab({ companyId, categories, skills, loading, onRefresh, s
         </div>
       )}
 
-      {categories.length === 0 && <p className="admin-empty">No skill categories yet. Add a category to get started, or seed default categories below.</p>}
-
       {categories.length === 0 && (
-        <button className="admin-btn" onClick={async () => {
-          const defaults = [
-            { name: 'Technical', description: 'Software, data, infrastructure and engineering skills', sort_order: 0 },
-            { name: 'Leadership & Management', description: 'People management, strategy and decision-making', sort_order: 1 },
-            { name: 'Communication', description: 'Written, verbal and presentation skills', sort_order: 2 },
-            { name: 'Digital & IT', description: 'Digital literacy, tools and platforms', sort_order: 3 },
-            { name: 'Project Management', description: 'Planning, delivery and methodology skills', sort_order: 4 },
-            { name: 'Industry Knowledge', description: 'Sector-specific expertise and regulations', sort_order: 5 },
-            { name: 'Interpersonal', description: 'Teamwork, collaboration and emotional intelligence', sort_order: 6 },
-            { name: 'Analytical', description: 'Problem solving, data analysis and critical thinking', sort_order: 7 },
-          ]
-          const { error } = await supabase.from('skill_categories').insert(
-            defaults.map(d => ({ ...d, company_id: companyId, is_system: true }))
-          )
-          if (error) showError(error.message)
-          else { showSuccess('Default categories added'); onRefresh() }
-        }}>Seed Default Categories</button>
+        <div className="admin-card" style={{ padding: 24, textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-muted)', marginBottom: 12 }}>No skill categories yet. Seed the default library to get started with 8 categories and 50+ skills, or add your own.</p>
+          <button className="admin-btn admin-btn-primary" onClick={seedDefaults} disabled={seeding}>{seeding ? 'Seeding...' : 'Seed Default Library'}</button>
+        </div>
       )}
 
       {categories.map(cat => {
-        const catSkills = skills.filter(s => s.category_id === cat.id)
+        const catSkills = skills.filter(s => s.category_id === cat.id && (showDisabled || s.is_active))
+        const disabledCount = skills.filter(s => s.category_id === cat.id && !s.is_active).length
         const isExpanded = expandedCat === cat.id
         return (
           <div key={cat.id} className="admin-card" style={{ marginBottom: 12, padding: 0 }}>
@@ -240,24 +275,34 @@ function SkillsLibraryTab({ companyId, categories, skills, loading, onRefresh, s
                 <strong>{cat.name}</strong>
                 {cat.description && <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 13 }}>{cat.description}</span>}
               </div>
-              <span className="admin-badge" style={{ background: 'var(--bg)', fontSize: 12 }}>{catSkills.length} skill{catSkills.length !== 1 ? 's' : ''}</span>
-              {!cat.is_system && (
-                <button className="admin-btn-icon" onClick={e => { e.stopPropagation(); deleteCategory(cat.id) }} title="Delete category" style={{ color: '#dc2626', fontSize: 14 }}>✕</button>
-              )}
+              <span className="admin-badge" style={{ background: 'var(--bg)', fontSize: 12 }}>
+                {catSkills.length} skill{catSkills.length !== 1 ? 's' : ''}
+                {!showDisabled && disabledCount > 0 && <span style={{ color: 'var(--text-muted)' }}> (+{disabledCount} disabled)</span>}
+              </span>
+              <button className="admin-btn-icon" onClick={e => { e.stopPropagation(); deleteCategory(cat.id) }} title="Delete category" style={{ color: '#dc2626', fontSize: 14 }}>✕</button>
             </div>
             {isExpanded && (
               <div style={{ borderTop: '1px solid var(--border)', padding: 16 }}>
-                {catSkills.length === 0 && <p style={{ color: 'var(--text-muted)', margin: '0 0 12px' }}>No skills in this category yet.</p>}
+                {catSkills.length === 0 && <p style={{ color: 'var(--text-muted)', margin: '0 0 12px' }}>No {showDisabled ? '' : 'active '}skills in this category.</p>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {catSkills.map(skill => (
-                    <div key={skill.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
+                    <div key={skill.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', opacity: skill.is_active ? 1 : 0.5 }}>
                       <div>
                         <span style={{ fontWeight: 500 }}>{skill.name}</span>
                         {skill.description && <span style={{ color: 'var(--text-muted)', marginLeft: 8, fontSize: 13 }}>— {skill.description}</span>}
+                        {!skill.is_active && <span style={{ marginLeft: 8, fontSize: 11, color: '#dc2626', fontStyle: 'italic' }}>disabled</span>}
                       </div>
-                      {!skill.is_system && (
-                        <button className="admin-btn-icon" onClick={() => deleteSkill(skill.id)} style={{ color: '#dc2626', fontSize: 12 }}>✕</button>
-                      )}
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <button
+                          className="admin-btn-icon"
+                          onClick={() => toggleSkillActive(skill.id, skill.is_active)}
+                          title={skill.is_active ? 'Disable skill' : 'Enable skill'}
+                          style={{ fontSize: 14 }}
+                        >
+                          {skill.is_active ? '🚫' : '✅'}
+                        </button>
+                        <button className="admin-btn-icon" onClick={() => deleteSkill(skill.id)} title="Delete skill" style={{ color: '#dc2626', fontSize: 12 }}>✕</button>
+                      </div>
                     </div>
                   ))}
                 </div>
