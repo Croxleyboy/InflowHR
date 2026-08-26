@@ -634,57 +634,200 @@ function RoleProfilesTab({ companyId, skills, categories, showSuccess, showError
 
 // ─── ANALYTICS TAB ───────────────────────────────────────────────────────────
 
+interface AnalyticsData {
+  totalSkills: number
+  totalEmployees: number
+  totalEmployeeSkills: number
+  validated: number
+  pending: number
+  avgProficiency: number
+  participationRate: number
+  topSkills: { name: string; count: number }[]
+  heatmap: { dept: string; categories: Record<string, number> }[]
+  heatmapCategories: string[]
+  skillGaps: { role: string; dept: string; gaps: { skill: string; required: number; actual: number; holders: number; essential: boolean }[] }[]
+  busFactorRisks: { skill: string; holders: string[]; category: string }[]
+  certsDashboard: { active: number; expiringSoon: number; expired: number; upcoming: { name: string; employee: string; expiry: string }[] }
+  trainingNeeds: { skill: string; category: string; avgProf: number; count: number; belowProficient: number }[]
+  silentDepts: string[]
+  roleMatches: { employee: string; dept: string; role: string; matchPct: number; met: number; total: number }[]
+  aiAdoption: { total: number; employees: number; avgProf: number; skills: { name: string; count: number }[] }
+}
+
 function AnalyticsTab({ companyId }: { companyId: string }) {
-  const [stats, setStats] = useState<{ totalSkills: number; totalEmployeeSkills: number; validated: number; pending: number; avgProficiency: number; topSkills: { name: string; count: number }[]; deptBreakdown: { dept: string; count: number }[] }>({
-    totalSkills: 0, totalEmployeeSkills: 0, validated: 0, pending: 0, avgProficiency: 0, topSkills: [], deptBreakdown: [],
-  })
+  const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [section, setSection] = useState<'overview' | 'heatmap' | 'gaps' | 'bus' | 'certs' | 'training' | 'matching' | 'ai'>('overview')
 
   useEffect(() => {
     if (!companyId) return
     async function load() {
       setLoading(true)
-      const [skillsRes, esRes, empRes, skRes] = await Promise.all([
-        supabase.from('skills').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
+      const [catRes, skRes, esRes, empRes, certRes, roleRes, reqRes] = await Promise.all([
+        supabase.from('skill_categories').select('id, name').eq('company_id', companyId).order('sort_order'),
+        supabase.from('skills').select('id, name, category_id').eq('company_id', companyId).eq('is_active', true),
         supabase.from('employee_skills').select('*').eq('company_id', companyId),
-        supabase.from('employees').select('id, department').eq('company_id', companyId).eq('is_active', true),
-        supabase.from('skills').select('id, name').eq('company_id', companyId),
+        supabase.from('employees').select('id, first_name, last_name, department, job_title').eq('company_id', companyId).eq('is_active', true),
+        supabase.from('employee_certifications').select('*').eq('company_id', companyId),
+        supabase.from('role_profiles').select('*').eq('company_id', companyId).eq('is_active', true),
+        supabase.from('role_skill_requirements').select('*').eq('company_id', companyId),
       ])
 
+      const cats = catRes.data || []
+      const skills = skRes.data || []
       const allEs = esRes.data || []
-      const validated = allEs.filter(e => e.status === 'validated').length
-      const pending = allEs.filter(e => e.status === 'pending_validation').length
-      const avgProf = allEs.length > 0 ? allEs.reduce((sum, e) => sum + e.proficiency, 0) / allEs.length : 0
+      const emps = empRes.data || []
+      const certs = certRes.data || []
+      const roles = roleRes.data || []
+      const reqs = reqRes.data || []
 
-      const skillMap = new Map((skRes.data || []).map((s: any) => [s.id, s.name]))
+      const catMap = new Map(cats.map((c: any) => [c.id, c.name]))
+      const skillMap = new Map(skills.map((s: any) => [s.id, s]))
+      const empMap = new Map(emps.map((e: any) => [e.id, e]))
+      const empName = (id: string) => { const e = empMap.get(id); return e ? `${e.first_name} ${e.last_name}` : 'Unknown' }
+
+      const validated = allEs.filter((e: any) => e.status === 'validated').length
+      const pending = allEs.filter((e: any) => e.status === 'pending_validation').length
+      const avgProf = allEs.length > 0 ? allEs.reduce((sum: number, e: any) => sum + e.proficiency, 0) / allEs.length : 0
+
+      const empsWithSkills = new Set(allEs.map((e: any) => e.employee_id))
+      const participationRate = emps.length > 0 ? Math.round((empsWithSkills.size / emps.length) * 100) : 0
+
+      // Top skills
       const skillCounts: Record<string, number> = {}
-      allEs.forEach(e => {
-        const name = skillMap.get(e.skill_id) || 'Unknown'
+      allEs.forEach((e: any) => {
+        const sk = skillMap.get(e.skill_id)
+        const name = sk?.name || 'Unknown'
         skillCounts[name] = (skillCounts[name] || 0) + 1
       })
-      const topSkills = Object.entries(skillCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10)
-        .map(([name, count]) => ({ name, count }))
+      const topSkills = Object.entries(skillCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count }))
 
-      const empMap = new Map((empRes.data || []).map((e: any) => [e.id, e.department || 'Unassigned']))
-      const deptCounts: Record<string, number> = {}
-      allEs.forEach(e => {
-        const dept = empMap.get(e.employee_id) || 'Unknown'
-        deptCounts[dept] = (deptCounts[dept] || 0) + 1
+      // Department skills heatmap
+      const depts = [...new Set(emps.map((e: any) => e.department || 'Unassigned'))].sort()
+      const catNames = cats.map((c: any) => c.name)
+      const heatmap = depts.map(dept => {
+        const deptEmpIds = new Set(emps.filter((e: any) => (e.department || 'Unassigned') === dept).map((e: any) => e.id))
+        const deptEs = allEs.filter((e: any) => deptEmpIds.has(e.employee_id))
+        const categories: Record<string, number> = {}
+        catNames.forEach(cn => { categories[cn] = 0 })
+        deptEs.forEach((e: any) => {
+          const sk = skillMap.get(e.skill_id)
+          if (sk) {
+            const cn = catMap.get(sk.category_id)
+            if (cn) categories[cn] = (categories[cn] || 0) + 1
+          }
+        })
+        return { dept, categories }
       })
-      const deptBreakdown = Object.entries(deptCounts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([dept, count]) => ({ dept, count }))
 
-      setStats({
-        totalSkills: skillsRes.count || 0,
-        totalEmployeeSkills: allEs.length,
-        validated,
-        pending,
-        avgProficiency: Math.round(avgProf * 10) / 10,
-        topSkills,
-        deptBreakdown,
+      // Skill gap analysis
+      const skillGaps = roles.map((role: any) => {
+        const roleReqs = reqs.filter((r: any) => r.role_profile_id === role.id)
+        const deptEmps = role.department ? emps.filter((e: any) => e.department === role.department) : emps
+        const deptEmpIds = new Set(deptEmps.map((e: any) => e.id))
+        const gaps = roleReqs.map((req: any) => {
+          const sk = skillMap.get(req.skill_id)
+          const holders = allEs.filter((e: any) => e.skill_id === req.skill_id && deptEmpIds.has(e.employee_id))
+          const qualified = holders.filter((e: any) => e.proficiency >= req.min_proficiency)
+          const avgActual = holders.length > 0 ? Math.round(holders.reduce((s: number, e: any) => s + e.proficiency, 0) / holders.length * 10) / 10 : 0
+          return { skill: sk?.name || 'Unknown', required: req.min_proficiency, actual: avgActual, holders: qualified.length, essential: req.is_essential }
+        }).filter(g => g.holders < deptEmps.length * 0.5 || g.actual < g.required)
+        return { role: role.title, dept: role.department || 'All', gaps }
+      }).filter(r => r.gaps.length > 0)
+
+      // Bus factor risk — skills held by ≤ 2 employees
+      const skillHolders: Record<string, Set<string>> = {}
+      allEs.forEach((e: any) => {
+        if (!skillHolders[e.skill_id]) skillHolders[e.skill_id] = new Set()
+        skillHolders[e.skill_id].add(e.employee_id)
+      })
+      const busFactorRisks = Object.entries(skillHolders)
+        .filter(([, holders]) => holders.size <= 2 && holders.size > 0)
+        .map(([skillId, holders]) => {
+          const sk = skillMap.get(skillId)
+          return { skill: sk?.name || 'Unknown', holders: [...holders].map(empName), category: sk ? catMap.get(sk.category_id) || '' : '' }
+        })
+        .sort((a, b) => a.holders.length - b.holders.length)
+
+      // Certification dashboard
+      const now = new Date()
+      const in90 = new Date(now.getTime() + 90 * 86400000)
+      const activeCerts = certs.filter((c: any) => c.status === 'active')
+      const expiringSoon = activeCerts.filter((c: any) => c.expiry_date && new Date(c.expiry_date) <= in90 && new Date(c.expiry_date) > now)
+      const expired = certs.filter((c: any) => c.status === 'expired' || (c.expiry_date && new Date(c.expiry_date) <= now))
+      const upcoming = expiringSoon
+        .map((c: any) => ({ name: c.name, employee: empName(c.employee_id), expiry: new Date(c.expiry_date).toLocaleDateString('en-GB') }))
+        .sort((a: any, b: any) => a.expiry.localeCompare(b.expiry))
+
+      // Training needs — skills with avg proficiency < 3
+      const skillProfAgg: Record<string, { total: number; count: number; belowProf: number }> = {}
+      allEs.forEach((e: any) => {
+        if (!skillProfAgg[e.skill_id]) skillProfAgg[e.skill_id] = { total: 0, count: 0, belowProf: 0 }
+        skillProfAgg[e.skill_id].total += e.proficiency
+        skillProfAgg[e.skill_id].count++
+        if (e.proficiency < 3) skillProfAgg[e.skill_id].belowProf++
+      })
+      const trainingNeeds = Object.entries(skillProfAgg)
+        .map(([skillId, agg]) => {
+          const sk = skillMap.get(skillId)
+          return { skill: sk?.name || 'Unknown', category: sk ? catMap.get(sk.category_id) || '' : '', avgProf: Math.round(agg.total / agg.count * 10) / 10, count: agg.count, belowProficient: agg.belowProf }
+        })
+        .filter(t => t.avgProf < 3 || t.belowProficient > 0)
+        .sort((a, b) => a.avgProf - b.avgProf)
+        .slice(0, 15)
+
+      // Silent departments — departments with zero skills submitted
+      const deptsWithSkills = new Set<string>()
+      allEs.forEach((e: any) => {
+        const emp = empMap.get(e.employee_id)
+        if (emp) deptsWithSkills.add(emp.department || 'Unassigned')
+      })
+      const silentDepts = depts.filter(d => !deptsWithSkills.has(d))
+
+      // Internal role matching — best employee matches for each role
+      const roleMatches: AnalyticsData['roleMatches'] = []
+      roles.forEach((role: any) => {
+        const roleReqs = reqs.filter((r: any) => r.role_profile_id === role.id)
+        if (roleReqs.length === 0) return
+        emps.forEach((emp: any) => {
+          const empEs = allEs.filter((e: any) => e.employee_id === emp.id)
+          const empSkillMap = new Map(empEs.map((e: any) => [e.skill_id, e.proficiency]))
+          let met = 0
+          roleReqs.forEach((req: any) => {
+            const prof = empSkillMap.get(req.skill_id)
+            if (prof && prof >= req.min_proficiency) met++
+          })
+          const matchPct = Math.round((met / roleReqs.length) * 100)
+          if (matchPct >= 50) {
+            roleMatches.push({ employee: `${emp.first_name} ${emp.last_name}`, dept: emp.department || 'Unassigned', role: role.title, matchPct, met, total: roleReqs.length })
+          }
+        })
+      })
+      roleMatches.sort((a, b) => b.matchPct - a.matchPct)
+
+      // AI & Automation adoption
+      const aiCat = cats.find((c: any) => c.name.toLowerCase().includes('ai'))
+      const aiSkillIds = aiCat ? new Set(skills.filter((s: any) => s.category_id === aiCat.id).map((s: any) => s.id)) : new Set<string>()
+      const aiEs = allEs.filter((e: any) => aiSkillIds.has(e.skill_id))
+      const aiEmps = new Set(aiEs.map((e: any) => e.employee_id))
+      const aiSkillCounts: Record<string, number> = {}
+      aiEs.forEach((e: any) => {
+        const name = skillMap.get(e.skill_id)?.name || 'Unknown'
+        aiSkillCounts[name] = (aiSkillCounts[name] || 0) + 1
+      })
+      const aiAdoption = {
+        total: aiEs.length,
+        employees: aiEmps.size,
+        avgProf: aiEs.length > 0 ? Math.round(aiEs.reduce((s: number, e: any) => s + e.proficiency, 0) / aiEs.length * 10) / 10 : 0,
+        skills: Object.entries(aiSkillCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+      }
+
+      setData({
+        totalSkills: skills.length, totalEmployees: emps.length, totalEmployeeSkills: allEs.length,
+        validated, pending, avgProficiency: Math.round(avgProf * 10) / 10, participationRate,
+        topSkills, heatmap, heatmapCategories: catNames, skillGaps, busFactorRisks,
+        certsDashboard: { active: activeCerts.length, expiringSoon: expiringSoon.length, expired: expired.length, upcoming },
+        trainingNeeds, silentDepts, roleMatches, aiAdoption,
       })
       setLoading(false)
     }
@@ -692,53 +835,391 @@ function AnalyticsTab({ companyId }: { companyId: string }) {
   }, [companyId])
 
   if (loading) return <p className="admin-empty">Loading analytics...</p>
+  if (!data) return <p className="admin-empty">No data available.</p>
+
+  const sections: { key: typeof section; label: string; icon: string }[] = [
+    { key: 'overview', label: 'Overview', icon: '📊' },
+    { key: 'heatmap', label: 'Skills Heatmap', icon: '🗺' },
+    { key: 'gaps', label: 'Skill Gaps', icon: '⚠' },
+    { key: 'bus', label: 'Risk & Succession', icon: '🚨' },
+    { key: 'certs', label: 'Certifications', icon: '📜' },
+    { key: 'training', label: 'Training Needs', icon: '📚' },
+    { key: 'matching', label: 'Role Matching', icon: '🎯' },
+    { key: 'ai', label: 'AI Adoption', icon: '🤖' },
+  ]
 
   return (
     <div className="admin-section">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <div className="admin-card" style={{ padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{stats.totalSkills}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Skills in Library</div>
-        </div>
-        <div className="admin-card" style={{ padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{stats.totalEmployeeSkills}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Employee Skills Recorded</div>
-        </div>
-        <div className="admin-card" style={{ padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#16a34a' }}>{stats.validated}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Validated</div>
-        </div>
-        <div className="admin-card" style={{ padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#f59e0b' }}>{stats.pending}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Pending Validation</div>
-        </div>
-        <div className="admin-card" style={{ padding: 16, textAlign: 'center' }}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>{stats.avgProficiency}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Avg Proficiency</div>
-        </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
+        {sections.map(s => (
+          <button key={s.key} className={`admin-tab ${section === s.key ? 'admin-tab-active' : ''}`} onClick={() => setSection(s.key)} style={{ fontSize: 13, padding: '6px 12px' }}>
+            {s.icon} {s.label}
+          </button>
+        ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+      {section === 'overview' && <OverviewSection data={data} />}
+      {section === 'heatmap' && <HeatmapSection data={data} />}
+      {section === 'gaps' && <GapSection data={data} />}
+      {section === 'bus' && <BusFactorSection data={data} />}
+      {section === 'certs' && <CertsSection data={data} />}
+      {section === 'training' && <TrainingSection data={data} />}
+      {section === 'matching' && <MatchingSection data={data} />}
+      {section === 'ai' && <AISection data={data} />}
+    </div>
+  )
+}
+
+function OverviewSection({ data }: { data: AnalyticsData }) {
+  return (
+    <>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 24 }}>
+        {[
+          { v: data.totalSkills, l: 'Skills in Library', c: '' },
+          { v: data.totalEmployeeSkills, l: 'Skills Recorded', c: '' },
+          { v: data.validated, l: 'Validated', c: '#16a34a' },
+          { v: data.pending, l: 'Pending Validation', c: '#f59e0b' },
+          { v: data.avgProficiency, l: 'Avg Proficiency', c: '' },
+          { v: `${data.participationRate}%`, l: 'Participation Rate', c: data.participationRate < 50 ? '#dc2626' : '#16a34a' },
+          { v: data.silentDepts.length, l: 'Depts Not Submitting', c: data.silentDepts.length > 0 ? '#dc2626' : '#16a34a' },
+          { v: data.busFactorRisks.length, l: 'Single-Point Risks', c: data.busFactorRisks.filter(r => r.holders.length === 1).length > 0 ? '#dc2626' : '#f59e0b' },
+        ].map((m, i) => (
+          <div key={i} className="admin-card" style={{ padding: 14, textAlign: 'center' }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: m.c || 'var(--text)' }}>{m.v}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{m.l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
         <div className="admin-card" style={{ padding: 16 }}>
-          <h3 style={{ marginTop: 0 }}>Top Skills</h3>
-          {stats.topSkills.length === 0 && <p className="admin-empty">No data yet.</p>}
-          {stats.topSkills.map((s, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-              <span>{s.name}</span>
-              <strong>{s.count}</strong>
-            </div>
-          ))}
+          <h3 style={{ marginTop: 0, fontSize: 15 }}>Top 10 Skills</h3>
+          {data.topSkills.length === 0 && <p className="admin-empty">No data yet.</p>}
+          {data.topSkills.map((s, i) => {
+            const pct = data.topSkills[0] ? Math.round((s.count / data.topSkills[0].count) * 100) : 0
+            return (
+              <div key={i} style={{ padding: '5px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
+                  <span>{s.name}</span><strong>{s.count}</strong>
+                </div>
+                <div style={{ height: 6, borderRadius: 3, background: 'var(--border)' }}>
+                  <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, background: '#3b82f6' }} />
+                </div>
+              </div>
+            )
+          })}
         </div>
+
         <div className="admin-card" style={{ padding: 16 }}>
-          <h3 style={{ marginTop: 0 }}>Skills by Department</h3>
-          {stats.deptBreakdown.length === 0 && <p className="admin-empty">No data yet.</p>}
-          {stats.deptBreakdown.map((d, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-              <span>{d.dept}</span>
-              <strong>{d.count}</strong>
+          <h3 style={{ marginTop: 0, fontSize: 15 }}>Department Engagement</h3>
+          {data.silentDepts.length > 0 && (
+            <div style={{ padding: 10, borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', marginBottom: 12, fontSize: 13 }}>
+              <strong>No skills submitted:</strong> {data.silentDepts.join(', ')}
             </div>
-          ))}
+          )}
+          {data.heatmap.map((row, i) => {
+            const total = Object.values(row.categories).reduce((a, b) => a + b, 0)
+            return (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                <span>{row.dept}</span>
+                <strong>{total} skills</strong>
+              </div>
+            )
+          })}
         </div>
+      </div>
+    </>
+  )
+}
+
+function HeatmapSection({ data }: { data: AnalyticsData }) {
+  if (data.heatmap.length === 0) return <p className="admin-empty">No department data available.</p>
+  const maxVal = Math.max(1, ...data.heatmap.flatMap(r => Object.values(r.categories)))
+  function cellColor(val: number) {
+    if (val === 0) return 'var(--bg-card)'
+    const intensity = Math.min(val / maxVal, 1)
+    return `rgba(59, 130, 246, ${0.15 + intensity * 0.7})`
+  }
+  return (
+    <div className="admin-card" style={{ padding: 16 }}>
+      <h3 style={{ marginTop: 0, fontSize: 15 }}>Department × Skill Category Heatmap</h3>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left', padding: '6px 8px', borderBottom: '2px solid var(--border)', position: 'sticky', left: 0, background: 'var(--bg-card)', zIndex: 1 }}>Department</th>
+              {data.heatmapCategories.map(c => (
+                <th key={c} style={{ padding: '6px 4px', borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap', writingMode: 'vertical-rl', transform: 'rotate(180deg)', maxWidth: 32, fontSize: 11 }}>{c}</th>
+              ))}
+              <th style={{ padding: '6px 8px', borderBottom: '2px solid var(--border)', fontWeight: 700 }}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.heatmap.map((row, i) => {
+              const total = Object.values(row.categories).reduce((a, b) => a + b, 0)
+              return (
+                <tr key={i}>
+                  <td style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', fontWeight: 500, position: 'sticky', left: 0, background: 'var(--bg-card)', zIndex: 1, whiteSpace: 'nowrap' }}>{row.dept}</td>
+                  {data.heatmapCategories.map(c => (
+                    <td key={c} style={{ padding: '4px 6px', textAlign: 'center', borderBottom: '1px solid var(--border)', background: cellColor(row.categories[c] || 0), color: (row.categories[c] || 0) > maxVal * 0.5 ? '#fff' : 'var(--text)', fontWeight: (row.categories[c] || 0) > 0 ? 600 : 400 }}>
+                      {row.categories[c] || '—'}
+                    </td>
+                  ))}
+                  <td style={{ padding: '4px 8px', textAlign: 'center', borderBottom: '1px solid var(--border)', fontWeight: 700 }}>{total}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function GapSection({ data }: { data: AnalyticsData }) {
+  if (data.skillGaps.length === 0) return (
+    <div className="admin-card" style={{ padding: 16 }}>
+      <h3 style={{ marginTop: 0, fontSize: 15 }}>Skill Gap Analysis</h3>
+      <p className="admin-empty">No skill gaps detected. Add role profiles with skill requirements to enable gap analysis.</p>
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {data.skillGaps.map((role, ri) => (
+        <div key={ri} className="admin-card" style={{ padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 15 }}>{role.role}</h3>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', padding: '2px 8px', borderRadius: 12, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>{role.dept}</span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Required</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Avg Actual</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Qualified Staff</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Priority</th>
+              </tr>
+            </thead>
+            <tbody>
+              {role.gaps.map((g, gi) => (
+                <tr key={gi} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '6px 8px' }}>{g.skill}</td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px' }}>{PROFICIENCY_LABELS[g.required]}</td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px', color: g.actual < g.required ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{g.actual || '—'}</td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px', color: g.holders === 0 ? '#dc2626' : 'var(--text)' }}>{g.holders}</td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 11, background: g.essential && g.holders === 0 ? '#fef2f2' : g.essential ? '#fef9c3' : '#f0f9ff', color: g.essential && g.holders === 0 ? '#dc2626' : g.essential ? '#92400e' : '#1e40af' }}>
+                      {g.essential && g.holders === 0 ? 'Critical' : g.essential ? 'High' : 'Medium'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function BusFactorSection({ data }: { data: AnalyticsData }) {
+  const soloRisks = data.busFactorRisks.filter(r => r.holders.length === 1)
+  const dualRisks = data.busFactorRisks.filter(r => r.holders.length === 2)
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="admin-card" style={{ padding: 16 }}>
+        <h3 style={{ marginTop: 0, fontSize: 15, color: '#dc2626' }}>Single-Point-of-Failure Skills ({soloRisks.length})</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>Skills held by only one employee — if they leave, the capability is lost.</p>
+        {soloRisks.length === 0 ? <p className="admin-empty">No single-point risks detected.</p> : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={{ borderBottom: '2px solid var(--border)' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Sole Holder</th></tr></thead>
+            <tbody>
+              {soloRisks.map((r, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: '#fef2f2' }}>
+                  <td style={{ padding: '6px 8px', fontWeight: 500 }}>{r.skill}</td>
+                  <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{r.category}</td>
+                  <td style={{ padding: '6px 8px' }}>{r.holders[0]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div className="admin-card" style={{ padding: 16 }}>
+        <h3 style={{ marginTop: 0, fontSize: 15, color: '#f59e0b' }}>Limited Coverage Skills ({dualRisks.length})</h3>
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>Skills held by only two employees — succession risk if either leaves.</p>
+        {dualRisks.length === 0 ? <p className="admin-empty">No limited-coverage risks detected.</p> : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={{ borderBottom: '2px solid var(--border)' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Holders</th></tr></thead>
+            <tbody>
+              {dualRisks.map((r, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '6px 8px', fontWeight: 500 }}>{r.skill}</td>
+                  <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{r.category}</td>
+                  <td style={{ padding: '6px 8px' }}>{r.holders.join(', ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CertsSection({ data }: { data: AnalyticsData }) {
+  const d = data.certsDashboard
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+        <div className="admin-card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#16a34a' }}>{d.active}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Active Certifications</div>
+        </div>
+        <div className="admin-card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#f59e0b' }}>{d.expiringSoon}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Expiring within 90 days</div>
+        </div>
+        <div className="admin-card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: '#dc2626' }}>{d.expired}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Expired</div>
+        </div>
+      </div>
+      {d.upcoming.length > 0 && (
+        <div className="admin-card" style={{ padding: 16 }}>
+          <h3 style={{ marginTop: 0, fontSize: 15 }}>Expiring Soon</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr style={{ borderBottom: '2px solid var(--border)' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Certification</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Employee</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Expiry Date</th></tr></thead>
+            <tbody>
+              {d.upcoming.map((c, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '6px 8px', fontWeight: 500 }}>{c.name}</td>
+                  <td style={{ padding: '6px 8px' }}>{c.employee}</td>
+                  <td style={{ padding: '6px 8px', color: '#f59e0b', fontWeight: 500 }}>{c.expiry}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TrainingSection({ data }: { data: AnalyticsData }) {
+  return (
+    <div className="admin-card" style={{ padding: 16 }}>
+      <h3 style={{ marginTop: 0, fontSize: 15 }}>Training Needs Analysis</h3>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>Skills where employees are below Proficient level — candidates for targeted training investment.</p>
+      {data.trainingNeeds.length === 0 ? <p className="admin-empty">No training gaps detected.</p> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid var(--border)' }}>
+              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th>
+              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Avg Proficiency</th>
+              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Total Holders</th>
+              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Below Proficient</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.trainingNeeds.map((t, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '6px 8px', fontWeight: 500 }}>{t.skill}</td>
+                <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{t.category}</td>
+                <td style={{ textAlign: 'center', padding: '6px 8px' }}>
+                  <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, background: t.avgProf < 2 ? '#fef2f2' : t.avgProf < 3 ? '#fef9c3' : '#f0fdf4', color: t.avgProf < 2 ? '#dc2626' : t.avgProf < 3 ? '#92400e' : '#16a34a' }}>
+                    {t.avgProf} — {PROFICIENCY_LABELS[Math.round(t.avgProf)] || 'Foundational'}
+                  </span>
+                </td>
+                <td style={{ textAlign: 'center', padding: '6px 8px' }}>{t.count}</td>
+                <td style={{ textAlign: 'center', padding: '6px 8px', color: t.belowProficient > 0 ? '#dc2626' : 'var(--text)', fontWeight: t.belowProficient > 0 ? 600 : 400 }}>{t.belowProficient}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+function MatchingSection({ data }: { data: AnalyticsData }) {
+  return (
+    <div className="admin-card" style={{ padding: 16 }}>
+      <h3 style={{ marginTop: 0, fontSize: 15 }}>Internal Role Matching</h3>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>Employees who meet 50%+ of a role profile's skill requirements — candidates for internal mobility or succession.</p>
+      {data.roleMatches.length === 0 ? <p className="admin-empty">No matches found. Add role profiles with skill requirements to enable matching.</p> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '2px solid var(--border)' }}>
+              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Employee</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Current Dept</th>
+              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Matching Role</th>
+              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Match</th>
+              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Skills Met</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.roleMatches.slice(0, 20).map((m, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '6px 8px', fontWeight: 500 }}>{m.employee}</td>
+                <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{m.dept}</td>
+                <td style={{ padding: '6px 8px' }}>{m.role}</td>
+                <td style={{ textAlign: 'center', padding: '6px 8px' }}>
+                  <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, background: m.matchPct >= 80 ? '#dcfce7' : m.matchPct >= 60 ? '#fef9c3' : '#fee2e2', color: m.matchPct >= 80 ? '#16a34a' : m.matchPct >= 60 ? '#92400e' : '#dc2626' }}>
+                    {m.matchPct}%
+                  </span>
+                </td>
+                <td style={{ textAlign: 'center', padding: '6px 8px' }}>{m.met}/{m.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+function AISection({ data }: { data: AnalyticsData }) {
+  const ai = data.aiAdoption
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+        <div className="admin-card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 700 }}>{ai.total}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>AI Skills Recorded</div>
+        </div>
+        <div className="admin-card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 700 }}>{ai.employees}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Employees with AI Skills</div>
+        </div>
+        <div className="admin-card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 700 }}>{ai.avgProf}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Avg AI Proficiency</div>
+        </div>
+        <div className="admin-card" style={{ padding: 14, textAlign: 'center' }}>
+          <div style={{ fontSize: 28, fontWeight: 700, color: data.totalEmployees > 0 ? (ai.employees / data.totalEmployees >= 0.5 ? '#16a34a' : '#f59e0b') : '' }}>
+            {data.totalEmployees > 0 ? Math.round((ai.employees / data.totalEmployees) * 100) : 0}%
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>AI Adoption Rate</div>
+        </div>
+      </div>
+      <div className="admin-card" style={{ padding: 16 }}>
+        <h3 style={{ marginTop: 0, fontSize: 15 }}>AI & Automation Skills Breakdown</h3>
+        {ai.skills.length === 0 ? <p className="admin-empty">No AI skills recorded yet.</p> : ai.skills.map((s, i) => {
+          const pct = ai.skills[0] ? Math.round((s.count / ai.skills[0].count) * 100) : 0
+          return (
+            <div key={i} style={{ padding: '5px 0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 3 }}>
+                <span>{s.name}</span><strong>{s.count}</strong>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: 'var(--border)' }}>
+                <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, background: '#8b5cf6' }} />
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
