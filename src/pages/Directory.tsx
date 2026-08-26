@@ -40,6 +40,7 @@ export default function Directory() {
   const [watchlist, setWatchlist] = useState<string[]>(getWatchlist)
   const [showWatchlistPrompt, setShowWatchlistPrompt] = useState(false)
   const [selectedSkills, setSelectedSkills] = useState<{ name: string; proficiency: number }[]>([])
+  const [selectedLangs, setSelectedLangs] = useState<{ language: string; proficiency: string }[]>([])
 
   const fetchData = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -98,17 +99,20 @@ export default function Directory() {
   async function openProfile(entry: DirectoryEntry) {
     setSelected(entry)
     setSelectedSkills([])
+    setSelectedLangs([])
     if (!features.skills_passport || !entry.employee_uuid) return
-    const { data: esData } = await supabase
-      .from('employee_skills')
-      .select('skill_id, proficiency')
-      .eq('employee_id', entry.employee_uuid)
-      .eq('status', 'validated')
-    if (!esData || esData.length === 0) return
-    const skillIds = esData.map(s => s.skill_id)
-    const { data: skillData } = await supabase.from('skills').select('id, name').in('id', skillIds)
-    const nameMap = new Map((skillData || []).map(s => [s.id, s.name]))
-    setSelectedSkills(esData.map(s => ({ name: nameMap.get(s.skill_id) || 'Unknown', proficiency: s.proficiency })).sort((a, b) => b.proficiency - a.proficiency))
+    const [esRes, langRes] = await Promise.all([
+      supabase.from('employee_skills').select('skill_id, proficiency').eq('employee_id', entry.employee_uuid).eq('status', 'validated'),
+      supabase.from('employee_languages').select('language, proficiency').eq('employee_id', entry.employee_uuid),
+    ])
+    const esData = esRes.data
+    if (esData && esData.length > 0) {
+      const skillIds = esData.map(s => s.skill_id)
+      const { data: skillData } = await supabase.from('skills').select('id, name').in('id', skillIds)
+      const nameMap = new Map((skillData || []).map(s => [s.id, s.name]))
+      setSelectedSkills(esData.map(s => ({ name: nameMap.get(s.skill_id) || 'Unknown', proficiency: s.proficiency })).sort((a, b) => b.proficiency - a.proficiency))
+    }
+    setSelectedLangs(langRes.data || [])
   }
 
   const filtered = search.trim()
@@ -306,6 +310,22 @@ export default function Directory() {
                       {s.name}
                     </span>
                   ))}
+                </div>
+              </div>
+            )}
+            {features.skills_passport && selectedLangs.length > 0 && (
+              <div className="directory-modal-details" style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Languages</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {selectedLangs.map((l, i) => {
+                    const c: Record<string, string> = { basic: '#6b7280', conversational: '#3b82f6', professional: '#8b5cf6', fluent: '#f59e0b', native: '#10b981' }
+                    const lbl: Record<string, string> = { basic: 'Basic', conversational: 'Conversational', professional: 'Professional', fluent: 'Fluent', native: 'Native' }
+                    return (
+                      <span key={i} style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, background: (c[l.proficiency] || '#6b7280') + '20', color: c[l.proficiency] || '#6b7280', border: `1px solid ${c[l.proficiency] || '#6b7280'}40` }}>
+                        {l.language} · {lbl[l.proficiency] || l.proficiency}
+                      </span>
+                    )
+                  })}
                 </div>
               </div>
             )}

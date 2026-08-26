@@ -598,7 +598,7 @@ interface SkillOption { id: string; category_id: string; name: string }
 interface EmployeeSkillItem { id: string; skill_id: string; proficiency: number; status: string; skill_name?: string; category_name?: string }
 
 function SkillsPassportEmbed({ companyId, employeeId, showSuccess, showError }: { companyId: string; employeeId: string; showSuccess: (m: string) => void; showError: (m: string) => void }) {
-  const [tab, setTab] = useState<'skills' | 'certs' | 'goals'>('skills')
+  const [tab, setTab] = useState<'skills' | 'certs' | 'goals' | 'languages'>('skills')
   const [categories, setCategories] = useState<SkillCategory[]>([])
   const [allSkills, setAllSkills] = useState<SkillOption[]>([])
   const [mySkills, setMySkills] = useState<EmployeeSkillItem[]>([])
@@ -630,9 +630,9 @@ function SkillsPassportEmbed({ companyId, employeeId, showSuccess, showError }: 
   return (
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-        {(['skills', 'certs', 'goals'] as const).map(t => (
+        {(['skills', 'certs', 'goals', 'languages'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} style={{ padding: '6px 14px', borderRadius: 20, fontSize: 13, fontWeight: tab === t ? 600 : 400, border: tab === t ? '2px solid var(--text)' : '1px solid var(--border)', background: tab === t ? 'var(--text)' : 'transparent', color: tab === t ? 'var(--bg)' : 'var(--text)', cursor: 'pointer' }}>
-            {t === 'skills' ? 'My Skills' : t === 'certs' ? 'Certifications' : 'Career Goals'}
+            {t === 'skills' ? 'My Skills' : t === 'certs' ? 'Certifications' : t === 'goals' ? 'Career Goals' : 'Languages'}
           </button>
         ))}
       </div>
@@ -640,6 +640,7 @@ function SkillsPassportEmbed({ companyId, employeeId, showSuccess, showError }: 
       {!loading && tab === 'skills' && <SkillsTab companyId={companyId} employeeId={employeeId} categories={categories} allSkills={allSkills} mySkills={mySkills} onRefresh={loadData} showSuccess={showSuccess} showError={showError} />}
       {!loading && tab === 'certs' && <CertsTab companyId={companyId} employeeId={employeeId} showSuccess={showSuccess} showError={showError} />}
       {!loading && tab === 'goals' && <GoalsTab companyId={companyId} employeeId={employeeId} showSuccess={showSuccess} showError={showError} />}
+      {!loading && tab === 'languages' && <LanguagesTab companyId={companyId} employeeId={employeeId} showSuccess={showSuccess} showError={showError} />}
     </div>
   )
 }
@@ -907,6 +908,102 @@ function GoalsTab({ companyId, employeeId, showSuccess, showError }: { companyId
       {aspiration?.target_department && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Department</span><div style={{ fontWeight: 500 }}>{aspiration.target_department}</div></div>}
       {aspiration?.timeframe && <div style={{ marginBottom: 6 }}><span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Timeframe</span><div style={{ fontWeight: 500 }}>{TIMEFRAME_LABELS[aspiration.timeframe] || aspiration.timeframe}</div></div>}
       {aspiration?.notes && <div><span style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Notes</span><div>{aspiration.notes}</div></div>}
+    </div>
+  )
+}
+
+const DEFAULT_LANGUAGES = ['English','German','French','Spanish','Italian','Portuguese','Arabic','Mandarin']
+const LANG_PROFICIENCY = ['basic','conversational','professional','fluent','native'] as const
+const LANG_PROF_LABELS: Record<string, string> = { basic: 'Basic', conversational: 'Conversational', professional: 'Professional', fluent: 'Fluent', native: 'Native' }
+const LANG_PROF_COLORS: Record<string, string> = { basic: '#6b7280', conversational: '#3b82f6', professional: '#8b5cf6', fluent: '#f59e0b', native: '#10b981' }
+
+function LanguagesTab({ companyId, employeeId, showSuccess, showError }: { companyId: string; employeeId: string; showSuccess: (m: string) => void; showError: (m: string) => void }) {
+  const [langs, setLangs] = useState<{ id: string; language: string; proficiency: string }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [newLang, setNewLang] = useState('')
+  const [customLang, setCustomLang] = useState('')
+  const [newProf, setNewProf] = useState<string>('conversational')
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data } = await supabase.from('employee_languages').select('id, language, proficiency').eq('employee_id', employeeId).eq('company_id', companyId).order('language')
+    setLangs(data || [])
+    setLoading(false)
+  }, [companyId, employeeId])
+
+  useEffect(() => { load() }, [load])
+
+  const existingLangs = new Set(langs.map(l => l.language))
+  const availableDefaults = DEFAULT_LANGUAGES.filter(l => !existingLangs.has(l))
+
+  async function addLang() {
+    const langName = newLang === '__custom' ? customLang.trim() : newLang
+    if (!langName) return
+    setSaving(true)
+    const { error } = await supabase.from('employee_languages').insert({ company_id: companyId, employee_id: employeeId, language: langName, proficiency: newProf })
+    setSaving(false)
+    if (error) { showError(error.message); return }
+    showSuccess('Language added')
+    setNewLang(''); setCustomLang(''); setNewProf('conversational'); setShowAdd(false)
+    load()
+  }
+
+  async function updateProf(id: string, proficiency: string) {
+    await supabase.from('employee_languages').update({ proficiency, updated_at: new Date().toISOString() }).eq('id', id)
+    load()
+  }
+
+  async function removeLang(id: string) {
+    await supabase.from('employee_languages').delete().eq('id', id)
+    showSuccess('Language removed')
+    load()
+  }
+
+  if (loading) return <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>Loading...</p>
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{langs.length} language{langs.length !== 1 ? 's' : ''}</span>
+        <button onClick={() => setShowAdd(true)} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}>+ Add Language</button>
+      </div>
+      {showAdd && (
+        <div style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
+          <select value={newLang} onChange={e => setNewLang(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8, boxSizing: 'border-box' }}>
+            <option value="">Select a language...</option>
+            {availableDefaults.map(l => <option key={l} value={l}>{l}</option>)}
+            <option value="__custom">Other (type below)</option>
+          </select>
+          {newLang === '__custom' && (
+            <input placeholder="Language name" value={customLang} onChange={e => setCustomLang(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8, boxSizing: 'border-box' }} />
+          )}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+            {LANG_PROFICIENCY.map(p => (
+              <button key={p} onClick={() => setNewProf(p)} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: newProf === p ? 600 : 400, border: `2px solid ${newProf === p ? LANG_PROF_COLORS[p] : 'var(--border)'}`, background: newProf === p ? LANG_PROF_COLORS[p] + '20' : 'transparent', color: newProf === p ? LANG_PROF_COLORS[p] : 'var(--text-muted)', cursor: 'pointer' }}>
+                {LANG_PROF_LABELS[p]}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={addLang} disabled={saving} style={{ padding: '6px 16px', borderRadius: 8, background: '#1565c0', color: '#fff', border: 'none', cursor: 'pointer' }}>{saving ? 'Adding...' : 'Add'}</button>
+            <button onClick={() => setShowAdd(false)} style={{ padding: '6px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', color: 'var(--text)' }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {langs.length === 0 && !showAdd && <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No languages recorded. Add your languages to showcase your multilingual abilities.</p>}
+      {langs.map(l => (
+        <div key={l.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>{l.language}</div>
+            <select value={l.proficiency} onChange={e => updateProf(l.id, e.target.value)} style={{ padding: '1px 6px', borderRadius: 10, fontSize: 11, border: `1px solid ${LANG_PROF_COLORS[l.proficiency] || '#6b7280'}`, color: LANG_PROF_COLORS[l.proficiency] || '#6b7280', background: 'transparent', cursor: 'pointer', marginTop: 4 }}>
+              {LANG_PROFICIENCY.map(p => <option key={p} value={p}>{LANG_PROF_LABELS[p]}</option>)}
+            </select>
+          </div>
+          <button onClick={() => removeLang(l.id)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid #dc2626', color: '#dc2626', background: 'transparent', cursor: 'pointer' }}>✕</button>
+        </div>
+      ))}
     </div>
   )
 }
