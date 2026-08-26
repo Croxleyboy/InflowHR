@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useFeatures } from '../context/FeatureContext'
 
 interface DirectoryEntry {
   id: number
@@ -30,6 +31,7 @@ export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { companyUser, employeeId: currentEmployeeId } = useAuth()
+  const { features } = useFeatures()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -37,6 +39,7 @@ export default function Directory() {
   const [onLeaveIds, setOnLeaveIds] = useState<Set<string>>(new Set())
   const [watchlist, setWatchlist] = useState<string[]>(getWatchlist)
   const [showWatchlistPrompt, setShowWatchlistPrompt] = useState(false)
+  const [selectedSkills, setSelectedSkills] = useState<{ name: string; proficiency: number }[]>([])
 
   const fetchData = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -91,6 +94,22 @@ export default function Directory() {
   }, [companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  async function openProfile(entry: DirectoryEntry) {
+    setSelected(entry)
+    setSelectedSkills([])
+    if (!features.skills_passport || !entry.employee_uuid) return
+    const { data: esData } = await supabase
+      .from('employee_skills')
+      .select('skill_id, proficiency')
+      .eq('employee_id', entry.employee_uuid)
+      .eq('status', 'validated')
+    if (!esData || esData.length === 0) return
+    const skillIds = esData.map(s => s.skill_id)
+    const { data: skillData } = await supabase.from('skills').select('id, name').in('id', skillIds)
+    const nameMap = new Map((skillData || []).map(s => [s.id, s.name]))
+    setSelectedSkills(esData.map(s => ({ name: nameMap.get(s.skill_id) || 'Unknown', proficiency: s.proficiency })).sort((a, b) => b.proficiency - a.proficiency))
+  }
 
   const filtered = search.trim()
     ? entries.filter(e => {
@@ -183,7 +202,7 @@ export default function Directory() {
           <div key={entry.id} className="directory-card">
             <div className="directory-card-top">
               <div className="directory-card-avatar-wrap">
-                <button className="directory-card-avatar-btn" onClick={() => setSelected(entry)}>
+                <button className="directory-card-avatar-btn" onClick={() => openProfile(entry)}>
                   {entry.avatar_url ? (
                     <img className="directory-card-avatar-img" src={entry.avatar_url} alt={`${entry.firstname} ${entry.surname}`} />
                   ) : (
@@ -277,6 +296,19 @@ export default function Directory() {
                 <span>{selected.department || ''}</span>
               </div>
             </div>
+
+            {features.skills_passport && selectedSkills.length > 0 && (
+              <div className="directory-modal-details" style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Validated Skills</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {selectedSkills.map((s, i) => (
+                    <span key={i} style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, background: ['','#6b728020','#3b82f620','#8b5cf620','#f59e0b20','#10b98120'][s.proficiency], color: ['','#6b7280','#3b82f6','#8b5cf6','#f59e0b','#10b981'][s.proficiency], border: `1px solid ${['','#6b7280','#3b82f6','#8b5cf6','#f59e0b','#10b981'][s.proficiency]}40` }}>
+                      {s.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="directory-modal-actions">
               <a

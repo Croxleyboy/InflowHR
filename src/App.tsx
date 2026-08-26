@@ -72,9 +72,11 @@ import AdminBilling from './pages/admin/AdminBilling'
 import AdminLegalTimesheets from './pages/admin/AdminLegalTimesheets'
 import AdminSpaceManagement from './pages/admin/AdminSpaceManagement'
 import AdminAssetManagement from './pages/admin/AdminAssetManagement'
+import AdminTalentIntelligence from './pages/admin/AdminTalentIntelligence'
 import AdminUserGuides from './pages/admin/AdminUserGuides'
 import AdminDashboardModern from './pages/admin/AdminDashboardModern'
 import UserGuide from './pages/UserGuide'
+import SkillsPassport from './pages/SkillsPassport'
 
 function AdminGate() {
   const { companyUser, isSuperAdmin } = useAuth()
@@ -135,6 +137,7 @@ function EmployeeRoutes() {
       <Route path="/space-booking" element={<SpaceBooking />} />
       <Route path="/announcements" element={<Placeholder title="Company Announcements" />} />
       <Route path="/user-guide" element={<UserGuide />} />
+      <Route path="/skills-passport" element={<SkillsPassport />} />
     </Routes>
   )
 }
@@ -194,6 +197,7 @@ function AuthGate() {
             <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
             <Route path="space-management" element={<AdminSpaceManagement />} />
             <Route path="assets" element={<AdminAssetManagement />} />
+            <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
             <Route path="dashboard-v2" element={<AdminDashboardModern />} />
             <Route element={<SuperAdminGate />}>

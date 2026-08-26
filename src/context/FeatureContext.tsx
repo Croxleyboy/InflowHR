@@ -15,6 +15,7 @@ export interface Features {
   legal_timesheets: boolean
   space_booking: boolean
   asset_management: boolean
+  skills_passport: boolean
 }
 
 const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management']
@@ -27,6 +28,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   benefits: 'benefits',
   legal_timesheets: 'legal_timesheets',
   space_booking: 'space_booking',
+  skills_passport: 'skills_passport',
 }
 
 const defaultFeatures: Features = {
@@ -43,6 +45,7 @@ const defaultFeatures: Features = {
   legal_timesheets: true,
   space_booking: true,
   asset_management: true,
+  skills_passport: true,
 }
 
 interface FeatureContextType {

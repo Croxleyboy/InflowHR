@@ -32,6 +32,7 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/legal-timesheets', label: 'Legal Timesheets', icon: '⚖️', feature: 'legal_timesheets' },
   { path: '/admin/space-management', label: 'Space Management', icon: '🏢', feature: 'space_booking' },
   { path: '/admin/assets', label: 'Asset Management', icon: '💻', feature: 'asset_management' },
+  { path: '/admin/talent-intelligence', label: 'Talent Intelligence', icon: '🧠', feature: 'skills_passport' },
   { path: '/admin/notifications', label: 'Notifications', icon: '🔔' },
   { path: '/admin/billing', label: 'Billing', icon: '💳' },
   { path: '/admin/user-guides', label: 'User Guides', icon: '📖' },
