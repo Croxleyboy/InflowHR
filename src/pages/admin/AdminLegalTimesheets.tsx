@@ -114,6 +114,8 @@ export const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
 }
 export const DEFAULT_STATUS_COLOR = { bg: '#f5f5f5', text: '#666' }
 
+const PAGE_SIZE = 30
+
 // ── Helpers ──
 function fmtDate(d: string): string {
   const dt = new Date(d + 'T00:00:00')
@@ -159,6 +161,7 @@ export default function AdminLegalTimesheets() {
   const [filterClient, setFilterClient] = useState('')
   const [filterStatus, setFilterStatus] = useState<ReviewFilter>('all')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
 
   // Review state
   const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null)
@@ -354,6 +357,13 @@ export default function AdminLegalTimesheets() {
       return true
     })
   }, [entries, dateFrom, dateTo, filterDept, filterEmployee, filterClient, filterStatus, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  useEffect(() => {
+    setPage(1)
+  }, [dateFrom, dateTo, filterDept, filterEmployee, filterClient, filterStatus, search])
 
   // KPIs
   const now = new Date()
@@ -667,7 +677,7 @@ export default function AdminLegalTimesheets() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.slice(0, 100).map(e => (
+                {paginated.map(e => (
                   <tr key={e.id} className="alt-row-hover">
                     <td style={{ fontWeight: 600 }}>{empName(e.employee)}</td>
                     <td><span className="alt-dept-badge">{e.employee?.department || '—'}</span></td>
@@ -685,8 +695,14 @@ export default function AdminLegalTimesheets() {
               </tbody>
             </table>
             {filtered.length === 0 && <div className="admin-empty">No entries match your filters</div>}
-            {filtered.length > 100 && <div style={{ padding: '8px 12px', fontSize: 12, color: '#8b8fa3', textAlign: 'right' }}>Showing 100 of {filtered.length} entries</div>}
           </div>
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+              <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+              <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+            </div>
+          )}
         </>
       )}
 

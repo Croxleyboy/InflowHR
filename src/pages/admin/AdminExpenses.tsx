@@ -45,6 +45,8 @@ const EXPENSE_TYPES = [
 
 const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
 
+const PAGE_SIZE = 30
+
 export default function AdminExpenses() {
   const { selectedCompanyId } = useAdminCompany()
   const { employeeEmail, employeeName } = useAuth()
@@ -66,6 +68,8 @@ export default function AdminExpenses() {
   const [newExpenseType, setNewExpenseType] = useState('')
   const [exporting, setExporting] = useState(false)
   const [exportLogs, setExportLogs] = useState<ExportLog[]>([])
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
 
   const loadExportLogs = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -335,12 +339,27 @@ export default function AdminExpenses() {
   }, [claims])
 
   const filtered = useMemo(() => {
+    setPage(1)
     return claims.filter(c => {
       if (filterStatus && c.status !== filterStatus) return false
       if (filterEmployee && c.employee && `${c.employee.first_name} ${c.employee.last_name}` !== filterEmployee) return false
+      if (search) {
+        const s = search.toLowerCase()
+        const empName = c.employee ? `${c.employee.first_name} ${c.employee.last_name}`.toLowerCase() : ''
+        if (
+          !empName.includes(s) &&
+          !c.title.toLowerCase().includes(s) &&
+          !c.status.toLowerCase().includes(s) &&
+          !c.reference_number.toLowerCase().includes(s) &&
+          !(c.cost_center || '').toLowerCase().includes(s)
+        ) return false
+      }
       return true
     })
-  }, [claims, filterStatus, filterEmployee])
+  }, [claims, filterStatus, filterEmployee, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const expenseExportDaysAgo = useMemo(() => {
     if (exportLogs.length === 0) return -1
@@ -415,6 +434,14 @@ export default function AdminExpenses() {
             </button>
           </div>
 
+          <input
+            className="admin-input"
+            placeholder="Search expenses..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
+          />
+
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
@@ -424,7 +451,7 @@ export default function AdminExpenses() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(claim => (
+                  {paginated.map(claim => (
                     <>
                       <tr key={claim.id} className={expandedId === claim.id ? 'admin-row-active' : ''}>
                         <td className="admin-td-mono">{claim.reference_number}</td>
@@ -509,6 +536,13 @@ export default function AdminExpenses() {
                 </tbody>
               </table>
               {filtered.length === 0 && <div className="admin-empty">No expense claims found</div>}
+              {filtered.length > PAGE_SIZE && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
+                  <button className="admin-btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+                  <span>Page {page} of {totalPages}</span>
+                  <button className="admin-btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+                </div>
+              )}
             </div>
           )}
         </>

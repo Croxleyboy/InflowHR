@@ -26,6 +26,8 @@ const LEAVE_TYPE_COLOURS: Record<string, string> = {
   'Exam Leave': '#7e57c2', 'Carers Leave': '#ef6c00',
 }
 
+const PAGE_SIZE = 30
+
 export default function AdminLeave() {
   const { selectedCompanyId } = useAdminCompany()
   const { t } = useLanguage()
@@ -34,6 +36,8 @@ export default function AdminLeave() {
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [weekendsAsWorkdays, setWeekendsAsWorkdays] = useState(false)
@@ -272,12 +276,24 @@ export default function AdminLeave() {
   }, [requests])
 
   const filtered = useMemo(() => {
+    setPage(1)
     return requests.filter(r => {
       if (filterStatus && r.status !== filterStatus) return false
       if (filterEmployee && r.employee && `${r.employee.first_name} ${r.employee.last_name}` !== filterEmployee) return false
+      if (search) {
+        const q = search.toLowerCase()
+        const name = r.employee ? `${r.employee.first_name} ${r.employee.last_name}`.toLowerCase() : ''
+        const type = (r.leave_type?.name || '').toLowerCase()
+        const status = r.status.toLowerCase()
+        const reason = (r.reason || '').toLowerCase()
+        if (!name.includes(q) && !type.includes(q) && !status.includes(q) && !reason.includes(q)) return false
+      }
       return true
     })
-  }, [requests, filterStatus, filterEmployee])
+  }, [requests, filterStatus, filterEmployee, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const stats = useMemo(() => ({
     total: requests.length,
@@ -460,12 +476,20 @@ export default function AdminLeave() {
         </select>
       </div>
 
+      <input
+        className="admin-input"
+        placeholder="Search leave requests..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
+      />
+
       {loading ? <div className="admin-loading">Loading...</div> : (
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
-              {filtered.map(r => (
+              {paginated.map(r => (
                 <tr key={r.id}>
                   <td>{r.employee ? <span className="admin-inline-avatar">{r.employee.avatar_url ? <img src={r.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{r.employee.first_name[0]}{r.employee.last_name[0]}</span>}{r.employee.first_name} {r.employee.last_name}</span> : '—'}</td>
                   <td>{r.leave_type?.name || '—'}</td>
@@ -503,6 +527,13 @@ export default function AdminLeave() {
             </tbody>
           </table>
           {filtered.length === 0 && <div className="admin-empty">No leave requests found</div>}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
+              <button className="admin-btn-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+              <span>Page {page} of {totalPages}</span>
+              <button className="admin-btn-sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+            </div>
+          )}
         </div>
       )}
     </div>

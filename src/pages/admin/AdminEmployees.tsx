@@ -5,6 +5,8 @@ import { useToast } from '../../context/ToastContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
 
+const PAGE_SIZE = 30
+
 interface Employee {
   id: string
   employee_number: string
@@ -62,6 +64,7 @@ export default function AdminEmployees() {
   const [filterDept, setFilterDept] = useState('')
   const [filterActive, setFilterActive] = useState('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -298,6 +301,11 @@ export default function AdminEmployees() {
     })
   }, [employees, filterDept, filterActive, search])
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  useEffect(() => { setPage(1) }, [search, filterDept, filterActive])
+
   return (
     <div className="admin-section">
       <div className="admin-page-header">
@@ -323,7 +331,7 @@ export default function AdminEmployees() {
           <table className="admin-table">
             <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Department</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
-              {filtered.map(emp => (
+              {paginated.map(emp => (
                 <>
                   <tr key={emp.id} className={expandedId === emp.id ? 'admin-row-active' : ''}>
                     <td className="admin-td-mono">{emp.employee_number}</td>
@@ -598,6 +606,13 @@ export default function AdminEmployees() {
             </tbody>
           </table>
           {filtered.length === 0 && <div className="admin-empty">No employees found</div>}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+              <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+              <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -101,6 +101,8 @@ function timeToMinutes(t: string): number {
   return h * 60 + m
 }
 
+const BOOKINGS_PAGE_SIZE = 30
+
 const DEFAULT_SETTINGS: SpaceSettings = {
   max_advance_days: 30,
   auto_cancel_no_checkin: false,
@@ -157,6 +159,8 @@ export default function AdminSpaceManagement() {
   const [bookingForm, setBookingForm] = useState({ date: '', start_time: '09:00', end_time: '10:00', title: '', status: 'confirmed' })
   const [bookingError, setBookingError] = useState<string | null>(null)
   const [savingBooking, setSavingBooking] = useState(false)
+  const [bookingSearch, setBookingSearch] = useState('')
+  const [bookingPage, setBookingPage] = useState(1)
 
   const loadAll = useCallback(async () => {
     if (!companyId) return
@@ -339,6 +343,8 @@ export default function AdminSpaceManagement() {
     setBookingsLoading(false)
   }, [companyId, bookingFilter])
 
+  useEffect(() => { setBookingPage(1) }, [bookingSearch, bookingFilter])
+
   const loadAnalytics = useCallback(async () => {
     if (!companyId) return
     setAnalyticsLoading(true)
@@ -485,6 +491,22 @@ export default function AdminSpaceManagement() {
     const f = floors.find(fl => fl.id === id)
     return f ? `${f.name} (${getLocName(f.location_id)})` : ''
   }
+
+  const filteredBookings = bookingSearch.trim()
+    ? allBookings.filter(b => {
+        const q = bookingSearch.toLowerCase()
+        return (
+          (b.employee_name || '').toLowerCase().includes(q) ||
+          (b.space_name || '').toLowerCase().includes(q) ||
+          (b.booking_date || '').toLowerCase().includes(q) ||
+          (b.title || '').toLowerCase().includes(q) ||
+          (b.status || '').toLowerCase().includes(q) ||
+          (b.space_type || '').toLowerCase().includes(q)
+        )
+      })
+    : allBookings
+  const bookingTotalPages = Math.max(1, Math.ceil(filteredBookings.length / BOOKINGS_PAGE_SIZE))
+  const paginatedBookings = filteredBookings.slice((bookingPage - 1) * BOOKINGS_PAGE_SIZE, bookingPage * BOOKINGS_PAGE_SIZE)
 
   if (loading) return <div className="admin-page"><p>Loading...</p></div>
 
@@ -743,6 +765,8 @@ export default function AdminSpaceManagement() {
             </div>
           )}
 
+          <input className="admin-input" placeholder="Search bookings..." value={bookingSearch} onChange={e => setBookingSearch(e.target.value)} style={{ maxWidth: 320, marginBottom: 12 }} />
+
           {bookingsLoading ? (
             <div className="admin-loading">Loading...</div>
           ) : (
@@ -760,7 +784,7 @@ export default function AdminSpaceManagement() {
                 </tr>
               </thead>
               <tbody>
-                {allBookings.map(b => (
+                {paginatedBookings.map(b => (
                   <tr key={b.id}>
                     <td>{b.space_name}</td>
                     <td><span className={`admin-badge admin-badge-${b.space_type}`}>{b.space_type === 'desk' ? 'Desk' : 'Room'}</span></td>
@@ -777,9 +801,16 @@ export default function AdminSpaceManagement() {
                     </td>
                   </tr>
                 ))}
-                {allBookings.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No bookings found</td></tr>}
+                {paginatedBookings.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No bookings found</td></tr>}
               </tbody>
             </table>
+          )}
+          {bookingTotalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <button className="admin-action-btn" disabled={bookingPage <= 1} onClick={() => setBookingPage(p => p - 1)}>Prev</button>
+              <span style={{ fontSize: 13 }}>Page {bookingPage} of {bookingTotalPages}</span>
+              <button className="admin-action-btn" disabled={bookingPage >= bookingTotalPages} onClick={() => setBookingPage(p => p + 1)}>Next</button>
+            </div>
           )}
         </div>
       )}

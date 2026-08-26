@@ -9,6 +9,8 @@ import * as XLSX from 'xlsx'
 import CompanySetupWizard from './CompanySetupWizard'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
 
+const PAGE_SIZE = 30
+
 interface OffboardRecord {
   id: number
   company_id: string
@@ -119,6 +121,10 @@ export default function AdminOnboarding() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow'>('dashboard')
   const [filterStatus, setFilterStatus] = useState('')
+  const [onbPage, setOnbPage] = useState(1)
+  const [offPage, setOffPage] = useState(1)
+  const [frozenPage, setFrozenPage] = useState(1)
+  const [complPage, setComplPage] = useState(1)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [workflowStep, setWorkflowStep] = useState(0)
   const [stepChecks, setStepChecks] = useState<Record<string, boolean>>({})
@@ -273,6 +279,13 @@ export default function AdminOnboarding() {
   }
 
   useEffect(() => { if (selectedCompanyId) { load(); loadOffboarding() } }, [selectedCompanyId])
+
+  useEffect(() => {
+    setOnbPage(1)
+    setOffPage(1)
+    setFrozenPage(1)
+    setComplPage(1)
+  }, [filterStatus, selectedCompanyId])
 
   async function load() {
     setLoading(true)
@@ -733,6 +746,20 @@ export default function AdminOnboarding() {
     return records.filter(r => r.status === filterStatus)
   }, [records, filterStatus])
 
+  const onbTotalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginatedFiltered = filtered.slice((onbPage - 1) * PAGE_SIZE, onbPage * PAGE_SIZE)
+
+  const activeOffboardRecords = useMemo(() => offboardRecords.filter(r => !r.is_complete), [offboardRecords])
+  const offTotalPages = Math.max(1, Math.ceil(activeOffboardRecords.length / PAGE_SIZE))
+  const paginatedActiveOffboard = activeOffboardRecords.slice((offPage - 1) * PAGE_SIZE, offPage * PAGE_SIZE)
+
+  const frozenTotalPages = Math.max(1, Math.ceil(frozenEmployees.length / PAGE_SIZE))
+  const paginatedFrozen = frozenEmployees.slice((frozenPage - 1) * PAGE_SIZE, frozenPage * PAGE_SIZE)
+
+  const completedOffboardRecords = useMemo(() => offboardRecords.filter(r => r.is_complete), [offboardRecords])
+  const complTotalPages = Math.max(1, Math.ceil(completedOffboardRecords.length / PAGE_SIZE))
+  const paginatedCompletedOffboard = completedOffboardRecords.slice((complPage - 1) * PAGE_SIZE, complPage * PAGE_SIZE)
+
   const selectedRecord = records.find(r => r.id === selectedId)
 
   return (
@@ -1085,7 +1112,7 @@ export default function AdminOnboarding() {
               <table className="admin-table">
                 <thead><tr><th>Name</th><th>Role</th><th>Start Date</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.map(r => {
+                  {paginatedFiltered.map(r => {
                     const skipped = r.skipped_steps || {}
                     const completedSteps = [true, r.equipment_order === 'Y', r.first_day, r.first_day, r.first_day, r.first_week, r.elearning, r.is_complete].filter(Boolean).length
                     const skippedCount = Object.values(skipped).filter(Boolean).length
@@ -1112,6 +1139,13 @@ export default function AdminOnboarding() {
                 </tbody>
               </table>
               {filtered.length === 0 && <div className="admin-empty">No onboarding records</div>}
+              {onbTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                  <button className="admin-action-btn" disabled={onbPage <= 1} onClick={() => setOnbPage(p => p - 1)}>Prev</button>
+                  <span style={{ fontSize: 13 }}>Page {onbPage} of {onbTotalPages}</span>
+                  <button className="admin-action-btn" disabled={onbPage >= onbTotalPages} onClick={() => setOnbPage(p => p + 1)}>Next</button>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -1227,14 +1261,14 @@ export default function AdminOnboarding() {
           </div>
 
           {/* Active Offboarding List */}
-          {offboardRecords.filter(r => !r.is_complete).length > 0 && (
+          {activeOffboardRecords.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Active Offboarding</h3>
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead><tr><th>Employee</th><th>Role</th><th>End Date</th><th>Reason</th><th>Progress</th><th>Actions</th></tr></thead>
                   <tbody>
-                    {offboardRecords.filter(r => !r.is_complete).map(r => {
+                    {paginatedActiveOffboard.map(r => {
                       const doneCount = OFFBOARD_STEPS.filter(s => r.workflow_steps?.[s.key] || r.skipped_steps?.[s.key]).length
                       return (
                         <tr key={r.id}>
@@ -1256,6 +1290,13 @@ export default function AdminOnboarding() {
                   </tbody>
                 </table>
               </div>
+              {offTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                  <button className="admin-action-btn" disabled={offPage <= 1} onClick={() => setOffPage(p => p - 1)}>Prev</button>
+                  <span style={{ fontSize: 13 }}>Page {offPage} of {offTotalPages}</span>
+                  <button className="admin-action-btn" disabled={offPage >= offTotalPages} onClick={() => setOffPage(p => p + 1)}>Next</button>
+                </div>
+              )}
             </div>
           )}
 
@@ -1267,7 +1308,7 @@ export default function AdminOnboarding() {
                 <table className="admin-table">
                   <thead><tr><th>Employee</th><th>Frozen Date</th><th>Deletion Date</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody>
-                    {frozenEmployees.map(f => {
+                    {paginatedFrozen.map(f => {
                       const now = new Date()
                       const delDate = new Date(f.deletion_date)
                       const daysLeft = Math.ceil((delDate.getTime() - now.getTime()) / 86400000)
@@ -1296,17 +1337,24 @@ export default function AdminOnboarding() {
             ) : (
               <div className="admin-empty">No frozen employees</div>
             )}
+            {frozenTotalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                <button className="admin-action-btn" disabled={frozenPage <= 1} onClick={() => setFrozenPage(p => p - 1)}>Prev</button>
+                <span style={{ fontSize: 13 }}>Page {frozenPage} of {frozenTotalPages}</span>
+                <button className="admin-action-btn" disabled={frozenPage >= frozenTotalPages} onClick={() => setFrozenPage(p => p + 1)}>Next</button>
+              </div>
+            )}
           </div>
 
           {/* Completed Offboarding */}
-          {offboardRecords.filter(r => r.is_complete).length > 0 && (
+          {completedOffboardRecords.length > 0 && (
             <div style={{ marginTop: 20 }}>
               <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px', color: '#888' }}>Completed Offboarding</h3>
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead><tr><th>Employee</th><th>Role</th><th>End Date</th><th>Reason</th><th>Frozen</th></tr></thead>
                   <tbody>
-                    {offboardRecords.filter(r => r.is_complete).map(r => (
+                    {paginatedCompletedOffboard.map(r => (
                       <tr key={r.id} style={{ opacity: 0.7 }}>
                         <td><strong>{r.employee_name}</strong></td>
                         <td>{r.job_title || '—'}</td>
@@ -1318,6 +1366,13 @@ export default function AdminOnboarding() {
                   </tbody>
                 </table>
               </div>
+              {complTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                  <button className="admin-action-btn" disabled={complPage <= 1} onClick={() => setComplPage(p => p - 1)}>Prev</button>
+                  <span style={{ fontSize: 13 }}>Page {complPage} of {complTotalPages}</span>
+                  <button className="admin-action-btn" disabled={complPage >= complTotalPages} onClick={() => setComplPage(p => p + 1)}>Next</button>
+                </div>
+              )}
             </div>
           )}
         </div>

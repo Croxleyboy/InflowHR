@@ -74,6 +74,8 @@ const statusColor: Record<string, string> = {
   Retired: '#616161', Sold: '#6a1b9a', Broken: '#c62828',
 }
 
+const PAGE_SIZE = 30
+
 export default function AdminAssetManagement() {
   const { selectedCompanyId: companyId } = useAdminCompany()
   const { isSuperAdmin } = useAuth()
@@ -99,6 +101,7 @@ export default function AdminAssetManagement() {
   const [swapAssetId, setSwapAssetId] = useState<string | null>(null)
   const [swapTo, setSwapTo] = useState('')
   const [saving, setSaving] = useState(false)
+  const [page, setPage] = useState(1)
 
   // Updates state
   const [assetUpdates, setAssetUpdates] = useState<Record<string, AssetUpdate[]>>({})
@@ -483,6 +486,13 @@ export default function AdminAssetManagement() {
     return true
   })
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, filterType, filterStatus, filterOwner])
+
   const statusCounts = ASSET_STATUSES.reduce((acc, s) => {
     acc[s] = assets.filter(a => a.status === s).length
     return acc
@@ -671,7 +681,7 @@ export default function AdminAssetManagement() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(asset => {
+            {paginated.map(asset => {
               const isExpanded = expandedId === asset.id
               return (
                 <>
@@ -919,6 +929,14 @@ export default function AdminAssetManagement() {
           </tbody>
         </table>
       </div>
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+          <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+          <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+          <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+        </div>
+      )}
 
       {swapAssetId && (
         <div className="my-profile-modal-overlay" onClick={() => setSwapAssetId(null)}>

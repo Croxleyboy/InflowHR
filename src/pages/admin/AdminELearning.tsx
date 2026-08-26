@@ -53,6 +53,8 @@ const INDUSTRY_LABELS: Record<string, string> = {
   accountancy: 'Accountancy',
 }
 
+const PAGE_SIZE = 30
+
 const CATEGORIES = ['onboarding', 'compliance', 'policies', 'role', 'development', 'wellbeing']
 const TYPES: CourseType[] = ['video', 'article', 'quiz', 'policy']
 const INDUSTRIES = ['', 'legal', 'education', 'accountancy']
@@ -204,6 +206,7 @@ function CompanyLibraryTab({ companyId }: { companyId: string }) {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterIndustry, setFilterIndustry] = useState('')
   const [deptDropdownOpen, setDeptDropdownOpen] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
 
   const fetchData = useCallback(async () => {
     if (!companyId) return
@@ -284,6 +287,11 @@ function CompanyLibraryTab({ companyId }: { companyId: string }) {
     return true
   }), [courses, search, filterCategory, filterIndustry])
 
+  useEffect(() => { setPage(1) }, [search, filterCategory, filterIndustry])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   const enabledCount = filtered.filter(c => visMap[c.id]?.is_enabled).length
   const categories = [...new Set(courses.map(c => c.category))]
   const industries = [...new Set(courses.filter(c => c.industry).map(c => c.industry!))]
@@ -326,7 +334,7 @@ function CompanyLibraryTab({ companyId }: { companyId: string }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(course => {
+            {paginated.map(course => {
               const vis = visMap[course.id]
               const enabled = vis?.is_enabled ?? false
               const targetDepts = vis?.target_departments || []
@@ -384,6 +392,13 @@ function CompanyLibraryTab({ companyId }: { companyId: string }) {
         </table>
         {filtered.length === 0 && <div className="admin-empty">No courses match your filters</div>}
       </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+          <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+          <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+          <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+        </div>
+      )}
     </>
   )
 }
@@ -402,6 +417,7 @@ function CompanyCourseTab({ companyId, showError, showSuccess }: { companyId: st
   const [addForm, setAddForm] = useState<DbCourse>({ ...EMPTY_COURSE })
   const [addDepts, setAddDepts] = useState<string[]>([])
   const [editDepts, setEditDepts] = useState<string[]>([])
+  const [page, setPage] = useState(1)
 
   const loadAll = useCallback(async () => {
     if (!companyId) return
@@ -422,6 +438,11 @@ function CompanyCourseTab({ companyId, showError, showSuccess }: { companyId: st
     if (filterCategory && c.category !== filterCategory) return false
     return true
   }), [courses, search, filterCategory])
+
+  useEffect(() => { setPage(1) }, [search, filterCategory])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function generateId(title: string): string {
     return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'new-course'
@@ -565,7 +586,7 @@ function CompanyCourseTab({ companyId, showError, showSuccess }: { companyId: st
             </tr>
           </thead>
           <tbody>
-            {filtered.map(course => (
+            {paginated.map(course => (
               <tr key={course.id} className={!course.is_active ? 'admin-row-inactive' : ''}>
                 <td>
                   <span className={`admin-badge ${course.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
@@ -596,6 +617,13 @@ function CompanyCourseTab({ companyId, showError, showSuccess }: { companyId: st
         </table>
         {filtered.length === 0 && <div className="admin-empty">No company courses yet. Create one above.</div>}
       </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+          <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+          <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+          <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+        </div>
+      )}
     </>
   )
 }
@@ -615,6 +643,7 @@ function CoreCourseManagementTab({ showError, showSuccess }: { showError: (m: st
   const [addForm, setAddForm] = useState<DbCourse>({ ...EMPTY_COURSE })
   const [addCompanyIds, setAddCompanyIds] = useState<Set<string>>(new Set())
   const [visDropdownOpen, setVisDropdownOpen] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -643,6 +672,11 @@ function CoreCourseManagementTab({ showError, showSuccess }: { showError: (m: st
     if (filterCategory && c.category !== filterCategory) return false
     return true
   }), [courses, search, filterCategory])
+
+  useEffect(() => { setPage(1) }, [search, filterCategory])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function generateId(title: string): string {
     return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').substring(0, 40) || 'new-course'
@@ -781,7 +815,7 @@ function CoreCourseManagementTab({ showError, showSuccess }: { showError: (m: st
             </tr>
           </thead>
           <tbody>
-            {filtered.map(course => {
+            {paginated.map(course => {
               const visCount = visibilityMap[course.id]?.size || 0
               return (
                 <tr key={course.id} className={!course.is_active ? 'admin-row-inactive' : ''}>
@@ -836,6 +870,13 @@ function CoreCourseManagementTab({ showError, showSuccess }: { showError: (m: st
         </table>
         {filtered.length === 0 && <div className="admin-empty">No courses match your filters</div>}
       </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+          <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+          <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+          <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+        </div>
+      )}
     </>
   )
 }
@@ -850,6 +891,7 @@ function SuperAdminVisibilityTab() {
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [filterCompany, setFilterCompany] = useState('')
+  const [page, setPage] = useState(1)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -898,6 +940,11 @@ function SuperAdminVisibilityTab() {
     return true
   }), [courses, search, filterCategory, filterCompany, visibilityMap])
 
+  useEffect(() => { setPage(1) }, [search, filterCategory, filterCompany])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
   const categories = [...new Set(courses.map(c => c.category))]
 
   if (loading) return <div className="admin-loading">Loading...</div>
@@ -929,7 +976,7 @@ function SuperAdminVisibilityTab() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(course => (
+            {paginated.map(course => (
               <tr key={course.id}>
                 <td className="admin-el-title-cell">
                   <div>
@@ -957,6 +1004,13 @@ function SuperAdminVisibilityTab() {
         </table>
         {filtered.length === 0 && <div className="admin-empty">No courses match your filters</div>}
       </div>
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+          <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+          <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+          <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+        </div>
+      )}
     </>
   )
 }

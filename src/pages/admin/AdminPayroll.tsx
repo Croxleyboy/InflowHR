@@ -5,6 +5,8 @@ import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/formatters'
 
+const PAGE_SIZE = 30
+
 interface Payslip {
   id: number
   reference_number: string
@@ -117,6 +119,8 @@ export default function AdminPayroll() {
   const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics' | 'xero_pay'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -441,12 +445,30 @@ export default function AdminPayroll() {
   }, [payslips, activeSource])
 
   const filtered = useMemo(() => {
-    return sourcePayslips.filter(p => {
+    const base = sourcePayslips.filter(p => {
       if (filterStatus && p.status !== filterStatus) return false
       if (filterEmployee && p.employee && `${p.employee.first_name} ${p.employee.last_name}` !== filterEmployee) return false
       return true
     })
-  }, [filterStatus, filterEmployee, sourcePayslips])
+    return search.trim()
+      ? base.filter(p => {
+          const q = search.toLowerCase()
+          const empName = p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : ''
+          return (
+            empName.toLowerCase().includes(q) ||
+            (p.status || '').toLowerCase().includes(q) ||
+            (p.reference_number || '').toLowerCase().includes(q) ||
+            (p.payroll_id || '').toLowerCase().includes(q) ||
+            (p.tax_code || '').toLowerCase().includes(q)
+          )
+        })
+      : base
+  }, [filterStatus, filterEmployee, sourcePayslips, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  useEffect(() => { setPage(1) }, [search])
 
   const empNames = useMemo(() => {
     const names = new Set<string>()
@@ -1065,12 +1087,20 @@ export default function AdminPayroll() {
             </div>
           )}
 
+          <input
+            className="admin-input"
+            placeholder="Search payroll..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ maxWidth: 320, marginBottom: 12 }}
+          />
+
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.map(p => (
+                  {paginated.map(p => (
                     <>
                       <tr key={p.id} className={expandedId === p.id ? 'admin-row-active' : ''}>
                         <td className="admin-td-mono">{p.reference_number}</td>
@@ -1170,6 +1200,13 @@ export default function AdminPayroll() {
                 </tbody>
               </table>
               {filtered.length === 0 && <div className="admin-empty">No payslips found</div>}
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                  <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+                  <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+                  <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+                </div>
+              )}
             </div>
           )}
         </>

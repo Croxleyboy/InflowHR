@@ -49,6 +49,8 @@ const STATUS_COLORS: Record<TicketStatus, string> = { open: '#ff9800', 'in-progr
 
 const EMPTY_NEW_TICKET = { title: '', description: '', category: 'hr-query' as TicketCategory, priority: 'medium' as Priority, assignedTo: 'HR Team' }
 
+const PAGE_SIZE = 30
+
 export default function AdminTickets() {
   const { employeeName, isSuperAdmin } = useAuth()
   const { selectedCompanyId, companies } = useAdminCompany()
@@ -64,6 +66,8 @@ export default function AdminTickets() {
   const [editForm, setEditForm] = useState<Record<string, string>>({})
   const [showRaiseForm, setShowRaiseForm] = useState(false)
   const [newTicket, setNewTicket] = useState(EMPTY_NEW_TICKET)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
 
   async function load() {
     if (!isSuperAdmin && !selectedCompanyId) { setLoading(false); return }
@@ -156,9 +160,19 @@ export default function AdminTickets() {
       if (filterStatus && t.status !== filterStatus) return false
       if (filterCategory && t.category !== filterCategory) return false
       if (filterPriority && t.priority !== filterPriority) return false
+      if (search) {
+        const s = search.toLowerCase()
+        const haystack = [t.title, t.description, t.ref, t.submitted_by, t.assigned_to, t.status, t.category, t.priority].join(' ').toLowerCase()
+        if (!haystack.includes(s)) return false
+      }
       return true
     })
-  }, [tickets, filterStatus, filterCategory, filterPriority])
+  }, [tickets, filterStatus, filterCategory, filterPriority, search])
+
+  useEffect(() => { setPage(1) }, [filterStatus, filterCategory, filterPriority, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const stats = useMemo(() => ({
     total: tickets.length,
@@ -208,6 +222,14 @@ export default function AdminTickets() {
           {showRaiseForm ? (isEn ? 'Cancel' : 'Abbrechen') : (isEn ? '+ Raise Ticket' : '+ Ticket erstellen')}
         </button>
       </div>
+
+      <input
+        className="admin-input"
+        placeholder={isEn ? 'Search tickets...' : 'Tickets suchen...'}
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
+      />
 
       {showRaiseForm && (
         <div className="admin-add-form">
@@ -263,7 +285,7 @@ export default function AdminTickets() {
           <table className="admin-table">
             <thead><tr>{isSuperAdmin && <th>{isEn ? 'Company' : 'Firma'}</th>}<th>Ref</th><th>{isEn ? 'Title' : 'Titel'}</th><th className="admin-ticket-hide-mobile">{isEn ? 'Category' : 'Kategorie'}</th><th>{isEn ? 'Priority' : 'Priorität'}</th><th>Status</th><th className="admin-ticket-hide-mobile">{isEn ? 'Assigned' : 'Zugewiesen'}</th><th>{isEn ? 'Actions' : 'Aktionen'}</th></tr></thead>
             <tbody>
-              {filtered.map(t => (
+              {paginated.map(t => (
                 <Fragment key={t.id}>
                   <tr className={expandedId === t.id ? 'admin-row-active' : ''}>
                     {isSuperAdmin && <td style={{ fontSize: 12, fontWeight: 600 }}>{companies?.find(c => c.id === t.company_id)?.name || t.company_id.substring(0, 8)}</td>}
@@ -336,6 +358,13 @@ export default function AdminTickets() {
             </tbody>
           </table>
           {filtered.length === 0 && <div className="admin-empty">{isEn ? 'No tickets found' : 'Keine Tickets gefunden'}</div>}
+          {filtered.length > PAGE_SIZE && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
+              <button className="admin-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+              <span>Page {page} of {totalPages}</span>
+              <button className="admin-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+            </div>
+          )}
         </div>
       )}
     </div>

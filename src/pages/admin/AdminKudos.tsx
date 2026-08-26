@@ -23,6 +23,7 @@ interface Employee {
   is_active: boolean
 }
 
+const PAGE_SIZE = 30
 const CATEGORIES = ['teamwork', 'innovation', 'leadership', 'customer_focus', 'going_above']
 const CATEGORY_COLOURS: Record<string, string> = {
   teamwork: '#2563eb',
@@ -43,6 +44,8 @@ export default function AdminKudos() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [tab, setTab] = useState<'management' | 'analytics'>('management')
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
 
   const load = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -88,9 +91,26 @@ export default function AdminKudos() {
   }
 
   const filtered = useMemo(() => {
-    if (!filterCat) return kudos
-    return kudos.filter(k => k.category === filterCat)
-  }, [kudos, filterCat])
+    let result = kudos
+    if (filterCat) result = result.filter(k => k.category === filterCat)
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      result = result.filter(k => {
+        const from = k.from_emp ? `${k.from_emp.first_name} ${k.from_emp.last_name}` : ''
+        const to = k.to_emp ? `${k.to_emp.first_name} ${k.to_emp.last_name}` : ''
+        return from.toLowerCase().includes(q)
+          || to.toLowerCase().includes(q)
+          || k.message.toLowerCase().includes(q)
+          || k.category.toLowerCase().includes(q)
+      })
+    }
+    return result
+  }, [kudos, filterCat, search])
+
+  useEffect(() => { setPage(1) }, [filterCat, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const stats = useMemo(() => {
     const byCat: Record<string, number> = {}
@@ -128,12 +148,20 @@ export default function AdminKudos() {
             </select>
           </div>
 
+          <input
+            className="admin-input"
+            placeholder="Search kudos..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
+          />
+
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead><tr><th>From</th><th>To</th><th>Category</th><th>Message</th><th>Date</th><th>Public</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filtered.map(k => (
+                  {paginated.map(k => (
                     <tr key={k.id}>
                       <td>{k.from_emp ? <span className="admin-inline-avatar">{k.from_emp.avatar_url ? <img src={k.from_emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{k.from_emp.first_name[0]}{k.from_emp.last_name[0]}</span>}{k.from_emp.first_name} {k.from_emp.last_name}</span> : '—'}</td>
                       <td>{k.to_emp ? <span className="admin-inline-avatar">{k.to_emp.avatar_url ? <img src={k.to_emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{k.to_emp.first_name[0]}{k.to_emp.last_name[0]}</span>}{k.to_emp.first_name} {k.to_emp.last_name}</span> : '—'}</td>
@@ -169,6 +197,14 @@ export default function AdminKudos() {
                 </tbody>
               </table>
               {filtered.length === 0 && <div className="admin-empty">No kudos found</div>}
+            </div>
+          )}
+
+          {!loading && filtered.length > PAGE_SIZE && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
+              <button className="admin-btn-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+              <span>Page {page} of {totalPages}</span>
+              <button className="admin-btn-sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
             </div>
           )}
         </>

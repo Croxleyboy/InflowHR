@@ -699,11 +699,14 @@ function GoalsReport({ employees, goals, comments, nameMap, companyId, onRefresh
   companyId: string | null
   onRefresh: () => void
 }) {
+  const PAGE_SIZE = 30
   const { showError, showSuccess } = useToast()
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null)
   const [editingGoal, setEditingGoal] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<Partial<AdminGoal>>({})
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
 
   const employeesWithGoals = useMemo(() => {
     const empIds = [...new Set(goals.map(g => g.employee_id))]
@@ -722,6 +725,26 @@ function GoalsReport({ employees, goals, comments, nameMap, companyId, onRefresh
       }
     }).sort((a, b) => a.name.localeCompare(b.name))
   }, [employees, goals, nameMap])
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return employeesWithGoals
+    const q = search.toLowerCase()
+    return employeesWithGoals.filter(emp =>
+      emp.name.toLowerCase().includes(q) ||
+      emp.job_title?.toLowerCase().includes(q) ||
+      emp.department?.toLowerCase().includes(q) ||
+      emp.goals.some(g =>
+        g.title.toLowerCase().includes(q) ||
+        g.status.toLowerCase().includes(q) ||
+        (g.description && g.description.toLowerCase().includes(q))
+      )
+    )
+  }, [employeesWithGoals, search])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  useEffect(() => { setPage(1) }, [search])
 
   function startEdit(goal: AdminGoal) {
     setEditingGoal(goal.id)
@@ -761,11 +784,19 @@ function GoalsReport({ employees, goals, comments, nameMap, companyId, onRefresh
         All performance goals across employees — both manager-set and self-set. Click an employee to view and edit their goals.
       </p>
 
-      {employeesWithGoals.length === 0 ? (
+      <input
+        className="admin-input"
+        placeholder="Search goals..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
+      />
+
+      {filtered.length === 0 ? (
         <div className="admin-empty">No goals found</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {employeesWithGoals.map(emp => {
+          {paginated.map(emp => {
             const isExpanded = expandedEmp === emp.id
             return (
               <div key={emp.id} style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, overflow: 'hidden' }}>
@@ -913,6 +944,13 @@ function GoalsReport({ employees, goals, comments, nameMap, companyId, onRefresh
               </div>
             )
           })}
+        </div>
+      )}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
+          <button className="admin-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+          <span>Page {page} of {totalPages}</span>
+          <button className="admin-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
         </div>
       )}
     </div>

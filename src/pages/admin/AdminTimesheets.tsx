@@ -43,6 +43,8 @@ interface ReportEmployee {
   is_active: boolean
 }
 
+const PAGE_SIZE = 30
+
 const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected']
 const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTH_NAMES_CAL = MONTH_NAMES_FULL
@@ -128,6 +130,7 @@ export default function AdminTimesheets() {
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [search, setSearch] = useState('')
+  const [entriesPage, setEntriesPage] = useState(1)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
 
@@ -328,7 +331,7 @@ export default function AdminTimesheets() {
     return Array.from(names).sort()
   }, [timesheets])
 
-  const filtered = useMemo(() => {
+  const filteredEntries = useMemo(() => {
     return timesheets.filter(t => {
       if (filterStatus && t.status !== filterStatus) return false
       if (filterEmployee && t.employee && `${t.employee.first_name} ${t.employee.last_name}` !== filterEmployee) return false
@@ -341,7 +344,12 @@ export default function AdminTimesheets() {
     })
   }, [timesheets, filterStatus, filterEmployee, search])
 
-  const totalHours = filtered.reduce((s, t) => s + Number(t.hours), 0)
+  useEffect(() => { setEntriesPage(1) }, [search, filterStatus, filterEmployee])
+
+  const entriesTotalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE))
+  const paginatedEntries = filteredEntries.slice((entriesPage - 1) * PAGE_SIZE, entriesPage * PAGE_SIZE)
+
+  const totalHours = filteredEntries.reduce((s, t) => s + Number(t.hours), 0)
 
   return (
     <div className="admin-section">
@@ -421,7 +429,7 @@ export default function AdminTimesheets() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(ts => (
+                  {paginatedEntries.map(ts => (
                     <tr key={ts.id}>
                       <td>{ts.employee ? <span className="admin-inline-avatar">{ts.employee.avatar_url ? <img src={ts.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{ts.employee.first_name[0]}{ts.employee.last_name[0]}</span>}{ts.employee.first_name} {ts.employee.last_name}</span> : '—'}</td>
                       <td>{editingId === ts.id
@@ -477,7 +485,14 @@ export default function AdminTimesheets() {
                   ))}
                 </tbody>
               </table>
-              {filtered.length === 0 && <div className="admin-empty">No timesheets found</div>}
+              {filteredEntries.length === 0 && <div className="admin-empty">No timesheets found</div>}
+              {entriesTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                  <button className="admin-action-btn" disabled={entriesPage <= 1} onClick={() => setEntriesPage(p => p - 1)}>Prev</button>
+                  <span style={{ fontSize: 13 }}>Page {entriesPage} of {entriesTotalPages}</span>
+                  <button className="admin-action-btn" disabled={entriesPage >= entriesTotalPages} onClick={() => setEntriesPage(p => p + 1)}>Next</button>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -597,12 +612,15 @@ function NotSubmittedReport({ companyId, period }: { companyId: string; period: 
   const [allEmployees, setAllEmployees] = useState<ReportEmployee[]>([])
   const [submittedIds, setSubmittedIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
+  const [reportsPage, setReportsPage] = useState(1)
 
   const range = period === 'weekly' ? getWeekRange(offset) : getMonthRange(offset)
 
   useEffect(() => {
     loadReport()
   }, [companyId, offset, period])
+
+  useEffect(() => { setReportsPage(1) }, [companyId, offset, period])
 
   async function loadReport() {
     setLoading(true)
@@ -618,6 +636,8 @@ function NotSubmittedReport({ companyId, period }: { companyId: string; period: 
   }
 
   const notSubmitted = allEmployees.filter(e => !submittedIds.has(e.id))
+  const notSubmittedTotalPages = Math.max(1, Math.ceil(notSubmitted.length / PAGE_SIZE))
+  const paginatedNotSubmitted = notSubmitted.slice((reportsPage - 1) * PAGE_SIZE, reportsPage * PAGE_SIZE)
 
   return (
     <div>
@@ -647,7 +667,7 @@ function NotSubmittedReport({ companyId, period }: { companyId: string; period: 
               </tr>
             </thead>
             <tbody>
-              {notSubmitted.map(emp => {
+              {paginatedNotSubmitted.map(emp => {
                 const weeklyHrs = emp.weekly_hours || 37.5
                 const displayHrs = period === 'monthly'
                   ? (weeklyHrs / 5) * getWorkingDaysInRange(range.start, range.end)
@@ -667,6 +687,13 @@ function NotSubmittedReport({ companyId, period }: { companyId: string; period: 
           <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 8 }}>
             {notSubmitted.length} of {allEmployees.length} employees have not submitted
           </p>
+          {notSubmittedTotalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <button className="admin-action-btn" disabled={reportsPage <= 1} onClick={() => setReportsPage(p => p - 1)}>Prev</button>
+              <span style={{ fontSize: 13 }}>Page {reportsPage} of {notSubmittedTotalPages}</span>
+              <button className="admin-action-btn" disabled={reportsPage >= notSubmittedTotalPages} onClick={() => setReportsPage(p => p + 1)}>Next</button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -679,12 +706,15 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
   const [offset, setOffset] = useState(0)
   const [data, setData] = useState<{ emp: ReportEmployee; submitted: number; required: number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [reportsPage, setReportsPage] = useState(1)
 
   const range = period === 'weekly' ? getWeekRange(offset) : getMonthRange(offset)
 
   useEffect(() => {
     loadReport()
   }, [companyId, offset, period])
+
+  useEffect(() => { setReportsPage(1) }, [companyId, offset, period])
 
   async function loadReport() {
     setLoading(true)
@@ -709,6 +739,9 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
     setData(rows)
     setLoading(false)
   }
+
+  const dataTotalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE))
+  const paginatedData = data.slice((reportsPage - 1) * PAGE_SIZE, reportsPage * PAGE_SIZE)
 
   return (
     <div>
@@ -740,7 +773,7 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
               </tr>
             </thead>
             <tbody>
-              {data.map(({ emp, submitted, required }) => (
+              {paginatedData.map(({ emp, submitted, required }) => (
                 <tr key={emp.id}>
                   <td><strong>{emp.first_name} {emp.last_name}</strong></td>
                   <td>{emp.department || '—'}</td>
@@ -753,6 +786,13 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
             </tbody>
           </table>
           {data.length === 0 && <div className="admin-empty">All employees have met their contracted hours</div>}
+          {dataTotalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+              <button className="admin-action-btn" disabled={reportsPage <= 1} onClick={() => setReportsPage(p => p - 1)}>Prev</button>
+              <span style={{ fontSize: 13 }}>Page {reportsPage} of {dataTotalPages}</span>
+              <button className="admin-action-btn" disabled={reportsPage >= dataTotalPages} onClick={() => setReportsPage(p => p + 1)}>Next</button>
+            </div>
+          )}
         </div>
       )}
     </div>

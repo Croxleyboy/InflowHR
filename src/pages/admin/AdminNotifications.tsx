@@ -33,6 +33,7 @@ interface Announcement {
 
 type Tab = 'workflow' | 'company'
 
+const PAGE_SIZE = 30
 const STATUS_OPTIONS = ['Pending', 'Complete']
 const TYPE_OPTIONS = ['Expense', 'Leave', 'Timesheet', 'Meeting', 'Birthday', 'Kudos']
 
@@ -68,6 +69,8 @@ export default function AdminNotifications() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loadingAnn, setLoadingAnn] = useState(true)
   const [annSearch, setAnnSearch] = useState('')
+  const [wfPage, setWfPage] = useState(1)
+  const [annPage, setAnnPage] = useState(1)
   const [editingAnnId, setEditingAnnId] = useState<number | null>(null)
   const [annEditForm, setAnnEditForm] = useState<Record<string, any>>({})
 
@@ -123,6 +126,11 @@ export default function AdminNotifications() {
     })
   }, [rows, filterStatus, filterType, filterEmployee])
 
+  const wfTotalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paginatedWf = filtered.slice((wfPage - 1) * PAGE_SIZE, wfPage * PAGE_SIZE)
+
+  useEffect(() => { setWfPage(1) }, [filterStatus, filterType, filterEmployee, rows])
+
   const stats = useMemo(() => ({
     total: rows.length,
     pending: rows.filter(r => r.status === 'Pending').length,
@@ -153,6 +161,11 @@ export default function AdminNotifications() {
     const q = annSearch.toLowerCase()
     return announcements.filter(a => `${a.title} ${a.body}`.toLowerCase().includes(q))
   }, [announcements, annSearch])
+
+  const annTotalPages = Math.ceil(filteredAnn.length / PAGE_SIZE)
+  const paginatedAnn = filteredAnn.slice((annPage - 1) * PAGE_SIZE, annPage * PAGE_SIZE)
+
+  useEffect(() => { setAnnPage(1) }, [annSearch, announcements])
 
   const annStats = useMemo(() => ({
     total: announcements.length,
@@ -269,7 +282,7 @@ export default function AdminNotifications() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(r => {
+                  {paginatedWf.map(r => {
                     const tb = typeBadge(r.record_type)
                     return (
                       <tr key={r.id}>
@@ -300,6 +313,13 @@ export default function AdminNotifications() {
                 </tbody>
               </table>
               {filtered.length === 0 && <div className="admin-empty">{t('admin_notif.no_results')}</div>}
+              {wfTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
+                  <button className="admin-btn" disabled={wfPage <= 1} onClick={() => setWfPage(p => p - 1)}>Prev</button>
+                  <span>Page {wfPage} of {wfTotalPages}</span>
+                  <button className="admin-btn" disabled={wfPage >= wfTotalPages} onClick={() => setWfPage(p => p + 1)}>Next</button>
+                </div>
+              )}
             </div>
           )}
         </>
@@ -323,7 +343,7 @@ export default function AdminNotifications() {
               <table className="admin-table">
                 <thead><tr><th>Title</th><th>Author</th><th>Published</th><th>Expires</th><th>Pinned</th><th>Actions</th></tr></thead>
                 <tbody>
-                  {filteredAnn.map(a => (
+                  {paginatedAnn.map(a => (
                     <tr key={a.id}>
                       <td>{editingAnnId === a.id ? (
                         <div>
@@ -359,6 +379,13 @@ export default function AdminNotifications() {
                 </tbody>
               </table>
               {filteredAnn.length === 0 && <div className="admin-empty">No company messages found</div>}
+              {annTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
+                  <button className="admin-btn" disabled={annPage <= 1} onClick={() => setAnnPage(p => p - 1)}>Prev</button>
+                  <span>Page {annPage} of {annTotalPages}</span>
+                  <button className="admin-btn" disabled={annPage >= annTotalPages} onClick={() => setAnnPage(p => p + 1)}>Next</button>
+                </div>
+              )}
             </div>
           )}
         </>
