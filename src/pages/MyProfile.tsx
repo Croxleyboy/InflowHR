@@ -676,13 +676,24 @@ function SkillsTab({ companyId, employeeId, categories, allSkills, mySkills, onR
   }
 
   async function requestValidation(es: EmployeeSkillItem) {
-    const { data: emp } = await supabase.from('employees').select('manager_id').eq('id', employeeId).single()
+    const { data: emp } = await supabase.from('employees').select('manager_id, first_name, last_name, email').eq('id', employeeId).single()
     if (!emp?.manager_id) { showError('No manager assigned'); return }
     await supabase.from('employee_skills').update({ status: 'pending_validation' }).eq('id', es.id)
     await supabase.from('skill_validations').insert({ company_id: companyId, employee_skill_id: es.id, requested_by: employeeId, assigned_to: emp.manager_id })
     const { data: mgr } = await supabase.from('employees').select('email').eq('id', emp.manager_id).single()
     if (mgr?.email) {
-      await supabase.from('workflow_tracker').insert({ company_id: companyId, type: 'Skill Validation', reference_id: es.id, assigned_to: mgr.email, status: 'Pending', description: `Skill validation requested for ${es.skill_name}` })
+      await supabase.from('workflow_tracker').insert({
+        company_id: companyId,
+        emp_display_name: `${emp.first_name} ${emp.last_name}`,
+        step: 1,
+        status: 'Pending',
+        record_type: 'Skill Validation',
+        action: `Skill validation requested for ${es.skill_name}`,
+        employee_email: emp.email,
+        assigned_to: mgr.email,
+        task_description: `${emp.first_name} ${emp.last_name} has requested manager validation for the skill "${es.skill_name}" (${PROFICIENCY_LABELS[es.proficiency]}).`,
+        extra_info: es.id,
+      })
       window.dispatchEvent(new Event('notifications-updated'))
     }
     showSuccess('Validation request sent')

@@ -388,6 +388,7 @@ function ValidationRequestsTab({ companyId, showSuccess, showError }: {
       supabase.from('employee_skills').update({ status: newStatus, validated_at: decision === 'approved' ? new Date().toISOString() : null }).eq('id', employeeSkillId),
     ])
     if (valRes.error || esRes.error) { showError('Failed to update'); return }
+    await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: decision === 'approved' ? 'Approved' : 'Declined' }).eq('record_type', 'Skill Validation').eq('extra_info', employeeSkillId).eq('company_id', companyId)
     showSuccess(`Skill ${decision}`)
     loadRequests()
   }

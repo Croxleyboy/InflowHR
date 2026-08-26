@@ -1543,6 +1543,8 @@ body {
 .notif-icon-performance { background: #7c3aed; }
 .notif-icon-confirm-booking { background: #2e7d32; }
 .notif-icon-confirm-shift { background: #388e3c; }
+.notif-icon-skill-validation { background: #6d28d9; }
+.notif-icon-skills-mapping { background: #0891b2; }
 
 .notif-section-heading {
   font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;

@@ -196,7 +196,7 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
   }
 
   async function requestValidation(es: EmployeeSkill) {
-    const { data: emp } = await supabase.from('employees').select('manager_id').eq('id', employeeId).single()
+    const { data: emp } = await supabase.from('employees').select('manager_id, first_name, last_name, email').eq('id', employeeId).single()
     if (!emp?.manager_id) { showError('No manager assigned — cannot request validation'); return }
     const { error: esErr } = await supabase.from('employee_skills').update({ status: 'pending_validation' }).eq('id', es.id)
     if (esErr) { showError(esErr.message); return }
@@ -212,11 +212,15 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
     if (mgr?.email) {
       await supabase.from('workflow_tracker').insert({
         company_id: companyId,
-        type: 'Skill Validation',
-        reference_id: es.id,
-        assigned_to: mgr.email,
+        emp_display_name: `${emp.first_name} ${emp.last_name}`,
+        step: 1,
         status: 'Pending',
-        description: `Skill validation requested for ${es.skill_name}`,
+        record_type: 'Skill Validation',
+        action: `Skill validation requested for ${es.skill_name}`,
+        employee_email: emp.email,
+        assigned_to: mgr.email,
+        task_description: `${emp.first_name} ${emp.last_name} has requested manager validation for the skill "${es.skill_name}".`,
+        extra_info: es.id,
       })
       window.dispatchEvent(new Event('notifications-updated'))
     }

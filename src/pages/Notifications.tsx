@@ -33,6 +33,7 @@ interface WorkflowItem {
   approval_id: number | null
   task_description: string | null
   approval_status: string | null
+  extra_info: string | null
   created_at: string
 }
 
@@ -211,6 +212,24 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'Skill Validation') {
+    return (
+      <div className="notif-icon notif-icon-skill-validation">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 12l2 2 4-4" /><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Skills Mapping') {
+    return (
+      <div className="notif-icon notif-icon-skills-mapping">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+      </div>
+    )
+  }
   return (
     <div className="notif-icon notif-icon-default">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
@@ -227,11 +246,12 @@ export default function Notifications() {
   const { t } = useLanguage()
   const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser, isSuperAdmin, canPostNotifications: canPost } = useAuth()
   const { features } = useFeatures()
-  const { showError } = useToast()
+  const { showError, showSuccess } = useToast()
   const locState = location.state as { tab?: Tab; expandReminders?: boolean } | null
   const initialTab = locState?.tab || 'actions'
   const [tab, setTab] = useState<Tab>(initialTab)
   const [actions, setActions] = useState<WorkflowItem[]>([])
+  const [skillActionItem, setSkillActionItem] = useState<WorkflowItem | null>(null)
   const [myNotifs, setMyNotifs] = useState<WorkflowItem[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
@@ -579,6 +599,14 @@ export default function Notifications() {
       }
       return
     }
+    if (item.record_type === 'Skills Mapping') {
+      navigate('/my-profile')
+      return
+    }
+    if (item.record_type === 'Skill Validation') {
+      setSkillActionItem(item)
+      return
+    }
     if (!item.approval_id) {
       alert('This action has no linked record. Please re-seed demo data to fix.')
       return
@@ -592,6 +620,19 @@ export default function Notifications() {
     }
   }
 
+  async function handleSkillValidation(item: WorkflowItem, approve: boolean) {
+    const esId = item.extra_info || ''
+    if (esId) {
+      await supabase.from('employee_skills').update({ status: approve ? 'validated' : 'rejected' }).eq('id', esId)
+      await supabase.from('skill_validations').update({ status: approve ? 'approved' : 'rejected', validated_at: new Date().toISOString() }).eq('employee_skill_id', esId)
+    }
+    await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: approve ? 'Approved' : 'Declined' }).eq('id', item.id)
+    showSuccess(approve ? 'Skill validated' : 'Skill validation rejected')
+    setSkillActionItem(null)
+    setActions(prev => prev.filter(a => a.id !== item.id))
+    window.dispatchEvent(new Event('notifications-updated'))
+  }
+
   function getActionTitle(item: WorkflowItem) {
     if (item.record_type === 'Expense') return t('notifications.expense_review')
     if (item.record_type === 'Leave') {
@@ -601,6 +642,8 @@ export default function Notifications() {
     }
     if (item.record_type === 'Timesheet') return t('notifications.timesheet_review')
     if (item.record_type === 'Meeting') return t('notifications.meeting_scheduled')
+    if (item.record_type === 'Skill Validation') return 'Skill Validation Request'
+    if (item.record_type === 'Skills Mapping') return 'Complete Skills Passport'
     return item.action
   }
 
@@ -634,10 +677,12 @@ export default function Notifications() {
     if (item.approval_status === 'Approved') {
       if (item.record_type === 'Expense') return t('notifications.expense_approved')
       if (item.record_type === 'Leave') return t('notifications.leave_approved')
+      if (item.record_type === 'Skill Validation') return 'Skill Validated'
     }
     if (item.approval_status === 'Declined') {
       if (item.record_type === 'Expense') return t('notifications.expense_declined')
       if (item.record_type === 'Leave') return t('notifications.leave_declined')
+      if (item.record_type === 'Skill Validation') return 'Skill Validation Rejected'
     }
     return item.action
   }
@@ -766,7 +811,7 @@ export default function Notifications() {
           ))}
           {actions.map(item => (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
-              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' ? 'bar-purple' : 'bar-grey'}`} />
+              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : 'bar-grey'}`} />
               <NotifIcon type={item.record_type} />
               <div className="notif-action-content">
                 <span className="notif-action-title">{getActionTitle(item)}</span>
@@ -787,10 +832,31 @@ export default function Notifications() {
                 </div>
               </div>
               <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
-                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' ? '#7c3aed' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' || item.record_type === 'Skill Validation' ? '#7c3aed' : item.record_type === 'Skills Mapping' ? '#0891b2' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           ))}
+        </div>
+      )}
+
+      {skillActionItem && (
+        <div className="my-profile-modal-overlay" onClick={() => setSkillActionItem(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: '#6d28d9', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Skill Validation</span>
+              <button onClick={() => setSkillActionItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{skillActionItem.emp_display_name}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>{skillActionItem.task_description}</div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => handleSkillValidation(skillActionItem, true)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>Approve</button>
+                <button onClick={() => handleSkillValidation(skillActionItem, false)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>Reject</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -552,11 +552,14 @@ export default function AdminOnboarding() {
         if (features.skills_passport) {
           await supabase.from('workflow_tracker').insert({
             company_id: selectedCompanyId,
-            type: 'Skills Mapping',
-            reference_id: emp.id,
-            assigned_to: record.user_email,
+            emp_display_name: `${record.firstname} ${record.surname}`,
+            step: 1,
             status: 'Pending',
-            description: 'Complete your skills passport — add your skills, certifications and career goals to help your organisation understand your capabilities.',
+            record_type: 'Skills Mapping',
+            action: 'Complete your skills passport',
+            employee_email: record.user_email,
+            assigned_to: record.user_email,
+            task_description: 'Complete your skills passport — add your skills, certifications and career goals to help your organisation understand your capabilities.',
           })
         }
       }
