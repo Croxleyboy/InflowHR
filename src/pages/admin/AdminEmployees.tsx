@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
+import { useFeatures } from '../../context/FeatureContext'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
 
 interface Employee {
@@ -66,6 +67,8 @@ export default function AdminEmployees() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [uploading, setUploading] = useState<string | null>(null)
   const [revealedPii, setRevealedPii] = useState<Set<string>>(new Set())
+  const { features } = useFeatures()
+  const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
@@ -86,6 +89,19 @@ export default function AdminEmployees() {
   }
 
   useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
+
+  useEffect(() => {
+    if (!expandedId || !features.skills_passport || empSkills[expandedId]) return
+    ;(async () => {
+      const { data } = await supabase
+        .from('employee_skills')
+        .select('skill_name, proficiency, status')
+        .eq('employee_id', expandedId)
+        .eq('company_id', selectedCompanyId)
+        .eq('status', 'validated')
+      if (data) setEmpSkills(prev => ({ ...prev, [expandedId]: data }))
+    })()
+  }, [expandedId])
 
   async function load() {
     setLoading(true)
@@ -553,6 +569,21 @@ export default function AdminEmployees() {
                                     <div><strong>Bank Account:</strong> {emp.bank_account_name}</div>
                                     <div><strong>Sort Code:</strong> <span onClick={() => toggleReveal(emp.id, 'sc')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(emp.bank_sort_code, emp.id, 'sc')}</span></div>
                                     <div><strong>Account No:</strong> <span onClick={() => toggleReveal(emp.id, 'ac')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(emp.bank_account_number, emp.id, 'ac')}</span></div>
+                                  </div>
+                                )}
+                                {features.skills_passport && empSkills[emp.id]?.length > 0 && (
+                                  <div>
+                                    <strong style={{ display: 'block', marginBottom: 6 }}>Validated Skills</strong>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                      {empSkills[emp.id].map(s => (
+                                        <span key={s.skill_name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 12, fontSize: 12, background: '#e0e7ff', color: '#3730a3' }}>
+                                          {s.skill_name}
+                                          <span style={{ fontSize: 10, opacity: 0.7 }}>
+                                            ({['','Foundational','Developing','Proficient','Advanced','Expert'][s.proficiency]})
+                                          </span>
+                                        </span>
+                                      ))}
+                                    </div>
                                   </div>
                                 )}
                               </div>

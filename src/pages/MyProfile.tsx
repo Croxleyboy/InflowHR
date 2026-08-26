@@ -400,7 +400,7 @@ export default function MyProfile() {
               </div>
             </div>
 
-            <div style={{ textAlign: 'right', padding: '8px 0 4px', display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ padding: '8px 0 4px', display: 'flex', gap: 8 }}>
               {features.skills_passport && (
                 <button className="my-profile-members-btn" onClick={() => setShowSkills(true)}>My Skills</button>
               )}
@@ -414,22 +414,23 @@ export default function MyProfile() {
       </div>
 
       {tab === 'job' && (
-        <div className="my-profile-employment-status">
-          <h3 className="my-profile-employment-status-title">{t('my_profile.employment_status')}</h3>
-          <div className="my-profile-status-cards">
-            <div className="my-profile-status-card">
-              <span className="my-profile-status-card-header my-profile-status-blue">{t('my_profile.salary_group')}</span>
-              <span className="my-profile-status-card-value">{empData?.salary_group || 'N/A'}</span>
+        <div style={{ padding: '0 16px 16px' }}>
+          <div style={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{t('my_profile.employment_status')}</span>
             </div>
-            <div className="my-profile-status-card">
-              <span className="my-profile-status-card-header my-profile-status-purple">{t('my_profile.emp_status')}</span>
-              <span className="my-profile-status-card-value">{t('my_profile.employed')}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{t('my_profile.salary_group')}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{empData?.salary_group || 'N/A'}</span>
             </div>
-            <div className="my-profile-status-card">
-              <span className="my-profile-status-card-header my-profile-status-blue">{t('my_profile.emp_type')}</span>
-              <span className="my-profile-status-card-value">{empData?.contract_type || profile.contract_type}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{t('my_profile.emp_status')}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{t('my_profile.employed')}</span>
             </div>
-
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{t('my_profile.emp_type')}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{empData?.contract_type || profile.contract_type}</span>
+            </div>
           </div>
         </div>
       )}
