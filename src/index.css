@@ -2461,16 +2461,16 @@ body {
 .my-profile-cr-fab:active { transform: translateX(-50%) scale(0.96); }
 .my-profile-cr-modal {
   background: var(--bg-card);
-  border-radius: 18px 18px 0 0;
+  border-radius: 0 0 18px 18px;
   width: 100%; max-width: 480px;
   max-height: 88vh; overflow-y: auto;
-  position: fixed; bottom: 0; left: 50%;
+  position: fixed; top: 0; left: 50%;
   transform: translateX(-50%);
   z-index: 1001;
-  animation: cr-slide-up 0.25s ease-out;
+  animation: cr-slide-down 0.25s ease-out;
 }
-@keyframes cr-slide-up {
-  from { transform: translateX(-50%) translateY(100%); }
+@keyframes cr-slide-down {
+  from { transform: translateX(-50%) translateY(-100%); }
   to   { transform: translateX(-50%) translateY(0); }
 }
 .my-profile-cr-close-btn {
