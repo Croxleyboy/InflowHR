@@ -124,6 +124,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
   const [setupErrors, setSetupErrors] = useState<string[]>([])
   const [adminEmail, setAdminEmail] = useState('')
   const [processing, setProcessing] = useState(false)
+  const [processProgress, setProcessProgress] = useState({ current: 0, total: 0, phase: '' })
   const [processResult, setProcessResult] = useState<{ onboarding: number; employees: number; payslips: number; admin: string; errors: string[] } | null>(null)
   const setupFileRef = useRef<HTMLInputElement>(null)
   const [fyStartMonth, setFyStartMonth] = useState(4)
@@ -300,7 +301,13 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
     })
     if (piiErrors.length > 0) { showError(piiErrors.slice(0, 5).join(' | ')); setProcessing(false); return }
 
-    for (const row of setupRows) {
+    const total = setupRows.length
+    setProcessProgress({ current: 0, total, phase: 'Setting up foundation...' })
+    await new Promise(r => setTimeout(r, 0))
+
+    for (let rowIndex = 0; rowIndex < setupRows.length; rowIndex++) {
+      const row = setupRows[rowIndex]
+      setProcessProgress({ current: rowIndex + 1, total, phase: `Processing ${row.firstname} ${row.surname}...` })
       // 1. Create onboarding record (skip if already exists)
       const { data: existingOnb } = await supabase.from('onboarding').select('id').eq('user_email', row.user_email).eq('company_id', setupCompanyId).maybeSingle()
       if (existingOnb) {
@@ -488,6 +495,8 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         }
       }
     }
+
+    setProcessProgress({ current: total, total, phase: 'Finalising setup...' })
 
     // 6. Create welcome announcement
     const { data: existingAnnouncement } = await supabase
@@ -799,10 +808,30 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           )}
 
           {processing && (
-            <div style={{ textAlign: 'center', padding: '60px 20px' }}>
-              <div style={{ fontSize: 48, marginBottom: 16, animation: 'spin 1s linear infinite' }}>⚙️</div>
-              <h3>Processing...</h3>
-              <p style={{ color: '#666' }}>Creating employee records, payslips and leave balances. Please wait.</p>
+            <div style={{ textAlign: 'center', padding: '60px 20px', maxWidth: 500, margin: '0 auto' }}>
+              <h3 style={{ marginBottom: 24 }}>Processing Employees</h3>
+              <div style={{ background: 'var(--border, #e0e0e0)', borderRadius: 8, height: 28, overflow: 'hidden', position: 'relative', marginBottom: 12 }}>
+                <div style={{
+                  height: '100%',
+                  width: `${processProgress.total > 0 ? (processProgress.current / processProgress.total) * 100 : 0}%`,
+                  background: 'linear-gradient(90deg, #43a047, #66bb6a)',
+                  borderRadius: 8,
+                  transition: 'width 0.3s ease',
+                  display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 8,
+                  minWidth: processProgress.current > 0 ? 40 : 0,
+                }}>
+                  {processProgress.current > 0 && (
+                    <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>
+                      {Math.round((processProgress.current / processProgress.total) * 100)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--text-muted, #666)', marginBottom: 8 }}>
+                <span>{processProgress.current} of {processProgress.total}</span>
+                <span>{processProgress.total - processProgress.current} remaining</span>
+              </div>
+              <p style={{ color: 'var(--text-muted, #888)', fontSize: 14, margin: 0 }}>{processProgress.phase}</p>
             </div>
           )}
 
