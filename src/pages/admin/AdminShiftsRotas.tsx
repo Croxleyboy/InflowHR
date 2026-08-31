@@ -2,9 +2,11 @@ import { useState } from 'react'
 import AdminShiftTemplates from './AdminShifts'
 import AdminRotaManager from './AdminRotas'
 import AdminShiftReports from './AdminShiftReports'
+import CheckInSettingsPanel from './CheckInSettings'
+import CheckInDashboardPanel from './CheckInDashboard'
 
 export default function AdminShiftsRotas() {
-  const [tab, setTab] = useState<'rotas' | 'templates' | 'reports'>('rotas')
+  const [tab, setTab] = useState<'rotas' | 'templates' | 'reports' | 'checkin'>('rotas')
 
   return (
     <div className="admin-section">
@@ -62,11 +64,34 @@ export default function AdminShiftsRotas() {
         >
           Reports &amp; Analytics
         </button>
+        <button
+          className={`admin-tab ${tab === 'checkin' ? 'admin-tab-active' : ''}`}
+          onClick={() => setTab('checkin')}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            background: 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            borderBottom: tab === 'checkin' ? '3px solid #5c6bc0' : '3px solid transparent',
+            color: tab === 'checkin' ? '#5c6bc0' : 'var(--text-muted, #8b8fa3)',
+            marginBottom: -2,
+          }}
+        >
+          Check-In
+        </button>
       </div>
 
       {tab === 'rotas' && <AdminRotaManager />}
       {tab === 'templates' && <AdminShiftTemplates />}
       {tab === 'reports' && <AdminShiftReports />}
+      {tab === 'checkin' && (
+        <div>
+          <CheckInSettingsPanel source="shifts" />
+          <CheckInDashboardPanel source="shifts" />
+        </div>
+      )}
     </div>
   )
 }

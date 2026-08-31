@@ -4,6 +4,7 @@ import { useTheme } from '../context/ThemeContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useCheckIn } from '../context/CheckInContext'
 import { supabase } from '../lib/supabase'
 import Chevron from '../components/Chevron'
 import { COURSES } from './ELearning'
@@ -36,6 +37,7 @@ export default function Dashboard() {
   const { t, lang } = useLanguage()
   const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser } = useAuth()
   const navigate = useNavigate()
+  const { activeCheckin, checkOut } = useCheckIn()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
   const [pendingOneToOnes, setPendingOneToOnes] = useState(0)
@@ -257,6 +259,19 @@ export default function Dashboard() {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       )}
+
+      {activeCheckin && (() => {
+        const mins = Math.floor((Date.now() - new Date(activeCheckin.check_in_at).getTime()) / 60000)
+        const h = Math.floor(mins / 60); const m = mins % 60
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#16a34a', color: '#fff', borderRadius: 10, padding: '10px 14px', margin: '0 0 12px', fontSize: 13, fontWeight: 500 }}>
+            <span onClick={() => navigate(activeCheckin.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin')} style={{ cursor: 'pointer' }}>
+              📍 Checked in since {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} — {h}h {m}m
+            </span>
+            <button onClick={async () => { const r = await checkOut(); if (!r.ok) alert(r.error) }} style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Check Out</button>
+          </div>
+        )
+      })()}
 
       <div className="greeting-row">
         <h2 className="greeting">{greeting} {'\u{1F44B}'} {employeeName}</h2>

@@ -567,6 +567,45 @@ export default function Notifications() {
       }
     }
 
+    // Check-in/out history — today's records
+    if (HARDCODED_EMPLOYEE_ID && companyId) {
+      const { data: todayCheckins } = await supabase
+        .from('checkin_records')
+        .select('id, check_in_at, check_out_at, status, work_from_home, source')
+        .eq('employee_id', HARDCODED_EMPLOYEE_ID)
+        .eq('company_id', companyId)
+        .gte('check_in_at', todayStr + 'T00:00:00')
+        .order('check_in_at', { ascending: false })
+
+      if (todayCheckins) {
+        todayCheckins.forEach((c: { id: string; check_in_at: string; check_out_at: string | null; status: string; work_from_home: boolean; source: string }) => {
+          const inTime = new Date(c.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+          if (c.status === 'checked_in') {
+            personalReminders.push({
+              id: `checkin-${c.id}`,
+              type: 'confirm_shift' as const,
+              title: `Checked in at ${inTime}${c.work_from_home ? ' (Home)' : ''}`,
+              subtitle: `${c.source === 'shifts' ? 'Shift' : 'Timesheet'} check-in active`,
+              date: todayStr,
+              navigateTo: c.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin',
+            })
+          } else if (c.check_out_at) {
+            const outTime = new Date(c.check_out_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+            const durMins = Math.round((new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 60000)
+            const hrs = Math.floor(durMins / 60)
+            const mins = durMins % 60
+            personalReminders.push({
+              id: `checkout-${c.id}`,
+              type: 'confirm_shift' as const,
+              title: `Checked out at ${outTime} (${hrs}h ${mins}m)`,
+              subtitle: `${c.source === 'shifts' ? 'Shift' : 'Timesheet'} • ${inTime} → ${outTime}`,
+              date: todayStr,
+            })
+          }
+        })
+      }
+    }
+
     const currentTime = `${String(todayDate.getHours()).padStart(2, '0')}:${String(todayDate.getMinutes()).padStart(2, '0')}`
     const activeReminders = personalReminders.filter(r => {
       if (r.type === 'confirm_booking' || r.type === 'confirm_shift') return true

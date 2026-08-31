@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
+import { useCheckIn } from '../context/CheckInContext'
 import { formatTime12 as formatTimeShort } from '../lib/formatters'
 
 interface ShiftTemplate {
@@ -133,6 +134,7 @@ export default function MyShifts() {
   const { t } = useLanguage()
   const { employeeId, companyUser } = useAuth()
   const { features } = useFeatures()
+  const { settings: ciSettings } = useCheckIn()
   const shiftsEnabled = features.shifts
 
   const [shifts, setShifts] = useState<ShiftAssignment[]>([])
@@ -466,6 +468,9 @@ export default function MyShifts() {
                             </div>
                           </div>
                           <div className="sc-block-actions">
+                            {ciSettings?.shifts_checkin_enabled && (
+                              <button className="sc-block-swap" style={{ background: '#16a34a', color: '#fff' }} onClick={() => navigate('/shifts/checkin')}>Check In</button>
+                            )}
                             <button className="sc-block-swap" onClick={() => navigate('/shifts/swap')}>{t('shifts.request_swap')}</button>
                             {canEdit && (
                               <button className="sc-block-edit" onClick={() => setEditingId(isEditing ? null : s.id)}>

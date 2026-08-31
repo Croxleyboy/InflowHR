@@ -77,6 +77,10 @@ import AdminUserGuides from './pages/admin/AdminUserGuides'
 import AdminDashboardModern from './pages/admin/AdminDashboardModern'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
+import TimesheetCheckIn from './pages/TimesheetCheckIn'
+import ShiftCheckIn from './pages/ShiftCheckIn'
+import CheckInPrompt from './components/CheckInPrompt'
+import { CheckInProvider } from './context/CheckInContext'
 
 function AdminGate() {
   const { companyUser, isSuperAdmin } = useAuth()
@@ -115,6 +119,7 @@ function EmployeeRoutes() {
       <Route path="/leave/new" element={<NewLeaveRequest />} />
       <Route path="/leave/:id" element={<LeaveDetail />} />
       <Route path="/timesheets" element={<Timesheets />} />
+      <Route path="/timesheets/checkin" element={<TimesheetCheckIn />} />
       <Route path="/timesheets/new" element={<NewTimesheet />} />
       <Route path="/timesheets/history" element={<TimesheetHistory />} />
       <Route path="/timesheets/:id" element={<TimesheetDetail />} />
@@ -131,6 +136,7 @@ function EmployeeRoutes() {
       <Route path="/performance" element={<OneToOnes />} />
       <Route path="/performance/goals" element={<PerformanceGoals />} />
       <Route path="/shifts" element={<MyShifts />} />
+      <Route path="/shifts/checkin" element={<ShiftCheckIn />} />
       <Route path="/shifts/swap" element={<ShiftSwap />} />
       <Route path="/shifts/availability" element={<Availability />} />
       <Route path="/legal-timesheets" element={<LegalTimesheets />} />
@@ -173,8 +179,9 @@ function AuthGate() {
 
   if (isDesktop) {
     return (
-      <>
+      <CheckInProvider>
       <FeatureLoader />
+      <CheckInPrompt />
       <Routes>
         <Route path="/admin" element={<AdminGate />}>
           <Route element={<AdminLayout />}>
@@ -212,13 +219,14 @@ function AuthGate() {
           <Route path="*" element={<EmployeeRoutes />} />
         </Route>
       </Routes>
-      </>
+      </CheckInProvider>
     )
   }
 
   return (
-    <>
+    <CheckInProvider>
     <FeatureLoader />
+    <CheckInPrompt />
     <Routes>
       {/* Admin Portal — locked to admin/hr roles */}
       <Route path="/admin" element={<AdminGate />}>
@@ -261,7 +269,7 @@ function AuthGate() {
         </>
       } />
     </Routes>
-    </>
+    </CheckInProvider>
   )
 }
 

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useCheckIn } from '../context/CheckInContext'
 import { formatDate, formatTime24 as formatTime } from '../lib/formatters'
 
 type TimesheetStatus = 'draft' | 'pending' | 'approved' | 'rejected'
@@ -49,6 +50,7 @@ export default function Timesheets() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
   const { employeeId } = useAuth()
+  const { settings: ciSettings } = useCheckIn()
   const [filter, setFilter] = useState<Filter>('all')
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
@@ -133,9 +135,16 @@ export default function Timesheets() {
         ))}
       </div>
 
-      <button className="add-claim-btn" onClick={() => navigate('/timesheets/new')}>
-        + {t('timesheets.add_new')}
-      </button>
+      <div style={{ display: 'flex', gap: 8, padding: '0 16px' }}>
+        <button className="add-claim-btn" style={{ flex: 1, margin: 0 }} onClick={() => navigate('/timesheets/new')}>
+          + {t('timesheets.add_new')}
+        </button>
+        {ciSettings?.timesheets_checkin_enabled && (
+          <button className="add-claim-btn" style={{ flex: 1, margin: 0, background: '#16a34a' }} onClick={() => navigate('/timesheets/checkin')}>
+            Check In
+          </button>
+        )}
+      </div>
 
       <button className="ts-history-btn" onClick={() => navigate('/timesheets/history')}>
         {t('timesheets.last_4_weeks')}

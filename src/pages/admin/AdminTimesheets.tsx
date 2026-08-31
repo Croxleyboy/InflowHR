@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { formatDate } from '../../lib/formatters'
+import CheckInSettingsPanel from './CheckInSettings'
+import CheckInDashboardPanel from './CheckInDashboard'
 
 interface Timesheet {
   id: number
@@ -124,7 +126,7 @@ function getWorkingDaysInRange(start: string, end: string): number {
 export default function AdminTimesheets() {
   const { selectedCompanyId, selectedCompany, refreshCompanies } = useAdminCompany()
   const { showError, showSuccess } = useToast()
-  const [tsTab, setTsTab] = useState<'entries' | 'projects' | 'timeline' | 'reports'>('entries')
+  const [tsTab, setTsTab] = useState<'entries' | 'projects' | 'timeline' | 'reports' | 'checkin'>('entries')
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -391,6 +393,7 @@ export default function AdminTimesheets() {
         <button className={`admin-tab ${tsTab === 'projects' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('projects')}>Customer Projects</button>
         <button className={`admin-tab ${tsTab === 'timeline' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('timeline')}>Project Timeline</button>
         <button className={`admin-tab ${tsTab === 'reports' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('reports')}>Timesheet Reports</button>
+        <button className={`admin-tab ${tsTab === 'checkin' ? 'admin-tab-active' : ''}`} onClick={() => setTsTab('checkin')}>Check-In</button>
       </div>
 
       {tsTab === 'entries' && (
@@ -580,6 +583,13 @@ export default function AdminTimesheets() {
           period={monitoringPeriod}
           fyStartMonth={selectedCompany?.fy_start_month || 4}
         />
+      )}
+
+      {tsTab === 'checkin' && (
+        <div>
+          <CheckInSettingsPanel source="timesheets" />
+          <CheckInDashboardPanel source="timesheets" />
+        </div>
       )}
     </div>
   )

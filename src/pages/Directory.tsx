@@ -18,6 +18,18 @@ interface DirectoryEntry {
   employee_uuid: string | null
 }
 
+interface ActiveCheckin {
+  check_in_at: string
+  work_from_home: boolean
+}
+
+interface TeamCheckinRow {
+  employee_id: string
+  name: string
+  todayCheckin: { check_in_at: string; work_from_home: boolean } | null
+  yesterday: { check_in_at: string; check_out_at: string | null } | null
+}
+
 const WATCHLIST_KEY = 'inflowhr-kudos-watchlist'
 const COLLEAGUES_ONLY_KEY = 'inflowhr-kudos-colleagues-only'
 
@@ -30,7 +42,7 @@ function getWatchlist(): string[] {
 export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { companyUser, employeeId: currentEmployeeId } = useAuth()
+  const { companyUser, employeeId: currentEmployeeId, isManager } = useAuth()
   const { features } = useFeatures()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
@@ -41,6 +53,10 @@ export default function Directory() {
   const [showWatchlistPrompt, setShowWatchlistPrompt] = useState(false)
   const [selectedSkills, setSelectedSkills] = useState<{ name: string; proficiency: number }[]>([])
   const [selectedLangs, setSelectedLangs] = useState<{ language: string; proficiency: string }[]>([])
+  const [selectedCheckin, setSelectedCheckin] = useState<ActiveCheckin | null>(null)
+  const [showTeamCheckins, setShowTeamCheckins] = useState(false)
+  const [teamCheckins, setTeamCheckins] = useState<TeamCheckinRow[]>([])
+  const [teamCheckinsLoading, setTeamCheckinsLoading] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -100,6 +116,22 @@ export default function Directory() {
     setSelected(entry)
     setSelectedSkills([])
     setSelectedLangs([])
+    setSelectedCheckin(null)
+
+    if (entry.employee_uuid && companyUser?.company_id) {
+      supabase
+        .from('checkin_records')
+        .select('check_in_at, work_from_home')
+        .eq('employee_id', entry.employee_uuid)
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'checked_in')
+        .order('check_in_at', { ascending: false })
+        .limit(1)
+        .then(({ data }) => {
+          if (data && data[0]) setSelectedCheckin(data[0])
+        })
+    }
+
     if (!features.skills_passport || !entry.employee_uuid) return
     const [esRes, langRes] = await Promise.all([
       supabase.from('employee_skills').select('skill_id, proficiency').eq('employee_id', entry.employee_uuid).eq('status', 'validated'),
@@ -113,6 +145,56 @@ export default function Directory() {
       setSelectedSkills(esData.map(s => ({ name: nameMap.get(s.skill_id) || 'Unknown', proficiency: s.proficiency })).sort((a, b) => b.proficiency - a.proficiency))
     }
     setSelectedLangs(langRes.data || [])
+  }
+
+  async function loadTeamCheckins() {
+    setShowTeamCheckins(true)
+    if (!currentEmployeeId || !companyUser?.company_id) return
+    setTeamCheckinsLoading(true)
+
+    const companyId = companyUser.company_id
+    const today = new Date()
+    const todayStr = today.toISOString().split('T')[0]
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+
+    const { data: reports } = await supabase
+      .from('employees')
+      .select('id, first_name, last_name')
+      .eq('company_id', companyId)
+      .eq('manager_id', currentEmployeeId)
+      .eq('is_active', true)
+
+    if (!reports || reports.length === 0) {
+      setTeamCheckins([])
+      setTeamCheckinsLoading(false)
+      return
+    }
+
+    const reportIds = reports.map((r: { id: string }) => r.id)
+    const { data: records } = await supabase
+      .from('checkin_records')
+      .select('employee_id, check_in_at, check_out_at, status, work_from_home')
+      .eq('company_id', companyId)
+      .in('employee_id', reportIds)
+      .gte('check_in_at', yesterdayStr + 'T00:00:00')
+      .order('check_in_at', { ascending: false })
+
+    const rows: TeamCheckinRow[] = reports.map((r: { id: string; first_name: string; last_name: string }) => {
+      const empRecords = (records || []).filter((c: any) => c.employee_id === r.id)
+      const todayRecord = empRecords.find((c: any) => c.check_in_at.startsWith(todayStr) && c.status === 'checked_in')
+      const yesterdayRecord = empRecords.find((c: any) => c.check_in_at.startsWith(yesterdayStr))
+      return {
+        employee_id: r.id,
+        name: `${r.first_name} ${r.last_name}`,
+        todayCheckin: todayRecord ? { check_in_at: todayRecord.check_in_at, work_from_home: todayRecord.work_from_home } : null,
+        yesterday: yesterdayRecord ? { check_in_at: yesterdayRecord.check_in_at, check_out_at: yesterdayRecord.check_out_at } : null,
+      }
+    })
+
+    setTeamCheckins(rows)
+    setTeamCheckinsLoading(false)
   }
 
   const filtered = search.trim()
@@ -195,6 +277,24 @@ export default function Directory() {
         </button>
       </div>
 
+      {isManager && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <button
+            onClick={loadTeamCheckins}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+              padding: '10px 14px', borderRadius: 10, border: '1px solid #7b1fa240',
+              background: '#7b1fa210', color: '#7b1fa2', fontWeight: 600, fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7b1fa2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+            </svg>
+            Team Check-Ins
+          </button>
+        </div>
+      )}
+
       {loading && <p className="claims-empty">{t('common.loading')}</p>}
 
       {!loading && filtered.length === 0 && (
@@ -272,6 +372,17 @@ export default function Directory() {
                 <span className="directory-modal-role">{selected.job_title}</span>
                 {isOnLeave(selected) && (
                   <span className="directory-leave-badge-modal">{t('directory.on_leave')}</span>
+                )}
+                {selectedCheckin && (
+                  <span
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4,
+                      padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600,
+                      background: '#e6f7ec', color: '#16a34a', border: '1px solid #16a34a40',
+                    }}
+                  >
+                    📍 Checked in{selectedCheckin.work_from_home ? ' from home' : ''} · {new Date(selectedCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
                 )}
               </div>
             </div>
@@ -355,6 +466,53 @@ export default function Directory() {
                 </svg>
               </a>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showTeamCheckins && (
+        <div className="directory-modal-overlay" onClick={() => setShowTeamCheckins(false)}>
+          <div className="directory-modal" onClick={e => e.stopPropagation()}>
+            <div className="directory-modal-top">
+              <span className="directory-modal-title">Team Check-Ins</span>
+              <button className="directory-modal-close-btn" onClick={() => setShowTeamCheckins(false)}>
+                {t('directory.close')}
+              </button>
+            </div>
+
+            {teamCheckinsLoading && <p className="claims-empty">{t('common.loading')}</p>}
+
+            {!teamCheckinsLoading && teamCheckins.length === 0 && (
+              <p className="claims-empty">No direct reports found.</p>
+            )}
+
+            {!teamCheckinsLoading && teamCheckins.length > 0 && (
+              <div className="directory-modal-details" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {teamCheckins.map(row => (
+                  <div key={row.employee_id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color, #eee)' }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{row.name}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      Today: {row.todayCheckin
+                        ? `Checked in at ${new Date(row.todayCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}${row.todayCheckin.work_from_home ? ' (Home)' : ''}`
+                        : 'Not checked in'}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                      Yesterday: {row.yesterday
+                        ? (() => {
+                            const inT = new Date(row.yesterday.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                            if (!row.yesterday.check_out_at) return `${inT} - (no checkout)`
+                            const outT = new Date(row.yesterday.check_out_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+                            const durMins = Math.round((new Date(row.yesterday.check_out_at).getTime() - new Date(row.yesterday.check_in_at).getTime()) / 60000)
+                            const hrs = Math.floor(durMins / 60)
+                            const mins = durMins % 60
+                            return `${inT} - ${outT}, ${hrs}h ${mins}m`
+                          })()
+                        : 'No record'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
