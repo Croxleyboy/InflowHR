@@ -128,7 +128,24 @@ export default function TimesheetCheckIn() {
     ?? (workLocations.length > 0 ? workLocations[0].latitude : 51.5074)
   const mapLng = activeCheckin?.check_in_lng
     ?? (workLocations.length > 0 ? workLocations[0].longitude : -0.1278)
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${mapLng - 0.005},${mapLat - 0.003},${mapLng + 0.005},${mapLat + 0.003}&layer=mapnik&marker=${mapLat},${mapLng}`
+
+  const zoom = 16
+  const n = Math.pow(2, zoom)
+  const tileX = Math.floor((mapLng + 180) / 360 * n)
+  const latRad = mapLat * Math.PI / 180
+  const tileY = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n)
+  const tileGrid: string[][] = []
+  for (let dy = -1; dy <= 1; dy++) {
+    const row: string[] = []
+    for (let dx = -1; dx <= 2; dx++) {
+      row.push(`https://tile.openstreetmap.org/${zoom}/${tileX + dx}/${tileY + dy}.png`)
+    }
+    tileGrid.push(row)
+  }
+  const pixelX = ((mapLng + 180) / 360 * n - tileX) * 256
+  const pixelY = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n - tileY) * 256
+  const markerLeft = 256 + pixelX
+  const markerTop = 256 + pixelY
 
   const checkedInLoc = activeCheckin
     ? workLocations.find(l => l.id === activeCheckin.check_in_location_id)
@@ -167,7 +184,10 @@ export default function TimesheetCheckIn() {
         .ci-header-sub { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 1px; }
         .ci-header-refresh { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
 
-        .ci-map-frame { width: 100%; height: 180px; border: none; display: block; }
+        .ci-map-wrap { width: 100%; height: 180px; overflow: hidden; position: relative; }
+        .ci-map-tiles { display: grid; grid-template-columns: repeat(4, 256px); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+        .ci-map-tiles img { width: 256px; height: 256px; display: block; }
+        .ci-map-pin { position: absolute; transform: translate(-50%, -100%); z-index: 2; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
 
         .ci-hero { padding: 12px 16px 0; }
         .ci-time-row { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 6px; }
@@ -187,10 +207,10 @@ export default function TimesheetCheckIn() {
         .ci-act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .ci-act-checkin { background: #16a34a; color: #fff; }
         .ci-act-checkin:hover:not(:disabled) { background: #15803d; }
-        .ci-act-break { background: var(--bg-card, #fff); color: var(--text); border: 1.5px solid var(--border, #ddd); }
-        .ci-act-break:hover:not(:disabled) { background: var(--border); }
-        .ci-act-checkout { background: var(--bg-card, #fff); color: var(--text); border: 1.5px solid var(--border, #ddd); }
-        .ci-act-checkout:hover:not(:disabled) { background: var(--border); }
+        .ci-act-break { background: #f59e0b; color: #fff; }
+        .ci-act-break:hover:not(:disabled) { background: #d97706; }
+        .ci-act-checkout { background: #dc2626; color: #fff; }
+        .ci-act-checkout:hover:not(:disabled) { background: #b91c1c; }
 
         .ci-body { padding: 0 16px; }
 
@@ -225,6 +245,10 @@ export default function TimesheetCheckIn() {
         [data-theme="dark"] .ci-badge-site { background: #14532d; color: #4ade80; }
         [data-theme="dark"] .ci-act-checkin { background: #15803d; }
         [data-theme="dark"] .ci-act-checkin:hover:not(:disabled) { background: #166534; }
+        [data-theme="dark"] .ci-act-break { background: #b45309; }
+        [data-theme="dark"] .ci-act-break:hover:not(:disabled) { background: #92400e; }
+        [data-theme="dark"] .ci-act-checkout { background: #b91c1c; }
+        [data-theme="dark"] .ci-act-checkout:hover:not(:disabled) { background: #991b1b; }
         [data-theme="dark"] .ci-status-icon.active { background: #14532d; color: #4ade80; }
         [data-theme="dark"] .ci-status-icon.on-break { background: #451a03; color: #fbbf24; }
         @media (prefers-color-scheme: dark) {
@@ -232,6 +256,10 @@ export default function TimesheetCheckIn() {
           :root:not([data-theme="light"]) .ci-badge-site { background: #14532d; color: #4ade80; }
           :root:not([data-theme="light"]) .ci-act-checkin { background: #15803d; }
           :root:not([data-theme="light"]) .ci-act-checkin:hover:not(:disabled) { background: #166534; }
+          :root:not([data-theme="light"]) .ci-act-break { background: #b45309; }
+          :root:not([data-theme="light"]) .ci-act-break:hover:not(:disabled) { background: #92400e; }
+          :root:not([data-theme="light"]) .ci-act-checkout { background: #b91c1c; }
+          :root:not([data-theme="light"]) .ci-act-checkout:hover:not(:disabled) { background: #991b1b; }
           :root:not([data-theme="light"]) .ci-status-icon.active { background: #14532d; color: #4ade80; }
           :root:not([data-theme="light"]) .ci-status-icon.on-break { background: #451a03; color: #fbbf24; }
         }
@@ -257,13 +285,18 @@ export default function TimesheetCheckIn() {
         </button>
       </header>
 
-      {/* Map — OpenStreetMap embed, no dependencies */}
-      <iframe
-        className="ci-map-frame"
-        src={mapUrl}
-        title="Location map"
-        loading="lazy"
-      />
+      {/* Map — OpenStreetMap tiles, no dependencies */}
+      <div className="ci-map-wrap">
+        <div className="ci-map-tiles" style={{ marginLeft: -(markerLeft - window.innerWidth / 2), marginTop: -(markerTop - 90) }}>
+          {tileGrid.map((row, ri) => row.map((url, ci) => (
+            <img key={`${ri}-${ci}`} src={url} alt="" style={{ gridRow: ri + 1, gridColumn: ci + 1 }} />
+          )))}
+        </div>
+        <svg className="ci-map-pin" style={{ left: '50%', top: 90 }} width="28" height="40" viewBox="0 0 28 40">
+          <path d="M14 0C6.3 0 0 6.3 0 14c0 10.5 14 26 14 26s14-15.5 14-26C28 6.3 21.7 0 14 0z" fill="#1565c0"/>
+          <circle cx="14" cy="14" r="6" fill="#fff"/>
+        </svg>
+      </div>
 
       {/* Time + Status + Action buttons — all visible without scrolling */}
       <div className="ci-hero">
