@@ -32,14 +32,14 @@ export default function CheckInPrompt() {
     }
     const todayStr = new Date().toISOString().split('T')[0]
     const { data } = await supabase.from('shift_assignments')
-      .select('id, shift_template:shift_templates(start_time)')
+      .select('id, shift_template:shift_templates(start_time), rota:rotas(status)')
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
       .eq('date', todayStr)
-      .limit(1)
 
-    if (data?.[0]) {
-      const row = data[0] as any
+    const row = (data || []).find((r: any) => r.rota?.status === 'published' || r.rota?.status === 'draft') as any
+
+    if (row) {
       setShiftRostered(true)
       setShiftAssignmentId(row.id)
       const startTime = row.shift_template?.start_time

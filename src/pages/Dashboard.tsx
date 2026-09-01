@@ -289,20 +289,35 @@ export default function Dashboard() {
         )
       })()}
 
-      {!activeCheckin && (ciSettings?.timesheets_checkin_enabled || ciSettings?.shifts_checkin_enabled) && (
-        <div className="dash-checkin-banner" style={{ background: '#64748b' }}
-          onClick={() => {
-            if (ciSettings?.timesheets_checkin_enabled && !ciSettings?.shifts_checkin_enabled) navigate('/timesheets/checkin')
-            else if (!ciSettings?.timesheets_checkin_enabled && ciSettings?.shifts_checkin_enabled) navigate('/shifts/checkin')
-            else navigate('/timesheets/checkin')
-          }}>
-          <div className="dash-checkin-banner-info">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            <span className="dash-checkin-banner-text">Not checked in — tap to check in</span>
+      {!activeCheckin && (ciSettings?.timesheets_checkin_enabled || ciSettings?.shifts_checkin_enabled) && (() => {
+        const tsOnly = ciSettings?.timesheets_checkin_enabled && !ciSettings?.shifts_checkin_enabled
+        const shiftOnly = !ciSettings?.timesheets_checkin_enabled && ciSettings?.shifts_checkin_enabled
+        const both = ciSettings?.timesheets_checkin_enabled && ciSettings?.shifts_checkin_enabled
+        if (both) {
+          return (
+            <div className="dash-checkin-banner" style={{ background: '#64748b' }}>
+              <div className="dash-checkin-banner-info">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <span className="dash-checkin-banner-text">Not checked in</span>
+              </div>
+              <div className="dash-checkin-banner-actions">
+                <button className="dash-checkout-btn" onClick={() => navigate('/timesheets/checkin')}>Timesheet</button>
+                <button className="dash-checkout-btn" style={{ background: 'rgba(230,81,0,0.6)' }} onClick={() => navigate('/shifts/checkin')}>Shift</button>
+              </div>
+            </div>
+          )
+        }
+        return (
+          <div className="dash-checkin-banner" style={{ background: shiftOnly ? '#e65100' : '#64748b', cursor: 'pointer' }}
+            onClick={() => navigate(tsOnly ? '/timesheets/checkin' : '/shifts/checkin')}>
+            <div className="dash-checkin-banner-info">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <span className="dash-checkin-banner-text">{shiftOnly ? 'Shift' : 'Timesheet'} — tap to check in</span>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 18l6-6-6-6"/></svg>
           </div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 18l6-6-6-6"/></svg>
-        </div>
-      )}
+        )
+      })()}
 
       {reminderCount > 0 && (
         <div className="dash-status-bar">

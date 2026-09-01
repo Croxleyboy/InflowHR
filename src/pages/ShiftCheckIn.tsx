@@ -39,7 +39,7 @@ export default function ShiftCheckIn() {
     monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
 
     const [shiftRes, locsRes, histRes] = await Promise.all([
-      supabase.from('shift_assignments').select('id, date, status, shift_template_id, shift_template:shift_templates(name, start_time, end_time)')
+      supabase.from('shift_assignments').select('id, date, status, shift_template_id, shift_template:shift_templates(name, start_time, end_time), rota:rotas(status)')
         .eq('employee_id', employeeId).eq('company_id', companyId).eq('date', todayStr)
         .limit(1),
       supabase.from('work_locations').select('id, name').eq('company_id', companyId),
@@ -49,8 +49,12 @@ export default function ShiftCheckIn() {
         .order('check_in_at', { ascending: false }),
     ])
 
-    if (shiftRes.data?.[0]) {
-      const s = shiftRes.data[0] as any
+    const validShift = (shiftRes.data || []).find((s: any) => {
+      const rotaStatus = s.rota?.status
+      return rotaStatus === 'published' || rotaStatus === 'draft'
+    })
+    if (validShift) {
+      const s = validShift as any
       const tpl = s.shift_template
       setTodayShift({
         id: s.id,
