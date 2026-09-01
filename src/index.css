@@ -3702,6 +3702,13 @@ body {
 .elearning-deadline-urgent { color: #c62828; background: #ffebee; }
 [data-theme="dark"] .elearning-deadline-urgent { background: #3a1515; }
 
+.elearning-days-tags { display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+.elearning-days-set {
+  font-size: 10px; font-weight: 600; color: var(--text-muted, #888);
+  padding: 2px 6px; border-radius: 8px;
+  background: var(--border, #eee);
+}
+
 .elearning-chevron { transition: transform 0.2s; }
 .elearning-chevron-open { transform: rotate(180deg); }
 

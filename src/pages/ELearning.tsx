@@ -232,6 +232,24 @@ export default function ELearning() {
   useEffect(() => { saveProgress(progress) }, [progress])
 
   useEffect(() => {
+    if (!companyUser?.company_id || !EMPLOYEE_ID || enabledCourseIds === null || Object.keys(enrolmentDates).length > 0) return
+    if (enabledCourseIds.size === 0) return
+    const missing = [...enabledCourseIds].filter(id => !enrolmentDates[id])
+    if (missing.length === 0) return
+    const rows = missing.map(course_id => ({
+      company_id: companyUser.company_id,
+      employee_id: EMPLOYEE_ID,
+      course_id,
+      status: 'not_started',
+      progress_pct: 0,
+      enrolled_at: new Date().toISOString(),
+    }))
+    supabase.from('course_enrolments').upsert(rows, { onConflict: 'employee_id,course_id' }).then(() => {
+      fetchEnrolmentDates()
+    })
+  }, [companyUser?.company_id, EMPLOYEE_ID, enabledCourseIds, enrolmentDates, fetchEnrolmentDates])
+
+  useEffect(() => {
     if (!companyUser?.company_id || !EMPLOYEE_ID || progress.completed.length === 0) return
     const rows = progress.completed.map(cid => ({
       company_id: companyUser.company_id,
@@ -503,10 +521,19 @@ export default function ELearning() {
                     </div>
                   ) : status === 'renewal-due' ? (
                     <span className="elearning-badge-renewal">{t('elearning.renewal_due')}</span>
+                  ) : daysLeft !== null && course.daysToComplete ? (
+                    <div className="elearning-days-tags">
+                      <span className="elearning-days-set">{course.daysToComplete}d</span>
+                      <span className={`elearning-deadline ${daysLeft <= 7 ? 'elearning-deadline-urgent' : ''}`}>
+                        {daysLeft <= 0 ? t('elearning.overdue') : `${daysLeft}d left`}
+                      </span>
+                    </div>
                   ) : course.required && daysLeft !== null ? (
                     <span className={`elearning-deadline ${daysLeft <= 7 ? 'elearning-deadline-urgent' : ''}`}>
                       {daysLeft <= 0 ? t('elearning.overdue') : `${daysLeft}d`}
                     </span>
+                  ) : course.daysToComplete ? (
+                    <span className="elearning-days-set">{course.daysToComplete}d</span>
                   ) : null}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`elearning-chevron ${isExpanded ? 'elearning-chevron-open' : ''}`}>
                     <polyline points="6 9 12 15 18 9" />
