@@ -162,12 +162,9 @@ export default function TimesheetCheckIn() {
         .ci-header { background: linear-gradient(135deg, #1565c0, #1e88e5); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
         .ci-header-back { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
         .ci-header-center { flex: 1; }
-        .ci-header-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .ci-header-title { font-size: 18px; font-weight: 800; margin: 0; color: #fff; }
         .ci-header-title span { font-style: italic; color: #90caf9; }
-        .ci-header-notif { display: flex; align-items: center; gap: 4px; background: rgba(255,255,255,0.15); border: none; border-radius: 6px; padding: 3px 8px; font-size: 11px; color: #fff; cursor: pointer; font-family: inherit; font-weight: 600; white-space: nowrap; }
-        .ci-header-notif:hover { background: rgba(255,255,255,0.25); }
-        .ci-header-notif-dot { width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; }
+        .ci-header-sub { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 1px; }
         .ci-header-refresh { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
 
         .ci-map-frame { width: 100%; height: 180px; border: none; display: block; }
@@ -256,12 +253,8 @@ export default function TimesheetCheckIn() {
           </svg>
         </button>
         <div className="ci-header-center">
-          <div className="ci-header-top">
-            <h1 className="ci-header-title">Check <span>In/Out</span></h1>
-            <button className="ci-header-notif" onClick={() => navigate('/notifications')}>
-              <span className="ci-header-notif-dot" /> Reminders
-            </button>
-          </div>
+          <h1 className="ci-header-title">Check <span>In/Out</span></h1>
+          <p className="ci-header-sub">Timesheet attendance</p>
         </div>
         <button className="ci-header-refresh" onClick={loadHistory}>
           <svg width="24" height="24" viewBox="0 0 32 32" fill="none">

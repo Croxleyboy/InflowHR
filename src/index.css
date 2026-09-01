@@ -91,16 +91,31 @@ body {
   border: 2px solid #764ba2;
 }
 
-.dash-reminder-bar {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  width: 100%; padding: 8px 16px;
-  background: #7f1d1d; color: #fff;
-  border: none; cursor: pointer;
-  font-size: 13px; font-weight: 700;
-  font-family: inherit;
-  transition: background 0.15s;
+.dash-status-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 16px; flex-wrap: wrap;
 }
-.dash-reminder-bar:hover { background: #641717; }
+.dash-checkin-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: #16a34a; color: #fff; border: none; border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: inherit; flex: 1; min-width: 0;
+}
+.dash-checkin-pill:hover { background: #15803d; }
+.dash-checkin-dot { width: 7px; height: 7px; border-radius: 50%; background: #bbf7d0; flex-shrink: 0; }
+.dash-checkout-btn {
+  background: rgba(255,255,255,0.2); color: #fff; border: none; border-radius: 5px;
+  padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+  font-family: inherit; margin-left: auto; flex-shrink: 0;
+}
+.dash-checkout-btn:hover { background: rgba(255,255,255,0.35); }
+.dash-reminder-pill {
+  display: flex; align-items: center; gap: 4px;
+  background: #7f1d1d; color: #fff; border: none; border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: inherit; white-space: nowrap; flex-shrink: 0;
+}
+.dash-reminder-pill:hover { background: #641717; }
 
 .header-center { flex: 1; text-align: center; }
 .header-tagline { font-size: 14px; color: var(--text-muted); font-weight: 500; }

@@ -253,25 +253,27 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {reminderCount > 0 && (
-        <button className="dash-reminder-bar" onClick={() => navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } })}>
-          <span>You have {reminderCount} reminder{reminderCount !== 1 ? 's' : ''}</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-        </button>
+      {(reminderCount > 0 || activeCheckin) && (
+        <div className="dash-status-bar">
+          {activeCheckin && (() => {
+            const mins = Math.floor((Date.now() - new Date(activeCheckin.check_in_at).getTime()) / 60000)
+            const h = Math.floor(mins / 60); const m = mins % 60
+            return (
+              <button className="dash-checkin-pill" onClick={() => navigate(activeCheckin.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin')}>
+                <span className="dash-checkin-dot" />
+                In {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({h}h {m}m)
+                <button className="dash-checkout-btn" onClick={async (e) => { e.stopPropagation(); const r = await checkOut(); if (!r.ok) alert(r.error) }}>Out</button>
+              </button>
+            )
+          })()}
+          {reminderCount > 0 && (
+            <button className="dash-reminder-pill" onClick={() => navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } })}>
+              {reminderCount} reminder{reminderCount !== 1 ? 's' : ''}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          )}
+        </div>
       )}
-
-      {activeCheckin && (() => {
-        const mins = Math.floor((Date.now() - new Date(activeCheckin.check_in_at).getTime()) / 60000)
-        const h = Math.floor(mins / 60); const m = mins % 60
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#16a34a', color: '#fff', borderRadius: 10, padding: '10px 14px', margin: '0 0 12px', fontSize: 13, fontWeight: 500 }}>
-            <span onClick={() => navigate(activeCheckin.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin')} style={{ cursor: 'pointer' }}>
-              📍 Checked in since {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} — {h}h {m}m
-            </span>
-            <button onClick={async () => { const r = await checkOut(); if (!r.ok) alert(r.error) }} style={{ background: 'rgba(255,255,255,0.2)', color: '#fff', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Check Out</button>
-          </div>
-        )
-      })()}
 
       <div className="greeting-row">
         <h2 className="greeting">{greeting} {'\u{1F44B}'} {employeeName}</h2>
