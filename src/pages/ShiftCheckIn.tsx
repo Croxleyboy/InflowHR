@@ -41,8 +41,7 @@ export default function ShiftCheckIn() {
 
     const [shiftRes, locsRes, histRes] = await Promise.all([
       supabase.from('shift_assignments').select('id, date, status, shift_template_id, shift_template:shift_templates(name, start_time, end_time), rota:rotas(status)')
-        .eq('employee_id', employeeId).eq('company_id', companyId).eq('date', todayStr)
-        .limit(1),
+        .eq('employee_id', employeeId).eq('company_id', companyId).eq('date', todayStr),
       supabase.from('work_locations').select('id, name').eq('company_id', companyId),
       supabase.from('checkin_records').select('*')
         .eq('employee_id', employeeId).eq('source', 'shifts')

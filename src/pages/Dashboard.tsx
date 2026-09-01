@@ -291,15 +291,29 @@ export default function Dashboard() {
       })()}
 
       {!activeCheckin && (ciSettings?.timesheets_checkin_enabled || ciSettings?.shifts_checkin_enabled) && (() => {
-        const shiftOnly = !ciSettings?.timesheets_checkin_enabled && ciSettings?.shifts_checkin_enabled
-        const label = shiftOnly ? 'Shift' : 'Timesheet'
-        const path = shiftOnly ? '/shifts/checkin' : '/timesheets/checkin'
+        const tsOn = ciSettings?.timesheets_checkin_enabled
+        const shiftOn = ciSettings?.shifts_checkin_enabled
+        if (tsOn && shiftOn) {
+          return (
+            <div className="dash-checkin-banner" style={{ background: '#64748b' }}>
+              <div className="dash-checkin-banner-info">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <span className="dash-checkin-banner-text">Not checked in</span>
+              </div>
+              <div className="dash-checkin-banner-actions">
+                <button className="dash-checkout-btn" onClick={() => navigate('/timesheets/checkin')}>Timesheet</button>
+                <button className="dash-checkout-btn" style={{ background: 'rgba(230,81,0,0.6)' }} onClick={() => navigate('/shifts/checkin')}>Shift</button>
+              </div>
+            </div>
+          )
+        }
+        const shiftOnly = !tsOn && shiftOn
         return (
           <div className="dash-checkin-banner" style={{ background: shiftOnly ? '#e65100' : '#64748b', cursor: 'pointer' }}
-            onClick={() => navigate(path)}>
+            onClick={() => navigate(shiftOnly ? '/shifts/checkin' : '/timesheets/checkin')}>
             <div className="dash-checkin-banner-info">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              <span className="dash-checkin-banner-text">{label} — tap to check in</span>
+              <span className="dash-checkin-banner-text">{shiftOnly ? 'Shift' : 'Timesheet'} — tap to check in</span>
             </div>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 18l6-6-6-6"/></svg>
           </div>
