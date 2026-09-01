@@ -137,34 +137,45 @@ export default function NewLeaveRequest() {
     if (EMPLOYEE_ID) {
       const yrStart = `${new Date().getFullYear()}-01-01`
       const yrEnd = `${new Date().getFullYear()}-12-31`
-      Promise.all([
-        supabase.from('leave_balances')
-          .select('total_allowance, used')
-          .eq('employee_id', EMPLOYEE_ID)
-          .eq('company_id', companyUser.company_id)
-          .eq('year', new Date().getFullYear())
-          .limit(1)
-          .single(),
-        supabase.from('leave_requests')
-          .select('days_requested')
-          .eq('employee_id', EMPLOYEE_ID)
-          .eq('company_id', companyUser.company_id)
-          .eq('status', 'pending')
-          .gte('start_date', yrStart)
-          .lte('start_date', yrEnd),
-        supabase.from('leave_requests')
-          .select('days_requested')
-          .eq('employee_id', EMPLOYEE_ID)
-          .eq('company_id', companyUser.company_id)
-          .eq('status', 'approved')
-          .gte('start_date', yrStart)
-          .lte('start_date', yrEnd),
-      ]).then(([balRes, pendRes, approvedRes]) => {
-        const total = balRes.data?.total_allowance || 0
-        const used = (approvedRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
-        const pending = (pendRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
-        setLeaveBalance({ total, used, pending })
-      })
+      supabase.from('leave_types')
+        .select('id')
+        .eq('company_id', companyUser.company_id)
+        .eq('name', 'Annual Leave')
+        .limit(1)
+        .single()
+        .then(async ({ data: annualType }) => {
+          if (!annualType) return
+          const [balRes, pendRes, approvedRes] = await Promise.all([
+            supabase.from('leave_balances')
+              .select('total_allowance')
+              .eq('employee_id', EMPLOYEE_ID)
+              .eq('company_id', companyUser.company_id)
+              .eq('leave_type_id', annualType.id)
+              .eq('year', new Date().getFullYear())
+              .limit(1)
+              .single(),
+            supabase.from('leave_requests')
+              .select('days_requested')
+              .eq('employee_id', EMPLOYEE_ID)
+              .eq('company_id', companyUser.company_id)
+              .eq('leave_type_id', annualType.id)
+              .eq('status', 'pending')
+              .gte('start_date', yrStart)
+              .lte('start_date', yrEnd),
+            supabase.from('leave_requests')
+              .select('days_requested')
+              .eq('employee_id', EMPLOYEE_ID)
+              .eq('company_id', companyUser.company_id)
+              .eq('leave_type_id', annualType.id)
+              .eq('status', 'approved')
+              .gte('start_date', yrStart)
+              .lte('start_date', yrEnd),
+          ])
+          const total = balRes.data?.total_allowance || 0
+          const used = (approvedRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
+          const pending = (pendRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
+          setLeaveBalance({ total, used, pending })
+        })
     }
     if (EMPLOYEE_ID) {
       supabase.from('benefit_types')

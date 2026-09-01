@@ -200,40 +200,46 @@ export default function Dashboard() {
         .single()
         .then(({ data }) => { if (data) setPendingExpense(data.amount) })
 
-      supabase.from('leave_balances')
-        .select('leave_type_id, total_allowance')
-        .eq('employee_id', employeeId)
+      supabase.from('leave_types')
+        .select('id, name')
         .eq('company_id', companyUser.company_id)
-        .eq('year', new Date().getFullYear())
-        .then(async ({ data: balRows }) => {
-          if (!balRows || balRows.length === 0) return
-          const leaveTypeIds = balRows.map((b: any) => b.leave_type_id)
-          const { data: types } = await supabase.from('leave_types')
-            .select('id, deducts_from_allowance')
-            .in('id', leaveTypeIds)
-          const deductSet = new Set((types || []).filter((t: any) => t.deducts_from_allowance !== false).map((t: any) => t.id))
-          const allowance = balRows.filter((b: any) => deductSet.has(b.leave_type_id)).reduce((s: number, b: any) => s + Number(b.total_allowance), 0)
+        .eq('name', 'Annual Leave')
+        .limit(1)
+        .single()
+        .then(async ({ data: annualType }) => {
+          if (!annualType) return
+          const { data: balRow } = await supabase.from('leave_balances')
+            .select('total_allowance')
+            .eq('employee_id', employeeId)
+            .eq('company_id', companyUser.company_id)
+            .eq('leave_type_id', annualType.id)
+            .eq('year', new Date().getFullYear())
+            .limit(1)
+            .single()
+          if (!balRow) return
           const yearStart = `${new Date().getFullYear()}-01-01`
           const yearEnd = `${new Date().getFullYear()}-12-31`
           const [approvedRes, pendingRes] = await Promise.all([
             supabase.from('leave_requests')
-              .select('days_requested, leave_type_id')
+              .select('days_requested')
               .eq('employee_id', employeeId)
               .eq('company_id', companyUser.company_id)
+              .eq('leave_type_id', annualType.id)
               .eq('status', 'approved')
               .gte('start_date', yearStart)
               .lte('start_date', yearEnd),
             supabase.from('leave_requests')
-              .select('days_requested, leave_type_id')
+              .select('days_requested')
               .eq('employee_id', employeeId)
               .eq('company_id', companyUser.company_id)
+              .eq('leave_type_id', annualType.id)
               .eq('status', 'pending')
               .gte('start_date', yearStart)
               .lte('start_date', yearEnd),
           ])
-          const approvedDays = (approvedRes.data || []).filter((r: any) => deductSet.has(r.leave_type_id)).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
-          const pendingDays = (pendingRes.data || []).filter((r: any) => deductSet.has(r.leave_type_id)).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
-          setLeaveRemaining(allowance - approvedDays)
+          const approvedDays = (approvedRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
+          const pendingDays = (pendingRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
+          setLeaveRemaining(balRow.total_allowance - approvedDays)
           setLeavePending(pendingDays)
         })
     }
