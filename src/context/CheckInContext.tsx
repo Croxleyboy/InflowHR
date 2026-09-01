@@ -19,6 +19,8 @@ export interface CheckinRecord {
   employee_id: string
   check_in_at: string
   check_out_at: string | null
+  check_in_lat: number | null
+  check_in_lng: number | null
   check_in_location_id: string | null
   check_out_location_id: string | null
   source: 'timesheets' | 'shifts'
