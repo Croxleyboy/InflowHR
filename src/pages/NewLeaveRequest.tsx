@@ -135,6 +135,8 @@ export default function NewLeaveRequest() {
         if (data?.weekends_as_workdays) setWeekendsAsWorkdays(true)
       })
     if (EMPLOYEE_ID) {
+      const yrStart = `${new Date().getFullYear()}-01-01`
+      const yrEnd = `${new Date().getFullYear()}-12-31`
       Promise.all([
         supabase.from('leave_balances')
           .select('total_allowance, used')
@@ -147,10 +149,19 @@ export default function NewLeaveRequest() {
           .select('days_requested')
           .eq('employee_id', EMPLOYEE_ID)
           .eq('company_id', companyUser.company_id)
-          .eq('status', 'pending'),
-      ]).then(([balRes, pendRes]) => {
+          .eq('status', 'pending')
+          .gte('start_date', yrStart)
+          .lte('start_date', yrEnd),
+        supabase.from('leave_requests')
+          .select('days_requested')
+          .eq('employee_id', EMPLOYEE_ID)
+          .eq('company_id', companyUser.company_id)
+          .eq('status', 'approved')
+          .gte('start_date', yrStart)
+          .lte('start_date', yrEnd),
+      ]).then(([balRes, pendRes, approvedRes]) => {
         const total = balRes.data?.total_allowance || 0
-        const used = balRes.data?.used || 0
+        const used = (approvedRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
         const pending = (pendRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
         setLeaveBalance({ total, used, pending })
       })

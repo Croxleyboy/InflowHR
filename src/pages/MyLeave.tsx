@@ -28,6 +28,8 @@ export default function MyLeave() {
   const loadData = useCallback(async () => {
     if (!EMPLOYEE_ID) return
     setLoading(true)
+    const yearStart = `${new Date().getFullYear()}-01-01`
+    const yearEnd = `${new Date().getFullYear()}-12-31`
     const [balRes, pendReqRes, approvedReqRes] = await Promise.all([
       supabase
         .from('leave_balances')
@@ -40,13 +42,17 @@ export default function MyLeave() {
         .select('leave_type_id, days_requested')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
-        .eq('status', 'pending'),
+        .eq('status', 'pending')
+        .gte('start_date', yearStart)
+        .lte('start_date', yearEnd),
       supabase
         .from('leave_requests')
         .select('leave_type_id, days_requested')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
-        .eq('status', 'approved'),
+        .eq('status', 'approved')
+        .gte('start_date', yearStart)
+        .lte('start_date', yearEnd),
     ])
 
     const approvedByType = new Map<number, number>()
