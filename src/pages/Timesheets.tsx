@@ -101,7 +101,7 @@ export default function Timesheets() {
     { key: 'all', label: t('timesheets.all') },
     { key: 'approved', label: t('timesheets.approved') },
     { key: 'pending', label: t('timesheets.pending') },
-    { key: 'cancelled', label: 'Cancelled' },
+    { key: 'cancelled', label: 'Declined' },
   ]
 
   return (
