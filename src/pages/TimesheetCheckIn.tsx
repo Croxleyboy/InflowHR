@@ -287,8 +287,10 @@ export default function TimesheetCheckIn() {
         </div>
 
         <div className="ci-status-actions">
-          <div className={`ci-status-icon ${activeBreak ? 'on-break' : activeCheckin ? 'active' : 'inactive'}`}>
-            {activeBreak ? (
+          <div className={`ci-status-icon ${activeCheckin && activeCheckin.source !== 'timesheets' ? 'inactive' : activeBreak ? 'on-break' : activeCheckin ? 'active' : 'inactive'}`}>
+            {activeCheckin && activeCheckin.source !== 'timesheets' ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><path d="M8 12h8" strokeLinecap="round"/></svg>
+            ) : activeBreak ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
             ) : activeCheckin ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -298,22 +300,30 @@ export default function TimesheetCheckIn() {
           </div>
           <div className="ci-status-info">
             <div className="ci-status-text">
-              {activeBreak
-                ? `Break ${fmtTime(activeBreak.break_start)}`
-                : activeCheckin
-                  ? `In ${fmtTime(activeCheckin.check_in_at)}`
-                  : 'Not checked in'}
+              {activeCheckin && activeCheckin.source !== 'timesheets'
+                ? 'Checked in to Shift'
+                : activeBreak
+                  ? `Break ${fmtTime(activeBreak.break_start)}`
+                  : activeCheckin
+                    ? `In ${fmtTime(activeCheckin.check_in_at)}`
+                    : 'Not checked in'}
             </div>
             <div className="ci-status-sub">
-              {activeBreak
-                ? fmtTimer(breakElapsed)
-                : activeCheckin
-                  ? fmtTimer(elapsed)
-                  : 'Tap Check In'}
+              {activeCheckin && activeCheckin.source !== 'timesheets'
+                ? 'Check out of shift first'
+                : activeBreak
+                  ? fmtTimer(breakElapsed)
+                  : activeCheckin
+                    ? fmtTimer(elapsed)
+                    : 'Tap Check In'}
             </div>
           </div>
           <div className="ci-action-btns">
-            {!activeCheckin ? (
+            {activeCheckin && activeCheckin.source !== 'timesheets' ? (
+              <button className="ci-act-btn" style={{ background: '#e65100', color: '#fff' }} onClick={() => navigate('/shifts/checkin')}>
+                Checked in to Shift
+              </button>
+            ) : !activeCheckin ? (
               <button className="ci-act-btn ci-act-checkin" onClick={handleCheckIn} disabled={acting}>
                 {acting ? '...' : 'Check In'}
               </button>
