@@ -21,6 +21,10 @@
   --text-muted: #aaaaaa;
   --border: #3a3a55;
 }
+[data-theme="dark"] .header-date { color: #64b5f6; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .header-date { color: #64b5f6; }
+}
 
 html { height: 100dvh; overflow: hidden; font: 16px/1.4 var(--sans); }
 body {
@@ -100,7 +104,7 @@ body {
 
 .header-center { flex: 1; text-align: center; }
 .header-tagline { font-size: 14px; color: var(--text-muted); font-weight: 500; }
-.header-date { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.header-date { font-size: 13px; color: #1565c0; margin-top: 2px; font-weight: 600; }
 
 .header-logo { flex-shrink: 0; }
 .logo-text {
