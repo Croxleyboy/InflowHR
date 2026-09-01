@@ -85,13 +85,19 @@ CREATE POLICY "cr_select" ON checkin_records FOR SELECT
 CREATE POLICY "cr_insert" ON checkin_records FOR INSERT
   WITH CHECK (
     company_id = get_my_company_id()
-    AND employee_id IN (SELECT id FROM employees WHERE auth_user_id = auth.uid())
+    AND employee_id IN (
+      SELECT employee_id FROM company_users
+      WHERE auth_user_id = auth.uid() AND is_active = true AND employee_id IS NOT NULL
+    )
   );
 CREATE POLICY "cr_update_own" ON checkin_records FOR UPDATE
   USING (
     company_id = get_my_company_id()
     AND (
-      employee_id IN (SELECT id FROM employees WHERE auth_user_id = auth.uid())
+      employee_id IN (
+        SELECT employee_id FROM company_users
+        WHERE auth_user_id = auth.uid() AND is_active = true AND employee_id IS NOT NULL
+      )
       OR is_company_admin()
       OR is_super_admin()
     )
@@ -124,8 +130,11 @@ CREATE POLICY "br_insert" ON break_records FOR INSERT
   WITH CHECK (
     company_id = get_my_company_id()
     AND checkin_record_id IN (
-      SELECT id FROM checkin_records
-      WHERE employee_id IN (SELECT id FROM employees WHERE auth_user_id = auth.uid())
+      SELECT cr.id FROM checkin_records cr
+      WHERE cr.employee_id IN (
+        SELECT employee_id FROM company_users
+        WHERE auth_user_id = auth.uid() AND is_active = true AND employee_id IS NOT NULL
+      )
     )
   );
 CREATE POLICY "br_update" ON break_records FOR UPDATE
@@ -133,8 +142,11 @@ CREATE POLICY "br_update" ON break_records FOR UPDATE
     company_id = get_my_company_id()
     AND (
       checkin_record_id IN (
-        SELECT id FROM checkin_records
-        WHERE employee_id IN (SELECT id FROM employees WHERE auth_user_id = auth.uid())
+        SELECT cr.id FROM checkin_records cr
+        WHERE cr.employee_id IN (
+          SELECT employee_id FROM company_users
+          WHERE auth_user_id = auth.uid() AND is_active = true AND employee_id IS NOT NULL
+        )
       )
       OR is_company_admin()
       OR is_super_admin()

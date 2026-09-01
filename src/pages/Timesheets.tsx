@@ -7,7 +7,7 @@ import { useCheckIn } from '../context/CheckInContext'
 import { formatDate, formatTime24 as formatTime } from '../lib/formatters'
 
 type TimesheetStatus = 'draft' | 'pending' | 'approved' | 'rejected'
-type Filter = 'all' | 'approved' | 'pending'
+type Filter = 'all' | 'approved' | 'pending' | 'cancelled'
 
 interface Timesheet {
   id: number
@@ -23,11 +23,12 @@ interface Timesheet {
   created_at: string
 }
 
-const statusColor: Record<TimesheetStatus, string> = {
+const statusColor: Record<string, string> = {
   draft: '#9e9e9e',
   pending: '#ff9800',
   approved: '#4caf50',
   rejected: '#f44336',
+  cancelled: '#78909c',
 }
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -87,7 +88,8 @@ export default function Timesheets() {
     const endDate = new Date(y, m + 1, 0)
     const end = `${y}-${String(m + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
     let entries = timesheets.filter(ts => ts.date >= start && ts.date <= end)
-    if (filter !== 'all') entries = entries.filter(ts => ts.status === filter)
+    if (filter === 'cancelled') entries = entries.filter(ts => ts.status === 'rejected')
+    else if (filter !== 'all') entries = entries.filter(ts => ts.status === filter)
     return entries
   }, [timesheets, current, filter])
 
@@ -99,10 +101,31 @@ export default function Timesheets() {
     { key: 'all', label: t('timesheets.all') },
     { key: 'approved', label: t('timesheets.approved') },
     { key: 'pending', label: t('timesheets.pending') },
+    { key: 'cancelled', label: 'Cancelled' },
   ]
 
   return (
     <div className="feature-page timesheets-page">
+      <style>{`
+        .ts-filters { display: flex; gap: 6px; padding: 10px 16px 6px; overflow-x: auto; }
+        .ts-filter-btn { flex: 1; min-width: 0; padding: 8px 4px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1.5px solid var(--border, #ddd); background: var(--card-bg, #fff); color: var(--text-muted, #888); cursor: pointer; font-family: inherit; text-align: center; white-space: nowrap; transition: all 0.15s; }
+        .ts-filter-btn.active { background: #1565c0; color: #fff; border-color: #1565c0; }
+        .ts-action-row { display: flex; gap: 8px; padding: 8px 16px; }
+        .ts-action-btn { flex: 1; padding: 10px 8px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; font-family: inherit; text-align: center; color: #fff; }
+        .ts-action-add { background: #1565c0; }
+        .ts-action-checkin { background: #16a34a; }
+        .ts-action-history { background: none; border: 1px solid var(--border, #ddd); color: var(--text-muted, #888); }
+        .ts-month-card { margin: 8px 16px 16px; background: var(--card-bg, #fff); border-radius: 14px; border: 1px solid var(--border, #eee); overflow: hidden; }
+        .ts-month-nav { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border, #eee); }
+        .ts-month-nav-btn { background: none; border: none; cursor: pointer; padding: 4px; color: var(--text-muted, #999); display: flex; align-items: center; }
+        .ts-month-nav-btn:disabled { opacity: 0.3; cursor: default; }
+        .ts-month-label { font-size: 15px; font-weight: 600; color: var(--text); }
+        .ts-month-list { min-height: 60px; }
+        .ts-month-total { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border, #eee); background: var(--card-bg, #fafafa); }
+        .ts-month-total-label { font-size: 13px; font-weight: 600; color: var(--text-muted, #888); }
+        .ts-month-total-value { font-size: 15px; font-weight: 700; color: var(--text); }
+      `}</style>
+
       <header className="feature-header">
         <button className="feature-back" onClick={() => navigate('/')}>
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
@@ -123,11 +146,11 @@ export default function Timesheets() {
         </button>
       </header>
 
-      <div className="expense-filters">
+      <div className="ts-filters">
         {filters.map(f => (
           <button
             key={f.key}
-            className={`filter-btn ${filter === f.key ? 'filter-active' : ''}`}
+            className={`ts-filter-btn ${filter === f.key ? 'active' : ''}`}
             onClick={() => setFilter(f.key)}
           >
             {f.label}
@@ -135,68 +158,70 @@ export default function Timesheets() {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, padding: '0 16px' }}>
-        <button className="add-claim-btn" style={{ flex: 1, margin: 0 }} onClick={() => navigate('/timesheets/new')}>
+      <div className="ts-action-row">
+        <button className="ts-action-btn ts-action-add" onClick={() => navigate('/timesheets/new')}>
           + {t('timesheets.add_new')}
         </button>
         {ciSettings?.timesheets_checkin_enabled && (
-          <button className="add-claim-btn" style={{ flex: 1, margin: 0, background: '#16a34a' }} onClick={() => navigate('/timesheets/checkin')}>
+          <button className="ts-action-btn ts-action-checkin" onClick={() => navigate('/timesheets/checkin')}>
             Check In
           </button>
         )}
-      </div>
-
-      <button className="ts-history-btn" onClick={() => navigate('/timesheets/history')}>
-        {t('timesheets.last_4_weeks')}
-      </button>
-
-      <div className="payslips-month-nav" style={{ padding: '8px 16px' }}>
-        <button className="payslips-nav-btn" disabled={!canPrev} onClick={() => setMonthIdx(i => i - 1)}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        <span className="payslips-month-label">
-          {current ? `${MONTH_NAMES[current.month]} ${current.year}` : ''}
-        </span>
-        <button className="payslips-nav-btn" disabled={!canNext} onClick={() => setMonthIdx(i => i + 1)}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+        <button className="ts-action-btn ts-action-history" onClick={() => navigate('/timesheets/history')}>
+          {t('timesheets.last_4_weeks')}
         </button>
       </div>
 
-      {loading && <p className="claims-empty">{t('common.loading')}</p>}
-
-      <div className="claims-list">
-        {!loading && monthEntries.length === 0 && (
-          <p className="claims-empty">{t('timesheets.no_timesheets')}</p>
-        )}
-        {monthEntries.map(ts => (
-          <button key={ts.id} className="claim-row" onClick={() => navigate(`/timesheets/${ts.id}`)}>
-            <div className="claim-date-col">
-              <span className="claim-date">{ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)}</span>
-              <span className="claim-id">{formatTime(ts.start_time)} - {formatTime(ts.end_time)}</span>
-            </div>
-            <div className="claim-detail-col">
-              <span className="claim-desc">{ts.role}</span>
-              <div className="claim-amount-row">
-                <span className="claim-amount">{Number(ts.hours).toFixed(1)}h</span>
-                <span className="claim-status">
-                  <span className="status-dot" style={{ background: statusColor[ts.status] }} />
-                  {tStatus(ts.status)}
-                </span>
-              </div>
-            </div>
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="claim-arrow">
-              <path d="M12 6l10 10-10 10" stroke="#1565c0" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+      <div className="ts-month-card">
+        <div className="ts-month-nav">
+          <button className="ts-month-nav-btn" disabled={!canPrev} onClick={() => setMonthIdx(i => i - 1)}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
-        ))}
-      </div>
-
-      {!loading && monthEntries.length > 0 && (
-        <div className="ts-week-total-row" style={{ margin: '0 16px' }}>
-          <span className="ts-week-total-label">{t('timesheets.month_total')}</span>
-          <span className="ts-week-total-value">{monthTotal.toFixed(1)}h</span>
+          <span className="ts-month-label">
+            {current ? `${MONTH_NAMES[current.month]} ${current.year}` : ''}
+          </span>
+          <button className="ts-month-nav-btn" disabled={!canNext} onClick={() => setMonthIdx(i => i + 1)}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
         </div>
-      )}
+
+        <div className="ts-month-list">
+          {loading && <p className="claims-empty">{t('common.loading')}</p>}
+          {!loading && monthEntries.length === 0 && (
+            <p className="claims-empty">{t('timesheets.no_timesheets')}</p>
+          )}
+          <div className="claims-list">
+            {monthEntries.map(ts => (
+              <button key={ts.id} className="claim-row" onClick={() => navigate(`/timesheets/${ts.id}`)}>
+                <div className="claim-date-col">
+                  <span className="claim-date">{ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)}</span>
+                  <span className="claim-id">{formatTime(ts.start_time)} - {formatTime(ts.end_time)}</span>
+                </div>
+                <div className="claim-detail-col">
+                  <span className="claim-desc">{ts.role}</span>
+                  <div className="claim-amount-row">
+                    <span className="claim-amount">{Number(ts.hours).toFixed(1)}h</span>
+                    <span className="claim-status">
+                      <span className="status-dot" style={{ background: statusColor[ts.status] }} />
+                      {tStatus(ts.status)}
+                    </span>
+                  </div>
+                </div>
+                <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="claim-arrow">
+                  <path d="M12 6l10 10-10 10" stroke="#1565c0" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {!loading && monthEntries.length > 0 && (
+          <div className="ts-month-total">
+            <span className="ts-month-total-label">{t('timesheets.month_total')}</span>
+            <span className="ts-month-total-value">{monthTotal.toFixed(1)}h</span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
