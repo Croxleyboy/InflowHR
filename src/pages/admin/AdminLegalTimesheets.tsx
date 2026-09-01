@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import LegalClientMatters from './LegalClientMatters'
+import { toLocalDateStr } from '../../lib/formatters'
 
 // ── Types ──
 export interface Employee {
@@ -128,14 +129,14 @@ function getWeekKey(d: string): string {
   const diff = day === 0 ? -6 : 1 - day
   const mon = new Date(dt)
   mon.setDate(dt.getDate() + diff)
-  return mon.toISOString().split('T')[0]
+  return toLocalDateStr(mon)
 }
 
 function getWeekRange(weekKey: string): string {
   const mon = new Date(weekKey + 'T00:00:00')
   const sun = new Date(mon)
   sun.setDate(mon.getDate() + 6)
-  return `${fmtDate(weekKey)} — ${fmtDate(sun.toISOString().split('T')[0])}`
+  return `${fmtDate(weekKey)} — ${fmtDate(toLocalDateStr(sun))}`
 }
 
 function empName(e: { first_name: string; last_name: string } | null | undefined): string {
@@ -262,7 +263,7 @@ export default function AdminLegalTimesheets() {
     // Get entries for the last 14 days
     const twoWeeksAgo = new Date()
     twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
-    const fromDate = twoWeeksAgo.toISOString().split('T')[0]
+    const fromDate = toLocalDateStr(twoWeeksAgo)
 
     const { data: recentEntries } = await supabase
       .from('legal_timesheet_entries')
@@ -367,7 +368,7 @@ export default function AdminLegalTimesheets() {
 
   // KPIs
   const now = new Date()
-  const thisWeekKey = getWeekKey(now.toISOString().split('T')[0])
+  const thisWeekKey = getWeekKey(toLocalDateStr(now))
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
   const weekHrs = filtered.filter(e => e.date >= thisWeekKey).reduce((s, e) => s + Number(e.duration_hrs), 0)
   const monthHrs = filtered.filter(e => e.date >= monthStart).reduce((s, e) => s + Number(e.duration_hrs), 0)
@@ -409,7 +410,7 @@ export default function AdminLegalTimesheets() {
     setLeaveConflictCount(alerts.filter(a => a.type === 'leave-conflict').length)
     if (!selectedCompanyId) return
     const weekStart = thisWeekKey
-    const weekEnd = new Date(new Date(weekStart + 'T00:00:00').getTime() + 6 * 86400000).toISOString().split('T')[0]
+    const weekEnd = toLocalDateStr(new Date(new Date(weekStart + 'T00:00:00').getTime() + 6 * 86400000))
     supabase
       .from('leave_requests')
       .select('employee_id')

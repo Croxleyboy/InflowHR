@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
+import { toLocalDateStr } from '../lib/formatters'
 
 interface DirectoryEntry {
   id: number
@@ -62,7 +63,7 @@ export default function Directory() {
     if (!companyUser?.company_id) return
     setLoading(true)
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = toLocalDateStr()
 
     const [dirRes, leaveRes, empRes] = await Promise.all([
       supabase
@@ -154,10 +155,10 @@ export default function Directory() {
 
     const companyId = companyUser.company_id
     const today = new Date()
-    const todayStr = today.toISOString().split('T')[0]
+    const todayStr = toLocalDateStr(today)
     const yesterday = new Date(today)
     yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayStr = yesterday.toISOString().split('T')[0]
+    const yesterdayStr = toLocalDateStr(yesterday)
 
     const { data: reports } = await supabase
       .from('employees')

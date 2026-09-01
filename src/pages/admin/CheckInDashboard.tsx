@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { toLocalDateStr } from '../../lib/formatters'
 
 interface CheckinRow {
   id: string
@@ -44,8 +45,8 @@ function getFYRange(fyStartMonth: number): { start: string; end: string } {
   const startDate = new Date(fyStartYear, fyStartMonth - 1, 1)
   const endDate = new Date(fyStartYear + 1, fyStartMonth - 1, 0)
   return {
-    start: startDate.toISOString().split('T')[0],
-    end: endDate.toISOString().split('T')[0],
+    start: toLocalDateStr(startDate),
+    end: toLocalDateStr(endDate),
   }
 }
 
@@ -59,9 +60,9 @@ export default function CheckInDashboardPanel({ source }: Props) {
   const [employees, setEmployees] = useState<Record<string, { name: string; dept: string }>>({})
   const [locationNames, setLocationNames] = useState<Record<string, string>>({})
   const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]
+    const d = new Date(); d.setDate(1); return toLocalDateStr(d)
   })
-  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0])
+  const [dateTo, setDateTo] = useState(() => toLocalDateStr())
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [filterDept, setFilterDept] = useState('')
@@ -97,7 +98,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
     if (histRes.data) setHistory(histRes.data)
 
     if (source === 'shifts') {
-      const todayStr = new Date().toISOString().split('T')[0]
+      const todayStr = toLocalDateStr()
       const [assignRes, tmplRes] = await Promise.all([
         supabase.from('shift_assignments').select('id, employee_id, date, shift_template_id')
           .eq('company_id', companyId).eq('date', todayStr),
@@ -133,7 +134,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
   const totalPages = Math.max(1, Math.ceil(filteredHistory.length / PAGE_SIZE))
   const paginated = filteredHistory.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = toLocalDateStr()
   const todayRecords = enriched(history).filter(r => r.check_in_at.startsWith(todayStr))
   const uniqueDepts = [...new Set(Object.values(employees).map(e => e.dept).filter(Boolean))].sort()
 

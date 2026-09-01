@@ -442,6 +442,7 @@ export default function MyShifts() {
             const dayNum = String(day.getDate()).padStart(2, '0')
             const dayName = DAY_LABELS[day.getDay()]
             const isToday = isSameDay(day, today)
+            const isPast = day < today && !isToday
 
             const groups = filter === 'everyone'
               ? (groupedByDate[dateStr] || [])
@@ -503,7 +504,7 @@ export default function MyShifts() {
                             {g.employees.length} assigned
                             {g.template.break_minutes != null && g.template.break_minutes > 0 && ` · ${g.template.break_minutes}m break`}
                           </span>
-                          <button className="sc-block-swap" onClick={() => navigate('/shifts/swap')}>{t('shifts.request_swap')}</button>
+                          {!isPast && <button className="sc-block-swap" onClick={() => navigate('/shifts/swap')}>{t('shifts.request_swap')}</button>}
                         </div>
                       </div>
                     )
@@ -528,7 +529,7 @@ export default function MyShifts() {
                             </div>
                           </div>
                           <div className="sc-block-actions">
-                            <button className="sc-block-swap" onClick={() => navigate('/shifts/swap')}>{t('shifts.request_swap')}</button>
+                            {!isPast && <button className="sc-block-swap" onClick={() => navigate('/shifts/swap')}>{t('shifts.request_swap')}</button>}
                             {canEdit && (
                               <button className="sc-block-edit" onClick={() => setEditingId(isEditing ? null : s.id)}>
                                 {isEditing ? 'Cancel' : 'Edit'}

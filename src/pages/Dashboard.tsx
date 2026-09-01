@@ -6,6 +6,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useCheckIn } from '../context/CheckInContext'
 import { supabase } from '../lib/supabase'
+import { toLocalDateStr } from '../lib/formatters'
 import Chevron from '../components/Chevron'
 import { COURSES } from './ELearning'
 
@@ -69,7 +70,7 @@ export default function Dashboard() {
         .gt('created_at', lastSeen)
         .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
 
-      const today = new Date().toISOString().split('T')[0]
+      const today = toLocalDateStr()
       supabase.from('one_to_one_meetings')
         .select('id', { count: 'exact', head: true })
         .eq('company_id', companyUser.company_id)
@@ -83,7 +84,7 @@ export default function Dashboard() {
         let count = 0
         const now = new Date()
         const weekAhead = new Date(now); weekAhead.setDate(weekAhead.getDate() + 7)
-        const weekAheadStr = weekAhead.toISOString().split('T')[0]
+        const weekAheadStr = toLocalDateStr(weekAhead)
 
         const { data: colleagues } = await supabase.from('employees')
           .select('id, date_of_birth').eq('company_id', companyUser.company_id).eq('is_active', true).not('date_of_birth', 'is', null)
@@ -118,7 +119,7 @@ export default function Dashboard() {
           .eq('company_id', companyUser.company_id)
           .in('status', ['pending', 'accepted'])
           .gte('scheduled_date', today)
-          .lte('scheduled_date', twoWeeksAhead.toISOString().split('T')[0])
+          .lte('scheduled_date', toLocalDateStr(twoWeeksAhead))
           .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
         if (upcomingMeetings) {
           count += upcomingMeetings.filter((m: any) => {

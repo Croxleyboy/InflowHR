@@ -3,6 +3,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
+import { toLocalDateStr } from '../../lib/formatters'
 
 const EQUIPMENT_OPTIONS = [
   'TV / Display',
@@ -305,7 +306,7 @@ export default function AdminSpaceManagement() {
   const loadBookings = useCallback(async () => {
     if (!companyId) return
     setBookingsLoading(true)
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = toLocalDateStr()
     let query = supabase.from('space_bookings')
       .select('id, space_id, employee_id, booking_date, start_time, end_time, title, status, checked_in_at, created_at, spaces(name, space_type), employees(first_name, last_name)')
       .eq('company_id', companyId)
@@ -350,7 +351,7 @@ export default function AdminSpaceManagement() {
     setAnalyticsLoading(true)
     const since = new Date()
     since.setDate(since.getDate() - analyticsRange)
-    const sinceStr = since.toISOString().split('T')[0]
+    const sinceStr = toLocalDateStr(since)
 
     const { data: rows } = await supabase.from('space_bookings')
       .select('id, space_id, booking_date, start_time, status, checked_in_at')

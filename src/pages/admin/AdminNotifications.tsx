@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
+import { toLocalDateStr } from '../../lib/formatters'
 
 interface WorkflowRow {
   id: number
@@ -44,10 +45,10 @@ function formatDateTime(d: string) {
 function defaultFrom() {
   const d = new Date()
   d.setDate(d.getDate() - 30)
-  return d.toISOString().split('T')[0]
+  return toLocalDateStr(d)
 }
 function defaultTo() {
-  return new Date().toISOString().split('T')[0]
+  return toLocalDateStr()
 }
 
 export default function AdminNotifications() {

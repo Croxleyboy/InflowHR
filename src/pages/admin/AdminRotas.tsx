@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { checkTimeOverlap } from '../../lib/overlapCheck'
+import { toLocalDateStr } from '../../lib/formatters'
 
 interface Rota {
   id: string
@@ -78,7 +79,7 @@ function addDays(d: Date, n: number): Date {
 }
 
 function formatDate(d: Date): string {
-  return d.toISOString().split('T')[0]
+  return toLocalDateStr(d)
 }
 
 function isDateInRange(date: string, start: string, end: string): boolean {
@@ -312,8 +313,8 @@ export default function AdminRotas() {
     if (dayRecords.length === 0) {
       const now = new Date()
       const dateObj = new Date(date + 'T00:00:00')
-      const isPast = dateObj < new Date(now.toISOString().split('T')[0] + 'T00:00:00')
-      const isToday = date === now.toISOString().split('T')[0]
+      const isPast = dateObj < new Date(toLocalDateStr(now) + 'T00:00:00')
+      const isToday = date === toLocalDateStr(now)
       if (template && (isPast || isToday)) {
         const shiftEnd = new Date(date + 'T' + template.end_time)
         if (now > shiftEnd) return { status: 'missed' as const, mins: 0 }

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useLanguage } from '../context/LanguageContext'
+import { toLocalDateStr } from '../lib/formatters'
 
 interface DirectReport {
   id: string
@@ -89,7 +90,7 @@ export default function PerformanceGoals() {
   const [formDesc, setFormDesc] = useState('')
   const [formStatus, setFormStatus] = useState('active')
   const [formGrade, setFormGrade] = useState<number | null>(null)
-  const [formStart, setFormStart] = useState(new Date().toISOString().split('T')[0])
+  const [formStart, setFormStart] = useState(toLocalDateStr())
   const [formDue, setFormDue] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -167,7 +168,7 @@ export default function PerformanceGoals() {
     setFormDesc('')
     setFormStatus('active')
     setFormGrade(null)
-    setFormStart(new Date().toISOString().split('T')[0])
+    setFormStart(toLocalDateStr())
     setFormDue('')
     setShowForm(true)
   }

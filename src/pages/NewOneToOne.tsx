@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { formatDateDisplay } from '../lib/formatters'
+import { formatDateDisplay, toLocalDateStr } from '../lib/formatters'
 
 interface DirectReport {
   id: string
@@ -89,7 +89,7 @@ export default function NewOneToOne() {
     navigate('/one-to-ones')
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = toLocalDateStr()
 
   return (
     <div className="oto-page">

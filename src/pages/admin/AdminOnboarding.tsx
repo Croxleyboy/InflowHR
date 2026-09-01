@@ -8,6 +8,7 @@ import { useFeatures } from '../../context/FeatureContext'
 import * as XLSX from 'xlsx'
 import CompanySetupWizard from './CompanySetupWizard'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
+import { toLocalDateStr } from '../../lib/formatters'
 
 const PAGE_SIZE = 30
 
@@ -620,7 +621,7 @@ export default function AdminOnboarding() {
       unique_employee_id: uniqueEid,
       job_title: record.job_title || '',
       department: record.department || '',
-      start_date: record.start_date || new Date().toISOString().split('T')[0],
+      start_date: record.start_date || toLocalDateStr(),
       phone: record.telephone || '',
       is_admin: false,
       is_active: false,
@@ -684,7 +685,7 @@ export default function AdminOnboarding() {
 
   const stats = useMemo(() => {
     const now = new Date()
-    const today = now.toISOString().split('T')[0]
+    const today = toLocalDateStr(now)
 
     const fyStart = new Date(now.getFullYear(), fyStartMonth - 1, 1)
     if (fyStart > now) fyStart.setFullYear(fyStart.getFullYear() - 1)
@@ -692,7 +693,7 @@ export default function AdminOnboarding() {
 
     const fyRecords = records.filter(r => {
       if (!r.start_date) return false
-      return r.start_date >= fyStart.toISOString().split('T')[0] && r.start_date <= fyEnd.toISOString().split('T')[0]
+      return r.start_date >= toLocalDateStr(fyStart) && r.start_date <= toLocalDateStr(fyEnd)
     })
 
     const monthNames = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
@@ -840,7 +841,7 @@ export default function AdminOnboarding() {
             <div style={{ marginTop: 20, background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 12, padding: 16 }}>
               <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#e65100' }}>Overdue Onboarding ({stats.overdue})</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {records.filter(r => !r.is_complete && r.start_date && r.start_date < new Date().toISOString().split('T')[0]).map(r => {
+                {records.filter(r => !r.is_complete && r.start_date && r.start_date < toLocalDateStr()).map(r => {
                   const daysOver = Math.floor((Date.now() - new Date(r.start_date).getTime()) / 86400000)
                   return (
                     <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13, padding: '6px 0', borderBottom: '1px solid #ffe0b2' }}>

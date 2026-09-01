@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
-import { formatDateDisplay } from '../lib/formatters'
+import { formatDateDisplay, toLocalDateStr } from '../lib/formatters'
 
 function todayStr() {
   const d = new Date()
-  return d.toISOString().split('T')[0]
+  return toLocalDateStr(d)
 }
 
 export default function NewExpenseClaim() {

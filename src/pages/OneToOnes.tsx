@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
-import { formatDateFriendly as formatDate } from '../lib/formatters'
+import { formatDateFriendly as formatDate, toLocalDateStr } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 
 
@@ -132,7 +132,7 @@ export default function OneToOnes() {
   useEffect(() => {
     if (!companyUser?.company_id || meetings.length === 0) return
     const now = new Date()
-    const todayStr = now.toISOString().split('T')[0]
+    const todayStr = toLocalDateStr(now)
     const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 
     const pastMeetings = meetings.filter(m => {
@@ -176,7 +176,7 @@ export default function OneToOnes() {
   }
 
   const now = new Date()
-  const today = now.toISOString().split('T')[0]
+  const today = toLocalDateStr(now)
   const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 
   function isFutureMeeting(m: Meeting): boolean {

@@ -5,7 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useFeatures } from '../context/FeatureContext'
-import { formatDate, formatDateDisplay } from '../lib/formatters'
+import { formatDate, formatDateDisplay, toLocalDateStr } from '../lib/formatters'
 import { checkTimeOverlap } from '../lib/overlapCheck'
 import { getManagerEmail } from '../lib/workflow'
 
@@ -107,7 +107,7 @@ export default function NewTimesheet() {
     let d = new Date(startDate + 'T00:00:00')
     const end = new Date(endDate + 'T00:00:00')
     while (d <= end) {
-      dates.push(d.toISOString().split('T')[0])
+      dates.push(toLocalDateStr(d))
       d.setDate(d.getDate() + 1)
     }
 

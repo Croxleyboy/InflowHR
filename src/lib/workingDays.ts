@@ -1,3 +1,5 @@
+import { toLocalDateStr } from './formatters'
+
 const UK_BANK_HOLIDAYS: Record<number, string[]> = {
   2024: [
     '2024-01-01', '2024-03-29', '2024-04-01', '2024-05-06',
@@ -53,7 +55,7 @@ export function countWorkingDays(
 
   while (current <= end) {
     const day = current.getDay()
-    const iso = current.toISOString().split('T')[0]
+    const iso = toLocalDateStr(current)
     const isWeekend = day === 0 || day === 6
     const isHoliday = holidays.has(iso)
 

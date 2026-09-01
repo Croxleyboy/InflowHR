@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useToast } from '../context/ToastContext'
 import { COURSES } from './ELearning'
+import { toLocalDateStr } from '../lib/formatters'
 
 type Tab = 'company' | 'actions' | 'notifications'
 
@@ -337,10 +338,10 @@ export default function Notifications() {
     // ── Personal reminders ──
     const personalReminders: PersonalReminder[] = []
     const todayDate = new Date()
-    const todayStr = todayDate.toISOString().split('T')[0]
+    const todayStr = toLocalDateStr(todayDate)
     const weekAhead = new Date(todayDate)
     weekAhead.setDate(weekAhead.getDate() + 7)
-    const weekAheadStr = weekAhead.toISOString().split('T')[0]
+    const weekAheadStr = toLocalDateStr(weekAhead)
 
     // Birthdays — colleagues with birthday in next 7 days
     if (HARDCODED_EMPLOYEE_ID && companyId) {
@@ -360,7 +361,7 @@ export default function Notifications() {
           if (birthdayThisYear < todayDate) birthdayThisYear.setFullYear(thisYear + 1)
           const diffDays = Math.floor((birthdayThisYear.getTime() - todayDate.getTime()) / 86400000)
           if (diffDays >= 0 && diffDays <= 7) {
-            const dateStr = birthdayThisYear.toISOString().split('T')[0]
+            const dateStr = toLocalDateStr(birthdayThisYear)
             personalReminders.push({
               id: `bday-${c.id}`,
               type: 'birthday',
@@ -416,7 +417,7 @@ export default function Notifications() {
         .or(`manager_id.eq.${HARDCODED_EMPLOYEE_ID},employee_id.eq.${HARDCODED_EMPLOYEE_ID}`)
         .in('status', ['pending', 'accepted'])
         .gte('scheduled_date', todayStr)
-        .lte('scheduled_date', twoWeeksAhead.toISOString().split('T')[0])
+        .lte('scheduled_date', toLocalDateStr(twoWeeksAhead))
 
       if (meetings && meetings.length > 0) {
         const otherIds = [...new Set(meetings.map((m: any) => m.manager_id === HARDCODED_EMPLOYEE_ID ? m.employee_id : m.manager_id))]

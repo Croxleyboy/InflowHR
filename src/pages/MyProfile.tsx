@@ -5,7 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { useFeatures } from '../context/FeatureContext'
-import { formatDate } from '../lib/formatters'
+import { formatDate, toLocalDateStr } from '../lib/formatters'
 
 interface DeptMember {
   first_name: string
@@ -788,7 +788,7 @@ function CertsTab({ companyId, employeeId, showSuccess, showError }: { companyId
   async function addCert() {
     if (!form.name.trim() || !form.issuing_body.trim() || !form.issue_date) return
     setSaving(true)
-    const today = new Date().toISOString().split('T')[0]
+    const today = toLocalDateStr()
     const { error } = await supabase.from('employee_certifications').insert({ company_id: companyId, employee_id: employeeId, name: form.name.trim(), issuing_body: form.issuing_body.trim(), issue_date: form.issue_date, expiry_date: form.expiry_date || null, credential_id: form.credential_id.trim() || null, status: form.expiry_date && form.expiry_date < today ? 'expired' : 'active' })
     setSaving(false)
     if (error) { showError(error.message); return }

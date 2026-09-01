@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { toLocalDateStr } from '../../lib/formatters'
 
 interface ShiftAssignmentRow {
   id: string
@@ -57,8 +58,8 @@ function getFYRange(fyStartMonth: number): { start: string; end: string; label: 
     ? `${fyStartYear}`
     : `${fyStartYear}/${fyStartYear + 1}`
   return {
-    start: startDate.toISOString().split('T')[0],
-    end: endDate.toISOString().split('T')[0],
+    start: toLocalDateStr(startDate),
+    end: toLocalDateStr(endDate),
     label,
   }
 }

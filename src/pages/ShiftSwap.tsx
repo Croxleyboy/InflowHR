@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { formatTime12 as formatTime } from '../lib/formatters'
+import { formatTime12 as formatTime, toLocalDateStr } from '../lib/formatters'
 
 interface ShiftAssignment {
   id: string
@@ -110,7 +110,7 @@ export default function ShiftSwap() {
     if (!employeeId || !companyUser?.company_id) return
     setLoading(true)
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = toLocalDateStr()
 
     const [shiftsRes, employeesRes, sentRes, incomingRes] = await Promise.all([
       supabase
@@ -151,6 +151,11 @@ export default function ShiftSwap() {
 
   async function handleSubmitSwap() {
     if (!selectedShiftId || !targetEmployeeId || !companyUser?.company_id) return
+    const selectedShift = shifts.find(s => s.id === selectedShiftId)
+    if (selectedShift && selectedShift.date < toLocalDateStr()) {
+      showError('Cannot request a swap for a shift that has already passed')
+      return
+    }
     setSubmitting(true)
 
     const { error } = await supabase.from('shift_swap_requests').insert({
@@ -176,6 +181,11 @@ export default function ShiftSwap() {
 
   async function handleAcceptSwap(request: SwapRequest) {
     if (!request.shift_assignment || !companyUser?.company_id) return
+    const shiftDate = request.shift_assignment.date
+    if (shiftDate < toLocalDateStr()) {
+      showError('Cannot accept a swap for a shift that has already passed')
+      return
+    }
     setActioningId(request.id)
 
     const origAssignment = request.shift_assignment

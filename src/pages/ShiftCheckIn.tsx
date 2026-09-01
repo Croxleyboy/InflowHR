@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useCheckIn } from '../context/CheckInContext'
 import { useToast } from '../context/ToastContext'
+import { toLocalDateStr } from '../lib/formatters'
 
 interface ShiftToday {
   id: string; date: string; start_time: string; end_time: string
@@ -34,7 +35,7 @@ export default function ShiftCheckIn() {
   const loadData = useCallback(async () => {
     if (!employeeId || !companyId) return
     setLoading(true)
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = toLocalDateStr()
     const monthStart = new Date()
     monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
 

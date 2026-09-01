@@ -4,6 +4,7 @@ import { useCheckIn } from '../context/CheckInContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
+import { toLocalDateStr } from '../lib/formatters'
 
 export default function CheckInPrompt() {
   const { settings, activeCheckin, checkIn, loading } = useCheckIn()
@@ -30,7 +31,7 @@ export default function CheckInPrompt() {
       setShiftRostered(false)
       return
     }
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = toLocalDateStr()
     const { data } = await supabase.from('shift_assignments')
       .select('id, shift_template:shift_templates(start_time), rota:rotas(status)')
       .eq('employee_id', employeeId)
@@ -64,7 +65,7 @@ export default function CheckInPrompt() {
   useEffect(() => {
     if (loading || !employeeId || !companyUser || dismissed || activeCheckin || !enabled) return
     if (location.pathname.includes('/checkin') || location.pathname.startsWith('/admin')) return
-    const key = `checkin_dismissed_${employeeId}_${new Date().toISOString().split('T')[0]}`
+    const key = `checkin_dismissed_${employeeId}_${toLocalDateStr()}`
     if (sessionStorage.getItem(key)) return
 
     let timer: ReturnType<typeof setTimeout>
@@ -80,7 +81,7 @@ export default function CheckInPrompt() {
     setVisible(false)
     setDismissed(true)
     if (remember && employeeId) {
-      sessionStorage.setItem(`checkin_dismissed_${employeeId}_${new Date().toISOString().split('T')[0]}`, '1')
+      sessionStorage.setItem(`checkin_dismissed_${employeeId}_${toLocalDateStr()}`, '1')
     }
   }
 

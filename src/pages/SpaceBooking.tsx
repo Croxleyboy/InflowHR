@@ -5,6 +5,7 @@ import { useFeatures } from '../context/FeatureContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
+import { toLocalDateStr } from '../lib/formatters'
 
 interface Location {
   id: string
@@ -86,7 +87,7 @@ export default function SpaceBooking() {
   const [selectedLocation, setSelectedLocation] = useState('')
   const [selectedFloor, setSelectedFloor] = useState('')
   const [selectedType, setSelectedType] = useState<'' | 'desk' | 'room'>('')
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useState(() => toLocalDateStr())
   const [selectedTime, setSelectedTime] = useState('09:00')
   const [selectedEndTime, setSelectedEndTime] = useState('17:00')
   const [selectedEquipment, setSelectedEquipment] = useState<string[]>([])
@@ -161,7 +162,7 @@ export default function SpaceBooking() {
       .select('id, space_id, employee_id, booking_date, start_time, end_time, title, attendees, guests, status, checked_in_at, admin_modified_at, created_at, space:spaces(name, space_type, floor_id, floors(name, locations:locations(name)))')
       .eq('company_id', companyId)
       .eq('employee_id', employeeId)
-      .gte('booking_date', new Date().toISOString().split('T')[0])
+      .gte('booking_date', toLocalDateStr())
       .order('booking_date', { ascending: true })
     setMyBookings((data as unknown as Booking[]) || [])
   }, [companyId, employeeId])
@@ -202,7 +203,7 @@ export default function SpaceBooking() {
 
   const maxDate = new Date()
   maxDate.setDate(maxDate.getDate() + settings.max_advance_days)
-  const maxDateStr = maxDate.toISOString().split('T')[0]
+  const maxDateStr = toLocalDateStr(maxDate)
 
   function snapTo30(mins: number): string {
     const snapped = Math.round(mins / 30) * 30
@@ -250,7 +251,7 @@ export default function SpaceBooking() {
           company_id: companyId,
           space_id: bookingModal.id,
           employee_id: employeeId,
-          booking_date: d.toISOString().split('T')[0],
+          booking_date: toLocalDateStr(d),
           status: 'confirmed',
         })
       }
@@ -307,7 +308,7 @@ export default function SpaceBooking() {
     loadMyBookings()
   }
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = toLocalDateStr()
 
   return (
     <div className="feature-page space-booking-page">

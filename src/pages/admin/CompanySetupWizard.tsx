@@ -4,6 +4,7 @@ import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import * as XLSX from 'xlsx'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
+import { toLocalDateStr } from '../../lib/formatters'
 
 interface CompanyRow {
   id: string
@@ -440,15 +441,15 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         const { error: payErr } = await supabase.from('payslips').insert({
           employee_id: employeeId,
           reference_number: `PAY-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${row.employee_number || employeeId.slice(0, 4)}`,
-          pay_period_start: periodStart.toISOString().split('T')[0],
-          pay_period_end: periodEnd.toISOString().split('T')[0],
+          pay_period_start: toLocalDateStr(periodStart),
+          pay_period_end: toLocalDateStr(periodEnd),
           gross_pay: Math.round(monthlySalary * 100) / 100,
           tax: Math.round(tax * 100) / 100,
           national_insurance: Math.round(ni * 100) / 100,
           pension: Math.round(pension * 100) / 100,
           other_deductions: 0,
           net_pay: Math.round(netPay * 100) / 100,
-          payment_date: paymentDate.toISOString().split('T')[0],
+          payment_date: toLocalDateStr(paymentDate),
           status: 'draft',
           tax_code: row.tax_code || '1257L',
           annual_salary: row.annual_salary,

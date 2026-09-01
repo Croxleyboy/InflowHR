@@ -46,3 +46,7 @@ export function formatTime12(time: string): string {
   const h = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh
   return `${h}:${String(mm).padStart(2, '0')}${ampm}`
 }
+
+export function toLocalDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}

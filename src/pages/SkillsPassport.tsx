@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { formatDate } from '../lib/formatters'
+import { formatDate, toLocalDateStr } from '../lib/formatters'
 
 interface SkillCategory {
   id: string
@@ -366,7 +366,7 @@ function CertificationsTab({ companyId, employeeId, showSuccess, showError }: {
   async function addCert() {
     if (!form.name.trim() || !form.issuing_body.trim() || !form.issue_date) return
     setSaving(true)
-    const today = new Date().toISOString().split('T')[0]
+    const today = toLocalDateStr()
     const { error } = await supabase.from('employee_certifications').insert({
       company_id: companyId,
       employee_id: employeeId,
