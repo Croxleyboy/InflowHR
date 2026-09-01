@@ -16,51 +16,26 @@ export default function CheckInPrompt() {
   const [visible, setVisible] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const [acting, setActing] = useState(false)
-  const [shiftAvailable, setShiftAvailable] = useState(false)
-  const [shiftRostered, setShiftRostered] = useState(false)
   const [shiftAssignmentId, setShiftAssignmentId] = useState<string | null>(null)
 
   const tsEnabled = !!settings?.timesheets_checkin_enabled
   const shiftEnabled = !!settings?.shifts_checkin_enabled
   const enabled = tsEnabled || shiftEnabled
-  const dualEnabled = tsEnabled && shiftEnabled
+  const source: 'timesheets' | 'shifts' = tsEnabled ? 'timesheets' : 'shifts'
+  const sourceLabel = tsEnabled ? 'Timesheet' : 'Shift'
 
-  const checkShiftAvailability = useCallback(async () => {
-    if (!shiftEnabled || !employeeId || !companyUser?.company_id) {
-      setShiftAvailable(false)
-      setShiftRostered(false)
-      return
-    }
+  const fetchShiftAssignment = useCallback(async () => {
+    if (!shiftEnabled || tsEnabled || !employeeId || !companyUser?.company_id) return
     const todayStr = toLocalDateStr()
     const { data } = await supabase.from('shift_assignments')
-      .select('id, shift_template:shift_templates(start_time), rota:rotas(status)')
+      .select('id, rota:rotas(status)')
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
       .eq('date', todayStr)
 
     const row = (data || []).find((r: any) => r.rota?.status === 'published' || r.rota?.status === 'draft') as any
-
-    if (row) {
-      setShiftRostered(true)
-      setShiftAssignmentId(row.id)
-      const startTime = row.shift_template?.start_time
-      if (startTime) {
-        const promptMins = settings?.prompt_before_shift_mins || 20
-        const now = new Date()
-        const [sh, sm] = startTime.split(':').map(Number)
-        const shiftStart = new Date()
-        shiftStart.setHours(sh, sm, 0, 0)
-        const windowStart = new Date(shiftStart.getTime() - promptMins * 60000)
-        setShiftAvailable(now >= windowStart)
-      } else {
-        setShiftAvailable(true)
-      }
-    } else {
-      setShiftRostered(false)
-      setShiftAvailable(false)
-      setShiftAssignmentId(null)
-    }
-  }, [shiftEnabled, employeeId, companyUser?.company_id, settings?.prompt_before_shift_mins])
+    if (row) setShiftAssignmentId(row.id)
+  }, [shiftEnabled, tsEnabled, employeeId, companyUser?.company_id])
 
   useEffect(() => {
     if (loading || !employeeId || !companyUser || dismissed || activeCheckin || !enabled) return
@@ -69,13 +44,13 @@ export default function CheckInPrompt() {
     if (sessionStorage.getItem(key)) return
 
     let timer: ReturnType<typeof setTimeout>
-    checkShiftAvailability().then(() => {
+    fetchShiftAssignment().then(() => {
       timer = setTimeout(() => setVisible(true), 1500)
     })
     return () => { if (timer) clearTimeout(timer) }
-  }, [loading, employeeId, companyUser, dismissed, activeCheckin, enabled, location.pathname, checkShiftAvailability])
+  }, [loading, employeeId, companyUser, dismissed, activeCheckin, enabled, location.pathname, fetchShiftAssignment])
 
-  if (!visible || !enabled) return null
+  if (!visible || !enabled || activeCheckin) return null
 
   function dismiss(remember: boolean) {
     setVisible(false)
@@ -85,7 +60,7 @@ export default function CheckInPrompt() {
     }
   }
 
-  async function handleCheckIn(source: 'timesheets' | 'shifts') {
+  async function handleCheckIn() {
     setActing(true)
     const result = await checkIn(source, source === 'shifts' ? shiftAssignmentId || undefined : undefined)
     if (result.ok) {
@@ -101,10 +76,6 @@ export default function CheckInPrompt() {
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
-  const singleSource: 'timesheets' | 'shifts' = tsEnabled ? 'timesheets' : 'shifts'
-  const singleLabel = tsEnabled ? 'Timesheet' : 'Shift'
-  const showDualChoice = dualEnabled
-
   return (
     <>
       <style>{`
@@ -119,41 +90,21 @@ export default function CheckInPrompt() {
         .cip-btn-primary { background: #16a34a; color: #fff; }
         .cip-btn-primary:hover { background: #15803d; }
         .cip-btn-primary:disabled { opacity: 0.6; cursor: wait; }
-        .cip-btn-shift { background: #e65100; color: #fff; }
-        .cip-btn-shift:hover:not(:disabled) { background: #bf360c; }
-        .cip-btn-shift:disabled { opacity: 0.4; cursor: not-allowed; }
         .cip-btn-secondary { background: transparent; color: var(--text-muted, #888); }
         .cip-btn-secondary:hover { color: var(--text); }
         .cip-link { font-size: 13px; color: var(--text-muted, #999); cursor: pointer; background: none; border: none; font-family: inherit; margin-top: 4px; }
         .cip-link:hover { text-decoration: underline; }
-        .cip-dual-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 6px; }
-        .cip-shift-note { font-size: 11px; color: var(--text-muted); margin-top: -4px; margin-bottom: 8px; }
       `}</style>
       <div className="cip-overlay" onClick={() => dismiss(false)}>
         <div className="cip-modal" onClick={e => e.stopPropagation()}>
           <div className="cip-icon">📍</div>
           <div className="cip-greeting">{greeting}!</div>
-          <div className="cip-sub">Ready to check in?</div>
+          <div className="cip-sub">{sourceLabel} Check-In</div>
 
-          {showDualChoice ? (
-            <>
-              <div className="cip-dual-label">Choose check-in type</div>
-              <button className="cip-btn cip-btn-primary" onClick={() => handleCheckIn('timesheets')} disabled={acting}>
-                {acting ? 'Checking in...' : 'Timesheet Check-In'}
-              </button>
-              <button className="cip-btn cip-btn-shift" onClick={() => handleCheckIn('shifts')} disabled={acting || !shiftAvailable}>
-                {!shiftRostered ? 'Shift Check-In (no shift today)' : !shiftAvailable ? 'Shift Check-In (not yet open)' : acting ? 'Checking in...' : 'Shift Check-In'}
-              </button>
-              {!shiftAvailable && shiftRostered && (
-                <div className="cip-shift-note">Check-in opens {settings?.prompt_before_shift_mins || 20} minutes before your shift</div>
-              )}
-            </>
-          ) : (
-            <button className="cip-btn cip-btn-primary" onClick={() => handleCheckIn(singleSource)} disabled={acting}
-              style={singleSource === 'shifts' ? { background: '#e65100' } : undefined}>
-              {acting ? 'Checking in...' : `${singleLabel} Check-In`}
-            </button>
-          )}
+          <button className="cip-btn cip-btn-primary" onClick={handleCheckIn} disabled={acting}
+            style={source === 'shifts' ? { background: '#e65100' } : undefined}>
+            {acting ? 'Checking in...' : `${sourceLabel} Check-In`}
+          </button>
 
           <button className="cip-btn cip-btn-secondary" onClick={() => dismiss(false)}>
             Remind Me Later

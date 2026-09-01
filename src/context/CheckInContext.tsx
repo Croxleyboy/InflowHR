@@ -71,7 +71,7 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
-    if (!companyId || !employeeId) { setLoading(false); return }
+    if (!companyId || !employeeId) return
     setLoading(true)
     const [settingsRes, locsRes, checkinRes] = await Promise.all([
       supabase.from('checkin_settings').select('*').eq('company_id', companyId).single(),
