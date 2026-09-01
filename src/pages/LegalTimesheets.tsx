@@ -755,32 +755,36 @@ export default function LegalTimesheets() {
               {/* Client */}
               <div className="lt-form-group">
                 <label className="lt-form-label">{t('legal_ts.client')}</label>
-                <input
-                  className="lt-form-search"
-                  placeholder={t('legal_ts.search_clients')}
-                  value={clientSearch}
-                  onChange={e => setClientSearch(e.target.value)}
-                />
-                <select className="lt-form-select" value={formClient} onChange={e => { setFormClient(e.target.value); setFormMatter('') }}>
-                  <option value="">{t('legal_ts.select_client')}</option>
-                  {filteredClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                <div className="lt-form-inline">
+                  <input
+                    className="lt-form-search"
+                    placeholder={t('legal_ts.search_clients')}
+                    value={clientSearch}
+                    onChange={e => setClientSearch(e.target.value)}
+                  />
+                  <select className="lt-form-select" value={formClient} onChange={e => { setFormClient(e.target.value); setFormMatter('') }}>
+                    <option value="">{t('legal_ts.select_client')}</option>
+                    {filteredClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
               </div>
 
               {/* Matter */}
               {formClient && (
                 <div className="lt-form-group">
                   <label className="lt-form-label">{t('legal_ts.matter')}</label>
-                  <input
-                    className="lt-form-search"
-                    placeholder={t('legal_ts.search_matters')}
-                    value={matterSearch}
-                    onChange={e => setMatterSearch(e.target.value)}
-                  />
-                  <select className="lt-form-select" value={formMatter} onChange={e => setFormMatter(e.target.value)}>
-                    <option value="">{t('legal_ts.select_matter')}</option>
-                    {filteredMatters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
+                  <div className="lt-form-inline">
+                    <input
+                      className="lt-form-search"
+                      placeholder={t('legal_ts.search_matters')}
+                      value={matterSearch}
+                      onChange={e => setMatterSearch(e.target.value)}
+                    />
+                    <select className="lt-form-select" value={formMatter} onChange={e => setFormMatter(e.target.value)}>
+                      <option value="">{t('legal_ts.select_matter')}</option>
+                      {filteredMatters.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
                 </div>
               )}
 

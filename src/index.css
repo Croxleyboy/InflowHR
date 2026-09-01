@@ -5533,6 +5533,15 @@ body {
   margin-bottom: 6px;
 }
 .lt-form-label-row .lt-form-label { margin-bottom: 0; }
+.lt-form-inline {
+  display: flex; gap: 8px; align-items: center;
+}
+.lt-form-inline .lt-form-search {
+  flex: 1; min-width: 0; margin-bottom: 0;
+}
+.lt-form-inline .lt-form-select {
+  flex: 1; min-width: 0;
+}
 .lt-form-search {
   width: 100%; padding: 10px 12px; border-radius: 10px;
   border: 1.5px solid var(--border);
