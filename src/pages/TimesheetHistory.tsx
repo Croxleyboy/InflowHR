@@ -109,54 +109,79 @@ export default function TimesheetHistory() {
         </button>
       </header>
 
-      <div className="payslips-month-nav" style={{ padding: '12px 16px' }}>
-        <button className="payslips-nav-btn" disabled={!canPrev} onClick={() => setMonthIdx(i => i - 1)}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-        </button>
-        <span className="payslips-month-label">
-          {current ? `${MONTH_NAMES[current.month]} ${current.year}` : ''}
-        </span>
-        <button className="payslips-nav-btn" disabled={!canNext} onClick={() => setMonthIdx(i => i + 1)}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
-        </button>
-      </div>
-
-      {loading && <p className="claims-empty">{t('common.loading')}</p>}
-
-      {!loading && monthEntries.length === 0 && (
-        <p className="claims-empty">{t('timesheets.no_timesheets')}</p>
-      )}
-
-      <div className="claims-list">
-        {monthEntries.map(ts => (
-          <button key={ts.id} className="claim-row" onClick={() => navigate(`/timesheets/${ts.id}`)}>
-            <div className="claim-date-col">
-              <span className="claim-date">{ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)}</span>
-              <span className="claim-id">{formatTime(ts.start_time)} - {formatTime(ts.end_time)}</span>
-            </div>
-            <div className="claim-detail-col">
-              <span className="claim-desc">{ts.role} {ts.location !== 'Unassigned' ? `- ${ts.location}` : ''}</span>
-              <div className="claim-amount-row">
-                <span className="claim-amount">{Number(ts.hours).toFixed(1)}h</span>
-                <span className="claim-status">
-                  <span className="status-dot" style={{ background: statusColor[ts.status] }} />
-                  {tStatus(ts.status)}
-                </span>
-              </div>
-            </div>
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="claim-arrow">
-              <path d="M12 6l10 10-10 10" stroke="#1565c0" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+      <div className="ts-month-card">
+        <div className="ts-month-nav">
+          <button className="ts-month-nav-btn" disabled={!canPrev} onClick={() => setMonthIdx(i => i - 1)}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </button>
-        ))}
-      </div>
-
-      {!loading && monthEntries.length > 0 && (
-        <div className="ts-week-total-row" style={{ margin: '0 16px' }}>
-          <span className="ts-week-total-label">{t('timesheets.month_total')}</span>
-          <span className="ts-week-total-value">{monthTotal.toFixed(1)}h</span>
+          <span className="ts-month-label">
+            {current ? `${MONTH_NAMES[current.month]} ${current.year}` : ''}
+          </span>
+          <button className="ts-month-nav-btn" disabled={!canNext} onClick={() => setMonthIdx(i => i + 1)}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
         </div>
-      )}
+
+        <div className="ts-month-list">
+          {loading && <p className="claims-empty">{t('common.loading')}</p>}
+
+          {!loading && monthEntries.length === 0 && (
+            <p className="claims-empty">{t('timesheets.no_timesheets')}</p>
+          )}
+
+          <div className="claims-list">
+            {monthEntries.map(ts => (
+              <button key={ts.id} className="claim-row" onClick={() => navigate(`/timesheets/${ts.id}`)}>
+                <div className="claim-date-col">
+                  <span className="claim-date">{ts.end_date && ts.end_date !== ts.date ? `${formatDate(ts.date)} – ${formatDate(ts.end_date)}` : formatDate(ts.date)}</span>
+                  <span className="claim-id">{formatTime(ts.start_time)} - {formatTime(ts.end_time)}</span>
+                </div>
+                <div className="claim-detail-col">
+                  <span className="claim-desc">{ts.role} {ts.location !== 'Unassigned' ? `- ${ts.location}` : ''}</span>
+                  <div className="claim-amount-row">
+                    <span className="claim-amount">{Number(ts.hours).toFixed(1)}h</span>
+                    <span className="claim-status">
+                      <span className="status-dot" style={{ background: statusColor[ts.status] }} />
+                      {tStatus(ts.status)}
+                    </span>
+                  </div>
+                </div>
+                <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="claim-arrow">
+                  <path d="M12 6l10 10-10 10" stroke="#1565c0" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {!loading && monthEntries.length > 0 && (
+          <div className="ts-month-total">
+            <span className="ts-month-total-label">{t('timesheets.month_total')}</span>
+            <span className="ts-month-total-value">{monthTotal.toFixed(1)}h</span>
+          </div>
+        )}
+
+        {!loading && monthEntries.length > 0 && (
+          <div className="ts-month-metrics">
+            <div className="ts-metric">
+              <span className="ts-metric-value">{monthEntries.length}</span>
+              <span className="ts-metric-label">Entries</span>
+            </div>
+            <div className="ts-metric">
+              <span className="ts-metric-value">{monthTotal.toFixed(1)}h</span>
+              <span className="ts-metric-label">Total Hours</span>
+            </div>
+            <div className="ts-metric">
+              <span className="ts-metric-value">{monthEntries.length > 0 ? (monthTotal / monthEntries.length).toFixed(1) : '0'}h</span>
+              <span className="ts-metric-label">Avg / Entry</span>
+            </div>
+            <div className="ts-metric">
+              <span className="ts-metric-value" style={{ color: '#4caf50' }}>{monthEntries.filter(ts => ts.status === 'approved').length}</span>
+              <span className="ts-metric-label">Approved</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
