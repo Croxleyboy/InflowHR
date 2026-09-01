@@ -49,10 +49,13 @@ export default function ShiftCheckIn() {
         .order('check_in_at', { ascending: false }),
     ])
 
-    const validShift = (shiftRes.data || []).find((s: any) => {
-      const rotaStatus = s.rota?.status
-      return !rotaStatus || rotaStatus === 'published' || rotaStatus === 'draft'
-    })
+    const allShifts = shiftRes.data || []
+    const validShift = allShifts.length > 0
+      ? allShifts.find((s: any) => {
+          const rotaStatus = s.rota?.status
+          return !rotaStatus || rotaStatus === 'published' || rotaStatus === 'draft'
+        }) || allShifts[0]
+      : null
     if (validShift) {
       const s = validShift as any
       const tpl = s.shift_template
@@ -75,15 +78,20 @@ export default function ShiftCheckIn() {
       ...r, loc_name: r.work_from_home ? 'Home' : (r.check_in_location_id ? locMap[r.check_in_location_id] || 'On-site' : 'On-site'),
     })))
 
-    if (activeCheckin && activeCheckin.source === 'shifts') {
-      const { data: brks } = await supabase.from('break_records').select('*')
-        .eq('checkin_record_id', activeCheckin.id).order('break_start', { ascending: false })
-      if (brks) setBreaks(brks)
-    }
     setLoading(false)
-  }, [employeeId, companyId, activeCheckin])
+  }, [employeeId, companyId])
 
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    if (activeCheckin && activeCheckin.source === 'shifts') {
+      supabase.from('break_records').select('*')
+        .eq('checkin_record_id', activeCheckin.id).order('break_start', { ascending: false })
+        .then(({ data: brks }) => { if (brks) setBreaks(brks) })
+    } else {
+      setBreaks([])
+    }
+  }, [activeCheckin])
 
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current)
