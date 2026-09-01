@@ -1750,6 +1750,13 @@ body {
   display: flex; align-items: center; gap: 12px;
   background: linear-gradient(135deg, #43a047, #2e7d32);
   padding: 16px;
+  position: relative; overflow: hidden;
+}
+.my-leave-header::before {
+  content: ''; position: absolute; left: -40px; top: -40px;
+  width: 160px; height: 160px; opacity: 0.15; pointer-events: none;
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E");
 }
 
 .my-leave-summary {

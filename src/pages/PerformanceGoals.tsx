@@ -686,9 +686,9 @@ const CSS = `
 .pg-form-label { display: block; font-size: 12px; font-weight: 700; margin-bottom: 4px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .pg-form-input, .pg-form-textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; font-family: inherit; color: var(--text); background: var(--bg); box-sizing: border-box; min-width: 0; max-width: 100%; }
 .pg-form-input:focus, .pg-form-textarea:focus { border-color: #2563eb; outline: none; }
-.pg-form-input[type="date"] { color-scheme: light dark; min-height: 44px; min-width: 0; }
+.pg-form-input[type="date"] { color-scheme: light dark; min-height: 44px; min-width: 0; width: 100%; max-width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none; }
 .pg-form-textarea { resize: vertical; }
-.pg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; overflow: hidden; }
+.pg-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-width: 0; overflow: hidden; width: 100%; box-sizing: border-box; }
 .pg-form-actions { display: flex; gap: 10px; margin-top: 16px; }
 .pg-save-btn { padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.2s; }
 .pg-save-btn:hover:not(:disabled) { background: #1d4ed8; }
@@ -737,8 +737,10 @@ const CSS = `
   .pg-comment-add { flex-direction: column; }
   .pg-comment-submit { align-self: stretch; text-align: center; }
 
-  .pg-form-card { padding: 16px; border-radius: 12px; }
+  .pg-form-card { padding: 16px; border-radius: 12px; max-width: 100%; overflow: hidden; }
   .pg-form-grid { grid-template-columns: 1fr; }
+  .pg-form-row { max-width: 100%; }
+  .pg-form-input, .pg-form-textarea, .pg-form-input[type="date"] { max-width: 100%; width: 100%; box-sizing: border-box; }
   .pg-form-actions { flex-direction: column; }
   .pg-save-btn, .pg-cancel-btn { width: 100%; text-align: center; }
 
