@@ -258,6 +258,7 @@ export default function Notifications() {
   const [swapActions, setSwapActions] = useState<SwapAction[]>([])
   const [expenseReceipts, setExpenseReceipts] = useState<Set<number>>(new Set())
   const [reminders, setReminders] = useState<PersonalReminder[]>([])
+  const [checkinHistory, setCheckinHistory] = useState<PersonalReminder[]>([])
   const [remindersExpanded, setRemindersExpanded] = useState(locState?.expandReminders || false)
   const [notifSearch, setNotifSearch] = useState('')
 
@@ -567,7 +568,8 @@ export default function Notifications() {
       }
     }
 
-    // Check-in/out history — today's records
+    // Check-in/out history — today's records (shown in history, not reminders)
+    const checkinItems: PersonalReminder[] = []
     if (HARDCODED_EMPLOYEE_ID && companyId) {
       const { data: todayCheckins } = await supabase
         .from('checkin_records')
@@ -581,7 +583,7 @@ export default function Notifications() {
         todayCheckins.forEach((c: { id: string; check_in_at: string; check_out_at: string | null; status: string; work_from_home: boolean; source: string }) => {
           const inTime = new Date(c.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
           if (c.status === 'checked_in') {
-            personalReminders.push({
+            checkinItems.push({
               id: `checkin-${c.id}`,
               type: 'confirm_shift' as const,
               title: `Checked in at ${inTime}${c.work_from_home ? ' (Home)' : ''}`,
@@ -594,7 +596,7 @@ export default function Notifications() {
             const durMins = Math.round((new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 60000)
             const hrs = Math.floor(durMins / 60)
             const mins = durMins % 60
-            personalReminders.push({
+            checkinItems.push({
               id: `checkout-${c.id}`,
               type: 'confirm_shift' as const,
               title: `Checked out at ${outTime} (${hrs}h ${mins}m)`,
@@ -605,6 +607,7 @@ export default function Notifications() {
         })
       }
     }
+    setCheckinHistory(checkinItems)
 
     const currentTime = `${String(todayDate.getHours()).padStart(2, '0')}:${String(todayDate.getMinutes()).padStart(2, '0')}`
     const activeReminders = personalReminders.filter(r => {
@@ -953,7 +956,7 @@ export default function Notifications() {
             </div>
           )}
 
-          {myNotifs.length > 0 && (
+          {(myNotifs.length > 0 || checkinHistory.length > 0) && (
             <>
               {reminders.length > 0 && (
                 <h3 className="notif-section-heading">{t('notifications.history')}</h3>
@@ -975,7 +978,30 @@ export default function Notifications() {
             </>
           )}
 
-          {myNotifs.length === 0 && reminders.length === 0 && <p className="claims-empty">{t('notifications.no_notifs')}</p>}
+          {myNotifs.length === 0 && checkinHistory.length === 0 && reminders.length === 0 && <p className="claims-empty">{t('notifications.no_notifs')}</p>}
+          {checkinHistory.filter(r => {
+            if (!notifSearch) return true
+            const q = notifSearch.toLowerCase()
+            return r.title.toLowerCase().includes(q) || r.subtitle.toLowerCase().includes(q)
+          }).map(r => (
+            <div
+              key={r.id}
+              className={`notif-card ${r.navigateTo ? 'notif-card-clickable' : ''}`}
+              onClick={() => r.navigateTo && navigate(r.navigateTo)}
+            >
+              <NotifIcon type="ConfirmShift" />
+              <div className="notif-card-content">
+                <span className="notif-card-title">{r.title}</span>
+                <span className="notif-card-sub">{r.subtitle}</span>
+                <span className="notif-card-date">Today</span>
+              </div>
+              {r.navigateTo && (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="notif-reminder-arrow">
+                  <path d="M9 6l6 6-6 6" stroke="#999" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </div>
+          ))}
           {myNotifs.filter(n => {
             if (!notifSearch) return true
             const q = notifSearch.toLowerCase()
