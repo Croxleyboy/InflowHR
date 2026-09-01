@@ -8,7 +8,7 @@ import { toLocalDateStr } from '../lib/formatters'
 
 interface ShiftToday {
   id: string; date: string; start_time: string; end_time: string
-  template_name: string; status: string
+  template_name: string
 }
 interface HistoryRow {
   id: string; check_in_at: string; check_out_at: string | null; status: string
@@ -40,7 +40,7 @@ export default function ShiftCheckIn() {
     monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
 
     const [shiftRes, locsRes, histRes] = await Promise.all([
-      supabase.from('shift_assignments').select('id, date, status, shift_template_id, shift_template:shift_templates(name, start_time, end_time), rota:rotas(status)')
+      supabase.from('shift_assignments').select('id, date, shift_template_id, shift_template:shift_templates(name, start_time, end_time), rota:rotas(status)')
         .eq('employee_id', employeeId).eq('company_id', companyId).eq('date', todayStr),
       supabase.from('work_locations').select('id, name').eq('company_id', companyId),
       supabase.from('checkin_records').select('*')
@@ -65,7 +65,6 @@ export default function ShiftCheckIn() {
         start_time: tpl?.start_time || '00:00',
         end_time: tpl?.end_time || '00:00',
         template_name: tpl?.name || 'Shift',
-        status: s.status,
       })
     } else {
       setTodayShift(null)
