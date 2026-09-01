@@ -20,6 +20,22 @@ function todayStr() {
   return `${y}-${m}-${d}`
 }
 
+function calcTimesheetHours(startDate: string, endDate: string, startTime: string, endTime: string): number {
+  const [sh, sm] = startTime.split(':').map(Number)
+  const [eh, em] = endTime.split(':').map(Number)
+  const dailyHours = (eh + em / 60) - (sh + sm / 60)
+  if (startDate === endDate) return Math.max(0, dailyHours)
+  let workingDays = 0
+  const d = new Date(startDate + 'T00:00:00')
+  const e = new Date(endDate + 'T00:00:00')
+  while (d <= e) {
+    const day = d.getDay()
+    if (day !== 0 && day !== 6) workingDays++
+    d.setDate(d.getDate() + 1)
+  }
+  return Math.max(0, dailyHours * workingDays)
+}
+
 interface CustomerProject {
   id: string
   name: string
@@ -110,6 +126,8 @@ export default function NewTimesheet() {
       ? formatDate(startDate)
       : `${formatDate(startDate)} – ${formatDate(endDate)}`
 
+    const hours = calcTimesheetHours(startDate, endDate, startTime, endTime)
+
     const { data, error: err } = await supabase
       .from('timesheets')
       .insert({
@@ -122,6 +140,7 @@ export default function NewTimesheet() {
         end_date: endDate,
         start_time: startTime,
         end_time: endTime,
+        hours,
         status,
         submitted_at: asDraft ? null : new Date().toISOString(),
         company_id: companyUser?.company_id,

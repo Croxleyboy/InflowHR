@@ -437,7 +437,9 @@ export default function AdminTimesheets() {
                       <td>{ts.employee ? <span className="admin-inline-avatar">{ts.employee.avatar_url ? <img src={ts.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{ts.employee.first_name[0]}{ts.employee.last_name[0]}</span>}{ts.employee.first_name} {ts.employee.last_name}</span> : '—'}</td>
                       <td>{editingId === ts.id
                         ? <input type="date" className="admin-inline-input" value={editForm.date || ''} onChange={e => setEditForm(p => ({ ...p, date: e.target.value }))} />
-                        : formatDateUK(ts.date)
+                        : ts.end_date && ts.end_date !== ts.date
+                          ? `${formatDateUK(ts.date)} – ${formatDateUK(ts.end_date)}`
+                          : formatDateUK(ts.date)
                       }</td>
                       <td>{editingId === ts.id
                         ? <><input type="time" className="admin-inline-input admin-inline-sm" value={editForm.start_time?.slice(0, 5) || ''} onChange={e => setEditForm(p => ({ ...p, start_time: e.target.value }))} /> - <input type="time" className="admin-inline-input admin-inline-sm" value={editForm.end_time?.slice(0, 5) || ''} onChange={e => setEditForm(p => ({ ...p, end_time: e.target.value }))} /></>
@@ -598,125 +600,38 @@ export default function AdminTimesheets() {
 /* ─── Reports ─── */
 
 function TimesheetReports({ companyId, period, fyStartMonth }: { companyId: string; period: 'weekly' | 'monthly'; fyStartMonth: number }) {
-  const [reportTab, setReportTab] = useState<'not_submitted' | 'missing_time' | 'metrics'>('not_submitted')
+  const [reportTab, setReportTab] = useState<'employee_time' | 'metrics'>('employee_time')
 
   return (
     <div style={{ paddingTop: 8 }}>
       <div className="admin-tabs" style={{ marginBottom: 12 }}>
-        <button className={`admin-tab ${reportTab === 'not_submitted' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('not_submitted')}>Not Submitted</button>
-        <button className={`admin-tab ${reportTab === 'missing_time' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('missing_time')}>Missing Time</button>
+        <button className={`admin-tab ${reportTab === 'employee_time' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('employee_time')}>Employee Time Report</button>
         <button className={`admin-tab ${reportTab === 'metrics' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('metrics')}>Metrics</button>
       </div>
 
-      {reportTab === 'not_submitted' && <NotSubmittedReport companyId={companyId} period={period} />}
-      {reportTab === 'missing_time' && <MissingTimeReport companyId={companyId} period={period} />}
+      {reportTab === 'employee_time' && <EmployeeTimeReport companyId={companyId} period={period} />}
       {reportTab === 'metrics' && <MetricsReport companyId={companyId} fyStartMonth={fyStartMonth} />}
     </div>
   )
 }
 
-/* ─── Report 1: Not Submitted ─── */
+/* ─── Employee Time Report (combined Not Submitted + Missing Time + Check-in) ─── */
 
-function NotSubmittedReport({ companyId, period }: { companyId: string; period: 'weekly' | 'monthly' }) {
-  const [offset, setOffset] = useState(0)
-  const [allEmployees, setAllEmployees] = useState<ReportEmployee[]>([])
-  const [submittedIds, setSubmittedIds] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [reportsPage, setReportsPage] = useState(1)
-
-  const range = period === 'weekly' ? getWeekRange(offset) : getMonthRange(offset)
-
-  useEffect(() => {
-    loadReport()
-  }, [companyId, offset, period])
-
-  useEffect(() => { setReportsPage(1) }, [companyId, offset, period])
-
-  async function loadReport() {
-    setLoading(true)
-    const [empRes, tsRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, working_pattern, is_active').eq('company_id', companyId).eq('is_active', true).order('last_name'),
-      supabase.from('timesheets').select('employee_id').eq('company_id', companyId).gte('date', range.start).lte('date', range.end),
-    ])
-    setAllEmployees((empRes.data as ReportEmployee[]) || [])
-    const ids = new Set<string>()
-    ;(tsRes.data || []).forEach((t: any) => ids.add(t.employee_id))
-    setSubmittedIds(ids)
-    setLoading(false)
-  }
-
-  const notSubmitted = allEmployees.filter(e => !submittedIds.has(e.id))
-  const notSubmittedTotalPages = Math.max(1, Math.ceil(notSubmitted.length / PAGE_SIZE))
-  const paginatedNotSubmitted = notSubmitted.slice((reportsPage - 1) * PAGE_SIZE, reportsPage * PAGE_SIZE)
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <button className="admin-btn-icon" onClick={() => setOffset(o => o - 1)}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-        <span style={{ fontSize: 14, fontWeight: 600, minWidth: 200, textAlign: 'center' }}>{range.label}</span>
-        <button className="admin-btn-icon" onClick={() => setOffset(o => o + 1)} disabled={offset >= 0}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-        <button className="admin-btn-sm admin-btn-cancel" onClick={() => setOffset(0)} style={{ marginLeft: 4 }}>Current</button>
-      </div>
-      <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 8 }}>
-        Employees who have not submitted any time entries for this {period === 'weekly' ? 'week' : 'month'}.
-      </p>
-
-      {loading ? <div className="admin-loading">Loading...</div> : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Employee</th>
-                <th>Department</th>
-                <th>Contracted Hours ({period === 'weekly' ? 'Weekly' : 'Monthly'})</th>
-                <th>Working Pattern</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedNotSubmitted.map(emp => {
-                const weeklyHrs = emp.weekly_hours || 37.5
-                const displayHrs = period === 'monthly'
-                  ? (weeklyHrs / 5) * getWorkingDaysInRange(range.start, range.end)
-                  : weeklyHrs
-                return (
-                  <tr key={emp.id}>
-                    <td><strong>{emp.first_name} {emp.last_name}</strong></td>
-                    <td>{emp.department || '—'}</td>
-                    <td>{displayHrs.toFixed(1)}</td>
-                    <td>{emp.working_pattern || 'Full-time'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {notSubmitted.length === 0 && <div className="admin-empty">All employees have submitted time for this period</div>}
-          <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 8 }}>
-            {notSubmitted.length} of {allEmployees.length} employees have not submitted
-          </p>
-          {notSubmittedTotalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
-              <button className="admin-action-btn" disabled={reportsPage <= 1} onClick={() => setReportsPage(p => p - 1)}>Prev</button>
-              <span style={{ fontSize: 13 }}>Page {reportsPage} of {notSubmittedTotalPages}</span>
-              <button className="admin-action-btn" disabled={reportsPage >= notSubmittedTotalPages} onClick={() => setReportsPage(p => p + 1)}>Next</button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
+interface EmployeeTimeRow {
+  emp: ReportEmployee
+  contracted: number
+  submitted: number
+  shortfall: number
+  checkinHours: number
+  hasSubmitted: boolean
 }
 
-/* ─── Report 2: Missing Time ─── */
-
-function MissingTimeReport({ companyId, period }: { companyId: string; period: 'weekly' | 'monthly' }) {
+function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 'weekly' | 'monthly' }) {
   const [offset, setOffset] = useState(0)
-  const [data, setData] = useState<{ emp: ReportEmployee; submitted: number; required: number }[]>([])
+  const [rows, setRows] = useState<EmployeeTimeRow[]>([])
   const [loading, setLoading] = useState(true)
   const [reportsPage, setReportsPage] = useState(1)
+  const [filterView, setFilterView] = useState<'all' | 'not_submitted' | 'shortfall'>('all')
 
   const range = period === 'weekly' ? getWeekRange(offset) : getMonthRange(offset)
 
@@ -724,13 +639,14 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
     loadReport()
   }, [companyId, offset, period])
 
-  useEffect(() => { setReportsPage(1) }, [companyId, offset, period])
+  useEffect(() => { setReportsPage(1) }, [companyId, offset, period, filterView])
 
   async function loadReport() {
     setLoading(true)
-    const [empRes, tsRes] = await Promise.all([
+    const [empRes, tsRes, ciRes] = await Promise.all([
       supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, working_pattern, is_active').eq('company_id', companyId).eq('is_active', true).order('last_name'),
       supabase.from('timesheets').select('employee_id, hours').eq('company_id', companyId).gte('date', range.start).lte('date', range.end),
+      supabase.from('checkin_records').select('employee_id, check_in_at, check_out_at, status').eq('company_id', companyId).gte('check_in_at', range.start + 'T00:00:00').lte('check_in_at', range.end + 'T23:59:59'),
     ])
     const emps = (empRes.data as ReportEmployee[]) || []
     const hoursByEmp: Record<string, number> = {}
@@ -738,20 +654,39 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
       hoursByEmp[t.employee_id] = (hoursByEmp[t.employee_id] || 0) + Number(t.hours)
     })
 
-    const workingDays = getWorkingDaysInRange(range.start, range.end)
-    const rows = emps.map(emp => {
-      const weeklyHrs = emp.weekly_hours || 37.5
-      const required = period === 'monthly' ? (weeklyHrs / 5) * workingDays : weeklyHrs
-      const submitted = hoursByEmp[emp.id] || 0
-      return { emp, submitted, required }
-    }).filter(r => r.submitted < r.required)
+    const checkinByEmp: Record<string, number> = {}
+    ;(ciRes.data || []).forEach((c: any) => {
+      if (!c.check_out_at) return
+      const mins = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 60000
+      checkinByEmp[c.employee_id] = (checkinByEmp[c.employee_id] || 0) + mins / 60
+    })
 
-    setData(rows)
+    const workingDays = getWorkingDaysInRange(range.start, range.end)
+    const allRows = emps.map(emp => {
+      const weeklyHrs = emp.weekly_hours || 37.5
+      const contracted = period === 'monthly' ? (weeklyHrs / 5) * workingDays : weeklyHrs
+      const submitted = hoursByEmp[emp.id] || 0
+      const shortfall = Math.max(0, contracted - submitted)
+      const checkinHours = checkinByEmp[emp.id] || 0
+      const hasSubmitted = submitted > 0
+      return { emp, contracted, submitted, shortfall, checkinHours, hasSubmitted }
+    })
+
+    setRows(allRows)
     setLoading(false)
   }
 
-  const dataTotalPages = Math.max(1, Math.ceil(data.length / PAGE_SIZE))
-  const paginatedData = data.slice((reportsPage - 1) * PAGE_SIZE, reportsPage * PAGE_SIZE)
+  const filteredRows = rows.filter(r => {
+    if (filterView === 'not_submitted') return !r.hasSubmitted
+    if (filterView === 'shortfall') return r.shortfall > 0
+    return true
+  })
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
+  const paginated = filteredRows.slice((reportsPage - 1) * PAGE_SIZE, reportsPage * PAGE_SIZE)
+
+  const notSubmittedCount = rows.filter(r => !r.hasSubmitted).length
+  const shortfallCount = rows.filter(r => r.shortfall > 0).length
 
   return (
     <div>
@@ -765,9 +700,18 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
         </button>
         <button className="admin-btn-sm admin-btn-cancel" onClick={() => setOffset(0)} style={{ marginLeft: 4 }}>Current</button>
       </div>
-      <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginBottom: 8 }}>
-        Employees who have submitted less time than their contracted {period === 'weekly' ? 'weekly' : 'monthly'} hours.
-      </p>
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button className={`admin-btn-sm ${filterView === 'all' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('all')}>
+          All ({rows.length})
+        </button>
+        <button className={`admin-btn-sm ${filterView === 'not_submitted' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('not_submitted')}>
+          Not Submitted ({notSubmittedCount})
+        </button>
+        <button className={`admin-btn-sm ${filterView === 'shortfall' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('shortfall')}>
+          Shortfall ({shortfallCount})
+        </button>
+      </div>
 
       {loading ? <div className="admin-loading">Loading...</div> : (
         <div className="admin-table-wrap">
@@ -779,28 +723,44 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
                 <th>Contracted</th>
                 <th>Submitted</th>
                 <th>Shortfall</th>
-                <th>Working Pattern</th>
+                <th>Check-in Time</th>
+                <th>Pattern</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedData.map(({ emp, submitted, required }) => (
+              {paginated.map(({ emp, contracted, submitted, shortfall, checkinHours, hasSubmitted }) => (
                 <tr key={emp.id}>
-                  <td><strong>{emp.first_name} {emp.last_name}</strong></td>
+                  <td>
+                    <strong>{emp.first_name} {emp.last_name}</strong>
+                    {!hasSubmitted && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#fee2e2', color: '#dc2626', fontWeight: 600 }}>Not submitted</span>}
+                  </td>
                   <td>{emp.department || '—'}</td>
-                  <td>{required.toFixed(1)}h</td>
+                  <td>{contracted.toFixed(1)}h</td>
                   <td>{submitted.toFixed(1)}h</td>
-                  <td style={{ color: '#dc2626', fontWeight: 600 }}>{(required - submitted).toFixed(1)}h</td>
+                  <td style={{ color: shortfall > 0 ? '#dc2626' : 'var(--text)', fontWeight: shortfall > 0 ? 600 : 400 }}>
+                    {shortfall > 0 ? `${shortfall.toFixed(1)}h` : '—'}
+                  </td>
+                  <td style={{ color: checkinHours > 0 ? '#16a34a' : 'var(--text-muted, #888)' }}>
+                    {checkinHours > 0 ? `${checkinHours.toFixed(1)}h` : '—'}
+                  </td>
                   <td>{emp.working_pattern || 'Full-time'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {data.length === 0 && <div className="admin-empty">All employees have met their contracted hours</div>}
-          {dataTotalPages > 1 && (
+          {filteredRows.length === 0 && <div className="admin-empty">
+            {filterView === 'not_submitted' ? 'All employees have submitted time for this period' :
+             filterView === 'shortfall' ? 'All employees have met their contracted hours' :
+             'No employees found'}
+          </div>}
+          <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 8 }}>
+            {notSubmittedCount} of {rows.length} not submitted &middot; {shortfallCount} with shortfall
+          </p>
+          {totalPages > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
               <button className="admin-action-btn" disabled={reportsPage <= 1} onClick={() => setReportsPage(p => p - 1)}>Prev</button>
-              <span style={{ fontSize: 13 }}>Page {reportsPage} of {dataTotalPages}</span>
-              <button className="admin-action-btn" disabled={reportsPage >= dataTotalPages} onClick={() => setReportsPage(p => p + 1)}>Next</button>
+              <span style={{ fontSize: 13 }}>Page {reportsPage} of {totalPages}</span>
+              <button className="admin-action-btn" disabled={reportsPage >= totalPages} onClick={() => setReportsPage(p => p + 1)}>Next</button>
             </div>
           )}
         </div>
@@ -809,7 +769,7 @@ function MissingTimeReport({ companyId, period }: { companyId: string; period: '
   )
 }
 
-/* ─── Report 3: Metrics ─── */
+/* ─── Report 2: Metrics ─── */
 
 function MetricsReport({ companyId, fyStartMonth }: { companyId: string; fyStartMonth: number }) {
   const [loading, setLoading] = useState(true)
