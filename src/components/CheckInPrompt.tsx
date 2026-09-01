@@ -38,7 +38,7 @@ export default function CheckInPrompt() {
       .eq('company_id', companyUser.company_id)
       .eq('date', todayStr)
 
-    const row = (data || []).find((r: any) => r.rota?.status === 'published' || r.rota?.status === 'draft') as any
+    const row = (data || []).find((r: any) => !r.rota?.status || r.rota?.status === 'published' || r.rota?.status === 'draft') as any
 
     if (row) {
       setShiftRostered(true)

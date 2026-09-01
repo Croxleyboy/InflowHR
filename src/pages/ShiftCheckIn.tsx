@@ -51,7 +51,7 @@ export default function ShiftCheckIn() {
 
     const validShift = (shiftRes.data || []).find((s: any) => {
       const rotaStatus = s.rota?.status
-      return rotaStatus === 'published' || rotaStatus === 'draft'
+      return !rotaStatus || rotaStatus === 'published' || rotaStatus === 'draft'
     })
     if (validShift) {
       const s = validShift as any
