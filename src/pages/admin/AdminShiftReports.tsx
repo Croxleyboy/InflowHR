@@ -63,6 +63,14 @@ function getFYRange(fyStartMonth: number): { start: string; end: string; label: 
   }
 }
 
+interface CheckinRow {
+  employee_id: string
+  check_in_at: string
+  check_out_at: string | null
+  status: string
+  work_from_home: boolean
+}
+
 export default function AdminShiftReports() {
   const { selectedCompanyId } = useAdminCompany()
   const [fyStartMonth, setFyStartMonth] = useState(4)
@@ -73,6 +81,8 @@ export default function AdminShiftReports() {
   const [loading, setLoading] = useState(true)
   const [editingFy, setEditingFy] = useState(false)
   const [draftFy, setDraftFy] = useState(4)
+  const [checkinEnabled, setCheckinEnabled] = useState(false)
+  const [checkinRecords, setCheckinRecords] = useState<CheckinRow[]>([])
 
   const fy = useMemo(() => getFYRange(fyStartMonth), [fyStartMonth])
 
@@ -100,6 +110,18 @@ export default function AdminShiftReports() {
     setRotas((rotaRes.data as Rota[]) || [])
     setEmployees((empRes.data as Employee[]) || [])
     setAssignments((assignRes.data as ShiftAssignmentRow[]) || [])
+
+    const ciSettingsRes = await supabase.from('checkin_settings').select('shifts_checkin_enabled').eq('company_id', selectedCompanyId).single()
+    const ciEnabled = ciSettingsRes.data?.shifts_checkin_enabled || false
+    setCheckinEnabled(ciEnabled)
+    if (ciEnabled) {
+      const fyRange = getFYRange(compRes.data?.fy_start_month || 4)
+      const { data: ciData } = await supabase.from('checkin_records')
+        .select('employee_id, check_in_at, check_out_at, status, work_from_home')
+        .eq('company_id', selectedCompanyId).eq('source', 'shifts')
+        .gte('check_in_at', fyRange.start + 'T00:00:00').lte('check_in_at', fyRange.end + 'T23:59:59')
+      setCheckinRecords((ciData as CheckinRow[]) || [])
+    }
     setLoading(false)
   }, [selectedCompanyId])
 
@@ -235,6 +257,28 @@ export default function AdminShiftReports() {
 
   const maxMonthHrs = useMemo(() => Math.max(...metrics.monthBreakdown.map(([, h]) => h), 1), [metrics.monthBreakdown])
   const maxDow = useMemo(() => Math.max(...metrics.dayOfWeekCount, 1), [metrics.dayOfWeekCount])
+
+  const ciMetrics = useMemo(() => {
+    if (!checkinEnabled || checkinRecords.length === 0) return null
+    const totalCheckins = checkinRecords.length
+    const completedRecords = checkinRecords.filter(r => r.check_out_at)
+    const totalHours = completedRecords.reduce((sum, r) => {
+      return sum + (new Date(r.check_out_at!).getTime() - new Date(r.check_in_at).getTime()) / 3600000
+    }, 0)
+    const avgDuration = completedRecords.length > 0 ? totalHours / completedRecords.length : 0
+    const wfhCount = checkinRecords.filter(r => r.work_from_home).length
+    const uniqueCheckinEmps = new Set(checkinRecords.map(r => r.employee_id)).size
+    const empCheckinHrs: Record<string, number> = {}
+    completedRecords.forEach(r => {
+      const hrs = (new Date(r.check_out_at!).getTime() - new Date(r.check_in_at).getTime()) / 3600000
+      empCheckinHrs[r.employee_id] = (empCheckinHrs[r.employee_id] || 0) + hrs
+    })
+    const topCheckinWorkers = Object.entries(empCheckinHrs)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([empId, hrs]) => ({ employee: empMap[empId], hours: hrs }))
+    return { totalCheckins, totalHours, avgDuration, wfhCount, uniqueCheckinEmps, topCheckinWorkers }
+  }, [checkinEnabled, checkinRecords, empMap])
 
   if (loading) return <div className="admin-loading">Loading reports...</div>
 
@@ -429,6 +473,61 @@ export default function AdminShiftReports() {
           )}
         </div>
       </div>
+
+      {/* Check-In Metrics */}
+      {ciMetrics && (
+        <>
+          <h3 style={{ fontSize: 16, fontWeight: 700, marginTop: 28, marginBottom: 12 }}>Check-In / Check-Out</h3>
+          <div className="asr-kpi-grid">
+            <div className="asr-kpi">
+              <span className="asr-kpi-value">{ciMetrics.totalCheckins}</span>
+              <span className="asr-kpi-label">Total Check-Ins</span>
+            </div>
+            <div className="asr-kpi">
+              <span className="asr-kpi-value">{ciMetrics.uniqueCheckinEmps}</span>
+              <span className="asr-kpi-label">Employees</span>
+            </div>
+            <div className="asr-kpi">
+              <span className="asr-kpi-value">{ciMetrics.totalHours.toFixed(0)}</span>
+              <span className="asr-kpi-label">Check-In Hours</span>
+            </div>
+            <div className="asr-kpi">
+              <span className="asr-kpi-value">{ciMetrics.avgDuration.toFixed(1)}</span>
+              <span className="asr-kpi-label">Avg Duration (hrs)</span>
+            </div>
+            <div className="asr-kpi">
+              <span className="asr-kpi-value">{ciMetrics.wfhCount}</span>
+              <span className="asr-kpi-label">Remote Check-Ins</span>
+            </div>
+            <div className="asr-kpi">
+              <span className="asr-kpi-value">{ciMetrics.totalCheckins > 0 ? ((ciMetrics.wfhCount / ciMetrics.totalCheckins) * 100).toFixed(0) : 0}%</span>
+              <span className="asr-kpi-label">Remote Rate</span>
+            </div>
+          </div>
+
+          {ciMetrics.topCheckinWorkers.length > 0 && (
+            <div className="asr-grid" style={{ marginTop: 16 }}>
+              <div className="asr-card">
+                <h3 className="asr-card-title">Top 5 — Check-In Hours</h3>
+                <div className="asr-rank-list">
+                  {ciMetrics.topCheckinWorkers.map((w, i) => (
+                    <div key={w.employee?.id || i} className="asr-rank-row">
+                      <span className="asr-rank-num">{i + 1}</span>
+                      <div className="asr-rank-bar-wrap">
+                        <div className="asr-rank-name">{w.employee ? `${w.employee.first_name} ${w.employee.last_name}` : 'Unknown'}</div>
+                        <div className="asr-rank-bar-track">
+                          <div className="asr-rank-bar" style={{ width: `${(w.hours / (ciMetrics.topCheckinWorkers[0]?.hours || 1)) * 100}%`, background: '#16a34a' }} />
+                        </div>
+                      </div>
+                      <span className="asr-rank-stat">{w.hours.toFixed(1)}h</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

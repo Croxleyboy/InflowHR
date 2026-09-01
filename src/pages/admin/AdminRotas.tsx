@@ -124,6 +124,8 @@ export default function AdminRotas() {
   const [activeCell, setActiveCell] = useState<{ employeeId: string; date: string } | null>(null)
   const [editFormRota, setEditFormRota] = useState<Record<string, any>>({})
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: true, legal_timesheets: false })
+  const [checkinRecords, setCheckinRecords] = useState<{ employee_id: string; check_in_at: string; check_out_at: string | null; status: string }[]>([])
+  const [shiftsCheckinEnabled, setShiftsCheckinEnabled] = useState(false)
 
   useEffect(() => {
     if (selectedCompanyId) {
@@ -132,6 +134,9 @@ export default function AdminRotas() {
         const map: Record<string, boolean> = { timesheets: false, shifts: true, legal_timesheets: false }
         data?.forEach(r => { if (r.feature_key in map) map[r.feature_key] = r.is_enabled })
         setEnabledFeatures({ timesheets: map.timesheets, shifts: map.shifts, legal_timesheets: map.legal_timesheets })
+      })
+      supabase.from('checkin_settings').select('shifts_checkin_enabled').eq('company_id', selectedCompanyId).single().then(({ data }) => {
+        setShiftsCheckinEnabled(data?.shifts_checkin_enabled || false)
       })
     }
   }, [selectedCompanyId])
@@ -244,7 +249,9 @@ export default function AdminRotas() {
   }
 
   // --- Grid data loading ---
-  const loadGridData = useCallback(async (rota: Rota) => {
+  const loadGridData = useCallback(async (rota: Rota, ws?: Date) => {
+    const weekS = ws || weekStart
+    const weekEnd = addDays(weekS, 6)
     const [empRes, tmplRes, assignRes, leaveRes, availRes] = await Promise.all([
       supabase.from('employees').select('id, first_name, last_name').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
       supabase.from('shift_templates').select('id, name, colour, start_time, end_time, break_minutes').eq('company_id', selectedCompanyId).eq('is_active', true),
@@ -257,12 +264,20 @@ export default function AdminRotas() {
     setAssignments((assignRes.data as ShiftAssignment[]) || [])
     setLeaveConflicts((leaveRes.data as LeaveConflict[]) || [])
     setAvailability((availRes.data as EmployeeAvailability[]) || [])
-  }, [selectedCompanyId])
+    if (shiftsCheckinEnabled) {
+      const { data: ciData } = await supabase.from('checkin_records').select('employee_id, check_in_at, check_out_at, status')
+        .eq('company_id', selectedCompanyId).eq('source', 'shifts')
+        .gte('check_in_at', formatDate(weekS) + 'T00:00:00')
+        .lte('check_in_at', formatDate(weekEnd) + 'T23:59:59')
+      setCheckinRecords(ciData || [])
+    }
+  }, [selectedCompanyId, shiftsCheckinEnabled, weekStart])
 
   function openRota(rota: Rota) {
     setSelectedRota(rota)
-    setWeekStart(getMonday(new Date(rota.start_date)))
-    loadGridData(rota)
+    const ws = getMonday(new Date(rota.start_date))
+    setWeekStart(ws)
+    loadGridData(rota, ws)
   }
 
   function backToList() {
@@ -289,6 +304,30 @@ export default function AdminRotas() {
     const rec = availability.find(a => a.employee_id === employeeId && a.day_of_week === dayOfWeek)
     if (!rec) return 'unset'
     return rec.is_available ? 'available' : 'unavailable'
+  }
+
+  function getCheckinInfo(employeeId: string, date: string, template?: ShiftTemplate) {
+    if (!shiftsCheckinEnabled) return null
+    const dayRecords = checkinRecords.filter(r => r.employee_id === employeeId && r.check_in_at.startsWith(date))
+    if (dayRecords.length === 0) {
+      const now = new Date()
+      const dateObj = new Date(date + 'T00:00:00')
+      const isPast = dateObj < new Date(now.toISOString().split('T')[0] + 'T00:00:00')
+      const isToday = date === now.toISOString().split('T')[0]
+      if (template && (isPast || isToday)) {
+        const shiftEnd = new Date(date + 'T' + template.end_time)
+        if (now > shiftEnd) return { status: 'missed' as const, mins: 0 }
+        const shiftStart = new Date(date + 'T' + template.start_time)
+        if (now > shiftStart) return { status: 'not_in' as const, mins: 0 }
+      }
+      return null
+    }
+    const totalMins = dayRecords.reduce((sum, r) => {
+      const end = r.check_out_at ? new Date(r.check_out_at) : new Date()
+      return sum + (end.getTime() - new Date(r.check_in_at).getTime()) / 60000
+    }, 0)
+    const isLive = dayRecords.some(r => r.status === 'checked_in')
+    return { status: isLive ? 'in' as const : 'out' as const, mins: Math.round(totalMins) }
   }
 
   // Get assignment for employee + date
@@ -741,17 +780,17 @@ export default function AdminRotas() {
 
       {/* Week Navigation */}
       <div className="rg-week-nav">
-        <button onClick={() => setWeekStart(addDays(weekStart, -7))}>
+        <button onClick={() => { const ws = addDays(weekStart, -7); setWeekStart(ws); if (selectedRota && shiftsCheckinEnabled) loadGridData(selectedRota, ws) }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
         <div className="rg-week-label">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           <span>{weekRangeLabel}</span>
         </div>
-        <button onClick={() => setWeekStart(addDays(weekStart, 7))}>
+        <button onClick={() => { const ws = addDays(weekStart, 7); setWeekStart(ws); if (selectedRota && shiftsCheckinEnabled) loadGridData(selectedRota, ws) }}>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </button>
-        <button className="rg-today-btn" onClick={() => setWeekStart(getMonday(new Date()))}>Today</button>
+        <button className="rg-today-btn" onClick={() => { const ws = getMonday(new Date()); setWeekStart(ws); if (selectedRota && shiftsCheckinEnabled) loadGridData(selectedRota, ws) }}>Today</button>
       </div>
 
       {/* Grid */}
@@ -813,18 +852,33 @@ export default function AdminRotas() {
                       )
                     }
 
+                    const ci = assignment && template ? getCheckinInfo(emp.id, d.date, template) : null
+                    const ciMissed = ci?.status === 'missed'
+
                     return (
                       <td key={d.date} className={`rg-td-cell ${isToday ? 'rg-td-today' : ''}`}>
                         {assignment && template ? (
                           <div
                             className="rg-shift"
-                            style={{ borderLeftColor: template.colour, background: `${template.colour}1A` }}
+                            style={{
+                              borderLeftColor: ciMissed ? '#e53935' : template.colour,
+                              background: ciMissed ? 'rgba(229,57,53,0.12)' : `${template.colour}1A`,
+                            }}
                             onClick={() => setActiveCell(isActive ? null : { employeeId: emp.id, date: d.date })}
                           >
                             {onLeave && <div className="rg-shift-leave-tag">On Leave</div>}
-                            <div className="rg-shift-name" style={{ color: template.colour }}>{template.name}</div>
+                            <div className="rg-shift-name" style={{ color: ciMissed ? '#e53935' : template.colour }}>{template.name}</div>
                             <div className="rg-shift-time">{formatTimeShort(template.start_time)}{'–'}{formatTimeShort(template.end_time)}</div>
                             <div className="rg-shift-hrs">{calcShiftHours(template).toFixed(1)}h</div>
+                            {ci && (
+                              <div className="rg-checkin-tag" style={{
+                                fontSize: 9, fontWeight: 700, marginTop: 2, padding: '1px 4px', borderRadius: 3,
+                                background: ci.status === 'in' ? '#16a34a' : ci.status === 'out' ? '#1565c0' : ci.status === 'missed' ? '#e53935' : '#d97706',
+                                color: '#fff',
+                              }}>
+                                {ci.status === 'in' ? `In ${Math.floor(ci.mins / 60)}h${ci.mins % 60}m` : ci.status === 'out' ? `${Math.floor(ci.mins / 60)}h${ci.mins % 60}m` : ci.status === 'missed' ? 'Not checked in' : 'Not checked in'}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div

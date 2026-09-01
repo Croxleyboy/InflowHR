@@ -632,6 +632,7 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
   const [loading, setLoading] = useState(true)
   const [reportsPage, setReportsPage] = useState(1)
   const [filterView, setFilterView] = useState<'all' | 'not_submitted' | 'shortfall'>('all')
+  const [tsCheckinEnabled, setTsCheckinEnabled] = useState(false)
 
   const range = period === 'weekly' ? getWeekRange(offset) : getMonthRange(offset)
 
@@ -643,11 +644,19 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
 
   async function loadReport() {
     setLoading(true)
-    const [empRes, tsRes, ciRes] = await Promise.all([
+    const [empRes, tsRes, ciSettingsRes] = await Promise.all([
       supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, working_pattern, is_active').eq('company_id', companyId).eq('is_active', true).order('last_name'),
       supabase.from('timesheets').select('employee_id, hours').eq('company_id', companyId).gte('date', range.start).lte('date', range.end),
-      supabase.from('checkin_records').select('employee_id, check_in_at, check_out_at, status').eq('company_id', companyId).gte('check_in_at', range.start + 'T00:00:00').lte('check_in_at', range.end + 'T23:59:59'),
+      supabase.from('checkin_settings').select('timesheets_checkin_enabled').eq('company_id', companyId).single(),
     ])
+    const ciEnabled = ciSettingsRes.data?.timesheets_checkin_enabled || false
+    setTsCheckinEnabled(ciEnabled)
+
+    let ciRes: { data: unknown[] | null } = { data: [] }
+    if (ciEnabled) {
+      ciRes = await supabase.from('checkin_records').select('employee_id, check_in_at, check_out_at, status').eq('company_id', companyId).gte('check_in_at', range.start + 'T00:00:00').lte('check_in_at', range.end + 'T23:59:59')
+    }
+
     const emps = (empRes.data as ReportEmployee[]) || []
     const hoursByEmp: Record<string, number> = {}
     ;(tsRes.data || []).forEach((t: any) => {
@@ -655,7 +664,7 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
     })
 
     const checkinByEmp: Record<string, number> = {}
-    ;(ciRes.data || []).forEach((c: any) => {
+    ;((ciRes.data || []) as any[]).forEach((c: any) => {
       if (!c.check_out_at) return
       const mins = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 60000
       checkinByEmp[c.employee_id] = (checkinByEmp[c.employee_id] || 0) + mins / 60
@@ -722,7 +731,7 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
                 <th>Contracted</th>
                 <th>Submitted</th>
                 <th>Shortfall</th>
-                <th>Check-in Time</th>
+                {tsCheckinEnabled && <th>Check-in Time</th>}
                 <th>Pattern</th>
               </tr>
             </thead>
@@ -739,9 +748,11 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
                   <td style={{ color: shortfall > 0 ? '#dc2626' : 'var(--text)', fontWeight: shortfall > 0 ? 600 : 400 }}>
                     {shortfall > 0 ? `${shortfall.toFixed(1)}h` : '—'}
                   </td>
-                  <td style={{ color: checkinHours > 0 ? '#16a34a' : 'var(--text-muted, #888)' }}>
-                    {checkinHours > 0 ? `${checkinHours.toFixed(1)}h` : '—'}
-                  </td>
+                  {tsCheckinEnabled && (
+                    <td style={{ color: checkinHours > 0 ? '#16a34a' : 'var(--text-muted, #888)' }}>
+                      {checkinHours > 0 ? `${checkinHours.toFixed(1)}h` : '—'}
+                    </td>
+                  )}
                   <td>{emp.working_pattern || 'Full-time'}</td>
                 </tr>
               ))}

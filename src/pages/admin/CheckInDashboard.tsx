@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 
@@ -16,11 +16,38 @@ interface CheckinRow {
   loc_name?: string
 }
 
+interface ShiftAssignmentRow {
+  id: string
+  employee_id: string
+  date: string
+  shift_template_id: string
+}
+
+interface ShiftTemplateRow {
+  id: string
+  name: string
+  start_time: string
+  end_time: string
+}
+
 interface Props {
   source: 'timesheets' | 'shifts'
 }
 
 const PAGE_SIZE = 30
+
+function getFYRange(fyStartMonth: number): { start: string; end: string } {
+  const now = new Date()
+  const currentMonth = now.getMonth() + 1
+  let fyStartYear = now.getFullYear()
+  if (currentMonth < fyStartMonth) fyStartYear--
+  const startDate = new Date(fyStartYear, fyStartMonth - 1, 1)
+  const endDate = new Date(fyStartYear + 1, fyStartMonth - 1, 0)
+  return {
+    start: startDate.toISOString().split('T')[0],
+    end: endDate.toISOString().split('T')[0],
+  }
+}
 
 export default function CheckInDashboardPanel({ source }: Props) {
   const { companyUser } = useAuth()
@@ -38,6 +65,10 @@ export default function CheckInDashboardPanel({ source }: Props) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [filterDept, setFilterDept] = useState('')
+  const [rotaExpanded, setRotaExpanded] = useState(false)
+  const [rotaAssignments, setRotaAssignments] = useState<ShiftAssignmentRow[]>([])
+  const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplateRow[]>([])
+  const [exporting, setExporting] = useState(false)
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -64,6 +95,19 @@ export default function CheckInDashboardPanel({ source }: Props) {
 
     if (liveRes.data) setLiveRecords(liveRes.data)
     if (histRes.data) setHistory(histRes.data)
+
+    if (source === 'shifts') {
+      const todayStr = new Date().toISOString().split('T')[0]
+      const [assignRes, tmplRes] = await Promise.all([
+        supabase.from('shift_assignments').select('id, employee_id, date, shift_template_id')
+          .eq('company_id', companyId).eq('date', todayStr),
+        supabase.from('shift_templates').select('id, name, start_time, end_time')
+          .eq('company_id', companyId),
+      ])
+      if (assignRes.data) setRotaAssignments(assignRes.data as ShiftAssignmentRow[])
+      if (tmplRes.data) setShiftTemplates(tmplRes.data as ShiftTemplateRow[])
+    }
+
     setLoading(false)
   }, [companyId, source, dateFrom, dateTo])
 
@@ -103,6 +147,57 @@ export default function CheckInDashboardPanel({ source }: Props) {
       }, 0) / checkedOutToday.length).toFixed(1)
     : '—'
 
+  const tmplMap = useMemo(() => {
+    const m: Record<string, ShiftTemplateRow> = {}
+    shiftTemplates.forEach(t => { m[t.id] = t })
+    return m
+  }, [shiftTemplates])
+
+  const rotaEmployeeRows = useMemo(() => {
+    if (source !== 'shifts' || rotaAssignments.length === 0) return []
+    const now = new Date()
+    const empAssignments: Record<string, ShiftAssignmentRow[]> = {}
+    rotaAssignments.forEach(a => {
+      if (!empAssignments[a.employee_id]) empAssignments[a.employee_id] = []
+      empAssignments[a.employee_id].push(a)
+    })
+    return Object.entries(empAssignments).map(([empId, assigns]) => {
+      const emp = employees[empId]
+      const checkins = todayRecords.filter(r => r.employee_id === empId)
+      const totalMins = checkins.reduce((sum, r) => {
+        const end = r.check_out_at ? new Date(r.check_out_at) : now
+        return sum + (end.getTime() - new Date(r.check_in_at).getTime()) / 60000
+      }, 0)
+      const isCheckedIn = liveRecords.some(r => r.employee_id === empId)
+      const firstShift = assigns.sort((a, b) => {
+        const ta = tmplMap[a.shift_template_id]?.start_time || ''
+        const tb = tmplMap[b.shift_template_id]?.start_time || ''
+        return ta.localeCompare(tb)
+      })[0]
+      const tmpl = firstShift ? tmplMap[firstShift.shift_template_id] : null
+      const shiftStarted = tmpl ? now >= new Date(todayStr + 'T' + tmpl.start_time) : false
+      const shiftEnded = tmpl ? now >= new Date(todayStr + 'T' + tmpl.end_time) : false
+      const missed = shiftStarted && !isCheckedIn && checkins.length === 0
+      return {
+        empId,
+        name: emp?.name || 'Unknown',
+        dept: emp?.dept || '',
+        shiftName: tmpl?.name || '—',
+        shiftTime: tmpl ? `${tmpl.start_time.substring(0, 5)}–${tmpl.end_time.substring(0, 5)}` : '',
+        totalMins: Math.round(totalMins),
+        isCheckedIn,
+        hasCheckedIn: checkins.length > 0,
+        missed,
+        shiftStarted,
+        shiftEnded,
+      }
+    }).sort((a, b) => {
+      if (a.missed && !b.missed) return -1
+      if (!a.missed && b.missed) return 1
+      return a.name.localeCompare(b.name)
+    })
+  }, [source, rotaAssignments, employees, todayRecords, liveRecords, tmplMap, todayStr])
+
   function fmtTime(iso: string) {
     return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   }
@@ -121,6 +216,56 @@ export default function CheckInDashboardPanel({ source }: Props) {
     const m = mins % 60
     return `${h}h ${m}m`
   }
+  function fmtMins(mins: number) {
+    const h = Math.floor(mins / 60)
+    const m = mins % 60
+    return `${h}h ${m}m`
+  }
+
+  async function exportCheckinCSV() {
+    setExporting(true)
+    const { data: compData } = await supabase.from('companies').select('fy_start_month').eq('id', companyId).single()
+    const fyMonth = compData?.fy_start_month || 4
+    const fy = getFYRange(fyMonth)
+    const { data: records } = await supabase.from('checkin_records').select('*')
+      .eq('company_id', companyId).eq('source', source)
+      .gte('check_in_at', fy.start + 'T00:00:00').lte('check_in_at', fy.end + 'T23:59:59')
+      .order('check_in_at', { ascending: true })
+    if (!records || records.length === 0) {
+      setExporting(false)
+      alert('No check-in data for the current financial year.')
+      return
+    }
+    const empGroups: Record<string, CheckinRow[]> = {}
+    records.forEach((r: CheckinRow) => {
+      const name = employees[r.employee_id]?.name || r.employee_id
+      if (!empGroups[name]) empGroups[name] = []
+      empGroups[name].push(r)
+    })
+    const lines = ['Employee,Department,Date,Check In,Check Out,Duration (hrs),Location,Status']
+    Object.keys(empGroups).sort().forEach(name => {
+      empGroups[name].forEach(r => {
+        const dept = employees[r.employee_id]?.dept || ''
+        const date = fmtDate(r.check_in_at)
+        const inTime = fmtTime(r.check_in_at)
+        const outTime = r.check_out_at ? fmtTime(r.check_out_at) : ''
+        const durHrs = r.check_out_at
+          ? ((new Date(r.check_out_at).getTime() - new Date(r.check_in_at).getTime()) / 3600000).toFixed(2)
+          : ''
+        const loc = r.work_from_home ? 'Remote' : (r.check_in_location_id ? locationNames[r.check_in_location_id] || 'On-site' : '')
+        const status = r.status === 'checked_in' ? 'In' : r.status === 'checked_out' ? 'Out' : r.status === 'auto_closed' ? 'Auto' : 'Cancelled'
+        lines.push(`"${name}","${dept}","${date}","${inTime}","${outTime}","${durHrs}","${loc}","${status}"`)
+      })
+    })
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `checkin-export-${source}-${fy.start}-to-${fy.end}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    setExporting(false)
+  }
 
   if (loading) return <div className="admin-loading">Loading...</div>
 
@@ -128,25 +273,86 @@ export default function CheckInDashboardPanel({ source }: Props) {
 
   return (
     <div>
-      {/* Metrics */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
-        <div className="admin-stat-card">
-          <div className="admin-stat-label">Currently In</div>
-          <div className="admin-stat-value">{liveEnriched.length}</div>
+      {/* Metrics + Export */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, flex: 1, minWidth: 0 }}>
+          <div className="admin-stat-card">
+            <div className="admin-stat-label">Currently In</div>
+            <div className="admin-stat-value">{liveEnriched.length}</div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="admin-stat-label">Today Total</div>
+            <div className="admin-stat-value">{totalToday}</div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="admin-stat-label">WFH Today</div>
+            <div className="admin-stat-value">{wfhToday}</div>
+          </div>
+          <div className="admin-stat-card">
+            <div className="admin-stat-label">Avg Hours</div>
+            <div className="admin-stat-value">{avgHours}</div>
+          </div>
         </div>
-        <div className="admin-stat-card">
-          <div className="admin-stat-label">Today Total</div>
-          <div className="admin-stat-value">{totalToday}</div>
-        </div>
-        <div className="admin-stat-card">
-          <div className="admin-stat-label">WFH Today</div>
-          <div className="admin-stat-value">{wfhToday}</div>
-        </div>
-        <div className="admin-stat-card">
-          <div className="admin-stat-label">Avg Hours</div>
-          <div className="admin-stat-value">{avgHours}</div>
-        </div>
+        <button className="admin-btn-sm admin-btn-save" onClick={exportCheckinCSV} disabled={exporting} style={{ flexShrink: 0 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: 'middle' }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          {exporting ? 'Exporting...' : 'Export CSV'}
+        </button>
       </div>
+
+      {/* Rota'd Employees Today (shifts only) */}
+      {source === 'shifts' && rotaAssignments.length > 0 && (
+        <div className="admin-section" style={{ marginBottom: 16 }}>
+          <button
+            onClick={() => setRotaExpanded(!rotaExpanded)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none',
+              cursor: 'pointer', padding: 0, fontSize: 14, fontWeight: 600, color: 'var(--text)',
+              marginBottom: rotaExpanded ? 10 : 0, fontFamily: 'inherit',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+              style={{ transform: rotaExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+            Today's Rota ({rotaEmployeeRows.length} employees)
+            {rotaEmployeeRows.filter(r => r.missed).length > 0 && (
+              <span style={{ background: '#e53935', color: '#fff', fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 10, marginLeft: 6 }}>
+                {rotaEmployeeRows.filter(r => r.missed).length} not checked in
+              </span>
+            )}
+          </button>
+          {rotaExpanded && (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr><th>Employee</th><th>Department</th><th>Shift</th><th>Time</th><th>Check-in Hours</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {rotaEmployeeRows.map(r => (
+                    <tr key={r.empId} style={r.missed ? { background: 'rgba(229,57,53,0.08)' } : undefined}>
+                      <td>{r.name}</td>
+                      <td>{r.dept || '—'}</td>
+                      <td>{r.shiftName}</td>
+                      <td>{r.shiftTime}</td>
+                      <td>{r.hasCheckedIn || r.isCheckedIn ? fmtMins(r.totalMins) : '—'}</td>
+                      <td>
+                        {r.isCheckedIn
+                          ? <span className="admin-badge admin-badge-active">Checked In</span>
+                          : r.hasCheckedIn
+                            ? <span className="admin-badge admin-badge-complete">Checked Out</span>
+                            : r.missed
+                              ? <span className="admin-badge admin-badge-cancelled">Not Checked In</span>
+                              : <span className="admin-badge" style={{ background: '#f5f5f5', color: '#999' }}>Upcoming</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Live check-ins */}
       {liveEnriched.length > 0 && (

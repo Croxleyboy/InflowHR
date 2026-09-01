@@ -134,7 +134,7 @@ export default function MyShifts() {
   const { t } = useLanguage()
   const { employeeId, companyUser } = useAuth()
   const { features } = useFeatures()
-  const { settings: ciSettings } = useCheckIn()
+  const { settings: ciSettings, activeCheckin, activeBreak, checkOut, startBreak, endBreak } = useCheckIn()
   const shiftsEnabled = features.shifts
 
   const [shifts, setShifts] = useState<ShiftAssignment[]>([])
@@ -370,6 +370,54 @@ export default function MyShifts() {
         ))}
       </div>
 
+      {/* Check-in banner */}
+      {ciSettings?.shifts_checkin_enabled && (() => {
+        if (activeCheckin && activeCheckin.source === 'shifts') {
+          const mins = Math.floor((Date.now() - new Date(activeCheckin.check_in_at).getTime()) / 60000)
+          const h = Math.floor(mins / 60); const m = mins % 60
+          const onBreak = !!activeBreak
+          return (
+            <div
+              className={`dash-checkin-banner${onBreak ? ' dash-checkin-break' : ''}`}
+              style={{ margin: '8px 16px 0', background: onBreak ? '#d97706' : '#e65100' }}
+              onClick={() => navigate('/shifts/checkin')}
+            >
+              <div className="dash-checkin-banner-info">
+                <span className={`dash-checkin-dot${onBreak ? ' dash-checkin-dot-break' : ''}`} />
+                <span className="dash-checkin-banner-text">
+                  {onBreak ? 'On break' : 'Checked in'} · {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({h}h {m}m)
+                </span>
+              </div>
+              <div className="dash-checkin-banner-actions">
+                {onBreak ? (
+                  <>
+                    <button className="dash-checkout-btn dash-end-break-btn" onClick={async (e) => { e.stopPropagation(); const r = await endBreak(); if (!r.ok) alert(r.error) }}>End Break</button>
+                    <button className="dash-checkout-btn" onClick={async (e) => { e.stopPropagation(); const r = await checkOut(); if (!r.ok) alert(r.error) }}>Out</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="dash-checkout-btn dash-break-btn" onClick={async (e) => { e.stopPropagation(); const r = await startBreak('lunch'); if (!r.ok) alert(r.error) }}>Break</button>
+                    <button className="dash-checkout-btn" onClick={async (e) => { e.stopPropagation(); const r = await checkOut(); if (!r.ok) alert(r.error) }}>Out</button>
+                  </>
+                )}
+              </div>
+            </div>
+          )
+        }
+        return (
+          <button
+            className="dash-checkin-banner"
+            style={{ margin: '8px 16px 0', background: '#e65100', border: 'none', cursor: 'pointer', width: 'calc(100% - 32px)' }}
+            onClick={() => navigate('/shifts/checkin')}
+          >
+            <div className="dash-checkin-banner-info">
+              <span className="dash-checkin-banner-text">Check In to your shift</span>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        )
+      })()}
+
       {/* Shift List */}
       <div className="schedule-shift-list">
         {filter === 'replacements' ? (
@@ -468,9 +516,6 @@ export default function MyShifts() {
                             </div>
                           </div>
                           <div className="sc-block-actions">
-                            {ciSettings?.shifts_checkin_enabled && (
-                              <button className="sc-block-swap" style={{ background: '#16a34a', color: '#fff' }} onClick={() => navigate('/shifts/checkin')}>Check In</button>
-                            )}
                             <button className="sc-block-swap" onClick={() => navigate('/shifts/swap')}>{t('shifts.request_swap')}</button>
                             {canEdit && (
                               <button className="sc-block-edit" onClick={() => setEditingId(isEditing ? null : s.id)}>
