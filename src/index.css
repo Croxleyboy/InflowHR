@@ -768,6 +768,7 @@ body {
   display: flex; align-items: center; gap: 10px;
   padding: 16px 0 8px;
 }
+.timesheets-page { padding: 0 0 100px; }
 .timesheets-page .feature-header {
   background: linear-gradient(135deg, #42a5f5, #1565c0);
   padding: 16px;
@@ -853,15 +854,15 @@ body {
 }
 .add-claim-btn:active { opacity: 0.85; }
 
-.ts-filters { display: flex; gap: 6px; padding: 10px 8px 6px; overflow-x: auto; }
+.ts-filters { display: flex; gap: 6px; padding: 10px 16px 6px; overflow-x: auto; }
 .ts-filter-btn { flex: 1; min-width: 0; padding: 8px 4px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1.5px solid var(--border, #ddd); background: var(--bg-card, #fff); color: var(--text-muted, #888); cursor: pointer; font-family: inherit; text-align: center; white-space: nowrap; transition: all 0.15s; }
 .ts-filter-btn.active { background: #1565c0; color: #fff; border-color: #1565c0; }
-.ts-action-row { display: flex; gap: 8px; padding: 8px 8px; }
+.ts-action-row { display: flex; gap: 8px; padding: 8px 16px; }
 .ts-action-btn { flex: 1; padding: 10px 8px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; font-family: inherit; text-align: center; color: #fff; }
 .ts-action-add { background: #1565c0; }
 .ts-action-checkin { background: #16a34a; }
 .ts-action-history { background: none; border: 1px solid var(--border, #ddd); color: var(--text-muted, #888); }
-.ts-month-card { margin: 8px 8px 16px; background: var(--bg-card, #fff); border-radius: 14px; border: 1.5px solid #90caf9; overflow: hidden; }
+.ts-month-card { margin: 8px 16px 16px; background: var(--bg-card, #fff); border-radius: 14px; border: 1.5px solid #90caf9; overflow: hidden; }
 [data-theme="dark"] .ts-month-card { border-color: #1565c0; }
 .ts-month-nav { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border, #eee); }
 .ts-month-nav-btn { background: none; border: none; cursor: pointer; padding: 4px; color: var(--text-muted, #999); display: flex; align-items: center; }
