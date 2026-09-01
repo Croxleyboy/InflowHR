@@ -24,6 +24,7 @@ interface CompanyOption {
   fixed_annual_price: number | null
   billing_type_locked_until: string | null
   fy_start_month: number
+  dashboard_style: string
 }
 
 interface CompanyFeature {
@@ -70,6 +71,8 @@ export default function AdminSubscriptions() {
   const [savedBillingType, setSavedBillingType] = useState<'monthly' | 'fixed'>('monthly')
   const [savedFixedPrice, setSavedFixedPrice] = useState('')
   const [fyStartMonth, setFyStartMonth] = useState(4)
+  const [dashboardStyle, setDashboardStyleState] = useState<'default' | 'slim'>('default')
+  const [savedDashboardStyle, setSavedDashboardStyle] = useState<'default' | 'slim'>('default')
 
   // Load pricing
   async function loadPricing() {
@@ -90,7 +93,7 @@ export default function AdminSubscriptions() {
   async function loadCompanies() {
     const { data } = await supabase
       .from('companies')
-      .select('id, name, billing_type, fixed_annual_price, billing_type_locked_until, fy_start_month')
+      .select('id, name, billing_type, fixed_annual_price, billing_type_locked_until, fy_start_month, dashboard_style')
       .order('name')
     setCompanies((data as CompanyOption[]) || [])
   }
@@ -109,6 +112,9 @@ export default function AdminSubscriptions() {
     setSavedFixedPrice(fp)
     setBillingTypeLocked(company?.billing_type_locked_until || null)
     setFyStartMonth(company?.fy_start_month ?? 4)
+    const ds = (company?.dashboard_style === 'slim' ? 'slim' : 'default') as 'default' | 'slim'
+    setDashboardStyleState(ds)
+    setSavedDashboardStyle(ds)
 
     const { data: metrics } = await callRpcDirect('get_company_metrics', { p_company_id: companyId })
     const m = metrics as Record<string, number> | null
@@ -212,6 +218,7 @@ export default function AdminSubscriptions() {
     const companyUpdate: Record<string, unknown> = {
       billing_type: billingType,
       fixed_annual_price: billingType === 'fixed' && fixedAnnualPrice ? parseFloat(fixedAnnualPrice) : null,
+      dashboard_style: dashboardStyle,
     }
 
     // When switching to fixed, lock until start of next FY
@@ -245,7 +252,8 @@ export default function AdminSubscriptions() {
     k => (customPrices[k] || '') !== (savedPrices[k] || '')
   )
   const hasBillingChanges = billingType !== savedBillingType || fixedAnnualPrice !== savedFixedPrice
-  const hasUnsavedChanges = hasPriceChanges || hasBillingChanges
+  const hasDashboardStyleChanges = dashboardStyle !== savedDashboardStyle
+  const hasUnsavedChanges = hasPriceChanges || hasBillingChanges || hasDashboardStyleChanges
 
   const isLockedToFixed = billingType === 'fixed' && billingTypeLocked && new Date(billingTypeLocked) > new Date()
 
@@ -523,6 +531,29 @@ export default function AdminSubscriptions() {
                         }).
                       </p>
                     )}
+                  </div>
+
+                  {/* Dashboard Style */}
+                  <div style={{ background: dashboardStyle === 'slim' ? '#e8eaf6' : '#f5f5f5', border: `1px solid ${dashboardStyle === 'slim' ? '#5c6bc0' : '#e0e0e0'}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>Dashboard Style</div>
+                      <label className="admin-toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={dashboardStyle === 'slim'}
+                          onChange={() => setDashboardStyleState(prev => prev === 'default' ? 'slim' : 'default')}
+                        />
+                        <span className="admin-toggle-slider" />
+                      </label>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: dashboardStyle === 'slim' ? '#3949ab' : '#666' }}>
+                        {dashboardStyle === 'slim' ? 'Slim Cards' : 'Default'}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: 12, color: '#666', margin: '8px 0 0' }}>
+                      {dashboardStyle === 'slim'
+                        ? 'Feature cards display at half height. Expenses and Leave cards remain full size.'
+                        : 'All dashboard cards display at standard height.'}
+                    </p>
                   </div>
 
                   {/* HR Core Features */}

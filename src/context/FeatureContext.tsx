@@ -51,6 +51,7 @@ const defaultFeatures: Features = {
 interface FeatureContextType {
   features: Features
   companyFeatures: Features
+  dashboardStyle: 'default' | 'slim'
   setFeatures: (f: Features) => void
   loadCompanyFeatures: (companyId: string) => Promise<void>
   featuresLoaded: boolean
@@ -58,6 +59,7 @@ interface FeatureContextType {
 
 const FeatureContext = createContext<FeatureContextType>({
   features: defaultFeatures,
+  dashboardStyle: 'default',
   companyFeatures: defaultFeatures,
   setFeatures: () => {},
   loadCompanyFeatures: async () => {},
@@ -67,13 +69,17 @@ const FeatureContext = createContext<FeatureContextType>({
 export function FeatureProvider({ children }: { children: ReactNode }) {
   const [features, setFeaturesState] = useState<Features>(defaultFeatures)
   const [companyFeatures, setCompanyFeatures] = useState<Features>(defaultFeatures)
+  const [dashboardStyle, setDashboardStyle] = useState<'default' | 'slim'>('default')
   const [featuresLoaded, setFeaturesLoaded] = useState(false)
 
   const loadCompanyFeatures = useCallback(async (companyId: string) => {
-    const { data: companyFeaturesData } = await supabase
-      .from('company_features')
-      .select('feature_key, is_enabled, is_visible')
-      .eq('company_id', companyId)
+    const [{ data: companyFeaturesData }, { data: companyRow }] = await Promise.all([
+      supabase.from('company_features').select('feature_key, is_enabled, is_visible').eq('company_id', companyId),
+      supabase.from('companies').select('dashboard_style').eq('id', companyId).single(),
+    ])
+
+    if (companyRow?.dashboard_style === 'slim') setDashboardStyle('slim')
+    else setDashboardStyle('default')
 
     if (!companyFeaturesData || companyFeaturesData.length === 0) {
       setFeaturesState(defaultFeatures)
@@ -110,7 +116,7 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <FeatureContext.Provider value={{ features, companyFeatures, setFeatures, loadCompanyFeatures, featuresLoaded }}>
+    <FeatureContext.Provider value={{ features, companyFeatures, dashboardStyle, setFeatures, loadCompanyFeatures, featuresLoaded }}>
       {children}
     </FeatureContext.Provider>
   )

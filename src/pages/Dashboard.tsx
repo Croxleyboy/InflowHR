@@ -34,7 +34,7 @@ interface LatestAnnouncement {
 
 export default function Dashboard() {
   const { dark, toggle } = useTheme()
-  const { features } = useFeatures()
+  const { features, dashboardStyle } = useFeatures()
   const { t, lang } = useLanguage()
   const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser } = useAuth()
   const navigate = useNavigate()
@@ -349,7 +349,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="card-grid">
+      <div className={`card-grid${dashboardStyle === 'slim' ? ' card-grid-slim' : ''}`}>
         {features.expenses && (
           <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>
             <div className="card-content">
