@@ -401,8 +401,8 @@ export default function Kudos() {
       <header className="kudos-header">
         <button className="kudos-back" onClick={() => navigate('/')}>
           <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="17" stroke="#00897b" strokeWidth="2" />
-            <path d="M21 12l-6 6 6 6" stroke="#00897b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="18" cy="18" r="17" stroke="rgba(255,255,255,0.5)" strokeWidth="2" />
+            <path d="M21 12l-6 6 6 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
         <div className="kudos-header-center">
@@ -411,17 +411,17 @@ export default function Kudos() {
         </div>
         <button className="kudos-graph-btn" onClick={openLeaderboard}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="#00897b" strokeWidth="2" />
-            <rect x="8" y="18" width="4" height="6" rx="1" fill="#00897b" />
-            <rect x="14" y="12" width="4" height="12" rx="1" fill="#00897b" />
-            <rect x="20" y="15" width="4" height="9" rx="1" fill="#00897b" />
+            <circle cx="16" cy="16" r="14" stroke="rgba(255,255,255,0.5)" strokeWidth="2" />
+            <rect x="8" y="18" width="4" height="6" rx="1" fill="#fff" />
+            <rect x="14" y="12" width="4" height="12" rx="1" fill="#fff" />
+            <rect x="20" y="15" width="4" height="9" rx="1" fill="#fff" />
           </svg>
         </button>
         <button className="feature-refresh" onClick={fetchData}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="#00897b" strokeWidth="2" />
-            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#00897b" strokeWidth="2" strokeLinecap="round" />
-            <path d="M22 10v4h-4M10 22v-4h4" stroke="#00897b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="16" cy="16" r="14" stroke="rgba(255,255,255,0.5)" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       </header>

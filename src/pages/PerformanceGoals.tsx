@@ -561,8 +561,15 @@ const CSS = `
 .pg-header {
   display: flex; align-items: center; gap: 16px;
   padding: 20px 24px;
-  background: linear-gradient(135deg, #1e3a5f, #2563eb);
+  background: linear-gradient(135deg, #ec407a, #c2185b);
   color: #fff;
+  position: relative; overflow: hidden;
+}
+.pg-header::before {
+  content: ''; position: absolute; left: -40px; top: -40px;
+  width: 160px; height: 160px; opacity: 0.15; pointer-events: none;
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E");
 }
 .pg-back { background: rgba(255,255,255,0.15); border: none; border-radius: 10px; padding: 6px; cursor: pointer; display: flex; }
 .pg-header-title { margin: 0; font-size: 20px; font-weight: 700; }
