@@ -145,43 +145,87 @@ export default function ShiftCheckIn() {
   const activeShiftCheckin = activeCheckin?.source === 'shifts' ? activeCheckin : null
 
   return (
-    <div className="page-container">
+    <div className="ci-page">
       <style>{`
-        .ci-timer-card { background: var(--card-bg, #fff); border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 16px; border: 1px solid var(--border, #eee); }
-        .ci-timer { font-size: 48px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -1px; color: var(--text); margin: 8px 0; font-family: 'SF Mono', monospace, inherit; }
+        .ci-page { padding: 0 0 100px; }
+        .ci-header { background: linear-gradient(135deg, #1565c0, #1e88e5); color: #fff; padding: 16px; display: flex; align-items: center; gap: 12px; }
+        .ci-header-back { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
+        .ci-header-center { flex: 1; }
+        .ci-header-title { font-size: 22px; font-weight: 800; margin: 0; color: #fff; }
+        .ci-header-title span { font-style: italic; color: #90caf9; }
+        .ci-header-sub { font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 2px; }
+        .ci-header-refresh { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
+        .ci-body { padding: 12px 16px 24px; }
+        .ci-timer-card { background: var(--bg-card); border-radius: 14px; padding: 16px; text-align: center; margin-bottom: 10px; border: 1px solid var(--border); }
+        .ci-timer { font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -1px; color: var(--text); margin: 4px 0; font-family: 'SF Mono', monospace, inherit; }
         .ci-timer.on-break { color: #d97706; }
-        .ci-date { font-size: 13px; color: var(--text-muted, #999); }
-        .ci-shift-card { background: var(--card-bg, #fff); border: 1px solid var(--border, #eee); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; }
-        .ci-shift-name { font-weight: 600; font-size: 15px; }
-        .ci-shift-time { font-size: 13px; color: var(--text-muted, #999); margin-top: 4px; }
-        .ci-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0; }
+        .ci-date { font-size: 12px; color: var(--text-muted); }
+        .ci-shift-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+        .ci-shift-name { font-weight: 600; font-size: 14px; color: var(--text); }
+        .ci-shift-time { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+        .ci-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 10px 0 0; }
         .ci-status-item { text-align: center; }
-        .ci-status-label { font-size: 11px; color: var(--text-muted, #999); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-        .ci-status-val { font-size: 15px; font-weight: 600; color: var(--text); margin-top: 2px; }
-        .ci-actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
-        .ci-btn { padding: 12px 28px; border-radius: 10px; font-size: 15px; font-weight: 600; border: none; cursor: pointer; font-family: inherit; }
+        .ci-status-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+        .ci-status-val { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 1px; }
+        .ci-actions { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+        .ci-btn { padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; font-family: inherit; }
         .ci-btn-in { background: #16a34a; color: #fff; }
+        .ci-btn-in:hover { background: #15803d; }
         .ci-btn-out { background: #dc2626; color: #fff; }
-        .ci-btn-break { background: var(--card-bg, #f5f5f5); color: var(--text); border: 1px solid var(--border, #ddd); }
+        .ci-btn-out:hover { background: #b91c1c; }
+        .ci-btn-break { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+        .ci-btn-break:hover { background: var(--border); }
         .ci-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .ci-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 10px; margin-bottom: 16px; }
-        .ci-metric { background: var(--card-bg, #fff); border-radius: 12px; padding: 14px 10px; text-align: center; border: 1px solid var(--border, #eee); }
-        .ci-metric-val { font-size: 22px; font-weight: 700; color: var(--text); }
-        .ci-metric-label { font-size: 11px; color: var(--text-muted, #999); margin-top: 2px; }
-        .ci-history { background: var(--card-bg, #fff); border-radius: 12px; border: 1px solid var(--border, #eee); overflow: hidden; }
-        .ci-history-title { font-size: 14px; font-weight: 600; padding: 14px 16px 8px; }
-        .ci-history-row { display: flex; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border, #eee); font-size: 13px; gap: 8px; }
-        .ci-history-date { min-width: 80px; font-weight: 500; }
-        .ci-history-times { flex: 1; color: var(--text-muted, #999); }
-        .ci-history-dur { font-weight: 600; min-width: 50px; text-align: right; }
-        .ci-history-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+        .ci-metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        .ci-metric { background: var(--bg-card); border-radius: 10px; padding: 10px 8px; text-align: center; border: 1px solid var(--border); }
+        .ci-metric-val { font-size: 18px; font-weight: 700; color: var(--text); }
+        .ci-metric-label { font-size: 10px; color: var(--text-muted); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .ci-history { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+        .ci-history-title { font-size: 13px; font-weight: 600; padding: 12px 14px 6px; color: var(--text); }
+        .ci-history-row { display: flex; align-items: center; padding: 9px 14px; border-top: 1px solid var(--border); font-size: 12px; gap: 6px; color: var(--text); }
+        .ci-history-date { min-width: 72px; font-weight: 500; }
+        .ci-history-times { flex: 1; color: var(--text-muted); }
+        .ci-history-dur { font-weight: 600; min-width: 44px; text-align: right; }
+        .ci-history-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
         .ci-badge-home { background: #eff6ff; color: #2563eb; }
         .ci-badge-site { background: #ecfdf5; color: #16a34a; }
-        .ci-back { background: none; border: none; color: var(--text-muted, #999); font-size: 13px; cursor: pointer; font-family: inherit; padding: 0; margin-bottom: 12px; }
+        [data-theme="dark"] .ci-badge-home { background: #1e3a5f; color: #60a5fa; }
+        [data-theme="dark"] .ci-badge-site { background: #14532d; color: #4ade80; }
+        [data-theme="dark"] .ci-btn-in { background: #15803d; }
+        [data-theme="dark"] .ci-btn-in:hover { background: #166534; }
+        [data-theme="dark"] .ci-btn-out { background: #b91c1c; }
+        [data-theme="dark"] .ci-btn-out:hover { background: #991b1b; }
+        @media (prefers-color-scheme: dark) {
+          :root:not([data-theme="light"]) .ci-badge-home { background: #1e3a5f; color: #60a5fa; }
+          :root:not([data-theme="light"]) .ci-badge-site { background: #14532d; color: #4ade80; }
+          :root:not([data-theme="light"]) .ci-btn-in { background: #15803d; }
+          :root:not([data-theme="light"]) .ci-btn-in:hover { background: #166534; }
+          :root:not([data-theme="light"]) .ci-btn-out { background: #b91c1c; }
+          :root:not([data-theme="light"]) .ci-btn-out:hover { background: #991b1b; }
+        }
       `}</style>
 
-      <button className="ci-back" onClick={() => navigate('/shifts')}>← Back to Shifts</button>
+      <header className="ci-header">
+        <button className="ci-header-back" onClick={() => navigate('/shifts')}>
+          <svg width="32" height="32" viewBox="0 0 36 36" fill="none">
+            <circle cx="18" cy="18" r="17" stroke="#fff" strokeWidth="2" />
+            <path d="M21 12l-6 6 6 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <div className="ci-header-center">
+          <h1 className="ci-header-title">My <span>Check-In</span></h1>
+          <p className="ci-header-sub">Shift attendance</p>
+        </div>
+        <button className="ci-header-refresh" onClick={loadData}>
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
+            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+            <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </header>
 
+      <div className="ci-body">
       {/* Today's shift */}
       {todayShift && (
         <div className="ci-shift-card">
@@ -200,15 +244,15 @@ export default function ShiftCheckIn() {
         <div className={`ci-timer ${activeBreak ? 'on-break' : ''}`}>
           {activeShiftCheckin ? fmtTimer(activeBreak ? breakElapsed : elapsed) : '00:00:00'}
         </div>
-        {activeBreak && <div style={{ fontSize: 13, color: '#d97706', fontWeight: 600 }}>On Break</div>}
+        {activeBreak && <div style={{ fontSize: 12, color: '#d97706', fontWeight: 600 }}>On Break</div>}
 
         <div className="ci-status-grid">
           <div className="ci-status-item">
-            <div className="ci-status-label">Check In</div>
+            <div className="ci-status-label">In</div>
             <div className="ci-status-val">{activeShiftCheckin ? fmtTime(activeShiftCheckin.check_in_at) : '—'}</div>
           </div>
           <div className="ci-status-item">
-            <div className="ci-status-label">Work Time</div>
+            <div className="ci-status-label">Work</div>
             <div className="ci-status-val">{activeShiftCheckin ? fmtTimer(elapsed) : '—'}</div>
           </div>
         </div>
@@ -230,10 +274,10 @@ export default function ShiftCheckIn() {
           )}
         </div>
         {activeShiftCheckin?.work_from_home && (
-          <div style={{ marginTop: 10, fontSize: 12, color: '#2563eb' }}>Working from home</div>
+          <div style={{ marginTop: 8, fontSize: 11, color: '#2563eb' }}>Working from home</div>
         )}
         {activeShiftCheckin && !activeShiftCheckin.work_from_home && (
-          <div style={{ marginTop: 10, fontSize: 12, color: '#16a34a' }}>
+          <div style={{ marginTop: 8, fontSize: 11, color: '#16a34a' }}>
             {workLocations.find(l => l.id === activeShiftCheckin.check_in_location_id)?.name || 'On-site'}
           </div>
         )}
@@ -251,7 +295,7 @@ export default function ShiftCheckIn() {
         <div className="ci-history">
           <div className="ci-history-title">This Month</div>
           {history.filter(r => r.status !== 'cancelled').length === 0 && (
-            <div style={{ padding: 20, textAlign: 'center', color: '#999', fontSize: 13 }}>No check-ins this month</div>
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>No check-ins this month</div>
           )}
           {history.filter(r => r.status !== 'cancelled').map(r => {
             const dur = r.check_out_at
@@ -268,6 +312,7 @@ export default function ShiftCheckIn() {
           })}
         </div>
       )}
+      </div>
     </div>
   )
 }

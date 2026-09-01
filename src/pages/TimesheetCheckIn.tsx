@@ -138,23 +138,24 @@ export default function TimesheetCheckIn() {
   }
 
   return (
-    <div className="feature-page">
+    <div className="ci-page">
       <style>{`
-        .ci-header { background: linear-gradient(135deg, #1565c0, #1e88e5); color: #fff; padding: 16px 16px 14px; display: flex; align-items: center; gap: 12px; }
+        .ci-page { padding: 0 0 100px; }
+        .ci-header { background: linear-gradient(135deg, #1565c0, #1e88e5); color: #fff; padding: 16px; display: flex; align-items: center; gap: 12px; }
         .ci-header-back { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
         .ci-header-center { flex: 1; }
-        .ci-header-title { font-size: 18px; font-weight: 700; margin: 0; }
-        .ci-header-title span { font-weight: 400; opacity: 0.85; }
-        .ci-header-sub { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+        .ci-header-title { font-size: 22px; font-weight: 800; margin: 0; color: #fff; }
+        .ci-header-title span { font-style: italic; color: #90caf9; }
+        .ci-header-sub { font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 2px; }
         .ci-header-refresh { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
         .ci-body { padding: 12px 16px 24px; }
-        .ci-timer-card { background: var(--card-bg, #fff); border-radius: 14px; padding: 16px; text-align: center; margin-bottom: 10px; border: 1px solid var(--border, #eee); }
+        .ci-timer-card { background: var(--bg-card); border-radius: 14px; padding: 16px; text-align: center; margin-bottom: 10px; border: 1px solid var(--border); }
         .ci-timer { font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -1px; color: var(--text); margin: 4px 0; font-family: 'SF Mono', monospace, inherit; }
         .ci-timer.on-break { color: #d97706; }
-        .ci-date { font-size: 12px; color: var(--text-muted, #999); }
+        .ci-date { font-size: 12px; color: var(--text-muted); }
         .ci-status-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; margin: 10px 0 0; }
         .ci-status-item { text-align: center; }
-        .ci-status-label { font-size: 10px; color: var(--text-muted, #999); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+        .ci-status-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
         .ci-status-val { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 1px; }
         .ci-actions { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
         .ci-btn { padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; font-family: inherit; }
@@ -162,22 +163,36 @@ export default function TimesheetCheckIn() {
         .ci-btn-in:hover { background: #15803d; }
         .ci-btn-out { background: #dc2626; color: #fff; }
         .ci-btn-out:hover { background: #b91c1c; }
-        .ci-btn-break { background: var(--card-bg, #f5f5f5); color: var(--text); border: 1px solid var(--border, #ddd); }
-        .ci-btn-break:hover { background: var(--border, #eee); }
+        .ci-btn-break { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+        .ci-btn-break:hover { background: var(--border); }
         .ci-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .ci-metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-        .ci-metric { background: var(--card-bg, #fff); border-radius: 10px; padding: 10px 8px; text-align: center; border: 1px solid var(--border, #eee); }
+        .ci-metric { background: var(--bg-card); border-radius: 10px; padding: 10px 8px; text-align: center; border: 1px solid var(--border); }
         .ci-metric-val { font-size: 18px; font-weight: 700; color: var(--text); }
-        .ci-metric-label { font-size: 10px; color: var(--text-muted, #999); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.03em; }
-        .ci-history { background: var(--card-bg, #fff); border-radius: 12px; border: 1px solid var(--border, #eee); overflow: hidden; }
+        .ci-metric-label { font-size: 10px; color: var(--text-muted); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .ci-history { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
         .ci-history-title { font-size: 13px; font-weight: 600; padding: 12px 14px 6px; color: var(--text); }
-        .ci-history-row { display: flex; align-items: center; padding: 9px 14px; border-top: 1px solid var(--border, #eee); font-size: 12px; gap: 6px; }
+        .ci-history-row { display: flex; align-items: center; padding: 9px 14px; border-top: 1px solid var(--border); font-size: 12px; gap: 6px; color: var(--text); }
         .ci-history-date { min-width: 72px; font-weight: 500; }
-        .ci-history-times { flex: 1; color: var(--text-muted, #999); }
+        .ci-history-times { flex: 1; color: var(--text-muted); }
         .ci-history-dur { font-weight: 600; min-width: 44px; text-align: right; }
         .ci-history-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
         .ci-badge-home { background: #eff6ff; color: #2563eb; }
         .ci-badge-site { background: #ecfdf5; color: #16a34a; }
+        [data-theme="dark"] .ci-badge-home { background: #1e3a5f; color: #60a5fa; }
+        [data-theme="dark"] .ci-badge-site { background: #14532d; color: #4ade80; }
+        [data-theme="dark"] .ci-btn-in { background: #15803d; }
+        [data-theme="dark"] .ci-btn-in:hover { background: #166534; }
+        [data-theme="dark"] .ci-btn-out { background: #b91c1c; }
+        [data-theme="dark"] .ci-btn-out:hover { background: #991b1b; }
+        @media (prefers-color-scheme: dark) {
+          :root:not([data-theme="light"]) .ci-badge-home { background: #1e3a5f; color: #60a5fa; }
+          :root:not([data-theme="light"]) .ci-badge-site { background: #14532d; color: #4ade80; }
+          :root:not([data-theme="light"]) .ci-btn-in { background: #15803d; }
+          :root:not([data-theme="light"]) .ci-btn-in:hover { background: #166534; }
+          :root:not([data-theme="light"]) .ci-btn-out { background: #b91c1c; }
+          :root:not([data-theme="light"]) .ci-btn-out:hover { background: #991b1b; }
+        }
       `}</style>
 
       <header className="ci-header">
