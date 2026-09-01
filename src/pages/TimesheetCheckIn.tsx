@@ -1,30 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { MapContainer, TileLayer, Marker, Circle, useMap } from 'react-leaflet'
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useCheckIn } from '../context/CheckInContext'
 import { useToast } from '../context/ToastContext'
-
-const PIN_SVG = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 28 40"><path d="M14 0C6.3 0 0 6.3 0 14c0 10.5 14 26 14 26s14-15.5 14-26C28 6.3 21.7 0 14 0z" fill="%231565c0"/><circle cx="14" cy="14" r="6" fill="%23fff"/></svg>')}`
-const USER_SVG = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="%2316a34a" stroke="%23fff" stroke-width="2"/><circle cx="10" cy="10" r="4" fill="%23fff"/></svg>')}`
-
-const locationIcon = L.icon({ iconUrl: PIN_SVG, iconSize: [28, 40], iconAnchor: [14, 40] })
-const userIcon = L.icon({ iconUrl: USER_SVG, iconSize: [20, 20], iconAnchor: [10, 10] })
-
-function FitBounds({ locations, userPos }: { locations: [number, number][]; userPos: [number, number] | null }) {
-  const map = useMap()
-  useEffect(() => {
-    const pts: [number, number][] = [...locations]
-    if (userPos) pts.push(userPos)
-    if (pts.length === 0) return
-    if (pts.length === 1) { map.setView(pts[0], 16); return }
-    map.fitBounds(L.latLngBounds(pts.map(p => L.latLng(p[0], p[1]))), { padding: [40, 40], maxZoom: 17 })
-  }, [map, locations, userPos])
-  return null
-}
 
 interface HistoryRow {
   id: string; check_in_at: string; check_out_at: string | null; status: string
@@ -45,15 +24,7 @@ export default function TimesheetCheckIn() {
   const [breaks, setBreaks] = useState<BreakRow[]>([])
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
-  const [userPos, setUserPos] = useState<[number, number] | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  useEffect(() => {
-    navigator.geolocation?.getCurrentPosition(
-      pos => setUserPos([pos.coords.latitude, pos.coords.longitude]),
-      () => {}
-    )
-  }, [])
 
   const loadHistory = useCallback(async () => {
     if (!employeeId || !companyId) return
@@ -153,13 +124,11 @@ export default function TimesheetCheckIn() {
     return sum + (end - new Date(b.break_start).getTime()) / 1000
   }, 0)
 
-  const mapCenter: [number, number] = activeCheckin?.check_in_lat && activeCheckin?.check_in_lng
-    ? [activeCheckin.check_in_lat, activeCheckin.check_in_lng]
-    : workLocations.length > 0
-      ? [workLocations[0].latitude, workLocations[0].longitude]
-      : userPos || [51.5074, -0.1278]
-
-  const locPins: [number, number][] = workLocations.map(l => [l.latitude, l.longitude])
+  const mapLat = activeCheckin?.check_in_lat
+    ?? (workLocations.length > 0 ? workLocations[0].latitude : 51.5074)
+  const mapLng = activeCheckin?.check_in_lng
+    ?? (workLocations.length > 0 ? workLocations[0].longitude : -0.1278)
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${mapLng - 0.005},${mapLat - 0.003},${mapLng + 0.005},${mapLat + 0.003}&layer=mapnik&marker=${mapLat},${mapLng}`
 
   const checkedInLoc = activeCheckin
     ? workLocations.find(l => l.id === activeCheckin.check_in_location_id)
@@ -190,78 +159,79 @@ export default function TimesheetCheckIn() {
       <style>{`
         .ci-page { padding: 0 0 100px; background: var(--bg, #f5f5f5); min-height: 100vh; }
 
-        .ci-header { background: linear-gradient(135deg, #1565c0, #1e88e5); color: #fff; padding: 14px 16px; display: flex; align-items: center; gap: 12px; position: relative; z-index: 1000; }
+        .ci-header { background: linear-gradient(135deg, #1565c0, #1e88e5); color: #fff; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
         .ci-header-back { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
         .ci-header-center { flex: 1; }
-        .ci-header-title { font-size: 20px; font-weight: 800; margin: 0; color: #fff; }
+        .ci-header-title { font-size: 18px; font-weight: 800; margin: 0; color: #fff; }
         .ci-header-title span { font-style: italic; color: #90caf9; }
         .ci-header-sub { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 1px; }
         .ci-header-refresh { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
 
-        .ci-map { width: 100%; height: 200px; position: relative; z-index: 1; }
-        .ci-map .leaflet-container { width: 100%; height: 100%; }
+        .ci-map-frame { width: 100%; height: 180px; border: none; display: block; }
 
-        .ci-body { padding: 16px 16px 24px; }
+        .ci-hero { padding: 12px 16px 0; }
+        .ci-time-row { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 6px; }
+        .ci-time-big { font-size: 32px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
+        .ci-time-date { font-size: 12px; color: var(--text-muted); font-weight: 500; }
 
-        .ci-time-display { font-size: 36px; font-weight: 700; color: var(--text); margin: 4px 0 12px; font-variant-numeric: tabular-nums; }
-
-        .ci-status-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-        .ci-status-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .ci-status-actions { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border, #eee); margin-bottom: 10px; }
+        .ci-status-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .ci-status-icon.active { background: #dcfce7; color: #16a34a; }
         .ci-status-icon.inactive { background: var(--bg-card, #eee); color: var(--text-muted); }
         .ci-status-icon.on-break { background: #fef3c7; color: #d97706; }
-        .ci-status-text { font-size: 14px; font-weight: 600; color: var(--text); }
-        .ci-status-sub { font-size: 12px; color: var(--text-muted); }
+        .ci-status-info { flex: 1; min-width: 0; }
+        .ci-status-text { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ci-status-sub { font-size: 11px; color: var(--text-muted); }
+        .ci-action-btns { display: flex; gap: 6px; flex-shrink: 0; }
+        .ci-act-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; white-space: nowrap; }
+        .ci-act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .ci-act-checkin { background: #16a34a; color: #fff; }
+        .ci-act-checkin:hover:not(:disabled) { background: #15803d; }
+        .ci-act-break { background: var(--bg-card, #fff); color: var(--text); border: 1.5px solid var(--border, #ddd); }
+        .ci-act-break:hover:not(:disabled) { background: var(--border); }
+        .ci-act-checkout { background: var(--bg-card, #fff); color: var(--text); border: 1.5px solid var(--border, #ddd); }
+        .ci-act-checkout:hover:not(:disabled) { background: var(--border); }
 
-        .ci-date-line { font-size: 13px; color: var(--text-muted); margin: 14px 0 10px; font-weight: 500; }
+        .ci-body { padding: 0 16px; }
 
-        .ci-card { background: var(--bg-card, #fff); border: 1px solid var(--border, #eee); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
-        .ci-card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 10px; }
+        .ci-card { background: var(--bg-card, #fff); border: 1px solid var(--border, #eee); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+        .ci-card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 8px; }
 
-        .ci-shift-row { display: flex; justify-content: space-between; align-items: center; }
-        .ci-shift-time { font-size: 14px; font-weight: 600; color: var(--text); }
-        .ci-shift-role { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
-
-        .ci-today-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
-        .ci-today-row + .ci-today-row { border-top: 1px solid var(--border, #eee); padding-top: 10px; margin-top: 4px; }
-        .ci-today-loc { font-size: 14px; font-weight: 600; color: var(--text); }
-        .ci-today-status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
-        .ci-today-dot { width: 8px; height: 8px; border-radius: 50%; }
+        .ci-today-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
+        .ci-today-row + .ci-today-row { border-top: 1px solid var(--border, #eee); padding-top: 8px; margin-top: 3px; }
+        .ci-today-loc { font-size: 13px; font-weight: 600; color: var(--text); }
+        .ci-today-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+        .ci-today-dot { width: 7px; height: 7px; border-radius: 50%; }
         .ci-today-dot.in { background: #16a34a; }
         .ci-today-dot.out { background: #9e9e9e; }
-        .ci-today-time { font-size: 13px; font-weight: 600; color: var(--text); }
+        .ci-today-time { font-size: 12px; font-weight: 600; color: var(--text); }
 
-        .ci-bottom-actions { display: flex; gap: 10px; margin-top: 16px; }
-        .ci-bottom-btn { flex: 1; padding: 14px; border-radius: 12px; font-size: 15px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; text-align: center; }
-        .ci-bottom-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .ci-btn-checkin { background: #16a34a; color: #fff; }
-        .ci-btn-checkin:hover:not(:disabled) { background: #15803d; }
-        .ci-btn-break { background: var(--bg-card, #fff); color: var(--text); border: 1.5px solid var(--border, #ddd); }
-        .ci-btn-break:hover:not(:disabled) { background: var(--border); }
-        .ci-btn-checkout { background: var(--bg-card, #fff); color: var(--text); border: 1.5px solid var(--border, #ddd); }
-        .ci-btn-checkout:hover:not(:disabled) { background: var(--border); }
+        .ci-month-stats { display: flex; justify-content: space-between; }
+        .ci-month-stat { text-align: center; flex: 1; }
+        .ci-month-val { font-size: 18px; font-weight: 700; color: var(--text); }
+        .ci-month-label { font-size: 10px; color: var(--text-muted); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.03em; }
 
-        .ci-history { background: var(--bg-card, #fff); border-radius: 12px; border: 1px solid var(--border, #eee); overflow: hidden; margin-top: 10px; }
-        .ci-history-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 12px 16px 6px; }
-        .ci-history-row { display: flex; align-items: center; padding: 9px 16px; border-top: 1px solid var(--border, #eee); font-size: 12px; gap: 6px; color: var(--text); }
-        .ci-history-date { min-width: 72px; font-weight: 500; }
+        .ci-history { background: var(--bg-card, #fff); border-radius: 12px; border: 1px solid var(--border, #eee); overflow: hidden; margin-top: 8px; }
+        .ci-history-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 10px 14px 4px; }
+        .ci-history-row { display: flex; align-items: center; padding: 8px 14px; border-top: 1px solid var(--border, #eee); font-size: 11px; gap: 5px; color: var(--text); }
+        .ci-history-date { min-width: 68px; font-weight: 500; }
         .ci-history-times { flex: 1; color: var(--text-muted); }
-        .ci-history-dur { font-weight: 600; min-width: 44px; text-align: right; }
+        .ci-history-dur { font-weight: 600; min-width: 40px; text-align: right; }
         .ci-history-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
         .ci-badge-home { background: #eff6ff; color: #2563eb; }
         .ci-badge-site { background: #ecfdf5; color: #16a34a; }
 
         [data-theme="dark"] .ci-badge-home { background: #1e3a5f; color: #60a5fa; }
         [data-theme="dark"] .ci-badge-site { background: #14532d; color: #4ade80; }
-        [data-theme="dark"] .ci-btn-checkin { background: #15803d; }
-        [data-theme="dark"] .ci-btn-checkin:hover:not(:disabled) { background: #166534; }
+        [data-theme="dark"] .ci-act-checkin { background: #15803d; }
+        [data-theme="dark"] .ci-act-checkin:hover:not(:disabled) { background: #166534; }
         [data-theme="dark"] .ci-status-icon.active { background: #14532d; color: #4ade80; }
         [data-theme="dark"] .ci-status-icon.on-break { background: #451a03; color: #fbbf24; }
         @media (prefers-color-scheme: dark) {
           :root:not([data-theme="light"]) .ci-badge-home { background: #1e3a5f; color: #60a5fa; }
           :root:not([data-theme="light"]) .ci-badge-site { background: #14532d; color: #4ade80; }
-          :root:not([data-theme="light"]) .ci-btn-checkin { background: #15803d; }
-          :root:not([data-theme="light"]) .ci-btn-checkin:hover:not(:disabled) { background: #166534; }
+          :root:not([data-theme="light"]) .ci-act-checkin { background: #15803d; }
+          :root:not([data-theme="light"]) .ci-act-checkin:hover:not(:disabled) { background: #166534; }
           :root:not([data-theme="light"]) .ci-status-icon.active { background: #14532d; color: #4ade80; }
           :root:not([data-theme="light"]) .ci-status-icon.on-break { background: #451a03; color: #fbbf24; }
         }
@@ -269,7 +239,7 @@ export default function TimesheetCheckIn() {
 
       <header className="ci-header">
         <button className="ci-header-back" onClick={() => navigate('/timesheets')}>
-          <svg width="30" height="30" viewBox="0 0 36 36" fill="none">
+          <svg width="28" height="28" viewBox="0 0 36 36" fill="none">
             <circle cx="18" cy="18" r="17" stroke="#fff" strokeWidth="2" />
             <path d="M21 12l-6 6 6 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -279,7 +249,7 @@ export default function TimesheetCheckIn() {
           <p className="ci-header-sub">Timesheet attendance</p>
         </div>
         <button className="ci-header-refresh" onClick={loadHistory}>
-          <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
+          <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
             <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
             <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
             <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -287,29 +257,26 @@ export default function TimesheetCheckIn() {
         </button>
       </header>
 
-      {/* Map */}
-      <div className="ci-map">
-        <MapContainer center={mapCenter} zoom={16} scrollWheelZoom={false} zoomControl={false} attributionControl={false} style={{ width: '100%', height: '100%' }}>
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <FitBounds locations={locPins} userPos={userPos} />
-          {workLocations.map(loc => (
-            <Marker key={loc.id} position={[loc.latitude, loc.longitude]} icon={locationIcon} />
-          ))}
-          {workLocations.map(loc => (
-            <Circle key={`r-${loc.id}`} center={[loc.latitude, loc.longitude]} radius={loc.radius_metres} pathOptions={{ color: '#1565c0', fillColor: '#1565c0', fillOpacity: 0.08, weight: 1.5 }} />
-          ))}
-          {userPos && <Marker position={userPos} icon={userIcon} />}
-        </MapContainer>
-      </div>
+      {/* Map — OpenStreetMap embed, no dependencies */}
+      <iframe
+        className="ci-map-frame"
+        src={mapUrl}
+        title="Location map"
+        loading="lazy"
+      />
 
-      <div className="ci-body">
-        {/* Current time */}
-        <div className="ci-time-display">
-          {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+      {/* Time + Status + Action buttons — all visible without scrolling */}
+      <div className="ci-hero">
+        <div className="ci-time-row">
+          <div className="ci-time-big">
+            {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+          <div className="ci-time-date">
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </div>
         </div>
 
-        {/* Check-in status */}
-        <div className="ci-status-row">
+        <div className="ci-status-actions">
           <div className={`ci-status-icon ${activeBreak ? 'on-break' : activeCheckin ? 'active' : 'inactive'}`}>
             {activeBreak ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
@@ -319,7 +286,7 @@ export default function TimesheetCheckIn() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
             )}
           </div>
-          <div>
+          <div className="ci-status-info">
             <div className="ci-status-text">
               {activeBreak
                 ? `On break since ${fmtTime(activeBreak.break_start)}`
@@ -335,13 +302,26 @@ export default function TimesheetCheckIn() {
                   : 'Tap Check In to start'}
             </div>
           </div>
+          <div className="ci-action-btns">
+            {!activeCheckin ? (
+              <button className="ci-act-btn ci-act-checkin" onClick={handleCheckIn} disabled={acting}>
+                {acting ? '...' : 'Check In'}
+              </button>
+            ) : (
+              <>
+                <button className="ci-act-btn ci-act-break" onClick={() => handleBreak(activeBreak ? 'short' : 'lunch')} disabled={acting}>
+                  {activeBreak ? 'End Break' : 'Break'}
+                </button>
+                <button className="ci-act-btn ci-act-checkout" onClick={handleCheckOut} disabled={acting}>
+                  {acting ? '...' : 'Check Out'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
+      </div>
 
-        {/* Date */}
-        <div className="ci-date-line">
-          {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </div>
-
+      <div className="ci-body">
         {/* Today's Time card */}
         <div className="ci-card">
           <div className="ci-card-title">Today's Time</div>
@@ -370,41 +350,23 @@ export default function TimesheetCheckIn() {
           ))}
         </div>
 
-        {/* Monthly summary card */}
+        {/* Monthly summary */}
         <div className="ci-card">
           <div className="ci-card-title">This Month</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div style={{ textAlign: 'center', flex: 1 }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)' }}>{history.filter(r => r.status !== 'cancelled').length}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Days</div>
+          <div className="ci-month-stats">
+            <div className="ci-month-stat">
+              <div className="ci-month-val">{history.filter(r => r.status !== 'cancelled').length}</div>
+              <div className="ci-month-label">Days</div>
             </div>
-            <div style={{ textAlign: 'center', flex: 1 }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)' }}>{monthHours.toFixed(1)}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Hours</div>
+            <div className="ci-month-stat">
+              <div className="ci-month-val">{monthHours.toFixed(1)}</div>
+              <div className="ci-month-label">Hours</div>
             </div>
-            <div style={{ textAlign: 'center', flex: 1 }}>
-              <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)' }}>{totalBreakSecs > 0 ? fmtTimer(Math.floor(totalBreakSecs)) : '0'}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Break</div>
+            <div className="ci-month-stat">
+              <div className="ci-month-val">{totalBreakSecs > 0 ? fmtTimer(Math.floor(totalBreakSecs)) : '0'}</div>
+              <div className="ci-month-label">Break</div>
             </div>
           </div>
-        </div>
-
-        {/* Actions */}
-        <div className="ci-bottom-actions">
-          {!activeCheckin ? (
-            <button className="ci-bottom-btn ci-btn-checkin" onClick={handleCheckIn} disabled={acting}>
-              {acting ? 'Checking in...' : 'Check In'}
-            </button>
-          ) : (
-            <>
-              <button className="ci-bottom-btn ci-btn-break" onClick={() => handleBreak(activeBreak ? 'short' : 'lunch')} disabled={acting}>
-                {activeBreak ? 'End Break' : 'Break'}
-              </button>
-              <button className="ci-bottom-btn ci-btn-checkout" onClick={handleCheckOut} disabled={acting}>
-                {acting ? 'Checking out...' : 'Check Out'}
-              </button>
-            </>
-          )}
         </div>
 
         {/* History */}
