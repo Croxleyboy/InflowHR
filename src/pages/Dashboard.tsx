@@ -37,7 +37,7 @@ export default function Dashboard() {
   const { t, lang } = useLanguage()
   const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser } = useAuth()
   const navigate = useNavigate()
-  const { activeCheckin, activeBreak, checkOut, startBreak, endBreak } = useCheckIn()
+  const { activeCheckin, activeBreak, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
   const [pendingOneToOnes, setPendingOneToOnes] = useState(0)
@@ -288,6 +288,21 @@ export default function Dashboard() {
           </div>
         )
       })()}
+
+      {!activeCheckin && (ciSettings?.timesheets_checkin_enabled || ciSettings?.shifts_checkin_enabled) && (
+        <div className="dash-checkin-banner" style={{ background: '#64748b' }}
+          onClick={() => {
+            if (ciSettings?.timesheets_checkin_enabled && !ciSettings?.shifts_checkin_enabled) navigate('/timesheets/checkin')
+            else if (!ciSettings?.timesheets_checkin_enabled && ciSettings?.shifts_checkin_enabled) navigate('/shifts/checkin')
+            else navigate('/timesheets/checkin')
+          }}>
+          <div className="dash-checkin-banner-info">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span className="dash-checkin-banner-text">Not checked in — tap to check in</span>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      )}
 
       {reminderCount > 0 && (
         <div className="dash-status-bar">

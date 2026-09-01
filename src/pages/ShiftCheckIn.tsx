@@ -6,7 +6,7 @@ import { useCheckIn } from '../context/CheckInContext'
 import { useToast } from '../context/ToastContext'
 
 interface ShiftToday {
-  id: string; shift_date: string; start_time: string; end_time: string
+  id: string; date: string; start_time: string; end_time: string
   template_name: string; status: string
 }
 interface HistoryRow {
@@ -39,9 +39,9 @@ export default function ShiftCheckIn() {
     monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
 
     const [shiftRes, locsRes, histRes] = await Promise.all([
-      supabase.from('shift_assignments').select('id, shift_date, start_time, end_time, status, shift_template_id')
-        .eq('employee_id', employeeId).eq('company_id', companyId).eq('shift_date', todayStr)
-        .order('start_time').limit(1),
+      supabase.from('shift_assignments').select('id, date, status, shift_template_id, shift_template:shift_templates(name, start_time, end_time)')
+        .eq('employee_id', employeeId).eq('company_id', companyId).eq('date', todayStr)
+        .limit(1),
       supabase.from('work_locations').select('id, name').eq('company_id', companyId),
       supabase.from('checkin_records').select('*')
         .eq('employee_id', employeeId).eq('source', 'shifts')
@@ -50,13 +50,16 @@ export default function ShiftCheckIn() {
     ])
 
     if (shiftRes.data?.[0]) {
-      const s = shiftRes.data[0]
-      let tplName = 'Shift'
-      if (s.shift_template_id) {
-        const { data: tpl } = await supabase.from('shift_templates').select('name').eq('id', s.shift_template_id).single()
-        if (tpl) tplName = tpl.name
-      }
-      setTodayShift({ ...s, template_name: tplName })
+      const s = shiftRes.data[0] as any
+      const tpl = s.shift_template
+      setTodayShift({
+        id: s.id,
+        date: s.date,
+        start_time: tpl?.start_time || '00:00',
+        end_time: tpl?.end_time || '00:00',
+        template_name: tpl?.name || 'Shift',
+        status: s.status,
+      })
     } else {
       setTodayShift(null)
     }

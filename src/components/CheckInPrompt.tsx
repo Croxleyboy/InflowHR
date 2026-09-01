@@ -16,6 +16,7 @@ export default function CheckInPrompt() {
   const [dismissed, setDismissed] = useState(false)
   const [acting, setActing] = useState(false)
   const [shiftAvailable, setShiftAvailable] = useState(false)
+  const [shiftRostered, setShiftRostered] = useState(false)
   const [shiftAssignmentId, setShiftAssignmentId] = useState<string | null>(null)
 
   const tsEnabled = !!settings?.timesheets_checkin_enabled
@@ -26,32 +27,38 @@ export default function CheckInPrompt() {
   const checkShiftAvailability = useCallback(async () => {
     if (!shiftEnabled || !employeeId || !companyUser?.company_id) {
       setShiftAvailable(false)
+      setShiftRostered(false)
       return
     }
     const todayStr = new Date().toISOString().split('T')[0]
     const { data } = await supabase.from('shift_assignments')
-      .select('id, start_time')
+      .select('id, shift_template:shift_templates(start_time)')
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
-      .eq('shift_date', todayStr)
-      .order('start_time')
+      .eq('date', todayStr)
       .limit(1)
 
     if (data?.[0]) {
-      const promptMins = settings?.prompt_before_shift_mins || 20
-      const now = new Date()
-      const [sh, sm] = data[0].start_time.split(':').map(Number)
-      const shiftStart = new Date()
-      shiftStart.setHours(sh, sm, 0, 0)
-      const windowStart = new Date(shiftStart.getTime() - promptMins * 60000)
-      if (now >= windowStart) {
+      const row = data[0] as any
+      setShiftRostered(true)
+      setShiftAssignmentId(row.id)
+      const startTime = row.shift_template?.start_time
+      if (startTime) {
+        const promptMins = settings?.prompt_before_shift_mins || 20
+        const now = new Date()
+        const [sh, sm] = startTime.split(':').map(Number)
+        const shiftStart = new Date()
+        shiftStart.setHours(sh, sm, 0, 0)
+        const windowStart = new Date(shiftStart.getTime() - promptMins * 60000)
+        setShiftAvailable(now >= windowStart)
+      } else {
         setShiftAvailable(true)
-        setShiftAssignmentId(data[0].id)
-        return
       }
+    } else {
+      setShiftRostered(false)
+      setShiftAvailable(false)
+      setShiftAssignmentId(null)
     }
-    setShiftAvailable(false)
-    setShiftAssignmentId(null)
   }, [shiftEnabled, employeeId, companyUser?.company_id, settings?.prompt_before_shift_mins])
 
   useEffect(() => {
@@ -60,10 +67,11 @@ export default function CheckInPrompt() {
     const key = `checkin_dismissed_${employeeId}_${new Date().toISOString().split('T')[0]}`
     if (sessionStorage.getItem(key)) return
 
+    let timer: ReturnType<typeof setTimeout>
     checkShiftAvailability().then(() => {
-      const timer = setTimeout(() => setVisible(true), 1500)
-      return () => clearTimeout(timer)
+      timer = setTimeout(() => setVisible(true), 1500)
     })
+    return () => { if (timer) clearTimeout(timer) }
   }, [loading, employeeId, companyUser, dismissed, activeCheckin, enabled, location.pathname, checkShiftAvailability])
 
   if (!visible || !enabled) return null
@@ -95,7 +103,6 @@ export default function CheckInPrompt() {
   const singleSource: 'timesheets' | 'shifts' = tsEnabled ? 'timesheets' : 'shifts'
   const singleLabel = tsEnabled ? 'Timesheet' : 'Shift'
   const showDualChoice = dualEnabled
-  const canCheckInShift = shiftAvailable
 
   return (
     <>
@@ -133,11 +140,11 @@ export default function CheckInPrompt() {
               <button className="cip-btn cip-btn-primary" onClick={() => handleCheckIn('timesheets')} disabled={acting}>
                 {acting ? 'Checking in...' : 'Timesheet Check-In'}
               </button>
-              <button className="cip-btn cip-btn-shift" onClick={() => handleCheckIn('shifts')} disabled={acting || !canCheckInShift}>
-                {!canCheckInShift ? 'Shift Check-In (no shift available)' : acting ? 'Checking in...' : 'Shift Check-In'}
+              <button className="cip-btn cip-btn-shift" onClick={() => handleCheckIn('shifts')} disabled={acting || !shiftAvailable}>
+                {!shiftRostered ? 'Shift Check-In (no shift today)' : !shiftAvailable ? 'Shift Check-In (not yet open)' : acting ? 'Checking in...' : 'Shift Check-In'}
               </button>
-              {!canCheckInShift && (
-                <div className="cip-shift-note">You must be rostered and within the check-in window</div>
+              {!shiftAvailable && shiftRostered && (
+                <div className="cip-shift-note">Check-in opens {settings?.prompt_before_shift_mins || 20} minutes before your shift</div>
               )}
             </>
           ) : (
