@@ -95,20 +95,29 @@ body {
   display: flex; align-items: center; gap: 6px;
   padding: 6px 16px; flex-wrap: wrap;
 }
-.dash-checkin-pill {
-  display: flex; align-items: center; gap: 6px;
-  background: #16a34a; color: #fff; border: none; border-radius: 8px;
-  padding: 6px 10px; font-size: 12px; font-weight: 600;
-  cursor: pointer; font-family: inherit; flex: 1; min-width: 0;
+.dash-checkin-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #16a34a; color: #fff; border-radius: 10px;
+  padding: 10px 14px; margin: 6px 16px 0; cursor: pointer;
+  font-family: inherit; gap: 10px;
 }
-.dash-checkin-pill:hover { background: #15803d; }
-.dash-checkin-dot { width: 7px; height: 7px; border-radius: 50%; background: #bbf7d0; flex-shrink: 0; }
+.dash-checkin-banner:hover { background: #15803d; }
+.dash-checkin-break { background: #d97706; }
+.dash-checkin-break:hover { background: #b45309; }
+.dash-checkin-banner-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dash-checkin-dot { width: 8px; height: 8px; border-radius: 50%; background: #bbf7d0; flex-shrink: 0; animation: checkin-pulse 2s ease-in-out infinite; }
+.dash-checkin-dot-break { background: #fef3c7; }
+@keyframes checkin-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.dash-checkin-banner-text { font-size: 13px; font-weight: 600; }
+.dash-checkin-banner-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .dash-checkout-btn {
-  background: rgba(255,255,255,0.2); color: #fff; border: none; border-radius: 5px;
-  padding: 3px 10px; font-size: 11px; font-weight: 700; cursor: pointer;
-  font-family: inherit; margin-left: auto; flex-shrink: 0;
+  background: rgba(255,255,255,0.2); color: #fff; border: none; border-radius: 6px;
+  padding: 5px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+  font-family: inherit; flex-shrink: 0;
 }
 .dash-checkout-btn:hover { background: rgba(255,255,255,0.35); }
+.dash-break-btn { background: rgba(255,255,255,0.15); }
+.dash-end-break-btn { background: rgba(255,255,255,0.25); }
 .dash-reminder-pill {
   display: flex; align-items: center; gap: 4px;
   background: #7f1d1d; color: #fff; border: none; border-radius: 8px;
@@ -177,9 +186,9 @@ body {
 .dash-card::before {
   content: '';
   position: absolute;
-  left: -10px; top: -10px;
-  width: 120px; height: 120px;
-  opacity: 0.12;
+  left: -40px; top: -40px;
+  width: 160px; height: 160px;
+  opacity: 0.15;
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
@@ -206,19 +215,19 @@ body {
 
 /* Card colours + background patterns */
 .card-expenses { background: linear-gradient(135deg, #e53935, #c62828); }
-.card-expenses::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='10' cy='10' r='45' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='10' cy='10' r='28' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='60' cy='80' r='8' fill='white'/%3E%3Ccircle cx='85' cy='30' r='5' fill='white'/%3E%3C/svg%3E"); }
+.card-expenses::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 .card-leave { background: linear-gradient(135deg, #43a047, #2e7d32); }
-.card-leave::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cpath d='M-10 50Q20 10 60-10' stroke='white' stroke-width='2.5' fill='none'/%3E%3Cpath d='M-10 70Q30 30 80-10' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='70' cy='60' r='6' fill='white'/%3E%3Ccircle cx='45' cy='90' r='4' fill='white'/%3E%3Ccircle cx='95' cy='45' r='3' fill='white'/%3E%3C/svg%3E"); }
+.card-leave::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 .card-profile { background: linear-gradient(135deg, #ab47bc, #7b1fa2); }
-.card-profile::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='15' cy='15' r='40' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='80' cy='70' r='12' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='55' cy='95' r='5' fill='white'/%3E%3Ccircle cx='100' cy='25' r='4' fill='white'/%3E%3C/svg%3E"); }
+.card-profile::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 .card-payslips { background: linear-gradient(135deg, #303f9f, #1a237e); }
-.card-payslips::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cpath d='M-5 30Q25-5 65-10' stroke='white' stroke-width='2' fill='none'/%3E%3Cpath d='M-5 55Q35 15 85-5' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M-5 80Q40 40 100 10' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='75' cy='55' r='5' fill='white'/%3E%3Ccircle cx='50' cy='85' r='3' fill='white'/%3E%3C/svg%3E"); }
+.card-payslips::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 .card-kudos { background: linear-gradient(135deg, #78909c, #546e7a); position: relative; }
-.card-kudos::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='20' cy='20' r='35' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='20' cy='20' r='18' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='80' cy='80' r='10' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='90' cy='40' r='4' fill='white'/%3E%3C/svg%3E"); }
+.card-kudos::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 .kudos-unread-badge {
   position: absolute; top: 8px; right: 32px;
   background: #e53935; color: #fff;
@@ -230,22 +239,22 @@ body {
 }
 
 .card-benefits { background: linear-gradient(135deg, #b2ebf2, #80deea); color: #00695c; }
-.card-benefits::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cpath d='M5 60Q5 5 60 5' stroke='%23006' stroke-width='2' fill='none'/%3E%3Cpath d='M-5 80Q-5 15 80-5' stroke='%23006' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='70' cy='65' r='7' stroke='%23006' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='90' cy='90' r='4' fill='%23006'/%3E%3C/svg%3E"); opacity: 0.1; }
+.card-benefits::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='%23006' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='%23006' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='%23006' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='%23006' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='%23006' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); opacity: 0.1; }
 
 .card-elearning { background: linear-gradient(135deg, #fdd835, #f9a825); color: #333; }
-.card-elearning::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='10' cy='10' r='50' stroke='%23333' stroke-width='2' fill='none'/%3E%3Ccircle cx='10' cy='10' r='30' stroke='%23333' stroke-width='1' fill='none'/%3E%3Ccircle cx='85' cy='75' r='6' fill='%23333'/%3E%3Ccircle cx='70' cy='100' r='4' fill='%23333'/%3E%3C/svg%3E"); opacity: 0.08; }
+.card-elearning::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='%23333' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='%23333' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='%23333' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='%23333' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='%23333' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); opacity: 0.08; }
 
 .card-performance { background: linear-gradient(135deg, #ec407a, #c2185b); position: relative; }
-.card-performance::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cpath d='M-10 40Q30 0 70-10' stroke='white' stroke-width='2.5' fill='none'/%3E%3Cpath d='M-10 65Q40 20 90-5' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='60' cy='70' r='8' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='95' cy='50' r='4' fill='white'/%3E%3Ccircle cx='40' cy='95' r='3' fill='white'/%3E%3C/svg%3E"); }
+.card-performance::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 .card-timesheets { background: linear-gradient(135deg, #42a5f5, #1565c0); }
-.card-timesheets::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='15' cy='15' r='42' stroke='white' stroke-width='2' fill='none'/%3E%3Cpath d='M-10 75Q50 40 110-10' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='80' cy='55' r='5' fill='white'/%3E%3Ccircle cx='55' cy='90' r='3.5' fill='white'/%3E%3Ccircle cx='100' cy='85' r='3' fill='white'/%3E%3C/svg%3E"); }
+.card-timesheets::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 .card-shifts { background: linear-gradient(135deg, #ff8a65, #e65100); }
-.card-shifts::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cpath d='M5 50Q5 5 50 5' stroke='white' stroke-width='2.5' fill='none'/%3E%3Cpath d='M5 80Q5 20 80 5' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='75' cy='65' r='9' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='50' cy='100' r='4' fill='white'/%3E%3Ccircle cx='100' cy='35' r='3' fill='white'/%3E%3C/svg%3E"); }
+.card-shifts::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 .card-legal-ts { background: linear-gradient(135deg, #00897b, #00695c); }
-.card-legal-ts::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Ccircle cx='10' cy='10' r='48' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='10' cy='10' r='25' stroke='white' stroke-width='1' fill='none'/%3E%3Cpath d='M60 90Q90 60 100 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='85' cy='70' r='4' fill='white'/%3E%3C/svg%3E"); }
+.card-legal-ts::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 /* ── My Schedule (Employee Shifts) ── */
 .schedule-header { display: flex; align-items: center; padding: 12px 16px 0; }
@@ -5744,7 +5753,7 @@ body {
 
 /* Dashboard card */
 .card-space-booking { background: linear-gradient(135deg, #455a64, #263238); }
-.card-space-booking::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cpath d='M-5 45Q25-5 70-10' stroke='white' stroke-width='2' fill='none'/%3E%3Cpath d='M-5 70Q35 20 95 0' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='65' cy='70' r='10' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='90' cy='50' r='5' fill='white'/%3E%3Ccircle cx='40' cy='100' r='3.5' fill='white'/%3E%3C/svg%3E"); }
+.card-space-booking::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 /* ============================================================
    Admin Space Management — shared admin styles

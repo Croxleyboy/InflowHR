@@ -37,7 +37,7 @@ export default function Dashboard() {
   const { t, lang } = useLanguage()
   const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser } = useAuth()
   const navigate = useNavigate()
-  const { activeCheckin, checkOut } = useCheckIn()
+  const { activeCheckin, activeBreak, checkOut, startBreak, endBreak } = useCheckIn()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
   const [pendingOneToOnes, setPendingOneToOnes] = useState(0)
@@ -253,25 +253,41 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {(reminderCount > 0 || activeCheckin) && (
+      {activeCheckin && (() => {
+        const mins = Math.floor((Date.now() - new Date(activeCheckin.check_in_at).getTime()) / 60000)
+        const h = Math.floor(mins / 60); const m = mins % 60
+        const onBreak = !!activeBreak
+        return (
+          <div className={`dash-checkin-banner${onBreak ? ' dash-checkin-break' : ''}`} onClick={() => navigate(activeCheckin.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin')}>
+            <div className="dash-checkin-banner-info">
+              <span className={`dash-checkin-dot${onBreak ? ' dash-checkin-dot-break' : ''}`} />
+              <span className="dash-checkin-banner-text">
+                {onBreak ? 'On break' : 'Checked in'} · {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({h}h {m}m)
+              </span>
+            </div>
+            <div className="dash-checkin-banner-actions">
+              {onBreak ? (
+                <>
+                  <button className="dash-checkout-btn dash-end-break-btn" onClick={async (e) => { e.stopPropagation(); const r = await endBreak(); if (!r.ok) alert(r.error) }}>End Break</button>
+                  <button className="dash-checkout-btn" onClick={async (e) => { e.stopPropagation(); const r = await checkOut(); if (!r.ok) alert(r.error) }}>Out</button>
+                </>
+              ) : (
+                <>
+                  <button className="dash-checkout-btn dash-break-btn" onClick={async (e) => { e.stopPropagation(); const r = await startBreak('lunch'); if (!r.ok) alert(r.error) }}>Break</button>
+                  <button className="dash-checkout-btn" onClick={async (e) => { e.stopPropagation(); const r = await checkOut(); if (!r.ok) alert(r.error) }}>Out</button>
+                </>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {reminderCount > 0 && (
         <div className="dash-status-bar">
-          {activeCheckin && (() => {
-            const mins = Math.floor((Date.now() - new Date(activeCheckin.check_in_at).getTime()) / 60000)
-            const h = Math.floor(mins / 60); const m = mins % 60
-            return (
-              <button className="dash-checkin-pill" onClick={() => navigate(activeCheckin.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin')}>
-                <span className="dash-checkin-dot" />
-                In {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({h}h {m}m)
-                <button className="dash-checkout-btn" onClick={async (e) => { e.stopPropagation(); const r = await checkOut(); if (!r.ok) alert(r.error) }}>Out</button>
-              </button>
-            )
-          })()}
-          {reminderCount > 0 && (
-            <button className="dash-reminder-pill" onClick={() => navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } })}>
-              {reminderCount} reminder{reminderCount !== 1 ? 's' : ''}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-            </button>
-          )}
+          <button className="dash-reminder-pill" onClick={() => navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } })}>
+            {reminderCount} reminder{reminderCount !== 1 ? 's' : ''}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
         </div>
       )}
 

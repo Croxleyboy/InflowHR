@@ -690,7 +690,7 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         <button className="admin-btn-icon" onClick={() => setOffset(o => o - 1)}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
         </button>
@@ -699,18 +699,17 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
         <button className="admin-btn-sm admin-btn-cancel" onClick={() => setOffset(0)} style={{ marginLeft: 4 }}>Current</button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        <button className={`admin-btn-sm ${filterView === 'all' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('all')}>
-          All ({rows.length})
-        </button>
-        <button className={`admin-btn-sm ${filterView === 'not_submitted' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('not_submitted')}>
-          Not Submitted ({notSubmittedCount})
-        </button>
-        <button className={`admin-btn-sm ${filterView === 'shortfall' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('shortfall')}>
-          Shortfall ({shortfallCount})
-        </button>
+        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
+          <button className={`admin-btn-sm ${filterView === 'all' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('all')}>
+            All ({rows.length})
+          </button>
+          <button className={`admin-btn-sm ${filterView === 'not_submitted' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('not_submitted')}>
+            Not Submitted ({notSubmittedCount})
+          </button>
+          <button className={`admin-btn-sm ${filterView === 'shortfall' ? 'admin-btn-save' : 'admin-btn-cancel'}`} onClick={() => setFilterView('shortfall')}>
+            Shortfall ({shortfallCount})
+          </button>
+        </div>
       </div>
 
       {loading ? <div className="admin-loading">Loading...</div> : (
