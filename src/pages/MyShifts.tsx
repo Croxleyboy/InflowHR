@@ -385,7 +385,7 @@ export default function MyShifts() {
               <div className="dash-checkin-banner-info">
                 <span className={`dash-checkin-dot${onBreak ? ' dash-checkin-dot-break' : ''}`} />
                 <span className="dash-checkin-banner-text">
-                  {onBreak ? 'On break' : 'Checked in'} · {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({h}h {m}m)
+                  Shift · {onBreak ? 'Break' : 'In'} {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({h}h{m > 0 ? ` ${m}m` : ''})
                 </span>
               </div>
               <div className="dash-checkin-banner-actions">
@@ -400,6 +400,18 @@ export default function MyShifts() {
                     <button className="dash-checkout-btn" onClick={async (e) => { e.stopPropagation(); const r = await checkOut(); if (!r.ok) alert(r.error) }}>Out</button>
                   </>
                 )}
+              </div>
+            </div>
+          )
+        }
+        if (activeCheckin && activeCheckin.source === 'timesheets') {
+          return (
+            <div
+              className="dash-checkin-banner"
+              style={{ margin: '8px 16px 0', background: '#78909c', cursor: 'default', opacity: 0.7 }}
+            >
+              <div className="dash-checkin-banner-info">
+                <span className="dash-checkin-banner-text">Check out of timesheets to check in to a shift</span>
               </div>
             </div>
           )

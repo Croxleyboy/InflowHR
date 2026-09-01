@@ -257,12 +257,19 @@ export default function Dashboard() {
         const mins = Math.floor((Date.now() - new Date(activeCheckin.check_in_at).getTime()) / 60000)
         const h = Math.floor(mins / 60); const m = mins % 60
         const onBreak = !!activeBreak
+        const isShift = activeCheckin.source === 'shifts'
+        const sourceLabel = isShift ? 'Shift' : 'Timesheet'
+        const bannerBg = isShift ? (onBreak ? '#d97706' : '#e65100') : undefined
         return (
-          <div className={`dash-checkin-banner${onBreak ? ' dash-checkin-break' : ''}`} onClick={() => navigate(activeCheckin.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin')}>
+          <div
+            className={`dash-checkin-banner${onBreak && !isShift ? ' dash-checkin-break' : ''}`}
+            style={bannerBg ? { background: bannerBg } : undefined}
+            onClick={() => navigate(isShift ? '/shifts/checkin' : '/timesheets/checkin')}
+          >
             <div className="dash-checkin-banner-info">
               <span className={`dash-checkin-dot${onBreak ? ' dash-checkin-dot-break' : ''}`} />
               <span className="dash-checkin-banner-text">
-                {onBreak ? 'On break' : 'Checked in'} · {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({h}h {m}m)
+                {sourceLabel} · {onBreak ? 'Break' : 'In'} {new Date(activeCheckin.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} ({h}h{m > 0 ? ` ${m}m` : ''})
               </span>
             </div>
             <div className="dash-checkin-banner-actions">

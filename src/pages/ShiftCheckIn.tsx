@@ -13,6 +13,7 @@ interface HistoryRow {
   id: string; check_in_at: string; check_out_at: string | null; status: string
   work_from_home: boolean; loc_name: string; shift_assignment_id: string | null
 }
+interface BreakRow { id: string; break_start: string; break_end: string | null; break_type: string }
 
 export default function ShiftCheckIn() {
   const navigate = useNavigate()
@@ -25,6 +26,7 @@ export default function ShiftCheckIn() {
   const [breakElapsed, setBreakElapsed] = useState(0)
   const [todayShift, setTodayShift] = useState<ShiftToday | null>(null)
   const [history, setHistory] = useState<HistoryRow[]>([])
+  const [breaks, setBreaks] = useState<BreakRow[]>([])
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -65,8 +67,14 @@ export default function ShiftCheckIn() {
     if (histRes.data) setHistory(histRes.data.map((r: { id: string; check_in_at: string; check_out_at: string | null; status: string; work_from_home: boolean; check_in_location_id: string | null; shift_assignment_id: string | null }) => ({
       ...r, loc_name: r.work_from_home ? 'Home' : (r.check_in_location_id ? locMap[r.check_in_location_id] || 'On-site' : 'On-site'),
     })))
+
+    if (activeCheckin && activeCheckin.source === 'shifts') {
+      const { data: brks } = await supabase.from('break_records').select('*')
+        .eq('checkin_record_id', activeCheckin.id).order('break_start', { ascending: false })
+      if (brks) setBreaks(brks)
+    }
     setLoading(false)
-  }, [employeeId, companyId])
+  }, [employeeId, companyId, activeCheckin])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -92,7 +100,8 @@ export default function ShiftCheckIn() {
 
   const promptMins = settings?.prompt_before_shift_mins || 20
   const canCheckInShift = (() => {
-    if (!todayShift || activeCheckin) return false
+    if (!todayShift) return false
+    if (activeCheckin) return false
     const now = new Date()
     const [sh, sm] = todayShift.start_time.split(':').map(Number)
     const shiftStart = new Date(); shiftStart.setHours(sh, sm, 0, 0)
@@ -102,6 +111,11 @@ export default function ShiftCheckIn() {
 
   async function handleCheckIn() {
     setActing(true)
+    if (activeCheckin) {
+      showError(`You are already checked in to ${activeCheckin.source}. Please check out first.`)
+      setActing(false)
+      return
+    }
     const result = await checkIn('shifts', todayShift?.id)
     if (result.ok) { showSuccess(result.wfh ? 'Checked in from home' : 'Checked in for shift'); loadData() }
     else showError(result.error || 'Check-in failed')
@@ -117,19 +131,29 @@ export default function ShiftCheckIn() {
   async function handleBreak(type: 'lunch' | 'short' | 'other') {
     setActing(true)
     if (activeBreak) {
-      const r = await endBreak(); if (r.ok) showSuccess('Break ended'); else showError(r.error || 'Failed')
+      const r = await endBreak(); if (r.ok) { showSuccess('Break ended'); loadData() } else showError(r.error || 'Failed')
     } else {
       const r = await startBreak(type); if (r.ok) showSuccess('Break started'); else showError(r.error || 'Failed')
     }
     setActing(false)
   }
 
-  const monthDays = history.filter(r => r.status !== 'cancelled').length
-  const completed = history.filter(r => r.status === 'checked_out' || r.status === 'auto_closed')
-  const monthHours = completed.reduce((sum, r) => {
+  const completedRecords = history.filter(r => r.status === 'checked_out' || r.status === 'auto_closed')
+  const monthHours = completedRecords.reduce((sum, r) => {
     if (!r.check_out_at) return sum
     return sum + (new Date(r.check_out_at).getTime() - new Date(r.check_in_at).getTime()) / 3600000
   }, 0)
+
+  const totalBreakSecs = breaks.reduce((sum, b) => {
+    const end = b.break_end ? new Date(b.break_end).getTime() : Date.now()
+    return sum + (end - new Date(b.break_start).getTime()) / 1000
+  }, 0)
+
+  const todayRecords = history.filter(r => {
+    const d = new Date(r.check_in_at)
+    const now = new Date()
+    return d.toDateString() === now.toDateString()
+  })
 
   if (!settings?.shifts_checkin_enabled) {
     return (
@@ -144,80 +168,143 @@ export default function ShiftCheckIn() {
 
   const activeShiftCheckin = activeCheckin?.source === 'shifts' ? activeCheckin : null
 
+  const mapLat = activeShiftCheckin?.check_in_lat
+    ?? (workLocations.length > 0 ? workLocations[0].latitude : 51.5074)
+  const mapLng = activeShiftCheckin?.check_in_lng
+    ?? (workLocations.length > 0 ? workLocations[0].longitude : -0.1278)
+  const mapUrl = `https://maps.google.com/maps?q=${mapLat},${mapLng}&z=16&output=embed`
+
+  const checkedInLoc = activeShiftCheckin
+    ? workLocations.find(l => l.id === activeShiftCheckin.check_in_location_id)
+    : null
+  const locationName = activeShiftCheckin
+    ? activeShiftCheckin.work_from_home ? 'Home' : (checkedInLoc?.name || 'On-site')
+    : workLocations.length > 0 ? workLocations[0].name : '—'
+
+  const checkinBtnLabel = (() => {
+    if (acting) return '...'
+    if (activeCheckin && activeCheckin.source !== 'shifts') return `Checked in to ${activeCheckin.source}`
+    if (!todayShift) return 'No shift today'
+    if (!canCheckInShift) return `Opens ${promptMins}m before shift`
+    return 'Check In'
+  })()
+
   return (
     <div className="ci-page">
       <style>{`
-        .ci-page { padding: 0 0 100px; }
-        .ci-header { background: linear-gradient(135deg, #1565c0, #1e88e5); color: #fff; padding: 16px; display: flex; align-items: center; gap: 12px; }
+        .ci-page { padding: 0 0 100px; background: var(--bg, #f5f5f5); min-height: 100vh; }
+
+        .ci-header { background: linear-gradient(135deg, #bf360c, #e65100); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 10px; }
         .ci-header-back { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
         .ci-header-center { flex: 1; }
-        .ci-header-title { font-size: 22px; font-weight: 800; margin: 0; color: #fff; }
-        .ci-header-title span { font-style: italic; color: #90caf9; }
-        .ci-header-sub { font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 2px; }
+        .ci-header-title { font-size: 18px; font-weight: 800; margin: 0; color: #fff; }
+        .ci-header-title span { font-style: italic; color: #ffcc80; }
+        .ci-header-sub { font-size: 11px; color: rgba(255,255,255,0.7); margin-top: 1px; }
         .ci-header-refresh { background: none; border: none; cursor: pointer; padding: 0; display: flex; }
-        .ci-body { padding: 12px 16px 24px; }
-        .ci-timer-card { background: var(--bg-card); border-radius: 14px; padding: 16px; text-align: center; margin-bottom: 10px; border: 1px solid var(--border); }
-        .ci-timer { font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -1px; color: var(--text); margin: 4px 0; font-family: 'SF Mono', monospace, inherit; }
-        .ci-timer.on-break { color: #d97706; }
-        .ci-date { font-size: 12px; color: var(--text-muted); }
-        .ci-shift-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
-        .ci-shift-name { font-weight: 600; font-size: 14px; color: var(--text); }
-        .ci-shift-time { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
-        .ci-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 10px 0 0; }
-        .ci-status-item { text-align: center; }
-        .ci-status-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-        .ci-status-val { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 1px; }
-        .ci-actions { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
-        .ci-btn { padding: 10px 24px; border-radius: 10px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; font-family: inherit; }
-        .ci-btn-in { background: #16a34a; color: #fff; }
-        .ci-btn-in:hover { background: #15803d; }
-        .ci-btn-out { background: #dc2626; color: #fff; }
-        .ci-btn-out:hover { background: #b91c1c; }
-        .ci-btn-break { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
-        .ci-btn-break:hover { background: var(--border); }
-        .ci-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .ci-metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-        .ci-metric { background: var(--bg-card); border-radius: 10px; padding: 10px 8px; text-align: center; border: 1px solid var(--border); }
-        .ci-metric-val { font-size: 18px; font-weight: 700; color: var(--text); }
-        .ci-metric-label { font-size: 10px; color: var(--text-muted); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.03em; }
-        .ci-history { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
-        .ci-history-title { font-size: 13px; font-weight: 600; padding: 12px 14px 6px; color: var(--text); }
-        .ci-history-row { display: flex; align-items: center; padding: 9px 14px; border-top: 1px solid var(--border); font-size: 12px; gap: 6px; color: var(--text); }
-        .ci-history-date { min-width: 72px; font-weight: 500; }
+
+        .ci-map-frame { width: 100%; height: 180px; border: none; display: block; }
+
+        .ci-hero { padding: 12px 16px 0; }
+        .ci-time-row { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 6px; }
+        .ci-time-big { font-size: 32px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; line-height: 1; }
+        .ci-time-date { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+
+        .ci-shift-info { background: #fff3e0; border: 1px solid #ffcc80; border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+        .ci-shift-name { font-weight: 600; font-size: 13px; color: #e65100; }
+        .ci-shift-time { font-size: 12px; color: #bf360c; }
+        [data-theme="dark"] .ci-shift-info { background: #3e2723; border-color: #6d4c41; }
+        [data-theme="dark"] .ci-shift-name { color: #ffcc80; }
+        [data-theme="dark"] .ci-shift-time { color: #ffab91; }
+        @media (prefers-color-scheme: dark) {
+          :root:not([data-theme="light"]) .ci-shift-info { background: #3e2723; border-color: #6d4c41; }
+          :root:not([data-theme="light"]) .ci-shift-name { color: #ffcc80; }
+          :root:not([data-theme="light"]) .ci-shift-time { color: #ffab91; }
+        }
+
+        .ci-status-actions { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border, #eee); margin-bottom: 10px; }
+        .ci-status-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .ci-status-icon.active { background: #fff3e0; color: #e65100; }
+        .ci-status-icon.inactive { background: var(--bg-card, #eee); color: var(--text-muted); }
+        .ci-status-icon.on-break { background: #fef3c7; color: #d97706; }
+        .ci-status-info { flex: 1; min-width: 0; }
+        .ci-status-text { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ci-status-sub { font-size: 11px; color: var(--text-muted); }
+        .ci-action-btns { display: flex; gap: 6px; flex-shrink: 0; }
+        .ci-act-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; border: none; cursor: pointer; font-family: inherit; white-space: nowrap; }
+        .ci-act-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .ci-act-checkin { background: #e65100; color: #fff; }
+        .ci-act-checkin:hover:not(:disabled) { background: #bf360c; }
+        .ci-act-break { background: #f59e0b; color: #fff; }
+        .ci-act-break:hover:not(:disabled) { background: #d97706; }
+        .ci-act-checkout { background: #dc2626; color: #fff; }
+        .ci-act-checkout:hover:not(:disabled) { background: #b91c1c; }
+
+        .ci-body { padding: 0 16px; }
+
+        .ci-card { background: var(--bg-card, #fff); border: 1px solid var(--border, #eee); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+        .ci-card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 8px; }
+
+        .ci-today-row { display: flex; align-items: center; justify-content: space-between; padding: 5px 0; }
+        .ci-today-row + .ci-today-row { border-top: 1px solid var(--border, #eee); padding-top: 8px; margin-top: 3px; }
+        .ci-today-loc { font-size: 13px; font-weight: 600; color: var(--text); }
+        .ci-today-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+        .ci-today-dot { width: 7px; height: 7px; border-radius: 50%; }
+        .ci-today-dot.in { background: #e65100; }
+        .ci-today-dot.out { background: #9e9e9e; }
+        .ci-today-time { font-size: 12px; font-weight: 600; color: var(--text); }
+
+        .ci-month-stats { display: flex; justify-content: space-between; }
+        .ci-month-stat { text-align: center; flex: 1; }
+        .ci-month-val { font-size: 18px; font-weight: 700; color: var(--text); }
+        .ci-month-label { font-size: 10px; color: var(--text-muted); margin-top: 1px; text-transform: uppercase; letter-spacing: 0.03em; }
+
+        .ci-history { background: var(--bg-card, #fff); border-radius: 12px; border: 1px solid var(--border, #eee); overflow: hidden; margin-top: 8px; }
+        .ci-history-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); padding: 10px 14px 4px; }
+        .ci-history-row { display: flex; align-items: center; padding: 8px 14px; border-top: 1px solid var(--border, #eee); font-size: 11px; gap: 5px; color: var(--text); }
+        .ci-history-date { min-width: 68px; font-weight: 500; }
         .ci-history-times { flex: 1; color: var(--text-muted); }
-        .ci-history-dur { font-weight: 600; min-width: 44px; text-align: right; }
+        .ci-history-dur { font-weight: 600; min-width: 40px; text-align: right; }
         .ci-history-badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; }
         .ci-badge-home { background: #eff6ff; color: #2563eb; }
-        .ci-badge-site { background: #ecfdf5; color: #16a34a; }
+        .ci-badge-site { background: #fff3e0; color: #e65100; }
+
         [data-theme="dark"] .ci-badge-home { background: #1e3a5f; color: #60a5fa; }
-        [data-theme="dark"] .ci-badge-site { background: #14532d; color: #4ade80; }
-        [data-theme="dark"] .ci-btn-in { background: #15803d; }
-        [data-theme="dark"] .ci-btn-in:hover { background: #166534; }
-        [data-theme="dark"] .ci-btn-out { background: #b91c1c; }
-        [data-theme="dark"] .ci-btn-out:hover { background: #991b1b; }
+        [data-theme="dark"] .ci-badge-site { background: #3e2723; color: #ffab91; }
+        [data-theme="dark"] .ci-act-checkin { background: #bf360c; }
+        [data-theme="dark"] .ci-act-checkin:hover:not(:disabled) { background: #8d2100; }
+        [data-theme="dark"] .ci-act-break { background: #b45309; }
+        [data-theme="dark"] .ci-act-break:hover:not(:disabled) { background: #92400e; }
+        [data-theme="dark"] .ci-act-checkout { background: #b91c1c; }
+        [data-theme="dark"] .ci-act-checkout:hover:not(:disabled) { background: #991b1b; }
+        [data-theme="dark"] .ci-status-icon.active { background: #3e2723; color: #ffab91; }
+        [data-theme="dark"] .ci-status-icon.on-break { background: #451a03; color: #fbbf24; }
         @media (prefers-color-scheme: dark) {
           :root:not([data-theme="light"]) .ci-badge-home { background: #1e3a5f; color: #60a5fa; }
-          :root:not([data-theme="light"]) .ci-badge-site { background: #14532d; color: #4ade80; }
-          :root:not([data-theme="light"]) .ci-btn-in { background: #15803d; }
-          :root:not([data-theme="light"]) .ci-btn-in:hover { background: #166534; }
-          :root:not([data-theme="light"]) .ci-btn-out { background: #b91c1c; }
-          :root:not([data-theme="light"]) .ci-btn-out:hover { background: #991b1b; }
+          :root:not([data-theme="light"]) .ci-badge-site { background: #3e2723; color: #ffab91; }
+          :root:not([data-theme="light"]) .ci-act-checkin { background: #bf360c; }
+          :root:not([data-theme="light"]) .ci-act-checkin:hover:not(:disabled) { background: #8d2100; }
+          :root:not([data-theme="light"]) .ci-act-break { background: #b45309; }
+          :root:not([data-theme="light"]) .ci-act-break:hover:not(:disabled) { background: #92400e; }
+          :root:not([data-theme="light"]) .ci-act-checkout { background: #b91c1c; }
+          :root:not([data-theme="light"]) .ci-act-checkout:hover:not(:disabled) { background: #991b1b; }
+          :root:not([data-theme="light"]) .ci-status-icon.active { background: #3e2723; color: #ffab91; }
+          :root:not([data-theme="light"]) .ci-status-icon.on-break { background: #451a03; color: #fbbf24; }
         }
       `}</style>
 
       <header className="ci-header">
         <button className="ci-header-back" onClick={() => navigate('/shifts')}>
-          <svg width="32" height="32" viewBox="0 0 36 36" fill="none">
+          <svg width="28" height="28" viewBox="0 0 36 36" fill="none">
             <circle cx="18" cy="18" r="17" stroke="#fff" strokeWidth="2" />
             <path d="M21 12l-6 6 6 6" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
         <div className="ci-header-center">
-          <h1 className="ci-header-title">My <span>Check-In</span></h1>
+          <h1 className="ci-header-title">Shift <span>Check-In</span></h1>
           <p className="ci-header-sub">Shift attendance</p>
         </div>
         <button className="ci-header-refresh" onClick={loadData}>
-          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+          <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
             <circle cx="16" cy="16" r="14" stroke="#fff" strokeWidth="2" />
             <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
             <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -225,93 +312,145 @@ export default function ShiftCheckIn() {
         </button>
       </header>
 
+      <iframe
+        className="ci-map-frame"
+        src={mapUrl}
+        title="Location map"
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+        allowFullScreen
+      />
+
+      <div className="ci-hero">
+        <div className="ci-time-row">
+          <div className="ci-time-big">
+            {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+          <div className="ci-time-date">
+            {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </div>
+        </div>
+
+        {todayShift && (
+          <div className="ci-shift-info">
+            <span className="ci-shift-name">{todayShift.template_name}</span>
+            <span className="ci-shift-time">{todayShift.start_time?.slice(0, 5)} — {todayShift.end_time?.slice(0, 5)}</span>
+          </div>
+        )}
+
+        <div className="ci-status-actions">
+          <div className={`ci-status-icon ${activeBreak ? 'on-break' : activeShiftCheckin ? 'active' : 'inactive'}`}>
+            {activeBreak ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+            ) : activeShiftCheckin ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/></svg>
+            )}
+          </div>
+          <div className="ci-status-info">
+            <div className="ci-status-text">
+              {activeBreak
+                ? `Break ${fmtTime(activeBreak.break_start)}`
+                : activeShiftCheckin
+                  ? `In ${fmtTime(activeShiftCheckin.check_in_at)}`
+                  : 'Not checked in'}
+            </div>
+            <div className="ci-status-sub">
+              {activeBreak
+                ? fmtTimer(breakElapsed)
+                : activeShiftCheckin
+                  ? fmtTimer(elapsed)
+                  : todayShift ? 'Tap Check In' : 'No shift today'}
+            </div>
+          </div>
+          <div className="ci-action-btns">
+            {!activeShiftCheckin ? (
+              <button className="ci-act-btn ci-act-checkin" onClick={handleCheckIn} disabled={acting || !canCheckInShift}>
+                {checkinBtnLabel}
+              </button>
+            ) : (
+              <>
+                <button className="ci-act-btn ci-act-break" onClick={() => handleBreak(activeBreak ? 'short' : 'lunch')} disabled={acting}>
+                  {activeBreak ? 'End Break' : 'Break'}
+                </button>
+                <button className="ci-act-btn ci-act-checkout" onClick={handleCheckOut} disabled={acting}>
+                  {acting ? '...' : 'Check Out'}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="ci-body">
-      {/* Today's shift */}
-      {todayShift && (
-        <div className="ci-shift-card">
-          <div className="ci-shift-name">{todayShift.template_name}</div>
-          <div className="ci-shift-time">
-            {todayShift.start_time?.slice(0, 5)} — {todayShift.end_time?.slice(0, 5)}
+        <div className="ci-card">
+          <div className="ci-card-title">Today's Time</div>
+          <div className="ci-today-row">
+            <div className="ci-today-loc">{locationName}</div>
           </div>
-        </div>
-      )}
-
-      {/* Timer */}
-      <div className="ci-timer-card">
-        <div className="ci-date">
-          {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        </div>
-        <div className={`ci-timer ${activeBreak ? 'on-break' : ''}`}>
-          {activeShiftCheckin ? fmtTimer(activeBreak ? breakElapsed : elapsed) : '00:00:00'}
-        </div>
-        {activeBreak && <div style={{ fontSize: 12, color: '#d97706', fontWeight: 600 }}>On Break</div>}
-
-        <div className="ci-status-grid">
-          <div className="ci-status-item">
-            <div className="ci-status-label">In</div>
-            <div className="ci-status-val">{activeShiftCheckin ? fmtTime(activeShiftCheckin.check_in_at) : '—'}</div>
-          </div>
-          <div className="ci-status-item">
-            <div className="ci-status-label">Work</div>
-            <div className="ci-status-val">{activeShiftCheckin ? fmtTimer(elapsed) : '—'}</div>
-          </div>
-        </div>
-
-        <div className="ci-actions">
-          {!activeShiftCheckin ? (
-            <button className="ci-btn ci-btn-in" onClick={handleCheckIn} disabled={acting || !canCheckInShift}>
-              {acting ? 'Checking in...' : !todayShift ? 'No shift today' : !canCheckInShift ? `Opens ${promptMins}m before shift` : 'Check In'}
-            </button>
-          ) : (
-            <>
-              <button className="ci-btn ci-btn-break" onClick={() => handleBreak(activeBreak ? 'short' : 'lunch')} disabled={acting}>
-                {activeBreak ? 'End Break' : 'Start Break'}
-              </button>
-              <button className="ci-btn ci-btn-out" onClick={handleCheckOut} disabled={acting}>
-                {acting ? 'Checking out...' : 'Check Out'}
-              </button>
-            </>
+          {todayRecords.length === 0 && !activeShiftCheckin && (
+            <div className="ci-today-row">
+              <div className="ci-today-status"><span className="ci-today-dot out" /> No check-ins today</div>
+            </div>
           )}
-        </div>
-        {activeShiftCheckin?.work_from_home && (
-          <div style={{ marginTop: 8, fontSize: 11, color: '#2563eb' }}>Working from home</div>
-        )}
-        {activeShiftCheckin && !activeShiftCheckin.work_from_home && (
-          <div style={{ marginTop: 8, fontSize: 11, color: '#16a34a' }}>
-            {workLocations.find(l => l.id === activeShiftCheckin.check_in_location_id)?.name || 'On-site'}
-          </div>
-        )}
-      </div>
-
-      {/* Metrics */}
-      <div className="ci-metrics">
-        <div className="ci-metric"><div className="ci-metric-val">{monthDays}</div><div className="ci-metric-label">Shifts</div></div>
-        <div className="ci-metric"><div className="ci-metric-val">{monthHours.toFixed(0)}</div><div className="ci-metric-label">Hours</div></div>
-        <div className="ci-metric"><div className="ci-metric-val">{completed.length}</div><div className="ci-metric-label">Completed</div></div>
-      </div>
-
-      {/* History */}
-      {!loading && (
-        <div className="ci-history">
-          <div className="ci-history-title">This Month</div>
-          {history.filter(r => r.status !== 'cancelled').length === 0 && (
-            <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>No check-ins this month</div>
-          )}
-          {history.filter(r => r.status !== 'cancelled').map(r => {
-            const dur = r.check_out_at
-              ? `${((new Date(r.check_out_at).getTime() - new Date(r.check_in_at).getTime()) / 3600000).toFixed(1)}h`
-              : r.status === 'checked_in' ? 'Active' : '—'
-            return (
-              <div key={r.id} className="ci-history-row">
-                <span className="ci-history-date">{fmtDate(r.check_in_at)}</span>
-                <span className="ci-history-times">{fmtTime(r.check_in_at)} → {r.check_out_at ? fmtTime(r.check_out_at) : '—'}</span>
-                <span className={`ci-history-badge ${r.work_from_home ? 'ci-badge-home' : 'ci-badge-site'}`}>{r.loc_name}</span>
-                <span className="ci-history-dur">{dur}</span>
+          {activeShiftCheckin && (
+            <div className="ci-today-row">
+              <div className="ci-today-status">
+                <span className="ci-today-dot in" />
+                {activeBreak ? 'On Break' : 'Checked In'}
               </div>
-            )
-          })}
+              <div className="ci-today-time">{fmtTime(activeShiftCheckin.check_in_at)}</div>
+            </div>
+          )}
+          {todayRecords.filter(r => r.status === 'checked_out' || r.status === 'auto_closed').map(r => (
+            <div key={r.id} className="ci-today-row">
+              <div className="ci-today-status"><span className="ci-today-dot out" /> Checked Out</div>
+              <div className="ci-today-time">{fmtTime(r.check_in_at)} — {r.check_out_at ? fmtTime(r.check_out_at) : '—'}</div>
+            </div>
+          ))}
         </div>
-      )}
+
+        <div className="ci-card">
+          <div className="ci-card-title">This Month</div>
+          <div className="ci-month-stats">
+            <div className="ci-month-stat">
+              <div className="ci-month-val">{history.filter(r => r.status !== 'cancelled').length}</div>
+              <div className="ci-month-label">Shifts</div>
+            </div>
+            <div className="ci-month-stat">
+              <div className="ci-month-val">{monthHours.toFixed(1)}</div>
+              <div className="ci-month-label">Hours</div>
+            </div>
+            <div className="ci-month-stat">
+              <div className="ci-month-val">{totalBreakSecs > 0 ? fmtTimer(Math.floor(totalBreakSecs)) : '0'}</div>
+              <div className="ci-month-label">Break</div>
+            </div>
+          </div>
+        </div>
+
+        {!loading && history.filter(r => r.status !== 'cancelled').length > 0 && (
+          <div className="ci-history">
+            <div className="ci-history-title">Recent Check-ins</div>
+            {history.filter(r => r.status !== 'cancelled').slice(0, 10).map(r => {
+              const dur = r.check_out_at
+                ? `${((new Date(r.check_out_at).getTime() - new Date(r.check_in_at).getTime()) / 3600000).toFixed(1)}h`
+                : r.status === 'checked_in' ? 'Active' : '—'
+              return (
+                <div key={r.id} className="ci-history-row">
+                  <span className="ci-history-date">{fmtDate(r.check_in_at)}</span>
+                  <span className="ci-history-times">
+                    {fmtTime(r.check_in_at)} → {r.check_out_at ? fmtTime(r.check_out_at) : '—'}
+                  </span>
+                  <span className={`ci-history-badge ${r.work_from_home ? 'ci-badge-home' : 'ci-badge-site'}`}>
+                    {r.loc_name}
+                  </span>
+                  <span className="ci-history-dur">{dur}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

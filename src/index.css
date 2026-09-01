@@ -99,16 +99,16 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   background: #16a34a; color: #fff; border-radius: 10px;
   padding: 10px 14px; margin: 6px 16px 0; cursor: pointer;
-  font-family: inherit; gap: 10px;
+  font-family: inherit; gap: 10px; flex-wrap: nowrap;
 }
 .dash-checkin-banner:hover { background: #15803d; }
 .dash-checkin-break { background: #d97706; }
 .dash-checkin-break:hover { background: #b45309; }
-.dash-checkin-banner-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dash-checkin-banner-info { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
 .dash-checkin-dot { width: 8px; height: 8px; border-radius: 50%; background: #bbf7d0; flex-shrink: 0; animation: checkin-pulse 2s ease-in-out infinite; }
 .dash-checkin-dot-break { background: #fef3c7; }
 @keyframes checkin-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-.dash-checkin-banner-text { font-size: 13px; font-weight: 600; }
+.dash-checkin-banner-text { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dash-checkin-banner-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .dash-checkout-btn {
   background: rgba(255,255,255,0.2); color: #fff; border: none; border-radius: 6px;
