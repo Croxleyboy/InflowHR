@@ -27,16 +27,12 @@ const statusColor: Record<string, string> = {
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
-function getFYMonths(): { year: number; month: number }[] {
+function getLast4Months(): { year: number; month: number }[] {
   const now = new Date()
-  const fyStartMonth = 3
-  const fyStartYear = now.getMonth() >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
   const months: { year: number; month: number }[] = []
-  for (let i = 0; i < 12; i++) {
-    const m = (fyStartMonth + i) % 12
-    const y = fyStartYear + Math.floor((fyStartMonth + i) / 12)
-    if (y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth())) break
-    months.push({ year: y, month: m })
+  for (let i = 3; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push({ year: d.getFullYear(), month: d.getMonth() })
   }
   return months
 }
@@ -48,17 +44,16 @@ export default function TimesheetHistory() {
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
 
-  const fyMonths = useMemo(() => getFYMonths(), [])
+  const fyMonths = useMemo(() => getLast4Months(), [])
   const [monthIdx, setMonthIdx] = useState(fyMonths.length - 1)
   const current = fyMonths[monthIdx]
 
   const fetchData = useCallback(async () => {
     if (!employeeId) return
     setLoading(true)
-    const fyStartMonth = 3
     const now = new Date()
-    const fyStartYear = now.getMonth() >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
-    const startDate = `${fyStartYear}-${String(fyStartMonth + 1).padStart(2, '0')}-01`
+    const start = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+    const startDate = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-01`
 
     const { data } = await supabase
       .from('timesheets')
