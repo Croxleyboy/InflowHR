@@ -43,7 +43,7 @@ const EXPENSE_TYPES = [
   'Mobile phone usage', 'Internet/data charges', 'Course fees/certifications or conferences',
 ]
 
-const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
+const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const PAGE_SIZE = 30
 
@@ -368,20 +368,30 @@ export default function AdminExpenses() {
 
   const chartData = useMemo(() => {
     const now = new Date()
-    const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
-    const monthly = new Array(12).fill(0)
-    claims.forEach(c => {
-      const d = new Date(c.created_at)
+    const year = now.getFullYear()
+    const months: { label: string; approved: number; submitted: number; declined: number }[] = []
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(year, now.getMonth() - i, 1)
       const m = d.getMonth()
       const y = d.getFullYear()
-      let idx = -1
-      if (m >= 3 && y === fyStart) idx = m - 3
-      else if (m < 3 && y === fyStart + 1) idx = m + 9
-      if (idx >= 0 && idx < 12) monthly[idx] += Number(c.amount)
-    })
-    const max = Math.max(...monthly, 1)
-    const yearTotal = monthly.reduce((a, b) => a + b, 0)
-    return { monthly, max, yearTotal, fyLabel: `${fyStart}/${fyStart + 1}` }
+      const label = `${CAL_MONTHS[m]} ${y}`
+      const inMonth = claims.filter(c => {
+        const cd = new Date(c.created_at)
+        return cd.getMonth() === m && cd.getFullYear() === y && c.status !== 'draft'
+      })
+      months.push({
+        label,
+        approved: inMonth.filter(c => c.status === 'approved').reduce((s, c) => s + Number(c.amount), 0),
+        submitted: inMonth.filter(c => c.status === 'pending').reduce((s, c) => s + Number(c.amount), 0),
+        declined: inMonth.filter(c => c.status === 'rejected').reduce((s, c) => s + Number(c.amount), 0),
+      })
+    }
+    const totalApproved = months.reduce((s, m) => s + m.approved, 0)
+    const totalSubmitted = months.reduce((s, m) => s + m.submitted, 0)
+    const totalDeclined = months.reduce((s, m) => s + m.declined, 0)
+    const overallTotal = totalApproved + totalSubmitted + totalDeclined
+    const max = Math.max(...months.map(m => m.approved + m.submitted + m.declined), 1)
+    return { months, max, totalApproved, totalSubmitted, totalDeclined, overallTotal }
   }, [claims])
 
   return (
@@ -550,18 +560,54 @@ export default function AdminExpenses() {
 
       {tab === 'chart' && (
         <div className="admin-chart-section">
-          <h3>Monthly Expense Totals — FY {chartData.fyLabel}</h3>
-          <div className="admin-bar-chart">
-            {MONTHS.map((m, i) => (
-              <div key={m} className="admin-bar-col">
-                <span className="admin-bar-value">£{chartData.monthly[i] > 0 ? chartData.monthly[i].toFixed(0) : ''}</span>
-                <div className="admin-bar" style={{ height: `${(chartData.monthly[i] / chartData.max) * 180}px` }} />
-                <span className="admin-bar-label">{m}</span>
-              </div>
-            ))}
+          <h3>Monthly Expense Totals — Last 12 Months</h3>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#475569' }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: '#22c55e', display: 'inline-block' }} /> Approved
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#475569' }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: '#f59e0b', display: 'inline-block' }} /> Submitted
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#475569' }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: '#ef4444', display: 'inline-block' }} /> Declined
+            </span>
           </div>
-          <div className="admin-chart-total">
-            <strong>FY Total:</strong> £{chartData.yearTotal.toFixed(2)}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {chartData.months.map(m => {
+              const total = m.approved + m.submitted + m.declined
+              const approvedPct = chartData.max > 0 ? (m.approved / chartData.max) * 100 : 0
+              const submittedPct = chartData.max > 0 ? (m.submitted / chartData.max) * 100 : 0
+              const declinedPct = chartData.max > 0 ? (m.declined / chartData.max) * 100 : 0
+              return (
+                <div key={m.label} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 70px', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b', textAlign: 'right' }}>{m.label}</span>
+                  <div style={{ display: 'flex', height: 22, borderRadius: 4, overflow: 'hidden', background: '#f1f5f9' }}>
+                    {m.approved > 0 && <div style={{ width: `${approvedPct}%`, background: '#22c55e', minWidth: 2 }} title={`Approved: £${m.approved.toFixed(2)}`} />}
+                    {m.submitted > 0 && <div style={{ width: `${submittedPct}%`, background: '#f59e0b', minWidth: 2 }} title={`Submitted: £${m.submitted.toFixed(2)}`} />}
+                    {m.declined > 0 && <div style={{ width: `${declinedPct}%`, background: '#ef4444', minWidth: 2 }} title={`Declined: £${m.declined.toFixed(2)}`} />}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: total > 0 ? '#0f172a' : '#cbd5e1' }}>£{total.toFixed(0)}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 20, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>£{chartData.overallTotal.toFixed(2)}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>OVERALL TOTAL</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#22c55e' }}>£{chartData.totalApproved.toFixed(2)}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>APPROVED</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#f59e0b' }}>£{chartData.totalSubmitted.toFixed(2)}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>SUBMITTED</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444' }}>£{chartData.totalDeclined.toFixed(2)}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>DECLINED</div>
+            </div>
           </div>
         </div>
       )}
