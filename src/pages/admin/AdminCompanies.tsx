@@ -142,7 +142,7 @@ export default function AdminCompanies() {
         adminMap[co.id] = matches.map((cu: any) => {
           const emp = empLookup.get(cu.employee_id)
           return { employee_id: cu.employee_id, first_name: emp?.first_name || '', last_name: emp?.last_name || '', email: emp?.email || '' }
-        }).filter(a => a.first_name || a.last_name)
+        })
       }
     }
     setAdmins(adminMap)

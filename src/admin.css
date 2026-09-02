@@ -665,10 +665,23 @@
 }
 
 /* ===== Admin Companies table fit ===== */
+.admin-co-table { table-layout: fixed; }
 .admin-co-table th,
-.admin-co-table td { padding: 10px 8px; }
+.admin-co-table td { padding: 10px 8px; overflow: hidden; text-overflow: ellipsis; }
 .admin-co-table th { white-space: normal; }
-.admin-co-table td[data-label="Actions"] { white-space: nowrap; }
+.admin-co-table th:nth-child(1) { width: 50px; }   /* Logo */
+.admin-co-table th:nth-child(2) { width: 14%; }     /* Company */
+.admin-co-table th:nth-child(3) { width: 12%; }     /* Domain */
+.admin-co-table th:nth-child(4) { width: 55px; }    /* Auth */
+.admin-co-table th:nth-child(5) { width: 18%; }     /* Admins */
+.admin-co-table th:nth-child(6) { width: 65px; }    /* Status */
+.admin-co-table th:nth-child(7) { width: 9%; }      /* Trial */
+.admin-co-table th:nth-child(8) { width: 55px; }    /* Login */
+.admin-co-table th:nth-child(9) { width: 9%; }      /* Registered */
+.admin-co-table th:nth-child(10) { width: auto; }   /* Actions */
+.admin-co-table td[data-label="Company Admins"] { overflow: visible; }
+.admin-co-table td[data-label="Actions"] { overflow: visible; }
+.admin-co-table .admin-actions { flex-wrap: wrap; white-space: normal; }
 
 /* ===== Admin Companies responsive ===== */
 @media (max-width: 960px) {
