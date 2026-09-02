@@ -664,6 +664,12 @@
   color: #999; font-style: italic;
 }
 
+/* ===== Admin Companies table fit ===== */
+.admin-co-table th,
+.admin-co-table td { padding: 10px 8px; }
+.admin-co-table th { white-space: normal; }
+.admin-co-table td[data-label="Actions"] { white-space: nowrap; }
+
 /* ===== Admin Companies responsive ===== */
 @media (max-width: 960px) {
   .admin-co-table-wrap { border: none; background: transparent; overflow: visible; }

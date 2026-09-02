@@ -120,17 +120,29 @@ export default function AdminCompanies() {
     const adminMap: Record<string, CompanyAdminEntry[]> = {}
     const companyIds = cos.map(co => co.id)
     if (companyIds.length > 0) {
-      const { data: allAdmins } = await supabase
+      const { data: adminCuRows } = await supabase
         .from('company_users')
-        .select('company_id, employee_id, employee:employees!company_users_employee_id_fkey(first_name, last_name, email)')
+        .select('company_id, employee_id')
         .in('company_id', companyIds)
         .eq('role', 'admin')
+        .not('employee_id', 'is', null)
+      const empIds = [...new Set((adminCuRows || []).map((r: any) => r.employee_id).filter(Boolean))]
+      let empLookup = new Map<string, { first_name: string; last_name: string; email: string }>()
+      if (empIds.length > 0) {
+        const { data: empRows } = await supabase
+          .from('employees')
+          .select('id, first_name, last_name, email')
+          .in('id', empIds)
+        for (const e of (empRows || []) as { id: string; first_name: string; last_name: string; email: string }[]) {
+          empLookup.set(e.id, e)
+        }
+      }
       for (const co of cos) {
-        const matches = (allAdmins || []).filter((a: any) => a.company_id === co.id)
+        const matches = (adminCuRows || []).filter((a: any) => a.company_id === co.id)
         adminMap[co.id] = matches.map((cu: any) => {
-          const emp = Array.isArray(cu.employee) ? cu.employee[0] : cu.employee
+          const emp = empLookup.get(cu.employee_id)
           return { employee_id: cu.employee_id, first_name: emp?.first_name || '', last_name: emp?.last_name || '', email: emp?.email || '' }
-        })
+        }).filter(a => a.first_name || a.last_name)
       }
     }
     setAdmins(adminMap)
@@ -598,7 +610,7 @@ export default function AdminCompanies() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {companyAdmins.map(a => (
           <div key={a.employee_id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 13 }}>{a.first_name} {a.last_name}</span>
+            <span style={{ fontSize: 13 }}>{a.first_name && a.last_name ? `${a.first_name} ${a.last_name}` : a.email || 'Unknown'}</span>
             <button
               className="admin-btn-icon admin-btn-danger"
               title={`Remove ${a.first_name} as admin`}
