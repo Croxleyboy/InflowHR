@@ -37,6 +37,7 @@ interface AuthState {
   isSuperAdmin: boolean
   isManager: boolean
   canPostNotifications: boolean
+  portalRole: string | null
   avatarUrl: string | null
   updateAvatarUrl: (url: string) => void
   setupComplete: boolean | null
@@ -66,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
   const [isManager, setIsManager] = useState(false)
   const [canPostNotifications, setCanPostNotifications] = useState(false)
+  const [portalRole, setPortalRole] = useState<string | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
     // Step 1: RPC ensures company_users row exists, claims orphans, resolves employee by local-part match
@@ -198,6 +200,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('company_id', cu.company_id)
           .single()
           .then(({ data }) => setCanPostNotifications(data?.can_post_notifications === true))
+
+        supabase.from('admin_portal_access')
+          .select('role_key')
+          .eq('employee_id', empId)
+          .eq('company_id', cu.company_id)
+          .maybeSingle()
+          .then(({ data }) => setPortalRole(data?.role_key || null))
       }
     } else {
       setSetupComplete(null)
@@ -265,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmployeeId(null)
     setIsManager(false)
     setCanPostNotifications(false)
+    setPortalRole(null)
   }
 
   const INACTIVITY_TIMEOUT = 15 * 60 * 1000
@@ -281,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmployeeId(null)
     setIsManager(false)
     setCanPostNotifications(false)
+    setPortalRole(null)
     window.location.href = '/'
   }, [])
 
@@ -320,7 +331,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(employeeEmail.toLowerCase())
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithPassword, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithPassword, signOut }}>
       {children}
     </AuthContext.Provider>
   )

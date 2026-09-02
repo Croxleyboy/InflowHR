@@ -30,7 +30,7 @@ const monthLabels = [
 export default function Settings() {
   const { features, companyFeatures, setFeatures } = useFeatures()
   const { lang, setLang, t, fyStartMonth, setFyStartMonth } = useLanguage()
-  const { employeeName, employeeEmail, companyUser, isSuperAdmin } = useAuth()
+  const { employeeName, employeeEmail, companyUser, isSuperAdmin, portalRole } = useAuth()
   const { showError, showSuccess } = useToast()
   const navigate = useNavigate()
   const [draft, setDraft] = useState<Features>({ ...features })
@@ -39,6 +39,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
   const [exporting, setExporting] = useState(false)
   const isCompanyAdmin = isSuperAdmin || companyUser?.role === 'admin'
+  const hasPortalAccess = isCompanyAdmin || !!portalRole
 
   const handleDownloadMyData = useCallback(async () => {
     if (!companyUser?.employee_id) { showError('No employee record linked'); return }
@@ -210,7 +211,7 @@ export default function Settings() {
         </div>
       </section>
 
-      {isCompanyAdmin && (
+      {hasPortalAccess && (
         <section className="settings-section settings-admin-section">
           <button className="settings-admin-btn" onClick={() => navigate('/admin')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

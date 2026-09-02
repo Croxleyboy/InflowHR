@@ -7,13 +7,14 @@ import { useNotificationBadge } from '../hooks/useNotificationBadge'
 
 export default function DesktopLayout() {
   const { t } = useLanguage()
-  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl } = useAuth()
+  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl, portalRole } = useAuth()
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const navigate = useNavigate()
   const badgeCount = useNotificationBadge()
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
   const isAdmin = companyUser && ['admin', 'hr'].includes(companyUser.role)
+  const hasPortalAccess = isAdmin || !!portalRole
 
   const allNavItems: { to: string; icon: string; label: string; end?: boolean; badge?: number; feature?: keyof Features }[] = [
     { to: '/', icon: 'home', label: t('footer.dashboard'), end: true },
@@ -114,7 +115,7 @@ export default function DesktopLayout() {
         </nav>
 
         <div className="desktop-sidebar-footer">
-          {isAdmin && (
+          {hasPortalAccess && (
             <button className="desktop-admin-btn" onClick={() => navigate('/admin')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />

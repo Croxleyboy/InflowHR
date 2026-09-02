@@ -75,6 +75,7 @@ import AdminAssetManagement from './pages/admin/AdminAssetManagement'
 import AdminTalentIntelligence from './pages/admin/AdminTalentIntelligence'
 import AdminUserGuides from './pages/admin/AdminUserGuides'
 import AdminDashboardModern from './pages/admin/AdminDashboardModern'
+import AdminAccess from './pages/admin/AdminAccess'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
 import TimesheetCheckIn from './pages/TimesheetCheckIn'
@@ -83,8 +84,8 @@ import CheckInPrompt from './components/CheckInPrompt'
 import { CheckInProvider } from './context/CheckInContext'
 
 function AdminGate() {
-  const { companyUser, isSuperAdmin } = useAuth()
-  if (!isSuperAdmin && (!companyUser || !['admin', 'hr'].includes(companyUser.role))) {
+  const { companyUser, isSuperAdmin, portalRole } = useAuth()
+  if (!isSuperAdmin && (!companyUser || (!['admin', 'hr'].includes(companyUser.role) && !portalRole))) {
     return <Navigate to="/" replace />
   }
   return <Outlet />
@@ -207,6 +208,7 @@ function AuthGate() {
             <Route path="assets" element={<AdminAssetManagement />} />
             <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
+            <Route path="access" element={<AdminAccess />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
@@ -249,6 +251,7 @@ function AuthGate() {
           <Route path="billing" element={<AdminBilling />} />
           <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
           <Route path="user-guides" element={<AdminUserGuides />} />
+          <Route path="access" element={<AdminAccess />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />
