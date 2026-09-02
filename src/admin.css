@@ -115,7 +115,7 @@
 /* Tabs */
 .admin-tabs {
   display: flex; gap: 0; border-bottom: 2px solid #e5e7eb;
-  margin-bottom: 16px; overflow-x: auto;
+  margin-bottom: 16px; flex-wrap: wrap;
 }
 .admin-tab {
   padding: 10px 20px; border: none; background: none;
