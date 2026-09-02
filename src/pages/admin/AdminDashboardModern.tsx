@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../../lib/supabase'
+import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { getCompanyFY } from '../../lib/companyArchive'
@@ -96,6 +96,9 @@ export default function AdminDashboardModern() {
   const [expenseStats, setExpenseStats] = useState({ submitted: 0, pending: 0, approved: 0, declined: 0 })
   const [fyLabel, setFyLabel] = useState('')
   const [deptFilter, setDeptFilter] = useState('')
+  const [supportGrant, setSupportGrant] = useState<{ active: boolean; expires_at: string; reason: string } | null>(null)
+  const [grantingAccess, setGrantingAccess] = useState(false)
+  const [revokingAccess, setRevokingAccess] = useState(false)
 
   const firstName = employeeName.split(' ')[0] || 'Admin'
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
@@ -187,7 +190,52 @@ export default function AdminDashboardModern() {
       declined: activeExp.filter(r => r.status === 'rejected' || r.status === 'declined').length,
     })
 
+    await loadSupportStatus(cid)
     setLoading(false)
+  }
+
+  async function loadSupportStatus(cid: string) {
+    const { data } = await supabase
+      .from('tenant_support_access')
+      .select('id, status, expires_at, reason')
+      .eq('company_id', cid)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at', { ascending: false })
+      .limit(1)
+    if (data && data.length > 0) {
+      setSupportGrant({ active: true, expires_at: data[0].expires_at, reason: data[0].reason })
+    } else {
+      setSupportGrant({ active: false, expires_at: '', reason: '' })
+    }
+  }
+
+  async function grantPlatformAccess() {
+    setGrantingAccess(true)
+    const { error } = await callRpcDirect('extend_support_access', {
+      p_company_id: selectedCompanyId,
+      p_hours: 48,
+    })
+    if (error) alert('Failed to grant access: ' + error)
+    await loadSupportStatus(selectedCompanyId)
+    setGrantingAccess(false)
+  }
+
+  async function revokePlatformAccess() {
+    setRevokingAccess(true)
+    const { data } = await supabase
+      .from('tenant_support_access')
+      .select('id')
+      .eq('company_id', selectedCompanyId)
+      .eq('status', 'active')
+      .gt('expires_at', new Date().toISOString())
+    if (data) {
+      for (const g of data) {
+        await callRpcDirect('revoke_support_access', { p_grant_id: g.id })
+      }
+    }
+    await loadSupportStatus(selectedCompanyId)
+    setRevokingAccess(false)
   }
 
   const departments = useMemo(() => {
@@ -304,7 +352,7 @@ export default function AdminDashboardModern() {
 
         {loading && <div className="dm-loading">Loading dashboard…</div>}
 
-        {!loading && (
+        {!loading && (<>
           <div className="dm-grid">
             {/* ── Leave Calendar (Hiring slot) ── */}
             <section className="dm-card dm-card-cal">
@@ -485,7 +533,45 @@ export default function AdminDashboardModern() {
               </div>
             </section>
           </div>
-        )}
+
+          {supportGrant && (
+            <section className="dm-card dm-support">
+              <div className="dm-card-head">
+                <h2 className="dm-card-title">Platform Support Access</h2>
+                <span className={`dm-support-badge ${supportGrant.active ? 'dm-support-active' : 'dm-support-inactive'}`}>
+                  {supportGrant.active ? 'Access Granted' : 'No Access'}
+                </span>
+              </div>
+              <p className="dm-card-sub">Control whether the InflowHR platform team can access your company data for support</p>
+
+              {supportGrant.active && (
+                <div className="dm-support-info">
+                  <strong>Active until:</strong>{' '}
+                  {new Date(supportGrant.expires_at).toLocaleDateString('en-GB')}{' '}
+                  {new Date(supportGrant.expires_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                  {supportGrant.reason && <> &mdash; <em>{supportGrant.reason}</em></>}
+                </div>
+              )}
+
+              <div className="dm-support-actions">
+                {!supportGrant.active ? (
+                  <button className="dm-support-btn dm-support-grant" onClick={grantPlatformAccess} disabled={grantingAccess}>
+                    {grantingAccess ? 'Granting...' : 'Grant Platform Access (48h)'}
+                  </button>
+                ) : (
+                  <>
+                    <button className="dm-support-btn dm-support-grant" onClick={grantPlatformAccess} disabled={grantingAccess}>
+                      {grantingAccess ? 'Extending...' : 'Extend 48h'}
+                    </button>
+                    <button className="dm-support-btn dm-support-revoke" onClick={revokePlatformAccess} disabled={revokingAccess}>
+                      {revokingAccess ? 'Revoking...' : 'Revoke Access'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+        </>)}
       </div>
     </>
   )
@@ -593,6 +679,20 @@ const CSS = `
 .dm-emp-info { min-width: 0; display: flex; flex-direction: column; }
 .dm-emp-name { font-size: 13px; font-weight: 700; color: #0f172a; }
 .dm-emp-role { font-size: 11px; color: #94a3b8; }
+
+/* Platform Support Access */
+.dm-support { margin-top: 16px; }
+.dm-support-badge { padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.dm-support-active { background: #dcfce7; color: #15803d; }
+.dm-support-inactive { background: #fee2e2; color: #991b1b; }
+.dm-support-info { padding: 10px 14px; background: #f0fdf4; border-radius: 8px; margin-bottom: 12px; font-size: 13px; color: #166534; }
+.dm-support-actions { display: flex; gap: 8px; }
+.dm-support-btn { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; font-family: inherit; }
+.dm-support-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.dm-support-grant { background: #4f46e5; color: #fff; }
+.dm-support-grant:hover:not(:disabled) { background: #4338ca; }
+.dm-support-revoke { background: #dc2626; color: #fff; }
+.dm-support-revoke:hover:not(:disabled) { background: #b91c1c; }
 
 @media (max-width: 1024px) {
   .dm-grid { grid-template-columns: 1fr; }
