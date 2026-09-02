@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import JSZip from 'jszip'
 import { supabase } from '../../lib/supabase'
+import { getCompanyFY } from '../../lib/companyArchive'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -70,6 +71,8 @@ export default function AdminExpenses() {
   const [exportLogs, setExportLogs] = useState<ExportLog[]>([])
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [fyStartMonth, setFyStartMonth] = useState(4)
+  const [fyLabel, setFyLabel] = useState('')
 
   const loadExportLogs = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -82,7 +85,14 @@ export default function AdminExpenses() {
     if (data) setExportLogs(data)
   }, [selectedCompanyId])
 
-  useEffect(() => { if (selectedCompanyId) loadClaims() }, [selectedCompanyId])
+  useEffect(() => {
+    if (!selectedCompanyId) return
+    loadClaims()
+    getCompanyFY(selectedCompanyId).then(fy => {
+      setFyStartMonth(fy.fyStartMonth)
+      setFyLabel(fy.label)
+    })
+  }, [selectedCompanyId])
   useEffect(() => { if (selectedCompanyId) loadExportLogs() }, [selectedCompanyId, loadExportLogs])
 
   async function exportExpenses() {
@@ -368,10 +378,11 @@ export default function AdminExpenses() {
 
   const chartData = useMemo(() => {
     const now = new Date()
-    const year = now.getFullYear()
+    const currentMonth = now.getMonth() + 1
+    const fyStartYear = currentMonth >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
     const months: { label: string; approved: number; submitted: number; declined: number }[] = []
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(year, now.getMonth() - i, 1)
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(fyStartYear, fyStartMonth - 1 + i, 1)
       const m = d.getMonth()
       const y = d.getFullYear()
       const label = `${CAL_MONTHS[m]} ${y}`
@@ -392,7 +403,7 @@ export default function AdminExpenses() {
     const overallTotal = totalApproved + totalSubmitted + totalDeclined
     const max = Math.max(...months.map(m => m.approved + m.submitted + m.declined), 1)
     return { months, max, totalApproved, totalSubmitted, totalDeclined, overallTotal }
-  }, [claims])
+  }, [claims, fyStartMonth])
 
   return (
     <div className="admin-section">
@@ -560,7 +571,7 @@ export default function AdminExpenses() {
 
       {tab === 'chart' && (
         <div className="admin-chart-section">
-          <h3>Monthly Expense Totals — Last 12 Months</h3>
+          <h3>Monthly Expense Totals — FY {fyLabel || '—'}</h3>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#475569' }}>
               <span style={{ width: 12, height: 12, borderRadius: 3, background: '#22c55e', display: 'inline-block' }} /> Approved

@@ -1,0 +1,1 @@
+ALTER TABLE expense_line_items ADD COLUMN IF NOT EXISTS return_journey BOOLEAN DEFAULT FALSE;

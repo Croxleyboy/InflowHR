@@ -27,6 +27,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
   const [mileageFrom, setMileageFrom] = useState('')
   const [mileageTo, setMileageTo] = useState('')
   const [totalMiles, setTotalMiles] = useState('')
+  const [returnJourney, setReturnJourney] = useState(false)
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null)
   const [receiptFile, setReceiptFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
@@ -72,6 +73,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
       mileage_from: mileageFrom.trim() || null,
       mileage_to: mileageTo.trim() || null,
       total_miles: totalMiles ? parseFloat(totalMiles) : null,
+      return_journey: returnJourney,
       receipt_url: receiptUrl,
       company_id: companyUser?.company_id,
     })
@@ -145,12 +147,11 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
             <div style={{ flex: 1 }}>
               <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.mileage_from')}</label>
               <input
-                type="number"
-                inputMode="numeric"
+                type="text"
                 value={mileageFrom}
                 onChange={e => setMileageFrom(e.target.value)}
                 className="form-input form-input-sm"
-                placeholder="0"
+                placeholder="Postcode or address"
               />
             </div>
           </div>
@@ -183,12 +184,11 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
               <div>
                 <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.mileage_to')}</label>
                 <input
-                  type="number"
-                  inputMode="numeric"
+                  type="text"
                   value={mileageTo}
                   onChange={e => setMileageTo(e.target.value)}
                   className="form-input form-input-sm"
-                  placeholder="0"
+                  placeholder="Postcode or address"
                 />
               </div>
               <div>
@@ -202,6 +202,15 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
                   placeholder="0"
                 />
               </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: '#475569', cursor: 'pointer', marginTop: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={returnJourney}
+                  onChange={e => setReturnJourney(e.target.checked)}
+                  style={{ width: 18, height: 18, accentColor: '#4caf50', cursor: 'pointer' }}
+                />
+                Include return journey
+              </label>
             </div>
           </div>
 
