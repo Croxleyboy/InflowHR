@@ -382,7 +382,7 @@ export default function AdminExpenses() {
       months.push({
         label,
         approved: inMonth.filter(c => c.status === 'approved').reduce((s, c) => s + Number(c.amount), 0),
-        submitted: inMonth.filter(c => c.status === 'pending').reduce((s, c) => s + Number(c.amount), 0),
+        submitted: inMonth.filter(c => c.status === 'pending' || c.status === 'submitted').reduce((s, c) => s + Number(c.amount), 0),
         declined: inMonth.filter(c => c.status === 'rejected').reduce((s, c) => s + Number(c.amount), 0),
       })
     }
