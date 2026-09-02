@@ -242,7 +242,7 @@ export default function AdminDashboardModern() {
                 {departments.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
-            <button className="dm-classic" onClick={() => navigate('/admin')} title="Classic dashboard">
+            <button className="dm-classic" onClick={() => navigate('/admin/dashboard-classic')} title="Classic dashboard">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6"/>
               </svg>

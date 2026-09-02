@@ -185,7 +185,8 @@ function AuthGate() {
       <Routes>
         <Route path="/admin" element={<AdminGate />}>
           <Route element={<AdminLayout />}>
-            <Route index element={<AdminDashboard />} />
+            <Route index element={<AdminDashboardModern />} />
+          <Route path="dashboard-classic" element={<AdminDashboard />} />
             <Route path="expenses" element={<AdminExpenses />} />
             <Route path="leave" element={<AdminLeave />} />
             <Route path="payroll" element={<AdminPayroll />} />
@@ -206,7 +207,6 @@ function AuthGate() {
             <Route path="assets" element={<AdminAssetManagement />} />
             <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
-            <Route path="dashboard-v2" element={<AdminDashboardModern />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
@@ -231,7 +231,8 @@ function AuthGate() {
       {/* Admin Portal — locked to admin/hr roles */}
       <Route path="/admin" element={<AdminGate />}>
         <Route element={<AdminLayout />}>
-          <Route index element={<AdminDashboard />} />
+          <Route index element={<AdminDashboardModern />} />
+          <Route path="dashboard-classic" element={<AdminDashboard />} />
           <Route path="expenses" element={<AdminExpenses />} />
           <Route path="leave" element={<AdminLeave />} />
           <Route path="payroll" element={<AdminPayroll />} />
@@ -248,7 +249,6 @@ function AuthGate() {
           <Route path="billing" element={<AdminBilling />} />
           <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
           <Route path="user-guides" element={<AdminUserGuides />} />
-          <Route path="dashboard-v2" element={<AdminDashboardModern />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />
