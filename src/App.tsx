@@ -91,6 +91,11 @@ function AdminGate() {
   return <Outlet />
 }
 
+function AdminDashboardIndex() {
+  const { isSuperAdmin } = useAuth()
+  return isSuperAdmin ? <AdminDashboard /> : <AdminDashboardModern />
+}
+
 function SuperAdminGate() {
   const { isSuperAdmin } = useAuth()
   if (!isSuperAdmin) {
@@ -186,7 +191,7 @@ function AuthGate() {
       <Routes>
         <Route path="/admin" element={<AdminGate />}>
           <Route element={<AdminLayout />}>
-            <Route index element={<AdminDashboardModern />} />
+            <Route index element={<AdminDashboardIndex />} />
           <Route path="dashboard-classic" element={<AdminDashboard />} />
             <Route path="expenses" element={<AdminExpenses />} />
             <Route path="leave" element={<AdminLeave />} />
