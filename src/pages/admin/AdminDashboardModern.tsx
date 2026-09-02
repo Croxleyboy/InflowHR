@@ -94,6 +94,7 @@ export default function AdminDashboardModern() {
   const [leaves, setLeaves] = useState<LeaveRow[]>([])
   const [notifications, setNotifications] = useState<WorkflowRow[]>([])
   const [leaveStats, setLeaveStats] = useState({ submitted: 0, pending: 0, approved: 0, declined: 0 })
+  const [expenseStats, setExpenseStats] = useState({ submitted: 0, pending: 0, approved: 0, declined: 0 })
   const [fyLabel, setFyLabel] = useState('')
   const [deptFilter, setDeptFilter] = useState('')
 
@@ -116,7 +117,7 @@ export default function AdminDashboardModern() {
     const weeksEndDate = new Date(weeksStart)
     weeksEndDate.setDate(weeksStart.getDate() + 27)
 
-    const [emp, lvCal, lvFY, notif] = await Promise.all([
+    const [emp, lvCal, lvFY, expFY, notif] = await Promise.all([
       supabase.from('employees')
         .select('id, first_name, last_name, job_title, department, avatar_url')
         .eq('company_id', cid).eq('is_active', true)
@@ -132,6 +133,10 @@ export default function AdminDashboardModern() {
         .select('id, status', { count: 'exact' })
         .eq('company_id', cid)
         .gte('start_date', fy.start).lte('start_date', fy.end),
+      supabase.from('expense_claims')
+        .select('id, status, amount')
+        .eq('company_id', cid)
+        .gte('created_at', fy.start).lte('created_at', fy.end + 'T23:59:59'),
       supabase.from('workflow_tracker')
         .select('id, emp_display_name, record_type, action, status, approval_status, task_description, created_at')
         .eq('company_id', cid)
@@ -149,6 +154,15 @@ export default function AdminDashboardModern() {
       pending: all.filter(r => r.status === 'pending').length,
       approved: all.filter(r => r.status === 'approved').length,
       declined: all.filter(r => r.status === 'rejected' || r.status === 'declined').length,
+    })
+
+    const allExp = (expFY.data || []) as { status: string }[]
+    const activeExp = allExp.filter(r => r.status !== 'draft')
+    setExpenseStats({
+      submitted: activeExp.length,
+      pending: activeExp.filter(r => r.status === 'pending').length,
+      approved: activeExp.filter(r => r.status === 'approved').length,
+      declined: activeExp.filter(r => r.status === 'rejected' || r.status === 'declined').length,
     })
 
     setLoading(false)
@@ -197,19 +211,21 @@ export default function AdminDashboardModern() {
   }, [employees])
 
   function leavesForDay(iso: string) {
-    return filteredLeaves.filter(l => iso >= l.start_date && iso <= l.end_date)
+    return filteredLeaves.filter(l => {
+      const start = (l.start_date || '').slice(0, 10)
+      const end = (l.end_date || '').slice(0, 10)
+      return iso >= start && iso <= end
+    })
   }
 
-  // Donut chart values
-  const donut = useMemo(() => {
-    const { pending, approved, declined } = leaveStats
-    const totalStates = pending + approved + declined
+  function buildDonut(stats: { pending: number; approved: number; declined: number }) {
+    const totalStates = stats.pending + stats.approved + stats.declined
     const segs = [
-      { label: 'Approved', value: approved, color: '#22c55e' },
-      { label: 'Pending', value: pending, color: '#f59e0b' },
-      { label: 'Declined', value: declined, color: '#ef4444' },
+      { label: 'Approved', value: stats.approved, color: '#22c55e' },
+      { label: 'Pending', value: stats.pending, color: '#f59e0b' },
+      { label: 'Declined', value: stats.declined, color: '#ef4444' },
     ]
-    const C = 2 * Math.PI * 60
+    const C = 2 * Math.PI * 48
     let acc = 0
     const parts = segs.map(s => {
       const frac = totalStates > 0 ? s.value / totalStates : 0
@@ -219,7 +235,9 @@ export default function AdminDashboardModern() {
       return { ...s, dash, gap: C - dash, off }
     })
     return { parts, C }
-  }, [leaveStats])
+  }
+  const leaveDonut = useMemo(() => buildDonut(leaveStats), [leaveStats])
+  const expenseDonut = useMemo(() => buildDonut(expenseStats), [expenseStats])
 
   return (
     <>
@@ -324,8 +342,8 @@ export default function AdminDashboardModern() {
               </div>
             </section>
 
-            {/* ── Leave Donut (Jobs Summary slot) ── */}
-            <section className="dm-card dm-card-donut">
+            {/* ── Leave Donut ── */}
+            <section className="dm-card dm-card-leave">
               <div className="dm-card-head">
                 <h2 className="dm-card-title">Leave Requests</h2>
                 <button className="dm-view-all" onClick={() => navigate('/admin/leave')}>
@@ -333,27 +351,60 @@ export default function AdminDashboardModern() {
                 </button>
               </div>
               <p className="dm-card-sub">FY {fyLabel || '—'}</p>
-              <div className="dm-donut-wrap">
-                <svg viewBox="0 0 160 160" className="dm-donut">
-                  <circle cx="80" cy="80" r="60" fill="none" stroke="#f3f4f6" strokeWidth="18" />
-                  {donut.parts.map((p, i) => (
+              <div className="dm-donut-row">
+                <svg viewBox="0 0 128 128" className="dm-donut-sm">
+                  <circle cx="64" cy="64" r="48" fill="none" stroke="#f3f4f6" strokeWidth="14" />
+                  {leaveDonut.parts.map((p, i) => (
                     p.value > 0 && (
-                      <circle key={i} cx="80" cy="80" r="60" fill="none"
-                        stroke={p.color} strokeWidth="18"
+                      <circle key={i} cx="64" cy="64" r="48" fill="none"
+                        stroke={p.color} strokeWidth="14"
                         strokeDasharray={`${p.dash} ${p.gap}`}
                         strokeDashoffset={p.off}
-                        transform="rotate(-90 80 80)"
+                        transform="rotate(-90 64 64)"
                       />
                     )
                   ))}
-                  <text x="80" y="76" textAnchor="middle" className="dm-donut-num">{leaveStats.submitted}</text>
-                  <text x="80" y="94" textAnchor="middle" className="dm-donut-lbl">SUBMITTED</text>
+                  <text x="64" y="62" textAnchor="middle" className="dm-donut-num-sm">{leaveStats.submitted}</text>
+                  <text x="64" y="78" textAnchor="middle" className="dm-donut-lbl-sm">SUBMITTED</text>
                 </svg>
+                <div className="dm-donut-legend">
+                  <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#22c55e' }}/> <span className="dm-legend-lbl">Approved</span> <span className="dm-legend-val">{leaveStats.approved}</span></div>
+                  <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#f59e0b' }}/> <span className="dm-legend-lbl">Pending</span> <span className="dm-legend-val">{leaveStats.pending}</span></div>
+                  <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#ef4444' }}/> <span className="dm-legend-lbl">Declined</span> <span className="dm-legend-val">{leaveStats.declined}</span></div>
+                </div>
               </div>
-              <div className="dm-donut-legend">
-                <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#22c55e' }}/> <span className="dm-legend-lbl">Approved</span> <span className="dm-legend-val">{leaveStats.approved}</span></div>
-                <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#f59e0b' }}/> <span className="dm-legend-lbl">Pending</span> <span className="dm-legend-val">{leaveStats.pending}</span></div>
-                <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#ef4444' }}/> <span className="dm-legend-lbl">Declined</span> <span className="dm-legend-val">{leaveStats.declined}</span></div>
+            </section>
+
+            {/* ── Expense Donut ── */}
+            <section className="dm-card dm-card-expense">
+              <div className="dm-card-head">
+                <h2 className="dm-card-title">Expenses</h2>
+                <button className="dm-view-all" onClick={() => navigate('/admin/expenses')}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                </button>
+              </div>
+              <p className="dm-card-sub">FY {fyLabel || '—'}</p>
+              <div className="dm-donut-row">
+                <svg viewBox="0 0 128 128" className="dm-donut-sm">
+                  <circle cx="64" cy="64" r="48" fill="none" stroke="#f3f4f6" strokeWidth="14" />
+                  {expenseDonut.parts.map((p, i) => (
+                    p.value > 0 && (
+                      <circle key={i} cx="64" cy="64" r="48" fill="none"
+                        stroke={p.color} strokeWidth="14"
+                        strokeDasharray={`${p.dash} ${p.gap}`}
+                        strokeDashoffset={p.off}
+                        transform="rotate(-90 64 64)"
+                      />
+                    )
+                  ))}
+                  <text x="64" y="62" textAnchor="middle" className="dm-donut-num-sm">{expenseStats.submitted}</text>
+                  <text x="64" y="78" textAnchor="middle" className="dm-donut-lbl-sm">SUBMITTED</text>
+                </svg>
+                <div className="dm-donut-legend">
+                  <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#22c55e' }}/> <span className="dm-legend-lbl">Approved</span> <span className="dm-legend-val">{expenseStats.approved}</span></div>
+                  <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#f59e0b' }}/> <span className="dm-legend-lbl">Pending</span> <span className="dm-legend-val">{expenseStats.pending}</span></div>
+                  <div className="dm-legend-row"><span className="dm-legend-dot" style={{ background: '#ef4444' }}/> <span className="dm-legend-lbl">Declined</span> <span className="dm-legend-val">{expenseStats.declined}</span></div>
+                </div>
               </div>
             </section>
 
@@ -441,11 +492,12 @@ const CSS = `
 .dm-loading { padding: 60px; text-align: center; color: #94a3b8; }
 
 /* Grid */
-.dm-grid { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: auto auto; gap: 16px; }
-.dm-card-cal { grid-column: 1; grid-row: 1; }
-.dm-card-donut { grid-column: 2; grid-row: 1; }
-.dm-card-tasks { grid-column: 1; grid-row: 2; }
-.dm-card-emps { grid-column: 2; grid-row: 2; }
+.dm-grid { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr auto; gap: 16px; }
+.dm-card-cal { grid-column: 1; grid-row: 1 / span 2; }
+.dm-card-leave { grid-column: 2; grid-row: 1; }
+.dm-card-expense { grid-column: 2; grid-row: 2; }
+.dm-card-tasks { grid-column: 1; grid-row: 3; }
+.dm-card-emps { grid-column: 2; grid-row: 3; }
 
 .dm-card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); border: 1px solid #eef0f4; }
 .dm-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
@@ -488,7 +540,11 @@ const CSS = `
 .dm-donut { width: 180px; height: 180px; }
 .dm-donut-num { font-size: 32px; font-weight: 800; fill: #0f172a; }
 .dm-donut-lbl { font-size: 10px; font-weight: 700; fill: #94a3b8; letter-spacing: 0.06em; }
-.dm-donut-legend { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.dm-donut-row { display: flex; align-items: center; gap: 16px; padding: 4px 0; }
+.dm-donut-sm { width: 120px; height: 120px; flex-shrink: 0; }
+.dm-donut-num-sm { font-size: 24px; font-weight: 800; fill: #0f172a; }
+.dm-donut-lbl-sm { font-size: 8px; font-weight: 700; fill: #94a3b8; letter-spacing: 0.06em; }
+.dm-donut-legend { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
 .dm-legend-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .dm-legend-dot { width: 10px; height: 10px; border-radius: 50%; }
 .dm-legend-lbl { flex: 1; color: #475569; font-weight: 500; }
@@ -518,7 +574,7 @@ const CSS = `
 
 @media (max-width: 1024px) {
   .dm-grid { grid-template-columns: 1fr; }
-  .dm-card-cal, .dm-card-donut, .dm-card-tasks, .dm-card-emps { grid-column: 1; grid-row: auto; }
+  .dm-card-cal, .dm-card-leave, .dm-card-expense, .dm-card-tasks, .dm-card-emps { grid-column: 1; grid-row: auto; }
 }
 @media (max-width: 640px) {
   .dm { padding: 12px; }
