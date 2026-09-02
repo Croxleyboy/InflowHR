@@ -19,6 +19,7 @@ interface LeaveRow {
   employee_id: string
   start_date: string
   end_date: string
+  days_requested: number
   status: string
   approval_status: string | null
   leave_type: { name: string } | null
@@ -121,7 +122,7 @@ export default function AdminDashboardModern() {
         .eq('company_id', cid).eq('is_active', true)
         .order('first_name', { ascending: true }),
       supabase.from('leave_requests')
-        .select('id, employee_id, start_date, end_date, status, approval_status, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, department)')
+        .select('id, employee_id, start_date, end_date, days_requested, status, approval_status, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, department)')
         .eq('company_id', cid)
         .lte('start_date', fmtIso(weeksEndDate))
         .gte('end_date', fmtIso(weeksStart))
@@ -284,22 +285,30 @@ export default function AdminDashboardModern() {
                       const iso = fmtIso(day)
                       const isToday = iso === fmtIso(new Date())
                       const isWeekend = day.getDay() === 0 || day.getDay() === 6
-                      const dayLeaves = leavesForDay(iso).slice(0, 3)
-                      const more = leavesForDay(iso).length - dayLeaves.length
+                      const all = leavesForDay(iso)
+                      const hasApproved = all.some(l => l.status === 'approved')
+                      const hasPending = all.some(l => l.status === 'pending')
+                      const hasHalf = all.some(l => Number(l.days_requested) === 0.5 && l.start_date === l.end_date)
+                      const statusClass = hasApproved ? 'dm-cal-approved' : hasPending ? 'dm-cal-pending' : ''
+                      const dayLeaves = all.slice(0, 3)
+                      const more = all.length - dayLeaves.length
                       return (
-                        <div key={iso} className={`dm-cal-cell ${isToday ? 'dm-cal-today' : ''} ${isWeekend ? 'dm-cal-weekend' : ''}`}>
+                        <div key={iso} className={`dm-cal-cell ${statusClass} ${isToday ? 'dm-cal-today' : ''} ${isWeekend ? 'dm-cal-weekend' : ''} ${hasHalf ? 'dm-cal-half' : ''}`}>
                           <span className="dm-cal-num">{day.getDate()}</span>
                           <div className="dm-cal-chips">
-                            {dayLeaves.map(l => (
-                              <div
-                                key={l.id}
-                                className="dm-cal-chip"
-                                style={{ background: empColour.get(l.employee_id) || '#6b7280' }}
-                                title={`${l.employee?.first_name} ${l.employee?.last_name} — ${l.leave_type?.name || 'Leave'} (${l.status})`}
-                              >
-                                {(l.employee?.first_name || '?')[0]}{(l.employee?.last_name || '?')[0]}
-                              </div>
-                            ))}
+                            {dayLeaves.map(l => {
+                              const half = Number(l.days_requested) === 0.5 && l.start_date === l.end_date
+                              return (
+                                <div
+                                  key={l.id}
+                                  className={`dm-cal-chip ${l.status === 'pending' ? 'dm-cal-chip-pending' : ''} ${half ? 'dm-cal-chip-half' : ''}`}
+                                  style={{ background: empColour.get(l.employee_id) || '#6b7280' }}
+                                  title={`${l.employee?.first_name} ${l.employee?.last_name} — ${l.leave_type?.name || 'Leave'} (${l.status}${half ? ', half day' : ''})`}
+                                >
+                                  {(l.employee?.first_name || '?')[0]}{(l.employee?.last_name || '?')[0]}{half ? ' ½' : ''}
+                                </div>
+                              )
+                            })}
                             {more > 0 && <div className="dm-cal-chip dm-cal-chip-more">+{more}</div>}
                           </div>
                         </div>
@@ -307,6 +316,11 @@ export default function AdminDashboardModern() {
                     })}
                   </div>
                 ))}
+              </div>
+              <div className="dm-cal-legend">
+                <span className="dm-cal-legend-item"><span className="dm-cal-legend-swatch dm-cal-legend-approved"/>Approved</span>
+                <span className="dm-cal-legend-item"><span className="dm-cal-legend-swatch dm-cal-legend-pending"/>Pending</span>
+                <span className="dm-cal-legend-item"><span className="dm-cal-legend-swatch dm-cal-legend-half"/>Half day</span>
               </div>
             </section>
 
@@ -445,14 +459,29 @@ const CSS = `
 .dm-cal { display: flex; flex-direction: column; gap: 4px; }
 .dm-cal-headrow, .dm-cal-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .dm-cal-headcell { text-align: center; font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 0; }
-.dm-cal-cell { min-height: 78px; background: #f8fafc; border: 1px solid #eef0f4; border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.dm-cal-cell { position: relative; min-height: 78px; background: #f8fafc; border: 1px solid #eef0f4; border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
 .dm-cal-weekend { background: #f1f5f9; opacity: 0.7; }
-.dm-cal-today { background: #eef2ff; border-color: #6366f1; }
-.dm-cal-num { font-size: 12px; font-weight: 700; color: #475569; }
+.dm-cal-today { border-color: #6366f1; box-shadow: inset 0 0 0 1px #6366f1; }
+.dm-cal-approved { background: #dcfce7; border-color: #86efac; }
+.dm-cal-pending { background: #fef3c7; border-color: #fcd34d; }
+.dm-cal-half.dm-cal-approved { background: linear-gradient(135deg, #dcfce7 0%, #dcfce7 50%, #f8fafc 50%, #f8fafc 100%); }
+.dm-cal-half.dm-cal-pending { background: linear-gradient(135deg, #fef3c7 0%, #fef3c7 50%, #f8fafc 50%, #f8fafc 100%); }
+.dm-cal-num { font-size: 12px; font-weight: 700; color: #475569; position: relative; z-index: 1; }
 .dm-cal-today .dm-cal-num { color: #4338ca; }
-.dm-cal-chips { display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
-.dm-cal-chip { display: flex; align-items: center; justify-content: center; height: 18px; border-radius: 4px; color: #fff; font-size: 10px; font-weight: 700; padding: 0 4px; }
-.dm-cal-chip-more { background: #cbd5e1 !important; color: #475569; }
+.dm-cal-approved .dm-cal-num { color: #14532d; }
+.dm-cal-pending .dm-cal-num { color: #78350f; }
+.dm-cal-chips { display: flex; flex-direction: column; gap: 3px; overflow: hidden; position: relative; z-index: 1; }
+.dm-cal-chip { display: flex; align-items: center; justify-content: center; height: 18px; border-radius: 4px; color: #fff; font-size: 10px; font-weight: 700; padding: 0 4px; box-shadow: 0 0 0 1px rgba(255,255,255,0.5); }
+.dm-cal-chip-pending { opacity: 0.85; border: 1.5px dashed rgba(255,255,255,0.8); }
+.dm-cal-chip-half { background-image: linear-gradient(90deg, currentColor 50%, rgba(255,255,255,0.4) 50%) !important; }
+.dm-cal-chip-more { background: #cbd5e1 !important; color: #475569; box-shadow: none; }
+
+.dm-cal-legend { display: flex; gap: 14px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eef0f4; flex-wrap: wrap; }
+.dm-cal-legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; font-weight: 600; }
+.dm-cal-legend-swatch { width: 14px; height: 14px; border-radius: 4px; border: 1px solid #cbd5e1; }
+.dm-cal-legend-approved { background: #dcfce7; border-color: #86efac; }
+.dm-cal-legend-pending { background: #fef3c7; border-color: #fcd34d; }
+.dm-cal-legend-half { background: linear-gradient(135deg, #dcfce7 0%, #dcfce7 50%, #f8fafc 50%, #f8fafc 100%); border-color: #86efac; }
 
 /* Donut */
 .dm-donut-wrap { display: flex; justify-content: center; padding: 6px 0 14px; }
