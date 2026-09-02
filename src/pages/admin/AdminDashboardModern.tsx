@@ -117,13 +117,13 @@ export default function AdminDashboardModern() {
     const weeksEndDate = new Date(weeksStart)
     weeksEndDate.setDate(weeksStart.getDate() + 27)
 
-    const [emp, lvCal, lvFY, expFY, notif] = await Promise.all([
+    const [emp, lvCal, lvFY, expFY, notif, leaveTypes] = await Promise.all([
       supabase.from('employees')
         .select('id, first_name, last_name, job_title, department, avatar_url')
         .eq('company_id', cid).eq('is_active', true)
         .order('first_name', { ascending: true }),
       supabase.from('leave_requests')
-        .select('id, employee_id, start_date, end_date, days_requested, status, approval_status, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, department)')
+        .select('id, employee_id, start_date, end_date, days_requested, status, approval_status, leave_type_id')
         .eq('company_id', cid)
         .lte('start_date', fmtIso(weeksEndDate))
         .gte('end_date', fmtIso(weeksStart))
@@ -142,10 +142,34 @@ export default function AdminDashboardModern() {
         .eq('company_id', cid)
         .order('created_at', { ascending: false })
         .limit(20),
+      supabase.from('leave_types').select('id, name').eq('company_id', cid),
     ])
 
-    setEmployees((emp.data as Employee[]) || [])
-    setLeaves((lvCal.data as unknown as LeaveRow[]) || [])
+    const employeeList = (emp.data as Employee[]) || []
+    setEmployees(employeeList)
+
+    // Stitch calendar leave rows with employee + leave_type client-side (avoids FK join reliability issues)
+    const empMap = new Map(employeeList.map(e => [e.id, e]))
+    const typeMap = new Map(((leaveTypes.data as { id: number; name: string }[]) || []).map(t => [t.id, t.name]))
+    const rawLeaves = (lvCal.data as {
+      id: number; employee_id: string; start_date: string; end_date: string;
+      days_requested: number; status: string; approval_status: string | null; leave_type_id: number | null
+    }[]) || []
+    const stitched: LeaveRow[] = rawLeaves.map(r => {
+      const e = empMap.get(r.employee_id)
+      return {
+        id: r.id,
+        employee_id: r.employee_id,
+        start_date: (r.start_date || '').slice(0, 10),
+        end_date: (r.end_date || '').slice(0, 10),
+        days_requested: r.days_requested,
+        status: r.status,
+        approval_status: r.approval_status,
+        leave_type: r.leave_type_id ? { name: typeMap.get(r.leave_type_id) || 'Leave' } : null,
+        employee: e ? { first_name: e.first_name, last_name: e.last_name, department: e.department } : null,
+      }
+    })
+    setLeaves(stitched)
     setNotifications((notif.data as WorkflowRow[]) || [])
 
     const all = (lvFY.data || []) as { status: string }[]
