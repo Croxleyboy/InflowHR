@@ -21,7 +21,6 @@ interface LeaveRow {
   end_date: string
   days_requested: number
   status: string
-  approval_status: string | null
   leave_type: { name: string } | null
   employee: { first_name: string; last_name: string; department: string | null } | null
 }
@@ -123,11 +122,11 @@ export default function AdminDashboardModern() {
         .eq('company_id', cid).eq('is_active', true)
         .order('first_name', { ascending: true }),
       supabase.from('leave_requests')
-        .select('id, employee_id, start_date, end_date, days_requested, status, approval_status, leave_type_id')
+        .select('id, employee_id, start_date, end_date, days_requested, status, leave_type_id')
         .eq('company_id', cid)
         .lte('start_date', fmtIso(weeksEndDate))
         .gte('end_date', fmtIso(weeksStart))
-        .neq('status', 'rejected')
+        .in('status', ['pending', 'approved'])
         .order('start_date', { ascending: true }),
       supabase.from('leave_requests')
         .select('id, status', { count: 'exact' })
@@ -153,7 +152,7 @@ export default function AdminDashboardModern() {
     const typeMap = new Map(((leaveTypes.data as { id: number; name: string }[]) || []).map(t => [t.id, t.name]))
     const rawLeaves = (lvCal.data as {
       id: number; employee_id: string; start_date: string; end_date: string;
-      days_requested: number; status: string; approval_status: string | null; leave_type_id: number | null
+      days_requested: number; status: string; leave_type_id: number | null
     }[]) || []
     const stitched: LeaveRow[] = rawLeaves.map(r => {
       const e = empMap.get(r.employee_id)
@@ -164,7 +163,6 @@ export default function AdminDashboardModern() {
         end_date: (r.end_date || '').slice(0, 10),
         days_requested: r.days_requested,
         status: r.status,
-        approval_status: r.approval_status,
         leave_type: r.leave_type_id ? { name: typeMap.get(r.leave_type_id) || 'Leave' } : null,
         employee: e ? { first_name: e.first_name, last_name: e.last_name, department: e.department } : null,
       }
