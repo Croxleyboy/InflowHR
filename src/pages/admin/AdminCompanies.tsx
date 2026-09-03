@@ -610,7 +610,7 @@ export default function AdminCompanies() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {companyAdmins.map(a => (
           <div key={a.employee_id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 13 }}>{a.first_name && a.last_name ? `${a.first_name} ${a.last_name}` : a.email || 'Unknown'}</span>
+            <span style={{ fontSize: 13, fontStyle: a.first_name && a.last_name ? 'normal' : 'italic', opacity: a.first_name && a.last_name ? 1 : 0.6 }}>{a.first_name && a.last_name ? `${a.first_name} ${a.last_name}` : a.email || 'Hidden'}</span>
             <button
               className="admin-btn-icon admin-btn-danger"
               title={`Remove ${a.first_name} as admin`}
