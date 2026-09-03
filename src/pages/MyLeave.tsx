@@ -89,11 +89,14 @@ export default function MyLeave() {
   useEffect(() => { loadData() }, [loadData])
 
   const primary = balances.find(b => b.leave_type_name === 'Annual Leave')
-  const totalEntitlement = primary ? primary.total_allowance + (primary.lieu_days || 0) : 0
+  const basAllowance = primary ? primary.total_allowance : 0
+  const primaryLieu = primary ? (primary.lieu_days || 0) : 0
+  const totalEntitlement = basAllowance + primaryLieu
   const totalUsed = primary ? primary.used : 0
   const remaining = totalEntitlement - totalUsed
   const usedPct = totalEntitlement > 0 ? (totalUsed / totalEntitlement) * 100 : 0
   const pendingPct = totalEntitlement > 0 ? (pendingCount / totalEntitlement) * 100 : 0
+  const lieuPct = totalEntitlement > 0 ? (primaryLieu / totalEntitlement) * 100 : 0
   const circumference = 2 * Math.PI * 52
 
   function translateLeaveType(name: string): string {
@@ -225,6 +228,18 @@ export default function MyLeave() {
                 transform="rotate(-90 60 60)"
               />
             )}
+            {lieuPct > 0 && (
+              <circle
+                cx="60" cy="60" r="52"
+                fill="none"
+                stroke="#7c3aed"
+                strokeWidth="10"
+                strokeLinecap="round"
+                strokeDasharray={`${(lieuPct / 100) * circumference} ${circumference}`}
+                strokeDashoffset={`${-((100 - lieuPct) / 100) * circumference}`}
+                transform="rotate(-90 60 60)"
+              />
+            )}
           </svg>
           <div className="my-leave-ring-center">
             <span className="my-leave-ring-value">{remaining}</span>
@@ -245,6 +260,12 @@ export default function MyLeave() {
             <span className="my-leave-stat-value my-leave-stat-pending">{pendingCount}</span>
             <span className="my-leave-stat-label">{t('my_leave.pending_days')}</span>
           </div>
+          {primaryLieu > 0 && (
+            <div className="my-leave-stat">
+              <span className="my-leave-stat-value" style={{ color: '#7c3aed' }}>{primaryLieu}</span>
+              <span className="my-leave-stat-label">{t('my_leave.lieu_days')}</span>
+            </div>
+          )}
         </div>
       </div>
 

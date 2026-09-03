@@ -109,6 +109,8 @@ export default function NewLeaveRequest() {
   const [leaveTypeDeducts, setLeaveTypeDeducts] = useState<Record<string, boolean>>({})
   const [weekendsAsWorkdays, setWeekendsAsWorkdays] = useState(false)
   const [leaveBalance, setLeaveBalance] = useState<{ total: number; used: number; pending: number } | null>(null)
+  const [employeeLieuDays, setEmployeeLieuDays] = useState(0)
+  const [showLieuPopup, setShowLieuPopup] = useState(false)
 
   useEffect(() => {
     if (!companyUser?.company_id) return
@@ -171,7 +173,9 @@ export default function NewLeaveRequest() {
               .gte('start_date', yrStart)
               .lte('start_date', yrEnd),
           ])
-          const total = (balRes.data?.total_allowance || 0) + (Number(balRes.data?.lieu_days) || 0)
+          const lieuVal = Number(balRes.data?.lieu_days) || 0
+          setEmployeeLieuDays(lieuVal)
+          const total = (balRes.data?.total_allowance || 0) + lieuVal
           const used = (approvedRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
           const pending = (pendRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
           setLeaveBalance({ total, used, pending })
@@ -306,6 +310,19 @@ export default function NewLeaveRequest() {
     const daysVal = parseFloat(days)
     const typeDeducts = leaveTypeDeducts[leaveType] !== false
     let careerBreakFlag = false
+
+    if (leaveType === 'Lieu Days') {
+      if (employeeLieuDays <= 0) {
+        setShowLieuPopup(true)
+        setSubmitting(false)
+        return
+      }
+      if (daysVal > employeeLieuDays) {
+        setError(`You only have ${employeeLieuDays} lieu day${employeeLieuDays !== 1 ? 's' : ''} assigned. Please reduce your request or speak to your manager.`)
+        setSubmitting(false)
+        return
+      }
+    }
 
     if (typeDeducts && leaveBalance) {
       const remaining = leaveBalance.total - leaveBalance.used - leaveBalance.pending
@@ -535,6 +552,23 @@ export default function NewLeaveRequest() {
           {submitting ? t('new_leave.submitting') : t('new_leave.submit')}
         </button>
       </div>
+
+      {showLieuPopup && (
+        <div className="modal-overlay" onClick={() => setShowLieuPopup(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 400, textAlign: 'center', padding: 32 }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 16px' }}>
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <h3 style={{ margin: '0 0 12px', fontSize: 18 }}>No Lieu Days Assigned</h3>
+            <p style={{ margin: '0 0 20px', color: '#666', fontSize: 14, lineHeight: 1.5 }}>
+              You do not have any registered lieu days. Please speak to your manager or raise an HR request to have lieu days assigned before booking this leave type.
+            </p>
+            <button className="new-leave-submit-btn" style={{ background: '#7c3aed', width: '100%' }} onClick={() => setShowLieuPopup(false)}>
+              OK
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
