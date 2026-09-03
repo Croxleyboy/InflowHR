@@ -2588,21 +2588,14 @@ body {
   cursor: pointer;
 }
 
-/* ── Profile Change Request ── */
-.my-profile-cr-fab {
-  position: fixed; bottom: 80px; left: 50%;
-  transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 24px;
-  border: none; border-radius: 28px;
-  background: #7b1fa2; color: #fff;
-  font-size: 14px; font-weight: 700;
-  font-family: var(--sans);
-  cursor: pointer; z-index: 90;
-  box-shadow: 0 4px 16px rgba(123,31,162,0.35);
-  transition: transform 0.15s, box-shadow 0.15s;
+/* ── Profile Edit Button ── */
+.my-profile-edit-btn {
+  background: none; border: none; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
-.my-profile-cr-fab:active { transform: translateX(-50%) scale(0.96); }
+
+/* ── Profile Change Request ── */
 .my-profile-cr-modal {
   background: var(--bg-card);
   border-radius: 0 0 18px 18px;

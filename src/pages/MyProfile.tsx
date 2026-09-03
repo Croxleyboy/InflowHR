@@ -255,13 +255,21 @@ export default function MyProfile() {
           </h1>
           <p className="my-profile-subtitle">{tab === 'personal' ? t('my_profile.subtitle') : ''}</p>
         </div>
-        <button className="feature-refresh" onClick={fetchData}>
-          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-            <circle cx="16" cy="16" r="14" stroke="rgba(255,255,255,0.5)" strokeWidth="2" />
-            <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
-            <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="my-profile-edit-btn" onClick={() => setShowChangeRequest(true)} title="Request profile change">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="14" stroke="rgba(255,255,255,0.5)" strokeWidth="2" fill="rgba(168,85,247,0.35)" />
+              <path d="M18.5 10.5a1.5 1.5 0 0 1 2.12 0l.88.88a1.5 1.5 0 0 1 0 2.12L14 21l-3 .75.75-3 6.75-8.25z" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button className="feature-refresh" onClick={fetchData}>
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="14" stroke="rgba(255,255,255,0.5)" strokeWidth="2" />
+              <path d="M22 14a6.5 6.5 0 0 0-11.3-1.5M10 18a6.5 6.5 0 0 0 11.3 1.5" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+              <path d="M22 10v4h-4M10 22v-4h4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <div className="my-profile-tabs">
@@ -434,13 +442,6 @@ export default function MyProfile() {
           </div>
         </div>
       )}
-      <button className="my-profile-cr-fab" onClick={() => setShowChangeRequest(true)}>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-        </svg>
-        Request Profile Change
-      </button>
 
       {showChangeRequest && (
         <div className="my-profile-modal-overlay" onClick={() => setShowChangeRequest(false)}>
