@@ -209,7 +209,7 @@ export default function Dashboard() {
         .then(async ({ data: annualType }) => {
           if (!annualType) return
           const { data: balRow } = await supabase.from('leave_balances')
-            .select('total_allowance')
+            .select('total_allowance, lieu_days')
             .eq('employee_id', employeeId)
             .eq('company_id', companyUser.company_id)
             .eq('leave_type_id', annualType.id)
@@ -239,7 +239,7 @@ export default function Dashboard() {
           ])
           const approvedDays = (approvedRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
           const pendingDays = (pendingRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
-          setLeaveRemaining(balRow.total_allowance - approvedDays)
+          setLeaveRemaining(balRow.total_allowance + (Number(balRow.lieu_days) || 0) - approvedDays)
           setLeavePending(pendingDays)
         })
     }

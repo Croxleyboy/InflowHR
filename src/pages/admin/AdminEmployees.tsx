@@ -72,6 +72,8 @@ export default function AdminEmployees() {
   const [revealedPii, setRevealedPii] = useState<Set<string>>(new Set())
   const { features } = useFeatures()
   const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
+  const [lieuDays, setLieuDays] = useState<Record<string, { balanceId: number; lieu_days: number }>>({})
+  const [editLieuDays, setEditLieuDays] = useState<number>(0)
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
@@ -116,6 +118,21 @@ export default function AdminEmployees() {
     const map: Record<string, boolean> = {}
     ;(onbData || []).forEach((o: any) => { map[o.user_email?.toLowerCase()] = o.initial_setup_complete === true })
     setSetupMap(map)
+
+    const { data: ltData } = await supabase.from('leave_types').select('id').eq('company_id', selectedCompanyId).eq('name', 'Annual Leave').limit(1).single()
+    if (ltData) {
+      const { data: balData } = await supabase.from('leave_balances')
+        .select('id, employee_id, lieu_days')
+        .eq('company_id', selectedCompanyId)
+        .eq('leave_type_id', ltData.id)
+        .eq('year', new Date().getFullYear())
+      const lieuMap: Record<string, { balanceId: number; lieu_days: number }> = {}
+      for (const b of (balData || []) as { id: number; employee_id: string; lieu_days: number }[]) {
+        lieuMap[b.employee_id] = { balanceId: b.id, lieu_days: Number(b.lieu_days) || 0 }
+      }
+      setLieuDays(lieuMap)
+    }
+
     setLoading(false)
   }
 
@@ -147,6 +164,7 @@ export default function AdminEmployees() {
       qualifications: emp.qualifications || '',
       religion: emp.religion || '',
     })
+    setEditLieuDays(lieuDays[emp.id]?.lieu_days ?? 0)
   }
 
   async function saveEdit(id: string) {
@@ -177,6 +195,10 @@ export default function AdminEmployees() {
         await supabase.from('onboarding').update(onboardingUpdate).eq('user_email', emp.email).eq('company_id', selectedCompanyId)
       }
     }
+    if (lieuDays[id]?.balanceId) {
+      await supabase.from('leave_balances').update({ lieu_days: editLieuDays }).eq('id', lieuDays[id].balanceId)
+    }
+
     setEditingId(null)
     showSuccess('Employee updated')
     load()
@@ -468,6 +490,10 @@ export default function AdminEmployees() {
                                         )}
                                       </div>
                                     ))}
+                                    <div className="admin-form-field">
+                                      <label style={{ fontSize: 12 }}>Lieu Days</label>
+                                      <input className="admin-inline-input" type="number" min="0" step="0.5" value={editLieuDays} onChange={e => setEditLieuDays(parseFloat(e.target.value) || 0)} />
+                                    </div>
                                   </div>
                                 </fieldset>
                                 <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
@@ -553,6 +579,7 @@ export default function AdminEmployees() {
                                   <div><strong>Manager:</strong> {emp.manager_name || '—'}</div>
                                   <div><strong>Manager Email:</strong> {emp.manager_email || '—'}</div>
                                   <div><strong>Leave Allowance:</strong> {emp.leave_allowance ?? 15} days</div>
+                                  <div><strong>Lieu Days:</strong> {lieuDays[emp.id]?.lieu_days ?? 0} days</div>
                                   <div><strong>Salary Group:</strong> {emp.salary_group || 'N/A'}</div>
                                 </div>
                                 {emp.qualifications && (

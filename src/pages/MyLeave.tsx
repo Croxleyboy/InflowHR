@@ -11,6 +11,7 @@ interface LeaveBalance {
   total_allowance: number
   used: number
   carried_over: number
+  lieu_days: number
   leave_type_name: string
   colour: string
 }
@@ -33,7 +34,7 @@ export default function MyLeave() {
     const [balRes, pendReqRes, approvedReqRes] = await Promise.all([
       supabase
         .from('leave_balances')
-        .select('leave_type_id, total_allowance, used, carried_over')
+        .select('leave_type_id, total_allowance, used, carried_over, lieu_days')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
         .eq('year', new Date().getFullYear()),
@@ -76,7 +77,7 @@ export default function MyLeave() {
       const merged: LeaveBalance[] = balRes.data.map((b: any) => {
         const lt = typeMap.get(b.leave_type_id) || { name: 'Leave', colour: '#999' }
         const approved = approvedByType.get(b.leave_type_id) || 0
-        return { ...b, used: approved, leave_type_name: lt.name, colour: lt.colour }
+        return { ...b, used: approved, lieu_days: Number(b.lieu_days) || 0, leave_type_name: lt.name, colour: lt.colour }
       })
       setBalances(merged)
     }
@@ -88,7 +89,7 @@ export default function MyLeave() {
   useEffect(() => { loadData() }, [loadData])
 
   const primary = balances.find(b => b.leave_type_name === 'Annual Leave')
-  const totalEntitlement = primary ? primary.total_allowance : 0
+  const totalEntitlement = primary ? primary.total_allowance + (primary.lieu_days || 0) : 0
   const totalUsed = primary ? primary.used : 0
   const remaining = totalEntitlement - totalUsed
   const usedPct = totalEntitlement > 0 ? (totalUsed / totalEntitlement) * 100 : 0
@@ -250,8 +251,9 @@ export default function MyLeave() {
       {balances.filter(b => b.used > 0).length > 0 && (
         <div className="my-leave-balances">
           {balances.filter(b => b.used > 0).map(b => {
-            const rem = b.total_allowance - b.used
-            const pct = b.total_allowance > 0 ? (b.used / b.total_allowance) * 100 : 0
+            const effectiveTotal = b.total_allowance + (b.lieu_days || 0)
+            const rem = effectiveTotal - b.used
+            const pct = effectiveTotal > 0 ? (b.used / effectiveTotal) * 100 : 0
             return (
               <div key={b.leave_type_id} className="my-leave-balance-row">
                 <div className="my-leave-balance-info">
@@ -262,7 +264,7 @@ export default function MyLeave() {
                   <div className="my-leave-balance-bar">
                     <div className="my-leave-balance-fill" style={{ width: `${pct}%`, background: b.colour }} />
                   </div>
-                  <span className="my-leave-balance-count">{rem} {t('my_leave.of')} {b.total_allowance}</span>
+                  <span className="my-leave-balance-count">{rem} {t('my_leave.of')} {effectiveTotal}</span>
                 </div>
               </div>
             )
