@@ -73,6 +73,22 @@ export default function AdminExpenses() {
   const [page, setPage] = useState(1)
   const [fyStartMonth, setFyStartMonth] = useState(4)
   const [fyLabel, setFyLabel] = useState('')
+  const [exportMonth, setExportMonth] = useState('all')
+
+  const fyMonthOptions = useMemo(() => {
+    const opts: { value: string; label: string; start: Date; end: Date }[] = []
+    const now = new Date()
+    const currentMonth = now.getMonth() + 1
+    const fyStartYear = currentMonth >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(fyStartYear, fyStartMonth - 1 + i, 1)
+      const m = d.getMonth()
+      const y = d.getFullYear()
+      const end = new Date(y, m + 1, 1)
+      opts.push({ value: `${y}-${m}`, label: `${CAL_MONTHS[m]} ${y}`, start: d, end })
+    }
+    return opts
+  }, [fyStartMonth])
 
   const loadExportLogs = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -99,20 +115,36 @@ export default function AdminExpenses() {
     if (!selectedCompanyId) return
     setExporting(true)
     try {
-      const thirtyDaysAgo = new Date()
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-      const cutoff = thirtyDaysAgo.toISOString()
+      let rangeStart: Date
+      let rangeEnd: Date
+      let rangeLabel: string
+
+      if (exportMonth === 'all') {
+        const now = new Date()
+        const currentMonth = now.getMonth() + 1
+        const fyStartYear = currentMonth >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+        rangeStart = new Date(fyStartYear, fyStartMonth - 1, 1)
+        rangeEnd = new Date(fyStartYear + 1, fyStartMonth - 1, 1)
+        rangeLabel = `FY ${fyStartYear}-${fyStartYear + 1}`
+      } else {
+        const selected = fyMonthOptions.find(o => o.value === exportMonth)
+        if (!selected) { setExporting(false); return }
+        rangeStart = selected.start
+        rangeEnd = selected.end
+        rangeLabel = selected.label
+      }
 
       const { data: expClaims } = await supabase
         .from('expense_claims')
         .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email, avatar_url)')
         .eq('company_id', selectedCompanyId)
         .in('status', ['pending', 'approved'])
-        .gte('submitted_at', cutoff)
+        .gte('submitted_at', rangeStart.toISOString())
+        .lt('submitted_at', rangeEnd.toISOString())
         .order('submitted_at', { ascending: false })
 
       if (!expClaims || expClaims.length === 0) {
-        showError('No submitted or approved expenses in the last 30 days')
+        showError(`No submitted or approved expenses for ${rangeLabel}`)
         setExporting(false)
         return
       }
@@ -132,7 +164,7 @@ export default function AdminExpenses() {
 
       const zip = new JSZip()
       const now = new Date()
-      const folderName = `Expenses_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`
+      const folderName = `Expenses_${rangeLabel.replace(/\s+/g, '_')}_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`
       const folder = zip.folder(folderName)!
       const receiptsFolder = folder.folder('receipts')!
 
@@ -447,12 +479,18 @@ export default function AdminExpenses() {
               <option value="">All Statuses</option>
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
-            <button className="admin-btn-sm admin-btn-save" onClick={exportExpenses} disabled={exporting} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              {exporting ? 'Exporting...' : 'Export 30 Days'}
-            </button>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <select value={exportMonth} onChange={e => setExportMonth(e.target.value)} className="admin-select" style={{ minWidth: 130 }}>
+                <option value="all">All Months</option>
+                {fyMonthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <button className="admin-btn-sm admin-btn-save" onClick={exportExpenses} disabled={exporting} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {exporting ? 'Exporting...' : 'Export'}
+              </button>
+            </div>
           </div>
 
           <input
@@ -627,12 +665,18 @@ export default function AdminExpenses() {
         <div className="admin-settings-section">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <h3 style={{ margin: 0 }}>Export History</h3>
-            <button className="admin-btn-sm admin-btn-save" onClick={exportExpenses} disabled={exporting} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              {exporting ? 'Exporting...' : 'Export 30 Days'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <select value={exportMonth} onChange={e => setExportMonth(e.target.value)} className="admin-select" style={{ minWidth: 130 }}>
+                <option value="all">All Months</option>
+                {fyMonthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <button className="admin-btn-sm admin-btn-save" onClick={exportExpenses} disabled={exporting} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {exporting ? 'Exporting...' : 'Export'}
+              </button>
+            </div>
           </div>
           {exportLogs.length > 0 ? (
             <div className="admin-table-wrap">
