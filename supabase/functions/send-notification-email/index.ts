@@ -5,6 +5,12 @@ const SENDER_EMAIL = Deno.env.get('TITAN_EMAIL') || 'notifications@inflowhr.com'
 const SENDER_NAME = 'InflowHR'
 const APP_URL = Deno.env.get('APP_URL') || 'https://app.inflowhr.com'
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+}
+
 function buildEmailHtml(firstName: string, title: string, message: string, link: string | null): string {
   const linkHtml = link
     ? `<p style="margin:24px 0 0"><a href="${APP_URL}${link}" style="display:inline-block;padding:10px 24px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">View in InflowHR</a></p>`
@@ -32,52 +38,32 @@ function buildEmailHtml(firstName: string, title: string, message: string, link:
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
   try {
     const payload = await req.json()
     const record = payload.record
-    console.log('Edge Function called with record:', JSON.stringify(record))
 
     if (!record || !record.send_email || record.email_sent) {
-      console.log('Skipped: send_email =', record?.send_email, ', email_sent =', record?.email_sent)
-      return new Response(JSON.stringify({ skipped: true }), { status: 200 })
+      return new Response(JSON.stringify({ skipped: true }), { status: 200, headers: corsHeaders })
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    console.log('Supabase URL:', supabaseUrl)
-    console.log('Service key present:', !!serviceKey)
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
 
-    const supabase = createClient(supabaseUrl, serviceKey)
-
-    const { data: emp, error: empError } = await supabase
+    const { data: emp } = await supabase
       .from('employees')
       .select('email, first_name')
       .eq('id', record.employee_id)
       .single()
 
-    console.log('Employee lookup:', JSON.stringify(emp), 'Error:', JSON.stringify(empError))
-
     if (!emp?.email) {
-      return new Response(JSON.stringify({ error: 'No employee email', empError }), { status: 200 })
+      return new Response(JSON.stringify({ error: 'No employee email' }), { status: 200, headers: corsHeaders })
     }
-
-    console.log('Sending email to:', emp.email, 'via Brevo')
-    console.log('BREVO_API_KEY present:', !!BREVO_API_KEY, 'length:', BREVO_API_KEY?.length)
-    console.log('SENDER_EMAIL:', SENDER_EMAIL)
-
-    const emailPayload = {
-      sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-      to: [{ email: emp.email, name: emp.first_name || '' }],
-      subject: `InflowHR: ${record.title}`,
-      htmlContent: buildEmailHtml(
-        emp.first_name || 'there',
-        record.title,
-        record.message || '',
-        record.link || null,
-      ),
-    }
-
-    console.log('Brevo payload (sans html):', JSON.stringify({ ...emailPayload, htmlContent: '[trimmed]' }))
 
     const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
@@ -86,14 +72,22 @@ Deno.serve(async (req) => {
         'content-type': 'application/json',
         'api-key': BREVO_API_KEY,
       },
-      body: JSON.stringify(emailPayload),
+      body: JSON.stringify({
+        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+        to: [{ email: emp.email, name: emp.first_name || '' }],
+        subject: `InflowHR: ${record.title}`,
+        htmlContent: buildEmailHtml(
+          emp.first_name || 'there',
+          record.title,
+          record.message || '',
+          record.link || null,
+        ),
+      }),
     })
 
-    const resText = await res.text()
-    console.log('Brevo response:', res.status, resText)
-
     if (!res.ok) {
-      return new Response(JSON.stringify({ error: `Brevo API error: ${res.status} ${resText}` }), { status: 500 })
+      const err = await res.text()
+      return new Response(JSON.stringify({ error: `Brevo API error: ${res.status} ${err}` }), { status: 500, headers: corsHeaders })
     }
 
     if (record.id) {
@@ -103,9 +97,8 @@ Deno.serve(async (req) => {
         .eq('id', record.id)
     }
 
-    return new Response(JSON.stringify({ sent: true, to: emp.email, brevo: resText }), { status: 200 })
+    return new Response(JSON.stringify({ sent: true, to: emp.email }), { status: 200, headers: corsHeaders })
   } catch (err) {
-    console.error('Edge Function error:', (err as Error).message, (err as Error).stack)
-    return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500 })
+    return new Response(JSON.stringify({ error: (err as Error).message }), { status: 500, headers: corsHeaders })
   }
 })
