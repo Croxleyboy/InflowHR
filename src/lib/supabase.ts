@@ -27,6 +27,21 @@ export async function callRpcDirect(
   return { data: body, error: null }
 }
 
+export async function sendNotificationEmail(notificationRecord: Record<string, unknown>): Promise<void> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token || supabaseAnonKey
+    await fetch(`${supabaseUrl}/functions/v1/send-notification-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ record: notificationRecord }),
+    })
+  } catch {}
+}
+
 export async function signInDirect(
   email: string,
   password: string,
