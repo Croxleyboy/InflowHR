@@ -31,7 +31,7 @@ export async function sendNotificationEmail(notificationRecord: Record<string, u
   try {
     const { data: { session } } = await supabase.auth.getSession()
     const token = session?.access_token || supabaseAnonKey
-    await fetch(`${supabaseUrl}/functions/v1/send-notification-email`, {
+    const res = await fetch(`${supabaseUrl}/functions/v1/send-notification-email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -39,7 +39,13 @@ export async function sendNotificationEmail(notificationRecord: Record<string, u
       },
       body: JSON.stringify({ record: notificationRecord }),
     })
-  } catch {}
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.warn('Notification email failed:', res.status, body)
+    }
+  } catch (err) {
+    console.warn('Notification email error:', err)
+  }
 }
 
 export async function signInDirect(
