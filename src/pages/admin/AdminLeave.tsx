@@ -200,6 +200,19 @@ export default function AdminLeave() {
         })
       }
 
+      await supabase.from('notifications').insert({
+        employee_id: req.employee_id,
+        title: approved ? `${typeName} Approved` : `${typeName} Declined`,
+        message: approved
+          ? `Your ${typeName} from ${dateRange} (${editForm.days_requested || req.days_requested} days) has been approved.`
+          : `Your ${typeName} request from ${dateRange} has been declined. Please contact your manager.`,
+        type: approved ? 'info' : 'alert',
+        link: '/leave',
+        is_read: false,
+        company_id: selectedCompanyId,
+        send_email: true,
+      })
+
       window.dispatchEvent(new Event('notifications-updated'))
     }
 
