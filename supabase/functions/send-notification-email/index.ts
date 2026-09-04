@@ -1,8 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { SmtpClient } from 'https://deno.land/x/smtp@v0.7.0/mod.ts'
 
-const TITAN_EMAIL = Deno.env.get('TITAN_EMAIL')!
-const TITAN_PASSWORD = Deno.env.get('TITAN_PASSWORD')!
+const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY')!
+const SENDER_EMAIL = Deno.env.get('TITAN_EMAIL') || 'notifications@inflowhr.com'
+const SENDER_NAME = 'InflowHR'
 const APP_URL = Deno.env.get('APP_URL') || 'https://app.inflowhr.com'
 
 function buildEmailHtml(firstName: string, title: string, message: string, link: string | null): string {
@@ -55,28 +55,30 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'No employee email' }), { status: 200 })
     }
 
-    const client = new SmtpClient()
-    await client.connectTLS({
-      hostname: 'smtp.titan.email',
-      port: 465,
-      username: TITAN_EMAIL,
-      password: TITAN_PASSWORD,
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'api-key': BREVO_API_KEY,
+      },
+      body: JSON.stringify({
+        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+        to: [{ email: emp.email, name: emp.first_name || '' }],
+        subject: `InflowHR: ${record.title}`,
+        htmlContent: buildEmailHtml(
+          emp.first_name || 'there',
+          record.title,
+          record.message || '',
+          record.link || null,
+        ),
+      }),
     })
 
-    await client.send({
-      from: TITAN_EMAIL,
-      to: emp.email,
-      subject: `InflowHR: ${record.title}`,
-      content: '',
-      html: buildEmailHtml(
-        emp.first_name || 'there',
-        record.title,
-        record.message || '',
-        record.link || null,
-      ),
-    })
-
-    await client.close()
+    if (!res.ok) {
+      const err = await res.text()
+      return new Response(JSON.stringify({ error: `Brevo API error: ${res.status} ${err}` }), { status: 500 })
+    }
 
     await supabase
       .from('notifications')
