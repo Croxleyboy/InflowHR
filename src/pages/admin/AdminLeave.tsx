@@ -212,8 +212,8 @@ export default function AdminLeave() {
         company_id: selectedCompanyId,
         send_email: true,
       }
-      const { data: notifRow } = await supabase.from('notifications').insert(notifPayload).select().single()
-      if (notifRow) sendNotificationEmail(notifRow)
+      const { data: notifRow } = await supabase.from('notifications').insert(notifPayload).select('id').single()
+      sendNotificationEmail({ ...notifPayload, id: notifRow?.id, email_sent: false })
 
       window.dispatchEvent(new Event('notifications-updated'))
     }

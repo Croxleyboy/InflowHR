@@ -176,8 +176,8 @@ export default function LeaveApproval() {
       company_id: companyUser?.company_id,
       send_email: true,
     }
-    const { data: notifRow } = await supabase.from('notifications').insert(notifPayload).select().single()
-    if (notifRow) sendNotificationEmail(notifRow)
+    const { data: notifRow } = await supabase.from('notifications').insert(notifPayload).select('id').single()
+    sendNotificationEmail({ ...notifPayload, id: notifRow?.id, email_sent: false })
 
     showSuccess(approved ? 'Leave request approved' : 'Leave request declined')
     window.dispatchEvent(new Event('notifications-updated'))
