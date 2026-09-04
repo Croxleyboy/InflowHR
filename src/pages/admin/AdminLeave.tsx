@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabase, sendNotificationEmail } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
@@ -200,7 +200,7 @@ export default function AdminLeave() {
         })
       }
 
-      await supabase.from('notifications').insert({
+      const notifPayload = {
         employee_id: req.employee_id,
         title: approved ? `${typeName} Approved` : `${typeName} Declined`,
         message: approved
@@ -211,7 +211,9 @@ export default function AdminLeave() {
         is_read: false,
         company_id: selectedCompanyId,
         send_email: true,
-      })
+      }
+      const { data: notifRow } = await supabase.from('notifications').insert(notifPayload).select().single()
+      if (notifRow) sendNotificationEmail(notifRow)
 
       window.dispatchEvent(new Event('notifications-updated'))
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { supabase, sendNotificationEmail } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, formatDateTime } from '../lib/formatters'
@@ -164,7 +164,7 @@ export default function LeaveApproval() {
     })
     if (errWf3) { showError('Failed to create manager notification: ' + errWf3.message) }
 
-    await supabase.from('notifications').insert({
+    const notifPayload = {
       employee_id: request.employee_id,
       title: approved ? `${typeName} Approved` : `${typeName} Declined`,
       message: approved
@@ -175,7 +175,9 @@ export default function LeaveApproval() {
       is_read: false,
       company_id: companyUser?.company_id,
       send_email: true,
-    })
+    }
+    const { data: notifRow } = await supabase.from('notifications').insert(notifPayload).select().single()
+    if (notifRow) sendNotificationEmail(notifRow)
 
     showSuccess(approved ? 'Leave request approved' : 'Leave request declined')
     window.dispatchEvent(new Event('notifications-updated'))
