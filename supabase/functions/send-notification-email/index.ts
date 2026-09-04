@@ -11,10 +11,9 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-function buildEmailHtml(firstName: string, title: string, message: string, link: string | null): string {
-  const linkHtml = link
-    ? `<p style="margin:24px 0 0"><a href="${APP_URL}${link}" style="display:inline-block;padding:10px 24px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">View in InflowHR</a></p>`
-    : ''
+function buildEmailHtml(firstName: string, title: string, message: string, _link: string | null): string {
+  const linkHtml = `<p style="margin:24px 0 0"><a href="${APP_URL}" style="display:inline-block;padding:10px 24px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:6px;font-weight:600">Log in to InflowHR</a></p>
+      <p style="margin:8px 0 0;color:#9ca3af;font-size:12px">Sign in and navigate to your Leave page to view details.</p>`
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
