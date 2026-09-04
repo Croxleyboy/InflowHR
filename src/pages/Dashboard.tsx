@@ -373,7 +373,7 @@ export default function Dashboard() {
           return (
             <>
               <div className="greeting-row">
-                <h2 className="greeting">{greeting} {'\u{1F44B}'} {employeeName}</h2>
+                <h2 className="greeting">{greeting} {'\u{1F44B}'} <span style={{ whiteSpace: 'nowrap' }}>{employeeName}</span></h2>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   {showReminderStandalone && (
                     <button className="dash-reminder-pill" onClick={() => navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } })}>
@@ -398,7 +398,7 @@ export default function Dashboard() {
               </div>
             )}
             <div className="greeting-row">
-              <h2 className="greeting">{greeting} {'\u{1F44B}'} {employeeName}</h2>
+              <h2 className="greeting">{greeting} {'\u{1F44B}'} <span style={{ whiteSpace: 'nowrap' }}>{employeeName}</span></h2>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 {themeLogoutIcons}
               </div>
