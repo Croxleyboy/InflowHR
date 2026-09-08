@@ -381,6 +381,7 @@ export default function AdminPayroll() {
     }
 
     const errors: string[] = []
+    let flaggedCount = 0
     for (let idx = 0; idx < employees.length; idx++) {
       const emp = employees[idx]
       const existing = sourcePayslips.find(p => p.employee?.id === emp.id && p.pay_period_start.startsWith(nextKey))
@@ -396,6 +397,12 @@ export default function AdminPayroll() {
       const ni = latest ? Number(latest.national_insurance) : calcMonthlyNI(annualAfterSacrifice)
       const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
+      const missing: string[] = []
+      if (!emp.annual_salary && !latest?.annual_salary) missing.push('Annual salary')
+      if (!emp.tax_code && !latest?.tax_code) missing.push('Tax code')
+      if (!emp.payroll_id && !latest?.payroll_id) missing.push('Payroll ID')
+      const isFlagged = missing.length > 0
+
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
         company_id: selectedCompanyId,
@@ -407,16 +414,20 @@ export default function AdminPayroll() {
         monthly_deductions: benefitDeductions,
         net_pay: adjustedGross - tax - ni - pension,
         payment_date: localDateStr(paymentDate),
-        status: 'draft',
+        status: isFlagged ? 'flagged' : 'draft',
         tax_code: emp.tax_code || latest?.tax_code || '1257L',
         annual_salary: salary,
         payroll_id: emp.payroll_id || latest?.payroll_id || '',
+        payroll_office: isFlagged ? `Missing: ${missing.join(', ')}` : '',
       })
       if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
+      if (isFlagged) flaggedCount++
     }
     setGenerating(false)
     if (errors.length > 0) {
       showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
+    } else if (flaggedCount > 0) {
+      showSuccess(`Payroll generated for ${MONTH_NAMES[nextMonth]} ${nextYear} — ${flaggedCount} payslip(s) flagged for review (missing pay details)`)
     } else {
       showSuccess(`Payroll generated for ${MONTH_NAMES[nextMonth]} ${nextYear}`)
     }
@@ -475,6 +486,12 @@ export default function AdminPayroll() {
     const ni = latest ? Number(latest.national_insurance) : calcMonthlyNI(annualAfterSacrifice)
     const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
+    const missing: string[] = []
+    if (!emp.annual_salary && !latest?.annual_salary) missing.push('Annual salary')
+    if (!emp.tax_code && !latest?.tax_code) missing.push('Tax code')
+    if (!emp.payroll_id && !latest?.payroll_id) missing.push('Payroll ID')
+    const isFlagged = missing.length > 0
+
     const existingCount = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey)).length
     const batch = Date.now().toString(36).slice(-4)
 
@@ -489,13 +506,16 @@ export default function AdminPayroll() {
       monthly_deductions: benefitDeductions,
       net_pay: adjustedGross - tax - ni - pension,
       payment_date: localDateStr(paymentDate),
-      status: 'draft',
+      status: isFlagged ? 'flagged' : 'draft',
       tax_code: emp.tax_code || latest?.tax_code || '1257L',
       annual_salary: salary,
       payroll_id: emp.payroll_id || latest?.payroll_id || '',
+      payroll_office: isFlagged ? `Missing: ${missing.join(', ')}` : '',
     })
     if (error) { showError('Failed to add payslip: ' + error.message); setSaving(false); return }
-    showSuccess(`Payslip added for ${emp.first_name} ${emp.last_name} — ${MONTH_NAMES[m - 1]} ${y}`)
+    showSuccess(isFlagged
+      ? `Payslip added for ${emp.first_name} ${emp.last_name} — FLAGGED: missing ${missing.join(', ')}`
+      : `Payslip added for ${emp.first_name} ${emp.last_name} — ${MONTH_NAMES[m - 1]} ${y}`)
     setShowAddSingle(false)
     setSingleEmpId('')
     setSingleMonth('')
@@ -552,6 +572,7 @@ export default function AdminPayroll() {
     })
     return {
       total: sourcePayslips.length,
+      flagged: sourcePayslips.filter(p => p.status === 'flagged').length,
       draft: sourcePayslips.filter(p => p.status === 'draft').length,
       processed: sourcePayslips.filter(p => p.status === 'processed').length,
       paid: sourcePayslips.filter(p => p.status === 'paid').length,
@@ -926,15 +947,24 @@ export default function AdminPayroll() {
 
     downloadCsv(`payroll-${monthKey}-${monthName}.csv`, headers, rows)
 
-    // Mark all payslips in this month as paid
-    const ids = monthPayslips.map(p => p.id)
-    await supabase.from('payslips').update({ status: 'paid' }).in('id', ids).eq('company_id', selectedCompanyId)
+    // Mark non-flagged payslips in this month as paid
+    const payableSlips = monthPayslips.filter(p => p.status !== 'flagged')
+    const flaggedSlips = monthPayslips.filter(p => p.status === 'flagged')
+    if (payableSlips.length > 0) {
+      await supabase.from('payslips').update({ status: 'paid' }).in('id', payableSlips.map(p => p.id)).eq('company_id', selectedCompanyId)
+    }
 
-    // Update schedule status to completed
-    const updated = { ...payrollScheduleStatuses, [monthKey]: 'completed' }
-    await saveScheduleStatuses(updated)
+    // Update schedule status to completed only if no flagged remain
+    if (flaggedSlips.length === 0) {
+      const updated = { ...payrollScheduleStatuses, [monthKey]: 'completed' }
+      await saveScheduleStatuses(updated)
+    }
 
-    showSuccess(`${monthName} ${yearStr} payroll downloaded and marked as paid`)
+    if (flaggedSlips.length > 0) {
+      showSuccess(`${monthName} ${yearStr} payroll downloaded — ${payableSlips.length} marked as paid, ${flaggedSlips.length} flagged payslip(s) excluded (review required)`)
+    } else {
+      showSuccess(`${monthName} ${yearStr} payroll downloaded and marked as paid`)
+    }
     loadAll()
   }
 
@@ -1047,6 +1077,7 @@ export default function AdminPayroll() {
       <div className="admin-mini-stats">
         <div className="admin-mini-stat"><span className="admin-mini-value">{stats.activeEmployees}</span><span>Active Employees</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Payslips</span></div>
+        {stats.flagged > 0 && <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#dc2626'}}>{stats.flagged}</span><span>Flagged</span></div>}
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>{stats.draft}</span><span>Draft</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.processed}</span><span>Processed</span></div>
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{stats.paid}</span><span>Paid</span></div>
@@ -1097,7 +1128,7 @@ export default function AdminPayroll() {
             </select>
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="admin-select">
               <option value="">All Statuses</option>
-              <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
+              <option value="flagged">Flagged</option><option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
             </select>
             {activeSource === 'inflowhr' && (
               <div style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
@@ -1170,7 +1201,7 @@ export default function AdminPayroll() {
                 <tbody>
                   {paginated.map(p => (
                     <>
-                      <tr key={p.id} className={expandedId === p.id ? 'admin-row-active' : ''}>
+                      <tr key={p.id} className={`${expandedId === p.id ? 'admin-row-active' : ''} ${p.status === 'flagged' ? 'admin-row-flagged' : ''}`}>
                         <td className="admin-td-mono">{p.reference_number}</td>
                         <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
                         <td>{new Date(p.pay_period_start + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</td>
@@ -1232,6 +1263,13 @@ export default function AdminPayroll() {
                               </div>
                             ) : (
                               <>
+                                {p.status === 'flagged' && p.payroll_office && (
+                                  <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    <span style={{ color: '#dc2626', fontWeight: 600, fontSize: 13 }}>{p.payroll_office}</span>
+                                    <span style={{ color: '#991b1b', fontSize: 12 }}>— Update the employee record and edit this payslip to correct values before processing.</span>
+                                  </div>
+                                )}
                                 <div className="admin-detail-grid admin-detail-grid-4">
                                   <div><strong>Tax Code:</strong> {p.tax_code}</div>
                                   <div><strong>Annual Salary:</strong> £{Number(p.annual_salary || 0).toLocaleString()}</div>

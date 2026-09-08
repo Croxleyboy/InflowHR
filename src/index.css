@@ -5980,6 +5980,9 @@ body {
 .admin-badge-desk { background: #e8f5e9; color: #2e7d32; }
 .admin-badge-room { background: #e3f2fd; color: #1565c0; }
 .admin-badge-draft { background: #fff3e0; color: #e65100; }
+.admin-badge-flagged { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+.admin-row-flagged { background: #fef2f2 !important; }
+.admin-row-flagged td { color: #991b1b !important; }
 .admin-badge-active { background: #e8f5e9; color: #2e7d32; }
 .admin-badge-maintenance { background: #fce4ec; color: #c62828; }
 .admin-badge-confirmed { background: #e8f5e9; color: #2e7d32; }
