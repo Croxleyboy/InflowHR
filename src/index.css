@@ -678,6 +678,32 @@ body {
 .settings-row:last-child { border-bottom: none; }
 .settings-label { font-weight: 600; color: var(--text-muted); }
 
+.settings-row-btn {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.settings-row-btn:last-child { border-bottom: none; }
+.settings-row-btn:hover { background: var(--bg); }
+.settings-row-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.settings-row-btn svg:last-child { color: var(--text-muted); flex-shrink: 0; }
+.settings-row-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .language-selector { display: flex; gap: 10px; }
 .lang-btn {
   flex: 1; padding: 10px;
