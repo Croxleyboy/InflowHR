@@ -115,7 +115,7 @@ export default function Dashboard() {
               const dob = new Date(c.date_of_birth)
               const bday = new Date(yr, dob.getMonth(), dob.getDate())
               if (bday < now) bday.setFullYear(yr + 1)
-              if (Math.floor((bday.getTime() - now.getTime()) / 86400000) <= 7) count++
+              if (Math.floor((bday.getTime() - now.getTime()) / 86400000) <= 30) count++
             })
           }
         }
