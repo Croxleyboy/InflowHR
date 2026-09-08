@@ -15,13 +15,13 @@ alter table labour_demand enable row level security;
 
 create policy "labour_demand_read" on labour_demand
   for select using (
-    company_id in (select company_id from company_users where user_id = auth.uid())
+    company_id in (select company_id from company_users where auth_user_id = auth.uid())
   );
 
 create policy "labour_demand_write" on labour_demand
   for all using (
     company_id in (
       select company_id from company_users
-      where user_id = auth.uid() and role in ('admin', 'hr')
+      where auth_user_id = auth.uid() and role in ('admin', 'hr')
     )
   );
