@@ -888,6 +888,18 @@ body {
 .ts-action-add { background: #1565c0; }
 .ts-action-checkin { background: #16a34a; }
 .ts-action-history { background: none; border: 1px solid var(--border, #ddd); color: var(--text-muted, #888); }
+.ts-summary-cards { display: flex; gap: 8px; padding: 4px 16px 8px; overflow-x: auto; }
+.ts-summary-card { flex: 1; min-width: 100px; background: var(--bg-card, #fff); border-radius: 12px; border: 1.5px solid var(--border, #e0e0e0); padding: 10px 12px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.ts-summary-label { font-size: 11px; font-weight: 600; color: var(--text-muted, #888); text-transform: uppercase; letter-spacing: 0.3px; }
+.ts-summary-value { font-size: 18px; font-weight: 700; color: var(--text); }
+.ts-summary-sub { font-size: 11px; color: var(--text-muted, #999); }
+.ts-summary-shortfall { border-color: #ef5350; background: #fff5f5; }
+.ts-summary-shortfall .ts-summary-value { color: #dc2626; }
+.ts-summary-ontrack { border-color: #4caf50; background: #f0fdf4; }
+.ts-summary-ontrack .ts-summary-value { color: #16a34a; }
+[data-theme="dark"] .ts-summary-shortfall { background: rgba(220,38,38,0.1); }
+[data-theme="dark"] .ts-summary-ontrack { background: rgba(22,163,74,0.1); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ts-summary-shortfall { background: rgba(220,38,38,0.1); } :root:not([data-theme="light"]) .ts-summary-ontrack { background: rgba(22,163,74,0.1); } }
 .ts-month-card { margin: 8px 16px 16px; background: var(--bg-card, #fff); border-radius: 14px; border: 1.5px solid #90caf9; overflow: hidden; }
 [data-theme="dark"] .ts-month-card { border-color: #1565c0; }
 .ts-month-nav { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border, #eee); }
