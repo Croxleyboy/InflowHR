@@ -141,22 +141,26 @@ export default function DashboardDetailed() {
       .order('created_at', { ascending: false }).limit(5)
       .then(({ data }) => { if (data) setRecentNotifications(data as Notification[]) })
 
-    // Birthdays & anniversaries in next 30 days
+    // Birthdays (watchlist only, next 7 days) & anniversaries (all, next 30 days)
+    let watchlistIds: string[] = []
+    try { watchlistIds = JSON.parse(localStorage.getItem('inflowhr-kudos-watchlist') || '[]') } catch { /* empty */ }
+
     supabase.from('employees')
       .select('id, first_name, last_name, date_of_birth, start_date, avatar_url, department')
       .eq('company_id', cid).eq('is_active', true)
       .then(({ data: colleagues }) => {
         if (!colleagues) return
         const now = new Date()
+        const sevenDays = 7 * 86400000
         const thirtyDays = 30 * 86400000
         const bdays: Colleague[] = []
         const annivs: Colleague[] = []
         colleagues.forEach((c: any) => {
-          if (c.date_of_birth) {
+          if (c.date_of_birth && watchlistIds.includes(c.id)) {
             const dob = new Date(c.date_of_birth)
             const bday = new Date(year, dob.getMonth(), dob.getDate())
             if (bday < now) bday.setFullYear(year + 1)
-            if (bday.getTime() - now.getTime() <= thirtyDays) bdays.push(c)
+            if (bday.getTime() - now.getTime() <= sevenDays) bdays.push(c)
           }
           if (c.start_date) {
             const sd = new Date(c.start_date)
@@ -411,7 +415,7 @@ export default function DashboardDetailed() {
         {/* Birthdays */}
         <Widget title={`Birthdays (${birthdays.length})`} color={BORDER_COLORS.birthdays}>
           {birthdays.length === 0 ? (
-            <p className="dd-empty">No upcoming birthdays</p>
+            <p className="dd-empty">No watchlist birthdays this week — add colleagues via the Directory</p>
           ) : (
             <div className="dd-people-list">
               {birthdays.map(c => {

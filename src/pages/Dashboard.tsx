@@ -102,17 +102,22 @@ export default function Dashboard() {
         const weekAhead = new Date(now); weekAhead.setDate(weekAhead.getDate() + 7)
         const weekAheadStr = toLocalDateStr(weekAhead)
 
-        const { data: colleagues } = await supabase.from('employees')
-          .select('id, date_of_birth').eq('company_id', companyUser.company_id).eq('is_active', true).not('date_of_birth', 'is', null)
-        if (colleagues) {
-          const yr = now.getFullYear()
-          colleagues.forEach((c: any) => {
-            if (!c.date_of_birth || c.id === employeeId) return
-            const dob = new Date(c.date_of_birth)
-            const bday = new Date(yr, dob.getMonth(), dob.getDate())
-            if (bday < now) bday.setFullYear(yr + 1)
-            if (Math.floor((bday.getTime() - now.getTime()) / 86400000) <= 7) count++
-          })
+        let watchlistIds: string[] = []
+        try { watchlistIds = JSON.parse(localStorage.getItem('inflowhr-kudos-watchlist') || '[]') } catch { /* empty */ }
+
+        if (watchlistIds.length > 0) {
+          const { data: colleagues } = await supabase.from('employees')
+            .select('id, date_of_birth').eq('company_id', companyUser.company_id).eq('is_active', true).not('date_of_birth', 'is', null)
+          if (colleagues) {
+            const yr = now.getFullYear()
+            colleagues.forEach((c: any) => {
+              if (!c.date_of_birth || c.id === employeeId || !watchlistIds.includes(c.id)) return
+              const dob = new Date(c.date_of_birth)
+              const bday = new Date(yr, dob.getMonth(), dob.getDate())
+              if (bday < now) bday.setFullYear(yr + 1)
+              if (Math.floor((bday.getTime() - now.getTime()) / 86400000) <= 7) count++
+            })
+          }
         }
 
         const { count: shiftCount } = await supabase.from('shift_assignments')
