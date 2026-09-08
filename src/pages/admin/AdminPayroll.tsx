@@ -338,6 +338,23 @@ export default function AdminPayroll() {
     paymentDate.setDate(paymentDate.getDate() - 3)
     const batch = Date.now().toString(36).slice(-4)
 
+    // Fetch active benefit enrollments for all employees
+    const { data: allEnrollments } = await supabase
+      .from('benefit_enrollments')
+      .select('employee_id, enrolled_at, benefit_type:benefit_types(monthly_cost, is_enabled)')
+      .eq('company_id', selectedCompanyId)
+      .is('option_id', null)
+    const benefitCostMap: Record<string, number> = {}
+    if (allEnrollments) {
+      for (const row of allEnrollments as any[]) {
+        const bt = row.benefit_type
+        if (!bt?.is_enabled || !bt.monthly_cost) continue
+        const enrolledAt = new Date(row.enrolled_at)
+        if (enrolledAt > endOfMonth) continue
+        benefitCostMap[row.employee_id] = (benefitCostMap[row.employee_id] || 0) + (bt.monthly_cost || 0)
+      }
+    }
+
     const errors: string[] = []
     for (let idx = 0; idx < employees.length; idx++) {
       const emp = employees[idx]
@@ -350,6 +367,7 @@ export default function AdminPayroll() {
       const tax = latest ? Number(latest.tax) : Math.round(gross * 0.2 * 100) / 100
       const ni = latest ? Number(latest.national_insurance) : Math.round(gross * 0.12 * 100) / 100
       const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
+      const benefitDeductions = Math.round((benefitCostMap[emp.id] || 0) * 100) / 100
 
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
@@ -359,7 +377,8 @@ export default function AdminPayroll() {
         pay_period_end: localDateStr(endOfMonth),
         gross_pay: gross, tax, national_insurance: ni, pension,
         other_deductions: 0,
-        net_pay: gross - tax - ni - pension,
+        monthly_deductions: benefitDeductions,
+        net_pay: gross - tax - ni - pension - benefitDeductions,
         payment_date: localDateStr(paymentDate),
         status: 'draft',
         tax_code: emp.tax_code || latest?.tax_code || '1257L',
@@ -408,6 +427,25 @@ export default function AdminPayroll() {
     const ni = latest ? Number(latest.national_insurance) : Math.round(gross * 0.12 * 100) / 100
     const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
+    // Fetch active benefit enrollments for this employee
+    let benefitDeductions = 0
+    const { data: empEnrollments } = await supabase
+      .from('benefit_enrollments')
+      .select('enrolled_at, benefit_type:benefit_types(monthly_cost, is_enabled)')
+      .eq('company_id', selectedCompanyId)
+      .eq('employee_id', emp.id)
+      .is('option_id', null)
+    if (empEnrollments) {
+      for (const row of empEnrollments as any[]) {
+        const bt = row.benefit_type
+        if (!bt?.is_enabled || !bt.monthly_cost) continue
+        const enrolledAt = new Date(row.enrolled_at)
+        if (enrolledAt > endOfMonth) continue
+        benefitDeductions += bt.monthly_cost || 0
+      }
+    }
+    benefitDeductions = Math.round(benefitDeductions * 100) / 100
+
     const existingCount = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey)).length
     const batch = Date.now().toString(36).slice(-4)
 
@@ -419,7 +457,8 @@ export default function AdminPayroll() {
       pay_period_end: localDateStr(endOfMonth),
       gross_pay: gross, tax, national_insurance: ni, pension,
       other_deductions: 0,
-      net_pay: gross - tax - ni - pension,
+      monthly_deductions: benefitDeductions,
+      net_pay: gross - tax - ni - pension - benefitDeductions,
       payment_date: localDateStr(paymentDate),
       status: 'draft',
       tax_code: emp.tax_code || latest?.tax_code || '1257L',
@@ -1143,7 +1182,7 @@ export default function AdminPayroll() {
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>National Insurance</label><input type="number" className="admin-inline-input" value={editForm.national_insurance} onChange={e => setEditForm(f => ({...f, national_insurance: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Pension</label><input type="number" className="admin-inline-input" value={editForm.pension} onChange={e => setEditForm(f => ({...f, pension: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Other Deductions</label><input type="number" className="admin-inline-input" value={editForm.other_deductions} onChange={e => setEditForm(f => ({...f, other_deductions: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Monthly Deductions</label><input type="number" className="admin-inline-input" value={editForm.monthly_deductions} onChange={e => setEditForm(f => ({...f, monthly_deductions: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Benefit Deductions</label><input type="number" className="admin-inline-input" value={editForm.monthly_deductions} onChange={e => setEditForm(f => ({...f, monthly_deductions: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Overtime</label><input type="number" className="admin-inline-input" value={editForm.overtime} onChange={e => setEditForm(f => ({...f, overtime: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Adjustments</label><input type="number" className="admin-inline-input" value={editForm.adjustments} onChange={e => setEditForm(f => ({...f, adjustments: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax Code</label><input className="admin-inline-input" value={editForm.tax_code} onChange={e => setEditForm(f => ({...f, tax_code: e.target.value}))} /></div>
@@ -1173,7 +1212,7 @@ export default function AdminPayroll() {
                                   <div><strong>Overtime:</strong> £{Number(p.overtime || 0).toFixed(2)}</div>
                                   <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
                                   <div><strong>Other Deductions:</strong> £{Number(p.other_deductions || 0).toFixed(2)}</div>
-                                  <div><strong>Monthly Deductions:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
+                                  <div><strong>Benefit Deductions:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
                                   <div><strong>Payment Date:</strong> {new Date(p.payment_date + 'T00:00:00').toLocaleDateString('en-GB')}</div>
                                   <div><strong>Payroll ID:</strong> {p.payroll_id || '—'}</div>
                                   <div><strong>Bank Account:</strong> {p.bank_account || '—'}</div>
