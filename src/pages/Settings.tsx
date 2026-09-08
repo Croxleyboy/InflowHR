@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useFeatures, type Features } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
@@ -38,6 +38,14 @@ export default function Settings() {
   const [draftFy, setDraftFy] = useState(fyStartMonth)
   const [saved, setSaved] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [dashLayout, setDashLayout] = useState(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
   const isCompanyAdmin = isSuperAdmin || companyUser?.role === 'admin'
   const hasPortalAccess = isCompanyAdmin || !!portalRole
 
@@ -187,6 +195,23 @@ export default function Settings() {
         <button className="save-btn" onClick={handleSave}>
           {saved ? t('settings.saved') : t('settings.save')}
         </button>
+      )}
+
+      {isDesktop && (
+        <section className="settings-section">
+          <h2>Dashboard Layout</h2>
+          <p className="settings-hint">Choose your default dashboard view for PC browsers.</p>
+          <div className="dd-layout-selector">
+            <button
+              className={`dd-layout-btn ${dashLayout === 'cards' ? 'dd-layout-active' : ''}`}
+              onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'cards'); setDashLayout('cards') }}
+            >Cards</button>
+            <button
+              className={`dd-layout-btn ${dashLayout === 'detailed' ? 'dd-layout-active' : ''}`}
+              onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'detailed'); setDashLayout('detailed') }}
+            >Detailed</button>
+          </div>
+        </section>
       )}
 
       <section className="settings-section">

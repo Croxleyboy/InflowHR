@@ -9,6 +9,7 @@ import { supabase } from '../lib/supabase'
 import { toLocalDateStr } from '../lib/formatters'
 import Chevron from '../components/Chevron'
 import { COURSES } from './ELearning'
+import DashboardDetailed from './DashboardDetailed'
 
 function getDateString(lang: string) {
   const d = new Date()
@@ -49,6 +50,21 @@ export default function Dashboard() {
   const [leavePending, setLeavePending] = useState<number | null>(null)
   const [reminderCount, setReminderCount] = useState(0)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
+
+  const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  const [dashPref, setDashPref] = useState(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
+  useEffect(() => {
+    const handler = () => setDashPref(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [])
 
   useEffect(() => {
     if (companyUser?.company_id) {
@@ -247,6 +263,10 @@ export default function Dashboard() {
 
   const h = new Date().getHours()
   const greeting = h < 12 ? t('dashboard.greeting_morning') : h < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening')
+
+  if (isDesktop && dashPref === 'detailed') {
+    return <DashboardDetailed />
+  }
 
   return (
     <div className="dashboard">
