@@ -7,6 +7,31 @@ import { formatDate } from '../../lib/formatters'
 
 const PAGE_SIZE = 30
 
+// UK 2024/25 tax & NI brackets applied to monthly taxable pay (annual salary after sacrifice)
+function calcMonthlyTax(annualTaxable: number): number {
+  const personalAllowance = annualTaxable > 125140 ? 0 : Math.max(0, 12570 - Math.max(0, (annualTaxable - 100000) / 2))
+  const taxable = Math.max(0, annualTaxable - personalAllowance)
+  let tax = 0
+  if (taxable > 0) tax += Math.min(taxable, 37700) * 0.2
+  if (taxable > 37700) tax += Math.min(taxable - 37700, 87440) * 0.4
+  if (taxable > 125140) tax += (taxable - 125140) * 0.45
+  return Math.round((tax / 12) * 100) / 100
+}
+
+function calcMonthlyNI(annualGross: number): number {
+  const monthlyGross = annualGross / 12
+  const primaryThreshold = 1048 // £12,570/yr monthly
+  const upperEarningsLimit = 4189 // £50,270/yr monthly
+  let ni = 0
+  if (monthlyGross > primaryThreshold) {
+    ni += Math.min(monthlyGross - primaryThreshold, upperEarningsLimit - primaryThreshold) * 0.08
+  }
+  if (monthlyGross > upperEarningsLimit) {
+    ni += (monthlyGross - upperEarningsLimit) * 0.02
+  }
+  return Math.round(ni * 100) / 100
+}
+
 interface Payslip {
   id: number
   reference_number: string
@@ -366,8 +391,9 @@ export default function AdminPayroll() {
       const gross = Math.round((salary / 12) * 100) / 100
       const benefitDeductions = Math.round((benefitCostMap[emp.id] || 0) * 100) / 100
       const adjustedGross = gross - benefitDeductions
-      const tax = latest ? Number(latest.tax) : Math.round(adjustedGross * 0.2 * 100) / 100
-      const ni = latest ? Number(latest.national_insurance) : Math.round(adjustedGross * 0.12 * 100) / 100
+      const annualAfterSacrifice = salary - (benefitDeductions * 12)
+      const tax = latest ? Number(latest.tax) : calcMonthlyTax(annualAfterSacrifice)
+      const ni = latest ? Number(latest.national_insurance) : calcMonthlyNI(annualAfterSacrifice)
       const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
       const { error } = await supabase.from('payslips').insert({
@@ -444,8 +470,9 @@ export default function AdminPayroll() {
     }
     benefitDeductions = Math.round(benefitDeductions * 100) / 100
     const adjustedGross = gross - benefitDeductions
-    const tax = latest ? Number(latest.tax) : Math.round(adjustedGross * 0.2 * 100) / 100
-    const ni = latest ? Number(latest.national_insurance) : Math.round(adjustedGross * 0.12 * 100) / 100
+    const annualAfterSacrifice = salary - (benefitDeductions * 12)
+    const tax = latest ? Number(latest.tax) : calcMonthlyTax(annualAfterSacrifice)
+    const ni = latest ? Number(latest.national_insurance) : calcMonthlyNI(annualAfterSacrifice)
     const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
     const existingCount = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey)).length
@@ -1215,9 +1242,19 @@ export default function AdminPayroll() {
                                   <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
                                   <div><strong>Other Deductions:</strong> £{Number(p.other_deductions || 0).toFixed(2)}</div>
                                   <div><strong>Salary Sacrifice:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
-                                  {Number(p.monthly_deductions || 0) > 0 && (
-                                    <div><strong>Benefit Tax Saving:</strong> <span style={{ color: '#16a34a', fontWeight: 600 }}>£{(Number(p.monthly_deductions || 0) * 0.32).toFixed(2)}</span> <span style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)' }}>(20% tax + 12% NI)</span></div>
-                                  )}
+                                  {Number(p.monthly_deductions || 0) > 0 && (() => {
+                                    const sacrifice = Number(p.monthly_deductions || 0)
+                                    const gross = Number(p.gross_pay || 0)
+                                    const adjustedGross = gross - sacrifice
+                                    const taxRate = adjustedGross > 0 ? Number(p.tax) / adjustedGross : 0.2
+                                    const niRate = adjustedGross > 0 ? Number(p.national_insurance) / adjustedGross : 0.12
+                                    const taxSaving = Math.round(sacrifice * taxRate * 100) / 100
+                                    const niSaving = Math.round(sacrifice * niRate * 100) / 100
+                                    const totalSaving = Math.round((taxSaving + niSaving) * 100) / 100
+                                    return (
+                                      <div><strong>Benefit Tax Saving:</strong> <span style={{ color: '#16a34a', fontWeight: 600 }}>£{totalSaving.toFixed(2)}</span> <span style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)' }}>(£{taxSaving.toFixed(2)} tax + £{niSaving.toFixed(2)} NI)</span></div>
+                                    )
+                                  })()}
                                   <div><strong>Payment Date:</strong> {new Date(p.payment_date + 'T00:00:00').toLocaleDateString('en-GB')}</div>
                                   <div><strong>Payroll ID:</strong> {p.payroll_id || '—'}</div>
                                   <div><strong>Bank Account:</strong> {p.bank_account || '—'}</div>
