@@ -229,8 +229,8 @@ export default function AdminPayroll() {
     const ni = Number(editForm.national_insurance)
     const pen = Number(editForm.pension)
     const other = Number(editForm.other_deductions)
-    const monthly = Number(editForm.monthly_deductions) || 0
-    const net = gross + ot + adj - tax - ni - pen - other - monthly
+    const benefitSacrifice = Number(editForm.monthly_deductions) || 0
+    const net = (gross - benefitSacrifice) + ot + adj - tax - ni - pen - other
 
     const payslip = payslips.find(p => p.id === id)
     const wasPaid = payslip?.status === 'paid'
@@ -364,10 +364,11 @@ export default function AdminPayroll() {
       const latest = sourcePayslips.find(p => p.employee?.id === emp.id)
       const salary = emp.annual_salary || latest?.annual_salary || 42000
       const gross = Math.round((salary / 12) * 100) / 100
-      const tax = latest ? Number(latest.tax) : Math.round(gross * 0.2 * 100) / 100
-      const ni = latest ? Number(latest.national_insurance) : Math.round(gross * 0.12 * 100) / 100
-      const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
       const benefitDeductions = Math.round((benefitCostMap[emp.id] || 0) * 100) / 100
+      const adjustedGross = gross - benefitDeductions
+      const tax = latest ? Number(latest.tax) : Math.round(adjustedGross * 0.2 * 100) / 100
+      const ni = latest ? Number(latest.national_insurance) : Math.round(adjustedGross * 0.12 * 100) / 100
+      const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
       const { error } = await supabase.from('payslips').insert({
         employee_id: emp.id,
@@ -378,7 +379,7 @@ export default function AdminPayroll() {
         gross_pay: gross, tax, national_insurance: ni, pension,
         other_deductions: 0,
         monthly_deductions: benefitDeductions,
-        net_pay: gross - tax - ni - pension - benefitDeductions,
+        net_pay: adjustedGross - tax - ni - pension,
         payment_date: localDateStr(paymentDate),
         status: 'draft',
         tax_code: emp.tax_code || latest?.tax_code || '1257L',
@@ -423,9 +424,6 @@ export default function AdminPayroll() {
     const latest = sourcePayslips.find(p => p.employee?.id === emp.id)
     const salary = emp.annual_salary || latest?.annual_salary || 42000
     const gross = Math.round((salary / 12) * 100) / 100
-    const tax = latest ? Number(latest.tax) : Math.round(gross * 0.2 * 100) / 100
-    const ni = latest ? Number(latest.national_insurance) : Math.round(gross * 0.12 * 100) / 100
-    const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
     // Fetch active benefit enrollments for this employee
     let benefitDeductions = 0
@@ -445,6 +443,10 @@ export default function AdminPayroll() {
       }
     }
     benefitDeductions = Math.round(benefitDeductions * 100) / 100
+    const adjustedGross = gross - benefitDeductions
+    const tax = latest ? Number(latest.tax) : Math.round(adjustedGross * 0.2 * 100) / 100
+    const ni = latest ? Number(latest.national_insurance) : Math.round(adjustedGross * 0.12 * 100) / 100
+    const pension = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
 
     const existingCount = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey)).length
     const batch = Date.now().toString(36).slice(-4)
@@ -458,7 +460,7 @@ export default function AdminPayroll() {
       gross_pay: gross, tax, national_insurance: ni, pension,
       other_deductions: 0,
       monthly_deductions: benefitDeductions,
-      net_pay: gross - tax - ni - pension - benefitDeductions,
+      net_pay: adjustedGross - tax - ni - pension,
       payment_date: localDateStr(paymentDate),
       status: 'draft',
       tax_code: emp.tax_code || latest?.tax_code || '1257L',
@@ -1182,7 +1184,7 @@ export default function AdminPayroll() {
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>National Insurance</label><input type="number" className="admin-inline-input" value={editForm.national_insurance} onChange={e => setEditForm(f => ({...f, national_insurance: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Pension</label><input type="number" className="admin-inline-input" value={editForm.pension} onChange={e => setEditForm(f => ({...f, pension: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Other Deductions</label><input type="number" className="admin-inline-input" value={editForm.other_deductions} onChange={e => setEditForm(f => ({...f, other_deductions: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Benefit Deductions</label><input type="number" className="admin-inline-input" value={editForm.monthly_deductions} onChange={e => setEditForm(f => ({...f, monthly_deductions: +e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Salary Sacrifice</label><input type="number" className="admin-inline-input" value={editForm.monthly_deductions} onChange={e => setEditForm(f => ({...f, monthly_deductions: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Overtime</label><input type="number" className="admin-inline-input" value={editForm.overtime} onChange={e => setEditForm(f => ({...f, overtime: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Adjustments</label><input type="number" className="admin-inline-input" value={editForm.adjustments} onChange={e => setEditForm(f => ({...f, adjustments: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax Code</label><input className="admin-inline-input" value={editForm.tax_code} onChange={e => setEditForm(f => ({...f, tax_code: e.target.value}))} /></div>
@@ -1195,7 +1197,7 @@ export default function AdminPayroll() {
                                 </div>
                                 <div style={{ gridColumn: 'span 4', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
                                   <span style={{ fontSize: 13, fontWeight: 600, marginRight: 'auto', color: 'var(--text, #1a1a2e)' }}>
-                                    Calculated Net: £{(Number(editForm.gross_pay) + Number(editForm.overtime || 0) + Number(editForm.adjustments || 0) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions) - Number(editForm.monthly_deductions || 0)).toFixed(2)}
+                                    Calculated Net: £{((Number(editForm.gross_pay) - Number(editForm.monthly_deductions || 0)) + Number(editForm.overtime || 0) + Number(editForm.adjustments || 0) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions)).toFixed(2)}
                                   </span>
                                   <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(p.id)}>Save</button>
                                   <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
@@ -1212,7 +1214,10 @@ export default function AdminPayroll() {
                                   <div><strong>Overtime:</strong> £{Number(p.overtime || 0).toFixed(2)}</div>
                                   <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
                                   <div><strong>Other Deductions:</strong> £{Number(p.other_deductions || 0).toFixed(2)}</div>
-                                  <div><strong>Benefit Deductions:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
+                                  <div><strong>Salary Sacrifice:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
+                                  {Number(p.monthly_deductions || 0) > 0 && (
+                                    <div><strong>Benefit Tax Saving:</strong> <span style={{ color: '#16a34a', fontWeight: 600 }}>£{(Number(p.monthly_deductions || 0) * 0.32).toFixed(2)}</span> <span style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)' }}>(20% tax + 12% NI)</span></div>
+                                  )}
                                   <div><strong>Payment Date:</strong> {new Date(p.payment_date + 'T00:00:00').toLocaleDateString('en-GB')}</div>
                                   <div><strong>Payroll ID:</strong> {p.payroll_id || '—'}</div>
                                   <div><strong>Bank Account:</strong> {p.bank_account || '—'}</div>
