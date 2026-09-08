@@ -380,12 +380,28 @@ export default function AdminPayroll() {
       }
     }
 
+    // Auto-generate payroll IDs for employees missing one
+    let nextPayrollSeq = 0
+    const { data: existingIds } = await supabase.from('employees').select('payroll_id').eq('company_id', selectedCompanyId).not('payroll_id', 'is', null)
+    if (existingIds) {
+      for (const r of existingIds) {
+        const m = (r.payroll_id || '').match(/^PAY-(\d+)$/)
+        if (m) nextPayrollSeq = Math.max(nextPayrollSeq, parseInt(m[1], 10))
+      }
+    }
+
     const errors: string[] = []
     let flaggedCount = 0
     for (let idx = 0; idx < employees.length; idx++) {
       const emp = employees[idx]
       const existing = sourcePayslips.find(p => p.employee?.id === emp.id && p.pay_period_start.startsWith(nextKey))
       if (existing) continue
+
+      if (!emp.payroll_id) {
+        nextPayrollSeq++
+        emp.payroll_id = `PAY-${String(nextPayrollSeq).padStart(4, '0')}`
+        await supabase.from('employees').update({ payroll_id: emp.payroll_id }).eq('id', emp.id)
+      }
 
       const latest = sourcePayslips.find(p => p.employee?.id === emp.id)
       const salary = emp.annual_salary || latest?.annual_salary || 42000
@@ -400,7 +416,6 @@ export default function AdminPayroll() {
       const missing: string[] = []
       if (!emp.annual_salary && !latest?.annual_salary) missing.push('Annual salary')
       if (!emp.tax_code && !latest?.tax_code) missing.push('Tax code')
-      if (!emp.payroll_id && !latest?.payroll_id) missing.push('Payroll ID')
       const isFlagged = missing.length > 0
 
       const { error } = await supabase.from('payslips').insert({
@@ -417,7 +432,7 @@ export default function AdminPayroll() {
         status: isFlagged ? 'flagged' : 'draft',
         tax_code: emp.tax_code || latest?.tax_code || '1257L',
         annual_salary: salary,
-        payroll_id: emp.payroll_id || latest?.payroll_id || '',
+        payroll_id: emp.payroll_id,
         payroll_office: isFlagged ? `Missing: ${missing.join(', ')}` : '',
       })
       if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
@@ -452,6 +467,20 @@ export default function AdminPayroll() {
 
     const emp = employees.find(e => e.id === singleEmpId)
     if (!emp) { showError('Employee not found'); setSaving(false); return }
+
+    // Auto-generate payroll ID if missing
+    if (!emp.payroll_id) {
+      let maxSeq = 0
+      const { data: existingIds } = await supabase.from('employees').select('payroll_id').eq('company_id', selectedCompanyId).not('payroll_id', 'is', null)
+      if (existingIds) {
+        for (const r of existingIds) {
+          const match = (r.payroll_id || '').match(/^PAY-(\d+)$/)
+          if (match) maxSeq = Math.max(maxSeq, parseInt(match[1], 10))
+        }
+      }
+      emp.payroll_id = `PAY-${String(maxSeq + 1).padStart(4, '0')}`
+      await supabase.from('employees').update({ payroll_id: emp.payroll_id }).eq('id', emp.id)
+    }
 
     const startDate = new Date(y, m - 1, 1)
     const endOfMonth = new Date(y, m, 0)
@@ -489,7 +518,6 @@ export default function AdminPayroll() {
     const missing: string[] = []
     if (!emp.annual_salary && !latest?.annual_salary) missing.push('Annual salary')
     if (!emp.tax_code && !latest?.tax_code) missing.push('Tax code')
-    if (!emp.payroll_id && !latest?.payroll_id) missing.push('Payroll ID')
     const isFlagged = missing.length > 0
 
     const existingCount = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey)).length
@@ -509,7 +537,7 @@ export default function AdminPayroll() {
       status: isFlagged ? 'flagged' : 'draft',
       tax_code: emp.tax_code || latest?.tax_code || '1257L',
       annual_salary: salary,
-      payroll_id: emp.payroll_id || latest?.payroll_id || '',
+      payroll_id: emp.payroll_id,
       payroll_office: isFlagged ? `Missing: ${missing.join(', ')}` : '',
     })
     if (error) { showError('Failed to add payslip: ' + error.message); setSaving(false); return }
@@ -1247,7 +1275,7 @@ export default function AdminPayroll() {
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Adjustments</label><input type="number" className="admin-inline-input" value={editForm.adjustments} onChange={e => setEditForm(f => ({...f, adjustments: +e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax Code</label><input className="admin-inline-input" value={editForm.tax_code} onChange={e => setEditForm(f => ({...f, tax_code: e.target.value}))} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Annual Salary</label><input type="number" className="admin-inline-input" value={editForm.annual_salary} onChange={e => setEditForm(f => ({...f, annual_salary: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Payroll ID</label><input className="admin-inline-input" value={editForm.payroll_id} onChange={e => setEditForm(f => ({...f, payroll_id: e.target.value}))} /></div>
+                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Payroll ID</label><input className="admin-inline-input" value={editForm.payroll_id} readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} /></div>
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Status</label>
                                   <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(f => ({...f, status: e.target.value}))}>
                                     <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
