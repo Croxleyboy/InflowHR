@@ -110,6 +110,9 @@ export default function SpaceBooking() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
+  const [scheduleDays, setScheduleDays] = useState<{ date: string; shiftName: string; startTime: string; endTime: string }[]>([])
+  const [colleagueCount, setColleagueCount] = useState<Map<string, number>>(new Map())
+
   const companyId = companyUser?.company_id
 
   const loadData = useCallback(async () => {
@@ -126,6 +129,48 @@ export default function SpaceBooking() {
     if (settingsRes.data) setSettings(settingsRes.data as SpaceSettings)
     if (locRes.data?.length && !selectedLocation) setSelectedLocation(locRes.data[0].id)
   }, [companyId, selectedLocation])
+
+  const loadSchedule = useCallback(async () => {
+    if (!companyId || !employeeId) return
+    const weekStart = new Date(selectedDate)
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekEnd.getDate() + 6)
+    const startStr = toLocalDateStr(weekStart)
+    const endStr = toLocalDateStr(weekEnd)
+
+    const { data: assignments } = await supabase
+      .from('shift_assignments')
+      .select('date, shift_templates(name, start_time, end_time)')
+      .eq('employee_id', employeeId)
+      .gte('date', startStr)
+      .lte('date', endStr)
+
+    if (assignments) {
+      setScheduleDays(assignments.map((a: Record<string, unknown>) => {
+        const tpl = a.shift_templates as Record<string, string> | null
+        return {
+          date: a.date as string,
+          shiftName: tpl?.name || 'Shift',
+          startTime: tpl?.start_time?.slice(0, 5) || '',
+          endTime: tpl?.end_time?.slice(0, 5) || '',
+        }
+      }))
+    }
+
+    const { data: allAssignments } = await supabase
+      .from('shift_assignments')
+      .select('date')
+      .eq('company_id', companyId)
+      .gte('date', startStr)
+      .lte('date', endStr)
+
+    if (allAssignments) {
+      const counts = new Map<string, number>()
+      allAssignments.forEach((a: { date: string }) => counts.set(a.date, (counts.get(a.date) || 0) + 1))
+      setColleagueCount(counts)
+    }
+  }, [companyId, employeeId, selectedDate])
 
   const loadSpaces = useCallback(async () => {
     if (!companyId) return
@@ -169,6 +214,7 @@ export default function SpaceBooking() {
 
   useEffect(() => { loadData() }, [loadData])
   useEffect(() => { loadSpaces() }, [loadSpaces])
+  useEffect(() => { loadSchedule() }, [loadSchedule])
   useEffect(() => { if (tab === 'book') loadBookingsForDate() }, [loadBookingsForDate, tab])
   useEffect(() => { if (tab === 'my_bookings') loadMyBookings() }, [loadMyBookings, tab])
 
@@ -338,6 +384,34 @@ export default function SpaceBooking() {
 
       {tab === 'book' && (
         <>
+          {scheduleDays.length > 0 && (
+            <div className="space-schedule-banner">
+              <div className="space-schedule-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Your Schedule This Week
+              </div>
+              <div className="space-schedule-days">
+                {scheduleDays.map(d => {
+                  const dayDate = new Date(d.date + 'T00:00:00')
+                  const dayLabel = dayDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+                  const isSelected = d.date === selectedDate
+                  const colleagues = colleagueCount.get(d.date) || 0
+                  return (
+                    <button
+                      key={d.date}
+                      className={`space-schedule-chip ${isSelected ? 'space-schedule-chip-active' : ''}`}
+                      onClick={() => setSelectedDate(d.date)}
+                    >
+                      <span className="space-schedule-chip-day">{dayLabel}</span>
+                      <span className="space-schedule-chip-shift">{d.shiftName} {d.startTime}–{d.endTime}</span>
+                      {colleagues > 1 && <span className="space-schedule-chip-colleagues">{colleagues - 1} others in</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="space-filters">
             <div className="space-filter-row">
               <label className="space-filter-label">{t('space.filter_location')}</label>

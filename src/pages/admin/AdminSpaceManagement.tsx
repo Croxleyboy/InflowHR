@@ -70,6 +70,17 @@ interface AdminBooking {
   employee_name?: string
 }
 
+interface SpaceUtilisation {
+  id: string
+  name: string
+  type: string
+  capacity: number
+  bookingCount: number
+  utilisationPct: number
+  checkinRate: number
+  isUnderUsed: boolean
+}
+
 interface AnalyticsData {
   totalBookings: number
   checkedIn: number
@@ -81,6 +92,9 @@ interface AnalyticsData {
   topSpaces: { name: string; type: string; count: number }[]
   byDayOfWeek: number[]
   byHour: number[]
+  spaceUtilisation: SpaceUtilisation[]
+  totalCapacity: number
+  totalEmployees: number
 }
 
 type SubTab = 'locations' | 'spaces' | 'bookings' | 'analytics' | 'settings'
@@ -353,10 +367,16 @@ export default function AdminSpaceManagement() {
     since.setDate(since.getDate() - analyticsRange)
     const sinceStr = toLocalDateStr(since)
 
-    const { data: rows } = await supabase.from('space_bookings')
-      .select('id, space_id, booking_date, start_time, status, checked_in_at')
-      .eq('company_id', companyId)
-      .gte('booking_date', sinceStr)
+    const [{ data: rows }, { data: empRows }] = await Promise.all([
+      supabase.from('space_bookings')
+        .select('id, space_id, booking_date, start_time, status, checked_in_at')
+        .eq('company_id', companyId)
+        .gte('booking_date', sinceStr),
+      supabase.from('employees')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('status', 'active'),
+    ])
 
     const all = rows || []
     const nonCancelled = all.filter(r => r.status !== 'cancelled')
@@ -370,9 +390,13 @@ export default function AdminSpaceManagement() {
 
     const uniqueDays = new Set(nonCancelled.map(r => r.booking_date))
     const avgDaily = uniqueDays.size > 0 ? nonCancelled.length / uniqueDays.size : 0
+    const workingDays = Math.max(1, Math.round(analyticsRange * 5 / 7))
 
     const spaceCounts = new Map<string, number>()
     nonCancelled.forEach(r => spaceCounts.set(r.space_id, (spaceCounts.get(r.space_id) || 0) + 1))
+    const spaceCheckins = new Map<string, number>()
+    checkedIn.forEach(r => spaceCheckins.set(r.space_id, (spaceCheckins.get(r.space_id) || 0) + 1))
+
     const topSpaces = Array.from(spaceCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -380,6 +404,25 @@ export default function AdminSpaceManagement() {
         const s = spaceMap.get(sid)
         return { name: s?.name || 'Unknown', type: s?.space_type || '', count }
       })
+
+    const activeSpaces = spaces.filter(s => s.status === 'active')
+    const spaceUtilisation: SpaceUtilisation[] = activeSpaces.map(s => {
+      const count = spaceCounts.get(s.id) || 0
+      const ciCount = spaceCheckins.get(s.id) || 0
+      const utilisationPct = Math.round((count / workingDays) * 100)
+      return {
+        id: s.id,
+        name: s.name,
+        type: s.space_type,
+        capacity: s.capacity,
+        bookingCount: count,
+        utilisationPct: Math.min(utilisationPct, 100),
+        checkinRate: count > 0 ? Math.round((ciCount / count) * 100) : 0,
+        isUnderUsed: utilisationPct < 20,
+      }
+    }).sort((a, b) => a.utilisationPct - b.utilisationPct)
+
+    const totalCapacity = activeSpaces.reduce((sum, s) => sum + (s.space_type === 'desk' ? 1 : s.capacity), 0)
 
     const byDayOfWeek = [0, 0, 0, 0, 0, 0, 0]
     nonCancelled.forEach(r => {
@@ -406,6 +449,9 @@ export default function AdminSpaceManagement() {
       topSpaces,
       byDayOfWeek,
       byHour,
+      spaceUtilisation,
+      totalCapacity,
+      totalEmployees: empRows?.length || 0,
     })
     setAnalyticsLoading(false)
   }, [companyId, analyticsRange, spaces])
@@ -821,12 +867,33 @@ export default function AdminSpaceManagement() {
         <div className="admin-section">
           <div className="admin-section-header">
             <h2>Occupancy Analytics</h2>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               {([7, 30, 90] as const).map(d => (
                 <button key={d} className={`admin-action-btn ${analyticsRange === d ? 'admin-filter-active' : ''}`} onClick={() => setAnalyticsRange(d)}>
                   {d}d
                 </button>
               ))}
+              {analyticsData && (
+                <button className="admin-action-btn" onClick={() => {
+                  const rows = [
+                    ['Space', 'Type', 'Bookings', 'Utilisation %', 'Check-in Rate %', 'Under-used'],
+                    ...analyticsData.spaceUtilisation.map(s => [
+                      s.name, s.type, String(s.bookingCount), String(s.utilisationPct),
+                      String(s.checkinRate), s.isUnderUsed ? 'Yes' : 'No',
+                    ]),
+                  ]
+                  const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(',')).join('\n')
+                  const blob = new Blob([csv], { type: 'text/csv' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `space-analytics-${analyticsRange}d.csv`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}>
+                  Export CSV
+                </button>
+              )}
             </div>
           </div>
 
@@ -858,6 +925,67 @@ export default function AdminSpaceManagement() {
                   </div>
                 </div>
               </div>
+
+              <div className="admin-analytics-rates" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, margin: '16px 0' }}>
+                <div className="admin-analytics-card">
+                  <h4>Capacity vs Headcount</h4>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span className="admin-analytics-big-num">{analyticsData.totalCapacity}</span>
+                    <span style={{ color: '#888', fontSize: 13 }}>seats</span>
+                    <span style={{ color: '#888', fontSize: 13 }}>for</span>
+                    <span className="admin-analytics-big-num" style={{ color: '#5c6bc0' }}>{analyticsData.totalEmployees}</span>
+                    <span style={{ color: '#888', fontSize: 13 }}>employees</span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                    Ratio: {analyticsData.totalEmployees > 0 ? (analyticsData.totalCapacity / analyticsData.totalEmployees).toFixed(1) : '—'} seats per employee
+                  </div>
+                </div>
+                <div className="admin-analytics-card">
+                  <h4>Under-used Spaces</h4>
+                  {(() => {
+                    const underUsed = analyticsData.spaceUtilisation.filter(s => s.isUnderUsed)
+                    return underUsed.length > 0 ? (
+                      <div>
+                        <div className="admin-analytics-big-num" style={{ color: '#ff9800' }}>{underUsed.length}</div>
+                        <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
+                          {underUsed.slice(0, 3).map(s => s.name).join(', ')}{underUsed.length > 3 ? ` +${underUsed.length - 3} more` : ''}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Below 20% utilisation in the last {analyticsRange} days</div>
+                      </div>
+                    ) : (
+                      <div style={{ color: '#43a047', fontSize: 14, fontWeight: 600, marginTop: 8 }}>All spaces well-utilised</div>
+                    )
+                  })()}
+                </div>
+              </div>
+
+              {analyticsData.spaceUtilisation.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Per-Space Utilisation</h3>
+                  <table className="admin-table">
+                    <thead><tr><th>Space</th><th>Type</th><th>Bookings</th><th>Utilisation</th><th>Check-in Rate</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {analyticsData.spaceUtilisation.map(s => (
+                        <tr key={s.id} className={s.isUnderUsed ? 'admin-row-flagged' : ''}>
+                          <td>{s.name}</td>
+                          <td><span className={`admin-badge admin-badge-${s.type}`}>{s.type === 'desk' ? 'Desk' : 'Room'}</span></td>
+                          <td>{s.bookingCount}</td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <div style={{ flex: 1, height: 6, background: '#e0e0e0', borderRadius: 3, overflow: 'hidden', maxWidth: 80 }}>
+                                <div style={{ width: `${s.utilisationPct}%`, height: '100%', background: s.utilisationPct < 20 ? '#ff9800' : s.utilisationPct < 50 ? '#5c6bc0' : '#43a047', borderRadius: 3 }} />
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 600 }}>{s.utilisationPct}%</span>
+                            </div>
+                          </td>
+                          <td>{s.checkinRate}%</td>
+                          <td>{s.isUnderUsed ? <span style={{ color: '#ff9800', fontWeight: 600, fontSize: 12 }}>Under-used</span> : <span style={{ color: '#43a047', fontSize: 12 }}>OK</span>}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               {analyticsData.topSpaces.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
