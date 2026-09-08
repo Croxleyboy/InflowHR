@@ -6366,27 +6366,3 @@ body {
   font-style: italic;
 }
 
-/* Dashboard layout toggle in settings */
-.dd-layout-selector {
-  display: flex;
-  gap: 8px;
-}
-.dd-layout-btn {
-  padding: 6px 14px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.dd-layout-btn:hover { background: var(--bg-card); }
-.dd-layout-active {
-  background: #7c3aed;
-  color: #fff;
-  border-color: #7c3aed;
-}
-.dd-layout-active:hover {
-  background: #6d28d9;
-}
