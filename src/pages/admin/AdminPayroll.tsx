@@ -114,6 +114,15 @@ function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function getPayDay(year: number, month: number, mode: 'end' | 'start' | 'custom', customDay: number): Date {
+  if (mode === 'start') return new Date(year, month, 1)
+  if (mode === 'custom') {
+    const lastDay = new Date(year, month + 1, 0).getDate()
+    return new Date(year, month, Math.min(customDay, lastDay))
+  }
+  return new Date(year, month + 1, 0)
+}
+
 function getFYRange(fyStartMonth: number) {
   const now = new Date()
   const currentMonth = now.getMonth() + 1
@@ -296,31 +305,48 @@ export default function AdminPayroll() {
 
   // Payroll schedule statuses stored in xero_integrations.cached_pay_run.schedule_statuses
   const [payrollScheduleStatuses, setPayrollScheduleStatuses] = useState<Record<string, string>>({})
+  const [payDayMode, setPayDayMode] = useState<'end' | 'start' | 'custom'>('end')
+  const [customPayDay, setCustomPayDay] = useState(28)
+  const [submitLeadDays, setSubmitLeadDays] = useState(5)
+  const [paySettingsSaving, setPaySettingsSaving] = useState(false)
 
   useEffect(() => {
     if (!selectedCompanyId) return
     supabase.from('xero_integrations').select('cached_pay_run').eq('company_id', selectedCompanyId).maybeSingle()
       .then(({ data }) => {
-        const statuses = (data?.cached_pay_run as any)?.schedule_statuses || {}
-        setPayrollScheduleStatuses(statuses)
+        const cpr = (data?.cached_pay_run as any) || {}
+        setPayrollScheduleStatuses(cpr.schedule_statuses || {})
+        if (cpr.pay_day_mode) setPayDayMode(cpr.pay_day_mode)
+        if (cpr.custom_pay_day) setCustomPayDay(cpr.custom_pay_day)
+        if (cpr.submit_lead_days !== undefined) setSubmitLeadDays(cpr.submit_lead_days)
       })
   }, [selectedCompanyId])
 
-  async function saveScheduleStatuses(statuses: Record<string, string>) {
-    setPayrollScheduleStatuses(statuses)
+  async function savePayRunData(patch: Record<string, any>) {
     const { data: existing } = await supabase.from('xero_integrations')
       .select('id, cached_pay_run').eq('company_id', selectedCompanyId).maybeSingle()
+    const merged = { ...(existing?.cached_pay_run as any || {}), ...patch }
     if (existing) {
-      await supabase.from('xero_integrations').update({
-        cached_pay_run: { ...(existing.cached_pay_run as any || {}), schedule_statuses: statuses },
-      }).eq('id', existing.id)
+      await supabase.from('xero_integrations').update({ cached_pay_run: merged }).eq('id', existing.id)
     } else {
       await supabase.from('xero_integrations').insert({
         company_id: selectedCompanyId,
-        cached_pay_run: { schedule_statuses: statuses },
+        cached_pay_run: merged,
         sync_status: 'not_connected',
       })
     }
+  }
+
+  async function saveScheduleStatuses(statuses: Record<string, string>) {
+    setPayrollScheduleStatuses(statuses)
+    await savePayRunData({ schedule_statuses: statuses })
+  }
+
+  async function savePaySettings() {
+    setPaySettingsSaving(true)
+    await savePayRunData({ pay_day_mode: payDayMode, custom_pay_day: customPayDay, submit_lead_days: submitLeadDays })
+    setPaySettingsSaving(false)
+    showSuccess('Payroll settings saved')
   }
 
   async function generateNextPayroll() {
@@ -1418,16 +1444,68 @@ export default function AdminPayroll() {
 
       {tab === 'schedule' && (
         <div className="admin-schedule">
-          <h3>Payroll Calendar — {fyLabel}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <h3 style={{ margin: 0 }}>Payroll Calendar — {fyLabel}</h3>
+            <span className="admin-info-tooltip" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5c6bc0" strokeWidth="2" style={{ cursor: 'help' }}>
+                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+              </svg>
+              <span className="admin-info-tooltip-text">
+                <strong>Payroll Process</strong><br/>
+                1. Set your pay day and submission window below<br/>
+                2. Generate payslips from the Payslips tab<br/>
+                3. Review and resolve any flagged payslips<br/>
+                4. Once within the submission window, click "Submit Payroll" to download the CSV and mark payslips as paid<br/>
+                5. Payslips become visible to employees on the chosen pay day
+              </span>
+            </span>
+          </div>
+
+          <div style={{ background: 'var(--bg-secondary, #f8f9fa)', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
+              <select className="admin-select" value={payDayMode} onChange={e => setPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
+                <option value="end">End of Month</option>
+                <option value="start">Beginning of Month</option>
+                <option value="custom">Custom Day</option>
+              </select>
+            </div>
+            {payDayMode === 'custom' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
+                <select className="admin-select" value={customPayDay} onChange={e => setCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                    <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
+              <select className="admin-select" value={submitLeadDays} onChange={e => setSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
+                {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
+                  <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
+                ))}
+              </select>
+            </div>
+            <button className="admin-btn admin-btn-primary" onClick={savePaySettings} disabled={paySettingsSaving} style={{ height: 36 }}>
+              {paySettingsSaving ? 'Saving...' : 'Save Settings'}
+            </button>
+          </div>
+
           <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Payment Date</th><th>Cutoff</th><th>Payslips</th><th>Status</th></tr></thead>
+              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th></tr></thead>
               <tbody>
                 {fyMonths.map(({ year, month }) => {
                   const start = new Date(year, month, 1)
                   const end = new Date(year, month + 1, 0)
-                  const payDate = new Date(end); payDate.setDate(payDate.getDate() - 2)
-                  const cutoff = new Date(end); cutoff.setDate(cutoff.getDate() - 5)
+                  const payDate = getPayDay(year, month, payDayMode, customPayDay)
+                  const submitOpens = new Date(payDate)
+                  submitOpens.setDate(submitOpens.getDate() - submitLeadDays)
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const withinSubmitWindow = today >= submitOpens
                   const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
                   const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey))
                   const isPast = end < new Date()
@@ -1445,11 +1523,14 @@ export default function AdminPayroll() {
                   } else if (schedStatus === 'edited') {
                     statusLabel = 'Edited — Download'
                     statusClass = 'admin-badge-rejected'
-                    isClickable = true
-                  } else if (hasPayslips && !allPaid) {
+                    isClickable = withinSubmitWindow
+                  } else if (hasPayslips && !allPaid && withinSubmitWindow) {
                     statusLabel = 'Submit Payroll'
                     statusClass = 'admin-badge-pending'
                     isClickable = true
+                  } else if (hasPayslips && !allPaid && !withinSubmitWindow) {
+                    statusLabel = `Opens ${submitOpens.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                    statusClass = 'admin-badge-draft'
                   } else if (!hasPayslips && isPast) {
                     statusLabel = 'No Payslips'
                     statusClass = 'admin-badge-pending'
@@ -1467,7 +1548,7 @@ export default function AdminPayroll() {
                       <td>{start.toLocaleDateString('en-GB')}</td>
                       <td>{end.toLocaleDateString('en-GB')}</td>
                       <td>{payDate.toLocaleDateString('en-GB')}</td>
-                      <td>{cutoff.toLocaleDateString('en-GB')}</td>
+                      <td>{submitOpens.toLocaleDateString('en-GB')}</td>
                       <td>{monthPayslips.length}</td>
                       <td>
                         {isClickable ? (
