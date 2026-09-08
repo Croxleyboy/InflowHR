@@ -83,6 +83,7 @@ const EMPLOYEE_SECTIONS: GuideSection[] = [
     features: [
       { title: 'Schedule a 1-to-1', purpose: 'Book a one-to-one meeting with your manager or direct report.', steps: ['Navigate to Home > Performance and tap + New 1-to-1.', 'Select the participant, date, and time. Add agenda items if needed.', 'Tap Create.'], callout: { type: 'tip', text: 'This feature is visible to managers and employees with direct reports.' } },
       { title: 'Meeting History & Reports', purpose: 'Review past meetings and add notes or action items.', steps: ['Use the Upcoming, History, and Reports tabs to navigate between views.', 'Tap any meeting to open the detail view, add a summary, or update status.'] },
+      { title: 'Performance Goals', purpose: 'Set, track, and manage goals for yourself and your direct reports across the financial year.', steps: ['Navigate to Home > Performance Goals.', 'View your own goals on the My Goals tab — each goal shows title, status, due date, and optional grade.', 'Tap + New Goal to create a goal with a title, description, start and due dates.', 'Update goal status: Active, Completed, Edited, On Hold, or Cancelled.', 'Add comments to goals for ongoing discussions with your manager.'], callout: { type: 'note', text: 'Managers can also view and manage goals for their direct reports using the team selector at the top of the page.' } },
     ],
   },
   {
@@ -92,10 +93,41 @@ const EMPLOYEE_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    icon: '🧠', title: 'Skills Passport',
+    features: [
+      { title: 'Add & Rate Your Skills', purpose: 'Build your professional skills profile by declaring skills and self-rating your proficiency.', steps: ['Navigate to Home > Skills Passport.', 'The Skills tab shows your current skill set organised by category.', 'Tap + Add Skill, select a category and skill, then rate your proficiency from 1 (Foundational) to 5 (Expert).', 'Skills start as Self-declared. You can request validation from a colleague or manager.'] },
+      { title: 'Certifications', purpose: 'Record professional certifications and track expiry dates.', steps: ['Switch to the Certifications tab.', 'Tap + Add Certification and enter the name, issuing body, issue date, optional expiry date, and credential ID or URL.', 'Certifications are listed with their current status — active, expired, or pending renewal.'] },
+      { title: 'Career Aspirations', purpose: 'Set your career goals so managers can align development opportunities.', steps: ['Switch to the Aspirations tab.', 'Set your target role, target department, and timeframe (6 months to 3+ years).', 'Add optional notes about your career plans.'] },
+      { title: 'Role Matching', purpose: 'See how your current skills align with defined role profiles in your company.', steps: ['Switch to the Matching tab.', 'Each role profile shows a match percentage based on your skills vs. the role\'s requirements.', 'Gap analysis highlights which skills you need to develop to qualify for each role.'], callout: { type: 'tip', text: 'Building out your skills profile helps your manager and HR team understand your capabilities and career aspirations.' } },
+    ],
+  },
+  {
     icon: '🏢', title: 'Space Booking',
     features: [
       { title: 'Book a Desk or Meeting Room', purpose: 'Reserve workspace or meeting rooms at your office locations.', steps: ['Navigate to Home > Space Booking.', 'Select a location and floor. Available desks and rooms are listed with capacity and equipment tags.', 'Pick a date, select your space, choose a time slot, and tap Book.'], callout: { type: 'tip', text: 'Use the equipment filter to find rooms with specific kit (projector, whiteboard, video conferencing, etc.).' } },
       { title: 'Manage Your Bookings', purpose: 'View, edit, or cancel existing bookings.', steps: ['Your upcoming bookings appear on the Space Booking page. Tap a booking to view details or cancel.'] },
+      { title: 'Schedule-Aware Booking', purpose: 'See your shift schedule alongside space bookings to help you book on the right days.', steps: ['If your company uses Shifts & Rotas, a schedule banner appears at the top of the Space Booking page.', 'Clickable chips show each day you are assigned a shift, with the shift name, times, and number of colleagues working.', 'Tap a chip to auto-set the booking date to that day.'], callout: { type: 'tip', text: 'This helps you book a desk or room on days you are scheduled to be in the office.' } },
+    ],
+  },
+  {
+    icon: '🎫', title: 'HR Tickets',
+    features: [
+      { title: 'Raise an HR Ticket', purpose: 'Submit a query or request to your HR team.', steps: ['Navigate to Home > HR Tickets.', 'Tap + New Ticket and enter a subject, description, and priority level.', 'Submit the ticket. Your HR team receives a notification and can respond.'] },
+      { title: 'Track Your Tickets', purpose: 'Follow the progress of tickets you have raised.', steps: ['Your HR Tickets page lists all your submitted tickets with status badges: Open, In Progress, or Resolved.', 'Tap any ticket to view the full conversation thread and status updates.'] },
+    ],
+  },
+  {
+    icon: '📋', title: 'Check-In',
+    features: [
+      { title: 'Timesheet Check-In', purpose: 'Clock in and out of your working day with a live timer, breaks, and location tracking.', steps: ['Navigate to Home > Timesheet Check-In (or tap the Check-In prompt on your Dashboard).', 'Select your work location (on-site or work from home) and tap Check In.', 'A live timer shows your elapsed working time. Use Start Break to log breaks (lunch, short break, etc.).', 'Tap Check Out when you finish. Your check-in record appears in the history below.'], callout: { type: 'note', text: 'Check-in is only available if your company admin has enabled it. If geolocation is required, your browser will ask for location permission.' } },
+      { title: 'Shift Check-In', purpose: 'Check in and out of your assigned shifts.', steps: ['Navigate to Home > Shift Check-In (or tap Check In from the My Shifts page).', 'Your assigned shift for today is displayed at the top with times and shift name.', 'Tap Check In to start, use breaks as needed, and tap Check Out when your shift ends.', 'Your check-in history for the current month is shown below.'] },
+    ],
+  },
+  {
+    icon: '📊', title: 'Dashboard',
+    features: [
+      { title: 'Home Dashboard', purpose: 'Your personalised landing page showing quick-access cards for all enabled features.', steps: ['The Dashboard is the first page you see after signing in.', 'Feature cards provide one-tap access to Leave, Expenses, Payslips, Timesheets, Shifts, E-Learning, Kudos, Performance, Benefits, Space Booking, Skills Passport, and more.', 'Stat summaries on each card show key numbers at a glance (e.g. leave remaining, pending expenses).', 'A birthday card shows upcoming birthdays for colleagues on your watchlist within the next 30 days.'] },
+      { title: 'Detailed Dashboard', purpose: 'An expanded view with richer data across all your HR features.', steps: ['Tap the Detailed Dashboard link on the home page.', 'View breakdowns for leave usage, expense trends, timesheet hours, shift patterns, and more.', 'The birthday section shows watchlisted colleagues with birthdays in the next 30 days.'], callout: { type: 'tip', text: 'Add colleagues to your watchlist from the Directory page to see their upcoming birthdays on your dashboard.' } },
     ],
   },
   {
@@ -104,6 +136,7 @@ const EMPLOYEE_SECTIONS: GuideSection[] = [
       { title: 'My Profile', purpose: 'View and update your personal details.', steps: ['Navigate to Home > My Profile.', 'View your job title, department, contract type, contact details, and emergency contacts.', 'Upload or change your avatar photo.'] },
       { title: 'Company Directory', purpose: 'Find colleagues by name, department, or job title.', steps: ['Tap Directory in the bottom navigation.', 'Search or scroll to find a colleague. Tap to view their profile card with contact details.'] },
       { title: 'My Assets', purpose: 'View the company assets assigned to you.', steps: ['Navigate to My Profile and switch to the Job tab.', 'If your company has Asset Management enabled, a My Assets button appears next to the Department Members button.', 'Tap My Assets to open a popup listing all assets assigned to you — showing asset name and type.'], callout: { type: 'note', text: 'This button only appears if your company admin has enabled the Asset Management feature.' } },
+      { title: 'Watchlist', purpose: 'Follow colleagues to see their upcoming birthdays on your dashboard.', steps: ['Open the Directory and tap a colleague\'s profile card.', 'Tap the star/watchlist icon to add them to your personal watchlist.', 'Watchlisted colleagues with birthdays in the next 30 days appear on your Dashboard birthday card.', 'Tap the star again to remove someone from your watchlist.'] },
     ],
   },
   {
@@ -275,6 +308,31 @@ const ADMIN_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    icon: '🧠', title: 'Talent Intelligence',
+    features: [
+      { title: 'Skills Library', purpose: 'Manage the company-wide catalogue of skill categories and individual skills that employees can add to their Skills Passport.', steps: ['Navigate to Admin > Talent Intelligence from the sidebar.', 'The Library tab shows all skill categories (system defaults and company-created).', 'Click + Add Category to create a custom skill category, then add individual skills within it.', 'Toggle skills active or inactive — inactive skills cannot be selected by employees.'] },
+      { title: 'Validation Requests', purpose: 'Review and action skill validation requests submitted by employees.', steps: ['Switch to the Requests tab.', 'Pending validation requests are listed with the employee name, skill, proficiency level, and date.', 'Click Validate to confirm the employee\'s proficiency, or Reject with an optional note.'] },
+      { title: 'Role Profiles', purpose: 'Define role profiles with required skills and proficiency levels so employees can see how they match.', steps: ['Switch to the Roles tab.', 'Click + Add Role Profile and enter a title, department, and description.', 'Add skill requirements to each role — select the skill, minimum proficiency, and whether it is essential.', 'Employees see their match percentage against these profiles in their Skills Passport > Matching tab.'] },
+      { title: 'Analytics', purpose: 'View company-wide skill coverage and gap analysis.', steps: ['Switch to the Analytics tab.', 'View charts showing top skills, average proficiency, skills gaps, and department coverage.'], callout: { type: 'tip', text: 'Use analytics to identify training needs and plan development programmes based on actual skill data.' } },
+    ],
+  },
+  {
+    icon: '📋', title: 'Check-In',
+    features: [
+      { title: 'Check-In Settings', purpose: 'Configure check-in rules for timesheets and shifts.', steps: ['Navigate to Admin > Timesheets or Admin > Shifts & Rotas and switch to the Check-In tab.', 'Enable or disable check-in for timesheets and/or shifts independently.', 'Configure settings: require geolocation, set work locations, define auto-checkout time, and set break policies.', 'Add work locations by name — employees select these when checking in on-site.'] },
+      { title: 'Check-In Dashboard', purpose: 'Monitor live check-in activity across your company.', steps: ['The Check-In tab on Admin > Timesheets and Admin > Shifts & Rotas shows live check-in data.', 'View who is currently checked in, their location, elapsed time, and break status.', 'Historical records show all check-in/check-out entries with times, locations, and durations.', 'Export check-in data as CSV for payroll or compliance reporting.'] },
+      { title: 'Rota Check-In Status', purpose: 'See check-in status overlaid on shift rotas.', steps: ['On the Rotas & Scheduling tab, employee cards in the rota grid show a check-in status badge.', 'Expand a rota employee row to see their individual check-in history for that week.'] },
+      { title: 'Check-In Analytics', purpose: 'View aggregated check-in metrics in the Shifts & Rotas Reports & Analytics tab.', steps: ['Check-in metrics are included in the Reports & Analytics tab: on-time rate, late arrivals, average hours, and location breakdowns.', 'These metrics are only visible when check-in is enabled.'] },
+    ],
+  },
+  {
+    icon: '🔐', title: 'Access Management',
+    features: [
+      { title: 'Role-Based Access', purpose: 'Assign granular access roles to employees beyond the standard Admin/Employee/HR roles.', steps: ['Navigate to Admin > Access Management from the sidebar.', 'Available roles: Read Only View, Accounting, Management, Support, and Company Admin.', 'Assign roles to employees — each role grants access to specific admin features and data.', 'Click + Add to assign a role, or X to remove one. Changes take effect immediately.'] },
+      { title: 'Role Permissions', purpose: 'View and configure what each role can access.', steps: ['The permissions grid shows which features each role can access (view, edit, approve, export, etc.).', 'Permissions are predefined per role but can be reviewed for audit purposes.'], callout: { type: 'note', text: 'Access Management provides more granular control than the basic Admin/Employee role. Use it when different admins need access to different parts of the system.' } },
+    ],
+  },
+  {
     icon: '🔔', title: 'Notifications',
     features: [
       { title: 'Workflow Notifications', purpose: 'Configure automated notification rules for HR workflows (approvals, status changes, reminders).', steps: ['Navigate to Admin > Notifications from the sidebar.', 'The Workflow tab lists notification rules for system events.', 'Review and customise which events trigger notifications and their content.'] },
@@ -328,6 +386,19 @@ const SUPER_SECTIONS: GuideSection[] = [
     features: [
       { title: 'Switching Companies', purpose: 'View and manage any company\'s data from a single admin session.', steps: ['Use the company dropdown in the top bar to switch the active company.', 'All admin pages — employees, leave, expenses, payroll, etc. — immediately reflect the selected company\'s data.', 'The company selector is visible only to Super Admins.'] },
       { title: 'Feature Visibility', purpose: 'Super Admins see all sidebar modules regardless of the selected company\'s feature settings.', steps: ['Even if a feature is disabled for the selected company, it appears in the sidebar so you can access its admin page (which will show empty state or configuration options).'] },
+    ],
+  },
+  {
+    icon: '🌱', title: 'Demo Seed',
+    features: [
+      { title: 'Reset & Seed Demo Data', purpose: 'Wipe all data and repopulate the platform with demo companies and employees for testing or demonstrations.', steps: ['Navigate to Admin > Demo Seed from the sidebar.', 'Read the warning — this action deletes ALL existing data across all companies.', 'Click Run Demo Seed and confirm the dialog.', 'The system creates 2 demo companies with 11 employees, complete with leave, expenses, payslips, shifts, timesheets, kudos, and other sample data.', 'Your super admin login is preserved through the reseed.'], callout: { type: 'note', text: 'This is a destructive action. Only use it on staging or demo environments — never on a production instance with real customer data.' } },
+    ],
+  },
+  {
+    icon: '🛡️', title: 'Support Access',
+    features: [
+      { title: 'Grant Support Access', purpose: 'Temporarily grant the InflowHR support team read access to a company\'s data for troubleshooting.', steps: ['Navigate to Admin > Support Access from the sidebar.', 'Select a company and scope of access (restricted data or configuration only).', 'Set an expiry period and provide a reason for the access grant.', 'The grant is logged with an audit trail showing who granted it, when, and why.'] },
+      { title: 'Manage Active Grants', purpose: 'View, extend, or revoke existing support access grants.', steps: ['The Support Access page lists all active and expired grants with company, scope, expiry date, and status.', 'Click Revoke to immediately terminate an active grant.', 'Expired grants are kept in the list for audit purposes.'], callout: { type: 'tip', text: 'All support access is time-limited and audited. Grants cannot be self-assigned — a super admin must create them.' } },
     ],
   },
 ]
