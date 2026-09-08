@@ -2,11 +2,13 @@ import { useState } from 'react'
 import AdminShiftTemplates from './AdminShifts'
 import AdminRotaManager from './AdminRotas'
 import AdminShiftReports from './AdminShiftReports'
+import AdminLabourDemand from './AdminLabourDemand'
+import AdminAvailabilityOverview from './AdminAvailabilityOverview'
 import CheckInSettingsPanel from './CheckInSettings'
 import CheckInDashboardPanel from './CheckInDashboard'
 
 export default function AdminShiftsRotas() {
-  const [tab, setTab] = useState<'rotas' | 'templates' | 'reports' | 'checkin'>('rotas')
+  const [tab, setTab] = useState<'rotas' | 'templates' | 'demand' | 'availability' | 'reports' | 'checkin'>('rotas')
 
   return (
     <div className="admin-section">
@@ -49,6 +51,38 @@ export default function AdminShiftsRotas() {
           Shift Templates
         </button>
         <button
+          onClick={() => setTab('demand')}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            background: 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            borderBottom: tab === 'demand' ? '3px solid #5c6bc0' : '3px solid transparent',
+            color: tab === 'demand' ? '#5c6bc0' : 'var(--text-muted, #8b8fa3)',
+            marginBottom: -2,
+          }}
+        >
+          Labour Demand
+        </button>
+        <button
+          onClick={() => setTab('availability')}
+          style={{
+            padding: '10px 24px',
+            border: 'none',
+            background: 'none',
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: 'pointer',
+            borderBottom: tab === 'availability' ? '3px solid #5c6bc0' : '3px solid transparent',
+            color: tab === 'availability' ? '#5c6bc0' : 'var(--text-muted, #8b8fa3)',
+            marginBottom: -2,
+          }}
+        >
+          Availability
+        </button>
+        <button
           onClick={() => setTab('reports')}
           style={{
             padding: '10px 24px',
@@ -85,6 +119,8 @@ export default function AdminShiftsRotas() {
 
       {tab === 'rotas' && <AdminRotaManager />}
       {tab === 'templates' && <AdminShiftTemplates />}
+      {tab === 'demand' && <AdminLabourDemand />}
+      {tab === 'availability' && <AdminAvailabilityOverview />}
       {tab === 'reports' && <AdminShiftReports />}
       {tab === 'checkin' && (
         <div>
