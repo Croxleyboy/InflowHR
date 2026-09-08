@@ -200,16 +200,20 @@ export default function Settings() {
       {isDesktop && (
         <section className="settings-section">
           <h2>Dashboard Layout</h2>
-          <p className="settings-hint">Choose your default dashboard view for PC browsers.</p>
-          <div className="dd-layout-selector">
-            <button
-              className={`dd-layout-btn ${dashLayout === 'cards' ? 'dd-layout-active' : ''}`}
-              onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'cards'); setDashLayout('cards') }}
-            >Cards</button>
-            <button
-              className={`dd-layout-btn ${dashLayout === 'detailed' ? 'dd-layout-active' : ''}`}
-              onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'detailed'); setDashLayout('detailed') }}
-            >Detailed</button>
+          <div className="settings-info">
+            <div className="settings-row">
+              <span className="settings-label">Default view</span>
+              <div className="language-selector">
+                <button
+                  className={`lang-btn ${dashLayout === 'cards' ? 'lang-active' : ''}`}
+                  onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'cards'); setDashLayout('cards') }}
+                >Cards</button>
+                <button
+                  className={`lang-btn ${dashLayout === 'detailed' ? 'lang-active' : ''}`}
+                  onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'detailed'); setDashLayout('detailed') }}
+                >Detailed</button>
+              </div>
+            </div>
           </div>
         </section>
       )}
