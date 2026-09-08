@@ -4700,6 +4700,7 @@ body {
   .desktop-content .feature-page { padding-bottom: 24px; }
   .desktop-content .dashboard { border-radius: 16px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
   .desktop-content .dashboard-detailed { border-radius: 0; box-shadow: none; }
+  .desktop-content:has(.dashboard-detailed) { max-width: none; padding: 0; }
 
   .desktop-content .dash-header { border-radius: 16px 16px 0 0; }
 
@@ -6359,27 +6360,6 @@ body {
 }
 
 /* Quick links */
-.dd-quick-links {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.dd-quick-link {
-  background: var(--bg);
-  border: none;
-  border-radius: 6px;
-  padding: 8px 12px;
-  text-align: left;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.dd-quick-link:hover {
-  background: var(--border);
-}
-
 .dd-empty {
   color: var(--text-muted);
   font-size: 13px;

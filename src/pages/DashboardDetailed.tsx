@@ -460,20 +460,6 @@ export default function DashboardDetailed() {
           )}
         </Widget>
 
-        {/* Quick Links */}
-        <Widget title="Quick Links" color={BORDER_COLORS.profile}>
-          <div className="dd-quick-links">
-            {features.profile && <button className="dd-quick-link" style={{ borderLeft: `3px solid ${BORDER_COLORS.profile}` }} onClick={() => navigate('/my-profile')}>My Profile</button>}
-            {features.payslips && <button className="dd-quick-link" style={{ borderLeft: `3px solid ${BORDER_COLORS.payslips}` }} onClick={() => navigate('/payslips')}>Payslips</button>}
-            {features.timesheets && <button className="dd-quick-link" style={{ borderLeft: `3px solid ${BORDER_COLORS.timesheets}` }} onClick={() => navigate('/timesheets')}>Timesheets</button>}
-            {features.shifts && <button className="dd-quick-link" style={{ borderLeft: `3px solid ${BORDER_COLORS.shifts}` }} onClick={() => navigate('/shifts')}>Shifts</button>}
-            {features.space_booking && <button className="dd-quick-link" style={{ borderLeft: `3px solid ${BORDER_COLORS.space_booking}` }} onClick={() => navigate('/space-booking')}>Space Booking</button>}
-            {features.benefits && <button className="dd-quick-link" style={{ borderLeft: `3px solid ${BORDER_COLORS.benefits}` }} onClick={() => navigate('/benefits')}>Benefits</button>}
-            {features.elearning && <button className="dd-quick-link" style={{ borderLeft: `3px solid ${BORDER_COLORS.elearning}` }} onClick={() => navigate('/elearning')}>E-Learning</button>}
-            {features.legal_timesheets && <button className="dd-quick-link" style={{ borderLeft: `3px solid ${BORDER_COLORS.legal_timesheets}` }} onClick={() => navigate('/legal-timesheets')}>Legal Timesheets</button>}
-            <button className="dd-quick-link" style={{ borderLeft: '3px solid #666' }} onClick={() => navigate('/settings')}>Settings</button>
-          </div>
-        </Widget>
       </div>
     </div>
   )
