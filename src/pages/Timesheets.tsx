@@ -47,14 +47,45 @@ function getFYMonths(): { year: number; month: number }[] {
   return months
 }
 
+function getWeekRange(offset: number): { start: string; end: string; label: string } {
+  const now = new Date()
+  const day = now.getDay()
+  const mondayOffset = day === 0 ? -6 : 1 - day
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + mondayOffset + offset * 7)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return {
+    start: fmt(monday),
+    end: fmt(sunday),
+    label: `${monday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${sunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+  }
+}
+
+function getWorkingDaysInMonth(year: number, month: number): number {
+  let count = 0
+  const d = new Date(year, month, 1)
+  const end = new Date(year, month + 1, 0)
+  while (d <= end) {
+    const day = d.getDay()
+    if (day !== 0 && day !== 6) count++
+    d.setDate(d.getDate() + 1)
+  }
+  return count
+}
+
 export default function Timesheets() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { employeeId } = useAuth()
+  const { employeeId, companyUser } = useAuth()
   const { settings: ciSettings } = useCheckIn()
   const [filter, setFilter] = useState<Filter>('all')
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
   const [loading, setLoading] = useState(true)
+  const [monitoringEnabled, setMonitoringEnabled] = useState(false)
+  const [monitoringPeriod, setMonitoringPeriod] = useState<'weekly' | 'monthly'>('weekly')
+  const [weeklyHours, setWeeklyHours] = useState(37.5)
 
   const fyMonths = useMemo(() => getFYMonths(), [])
   const [monthIdx, setMonthIdx] = useState(fyMonths.length - 1)
@@ -68,15 +99,25 @@ export default function Timesheets() {
     const fyStartYear = now.getMonth() >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
     const startDate = `${fyStartYear}-${String(fyStartMonth + 1).padStart(2, '0')}-01`
 
-    const { data } = await supabase
-      .from('timesheets')
-      .select('id, location, customer, role, date, end_date, start_time, end_time, hours, status, created_at')
-      .eq('employee_id', employeeId)
-      .gte('date', startDate)
-      .order('date', { ascending: false })
-    setTimesheets((data as Timesheet[]) || [])
+    const companyId = companyUser?.company_id
+    const [tsRes, companyRes, empRes] = await Promise.all([
+      supabase.from('timesheets')
+        .select('id, location, customer, role, date, end_date, start_time, end_time, hours, status, created_at')
+        .eq('employee_id', employeeId)
+        .gte('date', startDate)
+        .order('date', { ascending: false }),
+      companyId ? supabase.from('companies').select('timesheet_monitoring_enabled, timesheet_monitoring_period').eq('id', companyId).single() : Promise.resolve({ data: null }),
+      supabase.from('employees').select('weekly_hours').eq('id', employeeId).single(),
+    ])
+
+    setTimesheets((tsRes.data as Timesheet[]) || [])
+    if (companyRes.data) {
+      setMonitoringEnabled(companyRes.data.timesheet_monitoring_enabled || false)
+      setMonitoringPeriod(companyRes.data.timesheet_monitoring_period || 'weekly')
+    }
+    if (empRes.data?.weekly_hours) setWeeklyHours(empRes.data.weekly_hours)
     setLoading(false)
-  }, [employeeId])
+  }, [employeeId, companyUser?.company_id])
 
   useEffect(() => { fetchTimesheets() }, [fetchTimesheets])
 
@@ -96,6 +137,22 @@ export default function Timesheets() {
   const monthTotal = monthEntries.reduce((s, ts) => s + Number(ts.hours), 0)
   const canPrev = monthIdx > 0
   const canNext = monthIdx < fyMonths.length - 1
+
+  const weekRange = useMemo(() => getWeekRange(0), [])
+  const weekTotal = useMemo(() => {
+    return timesheets
+      .filter(ts => ts.date >= weekRange.start && ts.date <= weekRange.end)
+      .reduce((s, ts) => s + Number(ts.hours), 0)
+  }, [timesheets, weekRange])
+
+  const monthContracted = useMemo(() => {
+    if (!current) return 0
+    const workingDays = getWorkingDaysInMonth(current.year, current.month)
+    return (weeklyHours / 5) * workingDays
+  }, [current, weeklyHours])
+
+  const weekShortfall = Math.max(0, weeklyHours - weekTotal)
+  const monthShortfall = Math.max(0, monthContracted - monthTotal)
 
   const filters: { key: Filter; label: string }[] = [
     { key: 'all', label: t('timesheets.all') },
@@ -151,6 +208,44 @@ export default function Timesheets() {
           {t('timesheets.last_4_weeks')}
         </button>
       </div>
+
+      {monitoringEnabled && !loading && (
+        <div className="ts-summary-cards">
+          {monitoringPeriod === 'weekly' && (
+            <>
+              <div className="ts-summary-card">
+                <span className="ts-summary-label">This Week</span>
+                <span className="ts-summary-value">{weekTotal.toFixed(1)}h</span>
+                <span className="ts-summary-sub">of {weeklyHours.toFixed(1)}h</span>
+              </div>
+              <div className="ts-summary-card">
+                <span className="ts-summary-label">This Month</span>
+                <span className="ts-summary-value">{monthTotal.toFixed(1)}h</span>
+                <span className="ts-summary-sub">of {monthContracted.toFixed(1)}h</span>
+              </div>
+              <div className={`ts-summary-card ${weekShortfall > 0 ? 'ts-summary-shortfall' : 'ts-summary-ontrack'}`}>
+                <span className="ts-summary-label">Week Shortfall</span>
+                <span className="ts-summary-value">{weekShortfall > 0 ? `${weekShortfall.toFixed(1)}h` : 'On track'}</span>
+                <span className="ts-summary-sub">{weekRange.label}</span>
+              </div>
+            </>
+          )}
+          {monitoringPeriod === 'monthly' && (
+            <>
+              <div className="ts-summary-card">
+                <span className="ts-summary-label">This Month</span>
+                <span className="ts-summary-value">{monthTotal.toFixed(1)}h</span>
+                <span className="ts-summary-sub">of {monthContracted.toFixed(1)}h</span>
+              </div>
+              <div className={`ts-summary-card ${monthShortfall > 0 ? 'ts-summary-shortfall' : 'ts-summary-ontrack'}`}>
+                <span className="ts-summary-label">Month Shortfall</span>
+                <span className="ts-summary-value">{monthShortfall > 0 ? `${monthShortfall.toFixed(1)}h` : 'On track'}</span>
+                <span className="ts-summary-sub">{current ? `${MONTH_NAMES[current.month]} ${current.year}` : ''}</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="ts-month-card">
         <div className="ts-month-nav">

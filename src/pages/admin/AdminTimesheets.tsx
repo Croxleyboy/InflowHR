@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { formatDate } from '../../lib/formatters'
 import CheckInSettingsPanel from './CheckInSettings'
@@ -125,6 +126,7 @@ function getWorkingDaysInRange(start: string, end: string): number {
 
 export default function AdminTimesheets() {
   const { selectedCompanyId, selectedCompany, refreshCompanies } = useAdminCompany()
+  const { employeeId } = useAuth()
   const { showError, showSuccess } = useToast()
   const [tsTab, setTsTab] = useState<'entries' | 'projects' | 'timeline' | 'reports' | 'checkin'>('entries')
   const [timesheets, setTimesheets] = useState<Timesheet[]>([])
@@ -135,6 +137,8 @@ export default function AdminTimesheets() {
   const [entriesPage, setEntriesPage] = useState(1)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
+  const [viewMode, setViewMode] = useState<'admin' | 'manager'>('admin')
+  const [directReportIds, setDirectReportIds] = useState<string[]>([])
 
   const [projects, setProjects] = useState<CustomerProject[]>([])
   const [projLoading, setProjLoading] = useState(false)
@@ -147,6 +151,14 @@ export default function AdminTimesheets() {
   const [savingMonitoring, setSavingMonitoring] = useState(false)
 
   useEffect(() => { if (selectedCompanyId) { load(); loadProjects() } }, [selectedCompanyId])
+
+  useEffect(() => {
+    if (!employeeId || !selectedCompanyId) return
+    ;(async () => {
+      const { data } = await supabase.from('employees').select('id').eq('company_id', selectedCompanyId).eq('manager_id', employeeId)
+      setDirectReportIds((data || []).map((r: { id: string }) => r.id))
+    })()
+  }, [employeeId, selectedCompanyId])
 
   async function load() {
     setLoading(true)
@@ -335,6 +347,7 @@ export default function AdminTimesheets() {
 
   const filteredEntries = useMemo(() => {
     return timesheets.filter(t => {
+      if (viewMode === 'manager' && !directReportIds.includes(t.employee_id)) return false
       if (filterStatus && t.status !== filterStatus) return false
       if (filterEmployee && t.employee && `${t.employee.first_name} ${t.employee.last_name}` !== filterEmployee) return false
       if (search) {
@@ -344,7 +357,7 @@ export default function AdminTimesheets() {
       }
       return true
     })
-  }, [timesheets, filterStatus, filterEmployee, search])
+  }, [timesheets, filterStatus, filterEmployee, search, viewMode, directReportIds])
 
   useEffect(() => { setEntriesPage(1) }, [search, filterStatus, filterEmployee])
 
@@ -386,6 +399,17 @@ export default function AdminTimesheets() {
             >Monthly</button>
           </div>
         )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #888)' }}>View:</span>
+          <button
+            className={`admin-btn-sm ${viewMode === 'manager' ? 'admin-btn-save' : 'admin-btn-cancel'}`}
+            onClick={() => { setViewMode('manager'); setEntriesPage(1) }}
+          >Manager</button>
+          <button
+            className={`admin-btn-sm ${viewMode === 'admin' ? 'admin-btn-save' : 'admin-btn-cancel'}`}
+            onClick={() => { setViewMode('admin'); setEntriesPage(1) }}
+          >Admin</button>
+        </div>
       </div>
 
       <div className="admin-tabs">
@@ -584,6 +608,8 @@ export default function AdminTimesheets() {
           companyId={selectedCompanyId}
           period={monitoringPeriod}
           fyStartMonth={selectedCompany?.fy_start_month || 4}
+          viewMode={viewMode}
+          directReportIds={directReportIds}
         />
       )}
 
@@ -599,7 +625,7 @@ export default function AdminTimesheets() {
 
 /* ─── Reports ─── */
 
-function TimesheetReports({ companyId, period, fyStartMonth }: { companyId: string; period: 'weekly' | 'monthly'; fyStartMonth: number }) {
+function TimesheetReports({ companyId, period, fyStartMonth, viewMode, directReportIds }: { companyId: string; period: 'weekly' | 'monthly'; fyStartMonth: number; viewMode: 'admin' | 'manager'; directReportIds: string[] }) {
   const [reportTab, setReportTab] = useState<'employee_time' | 'metrics'>('employee_time')
 
   return (
@@ -609,7 +635,7 @@ function TimesheetReports({ companyId, period, fyStartMonth }: { companyId: stri
         <button className={`admin-tab ${reportTab === 'metrics' ? 'admin-tab-active' : ''}`} onClick={() => setReportTab('metrics')}>Metrics</button>
       </div>
 
-      {reportTab === 'employee_time' && <EmployeeTimeReport companyId={companyId} period={period} />}
+      {reportTab === 'employee_time' && <EmployeeTimeReport companyId={companyId} period={period} viewMode={viewMode} directReportIds={directReportIds} />}
       {reportTab === 'metrics' && <MetricsReport companyId={companyId} fyStartMonth={fyStartMonth} />}
     </div>
   )
@@ -626,7 +652,7 @@ interface EmployeeTimeRow {
   hasSubmitted: boolean
 }
 
-function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 'weekly' | 'monthly' }) {
+function EmployeeTimeReport({ companyId, period, viewMode, directReportIds }: { companyId: string; period: 'weekly' | 'monthly'; viewMode: 'admin' | 'manager'; directReportIds: string[] }) {
   const [offset, setOffset] = useState(0)
   const [rows, setRows] = useState<EmployeeTimeRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -638,7 +664,7 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
 
   useEffect(() => {
     loadReport()
-  }, [companyId, offset, period])
+  }, [companyId, offset, period, viewMode, directReportIds])
 
   useEffect(() => { setReportsPage(1) }, [companyId, offset, period, filterView])
 
@@ -671,7 +697,8 @@ function EmployeeTimeReport({ companyId, period }: { companyId: string; period: 
     })
 
     const workingDays = getWorkingDaysInRange(range.start, range.end)
-    const allRows = emps.map(emp => {
+    const filteredEmps = viewMode === 'manager' ? emps.filter(e => directReportIds.includes(e.id)) : emps
+    const allRows = filteredEmps.map(emp => {
       const weeklyHrs = emp.weekly_hours || 37.5
       const contracted = period === 'monthly' ? (weeklyHrs / 5) * workingDays : weeklyHrs
       const submitted = hoursByEmp[emp.id] || 0
