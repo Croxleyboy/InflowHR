@@ -3,7 +3,7 @@
 // Exchanges the code for tokens, fetches tenant ID, saves to DB,
 // then redirects the browser back to the app.
 
-import { getSupabase, getXeroEnv, corsHeaders, redirect } from '../_shared/xero.ts'
+import { getSupabase, getXeroEnv, corsHeaders, redirect, verifyState } from '../_shared/xero.ts'
 
 const TOKEN_URL = 'https://identity.xero.com/connect/token'
 const CONNECTIONS_URL = 'https://api.xero.com/connections'
@@ -20,16 +20,21 @@ Deno.serve(async (req) => {
       return redirect(getFrontendUrl() + '?xero=error&reason=missing_params')
     }
 
+    const { clientId, clientSecret, redirectUri } = getXeroEnv()
+
+    // Verify HMAC signature on state to prevent forgery
     let companyId: string
     try {
-      const parsed = JSON.parse(atob(stateRaw))
+      const verified = await verifyState(stateRaw, clientSecret)
+      if (!verified) {
+        return redirect(getFrontendUrl() + '?xero=error&reason=invalid_state_signature')
+      }
+      const parsed = JSON.parse(atob(verified))
       companyId = parsed.company_id
       if (!companyId) throw new Error('no company_id')
     } catch {
       return redirect(getFrontendUrl() + '?xero=error&reason=bad_state')
     }
-
-    const { clientId, clientSecret, redirectUri } = getXeroEnv()
 
     // Exchange authorisation code for tokens
     const tokenRes = await fetch(TOKEN_URL, {

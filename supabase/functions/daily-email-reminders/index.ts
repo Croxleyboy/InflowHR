@@ -3,21 +3,33 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const BREVO_API_KEY = Deno.env.get('BREVO_API_KEY') || ''
 const TITAN_EMAIL = Deno.env.get('TITAN_EMAIL') || 'notifications@inflowhr.com'
 const SENDER_NAME = Deno.env.get('SENDER_NAME') || 'InflowHR'
-const APP_URL = Deno.env.get('APP_URL') || 'https://inflowhr.com'
+const APP_URL = Deno.env.get('APP_URL') || 'https://app.inflowhr.com'
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function buildEmailHtml(firstName: string, title: string, message: string, link?: string): string {
+  const safeName = escapeHtml(firstName)
+  const safeTitle = escapeHtml(title)
+  const safeMessage = escapeHtml(message)
   return `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#f8f9fa;border-radius:8px;overflow:hidden">
     <div style="background:linear-gradient(135deg,#6C4FBF 0%,#8B5CF6 100%);padding:24px;text-align:center">
-      <h1 style="color:#fff;margin:0;font-size:22px">${SENDER_NAME}</h1>
+      <h1 style="color:#fff;margin:0;font-size:22px">${escapeHtml(SENDER_NAME)}</h1>
     </div>
     <div style="padding:24px">
-      <p style="color:#333;font-size:16px">Hi ${firstName},</p>
-      <h2 style="color:#333;font-size:18px;margin:16px 0 8px">${title}</h2>
-      <p style="color:#555;font-size:14px;line-height:1.6">${message}</p>
-      ${link ? `<div style="text-align:center;margin:24px 0"><a href="${APP_URL}${link}" style="background:#6C4FBF;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px">Log in to InflowHR</a></div>` : ''}
+      <p style="color:#333;font-size:16px">Hi ${safeName},</p>
+      <h2 style="color:#333;font-size:18px;margin:16px 0 8px">${safeTitle}</h2>
+      <p style="color:#555;font-size:14px;line-height:1.6">${safeMessage}</p>
+      ${link ? `<div style="text-align:center;margin:24px 0"><a href="${escapeHtml(APP_URL)}${escapeHtml(link)}" style="background:#6C4FBF;color:#fff;padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px">Log in to InflowHR</a></div>` : ''}
     </div>
     <div style="padding:16px;text-align:center;color:#999;font-size:11px;border-top:1px solid #eee">
       This is an automated reminder from InflowHR.
