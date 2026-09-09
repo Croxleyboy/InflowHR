@@ -86,7 +86,7 @@ export default function AdminNotifications() {
   const { selectedCompanyId } = useAdminCompany()
   const { t } = useLanguage()
   const { showError, showSuccess } = useToast()
-  const { companyFeatures } = useFeatures()
+  const { companyFeatures, loadCompanyFeatures } = useFeatures()
   const [tab, setTab] = useState<Tab>('workflow')
 
   // Email notification settings state
@@ -114,6 +114,7 @@ export default function AdminNotifications() {
 
   useEffect(() => {
     if (selectedCompanyId) {
+      loadCompanyFeatures(selectedCompanyId)
       loadWorkflow()
       loadAnnouncements()
       loadEmailSettings()

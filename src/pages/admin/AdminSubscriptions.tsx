@@ -182,7 +182,11 @@ export default function AdminSubscriptions() {
         },
         { onConflict: 'company_id,feature_key' }
       )
-    if (error) alert('Failed to update feature: ' + error.message)
+    if (error) {
+      showError('Failed to update feature: ' + error.message)
+    } else {
+      showSuccess(`${featureKey.replace(/_/g, ' ')} ${!currentlyEnabled ? 'enabled' : 'disabled'}`)
+    }
     await loadCompanyFeatures(selectedCompanyId)
     setSavingFeature(null)
   }
