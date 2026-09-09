@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase, sendNotificationEmail } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import { sendFeatureEmail } from '../lib/emailNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDate, formatDateTime } from '../lib/formatters'
@@ -164,20 +165,19 @@ export default function LeaveApproval() {
     })
     if (errWf3) { showError('Failed to create manager notification: ' + errWf3.message) }
 
-    const notifPayload = {
-      employee_id: request.employee_id,
-      title: approved ? `${typeName} Approved` : `${typeName} Declined`,
-      message: approved
-        ? `Your ${typeName} from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} (${request.days_requested} days) has been approved.${deductNote}`
-        : `Your ${typeName} request from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been declined. Please contact your manager.`,
-      type: approved ? 'info' : 'alert',
-      link: '/leave',
-      is_read: false,
-      company_id: companyUser?.company_id,
-      send_email: true,
+    if (companyUser?.company_id) {
+      sendFeatureEmail({
+        companyId: companyUser.company_id,
+        employeeId: request.employee_id,
+        featureKey: 'leave_enabled',
+        title: approved ? `${typeName} Approved` : `${typeName} Declined`,
+        message: approved
+          ? `Your ${typeName} from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} (${request.days_requested} days) has been approved.${deductNote}`
+          : `Your ${typeName} request from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been declined. Please contact your manager.`,
+        type: approved ? 'info' : 'alert',
+        link: '/leave',
+      })
     }
-    const { data: notifRow } = await supabase.from('notifications').insert(notifPayload).select('id').single()
-    sendNotificationEmail({ ...notifPayload, id: notifRow?.id, email_sent: false })
 
     showSuccess(approved ? 'Leave request approved' : 'Leave request declined')
     window.dispatchEvent(new Event('notifications-updated'))

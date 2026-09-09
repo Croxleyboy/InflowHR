@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { sendFeatureEmail } from '../lib/emailNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDateTime } from '../lib/formatters'
@@ -135,6 +136,20 @@ export default function ExpenseApproval() {
       company_id: companyUser?.company_id,
     })
     if (errWf3) { showError('Failed to create manager notification: ' + errWf3.message) }
+
+    if (companyUser?.company_id) {
+      sendFeatureEmail({
+        companyId: companyUser.company_id,
+        employeeId: claim.employee_id,
+        featureKey: 'expenses_enabled',
+        title: approved ? 'Expense Claim Approved' : 'Expense Claim Declined',
+        message: approved
+          ? `Your expense claim ${claim.reference_number} for £${totalAmount.toFixed(2)} has been approved.`
+          : `Your expense claim ${claim.reference_number} for £${totalAmount.toFixed(2)} has been declined. Please contact your manager for details.`,
+        type: approved ? 'info' : 'alert',
+        link: '/expenses',
+      })
+    }
 
     showSuccess(approved ? 'Expense approved' : 'Expense declined')
     window.dispatchEvent(new Event('notifications-updated'))

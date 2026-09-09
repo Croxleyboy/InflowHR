@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { supabase, sendNotificationEmail } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
+import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
@@ -200,20 +201,19 @@ export default function AdminLeave() {
         })
       }
 
-      const notifPayload = {
-        employee_id: req.employee_id,
-        title: approved ? `${typeName} Approved` : `${typeName} Declined`,
-        message: approved
-          ? `Your ${typeName} from ${dateRange} (${editForm.days_requested || req.days_requested} days) has been approved.`
-          : `Your ${typeName} request from ${dateRange} has been declined. Please contact your manager.`,
-        type: approved ? 'info' : 'alert',
-        link: '/leave',
-        is_read: false,
-        company_id: selectedCompanyId,
-        send_email: true,
+      if (selectedCompanyId) {
+        sendFeatureEmail({
+          companyId: selectedCompanyId,
+          employeeId: req.employee_id,
+          featureKey: 'leave_enabled',
+          title: approved ? `${typeName} Approved` : `${typeName} Declined`,
+          message: approved
+            ? `Your ${typeName} from ${dateRange} (${editForm.days_requested || req.days_requested} days) has been approved.`
+            : `Your ${typeName} request from ${dateRange} has been declined. Please contact your manager.`,
+          type: approved ? 'info' : 'alert',
+          link: '/leave',
+        })
       }
-      const { data: notifRow } = await supabase.from('notifications').insert(notifPayload).select('id').single()
-      sendNotificationEmail({ ...notifPayload, id: notifRow?.id, email_sent: false })
 
       window.dispatchEvent(new Event('notifications-updated'))
     }

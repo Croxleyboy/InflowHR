@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
+import { useFeatures } from '../../context/FeatureContext'
 import { toLocalDateStr } from '../../lib/formatters'
 
 interface WorkflowRow {
@@ -32,7 +33,37 @@ interface Announcement {
   author: { first_name: string; last_name: string } | null
 }
 
-type Tab = 'workflow' | 'company'
+type Tab = 'workflow' | 'company' | 'email'
+
+interface EmailSettings {
+  leave_enabled: boolean
+  expenses_enabled: boolean
+  shifts_enabled: boolean
+  kudos_enabled: boolean
+  space_booking_enabled: boolean
+  performance_reminders_enabled: boolean
+  elearning_reminders_enabled: boolean
+}
+
+const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
+  leave_enabled: false,
+  expenses_enabled: false,
+  shifts_enabled: false,
+  kudos_enabled: false,
+  space_booking_enabled: false,
+  performance_reminders_enabled: false,
+  elearning_reminders_enabled: false,
+}
+
+const EMAIL_TOGGLES: { key: keyof EmailSettings; label: string; description: string }[] = [
+  { key: 'leave_enabled', label: 'Leave Confirmations', description: 'Email employees when their leave request is approved or declined' },
+  { key: 'expenses_enabled', label: 'Expense Confirmations', description: 'Email employees when their expense claim is approved or declined' },
+  { key: 'shifts_enabled', label: 'Shift Notifications', description: 'Email employees when they are assigned a new shift' },
+  { key: 'kudos_enabled', label: 'Kudos Received', description: 'Email employees when they receive kudos recognition from a colleague' },
+  { key: 'space_booking_enabled', label: 'Booking Confirmations', description: 'Email employees when their desk or meeting room booking is confirmed' },
+  { key: 'performance_reminders_enabled', label: '1:1 Reminders', description: 'Email employees one day before a scheduled 1:1 performance meeting' },
+  { key: 'elearning_reminders_enabled', label: 'E-Learning Expiry Reminders', description: 'Email employees one day before an e-learning course deadline expires' },
+]
 
 const PAGE_SIZE = 30
 const STATUS_OPTIONS = ['Pending', 'Complete']
@@ -55,7 +86,13 @@ export default function AdminNotifications() {
   const { selectedCompanyId } = useAdminCompany()
   const { t } = useLanguage()
   const { showError, showSuccess } = useToast()
+  const { companyFeatures } = useFeatures()
   const [tab, setTab] = useState<Tab>('workflow')
+
+  // Email notification settings state
+  const [emailSettings, setEmailSettings] = useState<EmailSettings>(DEFAULT_EMAIL_SETTINGS)
+  const [loadingEmail, setLoadingEmail] = useState(true)
+  const [savingEmail, setSavingEmail] = useState<string | null>(null)
 
   // Workflow state
   const [rows, setRows] = useState<WorkflowRow[]>([])
@@ -79,8 +116,67 @@ export default function AdminNotifications() {
     if (selectedCompanyId) {
       loadWorkflow()
       loadAnnouncements()
+      loadEmailSettings()
     }
   }, [selectedCompanyId])
+
+  async function loadEmailSettings() {
+    setLoadingEmail(true)
+    const { data } = await supabase
+      .from('email_notification_settings')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .single()
+    if (data) {
+      setEmailSettings({
+        leave_enabled: data.leave_enabled ?? false,
+        expenses_enabled: data.expenses_enabled ?? false,
+        shifts_enabled: data.shifts_enabled ?? false,
+        kudos_enabled: data.kudos_enabled ?? false,
+        space_booking_enabled: data.space_booking_enabled ?? false,
+        performance_reminders_enabled: data.performance_reminders_enabled ?? false,
+        elearning_reminders_enabled: data.elearning_reminders_enabled ?? false,
+      })
+    } else {
+      setEmailSettings(DEFAULT_EMAIL_SETTINGS)
+    }
+    setLoadingEmail(false)
+  }
+
+  async function toggleEmailSetting(key: keyof EmailSettings) {
+    const newVal = !emailSettings[key]
+    setSavingEmail(key)
+    setEmailSettings(prev => ({ ...prev, [key]: newVal }))
+
+    const { data: existing } = await supabase
+      .from('email_notification_settings')
+      .select('id')
+      .eq('company_id', selectedCompanyId)
+      .single()
+
+    if (existing) {
+      const { error } = await supabase
+        .from('email_notification_settings')
+        .update({ [key]: newVal, updated_at: new Date().toISOString() })
+        .eq('company_id', selectedCompanyId)
+      if (error) {
+        showError('Failed to update setting: ' + error.message)
+        setEmailSettings(prev => ({ ...prev, [key]: !newVal }))
+      } else {
+        showSuccess(`${newVal ? 'Enabled' : 'Disabled'} ${EMAIL_TOGGLES.find(t => t.key === key)?.label || key}`)
+      }
+    } else {
+      const row: Record<string, unknown> = { company_id: selectedCompanyId, [key]: newVal }
+      const { error } = await supabase.from('email_notification_settings').insert(row)
+      if (error) {
+        showError('Failed to save setting: ' + error.message)
+        setEmailSettings(prev => ({ ...prev, [key]: !newVal }))
+      } else {
+        showSuccess(`${newVal ? 'Enabled' : 'Disabled'} ${EMAIL_TOGGLES.find(t => t.key === key)?.label || key}`)
+      }
+    }
+    setSavingEmail(null)
+  }
 
   async function loadWorkflow() {
     setLoadingWorkflow(true)
@@ -229,6 +325,19 @@ export default function AdminNotifications() {
         >
           Company Messages ({announcements.length})
         </button>
+        {companyFeatures.email_notifications && (
+          <button
+            onClick={() => setTab('email')}
+            style={{
+              padding: '10px 20px', fontWeight: 700, fontSize: 14, cursor: 'pointer',
+              background: 'none', border: 'none',
+              borderBottom: tab === 'email' ? '3px solid #43a047' : '3px solid transparent',
+              color: tab === 'email' ? '#43a047' : 'var(--text-muted, #888)',
+            }}
+          >
+            Email Notifications
+          </button>
+        )}
       </div>
 
       {tab === 'workflow' && (
@@ -387,6 +496,60 @@ export default function AdminNotifications() {
                   <button className="admin-btn" disabled={annPage >= annTotalPages} onClick={() => setAnnPage(p => p + 1)}>Next</button>
                 </div>
               )}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'email' && companyFeatures.email_notifications && (
+        <>
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-muted, #888)', margin: 0 }}>
+              Configure which HR features send email notifications to employees via Brevo. All switches default to off.
+            </p>
+          </div>
+
+          {loadingEmail ? <div className="admin-loading">Loading...</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {EMAIL_TOGGLES.map(toggle => (
+                <div
+                  key={toggle.key}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '14px 18px',
+                    background: emailSettings[toggle.key] ? 'var(--card-bg-active, #f0fdf4)' : 'var(--card-bg, #fff)',
+                    border: `1px solid ${emailSettings[toggle.key] ? '#43a047' : 'var(--border-color, #e0e0e0)'}`,
+                    borderRadius: 8,
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <label className="admin-toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={emailSettings[toggle.key]}
+                      onChange={() => toggleEmailSetting(toggle.key)}
+                      disabled={savingEmail === toggle.key}
+                    />
+                    <span className="admin-toggle-slider" />
+                  </label>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary, #333)' }}>{toggle.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 2 }}>{toggle.description}</div>
+                  </div>
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: '3px 10px',
+                    borderRadius: 12,
+                    background: emailSettings[toggle.key] ? '#e8f5e9' : '#f5f5f5',
+                    color: emailSettings[toggle.key] ? '#2e7d32' : '#999',
+                  }}>
+                    {savingEmail === toggle.key ? 'Saving...' : emailSettings[toggle.key] ? 'On' : 'Off'}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import JSZip from 'jszip'
 import { supabase } from '../../lib/supabase'
+import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { getCompanyFY } from '../../lib/companyArchive'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
@@ -319,6 +320,20 @@ export default function AdminExpenses() {
           task_description: `Admin ${approved ? 'approved' : 'declined'} expense claim ${claim.reference_number} (${amountStr}) for ${empName}`,
           approval_status: approved ? 'Approved' : 'Declined',
           company_id: selectedCompanyId,
+        })
+      }
+
+      if (selectedCompanyId && claim.employee_id) {
+        sendFeatureEmail({
+          companyId: selectedCompanyId,
+          employeeId: claim.employee_id,
+          featureKey: 'expenses_enabled',
+          title: approved ? 'Expense Claim Approved' : 'Expense Claim Declined',
+          message: approved
+            ? `Your expense claim ${claim.reference_number} (${amountStr}) has been approved by admin.`
+            : `Your expense claim ${claim.reference_number} (${amountStr}) has been declined by admin. Please contact your manager for details.`,
+          type: approved ? 'info' : 'alert',
+          link: '/expenses',
         })
       }
 

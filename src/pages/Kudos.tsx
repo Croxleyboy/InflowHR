@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { sendFeatureEmail } from '../lib/emailNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -286,6 +287,18 @@ export default function Kudos() {
             approval_status: 'Approved',
             company_id: companyUser?.company_id,
           })
+
+          if (companyUser?.company_id) {
+            sendFeatureEmail({
+              companyId: companyUser.company_id,
+              employeeId: recipientId,
+              featureKey: 'kudos_enabled',
+              title: 'You Received Kudos!',
+              message: `${currentUserName} sent you ${typeLabel}: "${message.trim().slice(0, 120)}"`,
+              type: 'info',
+              link: '/kudos',
+            })
+          }
         }
       }
     }
