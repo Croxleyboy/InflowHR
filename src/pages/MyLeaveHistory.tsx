@@ -25,6 +25,19 @@ interface LeaveType {
   colour: string
 }
 
+const LEAVE_TYPE_COLORS: Record<string, string> = {
+  'Annual Leave': '#43a047',
+  'Sick Leave': '#e53935',
+  'Compassionate Leave': '#8d6e63',
+  'Parental Leave': '#ab47bc',
+  'Jury Duty': '#5c6bc0',
+  'Bereavement': '#78909c',
+  'Exam Leave': '#ff9800',
+  'Carers Leave': '#ec407a',
+  'Career Break': '#7b1fa2',
+  'Lieu Days': '#00897b',
+}
+
 const LEAVE_TYPE_KEY_MAP: Record<string, string> = {
   'Annual Leave': 'my_leave.annual_leave',
   'Sick Leave': 'my_leave.sick_leave',
@@ -183,12 +196,12 @@ export default function MyLeaveHistory() {
             {upcoming.map(req => {
               const lt = typeMap.get(req.leave_type_id)
               const typeName = lt ? lt.name : 'Leave'
-              const colour = lt ? lt.colour : '#999'
+              const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
               return (
                 <button
                   key={req.id}
                   className="leave-history-row"
-                  style={{ borderLeftColor: colour }}
+                  style={{ '--leave-row-colour': colour } as React.CSSProperties}
                   onClick={() => navigate(`/leave/${req.id}`)}
                 >
                   <div className="leave-history-row-main">
@@ -224,12 +237,12 @@ export default function MyLeaveHistory() {
             {previous.map(req => {
               const lt = typeMap.get(req.leave_type_id)
               const typeName = lt ? lt.name : 'Leave'
-              const colour = lt ? lt.colour : '#999'
+              const colour = LEAVE_TYPE_COLORS[typeName] || (lt ? lt.colour : '#999')
               return (
                 <button
                   key={req.id}
                   className="leave-history-row"
-                  style={{ borderLeftColor: colour }}
+                  style={{ '--leave-row-colour': colour } as React.CSSProperties}
                   onClick={() => navigate(`/leave/${req.id}`)}
                 >
                   <div className="leave-history-row-main">

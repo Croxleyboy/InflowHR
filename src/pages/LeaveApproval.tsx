@@ -31,13 +31,24 @@ interface LeaveType {
   deducts_from_allowance: boolean | null
 }
 
-const happyLeaveMessages = [
-  'Have a wonderful time off! 🌴',
-  'Enjoy your well-deserved break! ☀️',
-  'Relax and recharge! 🎉',
-  'Happy holidays, enjoy every moment! 🏖️',
-  'Time to unwind — you\'ve earned it! 🎊',
-]
+const LEAVE_APPROVAL_MESSAGES: Record<string, string[]> = {
+  'Annual Leave': ['Have a wonderful time off!', 'Enjoy your well-deserved break!', 'Relax and recharge!'],
+  'Sick Leave': ['Take care and get well soon.', 'Wishing you a speedy recovery.', 'Rest up and feel better.'],
+  'Compassionate Leave': ['Our thoughts are with you.', 'Take all the time you need.', 'We hope this time brings you comfort.'],
+  'Bereavement': ['Our deepest condolences.', 'Take all the time you need during this difficult period.', 'We are thinking of you.'],
+  'Parental Leave': ['Congratulations and best wishes!', 'Enjoy this special time with your family.'],
+  'Jury Duty': ['Thank you for fulfilling your civic duty.', 'Good luck with your jury service.'],
+  'Exam Leave': ['Best of luck with your exams!', 'Wishing you every success.'],
+  'Carers Leave': ['Take the time you need to look after your loved ones.', 'We hope everything goes well.'],
+  'Career Break': ['Enjoy your career break!', 'We look forward to having you back.'],
+  'Lieu Days': ['Enjoy your time in lieu!', 'Have a great day off.'],
+}
+const DEFAULT_APPROVAL_MESSAGES = ['Your time off has been approved.']
+
+function getApprovalMessage(leaveTypeName: string): string {
+  const messages = LEAVE_APPROVAL_MESSAGES[leaveTypeName] || DEFAULT_APPROVAL_MESSAGES
+  return messages[Math.floor(Math.random() * messages.length)]
+}
 
 export default function LeaveApproval() {
   const { id } = useParams<{ id: string }>()
@@ -129,7 +140,7 @@ export default function LeaveApproval() {
       .eq('company_id', companyUser?.company_id)
     if (errWf1) { showError('Failed to update workflow: ' + errWf1.message) }
 
-    const happyMsg = happyLeaveMessages[Math.floor(Math.random() * happyLeaveMessages.length)]
+    const approvalMsg = getApprovalMessage(typeName)
 
     const { error: errWf2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: empName,
@@ -142,7 +153,7 @@ export default function LeaveApproval() {
       approval_id: request.id,
       reminder_count: 1,
       task_description: approved
-        ? `Your ${typeName} from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been approved. ${happyMsg}${deductNote}`
+        ? `Your ${typeName} from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been approved. ${approvalMsg}${deductNote}`
         : `Your ${typeName} request from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been declined. Please contact your manager.`,
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
