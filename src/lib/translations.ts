@@ -328,6 +328,8 @@ const en: Translations = {
   'leave_history.from': 'From',
   'leave_history.to': 'To',
   'leave_history.no_leave': 'No leave requests found.',
+  'leave_history.upcoming': 'Upcoming Time Off',
+  'leave_history.previous': 'Previous Time Off',
 
   // Leave Detail
   'leave_detail.title': 'Leave',
@@ -1217,6 +1219,8 @@ const de: Translations = {
   'leave_history.from': 'Von',
   'leave_history.to': 'Bis',
   'leave_history.no_leave': 'Keine Urlaubsanträge gefunden.',
+  'leave_history.upcoming': 'Bevorstehende Abwesenheit',
+  'leave_history.previous': 'Vergangene Abwesenheit',
 
   // Leave Detail
   'leave_detail.title': 'Urlaubs',
