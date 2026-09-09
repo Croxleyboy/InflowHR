@@ -5,6 +5,7 @@ import { useFeatures } from '../context/FeatureContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
+import { sendFeatureEmail } from '../lib/emailNotifications'
 import { toLocalDateStr } from '../lib/formatters'
 
 interface Location {
@@ -330,6 +331,21 @@ export default function SpaceBooking() {
         setSubmitting(false)
         return
       }
+    }
+
+    if (companyId && employeeId) {
+      const spaceName = bookingModal.name || 'space'
+      const spaceType = bookingModal.space_type === 'room' ? 'Meeting Room' : 'Desk'
+      const dateStr = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+      sendFeatureEmail({
+        companyId: companyId,
+        employeeId: employeeId,
+        featureKey: 'space_booking_enabled',
+        title: `${spaceType} Booking Confirmed`,
+        message: `Your booking for ${spaceName} on ${dateStr}${isMultiDayDesk ? ` to ${new Date((bookingEndDate || selectedDate) + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}` : ` (${bookingStartTime} - ${bookingEndTime})`} has been confirmed.`,
+        type: 'info',
+        link: '/space-booking',
+      })
     }
 
     setSuccess(t('space.booking_confirmed'))

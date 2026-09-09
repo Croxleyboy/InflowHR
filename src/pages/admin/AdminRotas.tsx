@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
+import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { checkTimeOverlap } from '../../lib/overlapCheck'
@@ -401,6 +402,20 @@ export default function AdminRotas() {
         date,
       })
       if (error) { showError('Failed to assign shift: ' + error.message); return }
+
+      if (selectedCompanyId) {
+        const tmpl = getTemplate(templateId)
+        const dateStr = new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+        sendFeatureEmail({
+          companyId: selectedCompanyId,
+          employeeId,
+          featureKey: 'shifts_enabled',
+          title: 'New Shift Assigned',
+          message: `You have been assigned the ${tmpl?.name || 'shift'} shift on ${dateStr}${tmpl ? ` (${tmpl.start_time} - ${tmpl.end_time})` : ''}.`,
+          type: 'info',
+          link: '/my-shifts',
+        })
+      }
     }
     setActiveCell(null)
     const { data } = await supabase.from('shift_assignments').select('*').eq('rota_id', selectedRota!.id)

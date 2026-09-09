@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { sendFeatureEmail } from '../lib/emailNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -83,6 +84,18 @@ export default function NewOneToOne() {
         company_id: companyUser?.company_id,
       })
       if (wfError) showError('Failed to create workflow tracker: ' + wfError.message)
+
+      if (companyUser?.company_id) {
+        sendFeatureEmail({
+          companyId: companyUser.company_id,
+          employeeId: selectedEmployee,
+          featureKey: 'performance_reminders_enabled',
+          title: '1:1 Meeting Scheduled',
+          message: `${employeeName} has scheduled a 1:1 meeting with you on ${formattedDate} at ${time}.`,
+          type: 'info',
+          link: '/one-to-ones',
+        })
+      }
     }
 
     window.dispatchEvent(new Event('notifications-updated'))
