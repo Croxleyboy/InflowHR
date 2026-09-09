@@ -107,6 +107,13 @@ export default function MyLeaveHistory() {
     ? requests
     : requests.filter(r => r.status === filter)
 
+  const todayStr = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+  const upcoming = filtered.filter(r => r.end_date >= todayStr).sort((a, b) => a.start_date.localeCompare(b.start_date))
+  const previous = filtered.filter(r => r.end_date < todayStr)
+
   function statusColor(status: string): string {
     if (status === 'approved') return '#43a047'
     if (status === 'pending') return '#e65100'
@@ -169,41 +176,87 @@ export default function MyLeaveHistory() {
         <p className="claims-empty">{t('leave_history.no_leave')}</p>
       )}
 
-      <div className="leave-history-list">
-        {filtered.map(req => {
-          const lt = typeMap.get(req.leave_type_id)
-          const typeName = lt ? lt.name : 'Leave'
-          const colour = lt ? lt.colour : '#999'
-          return (
-            <button
-              key={req.id}
-              className="leave-history-row"
-              style={{ borderLeftColor: colour }}
-              onClick={() => navigate(`/leave/${req.id}`)}
-            >
-              <div className="leave-history-row-main">
-                <span className="leave-history-row-type">{translateLeaveType(typeName)}</span>
-                <div className="leave-history-row-dates">
-                  <span className="leave-history-row-date-label">{t('leave_history.from')}</span>
-                  <span className="leave-history-row-date">{formatDate(req.start_date)}</span>
-                  <span className="leave-history-row-date-label">{t('leave_history.to')}</span>
-                  <span className="leave-history-row-date">{formatDate(req.end_date)}</span>
-                </div>
-              </div>
-              <div className="leave-history-row-right">
-                <div className="leave-history-row-days">
-                  <span className="leave-history-row-days-count" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
-                  <span className="leave-history-row-days-label">{t('leave_history.days')}</span>
-                </div>
-                <span className="leave-history-row-status" style={{ color: statusColor(req.status) }}>
-                  {tStatus(req.status)}
-                </span>
-              </div>
-              <Chevron color="#c8e600" />
-            </button>
-          )
-        })}
-      </div>
+      {!loading && upcoming.length > 0 && (
+        <>
+          <h3 className="leave-history-section-title">{t('leave_history.upcoming')}</h3>
+          <div className="leave-history-list">
+            {upcoming.map(req => {
+              const lt = typeMap.get(req.leave_type_id)
+              const typeName = lt ? lt.name : 'Leave'
+              const colour = lt ? lt.colour : '#999'
+              return (
+                <button
+                  key={req.id}
+                  className="leave-history-row"
+                  style={{ borderLeftColor: colour }}
+                  onClick={() => navigate(`/leave/${req.id}`)}
+                >
+                  <div className="leave-history-row-main">
+                    <span className="leave-history-row-type">{translateLeaveType(typeName)}</span>
+                    <div className="leave-history-row-dates">
+                      <span className="leave-history-row-date-label">{t('leave_history.from')}</span>
+                      <span className="leave-history-row-date">{formatDate(req.start_date)}</span>
+                      <span className="leave-history-row-date-label">{t('leave_history.to')}</span>
+                      <span className="leave-history-row-date">{formatDate(req.end_date)}</span>
+                    </div>
+                  </div>
+                  <div className="leave-history-row-right">
+                    <div className="leave-history-row-days">
+                      <span className="leave-history-row-days-count" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
+                      <span className="leave-history-row-days-label">{t('leave_history.days')}</span>
+                    </div>
+                    <span className="leave-history-row-status" style={{ color: statusColor(req.status) }}>
+                      {tStatus(req.status)}
+                    </span>
+                  </div>
+                  <Chevron color="#c8e600" />
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {!loading && previous.length > 0 && (
+        <>
+          <h3 className="leave-history-section-title">{t('leave_history.previous')}</h3>
+          <div className="leave-history-list">
+            {previous.map(req => {
+              const lt = typeMap.get(req.leave_type_id)
+              const typeName = lt ? lt.name : 'Leave'
+              const colour = lt ? lt.colour : '#999'
+              return (
+                <button
+                  key={req.id}
+                  className="leave-history-row"
+                  style={{ borderLeftColor: colour }}
+                  onClick={() => navigate(`/leave/${req.id}`)}
+                >
+                  <div className="leave-history-row-main">
+                    <span className="leave-history-row-type">{translateLeaveType(typeName)}</span>
+                    <div className="leave-history-row-dates">
+                      <span className="leave-history-row-date-label">{t('leave_history.from')}</span>
+                      <span className="leave-history-row-date">{formatDate(req.start_date)}</span>
+                      <span className="leave-history-row-date-label">{t('leave_history.to')}</span>
+                      <span className="leave-history-row-date">{formatDate(req.end_date)}</span>
+                    </div>
+                  </div>
+                  <div className="leave-history-row-right">
+                    <div className="leave-history-row-days">
+                      <span className="leave-history-row-days-count" style={{ borderColor: colour, color: colour }}>{req.days_requested}</span>
+                      <span className="leave-history-row-days-label">{t('leave_history.days')}</span>
+                    </div>
+                    <span className="leave-history-row-status" style={{ color: statusColor(req.status) }}>
+                      {tStatus(req.status)}
+                    </span>
+                  </div>
+                  <Chevron color="#c8e600" />
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
     </div>
   )
 }
