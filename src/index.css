@@ -2328,17 +2328,29 @@ body {
   overflow: hidden;
   margin-bottom: 8px;
 }
-.leave-calendar-day-headers {
-  display: grid; grid-template-columns: repeat(7, 1fr);
+.leave-calendar-row {
+  display: flex; align-items: center;
+}
+.leave-calendar-row-header {
   border-bottom: 1px solid var(--border);
+}
+.leave-calendar-row-label {
+  width: 120px; min-width: 120px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px;
+  flex-shrink: 0;
+}
+.leave-calendar-row-label-header {
+  font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px;
+}
+.leave-calendar-row-days {
+  flex: 1;
+  display: grid; grid-template-columns: repeat(7, 1fr);
 }
 .leave-calendar-day-header {
   text-align: center;
   font-size: 12px; font-weight: 700; color: var(--text-muted);
   padding: 6px 0;
-}
-.leave-calendar-day-cells {
-  display: grid; grid-template-columns: repeat(7, 1fr);
 }
 .leave-calendar-day-cell {
   text-align: center;
@@ -2369,25 +2381,24 @@ body {
 }
 
 .leave-calendar-person-row {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
 .leave-calendar-person-row:last-child { border-bottom: none; }
 .leave-calendar-person-avatar {
-  width: 32px; height: 32px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
   background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff; font-size: 11px; font-weight: 700;
+  color: #fff; font-size: 10px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 .leave-calendar-person-name {
-  font-size: 13px; font-weight: 600; color: var(--text);
-  min-width: 80px; flex-shrink: 0;
+  font-size: 12px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.leave-calendar-person-days {
-  display: grid; grid-template-columns: repeat(7, 1fr);
-  flex: 1; gap: 4px;
+.leave-calendar-person-row .leave-calendar-row-days {
+  gap: 4px;
 }
 .leave-calendar-person-dot {
   width: 100%; aspect-ratio: 1;
@@ -5377,8 +5388,16 @@ body {
   object-fit: cover;
 }
 .leave-calendar-person-avatar-img {
-  width: 32px; height: 32px; border-radius: 50%;
+  width: 28px; height: 28px; border-radius: 50%;
   object-fit: cover; flex-shrink: 0;
+}
+@media (max-width: 480px) {
+  .leave-calendar-row-label { width: 90px; min-width: 90px; padding: 0 6px; }
+  .leave-calendar-person-name { font-size: 11px; }
+  .leave-calendar-day-header { font-size: 10px; }
+  .leave-calendar-day-cell { font-size: 12px; padding: 8px 0; }
+  .leave-calendar-person-avatar, .leave-calendar-person-avatar-img { width: 24px; height: 24px; font-size: 9px; }
+  .leave-calendar-row-label-header { font-size: 10px; }
 }
 .oto-employee-option-avatar-img {
   width: 40px; height: 40px; border-radius: 50%;

@@ -181,25 +181,31 @@ export default function LeaveCalendar() {
           <div key={wi} className="leave-calendar-week">
             <h3 className="leave-calendar-month">{months[monthIdx]} {year}</h3>
             <div className="leave-calendar-grid">
-              <div className="leave-calendar-day-headers">
-                {dayKeys.map(k => (
-                  <span key={k} className="leave-calendar-day-header">{t(k)}</span>
-                ))}
+              <div className="leave-calendar-row leave-calendar-row-header">
+                <div className="leave-calendar-row-label leave-calendar-row-label-header">{t('leave_calendar.weekdays')}</div>
+                <div className="leave-calendar-row-days">
+                  {dayKeys.map(k => (
+                    <span key={k} className="leave-calendar-day-header">{t(k)}</span>
+                  ))}
+                </div>
               </div>
-              <div className="leave-calendar-day-cells">
-                {days.map(day => {
-                  const isToday = dateStr(day) === dateStr(today)
-                  const isWeekend = day.getDay() === 0 || day.getDay() === 6
-                  const hasLeave = dayHasLeave(day)
-                  return (
-                    <div
-                      key={dateStr(day)}
-                      className={`leave-calendar-day-cell ${isToday ? 'leave-calendar-today' : ''} ${isWeekend ? 'leave-calendar-weekend' : ''} ${hasLeave ? 'leave-calendar-day-has-leave' : ''}`}
-                    >
-                      {day.getDate()}
-                    </div>
-                  )
-                })}
+              <div className="leave-calendar-row leave-calendar-row-dates">
+                <div className="leave-calendar-row-label" />
+                <div className="leave-calendar-row-days">
+                  {days.map(day => {
+                    const isToday = dateStr(day) === dateStr(today)
+                    const isWeekend = day.getDay() === 0 || day.getDay() === 6
+                    const hasLeave = dayHasLeave(day)
+                    return (
+                      <div
+                        key={dateStr(day)}
+                        className={`leave-calendar-day-cell ${isToday ? 'leave-calendar-today' : ''} ${isWeekend ? 'leave-calendar-weekend' : ''} ${hasLeave ? 'leave-calendar-day-has-leave' : ''}`}
+                      >
+                        {day.getDate()}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
 
@@ -209,11 +215,13 @@ export default function LeaveCalendar() {
 
             {groupedEmployees.map(([empId, emp]) => (
               <div key={empId} className="leave-calendar-person-row">
-                {emp.avatar ? <img className="leave-calendar-person-avatar-img" src={emp.avatar} alt={emp.name} /> : <div className="leave-calendar-person-avatar">
-                  {emp.name.split(' ').map(n => n[0]).join('')}
-                </div>}
-                <span className="leave-calendar-person-name">{emp.name}</span>
-                <div className="leave-calendar-person-days">
+                <div className="leave-calendar-row-label">
+                  {emp.avatar ? <img className="leave-calendar-person-avatar-img" src={emp.avatar} alt={emp.name} /> : <div className="leave-calendar-person-avatar">
+                    {emp.name.split(' ').map(n => n[0]).join('')}
+                  </div>}
+                  <span className="leave-calendar-person-name">{emp.name}</span>
+                </div>
+                <div className="leave-calendar-row-days">
                   {days.map(day => {
                     const info = getDayInfo(emp.leaves, day)
                     if (info && info.halfDay) {
