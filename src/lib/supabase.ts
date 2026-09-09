@@ -31,7 +31,6 @@ export async function sendNotificationEmail(notificationRecord: Record<string, u
   try {
     const { data: { session } } = await supabase.auth.getSession()
     const token = session?.access_token || supabaseAnonKey
-    console.log('[Email] Calling Edge Function with:', JSON.stringify(notificationRecord))
     const res = await fetch(`${supabaseUrl}/functions/v1/send-notification-email`, {
       method: 'POST',
       headers: {
@@ -41,7 +40,6 @@ export async function sendNotificationEmail(notificationRecord: Record<string, u
       body: JSON.stringify({ record: notificationRecord }),
     })
     const body = await res.text().catch(() => '')
-    console.log('[Email] Edge Function response:', res.status, body)
     if (!res.ok) {
       console.warn('Notification email failed:', res.status, body)
     }

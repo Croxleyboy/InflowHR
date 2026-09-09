@@ -2,7 +2,7 @@
 // Returns { url } — the Xero OAuth authorisation URL.
 // The frontend opens this URL; Xero redirects to xero-callback.
 
-import { getSupabase, getXeroEnv, corsHeaders, json } from '../_shared/xero.ts'
+import { getSupabase, getXeroEnv, corsHeaders, json, signState } from '../_shared/xero.ts'
 
 const SCOPES = [
   'openid',
@@ -45,8 +45,10 @@ Deno.serve(async (req) => {
       return json({ error: 'Only company admins can connect Xero' }, 403)
     }
 
-    // Encode company_id into state so the callback knows which company
-    const state = btoa(JSON.stringify({ company_id }))
+    // Encode company_id into state with HMAC signature to prevent forgery
+    const { clientSecret } = getXeroEnv()
+    const statePayload = btoa(JSON.stringify({ company_id }))
+    const state = await signState(statePayload, clientSecret)
 
     const url = 'https://login.xero.com/identity/connect/authorize?' +
       new URLSearchParams({
