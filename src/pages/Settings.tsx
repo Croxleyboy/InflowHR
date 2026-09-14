@@ -7,6 +7,23 @@ import { supabase } from '../lib/supabase'
 import { useToast } from '../context/ToastContext'
 import type { Lang } from '../lib/translations'
 
+interface BillingSummary {
+  billing_type: string
+  billing_end_date: string
+  outstanding_amount: number
+  employee_count?: number
+  per_employee_monthly?: number
+  note: string
+}
+
+interface CancellationRequest {
+  id: string
+  status: string
+  billing_end_date: string
+  requested_at: string
+  data_frozen_at: string | null
+}
+
 const featureLabels: { key: keyof Features; tKey: string }[] = [
   { key: 'expenses', tKey: 'dashboard.expenses' },
   { key: 'leave', tKey: 'dashboard.leave_remaining' },
@@ -43,6 +60,12 @@ export default function Settings() {
   const [consents, setConsents] = useState<Record<string, boolean>>({})
   const [consentsLoading, setConsentsLoading] = useState(true)
   const [consentSaving, setConsentSaving] = useState<string | null>(null)
+  const [showCancelModal, setShowCancelModal] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null)
+  const [billingLoading, setBillingLoading] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [existingCancellation, setExistingCancellation] = useState<CancellationRequest | null>(null)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)')
     const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
@@ -131,6 +154,67 @@ export default function Settings() {
     }
     setConsentSaving(null)
   }, [companyUser?.employee_id, companyUser?.company_id, consents, showError, showSuccess])
+
+  // Check for existing cancellation request
+  useEffect(() => {
+    if (!companyUser?.company_id || !isCompanyAdmin || isSuperAdmin) return
+    supabase.from('cancellation_requests')
+      .select('id, status, billing_end_date, requested_at, data_frozen_at')
+      .eq('company_id', companyUser.company_id)
+      .not('status', 'in', '("cancelled","completed")')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setExistingCancellation(data as CancellationRequest)
+      })
+  }, [companyUser?.company_id, isCompanyAdmin, isSuperAdmin])
+
+  const handleOpenCancelModal = useCallback(async () => {
+    if (!companyUser?.company_id) return
+    setBillingLoading(true)
+    setShowCancelModal(true)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await supabase.rpc('get_cancellation_billing_summary' as any, {
+        p_company_id: companyUser.company_id,
+      })
+      if (error) { showError('Failed to load billing: ' + error.message); setShowCancelModal(false); return }
+      setBillingSummary(data as BillingSummary)
+    } catch {
+      showError('Failed to load billing information')
+      setShowCancelModal(false)
+    }
+    setBillingLoading(false)
+  }, [companyUser?.company_id, showError])
+
+  const handleConfirmCancellation = useCallback(async () => {
+    if (!companyUser?.company_id) return
+    setCancelling(true)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await supabase.rpc('request_company_cancellation' as any, {
+        p_company_id: companyUser.company_id,
+        p_reason: cancelReason || null,
+      })
+      if (error) { showError('Cancellation request failed: ' + error.message); setCancelling(false); return }
+      showSuccess('Cancellation request submitted. You will receive confirmation shortly.')
+      setShowCancelModal(false)
+      setCancelReason('')
+      // Refresh existing cancellation state
+      const { data } = await supabase.from('cancellation_requests')
+        .select('id, status, billing_end_date, requested_at, data_frozen_at')
+        .eq('company_id', companyUser.company_id)
+        .not('status', 'in', '("cancelled","completed")')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data) setExistingCancellation(data as CancellationRequest)
+    } catch {
+      showError('Cancellation request failed — please try again')
+    }
+    setCancelling(false)
+  }, [companyUser?.company_id, cancelReason, showError, showSuccess])
 
   function handleToggle(key: keyof Features) {
     setDraft(d => ({ ...d, [key]: !d[key] }))
@@ -357,6 +441,49 @@ export default function Settings() {
         </section>
       )}
 
+      {isCompanyAdmin && !isSuperAdmin && (
+        <section className="settings-section" style={{ borderTop: '2px solid #ef4444', paddingTop: 20, marginTop: 24 }}>
+          <h2 style={{ color: '#ef4444' }}>Subscription</h2>
+          {existingCancellation ? (
+            <div className="settings-info" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 16 }}>
+              <p style={{ margin: 0, fontWeight: 600, color: '#dc2626' }}>Cancellation in progress</p>
+              <p style={{ margin: '8px 0 0', fontSize: 14, color: '#7f1d1d' }}>
+                Status: <strong>{existingCancellation.status}</strong>
+                {existingCancellation.billing_end_date && (
+                  <> — Service until {new Date(existingCancellation.billing_end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</>
+                )}
+              </p>
+              {existingCancellation.status === 'frozen' && (
+                <p style={{ margin: '8px 0 0', fontSize: 14, color: '#7f1d1d' }}>
+                  Your data has been frozen. The service administrator will provide your data export shortly.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="settings-info">
+              <p className="settings-hint" style={{ marginBottom: 12 }}>
+                Cancelling your subscription will end your service at the close of the current billing period. All outstanding charges for this month will still apply.
+              </p>
+              <button
+                className="settings-row settings-row-btn"
+                onClick={handleOpenCancelModal}
+                style={{ color: '#ef4444', borderColor: '#fecaca' }}
+              >
+                <span className="settings-row-left">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="15" y1="9" x2="9" y2="15"/>
+                    <line x1="9" y1="9" x2="15" y2="15"/>
+                  </svg>
+                  <span>Cancel Subscription</span>
+                </span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
       {hasPortalAccess && (
         <section className="settings-section settings-admin-section">
           <button className="settings-admin-btn" onClick={() => navigate('/admin')}>
@@ -366,6 +493,86 @@ export default function Settings() {
             {t('settings.admin_portal')}
           </button>
         </section>
+      )}
+
+      {showCancelModal && (
+        <div className="modal-overlay" onClick={() => !cancelling && setShowCancelModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+            <h2 style={{ color: '#dc2626', margin: '0 0 16px' }}>Cancel Subscription</h2>
+
+            {billingLoading ? (
+              <p>Loading billing information…</p>
+            ) : billingSummary ? (
+              <>
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 15, color: '#991b1b' }}>Outstanding Charges</h3>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span>Billing type</span>
+                    <strong>{billingSummary.billing_type === 'fixed' ? 'Fixed Annual' : 'Monthly per employee'}</strong>
+                  </div>
+                  {billingSummary.employee_count != null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span>Active employees</span>
+                      <strong>{billingSummary.employee_count}</strong>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span>Amount due</span>
+                    <strong style={{ color: '#dc2626', fontSize: 18 }}>
+                      &pound;{billingSummary.outstanding_amount.toFixed(2)}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Service until</span>
+                    <strong>{new Date(billingSummary.billing_end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
+                  </div>
+                  <p style={{ fontSize: 13, color: '#7f1d1d', marginTop: 8, marginBottom: 0 }}>
+                    {billingSummary.note}
+                  </p>
+                </div>
+
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                  <h3 style={{ margin: '0 0 8px', fontSize: 15, color: '#92400e' }}>What happens next</h3>
+                  <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, color: '#78350f', lineHeight: 1.6 }}>
+                    <li>Your request is sent to the service administrator for review</li>
+                    <li>At the end of your billing period, your account will be frozen</li>
+                    <li>All company data will be exported and made available for download</li>
+                    <li>No one at your company will be able to log in after the freeze</li>
+                    <li>After 30 days, all data will be permanently deleted</li>
+                  </ol>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontWeight: 600, marginBottom: 6, fontSize: 14 }}>Reason for cancellation (optional)</label>
+                  <textarea
+                    value={cancelReason}
+                    onChange={e => setCancelReason(e.target.value)}
+                    rows={3}
+                    style={{ width: '100%', borderRadius: 6, border: '1px solid #d1d5db', padding: 10, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
+                    placeholder="Help us improve — why are you cancelling?"
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => setShowCancelModal(false)}
+                    disabled={cancelling}
+                    style={{ padding: '10px 20px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', fontSize: 14 }}
+                  >
+                    Keep Subscription
+                  </button>
+                  <button
+                    onClick={handleConfirmCancellation}
+                    disabled={cancelling}
+                    style={{ padding: '10px 20px', borderRadius: 6, border: 'none', background: '#dc2626', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
+                  >
+                    {cancelling ? 'Submitting…' : 'Confirm Cancellation'}
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
       )}
     </div>
   )

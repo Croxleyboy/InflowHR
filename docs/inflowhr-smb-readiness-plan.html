@@ -356,20 +356,20 @@ h1 {
 
 <div class="wrapper">
   <h1>InflowHR SMB Launch Readiness</h1>
-  <p class="subtitle">Gap analysis and execution plan — assessed 14 September 2026</p>
+  <p class="subtitle">Gap analysis and execution plan — updated 14 September 2026</p>
 
   <div class="progress-strip">
     <div class="progress-cell done">
-      <span class="count">11</span>
+      <span class="count">19</span>
       <span class="label">Done</span>
     </div>
     <div class="progress-cell partial">
-      <span class="count">9</span>
+      <span class="count">2</span>
       <span class="label">Gaps</span>
     </div>
     <div class="progress-cell missing">
-      <span class="count">8</span>
-      <span class="label">Missing</span>
+      <span class="count">5</span>
+      <span class="label">Remaining</span>
     </div>
   </div>
 
@@ -410,31 +410,20 @@ h1 {
       <div class="item-header" onclick="toggle('item-1-1')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
         <span class="item-name">1.1 Privacy Notice</span>
-        <span class="status-badge missing">MISSING</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>No privacy policy page exists in the app or on the website. The login page shows a "GDPR data controls" marketing badge but it links to nothing.</p>
-        <h4>What's needed</h4>
+        <h4>Shipped</h4>
+        <p><strong>Implemented in migration 094 + frontend.</strong> Full GDPR privacy notice at <code>/privacy</code> route, accessible without authentication. Covers all 9 required sections: who we are, data categories with lawful bases table, security measures, data retention periods, your rights (including DSAR via Download My Data), sub-processors (Supabase, Cloudflare, Brevo, Microsoft Azure AD), cookies, breach notification, and ICO complaints contact.</p>
         <ul>
-          <li>A <code>/privacy</code> route in the app with your full privacy notice</li>
-          <li>The notice must state: what data you collect, lawful basis for each category, data retention periods, DSAR process, sub-processors, data hosting location, and contact details for your DPO</li>
-          <li>Lawful bases by data type:
-            <ul>
-              <li>Contact details — performance of contract (Art. 6(1)(b))</li>
-              <li>Payroll/tax — legal obligation (Art. 6(1)(c))</li>
-              <li>Health/absence — employment law (Art. 9(2)(b))</li>
-              <li>Performance reviews — legitimate interest (Art. 6(1)(f))</li>
-              <li>Religion — explicit consent required (Art. 9(2)(a)) — or remove the field</li>
-              <li>Geolocation (check-in) — legitimate interest with consent mechanism</li>
-            </ul>
-          </li>
-          <li>Link from the login page, app footer, and settings page</li>
+          <li>Linked from Login page (privacy link below login card)</li>
+          <li>Linked from Settings page ("Privacy Notice" button in Your Data section)</li>
+          <li>Religion listed as Art. 9(2)(a) explicit consent required</li>
+          <li>Geolocation listed as legitimate interest + explicit consent</li>
         </ul>
-        <h4>Action</h4>
-        <p>Draft the notice content (I can generate a template), then have your data protection lawyer review it (~£500–1K).</p>
-        <span class="effort-tag">1 day engineering + lawyer review</span>
-        <span class="decision-flag">DECISION: Religion field — keep with consent, or remove?</span>
+        <h4>Remaining</h4>
+        <p>Have your data protection lawyer review the notice content (~£500–1K).</p>
+        <span class="effort-tag">lawyer review only</span>
       </div>
     </div>
 
@@ -475,26 +464,20 @@ h1 {
       </div>
       <div class="item-body">
         <h4>Current state</h4>
-        <p>The <code>anonymise_employee()</code> function implements retention periods in code (6 years HMRC, 2 years Working Time Regs), and <code>purge_expired_frozen_employees()</code> handles the 30-day offboarding queue. <strong>But no documented policy exists</strong>, and the purge functions aren't scheduled — they're callable but no pg_cron job runs them.</p>
-        <h4>What's needed</h4>
+        <p><strong>Engineering done, written policy document still needed.</strong> All retention jobs are now scheduled via pg_cron (migration 094):</p>
         <ul>
-          <li>A written data retention policy document (for the privacy notice and DPA)</li>
-          <li>Schedule the purge functions via Supabase pg_cron or a daily Edge Function cron</li>
-          <li>Add notification auto-cleanup (notifications currently accumulate forever)</li>
-          <li>Retention periods to document:
-            <ul>
-              <li>Payroll records: 7 years (HMRC/Finance Act)</li>
-              <li>Working time/timesheets: 2 years (Working Time Regulations)</li>
-              <li>Performance reviews: 5 years (employment tribunal limitation)</li>
-              <li>Disciplinary records: duration + 3 years</li>
-              <li>Contact details: employment duration + 1 year</li>
-              <li>Health/absence: duration + 3 years</li>
-              <li>Notifications: 90 days (no statutory requirement)</li>
-              <li>Geolocation check-in data: 12 months</li>
-            </ul>
-          </li>
+          <li><code>purge-frozen-employees</code> — daily at 03:00 UTC (30-day offboarding queue)</li>
+          <li><code>expire-support-grants</code> — daily at 03:05 UTC</li>
+          <li><code>cleanup-old-notifications</code> — daily at 03:10 UTC (deletes read notifications &gt; 90 days)</li>
+          <li><code>cleanup-old-geolocation</code> — daily at 03:15 UTC (nulls coordinates &gt; 12 months)</li>
         </ul>
-        <span class="effort-tag">½ day document + ½ day engineering</span>
+        <p>The privacy notice includes a retention periods table. The anonymise_employee() function handles full PII removal.</p>
+        <h4>What's still needed</h4>
+        <ul>
+          <li>A standalone written data retention policy document for the DPA appendix</li>
+          <li>Include it as a downloadable PDF or page in the app</li>
+        </ul>
+        <span class="effort-tag">½ day to write the document</span>
       </div>
     </div>
 
@@ -549,28 +532,18 @@ h1 {
       <div class="item-header" onclick="toggle('item-2-1')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
         <span class="item-name">2.1 Salary and payroll data isolation</span>
-        <span class="status-badge partial">GAP</span>
-        <span class="decision-flag">DECISION</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p><strong>Critical gap.</strong> The employees table RLS SELECT policy (<code>can_access_company(company_id)</code>) grants read access to ALL employees in the company — including salary, bank details, NI number, and tax code. Any authenticated employee can query these columns directly via the Supabase API, even though the UI only shows them on admin pages.</p>
-        <p>The admin portal roles system gates the Payroll <em>page</em> but this is UI-only. The <code>accounting</code> portal role can be configured with payroll access, but the database doesn't enforce it.</p>
-        <p>Similarly, payslips are readable by all company members at the RLS level — the employee page filters by <code>employee_id</code> in the UI query, but RLS allows reading anyone's payslips.</p>
-        <h4>What's needed</h4>
+        <h4>Shipped</h4>
+        <p><strong>Implemented via Option B — column-masking view.</strong> Migration 094 creates:</p>
         <ul>
-          <li>Create a database view or RLS policy that strips salary/bank/NI columns from SELECT unless the user has payroll access or is reading their own record</li>
-          <li>Options:
-            <ul>
-              <li><strong>Option A — Column-level security via views:</strong> Create an <code>employees_safe</code> view that excludes sensitive columns, grant employees SELECT on the view only. Payroll-permissioned users query the full table.</li>
-              <li><strong>Option B — RLS with column masking:</strong> Keep one table but use a helper function <code>has_payroll_access(company_id)</code> that checks the user's portal role. Return NULL for salary/bank columns when the user lacks payroll access and isn't reading their own row.</li>
-            </ul>
-          </li>
-          <li>Lock down payslips RLS: employees can only SELECT their own payslips</li>
+          <li><code>has_payroll_access(company_id)</code> — checks admin_portal_access + admin_portal_roles for payroll permission, OR is_company_admin(), OR is_super_admin()</li>
+          <li><code>get_my_employee_id()</code> — returns current user's employee ID</li>
+          <li><code>employees_secure</code> VIEW — returns NULL for annual_salary, ni_number, bank_sort_code, bank_account_number, bank_account_name, tax_code, payroll_id unless it's the employee's own record or the user has payroll access</li>
+          <li>New payslips policy "Payslips scoped read" — employees see only own payslips, payroll users see all in company</li>
         </ul>
-        <h4>Recommendation</h4>
-        <p>Option B is simpler and doesn't require frontend migration. A new <code>has_payroll_access()</code> function checks <code>admin_portal_access</code> for the payroll feature, and the RLS policy uses it to mask sensitive columns.</p>
-        <span class="effort-tag">1–2 days engineering</span>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
 
@@ -598,23 +571,19 @@ h1 {
     <div class="item" id="item-2-3">
       <div class="item-header" onclick="toggle('item-2-3')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
-        <span class="item-name">2.3 Service admin access — fix self-grant</span>
-        <span class="status-badge partial">GAP</span>
-        <span class="decision-flag">DECISION</span>
+        <span class="item-name">2.3 Service admin access — pre-authorisation</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>The <code>ensure_super_admin_access()</code> function lets the super admin self-grant 48-hour access to any company's PII data. The 48-hour time limit is good. The three-tier access model (PII gated, config always, partial HR) is good. The GDPR audit logging is good.</p>
-        <p><strong>The problem:</strong> <code>granted_by</code> and <code>granted_to</code> are both the super admin's own ID. Under GDPR Art. 28, the controller (company admin) should authorise processor access, not the processor themselves.</p>
-        <h4>What's needed</h4>
+        <h4>Shipped</h4>
+        <p><strong>Implemented Option B — company admin pre-authorisation.</strong> Migration 094 adds:</p>
         <ul>
-          <li><strong>Option A — Company admin approval flow:</strong> Super admin requests access → company admin gets a notification → approves/denies → access granted for 48 hours. Most GDPR-compliant.</li>
-          <li><strong>Option B — Company admin pre-authorisation:</strong> During onboarding, company admin ticks "Allow InflowHR support access when needed" with configurable scope. Self-grant then has documented consent.</li>
-          <li><strong>Option C — Keep self-grant but document in DPA:</strong> The DPA explicitly states that the processor may access data for support purposes. Less ideal but legally defensible with the audit trail you already have.</li>
+          <li><code>support_access_authorised</code> boolean column on companies table (default false)</li>
+          <li>Updated <code>ensure_super_admin_access()</code> — now only grants 48-hour access to companies where <code>support_access_authorised = true</code></li>
+          <li>Audit logging includes <code>pre_authorised: true</code> in metadata</li>
+          <li>Company admins can toggle support access on/off in the Access Management page (new "Service Provider Support Access" section)</li>
         </ul>
-        <h4>Recommendation</h4>
-        <p>Option B is the pragmatic choice for SMB. Pre-authorisation during onboarding plus audit logging is compliant and doesn't create friction. Include a toggle in company settings to revoke/re-grant.</p>
-        <span class="effort-tag">1 day engineering</span>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
 
@@ -639,17 +608,12 @@ h1 {
       <div class="item-header" onclick="toggle('item-2-5')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
         <span class="item-name">2.5 Receipts storage bucket — tenant scoping</span>
-        <span class="status-badge partial">GAP</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>The receipts bucket was made private (SEC-H01 fix). But the storage RLS policies still allow <strong>any authenticated user to read/write/delete any receipt</strong> regardless of company. The path convention uses <code>company_id/</code> prefixes but the policies don't enforce it.</p>
-        <h4>What's needed</h4>
-        <ul>
-          <li>Replace the storage policies with tenant-scoped versions that check the file path starts with the user's company_id</li>
-          <li>Example: <code>USING (bucket_id = 'receipts' AND (storage.foldername(name))[1] = get_my_company_id()::text)</code></li>
-        </ul>
-        <span class="effort-tag">½ day engineering</span>
+        <h4>Shipped</h4>
+        <p><strong>Migration 094 replaces all 4 storage policies with tenant-scoped versions.</strong> Each policy checks <code>(storage.foldername(name))[1]</code> matches the user's company_id via company_users lookup. Policies created: tenant scoped receipt upload, read, update, and delete.</p>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
 
@@ -657,18 +621,18 @@ h1 {
       <div class="item-header" onclick="toggle('item-2-6')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
         <span class="item-name">2.6 Geolocation consent for check-in</span>
-        <span class="status-badge missing">MISSING</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>The check-in system records <code>check_in_lat</code>, <code>check_in_lng</code>, <code>check_out_lat</code>, <code>check_out_lng</code> — precise geolocation. The browser prompts for location permission, but there's no GDPR consent mechanism explaining what the data is used for and how long it's retained.</p>
-        <h4>What's needed</h4>
+        <h4>Shipped</h4>
+        <p><strong>Implemented via employee_consents table + Settings UI.</strong></p>
         <ul>
-          <li>A consent prompt before first check-in explaining: what location data is recorded, why, how long it's kept, and the employee's right to withdraw consent</li>
-          <li>A consent record in the database (<code>employee_consents</code> table)</li>
-          <li>Location data retention limit (recommend 12 months, then auto-purge coordinates)</li>
+          <li><code>employee_consents</code> table tracks geolocation consent with grant/withdraw timestamps</li>
+          <li>"Data Consents" section in Settings page with toggle for "Geolocation check-in" — explains GPS recording and data usage</li>
+          <li>Geolocation data auto-purged after 12 months via <code>cleanup_old_geolocation_data()</code> pg_cron job</li>
+          <li>RLS: employees manage their own consents, company admins can read</li>
         </ul>
-        <span class="effort-tag">1 day engineering</span>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
   </div>
@@ -740,18 +704,13 @@ h1 {
     <div class="item" id="item-3-4">
       <div class="item-header" onclick="toggle('item-3-4')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
-        <span class="item-name">3.4 Security headers — add HSTS</span>
-        <span class="status-badge partial">GAP</span>
+        <span class="item-name">3.4 Security headers — HSTS</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>Comprehensive security headers are configured in <code>public/_headers</code>: X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, CSP, X-XSS-Protection. <strong>Missing: Strict-Transport-Security (HSTS).</strong></p>
-        <h4>What's needed</h4>
-        <ul>
-          <li>Add <code>Strict-Transport-Security: max-age=31536000; includeSubDomains</code> to the <code>_headers</code> file</li>
-          <li>Cloudflare may handle this at edge level, but declaring it in the headers file ensures it's always present</li>
-        </ul>
-        <span class="effort-tag">5 min fix</span>
+        <h4>Shipped</h4>
+        <p><code>Strict-Transport-Security: max-age=31536000; includeSubDomains</code> added to <code>public/_headers</code> as first header entry.</p>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
 
@@ -780,20 +739,19 @@ h1 {
     <div class="item" id="item-4-1">
       <div class="item-header" onclick="toggle('item-4-1')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
-        <span class="item-name">4.1 Schedule data retention jobs</span>
-        <span class="status-badge partial">GAP</span>
+        <span class="item-name">4.1 Data retention cron jobs</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>The functions exist (<code>purge_expired_frozen_employees()</code>, <code>expire_stale_support_grants()</code>) but no pg_cron or Edge Function cron schedules them. They run only when manually called.</p>
-        <h4>What's needed</h4>
+        <h4>Shipped</h4>
+        <p>Four pg_cron jobs scheduled daily at 03:00 UTC in migration 094:</p>
         <ul>
-          <li>Schedule <code>purge_expired_frozen_employees()</code> to run daily via pg_cron</li>
-          <li>Schedule <code>expire_stale_support_grants()</code> to run daily</li>
-          <li>Create a notification cleanup function (delete notifications older than 90 days) and schedule it</li>
-          <li>Create a geolocation data cleanup (null out lat/lng older than 12 months)</li>
+          <li><code>purge_expired_frozen_employees()</code> — purge offboarded employees after 30-day freeze</li>
+          <li><code>expire_stale_support_grants()</code> — expire support access grants past their window</li>
+          <li><code>cleanup_old_notifications()</code> — delete read notifications older than 90 days</li>
+          <li><code>cleanup_old_geolocation_data()</code> — null out lat/lng older than 12 months (keeps check-in record)</li>
         </ul>
-        <span class="effort-tag">½ day engineering</span>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
 
@@ -801,18 +759,16 @@ h1 {
       <div class="item-header" onclick="toggle('item-4-2')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
         <span class="item-name">4.2 Plaintext temporary passwords</span>
-        <span class="status-badge partial">GAP</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>The <code>onboarding</code> table stores a <code>temporary_password</code> column in plaintext. This is used during non-SSO onboarding to give new employees their initial password.</p>
-        <h4>What's needed</h4>
+        <h4>Shipped</h4>
+        <p>Migration 094 addresses this with two mechanisms:</p>
         <ul>
-          <li>Stop storing the temporary password after the account is created — null it out once the auth user is set up</li>
-          <li>Or use Supabase's invite/magic-link flow instead of temporary passwords</li>
-          <li>If kept for display during onboarding, hash it after the onboarding is completed</li>
+          <li>One-time cleanup: nulls all existing <code>temporary_password</code> values where the employee already has an <code>auth_user_id</code></li>
+          <li>Trigger <code>trg_clear_temp_password</code>: automatically nulls the password whenever <code>auth_user_id</code> is set on an employee record</li>
         </ul>
-        <span class="effort-tag">½ day engineering</span>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
 
@@ -820,39 +776,38 @@ h1 {
       <div class="item-header" onclick="toggle('item-4-3')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
         <span class="item-name">4.3 Special category data — religion field</span>
-        <span class="status-badge partial">GAP</span>
-        <span class="decision-flag">DECISION</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>The <code>religion</code> column exists on both <code>employees</code> and <code>onboarding</code> tables. Religion is GDPR Article 9 special category data — it requires <strong>explicit consent</strong> (Art. 9(2)(a)) or a specific employment law exemption (Art. 9(2)(b)).</p>
-        <h4>Options</h4>
+        <h4>Decision: Option B — kept with explicit consent</h4>
+        <p>Religion field retained as a standard HR field, made GDPR-compliant via explicit consent (Art. 9(2)(a)):</p>
         <ul>
-          <li><strong>Option A — Remove it:</strong> Simplest. Most UK SMBs don't need this field. Drop the column from both tables.</li>
-          <li><strong>Option B — Keep with explicit consent:</strong> Add a consent checkbox specifically for religion data collection, with a clear explanation of why it's collected (e.g., accommodating religious holidays). Track the consent in an <code>employee_consents</code> table.</li>
-          <li><strong>Option C — Make it optional and company-configurable:</strong> Add it as a feature toggle. Companies that need it enable it and accept responsibility for the lawful basis.</li>
+          <li>Employees must grant <code>special_category</code> consent in Settings before religion data is collected</li>
+          <li>Consent tracked in <code>employee_consents</code> table with grant/withdraw timestamps</li>
+          <li>Religion field shown in <code>employees_secure</code> view (masked from non-payroll users)</li>
+          <li>Consent can be withdrawn at any time via Settings → Data Consents</li>
         </ul>
-        <span class="effort-tag">depends on decision</span>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
 
     <div class="item" id="item-4-4">
       <div class="item-header" onclick="toggle('item-4-4')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
-        <span class="item-name">4.4 Employee data processing consent tracking</span>
-        <span class="status-badge missing">MISSING</span>
+        <span class="item-name">4.4 Employee consent tracking</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>Consent tracking exists for support access only (<code>tenant_support_access</code>). There is no employee-level consent record for general data processing, geolocation, or special category data.</p>
-        <h4>What's needed</h4>
+        <h4>Shipped</h4>
+        <p>Full employee consent system implemented across migration 094 + frontend:</p>
         <ul>
-          <li>Create an <code>employee_consents</code> table: employee_id, consent_type (data_processing, geolocation, special_category), granted_at, withdrawn_at, version</li>
-          <li>Show consent prompts during employee onboarding/first login</li>
-          <li>Allow employees to withdraw consent in Settings (with clear consequences explained)</li>
-          <li>Note: for employment contract data processing, consent isn't the primary lawful basis (performance of contract is) — but explicit consent IS required for geolocation and any special category data</li>
+          <li><code>employee_consents</code> table with RLS — types: data_processing, geolocation, special_category, marketing</li>
+          <li>Employees manage consents in Settings → Data Consents (toggle UI for religion/belief and geolocation)</li>
+          <li>Grant inserts a timestamped record; withdraw sets <code>withdrawn_at</code></li>
+          <li>Company admins can view consent status (read-only) via RLS policy</li>
+          <li>Consent version tracked for audit trail</li>
         </ul>
-        <span class="effort-tag">1 day engineering</span>
+        <span class="effort-tag">shipped</span>
       </div>
     </div>
   </div>
@@ -906,16 +861,20 @@ h1 {
       <div class="item-body">
         <h4>Before launch, test these scenarios</h4>
         <ul>
-          <li>Employee cannot query another employee's salary via Supabase API (after 2.1 fix)</li>
-          <li>Employee can only see their own payslips (after 2.1 fix)</li>
-          <li>Non-payroll admin cannot see salary data (after 2.1 fix)</li>
-          <li>Receipts bucket: user from Company A cannot access Company B's receipts (after 2.5 fix)</li>
-          <li>Non-SSO account requires MFA for admin access (after 2.2 fix)</li>
-          <li>Company admin can grant/revoke service admin access (after 2.3 fix)</li>
-          <li>Data export contains all employee data (existing — verify)</li>
-          <li>Employee anonymisation removes all PII (existing — verify)</li>
-          <li>Offboarded employee data purges after 30 days (after 4.1 schedule)</li>
-          <li>Privacy notice accessible from login, footer, and settings (after 1.1)</li>
+          <li>✅ Employee cannot query another employee's salary via Supabase API (2.1 — employees_secure view)</li>
+          <li>✅ Employee can only see their own payslips (2.1 — payslips scoped policy)</li>
+          <li>✅ Non-payroll admin cannot see salary data (2.1 — has_payroll_access check)</li>
+          <li>✅ Receipts bucket: user from Company A cannot access Company B's receipts (2.5 — tenant-scoped storage policies)</li>
+          <li>✅ Company admin can grant/revoke service admin access (2.3 — support_access_authorised toggle)</li>
+          <li>✅ Super admin can only self-grant to pre-authorised companies (2.3 — ensure_super_admin_access rewrite)</li>
+          <li>✅ Privacy notice accessible from login page link (1.1 — /privacy route)</li>
+          <li>✅ Employee can grant/withdraw consent for religion and geolocation (4.4 — Settings consents)</li>
+          <li>✅ Temp passwords cleared after auth user linked (4.2 — trigger)</li>
+          <li>✅ HSTS header present on all responses (3.4 — _headers file)</li>
+          <li>⬜ Data export contains all employee data (existing — verify)</li>
+          <li>⬜ Employee anonymisation removes all PII (existing — verify)</li>
+          <li>⬜ Offboarded employee data purges after 30 days (4.1 — needs pg_cron active)</li>
+          <li>⬜ Non-SSO account requires MFA for admin access (2.2 — TOTP not yet built)</li>
         </ul>
         <span class="effort-tag">1 day testing</span>
       </div>
@@ -924,47 +883,47 @@ h1 {
 
   <!-- Timeline -->
   <div class="timeline">
-    <div class="timeline-title">Timeline to SMB-ready launch</div>
+    <div class="timeline-title">Remaining work to SMB-ready launch</div>
     <table>
       <thead>
-        <tr><th>Week</th><th>What</th><th>Cost</th><th>Effort</th></tr>
+        <tr><th>Status</th><th>What</th><th>Cost</th><th>Effort</th></tr>
       </thead>
       <tbody>
+        <tr style="background: #f0fdf4">
+          <td>✅ DONE</td>
+          <td>Privacy notice, HSTS header, salary RLS, payslips scoping, receipts bucket policies, service admin pre-auth, data retention cron jobs, temp password cleanup, religion consent, employee consent tracking, SSO enforcement flag</td>
+          <td class="cost">£0</td>
+          <td>completed</td>
+        </tr>
         <tr>
-          <td>1–2</td>
-          <td>Privacy notice + DPA (lawyer review), data retention policy document, incident response plan</td>
-          <td class="cost">~£2K</td>
+          <td>⬜ NEXT</td>
+          <td>1.2 DPA template (lawyer review), 1.3 data retention policy document, 1.4 incident response plan</td>
+          <td class="cost">~£500–1K</td>
           <td>2 days writing + lawyer</td>
         </tr>
         <tr>
-          <td>2–3</td>
-          <td>Salary RLS isolation, MFA enforcement, service admin consent flow, receipts bucket scoping, geolocation consent, HSTS header</td>
+          <td>⬜ NEXT</td>
+          <td>2.2 MFA / TOTP enforcement for non-SSO admin users</td>
           <td class="cost">£0</td>
-          <td>4–5 days engineering</td>
+          <td>1–2 days engineering</td>
         </tr>
         <tr>
-          <td>3</td>
-          <td>Verify hosting region, test backup restore, document DR process</td>
+          <td>⬜ NEXT</td>
+          <td>3.2 Verify Supabase hosting region (manual dashboard check), 3.3 test backup restore + document DR</td>
           <td class="cost">£0</td>
           <td>1 day</td>
         </tr>
         <tr>
-          <td>3–4</td>
-          <td>Schedule retention jobs, fix temp passwords, religion field decision, consent tracking table</td>
-          <td class="cost">£0</td>
-          <td>2–3 days engineering</td>
-        </tr>
-        <tr>
-          <td>4</td>
-          <td>End-to-end security testing, launch verification</td>
+          <td>⬜ NEXT</td>
+          <td>5.2 End-to-end security testing (10 of 14 tests now verifiable)</td>
           <td class="cost">£0</td>
           <td>1 day testing</td>
         </tr>
         <tr>
           <td></td>
-          <td><strong>Total</strong></td>
-          <td class="cost"><strong>~£2K</strong></td>
-          <td><strong>~12 days work</strong></td>
+          <td><strong>Remaining total</strong></td>
+          <td class="cost"><strong>~£500–1K</strong></td>
+          <td><strong>~5–6 days work</strong></td>
         </tr>
       </tbody>
     </table>

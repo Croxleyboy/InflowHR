@@ -103,6 +103,7 @@ FROM employees e;
 -- Payslips: employees can only read their own. Admin/payroll users read all in company.
 DROP POLICY IF EXISTS "Company scoped read" ON payslips;
 DROP POLICY IF EXISTS "Employees can read own payslips" ON payslips;
+DROP POLICY IF EXISTS "Payslips scoped read" ON payslips;
 
 CREATE POLICY "Payslips scoped read" ON payslips FOR SELECT
   USING (
@@ -125,8 +126,8 @@ ALTER TABLE companies
   ADD COLUMN IF NOT EXISTS support_access_authorised boolean NOT NULL DEFAULT false;
 
 -- Replace ensure_super_admin_access to check pre-authorisation
-CREATE OR REPLACE FUNCTION ensure_super_admin_access()
-RETURNS void
+CREATE OR REPLACE FUNCTION ensure_super_admin_access(p_hours int DEFAULT 48)
+RETURNS int
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
@@ -134,6 +135,7 @@ AS $$
 DECLARE
   v_sa_uid uuid;
   v_company record;
+  v_granted int := 0;
 BEGIN
   IF NOT is_super_admin() THEN
     RAISE EXCEPTION 'Only super admins can call this function';
@@ -148,7 +150,7 @@ BEGIN
     AND status = 'active'
     AND expires_at < now();
 
-  -- Grant 48h access to companies that have pre-authorised support access
+  -- Only grant access to companies that have pre-authorised support access
   FOR v_company IN
     SELECT id FROM companies WHERE support_access_authorised = true
   LOOP
@@ -169,8 +171,10 @@ BEGIN
     ) VALUES (
       v_company.id, v_sa_uid, v_sa_uid,
       'read_only', 'Pre-authorised support access',
-      now() + interval '48 hours', 'active'
+      now() + make_interval(hours => p_hours), 'active'
     );
+
+    v_granted := v_granted + 1;
 
     -- Audit log the self-grant
     PERFORM log_gdpr_action(
@@ -180,11 +184,13 @@ BEGIN
       jsonb_build_object(
         'scope', 'read_only',
         'reason', 'Pre-authorised support access',
-        'expires_at', (now() + interval '48 hours')::text,
+        'expires_at', (now() + make_interval(hours => p_hours))::text,
         'pre_authorised', true
       )
     );
   END LOOP;
+
+  RETURN v_granted;
 END;
 $$;
 
@@ -200,6 +206,7 @@ DROP POLICY IF EXISTS "Authenticated users can delete own receipts" ON storage.o
 DROP POLICY IF EXISTS "Authenticated users can update receipts" ON storage.objects;
 
 -- Tenant-scoped: file path must start with user's company_id
+DROP POLICY IF EXISTS "Tenant scoped receipt upload" ON storage.objects;
 CREATE POLICY "Tenant scoped receipt upload" ON storage.objects FOR INSERT
   TO authenticated
   WITH CHECK (
@@ -210,6 +217,7 @@ CREATE POLICY "Tenant scoped receipt upload" ON storage.objects FOR INSERT
     )
   );
 
+DROP POLICY IF EXISTS "Tenant scoped receipt read" ON storage.objects;
 CREATE POLICY "Tenant scoped receipt read" ON storage.objects FOR SELECT
   TO authenticated
   USING (
@@ -220,6 +228,7 @@ CREATE POLICY "Tenant scoped receipt read" ON storage.objects FOR SELECT
     )
   );
 
+DROP POLICY IF EXISTS "Tenant scoped receipt update" ON storage.objects;
 CREATE POLICY "Tenant scoped receipt update" ON storage.objects FOR UPDATE
   TO authenticated
   USING (
@@ -230,6 +239,7 @@ CREATE POLICY "Tenant scoped receipt update" ON storage.objects FOR UPDATE
     )
   );
 
+DROP POLICY IF EXISTS "Tenant scoped receipt delete" ON storage.objects;
 CREATE POLICY "Tenant scoped receipt delete" ON storage.objects FOR DELETE
   TO authenticated
   USING (
@@ -245,7 +255,7 @@ CREATE POLICY "Tenant scoped receipt delete" ON storage.objects FOR DELETE
 -- 4.4 — EMPLOYEE CONSENTS TABLE
 -- ============================================================
 
-CREATE TABLE employee_consents (
+CREATE TABLE IF NOT EXISTS employee_consents (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
   company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
@@ -263,6 +273,7 @@ CREATE TABLE employee_consents (
 ALTER TABLE employee_consents ENABLE ROW LEVEL SECURITY;
 
 -- Employees can read/manage their own consents; admins can read company consents
+DROP POLICY IF EXISTS "Own consents read" ON employee_consents;
 CREATE POLICY "Own consents read" ON employee_consents FOR SELECT
   USING (
     employee_id = get_my_employee_id()
@@ -270,9 +281,11 @@ CREATE POLICY "Own consents read" ON employee_consents FOR SELECT
     OR is_super_admin()
   );
 
+DROP POLICY IF EXISTS "Own consents insert" ON employee_consents;
 CREATE POLICY "Own consents insert" ON employee_consents FOR INSERT
   WITH CHECK (employee_id = get_my_employee_id());
 
+DROP POLICY IF EXISTS "Own consents update" ON employee_consents;
 CREATE POLICY "Own consents update" ON employee_consents FOR UPDATE
   USING (employee_id = get_my_employee_id());
 
@@ -383,6 +396,75 @@ BEGIN
     );
   END IF;
 END $$;
+
+
+-- ============================================================
+-- 2.3b — EXTEND/RE-GRANT MUST ALSO CHECK PRE-AUTHORISATION
+-- ============================================================
+
+-- Super admin re-grants or extends must respect the pre-authorisation flag.
+-- Company admins granting access to their own company are not affected.
+CREATE OR REPLACE FUNCTION extend_support_access(
+  p_company_id uuid,
+  p_hours int DEFAULT 48
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_grant_id uuid;
+  v_actor    uuid;
+BEGIN
+  v_actor := auth.uid();
+
+  IF NOT (is_super_admin() OR is_my_company(p_company_id)) THEN
+    RAISE EXCEPTION 'Access denied';
+  END IF;
+
+  -- Super admin self-grants require company pre-authorisation
+  IF is_super_admin() AND NOT EXISTS (
+    SELECT 1 FROM companies WHERE id = p_company_id AND support_access_authorised = true
+  ) THEN
+    RAISE EXCEPTION 'Company has not pre-authorised support access';
+  END IF;
+
+  -- Expire old grants for this company
+  UPDATE tenant_support_access
+    SET status = 'expired'
+  WHERE company_id = p_company_id
+    AND granted_to = CASE WHEN is_super_admin() THEN v_actor ELSE get_super_admin_uid() END
+    AND status = 'active';
+
+  -- Create new grant
+  INSERT INTO tenant_support_access (
+    company_id, granted_by, granted_to, reason, scope, expires_at
+  ) VALUES (
+    p_company_id,
+    v_actor,
+    CASE WHEN is_super_admin() THEN v_actor ELSE get_super_admin_uid() END,
+    CASE WHEN is_super_admin() THEN 'Pre-authorised support access — extended' ELSE 'Company admin granted access' END,
+    'read_only',
+    now() + make_interval(hours => p_hours)
+  )
+  RETURNING id INTO v_grant_id;
+
+  PERFORM log_gdpr_action(
+    v_actor,
+    CASE WHEN is_super_admin() THEN 'super_admin' ELSE 'company_admin' END,
+    p_company_id, NULL, 'tenant_support_access', v_grant_id::text,
+    'SELF_GRANT_ACCESS', NULL, NULL,
+    jsonb_build_object(
+      'scope', 'read_only',
+      'hours', p_hours,
+      'pre_authorised', true
+    )
+  );
+
+  RETURN v_grant_id;
+END;
+$$;
 
 
 -- ============================================================
