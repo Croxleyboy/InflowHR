@@ -20,7 +20,7 @@ export function getXeroEnv() {
 }
 
 export const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://app.inflowhr.com',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
@@ -33,6 +33,29 @@ export function json(data: unknown, status = 200) {
 
 export function redirect(url: string) {
   return new Response(null, { status: 302, headers: { Location: url } })
+}
+
+async function hmacKey(secret: string): Promise<CryptoKey> {
+  const enc = new TextEncoder()
+  return crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
+}
+
+export async function signState(payload: string, secret: string): Promise<string> {
+  const key = await hmacKey(secret)
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+  return `${payload}.${sigB64}`
+}
+
+export async function verifyState(signed: string, secret: string): Promise<string | null> {
+  const dotIdx = signed.lastIndexOf('.')
+  if (dotIdx < 0) return null
+  const payload = signed.slice(0, dotIdx)
+  const sigB64 = signed.slice(dotIdx + 1)
+  const key = await hmacKey(secret)
+  const sigBytes = Uint8Array.from(atob(sigB64), c => c.charCodeAt(0))
+  const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
+  return valid ? payload : null
 }
 
 /**

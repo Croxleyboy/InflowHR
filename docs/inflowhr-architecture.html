@@ -1,0 +1,1045 @@
+<title>InflowHR Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --ink: #1a2332;
+  --ink-secondary: #475569;
+  --ink-muted: #64748b;
+  --border: #e2e8f0;
+  --accent: #2563eb;
+  --accent-light: #eff6ff;
+  --critical: #dc2626;
+  --critical-bg: #fef2f2;
+  --warning: #d97706;
+  --warning-bg: #fffbeb;
+  --ok: #16a34a;
+  --ok-bg: #f0fdf4;
+  --info-bg: #f0f9ff;
+  --code-bg: #f1f5f9;
+  --font: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --ink: #e2e8f0;
+    --ink-secondary: #94a3b8;
+    --ink-muted: #64748b;
+    --border: #334155;
+    --accent: #60a5fa;
+    --accent-light: #1e293b;
+    --critical: #f87171;
+    --critical-bg: #1c1917;
+    --warning: #fbbf24;
+    --warning-bg: #1c1917;
+    --ok: #4ade80;
+    --ok-bg: #0f1f13;
+    --info-bg: #0c1929;
+    --code-bg: #1e293b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --ink: #e2e8f0;
+  --ink-secondary: #94a3b8;
+  --ink-muted: #64748b;
+  --border: #334155;
+  --accent: #60a5fa;
+  --accent-light: #1e293b;
+  --critical: #f87171;
+  --critical-bg: #1c1917;
+  --warning: #fbbf24;
+  --warning-bg: #1c1917;
+  --ok: #4ade80;
+  --ok-bg: #0f1f13;
+  --info-bg: #0c1929;
+  --code-bg: #1e293b;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+.layout {
+  display: flex;
+  gap: 0;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 260px;
+  min-width: 260px;
+  overflow-y: auto;
+  padding: 24px 16px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  scrollbar-width: thin;
+}
+
+.sidebar-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 12px 0;
+}
+
+.sidebar a {
+  display: block;
+  font-size: 13px;
+  color: var(--ink-secondary);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+.sidebar a:hover { background: var(--accent-light); color: var(--accent); }
+.sidebar .s-group { margin-top: 16px; }
+.sidebar .s-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  padding: 32px 48px 80px;
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+.subtitle {
+  font-size: 15px;
+  color: var(--ink-muted);
+  margin: 0 0 32px 0;
+}
+.meta-line {
+  font-size: 13px;
+  color: var(--ink-muted);
+  margin: 0 0 24px 0;
+  font-family: var(--mono);
+}
+
+h2 {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 48px 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border);
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 32px 0 12px 0;
+  color: var(--ink);
+}
+h4 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 24px 0 8px 0;
+  color: var(--ink-secondary);
+}
+
+p { margin: 0 0 12px 0; max-width: 72ch; }
+
+code {
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--code-bg);
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+.chip {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+.chip-critical { background: var(--critical-bg); color: var(--critical); }
+.chip-warning { background: var(--warning-bg); color: var(--warning); }
+.chip-ok { background: var(--ok-bg); color: var(--ok); }
+.chip-info { background: var(--info-bg); color: var(--accent); }
+
+.alert {
+  padding: 12px 16px;
+  border-radius: 6px;
+  margin: 16px 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.alert-critical { background: var(--critical-bg); border-left: 3px solid var(--critical); }
+.alert-warning { background: var(--warning-bg); border-left: 3px solid var(--warning); }
+.alert-info { background: var(--info-bg); border-left: 3px solid var(--accent); }
+
+.tbl-wrap { overflow-x: auto; margin: 12px 0 24px; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tr:last-child td { border-bottom: none; }
+td code { font-size: 12px; }
+
+details {
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+details > summary {
+  padding: 10px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--ink);
+}
+details > summary::before {
+  content: '\25B6\FE0E';
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 10px;
+  transition: transform 0.15s;
+  color: var(--ink-muted);
+}
+details[open] > summary::before { transform: rotate(90deg); }
+details > summary::-webkit-details-marker { display: none; }
+details .detail-body { padding: 0 16px 16px; }
+
+.stack-diagram {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 480px;
+  margin: 16px 0 24px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+.stack-layer {
+  padding: 10px 16px;
+  border-radius: 4px;
+}
+.stack-cf { background: #f59e0b20; color: var(--warning); border: 1px solid #f59e0b40; }
+.stack-react { background: #2563eb15; color: var(--accent); border: 1px solid #2563eb30; }
+.stack-supa { background: #16a34a15; color: var(--ok); border: 1px solid #16a34a30; }
+.stack-pg { background: #64748b15; color: var(--ink-secondary); border: 1px solid #64748b30; }
+.stack-arrow {
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+ul, ol { margin: 0 0 12px 0; padding-left: 24px; }
+li { margin-bottom: 4px; }
+li code { font-size: 12px; }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0; }
+
+@media (max-width: 900px) {
+  .layout { flex-direction: column; }
+  .sidebar {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 16px;
+  }
+  .main { padding: 24px 16px 64px; }
+  .two-col { grid-template-columns: 1fr; }
+}
+</style>
+
+<div class="layout">
+<nav class="sidebar">
+  <div class="sidebar-title">InflowHR Architecture</div>
+  <div class="s-group">
+    <div class="s-group-title">Overview</div>
+    <a href="#stack">Technology Stack</a>
+    <a href="#hosting">Hosting &amp; Deployment</a>
+    <a href="#auth">Authentication</a>
+    <a href="#multi-tenancy">Multi-Tenancy</a>
+  </div>
+  <div class="s-group">
+    <div class="s-group-title">Frontend</div>
+    <a href="#routes">Route Map</a>
+    <a href="#contexts">React Contexts</a>
+    <a href="#features">Feature Flags</a>
+    <a href="#libs">Libraries &amp; Utilities</a>
+  </div>
+  <div class="s-group">
+    <div class="s-group-title">Database</div>
+    <a href="#tables">Tables</a>
+    <a href="#indexes">Indexes</a>
+    <a href="#rls">Row Level Security</a>
+    <a href="#functions">Functions &amp; RPCs</a>
+    <a href="#triggers">Triggers</a>
+    <a href="#storage">Storage Buckets</a>
+    <a href="#edge-functions">Edge Functions</a>
+  </div>
+  <div class="s-group">
+    <div class="s-group-title">Security Audit</div>
+    <a href="#sec-critical">Critical Issues</a>
+    <a href="#sec-high">High Issues</a>
+    <a href="#sec-medium">Medium Issues</a>
+    <a href="#sec-low">Low / Informational</a>
+  </div>
+  <div class="s-group">
+    <div class="s-group-title">Performance</div>
+    <a href="#dead-code">Dead &amp; Unused Code</a>
+    <a href="#bundle">Bundle &amp; Performance</a>
+    <a href="#duplication">Code Duplication</a>
+  </div>
+  <div class="s-group">
+    <div class="s-group-title">Troubleshooting</div>
+    <a href="#ts-auth">Auth Issues</a>
+    <a href="#ts-data">Data &amp; RLS</a>
+    <a href="#ts-email">Email Notifications</a>
+    <a href="#ts-xero">Xero Integration</a>
+    <a href="#ts-checkin">Check-In / Geolocation</a>
+  </div>
+</nav>
+
+<main class="main">
+
+<h1>InflowHR Architecture &amp; Security Audit</h1>
+<p class="subtitle">Complete technical reference for supporting, troubleshooting, and securing the InflowHR SaaS platform.</p>
+<p class="meta-line">Generated 09-09-2026 &middot; Repository: Croxleyboy/Inflowhrcode &middot; 92 migrations &middot; 97 source files</p>
+
+<!-- ============================================ -->
+<h2 id="stack">Technology Stack</h2>
+
+<div class="stack-diagram">
+  <div class="stack-layer stack-cf">Cloudflare Pages &mdash; CDN, hosting, _headers CSP</div>
+  <div class="stack-arrow">&darr; static SPA &darr;</div>
+  <div class="stack-layer stack-react">React 19 + TypeScript 6 + Vite 8 &mdash; SPA with react-router-dom 7</div>
+  <div class="stack-arrow">&darr; supabase-js SDK &darr;</div>
+  <div class="stack-layer stack-supa">Supabase &mdash; Auth, REST (PostgREST), Edge Functions, Storage</div>
+  <div class="stack-arrow">&darr;&darr;</div>
+  <div class="stack-layer stack-pg">PostgreSQL &mdash; RLS, pg_cron, pgcrypto, btree_gist</div>
+</div>
+
+<h3>Key Dependencies</h3>
+<div class="tbl-wrap"><table>
+<tr><th>Package</th><th>Purpose</th><th>Notes</th></tr>
+<tr><td><code>@supabase/supabase-js</code></td><td>Backend SDK (auth, DB, storage, functions)</td><td>v2.x</td></tr>
+<tr><td><code>react-router-dom</code></td><td>Client-side routing</td><td>v7</td></tr>
+<tr><td><code>xlsx</code></td><td>Spreadsheet import/export (onboarding CSV)</td><td>~300 KB, eagerly loaded</td></tr>
+<tr><td><code>jspdf</code></td><td>PDF generation (payslips, invoices)</td><td></td></tr>
+<tr><td><code>jszip</code></td><td>Zip file creation (GDPR data export)</td><td></td></tr>
+<tr><td><code>leaflet</code> / <code>react-leaflet</code></td><td>Maps for check-in geolocation</td><td></td></tr>
+<tr><td><code>vite-plugin-pwa</code></td><td>PWA service worker + offline caching</td><td>Workbox, 3 MB file limit</td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="hosting">Hosting &amp; Deployment</h2>
+<p>The app is a single-page application deployed to <strong>Cloudflare Pages</strong>. The deployment pipeline is: commit to <code>dev</code> branch &rarr; push &rarr; PR to <code>main</code> &rarr; merge &rarr; Cloudflare auto-deploys.</p>
+
+<h3>Security Headers (Cloudflare _headers)</h3>
+<ul>
+  <li><code>Content-Security-Policy</code> &mdash; <code>default-src 'self'</code>; scripts and styles allow <code>'unsafe-inline'</code>; images allow Supabase and OpenStreetMap tiles; connections restricted to Supabase endpoints</li>
+  <li><code>X-Frame-Options: DENY</code> &mdash; prevents clickjacking</li>
+  <li><code>X-Content-Type-Options: nosniff</code></li>
+  <li><code>Referrer-Policy: strict-origin-when-cross-origin</code></li>
+  <li><code>Permissions-Policy</code> &mdash; camera/microphone denied, geolocation self-only, payment denied</li>
+</ul>
+
+<!-- ============================================ -->
+<h2 id="auth">Authentication</h2>
+
+<h3>Login Methods</h3>
+<div class="tbl-wrap"><table>
+<tr><th>Method</th><th>Flow</th><th>Details</th></tr>
+<tr><td><strong>Microsoft SSO</strong></td><td><code>supabase.auth.signInWithOAuth({ provider: 'azure' })</code></td><td>Scopes: openid, email, profile. Forces account selection. On sign-in, the <code>handle_new_sso_user()</code> trigger auto-creates the company (by tenant ID) and <code>company_users</code> row.</td></tr>
+<tr><td><strong>Email/Password</strong></td><td>Raw POST to <code>/auth/v1/token?grant_type=password</code>, then <code>supabase.auth.setSession()</code></td><td>For non-SSO companies. Bypasses SDK <code>signInWithPassword</code>. Accounts created via <code>create_nonsso_account()</code> RPC (super admin only).</td></tr>
+<tr><td><strong>Break Glass</strong></td><td>Same as Email/Password</td><td>Emergency access form on login page. Cosmetically different but functionally identical. No additional MFA or IP restriction.</td></tr>
+</table></div>
+
+<h3>Session Management</h3>
+<ul>
+  <li><code>AuthProvider</code> calls <code>getSession()</code> on mount and subscribes to <code>onAuthStateChange()</code></li>
+  <li>On session detected: calls <code>ensure_company_user()</code> RPC to link/create the <code>company_users</code> record</li>
+  <li>Resolves <code>employee_id</code> by exact email match, then fuzzy local-part match</li>
+  <li>Checks <code>login_disabled</code> flag and trial expiry on the company</li>
+  <li><strong>Inactivity timeout:</strong> 15 minutes. Monitors mouse, keyboard, scroll, touch. Cross-tab check every 30s via <code>sessionStorage</code>.</li>
+</ul>
+
+<h3>Role Hierarchy</h3>
+<div class="tbl-wrap"><table>
+<tr><th>Role</th><th>Determination</th><th>Access Level</th></tr>
+<tr><td><code>super_admin</code></td><td>Email matches <code>VITE_SUPER_ADMIN_EMAIL</code> or <code>VITE_BREAK_GLASS_EMAIL</code> env vars</td><td>All routes. Company selector. All features visible regardless of subscription. Backend: <code>is_super_admin()</code> function checks hardcoded emails.</td></tr>
+<tr><td><code>admin</code></td><td><code>company_users.role = 'admin'</code></td><td>Admin portal + all employee routes</td></tr>
+<tr><td><code>hr</code></td><td><code>company_users.role = 'hr'</code></td><td>Same as admin</td></tr>
+<tr><td><code>portal_role</code></td><td>Record in <code>admin_portal_access</code> table</td><td>Admin portal (all sections, no per-route scoping)</td></tr>
+<tr><td><code>employee</code></td><td>Default</td><td>Employee routes only</td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="multi-tenancy">Multi-Tenancy Model</h2>
+<p>Every data table carries a <code>company_id</code> column (UUID FK to <code>companies</code>). Tenant isolation is enforced through:</p>
+<ul>
+  <li><strong>Row Level Security (RLS)</strong> on every table, using <code>is_my_company(company_id)</code> to verify the current user belongs to the company</li>
+  <li>A <code>BEFORE INSERT</code> trigger (<code>auto_set_company_id</code>) on 13 core tables that stamps <code>company_id</code> from <code>get_my_company_id()</code></li>
+  <li>Super admin access is gated through <code>can_access_company()</code> which requires an active <code>tenant_support_access</code> grant (GDPR consent-based)</li>
+</ul>
+
+<!-- ============================================ -->
+<h2 id="routes">Route Map</h2>
+
+<h3>Route Protection Layers</h3>
+<ol>
+  <li><strong>AuthGate</strong> (wraps all routes) &mdash; No session &rarr; Login page. No <code>companyUser</code> and not super admin &rarr; Access Denied. Setup incomplete &rarr; Initial Setup forced.</li>
+  <li><strong>AdminGate</strong> (wraps <code>/admin/*</code>) &mdash; Requires <code>super_admin</code>, or <code>company_users.role</code> in [admin, hr], or <code>admin_portal_access</code> record.</li>
+  <li><strong>SuperAdminGate</strong> (wraps <code>/admin/companies</code>, <code>/admin/subscriptions</code>, <code>/admin/demo-seed</code>) &mdash; Super admin email only.</li>
+</ol>
+
+<details>
+<summary>Employee Routes (38 routes)</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Path</th><th>Component</th><th>Description</th></tr>
+<tr><td><code>/</code></td><td>Dashboard</td><td>Home dashboard with quick-access tiles</td></tr>
+<tr><td><code>/settings</code></td><td>Settings</td><td>Language, theme preferences</td></tr>
+<tr><td><code>/directory</code></td><td>Directory</td><td>Company employee directory</td></tr>
+<tr><td><code>/notifications</code></td><td>Notifications</td><td>Workflow notifications and personal reminders</td></tr>
+<tr><td><code>/notifications/create</code></td><td>CreateNotification</td><td>Post a notification (managers/admins)</td></tr>
+<tr><td><code>/expenses</code></td><td>Expenses</td><td>Expense claims list</td></tr>
+<tr><td><code>/expenses/new</code></td><td>NewExpenseClaim</td><td>Create new expense claim</td></tr>
+<tr><td><code>/expenses/:id</code></td><td>ExpenseDetail</td><td>Expense claim detail + line items</td></tr>
+<tr><td><code>/approve/expense/:id</code></td><td>ExpenseApproval</td><td>Approve/decline expense</td></tr>
+<tr><td><code>/approve/leave/:id</code></td><td>LeaveApproval</td><td>Approve/decline leave request</td></tr>
+<tr><td><code>/approve/timesheet/:id</code></td><td>TimesheetApproval</td><td>Approve/decline timesheet</td></tr>
+<tr><td><code>/leave</code></td><td>MyLeave</td><td>Leave overview + balances</td></tr>
+<tr><td><code>/leave/history</code></td><td>MyLeaveHistory</td><td>Leave request history (upcoming + previous)</td></tr>
+<tr><td><code>/leave/calendar</code></td><td>LeaveCalendar</td><td>3-week team leave calendar</td></tr>
+<tr><td><code>/leave/new</code></td><td>NewLeaveRequest</td><td>Submit leave request</td></tr>
+<tr><td><code>/leave/:id</code></td><td>LeaveDetail</td><td>Leave request detail</td></tr>
+<tr><td><code>/timesheets</code></td><td>Timesheets</td><td>Timesheets overview</td></tr>
+<tr><td><code>/timesheets/checkin</code></td><td>TimesheetCheckIn</td><td>Clock in/out for timesheets</td></tr>
+<tr><td><code>/timesheets/new</code></td><td>NewTimesheet</td><td>Submit timesheet entry</td></tr>
+<tr><td><code>/timesheets/history</code></td><td>TimesheetHistory</td><td>Past timesheets</td></tr>
+<tr><td><code>/timesheets/:id</code></td><td>TimesheetDetail</td><td>Timesheet entry detail</td></tr>
+<tr><td><code>/my-profile</code></td><td>MyProfile</td><td>Employee profile (personal, job, documents)</td></tr>
+<tr><td><code>/payslips</code></td><td>Payslips</td><td>Payslip history + PDF download</td></tr>
+<tr><td><code>/kudos</code></td><td>Kudos</td><td>Send/receive recognition</td></tr>
+<tr><td><code>/benefits</code></td><td>Benefits</td><td>Company benefits enrolment</td></tr>
+<tr><td><code>/elearning</code></td><td>ELearning</td><td>Training courses</td></tr>
+<tr><td><code>/elearning/onb-getting-started</code></td><td>GettingStartedCourse</td><td>Onboarding course</td></tr>
+<tr><td><code>/elearning/:courseId</code></td><td>CourseContent</td><td>Course content viewer</td></tr>
+<tr><td><code>/one-to-ones</code></td><td>OneToOnes</td><td>1:1 meeting list</td></tr>
+<tr><td><code>/one-to-ones/new</code></td><td>NewOneToOne</td><td>Schedule 1:1</td></tr>
+<tr><td><code>/one-to-ones/:id</code></td><td>OneToOneDetail</td><td>Meeting detail + comments</td></tr>
+<tr><td><code>/performance/goals</code></td><td>PerformanceGoals</td><td>Goals tracking</td></tr>
+<tr><td><code>/shifts</code></td><td>MyShifts</td><td>Assigned shifts view</td></tr>
+<tr><td><code>/shifts/checkin</code></td><td>ShiftCheckIn</td><td>Shift clock-in</td></tr>
+<tr><td><code>/shifts/swap</code></td><td>ShiftSwap</td><td>Shift swap requests</td></tr>
+<tr><td><code>/shifts/availability</code></td><td>Availability</td><td>Availability preferences</td></tr>
+<tr><td><code>/space-booking</code></td><td>SpaceBooking</td><td>Desk/room booking</td></tr>
+<tr><td><code>/skills-passport</code></td><td>SkillsPassport</td><td>Skills, certifications, career aspirations</td></tr>
+</table></div>
+</div>
+</details>
+
+<details>
+<summary>Admin Routes (26 routes)</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Path</th><th>Component</th><th>Description</th></tr>
+<tr><td><code>/admin</code></td><td>AdminDashboardModern</td><td>Admin home (modern on mobile, classic on desktop for super admin)</td></tr>
+<tr><td><code>/admin/employees</code></td><td>AdminEmployees</td><td>Employee management, onboarding, offboarding</td></tr>
+<tr><td><code>/admin/expenses</code></td><td>AdminExpenses</td><td>Company expense claims management</td></tr>
+<tr><td><code>/admin/leave</code></td><td>AdminLeave</td><td>Leave management, types, balances</td></tr>
+<tr><td><code>/admin/payroll</code></td><td>AdminPayroll</td><td>Payroll, payslips, Xero integration</td></tr>
+<tr><td><code>/admin/timesheets</code></td><td>AdminTimesheets</td><td>Timesheet management + check-in dashboard</td></tr>
+<tr><td><code>/admin/shifts</code></td><td>AdminShiftsRotas</td><td>Shifts, rotas, availability, check-in, reports, labour demand</td></tr>
+<tr><td><code>/admin/kudos</code></td><td>AdminKudos</td><td>Recognition management</td></tr>
+<tr><td><code>/admin/elearning</code></td><td>AdminELearning</td><td>Course management</td></tr>
+<tr><td><code>/admin/performance</code></td><td>AdminPerformance</td><td>Performance reviews</td></tr>
+<tr><td><code>/admin/benefits</code></td><td>AdminBenefits</td><td>Benefits administration</td></tr>
+<tr><td><code>/admin/onboarding</code></td><td>AdminOnboarding</td><td>Onboarding workflows + company setup wizard</td></tr>
+<tr><td><code>/admin/announcements</code></td><td>AdminAnnouncements</td><td>Company announcements</td></tr>
+<tr><td><code>/admin/notifications</code></td><td>AdminNotifications</td><td>Notification settings, email config, workflow</td></tr>
+<tr><td><code>/admin/tickets</code></td><td>AdminTickets</td><td>HR support tickets</td></tr>
+<tr><td><code>/admin/billing</code></td><td>AdminBilling</td><td>Billing, invoices, snapshots</td></tr>
+<tr><td><code>/admin/legal-timesheets</code></td><td>AdminLegalTimesheets</td><td>Legal client/matter timesheets</td></tr>
+<tr><td><code>/admin/space-management</code></td><td>AdminSpaceManagement</td><td>Locations, floors, spaces, booking analytics</td></tr>
+<tr><td><code>/admin/assets</code></td><td>AdminAssetManagement</td><td>Company asset tracking</td></tr>
+<tr><td><code>/admin/talent-intelligence</code></td><td>AdminTalentIntelligence</td><td>Skills gap analysis, role profiles</td></tr>
+<tr><td><code>/admin/access</code></td><td>AdminAccess</td><td>Portal role delegation</td></tr>
+<tr><td><code>/admin/user-guides</code></td><td>AdminUserGuides</td><td>User guide documentation</td></tr>
+<tr><td colspan="3" style="font-weight:600; color:var(--accent)">Super Admin Only</td></tr>
+<tr><td><code>/admin/companies</code></td><td>AdminCompanies</td><td>Company management, registration, trial control</td></tr>
+<tr><td><code>/admin/subscriptions</code></td><td>AdminSubscriptions</td><td>Feature subscriptions, pricing, audit log, support access</td></tr>
+<tr><td><code>/admin/demo-seed</code></td><td>AdminDemoSeed</td><td>Demo data seeding/wiping</td></tr>
+</table></div>
+</div>
+</details>
+
+<!-- ============================================ -->
+<h2 id="contexts">React Contexts</h2>
+<div class="tbl-wrap"><table>
+<tr><th>Context</th><th>File</th><th>Purpose</th></tr>
+<tr><td><code>AuthContext</code></td><td><code>context/AuthContext.tsx</code></td><td>Session, user identity, role, company, manager status, inactivity timer</td></tr>
+<tr><td><code>FeatureContext</code></td><td><code>context/FeatureContext.tsx</code></td><td>Company feature flags (enabled/visible per add-on)</td></tr>
+<tr><td><code>LanguageContext</code></td><td><code>context/LanguageContext.tsx</code></td><td>i18n (EN/DE), translation keys, status translation</td></tr>
+<tr><td><code>ThemeContext</code></td><td><code>context/ThemeContext.tsx</code></td><td>Light/dark theme toggle, persisted in localStorage</td></tr>
+<tr><td><code>ToastContext</code></td><td><code>context/ToastContext.tsx</code></td><td>Global toast notifications (success, error, info)</td></tr>
+<tr><td><code>CheckInContext</code></td><td><code>context/CheckInContext.tsx</code></td><td>Geolocation check-in state, active record tracking</td></tr>
+<tr><td><code>AdminCompanyContext</code></td><td><code>context/AdminCompanyContext.tsx</code></td><td>Selected company for admin views (rendered inside AdminLayout)</td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="features">Feature Flag System</h2>
+<p>Features are toggled per company via the <code>company_features</code> table. Each feature has an <code>is_enabled</code> (subscribed) and <code>is_visible</code> (shown to employees) flag.</p>
+
+<div class="two-col">
+<div>
+<h4>Standard Features (always on)</h4>
+<ul>
+  <li><code>expenses</code></li>
+  <li><code>leave</code></li>
+  <li><code>profile</code></li>
+  <li><code>kudos</code></li>
+  <li><code>asset_management</code></li>
+</ul>
+</div>
+<div>
+<h4>Add-On Features (off by default)</h4>
+<ul>
+  <li><code>timesheets</code></li>
+  <li><code>performance</code></li>
+  <li><code>shifts</code></li>
+  <li><code>payslips</code></li>
+  <li><code>elearning</code></li>
+  <li><code>benefits</code></li>
+  <li><code>legal_timesheets</code></li>
+  <li><code>space_booking</code></li>
+  <li><code>skills_passport</code></li>
+  <li><code>email_notifications</code></li>
+</ul>
+</div>
+</div>
+
+<div class="alert alert-warning"><strong>Important:</strong> Feature flags control UI visibility only (dashboard tiles, admin sidebar items). They do <strong>not</strong> block direct URL navigation. A user who types <code>/timesheets</code> into the address bar will reach the Timesheets component even if the feature is disabled. Security relies on backend RLS preventing data access.</div>
+
+<!-- ============================================ -->
+<h2 id="libs">Libraries &amp; Utilities</h2>
+<div class="tbl-wrap"><table>
+<tr><th>File</th><th>Purpose</th></tr>
+<tr><td><code>lib/supabase.ts</code></td><td>Supabase client initialisation, <code>signInDirect()</code>, <code>callRpcDirect()</code>, <code>sendNotificationEmail()</code></td></tr>
+<tr><td><code>lib/emailNotifications.ts</code></td><td><code>sendFeatureEmail()</code> &mdash; checks company email settings, inserts notification, calls Edge Function</td></tr>
+<tr><td><code>lib/workflow.ts</code></td><td><code>getManagerEmail()</code> &mdash; 3-tier fallback: explicit manager_email &rarr; manager_id FK &rarr; any company admin</td></tr>
+<tr><td><code>lib/formatters.ts</code></td><td>Date formatting (UK DD/MM/YYYY), currency, time formatting</td></tr>
+<tr><td><code>lib/validators.ts</code></td><td>UK NI number, bank sort code, account number validation</td></tr>
+<tr><td><code>lib/geolocation.ts</code></td><td>Haversine distance calculation, <code>matchLocation()</code> for geofence check-in</td></tr>
+<tr><td><code>lib/overlapCheck.ts</code></td><td>Leave/shift overlap detection</td></tr>
+<tr><td><code>lib/workingDays.ts</code></td><td>Working day calculation (excludes weekends)</td></tr>
+<tr><td><code>lib/companyArchive.ts</code></td><td>Company data archive/export utilities</td></tr>
+<tr><td><code>lib/benefitDefaults.ts</code></td><td>Default benefit type definitions</td></tr>
+<tr><td><code>lib/translations.ts</code></td><td>Translation key-value map (EN/DE)</td></tr>
+<tr><td><code>hooks/useMediaQuery.ts</code></td><td>Responsive breakpoint hook</td></tr>
+<tr><td><code>hooks/useNotificationBadge.ts</code></td><td>Unread notification count</td></tr>
+<tr><td><code>hooks/useEmployeeLookup.ts</code></td><td><span class="chip chip-warning">UNUSED</span> Dead code &mdash; never imported</td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="tables">Database Tables</h2>
+<p>92 migrations define ~55 tables. Tables created via Supabase dashboard (not version-controlled) are marked below.</p>
+
+<details>
+<summary>Core HR Tables</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Table</th><th>PK</th><th>Key Columns</th><th>FKs</th><th>Notes</th></tr>
+<tr><td><code>companies</code></td><td>UUID</td><td>name, microsoft_tenant_id (UNIQUE), domain, is_active, auth_mode, is_trial, trial dates, login_disabled, fy_start_month, dashboard_style</td><td>&mdash;</td><td>Central tenant table</td></tr>
+<tr><td><code>company_users</code></td><td>UUID</td><td>role (admin/employee/hr), is_active</td><td>auth_user_id &rarr; auth.users, company_id &rarr; companies, employee_id &rarr; employees</td><td>UNIQUE(auth_user_id, company_id)</td></tr>
+<tr><td><code>employees</code></td><td>UUID</td><td>~40 columns: personal details, job details, bank details, NI, emergency contacts, manager_id (self-ref), is_admin, is_active, anonymised_at, is_frozen</td><td>auth_user_id &rarr; auth.users, company_id &rarr; companies, manager_id &rarr; employees</td><td>Core employee record</td></tr>
+<tr><td><code>onboarding</code></td><td>BIGINT</td><td>~60 columns: personal details, workflow flags, device options JSONB, skipped_steps JSONB</td><td>employee_id &rarr; employees, company_id &rarr; companies</td><td>Full onboarding workflow</td></tr>
+<tr><td><code>offboarding</code></td><td>SERIAL</td><td>end_date, reason, status, workflow_steps JSONB, is_complete</td><td>employee_id, company_id</td><td>Migration 054</td></tr>
+<tr><td><code>frozen_employees</code></td><td>SERIAL</td><td>deletion_date (default +30 days), status, recovered_at</td><td>employee_id, company_id</td><td>GDPR retention holding</td></tr>
+</table></div>
+</div>
+</details>
+
+<details>
+<summary>Leave Management</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Table</th><th>Key Columns</th><th>Notes</th></tr>
+<tr><td><code>leave_types</code></td><td>name, default_allowance, colour, max_carry_over_days, is_active</td><td>UNIQUE(name, company_id)</td></tr>
+<tr><td><code>leave_balances</code></td><td>employee_id, leave_type_id, year, total_allowance, used, carried_over, lieu_days</td><td>UNIQUE(employee_id, leave_type_id, year)</td></tr>
+<tr><td><code>leave_requests</code></td><td>employee_id, leave_type_id, start_date, end_date, days_requested, status, reason, approved_by, auto_approve</td><td>Status: pending/approved/rejected</td></tr>
+</table></div>
+</div>
+</details>
+
+<details>
+<summary>Expenses</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Table</th><th>Key Columns</th><th>Notes</th></tr>
+<tr><td><code>expense_claims</code></td><td>employee_id, reference_number (UNIQUE), title, amount DECIMAL(10,2), status, category, receipt_url, start_date, end_date, cost_center, auto_approve</td><td>Status: draft/submitted/pending/approved/rejected</td></tr>
+<tr><td><code>expense_line_items</code></td><td>expense_claim_id (CASCADE), title, expense_type, amount, mileage fields, receipt_url, return_journey</td><td></td></tr>
+<tr><td><code>expense_export_log</code></td><td>exported_by, file_name, export_date</td><td>UNIQUE(company_id, exported_by, export_date)</td></tr>
+</table></div>
+</div>
+</details>
+
+<details>
+<summary>Timesheets &amp; Shifts</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Table</th><th>Key Columns</th><th>Notes</th></tr>
+<tr><td><code>timesheets</code></td><td>employee_id, location, customer, role, date, start_time, end_time, hours, status, project_id</td><td></td></tr>
+<tr><td><code>shift_templates</code></td><td>name, start_time, end_time, break_minutes, department</td><td><span class="chip chip-info">Dashboard</span></td></tr>
+<tr><td><code>shift_assignments</code></td><td>employee_id, shift_template_id, date, status</td><td><span class="chip chip-info">Dashboard</span></td></tr>
+<tr><td><code>rotas</code></td><td>name, start_date, end_date, department</td><td><span class="chip chip-info">Dashboard</span></td></tr>
+<tr><td><code>shift_swap_requests</code></td><td>from_employee, to_employee, shift_assignment_id, status</td><td><span class="chip chip-info">Dashboard</span></td></tr>
+<tr><td><code>employee_availability</code></td><td>employee_id, day_of_week, available_from, available_to</td><td><span class="chip chip-info">Dashboard</span></td></tr>
+<tr><td><code>customer_projects</code></td><td>name, customer_name, start_date, end_date, is_active</td><td>Migration 046</td></tr>
+<tr><td><code>labour_demand</code></td><td>shift_template_id, day_of_week (0-6), min_staff, max_staff</td><td>Migration 090</td></tr>
+</table></div>
+</div>
+</details>
+
+<details>
+<summary>Check-In System</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Table</th><th>Key Columns</th><th>Notes</th></tr>
+<tr><td><code>work_locations</code></td><td>name, address, latitude, longitude, radius_metres, allow_remote, is_active</td><td>UNIQUE(company_id, name)</td></tr>
+<tr><td><code>checkin_settings</code></td><td>timesheets_checkin_enabled, shifts_checkin_enabled, allow_work_from_home, auto_checkout_hours, prompt_before_shift_mins, allowed_departments</td><td>UNIQUE(company_id)</td></tr>
+<tr><td><code>checkin_records</code></td><td>employee_id, check_in_at, check_out_at, lat/lng, location, source (timesheets/shifts), status, work_from_home, notes</td><td></td></tr>
+<tr><td><code>break_records</code></td><td>checkin_record_id (CASCADE), break_start, break_end, break_type (lunch/short/other)</td><td></td></tr>
+</table></div>
+</div>
+</details>
+
+<details>
+<summary>Other Feature Tables</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Table</th><th>Feature</th><th>Key Columns</th></tr>
+<tr><td><code>payslips</code></td><td>Payroll</td><td>pay period, gross/tax/NI/pension/net, xero_payslip_id, source</td></tr>
+<tr><td><code>kudos</code></td><td>Recognition</td><td>from/to employee, message, category, recognition_type, badge, is_broadcast, like_count</td></tr>
+<tr><td><code>benefits</code> / <code>employee_benefits</code></td><td>Benefits</td><td>Benefit definitions + employee enrolments</td></tr>
+<tr><td><code>courses</code> / <code>course_enrolments</code></td><td>eLearning</td><td>Course catalog + enrolment progress</td></tr>
+<tr><td><code>elearning_courses</code></td><td>eLearning</td><td>Additional course library with TEXT PK, external URLs, tags</td></tr>
+<tr><td><code>one_to_one_meetings</code> / <code>one_to_one_comments</code></td><td>Performance</td><td>1:1 scheduling + discussion comments</td></tr>
+<tr><td><code>performance_reviews</code></td><td>Performance</td><td>Review period, rating (1-5), strengths, goals</td></tr>
+<tr><td><code>performance_goals</code> / <code>performance_goal_comments</code></td><td>Performance</td><td>Goal tracking, grade (1-10), comments</td></tr>
+<tr><td><code>locations</code> / <code>floors</code> / <code>spaces</code> / <code>space_bookings</code> / <code>space_settings</code></td><td>Space Booking</td><td>Hierarchical location model, EXCLUDE constraint prevents overlapping bookings</td></tr>
+<tr><td><code>company_assets</code> / <code>asset_history</code> / <code>asset_updates</code></td><td>Assets</td><td>Asset tracking with history and update notes</td></tr>
+<tr><td><code>skill_categories</code> / <code>skills</code> / <code>employee_skills</code> / <code>skill_evidence</code> / <code>employee_certifications</code> / <code>employee_career_aspirations</code> / <code>role_profiles</code> / <code>role_skill_requirements</code> / <code>skill_validations</code> / <code>employee_languages</code></td><td>Skills Passport</td><td>10 tables for full skills management</td></tr>
+<tr><td><code>legal_clients</code> / <code>legal_matters</code> / <code>legal_timesheet_entries</code></td><td>Legal Timesheets</td><td><span class="chip chip-info">Dashboard</span></td></tr>
+<tr><td><code>announcements</code></td><td>Core</td><td>Title, body, is_pinned, expires_at</td></tr>
+<tr><td><code>notifications</code></td><td>Core</td><td>Per-employee notifications with email delivery flags</td></tr>
+<tr><td><code>workflow_tracker</code></td><td>Core</td><td>Universal workflow/approval tracker used by all features</td></tr>
+<tr><td><code>hr_tickets</code></td><td>Support</td><td><span class="chip chip-info">Dashboard</span></td></tr>
+</table></div>
+</div>
+</details>
+
+<details>
+<summary>Platform / Admin Tables</summary>
+<div class="detail-body">
+<div class="tbl-wrap"><table>
+<tr><th>Table</th><th>Purpose</th></tr>
+<tr><td><code>company_features</code></td><td>Feature flags per company (is_enabled, is_visible)</td></tr>
+<tr><td><code>subscription_pricing</code></td><td>Feature pricing definitions</td></tr>
+<tr><td><code>billing_snapshots</code></td><td>Monthly billing snapshots</td></tr>
+<tr><td><code>app_settings</code></td><td>Per-company app config (singleton, CHECK id=1)</td></tr>
+<tr><td><code>app_translations</code></td><td>Custom translation overrides</td></tr>
+<tr><td><code>user_settings</code></td><td>Per-employee language preference</td></tr>
+<tr><td><code>tenant_support_access</code></td><td>GDPR consent-gated super admin access grants</td></tr>
+<tr><td><code>gdpr_audit_logs</code></td><td>Append-only audit trail (UPDATE/DELETE revoked)</td></tr>
+<tr><td><code>admin_portal_roles</code> / <code>admin_portal_access</code></td><td>Delegated admin access</td></tr>
+<tr><td><code>email_notification_settings</code></td><td>Per-company email notification toggles</td></tr>
+<tr><td><code>xero_integrations</code></td><td>Xero OAuth tokens, tenant ID, cached data</td></tr>
+</table></div>
+</div>
+</details>
+
+<div class="alert alert-info"><strong>Dashboard-created tables</strong> (marked above) were created via the Supabase dashboard, not migration files. Their CREATE TABLE definitions are <strong>not version-controlled</strong>. RLS was retroactively added in migration 035. These tables should be captured in a migration for reproducibility.</div>
+
+<!-- ============================================ -->
+<h2 id="indexes">Indexes</h2>
+<p>Key indexes beyond primary keys. All tenant-scoped tables have a <code>company_id</code> index.</p>
+<div class="tbl-wrap"><table>
+<tr><th>Table</th><th>Index</th><th>Columns</th><th>Unique</th></tr>
+<tr><td><code>company_users</code></td><td><code>idx_company_users_auth</code></td><td>auth_user_id</td><td></td></tr>
+<tr><td><code>employees</code></td><td><code>employees_employee_number_company</code></td><td>employee_number, company_id</td><td>Yes</td></tr>
+<tr><td><code>employees</code></td><td><code>employees_email_company</code></td><td>email, company_id</td><td>Yes</td></tr>
+<tr><td><code>employees</code></td><td><code>idx_employees_unique_eid_company</code></td><td>unique_employee_id, company_id (partial)</td><td>Yes</td></tr>
+<tr><td><code>timesheets</code></td><td><code>idx_timesheets_date</code></td><td>date DESC</td><td></td></tr>
+<tr><td><code>checkin_records</code></td><td>5 indexes</td><td>company, employee, check_in_at, source, status</td><td></td></tr>
+<tr><td><code>gdpr_audit_logs</code></td><td>4 indexes</td><td>actor, company, performed_at, action</td><td></td></tr>
+<tr><td><code>space_bookings</code></td><td>EXCLUDE</td><td>btree_gist overlap prevention</td><td>N/A</td></tr>
+<tr><td><code>payslips</code></td><td><code>idx_payslips_xero_id</code></td><td>xero_payslip_id (partial)</td><td></td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="rls">Row Level Security</h2>
+
+<h3>RLS Architecture</h3>
+<p>Three tiers of access control using helper functions:</p>
+<div class="tbl-wrap"><table>
+<tr><th>Function</th><th>Logic</th></tr>
+<tr><td><code>is_my_company(uuid)</code></td><td>Current user has a <code>company_users</code> row for this company. SECURITY DEFINER.</td></tr>
+<tr><td><code>is_super_admin()</code></td><td>Current user's email matches hardcoded super admin emails. SECURITY DEFINER.</td></tr>
+<tr><td><code>can_access_company(uuid)</code></td><td>For regular users: <code>is_my_company()</code>. For super admins: requires <code>has_active_support_access()</code> (GDPR consent grant).</td></tr>
+<tr><td><code>is_company_admin()</code></td><td>Current user has admin or hr role in <code>company_users</code>.</td></tr>
+</table></div>
+
+<h3>Policy Tiers</h3>
+<ul>
+  <li><strong>Tier 1 &mdash; PII tables:</strong> <code>can_access_company(company_id)</code> only. Super admin must have consent grant. Covers: employees, expenses, leave, payslips, onboarding, timesheets, etc.</li>
+  <li><strong>Tier 2 &mdash; Config tables:</strong> <code>can_access_company(company_id) OR is_super_admin()</code>. Super admin can always read config. Covers: leave_types, benefits, spaces, courses, etc.</li>
+  <li><strong>Tier 3 &mdash; Write-restricted:</strong> Additional role checks (admin/hr) for INSERT/UPDATE/DELETE on: work_locations, checkin_settings, labour_demand, admin_portal_roles.</li>
+</ul>
+
+<!-- ============================================ -->
+<h2 id="functions">Database Functions &amp; RPCs</h2>
+<div class="tbl-wrap"><table>
+<tr><th>Function</th><th>Guard</th><th>Purpose</th></tr>
+<tr><td><code>ensure_company_user()</code></td><td>Authenticated</td><td>Auto-links auth user to company + employee record on login</td></tr>
+<tr><td><code>run_demo_seed(uuid)</code></td><td>Super admin</td><td>Wipes and re-seeds demo data</td></tr>
+<tr><td><code>delete_company_data(uuid)</code></td><td>Super admin</td><td>Deletes all data for a company. Temporarily disables RLS on 1:1 tables.</td></tr>
+<tr><td><code>promote_employee_to_admin(uuid, uuid)</code></td><td>Admin/super admin</td><td>Promotes employee to admin role</td></tr>
+<tr><td><code>export_employee_data(uuid)</code></td><td>Authenticated</td><td>GDPR Art. 20 data portability &mdash; returns all employee data as JSONB</td></tr>
+<tr><td><code>anonymise_employee(uuid)</code></td><td>Authenticated</td><td>GDPR Art. 17 right to erasure &mdash; scrubs PII, retains financials</td></tr>
+<tr><td><code>grant_support_access(...)</code></td><td>Company admin</td><td>GDPR-gated super admin access grant</td></tr>
+<tr><td><code>revoke_support_access(uuid)</code></td><td>Company admin</td><td>Revokes a support access grant</td></tr>
+<tr><td><code>ensure_super_admin_access(int)</code></td><td>Super admin</td><td>Self-grants access to all companies</td></tr>
+<tr><td><code>create_nonsso_account(...)</code></td><td>Super admin</td><td>Creates auth user + employee for non-SSO companies</td></tr>
+<tr><td><code>setup_nonsso_admin(uuid, text, uuid, text)</code></td><td>Super admin</td><td>Post-signup setup for non-SSO admin</td></tr>
+<tr><td><code>get_all_company_metrics()</code></td><td>Super admin</td><td>Aggregate counts per company (no PII)</td></tr>
+<tr><td><code>get_company_metrics(uuid)</code></td><td>Super admin / member</td><td>Single company aggregate counts</td></tr>
+<tr><td><code>cancel_current_month_checkins(uuid, text)</code></td><td>Admin</td><td>Bulk cancel check-in records for current month</td></tr>
+<tr><td><code>expire_stale_support_grants()</code></td><td>&mdash;</td><td>Marks expired support grants. Intended for pg_cron but <strong>no schedule defined in migrations</strong>.</td></tr>
+<tr><td><code>log_gdpr_action(...)</code></td><td>Authenticated</td><td>Inserts into append-only gdpr_audit_logs</td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="triggers">Triggers</h2>
+<div class="tbl-wrap"><table>
+<tr><th>Trigger</th><th>Table</th><th>Event</th><th>Function</th></tr>
+<tr><td><code>on_auth_user_created_sso</code></td><td><code>auth.users</code></td><td>AFTER INSERT</td><td><code>handle_new_sso_user()</code> &mdash; creates company (if new tenant) and company_users row</td></tr>
+<tr><td><code>auto_company_id</code></td><td>13 core tables</td><td>BEFORE INSERT</td><td><code>auto_set_company_id()</code> &mdash; stamps company_id from <code>get_my_company_id()</code></td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="storage">Storage Buckets</h2>
+<div class="tbl-wrap"><table>
+<tr><th>Bucket</th><th>Public</th><th>Policies</th><th>Content</th></tr>
+<tr><td><code>company-logos</code></td><td>Yes</td><td>Authenticated INSERT/UPDATE; public SELECT</td><td>Company logo images</td></tr>
+<tr><td><code>receipts</code></td><td>Yes</td><td>Authenticated INSERT/SELECT/DELETE</td><td>Expense receipt files</td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="edge-functions">Edge Functions</h2>
+<div class="tbl-wrap"><table>
+<tr><th>Function</th><th>Auth</th><th>Purpose</th><th>Env Vars</th></tr>
+<tr><td><code>xero-connect</code></td><td>Bearer token + admin/hr role check</td><td>Generates Xero OAuth authorisation URL</td><td>XERO_CLIENT_ID, XERO_CLIENT_SECRET, XERO_REDIRECT_URI</td></tr>
+<tr><td><code>xero-callback</code></td><td>None (relies on state param)</td><td>Handles Xero OAuth redirect, exchanges code for tokens</td><td>Same + FRONTEND_URL</td></tr>
+<tr><td><code>xero-payslips</code></td><td>Bearer token + company_users check</td><td>Fetches payroll data from Xero, upserts payslips</td><td>Same as xero-connect</td></tr>
+<tr><td><code>send-notification-email</code></td><td><span class="chip chip-critical">None</span></td><td>Sends transactional email via Brevo</td><td>BREVO_API_KEY, TITAN_EMAIL, APP_URL</td></tr>
+<tr><td><code>daily-email-reminders</code></td><td>None (cron-triggered)</td><td>Sends 1:1 meeting and eLearning deadline reminders</td><td>Same + SENDER_NAME</td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<!-- SECURITY AUDIT -->
+<!-- ============================================ -->
+<h2 id="sec-critical">Security Audit &mdash; <span class="chip chip-critical">Critical</span></h2>
+
+<h3>SEC-C01: admin_portal_roles / admin_portal_access &mdash; Cross-Tenant Data Leak</h3>
+<div class="alert alert-critical">
+<strong>Tables:</strong> <code>admin_portal_roles</code>, <code>admin_portal_access</code> (migration 087)<br>
+<strong>Issue:</strong> RLS policies use <code>TO authenticated USING (true)</code> for ALL operations. Any authenticated user from <strong>any company</strong> can read, insert, update, and delete role definitions and access grants for <strong>all companies</strong>.<br>
+<strong>Impact:</strong> Cross-tenant privilege escalation. An employee at Company A could grant themselves admin portal access at Company B.<br>
+<strong>Fix:</strong> Replace <code>USING (true)</code> with <code>USING (is_my_company(company_id))</code> for SELECT, and add admin/hr role check for writes.
+</div>
+
+<h3>SEC-C02: send-notification-email Edge Function &mdash; No Authentication</h3>
+<div class="alert alert-critical">
+<strong>File:</strong> <code>supabase/functions/send-notification-email/index.ts</code><br>
+<strong>Issue:</strong> No auth header validation. Anyone who knows the function URL can trigger email sends via the Brevo API.<br>
+<strong>Impact:</strong> Email spoofing from the InflowHR domain, quota exhaustion, potential spam abuse.<br>
+<strong>Fix:</strong> Add Bearer token validation and verify the caller is authenticated. Consider also checking that the notification record exists and belongs to the caller's company.
+</div>
+
+<h3>SEC-C03: app_translations &mdash; Anonymous Full CRUD</h3>
+<div class="alert alert-critical">
+<strong>Table:</strong> <code>app_translations</code> (migration 011)<br>
+<strong>Issue:</strong> Retains <code>FOR ALL TO anon USING (true)</code>. Anonymous users can INSERT/UPDATE/DELETE translation strings without any authentication.<br>
+<strong>Impact:</strong> Content injection. An attacker could modify UI text to display phishing messages, offensive content, or misleading instructions.<br>
+<strong>Fix:</strong> Drop the anon policy. Add <code>TO authenticated USING (true)</code> for SELECT and admin-only for writes.
+</div>
+
+<!-- ============================================ -->
+<h2 id="sec-high">Security Audit &mdash; <span class="chip chip-warning">High</span></h2>
+
+<h3>SEC-H01: Receipts Storage Bucket &mdash; Public Access + Unscoped Delete</h3>
+<div class="alert alert-warning">
+<strong>Issue:</strong> The <code>receipts</code> bucket is set to <code>public = true</code>, meaning receipt file URLs are accessible without authentication. The DELETE policy also has no company scoping &mdash; any authenticated user can delete any company's receipts.<br>
+<strong>Fix:</strong> Set the bucket to private. Add company-scoped folder structure (e.g., <code>{company_id}/{claim_id}/receipt.pdf</code>) and scope storage policies to the user's company.
+</div>
+
+<h3>SEC-H02: is_super_admin() Hardcodes Email Addresses</h3>
+<div class="alert alert-warning">
+<strong>Function:</strong> <code>is_super_admin()</code> checks <code>auth.jwt() ->> 'email'</code> against two hardcoded emails.<br>
+<strong>Issue:</strong> If either account is compromised or deprovisioned, there is no recovery path without deploying a migration. Adding/removing super admins requires a database migration.<br>
+<strong>Fix:</strong> Create a <code>super_admins</code> table with email addresses. The function checks against this table instead. Manage via protected admin UI.
+</div>
+
+<h3>SEC-H03: delete_company_data Temporarily Disables RLS</h3>
+<div class="alert alert-warning">
+<strong>Function:</strong> <code>delete_company_data(uuid)</code><br>
+<strong>Issue:</strong> Runs <code>ALTER TABLE ... DISABLE ROW LEVEL SECURITY</code> on <code>one_to_one_comments</code> and <code>one_to_one_meetings</code> during execution. If the function errors mid-execution, RLS remains disabled, exposing these tables to all authenticated users.<br>
+<strong>Fix:</strong> Use SECURITY DEFINER context to bypass RLS instead of disabling it, or wrap the disable/enable in an exception handler.
+</div>
+
+<h3>SEC-H04: CORS Wildcard on All Edge Functions</h3>
+<div class="alert alert-warning">
+<strong>Issue:</strong> All edge functions set <code>Access-Control-Allow-Origin: *</code>. This allows any origin to call these functions.<br>
+<strong>Fix:</strong> Restrict to the production domain (<code>https://app.inflowhr.com</code>) and any staging domains.
+</div>
+
+<h3>SEC-H05: xero-callback State Parameter Not Signed</h3>
+<div class="alert alert-warning">
+<strong>Function:</strong> <code>xero-callback</code><br>
+<strong>Issue:</strong> The <code>state</code> parameter is base64-encoded JSON containing <code>company_id</code> but is not signed or validated against a server-side nonce. An attacker could craft a state value to associate a rogue Xero connection with a target company.<br>
+<strong>Fix:</strong> Generate a random nonce, store it server-side (or sign it with HMAC), and verify it on callback.
+</div>
+
+<h3>SEC-H06: HTML Injection in Edge Function Email Templates</h3>
+<div class="alert alert-warning">
+<strong>Functions:</strong> <code>send-notification-email</code>, <code>daily-email-reminders</code><br>
+<strong>Issue:</strong> <code>firstName</code>, <code>title</code>, and <code>message</code> are interpolated directly into HTML email templates without escaping. If notification content contains user-controlled markup, it enables stored XSS/HTML injection in emails.<br>
+<strong>Fix:</strong> HTML-escape all dynamic values before interpolation.
+</div>
+
+<!-- ============================================ -->
+<h2 id="sec-medium">Security Audit &mdash; <span class="chip chip-info">Medium</span></h2>
+
+<h3>SEC-M01: Feature Flags Don't Block Routes</h3>
+<p>Feature flags control UI visibility but not route access. A user at a company without the timesheets add-on can navigate directly to <code>/timesheets</code>. Security depends entirely on backend RLS preventing data access, which works correctly, but the page component still renders (possibly with empty state).</p>
+
+<h3>SEC-M02: Approval Routes Lack Role Guard</h3>
+<p><code>/approve/expense/:id</code>, <code>/approve/leave/:id</code>, and <code>/approve/timesheet/:id</code> are accessible to any authenticated employee. The components check manager status internally, but there is no route-level guard. A non-manager visiting the URL sees the request details before the component-level check redirects them.</p>
+
+<h3>SEC-M03: Portal Role Grants Full Admin Access</h3>
+<p>Any employee with an <code>admin_portal_access</code> record passes the <code>AdminGate</code> for <strong>all</strong> admin routes, not just specific sections. There is no per-route portal role scoping. The <code>permissions</code> JSONB column on <code>admin_portal_roles</code> exists but is not checked by the frontend.</p>
+
+<h3>SEC-M04: Console.log Leaking PII</h3>
+<p><code>src/lib/supabase.ts</code> lines 34 and 44 log notification payloads (employee names, emails, notification content) and response bodies to the browser console. Should be removed for production.</p>
+
+<h3>SEC-M05: Super Admin Emails in Client Bundle</h3>
+<p><code>VITE_SUPER_ADMIN_EMAIL</code> and <code>VITE_BREAK_GLASS_EMAIL</code> are <code>VITE_</code>-prefixed, meaning they are embedded in the production JavaScript bundle. Anyone inspecting the built JS can identify the super admin email addresses.</p>
+
+<h3>SEC-M06: Break-Glass Domain Typo</h3>
+<p><code>VITE_BREAK_GLASS_EMAIL</code> is set to <code>breakglass@kumonic.com</code> (missing the "x" &mdash; should be <code>kumonix.com</code>). If this domain is unregistered, an attacker could register it and receive break-glass login credentials.</p>
+
+<h3>SEC-M07: Dashboard-Created Tables Not Version-Controlled</h3>
+<p>~15 tables were created via the Supabase dashboard UI. Their schemas exist only in the live database, not in migration files. If the database needs to be recreated, these tables would be missing.</p>
+
+<!-- ============================================ -->
+<h2 id="sec-low">Security Audit &mdash; <span class="chip chip-ok">Low / Informational</span></h2>
+
+<h3>SEC-L01: unsafe-inline in CSP script-src</h3>
+<p>The CSP allows <code>'unsafe-inline'</code> for scripts. This weakens XSS protection, though it's common for SPAs that use inline event handlers. Consider nonce-based CSP if feasible.</p>
+
+<h3>SEC-L02: dangerouslySetInnerHTML Usage</h3>
+<p><code>AdminLayout.tsx:119</code> uses <code>dangerouslySetInnerHTML</code> to render SVG icon markup. The values are static nav icon strings defined in code, so the actual risk is low. Document this as an accepted risk.</p>
+
+<h3>SEC-L03: expire_stale_support_grants Not Scheduled</h3>
+<p>The function exists but no pg_cron schedule is defined. Expired grants functionally expire (the access check also verifies <code>expires_at > now()</code>), but their status column remains "active" in the database, which is misleading for audit queries.</p>
+
+<h3>SEC-L04: email_notification_settings Uses get_my_company_id()</h3>
+<p>This function returns the first company for multi-company users, which may be the wrong one. Should use <code>is_my_company()</code> for accuracy.</p>
+
+<h3>SEC-L05: Hardcoded Domains in Source</h3>
+<p>Several source files hardcode <code>inflowhr.com</code>, <code>inflowhr.co.uk</code>, <code>kumonix.com</code> etc. for billing invoices, email templates, and fallback URLs. These should be env vars or config for portability.</p>
+
+<!-- ============================================ -->
+<h2 id="dead-code">Dead &amp; Unused Code</h2>
+
+<div class="tbl-wrap"><table>
+<tr><th>Item</th><th>Location</th><th>Action</th></tr>
+<tr><td><code>useEmployeeLookup</code> hook</td><td><code>src/hooks/useEmployeeLookup.ts</code></td><td><span class="chip chip-critical">Remove</span> &mdash; 41 lines, never imported</td></tr>
+<tr><td>Placeholder routes</td><td><code>/time-off</code>, <code>/announcements</code></td><td><span class="chip chip-warning">Hide or implement</span> &mdash; "Coming Soon" stubs visible to users</td></tr>
+<tr><td>~54 dead CSS selectors</td><td><code>src/index.css</code></td><td><span class="chip chip-warning">Remove</span> &mdash; includes <code>.my-profile-employment-status*</code>, <code>.time-off-page</code>, <code>.onboarding-page</code></td></tr>
+<tr><td>Mobile route gaps</td><td><code>App.tsx</code> mobile branch</td><td><span class="chip chip-info">Review</span> &mdash; performance, space-management, assets, talent-intelligence missing on mobile</td></tr>
+</table></div>
+
+<!-- ============================================ -->
+<h2 id="bundle">Bundle &amp; Performance</h2>
+
+<h3>No Code Splitting</h3>
+<div class="alert alert-warning"><strong>All 70+ page components are eagerly imported</strong> at the top of <code>App.tsx</code>. Zero use of <code>React.lazy()</code> or <code>Suspense</code>. The entire application (45,000+ lines of TSX) ships as a single JavaScript bundle. Admin pages (which most users never visit) bloat the initial payload for regular employees.</div>
+
+<h3>Recommendations</h3>
+<ul>
+  <li><strong>Lazy-load the admin route tree:</strong> <code>const AdminDashboard = React.lazy(() =&gt; import('./pages/admin/AdminDashboard'))</code>. This alone would significantly reduce the initial bundle for employees.</li>
+  <li><strong>Dynamic import xlsx:</strong> The <code>xlsx</code> library (~300 KB) is imported at the top of <code>AdminOnboarding.tsx</code>. Use <code>const XLSX = await import('xlsx')</code> only when the export button is clicked.</li>
+  <li><strong>Add Vite manual chunks:</strong> Split heavy libraries (xlsx, jspdf, jszip, leaflet) into separate chunks via <code>build.rollupOptions.output.manualChunks</code>.</li>
+  <li><strong>Single CSS file:</strong> All 6,700 lines of CSS are in one <code>index.css</code>. Consider CSS modules or splitting by feature area for better caching.</li>
+</ul>
+
+<!-- ============================================ -->
+<h2 id="duplication">Code Duplication</h2>
+
+<h3>Repeated Query Patterns</h3>
+<div class="tbl-wrap"><table>
+<tr><th>Pattern</th><th>Occurrences</th><th>Top Files</th></tr>
+<tr><td><code>supabase.from('employees')</code></td><td>72</td><td>AdminPayroll (39 .from() calls total)</td></tr>
+<tr><td><code>supabase.from('workflow_tracker')</code></td><td>56</td><td>Spread across all approval flows</td></tr>
+<tr><td><code>supabase.from('companies')</code></td><td>25</td><td>Admin pages</td></tr>
+<tr><td><code>supabase.from('expense_claims')</code></td><td>21</td><td>Expense pages</td></tr>
+<tr><td><code>supabase.from('shift_assignments')</code></td><td>20</td><td>Shifts pages</td></tr>
+</table></div>
+<p>Consider creating shared data-fetching hooks (like the abandoned <code>useEmployeeLookup</code>) to reduce duplication and centralise query logic.</p>
+
+<h3>Monolithic Files</h3>
+<p>The 5 largest files range from 1,198 to 2,043 lines. <code>AdminPayroll.tsx</code> (2,043 lines) contains data fetching, business logic, and UI for the entire payroll section. <code>AdminShiftsRotas.tsx</code> imports 6 full sub-pages as tab panels.</p>
+
+<!-- ============================================ -->
+<!-- TROUBLESHOOTING GUIDE -->
+<!-- ============================================ -->
+<h2 id="ts-auth">Troubleshooting: Auth Issues</h2>
+
+<h3>"Access Denied" after login</h3>
+<ol>
+  <li>Check <code>company_users</code> for a row matching the user's <code>auth_user_id</code>. If missing, the <code>ensure_company_user()</code> RPC may have failed.</li>
+  <li>For SSO users: verify the Microsoft tenant ID matches the <code>companies.microsoft_tenant_id</code>. A mismatch means the trigger <code>handle_new_sso_user()</code> created a new company instead of linking to the existing one.</li>
+  <li>Check <code>companies.login_disabled</code> &mdash; if <code>true</code>, all users are locked out.</li>
+  <li>For trial companies: check <code>is_trial</code>, <code>trial_end_date</code>. Expired trials block access.</li>
+</ol>
+
+<h3>Employee not linked to company_users</h3>
+<p><code>ensure_company_user()</code> matches by: (1) exact email, then (2) local-part fuzzy match (e.g., <code>john.smith@company.com</code> matches <code>john.smith@otherdomain.com</code>). If neither matches, the employee won't be linked. Fix: manually set <code>company_users.employee_id</code> to the correct employee UUID.</p>
+
+<h3>Super admin can't see company data</h3>
+<p>Since GDPR compliance (migration 047), super admins need an active <code>tenant_support_access</code> grant to access company data. Go to Admin &rarr; Subscriptions &rarr; Support Access tab and grant access, or run <code>ensure_super_admin_access()</code> RPC.</p>
+
+<h3>Break-glass login fails</h3>
+<p>Verify: (1) <code>VITE_BREAK_GLASS_EMAIL</code> domain is correct (currently <code>kumonic.com</code>, should be <code>kumonix.com</code>?). (2) The break-glass account exists in <code>auth.users</code>. (3) The password is correct &mdash; there's no password reset UI for break-glass.</p>
+
+<!-- ============================================ -->
+<h2 id="ts-data">Troubleshooting: Data &amp; RLS</h2>
+
+<h3>Query returns empty when data exists</h3>
+<ol>
+  <li>RLS is blocking. Check the user has a <code>company_users</code> row with <code>is_active = true</code> for the target company.</li>
+  <li>For super admins: ensure <code>tenant_support_access</code> exists and hasn't expired.</li>
+  <li>For dashboard-created tables: confirm RLS is enabled (<code>ALTER TABLE ... ENABLE ROW LEVEL SECURITY</code>) and policies exist.</li>
+</ol>
+
+<h3>Data visible across companies</h3>
+<p>Check the table has: (1) <code>company_id</code> column populated, (2) RLS enabled, (3) policies using <code>is_my_company(company_id)</code> or <code>can_access_company(company_id)</code>. The admin_portal tables (migration 087) are a known gap &mdash; see SEC-C01.</p>
+
+<h3>Workflow notifications not appearing</h3>
+<p>The <code>workflow_tracker</code> table is the backbone of the notification system. Check: (1) <code>assigned_to</code> matches the employee's email, (2) <code>status</code> is not already 'Complete', (3) <code>company_id</code> is correct. The employee Notifications page queries <code>workflow_tracker</code> where <code>assigned_to = current user's email</code>.</p>
+
+<h3>Leave balance not updating after approval</h3>
+<p>The <code>LeaveApproval</code> component updates <code>leave_balances.used</code> directly in the frontend after approval. Check: (1) <code>leave_balances</code> row exists for the employee/year/leave_type, (2) the leave type has <code>deducts_from_allowance !== false</code>. Non-deducting types (e.g., jury duty) skip the balance update.</p>
+
+<!-- ============================================ -->
+<h2 id="ts-email">Troubleshooting: Email Notifications</h2>
+
+<h3>Emails not sending</h3>
+<ol>
+  <li>Check <code>company_features</code> for <code>email_notifications</code> &mdash; must be <code>is_enabled = true</code>.</li>
+  <li>Check <code>email_notification_settings</code> for the specific feature toggle (e.g., <code>leave_enabled</code>).</li>
+  <li>Check the <code>notifications</code> table for <code>send_email = true</code> and <code>email_sent = false</code>.</li>
+  <li>Check Edge Function logs: <code>supabase functions logs send-notification-email</code>.</li>
+  <li>Verify <code>BREVO_API_KEY</code> is set in Supabase Edge Function secrets.</li>
+</ol>
+
+<h3>Daily reminders not firing</h3>
+<p>The <code>daily-email-reminders</code> function must be called by a scheduled trigger (Supabase cron or external). Check the Supabase dashboard under Database &rarr; Extensions &rarr; pg_net / cron, or Edge Function Schedules.</p>
+
+<!-- ============================================ -->
+<h2 id="ts-xero">Troubleshooting: Xero Integration</h2>
+
+<h3>Xero connection failing</h3>
+<ol>
+  <li>Verify Edge Function secrets: <code>XERO_CLIENT_ID</code>, <code>XERO_CLIENT_SECRET</code>, <code>XERO_REDIRECT_URI</code>.</li>
+  <li>Check <code>xero_integrations</code> table for the company &mdash; is there an existing row with expired tokens?</li>
+  <li>The callback function upserts tokens, so a reconnect should overwrite stale credentials.</li>
+  <li>Check that the redirect URI in Xero's developer portal matches <code>XERO_REDIRECT_URI</code> exactly.</li>
+</ol>
+
+<h3>Payslip sync returning wrong data</h3>
+<p>The <code>xero-payslips</code> function matches employees by email. If an employee's Xero email doesn't match their InflowHR email, the payslip won't link. Check the email mapping in the sync logs.</p>
+
+<!-- ============================================ -->
+<h2 id="ts-checkin">Troubleshooting: Check-In / Geolocation</h2>
+
+<h3>Check-in button not appearing</h3>
+<ol>
+  <li>Check <code>checkin_settings</code> for the company &mdash; <code>timesheets_checkin_enabled</code> or <code>shifts_checkin_enabled</code> must be true.</li>
+  <li>If <code>allowed_departments</code> is set, the employee must be in one of those departments.</li>
+  <li>The <code>CheckInContext</code> loads settings on mount and exposes <code>isEnabled</code>.</li>
+</ol>
+
+<h3>Location verification failing</h3>
+<p>The <code>matchLocation()</code> function in <code>lib/geolocation.ts</code> uses haversine distance to compare the employee's GPS coordinates against <code>work_locations</code> entries. Check: (1) <code>work_locations</code> has correct lat/lng for the office, (2) <code>radius_metres</code> is large enough (GPS accuracy varies), (3) <code>allow_remote</code> is set if WFH should be allowed.</p>
+
+<h3>Auto-checkout not working</h3>
+<p>The <code>auto_checkout_hours</code> setting in <code>checkin_settings</code> defines when open check-ins are automatically closed. This must be handled by a scheduled process (pg_cron or Edge Function cron). If no schedule is configured, check-ins will remain open indefinitely.</p>
+
+</main>
+</div>

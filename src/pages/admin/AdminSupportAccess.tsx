@@ -54,21 +54,30 @@ export default function AdminSupportAccess() {
   const [loading, setLoading] = useState(true)
   const [granting, setGranting] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
+  const [preAuthorisedCount, setPreAuthorisedCount] = useState(0)
 
   async function loadGrants() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('tenant_support_access')
-      .select('*, companies:company_id(name)')
-      .order('created_at', { ascending: false })
+    const [grantsRes, companiesRes] = await Promise.all([
+      supabase
+        .from('tenant_support_access')
+        .select('*, companies:company_id(name)')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('companies')
+        .select('id')
+        .eq('support_access_authorised', true),
+    ])
 
-    if (error) {
+    if (grantsRes.error) {
       showError('Failed to load support access grants')
       setLoading(false)
       return
     }
 
-    const all = (data || []).map((g: any) => ({
+    setPreAuthorisedCount(companiesRes.data?.length ?? 0)
+
+    const all = (grantsRes.data || []).map((g: any) => ({
       ...g,
       company_name: g.companies?.name || 'Unknown',
     }))
@@ -86,12 +95,18 @@ export default function AdminSupportAccess() {
   useEffect(() => { loadGrants() }, [])
 
   async function grantAllAccess() {
+    if (preAuthorisedCount === 0) {
+      showError('No companies have pre-authorised support access. Company admins must enable this in their Access settings.')
+      return
+    }
     setGranting(true)
     const { data, error } = await callRpcDirect('ensure_super_admin_access', { p_hours: 48 })
     if (error) {
       showError('Failed to grant access: ' + error)
+    } else if (data === 0) {
+      showSuccess('All pre-authorised companies already have active grants')
     } else {
-      showSuccess(`Granted access to ${data} additional company(s)`)
+      showSuccess(`Granted access to ${data} pre-authorised company(s)`)
     }
     await loadGrants()
     setGranting(false)
@@ -168,9 +183,10 @@ export default function AdminSupportAccess() {
             <button
               className="admin-btn admin-btn-primary"
               onClick={grantAllAccess}
-              disabled={granting}
+              disabled={granting || preAuthorisedCount === 0}
+              title={preAuthorisedCount === 0 ? 'No companies have pre-authorised support access' : `${preAuthorisedCount} company(s) have pre-authorised access`}
             >
-              {granting ? 'Granting...' : 'Grant All Companies (48h)'}
+              {granting ? 'Granting...' : `Grant Pre-Authorised (${preAuthorisedCount}) — 48h`}
             </button>
           )}
         </div>
@@ -183,11 +199,15 @@ export default function AdminSupportAccess() {
           <span className="sa-support-stat-label">Active Grants</span>
         </div>
         <div className="sa-support-stat">
+          <span className="sa-support-stat-value" style={{ color: '#1565c0' }}>{preAuthorisedCount}</span>
+          <span className="sa-support-stat-label">Pre-Authorised</span>
+        </div>
+        <div className="sa-support-stat">
           <span className="sa-support-stat-value" style={{ color: '#e65100' }}>{companies.length - companiesWithAccess.length}</span>
           <span className="sa-support-stat-label">No Access</span>
         </div>
         <div className="sa-support-stat">
-          <span className="sa-support-stat-value" style={{ color: '#1565c0' }}>{grants.length}</span>
+          <span className="sa-support-stat-value" style={{ color: '#888' }}>{grants.length}</span>
           <span className="sa-support-stat-label">Total Grants</span>
         </div>
       </div>
@@ -271,6 +291,11 @@ export default function AdminSupportAccess() {
           </div>
         </div>
       )}
+
+      {/* Pre-authorisation notice */}
+      <div style={{ margin: '12px 0', padding: '10px 14px', background: '#f0f4ff', borderRadius: 8, borderLeft: '4px solid #1565c0', fontSize: 13, color: '#334155' }}>
+        <strong>Pre-authorisation required:</strong> Support access can only be granted to companies whose admin has enabled it in their Access settings. The &quot;Grant Pre-Authorised&quot; button only creates grants for those companies.
+      </div>
 
       {/* Grants table */}
       {loading ? (

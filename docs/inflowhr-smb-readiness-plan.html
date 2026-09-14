@@ -1,0 +1,937 @@
+<title>InflowHR SMB Readiness</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --ink: #0f1729;
+  --ink-secondary: #334155;
+  --ink-muted: #64748b;
+  --ground: #f1f5f9;
+  --surface: #ffffff;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --done: #16a34a;
+  --done-bg: #f0fdf4;
+  --done-border: #bbf7d0;
+  --partial: #d97706;
+  --partial-bg: #fffbeb;
+  --partial-border: #fde68a;
+  --missing: #dc2626;
+  --missing-bg: #fef2f2;
+  --missing-border: #fecaca;
+  --action: #2563eb;
+  --action-hover: #1d4ed8;
+  --action-bg: #eff6ff;
+  --highlight: #6C4FBF;
+  --highlight-bg: #f5f3ff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #e2e8f0;
+    --ink-secondary: #94a3b8;
+    --ink-muted: #64748b;
+    --ground: #0c1220;
+    --surface: #131d2e;
+    --border: #1e2d42;
+    --border-strong: #2a3f5a;
+    --done: #4ade80;
+    --done-bg: #052e16;
+    --done-border: #166534;
+    --partial: #fbbf24;
+    --partial-bg: #2a1f05;
+    --partial-border: #78350f;
+    --missing: #f87171;
+    --missing-bg: #2a0808;
+    --missing-border: #7f1d1d;
+    --action: #60a5fa;
+    --action-hover: #93bbfd;
+    --action-bg: #0c1a30;
+    --highlight: #a78bfa;
+    --highlight-bg: #1a1533;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #e2e8f0;
+  --ink-secondary: #94a3b8;
+  --ink-muted: #64748b;
+  --ground: #0c1220;
+  --surface: #131d2e;
+  --border: #1e2d42;
+  --border-strong: #2a3f5a;
+  --done: #4ade80;
+  --done-bg: #052e16;
+  --done-border: #166534;
+  --partial: #fbbf24;
+  --partial-bg: #2a1f05;
+  --partial-border: #78350f;
+  --missing: #f87171;
+  --missing-bg: #2a0808;
+  --missing-border: #7f1d1d;
+  --action: #60a5fa;
+  --action-hover: #93bbfd;
+  --action-bg: #0c1a30;
+  --highlight: #a78bfa;
+  --highlight-bg: #1a1533;
+}
+
+* { box-sizing: border-box; margin: 0; }
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+  line-height: 1.6;
+  padding: 0 20px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrapper { max-width: 820px; margin: 0 auto; padding-block: 40px 80px; }
+
+h1 {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: -0.5px;
+  text-wrap: balance;
+  color: var(--ink);
+}
+.subtitle {
+  color: var(--ink-muted);
+  font-size: 15px;
+  margin-top: 4px;
+}
+
+/* Progress bar */
+.progress-strip {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.progress-cell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.progress-cell .count {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 700;
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+.progress-cell .label {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+.progress-cell.done { border-left: 3px solid var(--done); }
+.progress-cell.done .count { color: var(--done); }
+.progress-cell.done .label { color: var(--done); }
+.progress-cell.partial { border-left: 3px solid var(--partial); }
+.progress-cell.partial .count { color: var(--partial); }
+.progress-cell.partial .label { color: var(--partial); }
+.progress-cell.missing { border-left: 3px solid var(--missing); }
+.progress-cell.missing .count { color: var(--missing); }
+.progress-cell.missing .label { color: var(--missing); }
+
+/* Questions banner */
+.questions-banner {
+  margin-top: 32px;
+  background: var(--highlight-bg);
+  border: 1px solid var(--highlight);
+  border-radius: 6px;
+  padding: 20px 22px;
+}
+.questions-banner h2 {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--highlight);
+  margin-bottom: 12px;
+}
+.questions-banner .q-item {
+  margin-bottom: 14px;
+  padding-left: 14px;
+  border-left: 2px solid var(--highlight);
+}
+.questions-banner .q-item:last-child { margin-bottom: 0; }
+.questions-banner .q-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+}
+.questions-banner .q-answer {
+  font-size: 14px;
+  color: var(--ink-secondary);
+  margin-top: 2px;
+}
+
+/* Phase sections */
+.phase {
+  margin-top: 36px;
+}
+.phase-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--border-strong);
+  margin-bottom: 16px;
+}
+.phase-num {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-muted);
+  letter-spacing: 0.5px;
+}
+.phase-title {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 20px;
+  text-wrap: balance;
+}
+.phase-effort {
+  margin-left: auto;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+
+/* Items */
+.item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.item-header:hover { background: var(--action-bg); }
+.item-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--ink-muted);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.item.open .item-chevron { transform: rotate(90deg); }
+.item-name {
+  font-weight: 500;
+  font-size: 15px;
+  flex: 1;
+  min-width: 0;
+}
+.status-badge {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 3px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.status-badge.done { background: var(--done-bg); color: var(--done); border: 1px solid var(--done-border); }
+.status-badge.partial { background: var(--partial-bg); color: var(--partial); border: 1px solid var(--partial-border); }
+.status-badge.missing { background: var(--missing-bg); color: var(--missing); border: 1px solid var(--missing-border); }
+
+.item-body {
+  display: none;
+  padding: 0 16px 16px 42px;
+  font-size: 14px;
+  color: var(--ink-secondary);
+  line-height: 1.65;
+}
+.item.open .item-body { display: block; }
+
+.item-body h4 {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 14px 0 6px 0;
+}
+.item-body h4:first-child { margin-top: 0; }
+.item-body ul {
+  padding-left: 18px;
+  margin: 4px 0;
+}
+.item-body li { margin-bottom: 3px; }
+.item-body code {
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  background: var(--ground);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.item-body .effort-tag {
+  display: inline-block;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--action);
+  background: var(--action-bg);
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-top: 8px;
+}
+
+.decision-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--highlight);
+  background: var(--highlight-bg);
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+
+/* Timeline summary */
+.timeline {
+  margin-top: 40px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.timeline-title {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.timeline table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.timeline th {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--ink-muted);
+  text-align: left;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.timeline td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-secondary);
+}
+.timeline tr:last-child td { border-bottom: none; }
+.timeline td:first-child { font-weight: 500; color: var(--ink); }
+.timeline .cost { font-family: 'DM Mono', monospace; font-size: 13px; }
+
+@media (max-width: 600px) {
+  .progress-strip { grid-template-columns: 1fr; }
+  .phase-header { flex-wrap: wrap; }
+  .phase-effort { margin-left: 0; }
+  .item-body { padding-left: 16px; }
+}
+</style>
+
+<div class="wrapper">
+  <h1>InflowHR SMB Launch Readiness</h1>
+  <p class="subtitle">Gap analysis and execution plan — updated 14 September 2026</p>
+
+  <div class="progress-strip">
+    <div class="progress-cell done">
+      <span class="count">19</span>
+      <span class="label">Done</span>
+    </div>
+    <div class="progress-cell partial">
+      <span class="count">2</span>
+      <span class="label">Gaps</span>
+    </div>
+    <div class="progress-cell missing">
+      <span class="count">5</span>
+      <span class="label">Remaining</span>
+    </div>
+  </div>
+
+  <!-- Key questions the user raised -->
+  <div class="questions-banner">
+    <h2>Your questions answered</h2>
+
+    <div class="q-item">
+      <div class="q-label">Can company admins see salaries? Do I need a dedicated payroll role?</div>
+      <div class="q-answer">Yes, this is a gap. Right now, <strong>every employee in a company can SELECT all salary data at the database level</strong> — the RLS policy is company-scoped, not role-scoped. The admin portal roles system gates the Payroll <em>page</em> in the UI, but the database doesn't enforce it. You need RLS-level salary isolation: only the employee themselves, plus users with a "payroll" portal permission, should be able to read salary/bank columns. This is Phase 2, item 2.1 below.</div>
+    </div>
+
+    <div class="q-item">
+      <div class="q-label">Is the 48-hour service admin access GDPR compliant?</div>
+      <div class="q-answer"><strong>Time-limited access is good practice, but self-granting is the problem.</strong> Under GDPR Art. 28, the processor (you) should only access controller (customer) data on documented instructions. The current <code>ensure_super_admin_access()</code> lets you self-grant access with no customer approval. For compliance, company admins should grant/approve access, not the service admin. The 48-hour window itself is fine — it's the consent flow that needs fixing. Phase 2, item 2.3.</div>
+    </div>
+
+    <div class="q-item">
+      <div class="q-label">As the service provider, I have full database access — is this allowed?</div>
+      <div class="q-answer"><strong>Yes, but only with a signed DPA and documented controls.</strong> GDPR allows processors to access personal data — that's the whole point of a Data Processing Agreement. Your DPA must state: what data you access, why, your security measures, your sub-processors (Supabase, Cloudflare, Brevo), and breach notification obligations. Supabase service role key access is normal for a SaaS operator. Document it, don't remove it. Phase 1, item 1.2.</div>
+    </div>
+
+    <div class="q-item">
+      <div class="q-label">Do I need to check where code is hosted and what backups I get?</div>
+      <div class="q-answer"><strong>Yes — you need to document this and verify it.</strong> Your Supabase project region determines where employee data is stored. Check your Supabase dashboard for the region (it should be EU/UK for GDPR). Cloudflare Pages runs on their global CDN but the SPA contains no PII — only the Supabase database holds personal data. Supabase Pro includes daily backups with 7-day PITR. You need to <em>test</em> a restore and document the process. Phase 3, items 3.2 and 3.3.</div>
+    </div>
+  </div>
+
+  <!-- PHASE 1: Legal & Documentation -->
+  <div class="phase">
+    <div class="phase-header">
+      <span class="phase-num">PHASE 1</span>
+      <span class="phase-title">Legal and Documentation</span>
+      <span class="phase-effort">Week 1–2 · ~£2K lawyer</span>
+    </div>
+
+    <div class="item" id="item-1-1">
+      <div class="item-header" onclick="toggle('item-1-1')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">1.1 Privacy Notice</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p><strong>Implemented in migration 094 + frontend.</strong> Full GDPR privacy notice at <code>/privacy</code> route, accessible without authentication. Covers all 9 required sections: who we are, data categories with lawful bases table, security measures, data retention periods, your rights (including DSAR via Download My Data), sub-processors (Supabase, Cloudflare, Brevo, Microsoft Azure AD), cookies, breach notification, and ICO complaints contact.</p>
+        <ul>
+          <li>Linked from Login page (privacy link below login card)</li>
+          <li>Linked from Settings page ("Privacy Notice" button in Your Data section)</li>
+          <li>Religion listed as Art. 9(2)(a) explicit consent required</li>
+          <li>Geolocation listed as legitimate interest + explicit consent</li>
+        </ul>
+        <h4>Remaining</h4>
+        <p>Have your data protection lawyer review the notice content (~£500–1K).</p>
+        <span class="effort-tag">lawyer review only</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-1-2">
+      <div class="item-header" onclick="toggle('item-1-2')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">1.2 Data Processing Agreement (DPA)</span>
+        <span class="status-badge missing">MISSING</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p>No DPA exists. The GDPR migration references Art. 28 in code comments but there's no customer-facing agreement. <strong>Without a DPA, customers legally cannot use InflowHR for employee data.</strong></p>
+        <h4>What's needed</h4>
+        <ul>
+          <li>Standard DPA template based on EU Standard Contractual Clauses</li>
+          <li>Must cover: processor obligations, sub-processors (Supabase, Cloudflare, Brevo/Sendinblue), data transfer safeguards, breach notification (72 hours), data deletion on termination, security measures</li>
+          <li>Sub-processor list with their own DPAs:
+            <ul>
+              <li>Supabase (database, auth, storage) — they have a DPA</li>
+              <li>Cloudflare (CDN, Pages) — they have a DPA</li>
+              <li>Brevo (email sending) — they have a DPA</li>
+              <li>Microsoft (SSO/Azure AD) — they have a DPA</li>
+            </ul>
+          </li>
+          <li>Make it downloadable from the app and signable during onboarding</li>
+        </ul>
+        <h4>Action</h4>
+        <p>Use the ICO's standard DPA template as a base. Lawyer review ~£500.</p>
+        <span class="effort-tag">lawyer task · £500–1K</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-1-3">
+      <div class="item-header" onclick="toggle('item-1-3')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">1.3 Data Retention Policy</span>
+        <span class="status-badge partial">GAP</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p><strong>Engineering done, written policy document still needed.</strong> All retention jobs are now scheduled via pg_cron (migration 094):</p>
+        <ul>
+          <li><code>purge-frozen-employees</code> — daily at 03:00 UTC (30-day offboarding queue)</li>
+          <li><code>expire-support-grants</code> — daily at 03:05 UTC</li>
+          <li><code>cleanup-old-notifications</code> — daily at 03:10 UTC (deletes read notifications &gt; 90 days)</li>
+          <li><code>cleanup-old-geolocation</code> — daily at 03:15 UTC (nulls coordinates &gt; 12 months)</li>
+        </ul>
+        <p>The privacy notice includes a retention periods table. The anonymise_employee() function handles full PII removal.</p>
+        <h4>What's still needed</h4>
+        <ul>
+          <li>A standalone written data retention policy document for the DPA appendix</li>
+          <li>Include it as a downloadable PDF or page in the app</li>
+        </ul>
+        <span class="effort-tag">½ day to write the document</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-1-4">
+      <div class="item-header" onclick="toggle('item-1-4')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">1.4 Incident Response Plan</span>
+        <span class="status-badge missing">MISSING</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p>No incident response documentation exists anywhere in the codebase or docs.</p>
+        <h4>What's needed</h4>
+        <ul>
+          <li>A documented plan covering: detection, assessment, containment, notification (ICO within 72 hours, affected individuals "without undue delay"), remediation, post-incident review</li>
+          <li>Contact details: who gets called, escalation path</li>
+          <li>Template breach notification letters for ICO and for affected customers</li>
+          <li>This is a document, not code — takes a day to write</li>
+        </ul>
+        <span class="effort-tag">1 day to write</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-1-5">
+      <div class="item-header" onclick="toggle('item-1-5')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">1.5 DSAR Process</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p><strong>Already implemented.</strong> The <code>export_employee_data()</code> RPC returns a comprehensive JSON export across 16+ tables. A "Download My Data" button exists in the Settings page. The export is logged to the GDPR audit trail.</p>
+        <h4>Minor gap</h4>
+        <ul>
+          <li>Document the DSAR process (email → export → review → send within 30 days) in your privacy notice</li>
+          <li>Consider adding a company admin DSAR request flow (for when an employee makes a formal request to their employer)</li>
+        </ul>
+        <span class="effort-tag">documentation only</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 2: RBAC & Access Controls -->
+  <div class="phase">
+    <div class="phase-header">
+      <span class="phase-num">PHASE 2</span>
+      <span class="phase-title">RBAC and Access Controls</span>
+      <span class="phase-effort">Week 2–3 · £0 engineering</span>
+    </div>
+
+    <div class="item" id="item-2-1">
+      <div class="item-header" onclick="toggle('item-2-1')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">2.1 Salary and payroll data isolation</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p><strong>Implemented via Option B — column-masking view.</strong> Migration 094 creates:</p>
+        <ul>
+          <li><code>has_payroll_access(company_id)</code> — checks admin_portal_access + admin_portal_roles for payroll permission, OR is_company_admin(), OR is_super_admin()</li>
+          <li><code>get_my_employee_id()</code> — returns current user's employee ID</li>
+          <li><code>employees_secure</code> VIEW — returns NULL for annual_salary, ni_number, bank_sort_code, bank_account_number, bank_account_name, tax_code, payroll_id unless it's the employee's own record or the user has payroll access</li>
+          <li>New payslips policy "Payslips scoped read" — employees see only own payslips, payroll users see all in company</li>
+        </ul>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-2-2">
+      <div class="item-header" onclick="toggle('item-2-2')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">2.2 MFA enforcement</span>
+        <span class="status-badge missing">MISSING</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p>No MFA is configured or enforced. SSO via Microsoft provides whatever MFA the customer's Azure AD enforces, but non-SSO (email/password) accounts have zero second-factor protection. No references to TOTP, 2FA, or MFA exist in the codebase.</p>
+        <h4>What's needed</h4>
+        <ul>
+          <li>Supabase Auth supports TOTP MFA natively — enable it</li>
+          <li>Enforce MFA for admin/HR roles at minimum (company admins accessing PII must have MFA)</li>
+          <li>For SSO companies, MFA is delegated to their IdP — document this</li>
+          <li>For non-SSO companies, add TOTP enrolment flow after first login</li>
+        </ul>
+        <span class="effort-tag">1–2 days engineering</span>
+        <span class="decision-flag">DECISION: MFA required for all, or admin-only?</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-2-3">
+      <div class="item-header" onclick="toggle('item-2-3')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">2.3 Service admin access — pre-authorisation</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p><strong>Implemented Option B — company admin pre-authorisation.</strong> Migration 094 adds:</p>
+        <ul>
+          <li><code>support_access_authorised</code> boolean column on companies table (default false)</li>
+          <li>Updated <code>ensure_super_admin_access()</code> — now only grants 48-hour access to companies where <code>support_access_authorised = true</code></li>
+          <li>Audit logging includes <code>pre_authorised: true</code> in metadata</li>
+          <li>Company admins can toggle support access on/off in the Access Management page (new "Service Provider Support Access" section)</li>
+        </ul>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-2-4">
+      <div class="item-header" onclick="toggle('item-2-4')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">2.4 Audit logging completeness</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p><strong>Already well-implemented.</strong> The <code>gdpr_audit_logs</code> table is immutable (UPDATE/DELETE revoked). It logs: SELECT, INSERT, UPDATE, DELETE, EXPORT, ANONYMISE, GRANT_ACCESS, REVOKE_ACCESS, SELF_GRANT_ACCESS, AUTO_PURGE. The <code>log_gdpr_action()</code> helper captures actor, role, company, table, record, old/new data, and metadata. An admin viewer exists at <code>AdminAuditLog.tsx</code>.</p>
+        <h4>Minor enhancement</h4>
+        <ul>
+          <li>Currently, audit logging is called explicitly from specific functions — not triggered automatically on all PII table operations. For launch, the explicit approach is adequate. Trigger-based logging can come later for SOC 2.</li>
+        </ul>
+        <span class="effort-tag">no action needed</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-2-5">
+      <div class="item-header" onclick="toggle('item-2-5')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">2.5 Receipts storage bucket — tenant scoping</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p><strong>Migration 094 replaces all 4 storage policies with tenant-scoped versions.</strong> Each policy checks <code>(storage.foldername(name))[1]</code> matches the user's company_id via company_users lookup. Policies created: tenant scoped receipt upload, read, update, and delete.</p>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-2-6">
+      <div class="item-header" onclick="toggle('item-2-6')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">2.6 Geolocation consent for check-in</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p><strong>Implemented via employee_consents table + Settings UI.</strong></p>
+        <ul>
+          <li><code>employee_consents</code> table tracks geolocation consent with grant/withdraw timestamps</li>
+          <li>"Data Consents" section in Settings page with toggle for "Geolocation check-in" — explains GPS recording and data usage</li>
+          <li>Geolocation data auto-purged after 12 months via <code>cleanup_old_geolocation_data()</code> pg_cron job</li>
+          <li>RLS: employees manage their own consents, company admins can read</li>
+        </ul>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 3: Infrastructure Verification -->
+  <div class="phase">
+    <div class="phase-header">
+      <span class="phase-num">PHASE 3</span>
+      <span class="phase-title">Infrastructure Verification</span>
+      <span class="phase-effort">Week 3 · £0</span>
+    </div>
+
+    <div class="item" id="item-3-1">
+      <div class="item-header" onclick="toggle('item-3-1')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">3.1 Encryption at rest and in transit</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p><strong>Platform-level encryption is in place.</strong> Supabase provides AES-256 encryption at rest for the database and TLS 1.2+ in transit. Cloudflare enforces HTTPS for the frontend. This is sufficient for SMB.</p>
+        <h4>Note on field-level encryption</h4>
+        <p>Bank details, NI numbers, and tax codes are stored as plaintext columns. Field-level encryption (using pgcrypto) would add a layer but complicates queries and isn't required for GDPR compliance — AES-256 disk encryption satisfies the "appropriate technical measures" requirement. The existing column masking in the admin UI (SEC-H05) prevents casual viewing.</p>
+        <span class="effort-tag">no action needed for SMB launch</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-3-2">
+      <div class="item-header" onclick="toggle('item-3-2')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">3.2 Data hosting location</span>
+        <span class="status-badge partial">VERIFY</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p>The Supabase project region is set at project creation and isn't stored in the local config. You need to verify this in the Supabase dashboard. For UK/EU customers, the database should be in an EU region (eu-west-1 London, eu-west-2, or eu-central-1 Frankfurt).</p>
+        <h4>What to check</h4>
+        <ul>
+          <li>Supabase Dashboard → Project Settings → General → Region</li>
+          <li>Cloudflare Pages: the SPA is served from Cloudflare's global CDN — this is fine as the SPA contains no PII (all PII lives in Supabase)</li>
+          <li>Brevo (email): check their data processing region — they offer EU hosting</li>
+        </ul>
+        <h4>What to document</h4>
+        <p>Your privacy notice needs to state: "Employee data is stored on servers in [region] operated by Supabase (our sub-processor). Application delivery uses Cloudflare's global CDN for static assets only — no personal data is cached at the edge."</p>
+        <span class="effort-tag">30 min verification</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-3-3">
+      <div class="item-header" onclick="toggle('item-3-3')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">3.3 Backup and disaster recovery</span>
+        <span class="status-badge partial">GAP</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p>No backup configuration or DR documentation exists in the codebase. Supabase Pro plan includes automatic daily backups with 7-day Point-in-Time Recovery (PITR), but this has never been tested.</p>
+        <h4>What's needed</h4>
+        <ul>
+          <li>Verify your Supabase plan includes PITR</li>
+          <li>Test a restore — actually do it on a staging project to confirm it works</li>
+          <li>Document the recovery process: who triggers it, how long it takes, what the RPO/RTO targets are</li>
+          <li>Consider: Supabase also offers logical backups (pg_dump) via the dashboard — schedule a weekly export to a separate storage location</li>
+        </ul>
+        <span class="effort-tag">1 day to test + document</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-3-4">
+      <div class="item-header" onclick="toggle('item-3-4')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">3.4 Security headers — HSTS</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p><code>Strict-Transport-Security: max-age=31536000; includeSubDomains</code> added to <code>public/_headers</code> as first header entry.</p>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-3-5">
+      <div class="item-header" onclick="toggle('item-3-5')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">3.5 Change management</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Current state</h4>
+        <p><strong>Already in place.</strong> Git repository with branch-based workflow (dev → main), PRs for code review, Cloudflare Pages auto-deploys from main. The recent security audit (SEC-C01 through SEC-M07) demonstrates the review-before-production process.</p>
+        <span class="effort-tag">no action needed</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 4: Data Hygiene Fixes -->
+  <div class="phase">
+    <div class="phase-header">
+      <span class="phase-num">PHASE 4</span>
+      <span class="phase-title">Data Hygiene Fixes</span>
+      <span class="phase-effort">Week 3–4 · £0</span>
+    </div>
+
+    <div class="item" id="item-4-1">
+      <div class="item-header" onclick="toggle('item-4-1')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">4.1 Data retention cron jobs</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p>Four pg_cron jobs scheduled daily at 03:00 UTC in migration 094:</p>
+        <ul>
+          <li><code>purge_expired_frozen_employees()</code> — purge offboarded employees after 30-day freeze</li>
+          <li><code>expire_stale_support_grants()</code> — expire support access grants past their window</li>
+          <li><code>cleanup_old_notifications()</code> — delete read notifications older than 90 days</li>
+          <li><code>cleanup_old_geolocation_data()</code> — null out lat/lng older than 12 months (keeps check-in record)</li>
+        </ul>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-4-2">
+      <div class="item-header" onclick="toggle('item-4-2')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">4.2 Plaintext temporary passwords</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p>Migration 094 addresses this with two mechanisms:</p>
+        <ul>
+          <li>One-time cleanup: nulls all existing <code>temporary_password</code> values where the employee already has an <code>auth_user_id</code></li>
+          <li>Trigger <code>trg_clear_temp_password</code>: automatically nulls the password whenever <code>auth_user_id</code> is set on an employee record</li>
+        </ul>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-4-3">
+      <div class="item-header" onclick="toggle('item-4-3')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">4.3 Special category data — religion field</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Decision: Option B — kept with explicit consent</h4>
+        <p>Religion field retained as a standard HR field, made GDPR-compliant via explicit consent (Art. 9(2)(a)):</p>
+        <ul>
+          <li>Employees must grant <code>special_category</code> consent in Settings before religion data is collected</li>
+          <li>Consent tracked in <code>employee_consents</code> table with grant/withdraw timestamps</li>
+          <li>Religion field shown in <code>employees_secure</code> view (masked from non-payroll users)</li>
+          <li>Consent can be withdrawn at any time via Settings → Data Consents</li>
+        </ul>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-4-4">
+      <div class="item-header" onclick="toggle('item-4-4')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">4.4 Employee consent tracking</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Shipped</h4>
+        <p>Full employee consent system implemented across migration 094 + frontend:</p>
+        <ul>
+          <li><code>employee_consents</code> table with RLS — types: data_processing, geolocation, special_category, marketing</li>
+          <li>Employees manage consents in Settings → Data Consents (toggle UI for religion/belief and geolocation)</li>
+          <li>Grant inserts a timestamped record; withdraw sets <code>withdrawn_at</code></li>
+          <li>Company admins can view consent status (read-only) via RLS policy</li>
+          <li>Consent version tracked for audit trail</li>
+        </ul>
+        <span class="effort-tag">shipped</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PHASE 5: Launch Verification -->
+  <div class="phase">
+    <div class="phase-header">
+      <span class="phase-num">PHASE 5</span>
+      <span class="phase-title">Launch Verification</span>
+      <span class="phase-effort">Week 4 · £0</span>
+    </div>
+
+    <div class="item" id="item-5-1">
+      <div class="item-header" onclick="toggle('item-5-1')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">5.1 Security controls already in place</span>
+        <span class="status-badge done">DONE</span>
+      </div>
+      <div class="item-body">
+        <h4>Completed in prior security audits</h4>
+        <ul>
+          <li>Multi-tenant RLS on all tables with <code>company_id</code> scoping</li>
+          <li>Cross-tenant data leak fixed (SEC-C01: admin portal tables)</li>
+          <li>Authenticated Edge Functions (SEC-C02)</li>
+          <li>CORS restricted to <code>app.inflowhr.com</code> (SEC-H04)</li>
+          <li>HMAC-signed OAuth state (SEC-H05)</li>
+          <li>HTML injection prevention in emails (SEC-H06)</li>
+          <li>Private storage bucket (SEC-H01)</li>
+          <li>Super admin table replacing hardcoded emails (SEC-H02)</li>
+          <li>PII masking in admin UI (SEC-H05)</li>
+          <li>CSV formula injection protection (SEC-H06)</li>
+          <li>PostgREST input sanitisation (SEC-21)</li>
+          <li>PII console.log removal (SEC-22, SEC-M04)</li>
+          <li>Comprehensive security headers (CSP, X-Frame-Options, etc.)</li>
+          <li>Session timeout on inactivity</li>
+          <li>Employee data anonymisation function</li>
+          <li>Company data deletion function</li>
+          <li>GDPR audit logging (immutable)</li>
+          <li>Data export / DSAR capability</li>
+        </ul>
+        <span class="effort-tag">already shipped</span>
+      </div>
+    </div>
+
+    <div class="item" id="item-5-2">
+      <div class="item-header" onclick="toggle('item-5-2')">
+        <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
+        <span class="item-name">5.2 End-to-end test checklist</span>
+        <span class="status-badge missing">TO DO</span>
+      </div>
+      <div class="item-body">
+        <h4>Before launch, test these scenarios</h4>
+        <ul>
+          <li>✅ Employee cannot query another employee's salary via Supabase API (2.1 — employees_secure view)</li>
+          <li>✅ Employee can only see their own payslips (2.1 — payslips scoped policy)</li>
+          <li>✅ Non-payroll admin cannot see salary data (2.1 — has_payroll_access check)</li>
+          <li>✅ Receipts bucket: user from Company A cannot access Company B's receipts (2.5 — tenant-scoped storage policies)</li>
+          <li>✅ Company admin can grant/revoke service admin access (2.3 — support_access_authorised toggle)</li>
+          <li>✅ Super admin can only self-grant to pre-authorised companies (2.3 — ensure_super_admin_access rewrite)</li>
+          <li>✅ Privacy notice accessible from login page link (1.1 — /privacy route)</li>
+          <li>✅ Employee can grant/withdraw consent for religion and geolocation (4.4 — Settings consents)</li>
+          <li>✅ Temp passwords cleared after auth user linked (4.2 — trigger)</li>
+          <li>✅ HSTS header present on all responses (3.4 — _headers file)</li>
+          <li>⬜ Data export contains all employee data (existing — verify)</li>
+          <li>⬜ Employee anonymisation removes all PII (existing — verify)</li>
+          <li>⬜ Offboarded employee data purges after 30 days (4.1 — needs pg_cron active)</li>
+          <li>⬜ Non-SSO account requires MFA for admin access (2.2 — TOTP not yet built)</li>
+        </ul>
+        <span class="effort-tag">1 day testing</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timeline -->
+  <div class="timeline">
+    <div class="timeline-title">Remaining work to SMB-ready launch</div>
+    <table>
+      <thead>
+        <tr><th>Status</th><th>What</th><th>Cost</th><th>Effort</th></tr>
+      </thead>
+      <tbody>
+        <tr style="background: #f0fdf4">
+          <td>✅ DONE</td>
+          <td>Privacy notice, HSTS header, salary RLS, payslips scoping, receipts bucket policies, service admin pre-auth, data retention cron jobs, temp password cleanup, religion consent, employee consent tracking, SSO enforcement flag</td>
+          <td class="cost">£0</td>
+          <td>completed</td>
+        </tr>
+        <tr>
+          <td>⬜ NEXT</td>
+          <td>1.2 DPA template (lawyer review), 1.3 data retention policy document, 1.4 incident response plan</td>
+          <td class="cost">~£500–1K</td>
+          <td>2 days writing + lawyer</td>
+        </tr>
+        <tr>
+          <td>⬜ NEXT</td>
+          <td>2.2 MFA / TOTP enforcement for non-SSO admin users</td>
+          <td class="cost">£0</td>
+          <td>1–2 days engineering</td>
+        </tr>
+        <tr>
+          <td>⬜ NEXT</td>
+          <td>3.2 Verify Supabase hosting region (manual dashboard check), 3.3 test backup restore + document DR</td>
+          <td class="cost">£0</td>
+          <td>1 day</td>
+        </tr>
+        <tr>
+          <td>⬜ NEXT</td>
+          <td>5.2 End-to-end security testing (10 of 14 tests now verifiable)</td>
+          <td class="cost">£0</td>
+          <td>1 day testing</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td><strong>Remaining total</strong></td>
+          <td class="cost"><strong>~£500–1K</strong></td>
+          <td><strong>~5–6 days work</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function toggle(id) {
+  document.getElementById(id).classList.toggle('open');
+}
+</script>

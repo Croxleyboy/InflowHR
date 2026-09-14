@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { useFeatures } from './context/FeatureContext'
 import Login from './pages/Login'
+import PrivacyNotice from './pages/PrivacyNotice'
 import AccessDenied from './pages/AccessDenied'
 import InitialSetup from './pages/InitialSetup'
 import Footer from './components/Footer'
@@ -76,6 +77,7 @@ import AdminTalentIntelligence from './pages/admin/AdminTalentIntelligence'
 import AdminUserGuides from './pages/admin/AdminUserGuides'
 import AdminDashboardModern from './pages/admin/AdminDashboardModern'
 import AdminAccess from './pages/admin/AdminAccess'
+import AdminCancellations from './pages/admin/AdminCancellations'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
 import TimesheetCheckIn from './pages/TimesheetCheckIn'
@@ -217,6 +219,7 @@ function AuthGate() {
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
+              <Route path="cancellations" element={<AdminCancellations />} />
               <Route path="demo-seed" element={<AdminDemoSeed />} />
             </Route>
           </Route>
@@ -260,6 +263,7 @@ function AuthGate() {
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />
+            <Route path="cancellations" element={<AdminCancellations />} />
             <Route path="demo-seed" element={<AdminDemoSeed />} />
           </Route>
         </Route>
@@ -288,9 +292,10 @@ export default function App() {
       <LanguageProvider>
       <FeatureProvider>
         <BrowserRouter>
-          <AuthProvider>
-            <AuthGate />
-          </AuthProvider>
+          <Routes>
+            <Route path="/privacy" element={<PrivacyNotice />} />
+            <Route path="*" element={<AuthProvider><AuthGate /></AuthProvider>} />
+          </Routes>
         </BrowserRouter>
       </FeatureProvider>
       </LanguageProvider>
