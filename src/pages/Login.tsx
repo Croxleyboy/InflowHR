@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
 
@@ -206,6 +207,8 @@ export default function Login() {
               </button>
             </form>
           )}
+
+          <Link to="/privacy" className="login-privacy-link">Privacy Notice</Link>
         </div>
       </div>
     </div>

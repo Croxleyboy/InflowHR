@@ -89,13 +89,15 @@ export default function AdminAccess() {
   const [selectedEmployee, setSelectedEmployee] = useState('')
   const [selectedRole, setSelectedRole] = useState('read_only')
   const [saving, setSaving] = useState(false)
+  const [supportAccessAuthorised, setSupportAccessAuthorised] = useState(false)
+  const [supportAccessLoading, setSupportAccessLoading] = useState(false)
 
   const isCompanyAdmin = isSuperAdmin || companyUser?.role === 'admin'
 
   const loadData = useCallback(async () => {
     if (!selectedCompanyId) return
     setLoading(true)
-    const [empRes, accessRes, rolesRes] = await Promise.all([
+    const [empRes, accessRes, rolesRes, companyRes] = await Promise.all([
       supabase.from('employees')
         .select('id, first_name, last_name, email, avatar_url, department, job_title')
         .eq('company_id', selectedCompanyId).eq('is_active', true)
@@ -107,9 +109,14 @@ export default function AdminAccess() {
       supabase.from('admin_portal_roles')
         .select('*')
         .eq('company_id', selectedCompanyId),
+      supabase.from('companies')
+        .select('support_access_authorised')
+        .eq('id', selectedCompanyId)
+        .single(),
     ])
     setEmployees((empRes.data as Employee[]) || [])
     setAccessList((accessRes.data as AccessRow[]) || [])
+    if (companyRes.data) setSupportAccessAuthorised(companyRes.data.support_access_authorised ?? false)
 
     const existing = (rolesRes.data || []) as { id: number; role_key: string; role_label: string; permissions: Record<string, boolean> }[]
     const merged: RolePerms[] = ROLE_KEYS.map(rk => {
@@ -198,6 +205,19 @@ export default function AdminAccess() {
     setSaving(false)
     showSuccess('Permissions saved')
     loadData()
+  }
+
+  async function toggleSupportAccess() {
+    if (!selectedCompanyId) return
+    setSupportAccessLoading(true)
+    const newValue = !supportAccessAuthorised
+    const { error } = await supabase.from('companies')
+      .update({ support_access_authorised: newValue })
+      .eq('id', selectedCompanyId)
+    if (error) { showError('Failed to update support access: ' + error.message); setSupportAccessLoading(false); return }
+    setSupportAccessAuthorised(newValue)
+    showSuccess(newValue ? 'Support access authorised' : 'Support access revoked')
+    setSupportAccessLoading(false)
   }
 
   const subscribedFeatures = useMemo(() => {
@@ -336,6 +356,35 @@ export default function AdminAccess() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {isCompanyAdmin && (
+            <div style={{ marginTop: 28, padding: 20, background: '#f8fafc', borderRadius: 12, border: '1px solid #e5e7eb' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Service Provider Support Access</h3>
+              </div>
+              <p style={{ fontSize: 13, color: '#64748b', marginBottom: 14, lineHeight: 1.5 }}>
+                When enabled, the InflowHR service team can access your company's data for support and troubleshooting purposes. Access is logged in the audit trail and limited to 48-hour sessions. You can revoke this at any time.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button
+                  className={`toggle-switch ${supportAccessAuthorised ? 'toggle-on' : 'toggle-off'}`}
+                  onClick={toggleSupportAccess}
+                  disabled={supportAccessLoading}
+                  role="switch"
+                  aria-checked={supportAccessAuthorised}
+                  style={{ flexShrink: 0 }}
+                >
+                  <span className="toggle-knob" />
+                </button>
+                <span style={{ fontSize: 13, fontWeight: 600, color: supportAccessAuthorised ? '#059669' : '#64748b' }}>
+                  {supportAccessLoading ? 'Updating…' : supportAccessAuthorised ? 'Authorised' : 'Not authorised'}
+                </span>
+              </div>
             </div>
           )}
         </>
