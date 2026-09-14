@@ -40,6 +40,9 @@ export default function Settings() {
   const [exporting, setExporting] = useState(false)
   const [dashLayout, setDashLayout] = useState(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768)
+  const [consents, setConsents] = useState<Record<string, boolean>>({})
+  const [consentsLoading, setConsentsLoading] = useState(true)
+  const [consentSaving, setConsentSaving] = useState<string | null>(null)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)')
     const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
@@ -69,6 +72,65 @@ export default function Settings() {
     }
     setExporting(false)
   }, [companyUser?.employee_id, showError, showSuccess])
+
+  useEffect(() => {
+    if (!companyUser?.employee_id || !companyUser?.company_id) { setConsentsLoading(false); return }
+    supabase.from('employee_consents')
+      .select('consent_type, withdrawn_at')
+      .eq('employee_id', companyUser.employee_id)
+      .eq('company_id', companyUser.company_id)
+      .then(({ data }) => {
+        const map: Record<string, boolean> = {}
+        ;(data || []).forEach((c: { consent_type: string; withdrawn_at: string | null }) => {
+          map[c.consent_type] = !c.withdrawn_at
+        })
+        setConsents(map)
+        setConsentsLoading(false)
+      })
+  }, [companyUser?.employee_id, companyUser?.company_id])
+
+  const handleConsentToggle = useCallback(async (consentType: string) => {
+    if (!companyUser?.employee_id || !companyUser?.company_id) return
+    setConsentSaving(consentType)
+    const currentlyGranted = consents[consentType] ?? false
+
+    if (currentlyGranted) {
+      const { error } = await supabase.from('employee_consents')
+        .update({ withdrawn_at: new Date().toISOString() })
+        .eq('employee_id', companyUser.employee_id)
+        .eq('company_id', companyUser.company_id)
+        .eq('consent_type', consentType)
+      if (error) { showError('Failed to update consent'); setConsentSaving(null); return }
+      setConsents(prev => ({ ...prev, [consentType]: false }))
+      showSuccess('Consent withdrawn')
+    } else {
+      const existing = await supabase.from('employee_consents')
+        .select('id')
+        .eq('employee_id', companyUser.employee_id)
+        .eq('company_id', companyUser.company_id)
+        .eq('consent_type', consentType)
+        .maybeSingle()
+
+      if (existing.data) {
+        const { error } = await supabase.from('employee_consents')
+          .update({ granted_at: new Date().toISOString(), withdrawn_at: null, consent_version: '1.0' })
+          .eq('id', existing.data.id)
+        if (error) { showError('Failed to update consent'); setConsentSaving(null); return }
+      } else {
+        const { error } = await supabase.from('employee_consents')
+          .insert({
+            employee_id: companyUser.employee_id,
+            company_id: companyUser.company_id,
+            consent_type: consentType,
+            consent_version: '1.0',
+          })
+        if (error) { showError('Failed to record consent'); setConsentSaving(null); return }
+      }
+      setConsents(prev => ({ ...prev, [consentType]: true }))
+      showSuccess('Consent granted')
+    }
+    setConsentSaving(null)
+  }, [companyUser?.employee_id, companyUser?.company_id, consents, showError, showSuccess])
 
   function handleToggle(key: keyof Features) {
     setDraft(d => ({ ...d, [key]: !d[key] }))
@@ -242,8 +304,58 @@ export default function Settings() {
             </span>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
           </button>
+          <button className="settings-row settings-row-btn" onClick={() => navigate('/privacy')}>
+            <span className="settings-row-left">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span>Privacy Notice</span>
+            </span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
         </div>
       </section>
+
+      {!consentsLoading && companyUser?.employee_id && (
+        <section className="settings-section">
+          <h2>Data Consents</h2>
+          <p className="settings-hint" style={{ marginBottom: 12 }}>
+            Manage your consent for optional data processing. You can withdraw consent at any time. <a href="/privacy" style={{ color: 'var(--primary, #6C4FBF)' }}>View our Privacy Notice</a>
+          </p>
+          <div className="feature-toggles">
+            <div className="toggle-row">
+              <div>
+                <span>Religion or belief data</span>
+                <p style={{ fontSize: 12, color: '#64748b', margin: '2px 0 0' }}>Used to accommodate religious observance and dietary requirements</p>
+              </div>
+              <button
+                className={`toggle-switch ${consents.special_category ? 'toggle-on' : 'toggle-off'}`}
+                onClick={() => handleConsentToggle('special_category')}
+                disabled={consentSaving === 'special_category'}
+                role="switch"
+                aria-checked={consents.special_category ?? false}
+              >
+                <span className="toggle-knob" />
+              </button>
+            </div>
+            <div className="toggle-row">
+              <div>
+                <span>Geolocation check-in</span>
+                <p style={{ fontSize: 12, color: '#64748b', margin: '2px 0 0' }}>Records GPS coordinates when you check in/out for timesheets or shifts</p>
+              </div>
+              <button
+                className={`toggle-switch ${consents.geolocation ? 'toggle-on' : 'toggle-off'}`}
+                onClick={() => handleConsentToggle('geolocation')}
+                disabled={consentSaving === 'geolocation'}
+                role="switch"
+                aria-checked={consents.geolocation ?? false}
+              >
+                <span className="toggle-knob" />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       {hasPortalAccess && (
         <section className="settings-section settings-admin-section">

@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { useFeatures } from './context/FeatureContext'
 import Login from './pages/Login'
+import PrivacyNotice from './pages/PrivacyNotice'
 import AccessDenied from './pages/AccessDenied'
 import InitialSetup from './pages/InitialSetup'
 import Footer from './components/Footer'
@@ -288,9 +289,10 @@ export default function App() {
       <LanguageProvider>
       <FeatureProvider>
         <BrowserRouter>
-          <AuthProvider>
-            <AuthGate />
-          </AuthProvider>
+          <Routes>
+            <Route path="/privacy" element={<PrivacyNotice />} />
+            <Route path="*" element={<AuthProvider><AuthGate /></AuthProvider>} />
+          </Routes>
         </BrowserRouter>
       </FeatureProvider>
       </LanguageProvider>

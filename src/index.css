@@ -4493,6 +4493,16 @@ body {
 .login-breakglass-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .login-breakglass-btn:hover:not(:disabled) { background: #e74c3c; }
 
+.login-privacy-link {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  font-size: 12px;
+  color: #94a3b8;
+  text-decoration: none;
+}
+.login-privacy-link:hover { color: #6C4FBF; text-decoration: underline; }
+
 @media (max-width: 900px) {
   .login-page {
     flex-direction: column;
