@@ -77,6 +77,7 @@ import AdminTalentIntelligence from './pages/admin/AdminTalentIntelligence'
 import AdminUserGuides from './pages/admin/AdminUserGuides'
 import AdminDashboardModern from './pages/admin/AdminDashboardModern'
 import AdminAccess from './pages/admin/AdminAccess'
+import AdminCancellations from './pages/admin/AdminCancellations'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
 import TimesheetCheckIn from './pages/TimesheetCheckIn'
@@ -218,6 +219,7 @@ function AuthGate() {
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
+              <Route path="cancellations" element={<AdminCancellations />} />
               <Route path="demo-seed" element={<AdminDemoSeed />} />
             </Route>
           </Route>
@@ -261,6 +263,7 @@ function AuthGate() {
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />
+            <Route path="cancellations" element={<AdminCancellations />} />
             <Route path="demo-seed" element={<AdminDemoSeed />} />
           </Route>
         </Route>

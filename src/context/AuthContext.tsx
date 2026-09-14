@@ -18,6 +18,8 @@ interface Company {
   is_trial: boolean
   trial_end_date: string | null
   trial_expired?: boolean
+  cancellation_status?: string | null
+  is_cancelled?: boolean
 }
 
 const SUPER_ADMIN_EMAILS = [
@@ -150,14 +152,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: co } = await supabase
         .from('companies')
-        .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date')
+        .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status')
         .eq('id', cu.company_id)
         .single()
       if (co) {
         const trialExpired = co.is_trial && co.trial_end_date && new Date(co.trial_end_date) < new Date()
-        if (co.login_disabled || trialExpired) {
+        const isCancelled = co.cancellation_status && ['frozen', 'exported', 'completed', 'purged'].includes(co.cancellation_status)
+        if (co.login_disabled || trialExpired || isCancelled) {
           setCompanyUser(null)
-          setCompany({ ...co, trial_expired: !!trialExpired } as Company)
+          setCompany({ ...co, trial_expired: !!trialExpired, is_cancelled: !!isCancelled } as Company)
           setSetupComplete(null)
           return
         }
@@ -209,6 +212,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .then(({ data }) => setPortalRole(data?.role_key || null))
       }
     } else {
+      // No active company_users row — check if user has a deactivated row in a cancelled company
+      const { data: inactiveRows } = await supabase
+        .from('company_users')
+        .select('company_id')
+        .eq('auth_user_id', userId)
+        .eq('is_active', false)
+        .limit(1)
+      if (inactiveRows && inactiveRows.length > 0) {
+        const { data: co } = await supabase
+          .from('companies')
+          .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status')
+          .eq('id', inactiveRows[0].company_id)
+          .single()
+        if (co && co.cancellation_status && ['frozen', 'exported', 'completed', 'purged'].includes(co.cancellation_status)) {
+          setCompany({ ...co, is_cancelled: true } as Company)
+          setSetupComplete(null)
+          return
+        }
+      }
       setSetupComplete(null)
     }
   }

@@ -37,6 +37,7 @@ const MENU_ITEMS: MenuItem[] = [
   { path: '/admin/notifications', label: 'Notifications', svg: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>' },
   { path: '/admin/billing', label: 'Billing', svg: '<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>' },
   { path: '/admin/user-guides', label: 'User Guides', svg: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
+  { path: '/admin/cancellations', label: 'Cancellations', svg: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>', superAdminOnly: true },
 ]
 
 function AdminLayoutInner() {
