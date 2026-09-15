@@ -37,8 +37,8 @@ interface ExportLog {
 }
 
 const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected']
-const COST_CENTERS = ['External expenses', 'Internal costs', 'Travel & Transport', 'Client entertainment', 'Office supplies', 'IT & Software', 'Training & Development']
-const EXPENSE_TYPES = [
+const DEFAULT_COST_CENTERS = ['External expenses', 'Internal costs', 'Travel & Transport', 'Client entertainment', 'Office supplies', 'IT & Software', 'Training & Development']
+const DEFAULT_EXPENSE_TYPES = [
   'Flights', 'Trains', 'Taxis', 'Car rental', 'Mileage', 'Parking and tolls',
   'Hotel stays for business', 'Meals while travelling', 'Client entertainment',
   'Stationery', 'Equipment or tools', 'Software or subscriptions',
@@ -64,10 +64,11 @@ export default function AdminExpenses() {
   const [editingLineId, setEditingLineId] = useState<number | null>(null)
   const [lineForm, setLineForm] = useState<Partial<LineItem>>({})
   const [tab, setTab] = useState<'claims' | 'settings' | 'chart' | 'exports'>('claims')
-  const [costCenters, setCostCenters] = useState([...COST_CENTERS])
-  const [expenseTypes, setExpenseTypes] = useState([...EXPENSE_TYPES])
+  const [costCenters, setCostCenters] = useState<string[]>([])
+  const [expenseTypes, setExpenseTypes] = useState<string[]>([])
   const [newCostCenter, setNewCostCenter] = useState('')
   const [newExpenseType, setNewExpenseType] = useState('')
+  const [settingsLoading, setSettingsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportLogs, setExportLogs] = useState<ExportLog[]>([])
   const [search, setSearch] = useState('')
@@ -102,14 +103,39 @@ export default function AdminExpenses() {
     if (data) setExportLogs(data)
   }, [selectedCompanyId])
 
+  const loadExpenseSettings = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setSettingsLoading(true)
+    const [ccResult, etResult] = await Promise.all([
+      supabase.from('expense_cost_centers').select('name').eq('company_id', selectedCompanyId).order('sort_order'),
+      supabase.from('expense_expense_types').select('name').eq('company_id', selectedCompanyId).order('sort_order'),
+    ])
+    if (ccResult.data && ccResult.data.length > 0) {
+      setCostCenters(ccResult.data.map((r: any) => r.name))
+    } else {
+      setCostCenters([...DEFAULT_COST_CENTERS])
+      const rows = DEFAULT_COST_CENTERS.map((name, i) => ({ company_id: selectedCompanyId, name, sort_order: i }))
+      await supabase.from('expense_cost_centers').insert(rows)
+    }
+    if (etResult.data && etResult.data.length > 0) {
+      setExpenseTypes(etResult.data.map((r: any) => r.name))
+    } else {
+      setExpenseTypes([...DEFAULT_EXPENSE_TYPES])
+      const rows = DEFAULT_EXPENSE_TYPES.map((name, i) => ({ company_id: selectedCompanyId, name, sort_order: i }))
+      await supabase.from('expense_expense_types').insert(rows)
+    }
+    setSettingsLoading(false)
+  }, [selectedCompanyId])
+
   useEffect(() => {
     if (!selectedCompanyId) return
     loadClaims()
+    loadExpenseSettings()
     getCompanyFY(selectedCompanyId).then(fy => {
       setFyStartMonth(fy.fyStartMonth)
       setFyLabel(fy.label)
     })
-  }, [selectedCompanyId])
+  }, [selectedCompanyId, loadExpenseSettings])
   useEffect(() => { if (selectedCompanyId) loadExportLogs() }, [selectedCompanyId, loadExportLogs])
 
   async function exportExpenses() {
@@ -718,36 +744,68 @@ export default function AdminExpenses() {
 
       {tab === 'settings' && (
         <div className="admin-settings-section">
-          <div className="admin-settings-group">
-            <h3>Cost Centers</h3>
-            <div className="admin-tag-list">
-              {costCenters.map(cc => (
-                <div key={cc} className="admin-tag">
-                  <span>{cc}</span>
-                  <button onClick={() => setCostCenters(prev => prev.filter(x => x !== cc))}>×</button>
+          {settingsLoading ? <div className="admin-loading">Loading settings…</div> : (
+            <>
+              <div className="admin-settings-group">
+                <h3>Cost Centers</h3>
+                <div className="admin-tag-list">
+                  {costCenters.map(cc => (
+                    <div key={cc} className="admin-tag">
+                      <span>{cc}</span>
+                      <button onClick={async () => {
+                        const { error } = await supabase.from('expense_cost_centers').delete().eq('company_id', selectedCompanyId).eq('name', cc)
+                        if (error) { showError('Failed to delete cost center: ' + error.message); return }
+                        setCostCenters(prev => prev.filter(x => x !== cc))
+                        showSuccess('Cost center removed')
+                      }}>×</button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <div className="admin-add-row">
-              <input placeholder="New cost center..." value={newCostCenter} onChange={e => setNewCostCenter(e.target.value)} className="admin-input" />
-              <button className="admin-btn-sm admin-btn-save" onClick={() => { if (newCostCenter.trim()) { setCostCenters(prev => [...prev, newCostCenter.trim()]); setNewCostCenter('') } }}>Add</button>
-            </div>
-          </div>
-          <div className="admin-settings-group">
-            <h3>Expense Types</h3>
-            <div className="admin-tag-list">
-              {expenseTypes.map(et => (
-                <div key={et} className="admin-tag">
-                  <span>{et}</span>
-                  <button onClick={() => setExpenseTypes(prev => prev.filter(x => x !== et))}>×</button>
+                <div className="admin-add-row">
+                  <input placeholder="New cost center..." value={newCostCenter} onChange={e => setNewCostCenter(e.target.value)} className="admin-input" />
+                  <button className="admin-btn-sm admin-btn-save" onClick={async () => {
+                    const name = newCostCenter.trim()
+                    if (!name) return
+                    if (costCenters.includes(name)) { showError('Cost center already exists'); return }
+                    const { error } = await supabase.from('expense_cost_centers').insert({ company_id: selectedCompanyId, name, sort_order: costCenters.length })
+                    if (error) { showError('Failed to add cost center: ' + error.message); return }
+                    setCostCenters(prev => [...prev, name])
+                    setNewCostCenter('')
+                    showSuccess('Cost center added')
+                  }}>Add</button>
                 </div>
-              ))}
-            </div>
-            <div className="admin-add-row">
-              <input placeholder="New expense type..." value={newExpenseType} onChange={e => setNewExpenseType(e.target.value)} className="admin-input" />
-              <button className="admin-btn-sm admin-btn-save" onClick={() => { if (newExpenseType.trim()) { setExpenseTypes(prev => [...prev, newExpenseType.trim()]); setNewExpenseType('') } }}>Add</button>
-            </div>
-          </div>
+              </div>
+              <div className="admin-settings-group">
+                <h3>Expense Types</h3>
+                <div className="admin-tag-list">
+                  {expenseTypes.map(et => (
+                    <div key={et} className="admin-tag">
+                      <span>{et}</span>
+                      <button onClick={async () => {
+                        const { error } = await supabase.from('expense_expense_types').delete().eq('company_id', selectedCompanyId).eq('name', et)
+                        if (error) { showError('Failed to delete expense type: ' + error.message); return }
+                        setExpenseTypes(prev => prev.filter(x => x !== et))
+                        showSuccess('Expense type removed')
+                      }}>×</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="admin-add-row">
+                  <input placeholder="New expense type..." value={newExpenseType} onChange={e => setNewExpenseType(e.target.value)} className="admin-input" />
+                  <button className="admin-btn-sm admin-btn-save" onClick={async () => {
+                    const name = newExpenseType.trim()
+                    if (!name) return
+                    if (expenseTypes.includes(name)) { showError('Expense type already exists'); return }
+                    const { error } = await supabase.from('expense_expense_types').insert({ company_id: selectedCompanyId, name, sort_order: expenseTypes.length })
+                    if (error) { showError('Failed to add expense type: ' + error.message); return }
+                    setExpenseTypes(prev => [...prev, name])
+                    setNewExpenseType('')
+                    showSuccess('Expense type added')
+                  }}>Add</button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

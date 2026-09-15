@@ -360,11 +360,11 @@ h1 {
 
   <div class="progress-strip">
     <div class="progress-cell done">
-      <span class="count">19</span>
+      <span class="count">20</span>
       <span class="label">Done</span>
     </div>
     <div class="progress-cell partial">
-      <span class="count">2</span>
+      <span class="count">1</span>
       <span class="label">Gaps</span>
     </div>
     <div class="progress-cell missing">
@@ -664,20 +664,17 @@ h1 {
       <div class="item-header" onclick="toggle('item-3-2')">
         <svg class="item-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4l4 4-4 4"/></svg>
         <span class="item-name">3.2 Data hosting location</span>
-        <span class="status-badge partial">VERIFY</span>
+        <span class="status-badge done">DONE</span>
       </div>
       <div class="item-body">
-        <h4>Current state</h4>
-        <p>The Supabase project region is set at project creation and isn't stored in the local config. You need to verify this in the Supabase dashboard. For UK/EU customers, the database should be in an EU region (eu-west-1 London, eu-west-2, or eu-central-1 Frankfurt).</p>
-        <h4>What to check</h4>
+        <h4>Verified — 14 September 2026</h4>
         <ul>
-          <li>Supabase Dashboard → Project Settings → General → Region</li>
-          <li>Cloudflare Pages: the SPA is served from Cloudflare's global CDN — this is fine as the SPA contains no PII (all PII lives in Supabase)</li>
-          <li>Brevo (email): check their data processing region — they offer EU hosting</li>
+          <li><strong>Supabase (database, auth, storage):</strong> EU West — London. All employee PII stored in UK/EU.</li>
+          <li><strong>Cloudflare Pages (frontend CDN):</strong> Global CDN (free tier). No PII concern — the SPA is static HTML/JS/CSS with zero personal data; all PII lives in Supabase. Upgrading to Pro would not add region-locking, but it's not needed since no PII transits the CDN.</li>
+          <li><strong>Brevo (transactional email):</strong> EU-hosted. Primary hosting OVH in France and Germany; data stored on Google Cloud in Belgium. Data copied 3x across 2+ locations, encrypted backups on Google Cloud. Per Brevo documentation: "hosting servers are all located within the European Union."</li>
         </ul>
-        <h4>What to document</h4>
-        <p>Your privacy notice needs to state: "Employee data is stored on servers in [region] operated by Supabase (our sub-processor). Application delivery uses Cloudflare's global CDN for static assets only — no personal data is cached at the edge."</p>
-        <span class="effort-tag">30 min verification</span>
+        <p>You're correct that only the backend matters for GDPR data residency — the Cloudflare CDN serves the compiled app bundle (no PII), so global distribution is fine. The privacy notice already names Supabase, Cloudflare, and Brevo as sub-processors.</p>
+        <span class="effort-tag">verified</span>
       </div>
     </div>
 
@@ -891,7 +888,7 @@ h1 {
       <tbody>
         <tr style="background: #f0fdf4">
           <td>✅ DONE</td>
-          <td>Privacy notice, HSTS header, salary RLS, payslips scoping, receipts bucket policies, service admin pre-auth, data retention cron jobs, temp password cleanup, religion consent, employee consent tracking, SSO enforcement flag</td>
+          <td>Privacy notice, HSTS header, salary RLS, payslips scoping, receipts bucket policies, service admin pre-auth, data retention cron jobs, temp password cleanup, religion consent, employee consent tracking, SSO enforcement flag, data hosting verification</td>
           <td class="cost">£0</td>
           <td>completed</td>
         </tr>
@@ -909,9 +906,9 @@ h1 {
         </tr>
         <tr>
           <td>⬜ NEXT</td>
-          <td>3.2 Verify Supabase hosting region (manual dashboard check), 3.3 test backup restore + document DR</td>
+          <td>3.3 Test backup restore + document DR process</td>
           <td class="cost">£0</td>
-          <td>1 day</td>
+          <td>½ day</td>
         </tr>
         <tr>
           <td>⬜ NEXT</td>
@@ -923,7 +920,7 @@ h1 {
           <td></td>
           <td><strong>Remaining total</strong></td>
           <td class="cost"><strong>~£500–1K</strong></td>
-          <td><strong>~5–6 days work</strong></td>
+          <td><strong>~5 days work</strong></td>
         </tr>
       </tbody>
     </table>
