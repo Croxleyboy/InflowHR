@@ -206,6 +206,7 @@ function CompanyLibraryTab({ companyId }: { companyId: string }) {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterIndustry, setFilterIndustry] = useState('')
   const [deptDropdownOpen, setDeptDropdownOpen] = useState<string | null>(null)
+  const [previewId, setPreviewId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
 
   const fetchData = useCallback(async () => {
@@ -330,7 +331,7 @@ function CompanyLibraryTab({ companyId }: { companyId: string }) {
               <th className="admin-el-hide-mobile">Duration</th>
               <th className="admin-el-hide-tablet">Required</th>
               {departments.length > 0 && <th>Departments</th>}
-              <th className="admin-el-hide-mobile">Source</th>
+              <th>Preview</th>
             </tr>
           </thead>
           <tbody>
@@ -338,54 +339,81 @@ function CompanyLibraryTab({ companyId }: { companyId: string }) {
               const vis = visMap[course.id]
               const enabled = vis?.is_enabled ?? false
               const targetDepts = vis?.target_departments || []
+              const isPreviewing = previewId === course.id
               return (
-                <tr key={course.id} className={!enabled ? 'admin-row-inactive' : ''}>
-                  <td>
-                    <label className="admin-toggle-switch">
-                      <input type="checkbox" checked={enabled} onChange={() => toggleCourse(course.id)} disabled={saving === course.id} />
-                      <span className="admin-toggle-slider" />
-                    </label>
-                  </td>
-                  <td><span className="admin-type-icon">{TYPE_ICONS[course.type]}</span> {course.type}</td>
-                  <td className="admin-el-title-cell">
-                    <div>
-                      <strong>{course.title}</strong><br />
-                      <span className="admin-td-desc">{course.description.substring(0, 60)}{course.description.length > 60 ? '...' : ''}</span>
-                    </div>
-                  </td>
-                  <td className="admin-el-hide-mobile"><span className="admin-tag-mini">{CATEGORY_LABELS[course.category] || course.category}</span></td>
-                  <td className="admin-el-hide-mobile">
-                    {course.industry ? <span className="admin-tag-mini">{INDUSTRY_LABELS[course.industry] || course.industry}</span> : <span style={{ opacity: 0.4 }}>—</span>}
-                  </td>
-                  <td className="admin-el-hide-mobile">{course.duration}</td>
-                  <td className="admin-el-hide-tablet">{course.required ? '✓' : '—'}</td>
-                  {departments.length > 0 && (
-                    <td style={{ position: 'relative' }}>
-                      <button
-                        className="admin-btn-sm"
-                        style={{ fontSize: 12, minWidth: 80 }}
-                        onClick={() => setDeptDropdownOpen(deptDropdownOpen === course.id ? null : course.id)}
-                        disabled={!enabled}
-                      >
-                        {targetDepts.length === 0 ? 'All' : `${targetDepts.length} dept${targetDepts.length !== 1 ? 's' : ''}`} ▾
-                      </button>
-                      {deptDropdownOpen === course.id && (
-                        <DepartmentDropdown
-                          courseId={course.id}
-                          departments={departments}
-                          selectedDepartments={targetDepts}
-                          onToggle={toggleDepartment}
-                          onClose={() => setDeptDropdownOpen(null)}
-                        />
-                      )}
+                <>
+                  <tr key={course.id} className={!enabled ? 'admin-row-inactive' : ''}>
+                    <td>
+                      <label className="admin-toggle-switch">
+                        <input type="checkbox" checked={enabled} onChange={() => toggleCourse(course.id)} disabled={saving === course.id} />
+                        <span className="admin-toggle-slider" />
+                      </label>
                     </td>
+                    <td><span className="admin-type-icon">{TYPE_ICONS[course.type]}</span> {course.type}</td>
+                    <td className="admin-el-title-cell">
+                      <div>
+                        <strong>{course.title}</strong><br />
+                        <span className="admin-td-desc">{course.description.substring(0, 60)}{course.description.length > 60 ? '...' : ''}</span>
+                      </div>
+                    </td>
+                    <td className="admin-el-hide-mobile"><span className="admin-tag-mini">{CATEGORY_LABELS[course.category] || course.category}</span></td>
+                    <td className="admin-el-hide-mobile">
+                      {course.industry ? <span className="admin-tag-mini">{INDUSTRY_LABELS[course.industry] || course.industry}</span> : <span style={{ opacity: 0.4 }}>—</span>}
+                    </td>
+                    <td className="admin-el-hide-mobile">{course.duration}</td>
+                    <td className="admin-el-hide-tablet">{course.required ? '✓' : '—'}</td>
+                    {departments.length > 0 && (
+                      <td style={{ position: 'relative' }}>
+                        <button
+                          className="admin-btn-sm"
+                          style={{ fontSize: 12, minWidth: 80 }}
+                          onClick={() => setDeptDropdownOpen(deptDropdownOpen === course.id ? null : course.id)}
+                          disabled={!enabled}
+                        >
+                          {targetDepts.length === 0 ? 'All' : `${targetDepts.length} dept${targetDepts.length !== 1 ? 's' : ''}`} ▾
+                        </button>
+                        {deptDropdownOpen === course.id && (
+                          <DepartmentDropdown
+                            courseId={course.id}
+                            departments={departments}
+                            selectedDepartments={targetDepts}
+                            onToggle={toggleDepartment}
+                            onClose={() => setDeptDropdownOpen(null)}
+                          />
+                        )}
+                      </td>
+                    )}
+                    <td>
+                      <button
+                        className="admin-btn-icon"
+                        title={isPreviewing ? 'Close preview' : 'Preview course'}
+                        onClick={() => setPreviewId(isPreviewing ? null : course.id)}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isPreviewing ? '#5c6bc0' : 'currentColor'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          {isPreviewing
+                            ? <><polyline points="18 15 12 9 6 15"/></>
+                            : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+                          }
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                  {isPreviewing && (
+                    <tr key={`preview-${course.id}`} className="admin-expanded-row">
+                      <td colSpan={departments.length > 0 ? 9 : 8}>
+                        <CoursePreviewPanel
+                          course={course}
+                          enabled={enabled}
+                          targetDepts={targetDepts}
+                          departments={departments}
+                          onToggleEnable={() => toggleCourse(course.id)}
+                          onToggleDept={(dept) => toggleDepartment(course.id, dept)}
+                          saving={saving === course.id}
+                        />
+                      </td>
+                    </tr>
                   )}
-                  <td className="admin-el-hide-mobile">
-                    <span className="admin-tag-mini" style={{ background: course.company_id ? '#e3f2fd' : '#f3e5f5', color: course.company_id ? '#1565c0' : '#7b1fa2' }}>
-                      {course.company_id ? 'Company' : 'Core'}
-                    </span>
-                  </td>
-                </tr>
+                </>
               )
             })}
           </tbody>
@@ -1012,6 +1040,96 @@ function SuperAdminVisibilityTab() {
         </div>
       )}
     </>
+  )
+}
+
+/* ────── Course Preview Panel (Company Admin) ────── */
+
+function CoursePreviewPanel({ course, enabled, targetDepts, departments, onToggleEnable, onToggleDept, saving }: {
+  course: DbCourse; enabled: boolean; targetDepts: string[]; departments: string[];
+  onToggleEnable: () => void; onToggleDept: (dept: string) => void; saving: boolean;
+}) {
+  return (
+    <div style={{ padding: '16px 4px' }}>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ flex: '1 1 340px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <span style={{ fontSize: 28 }}>{TYPE_ICONS[course.type]}</span>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 17 }}>{course.title}</h3>
+              <span style={{ fontSize: 12, color: 'var(--text-muted, #8b8fa3)' }}>
+                {CATEGORY_LABELS[course.category] || course.category}
+                {course.industry && <> &middot; {INDUSTRY_LABELS[course.industry] || course.industry}</>}
+                {course.company_id ? ' · Company course' : ' · Core course'}
+              </span>
+            </div>
+          </div>
+
+          <p style={{ margin: '0 0 14px', fontSize: 14, lineHeight: 1.6, color: 'var(--text-primary, #1e293b)' }}>
+            {course.description}
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px 16px', fontSize: 13, marginBottom: 14 }}>
+            <div><span style={{ color: 'var(--text-muted, #8b8fa3)' }}>Type:</span> <strong style={{ textTransform: 'capitalize' }}>{course.type}</strong></div>
+            <div><span style={{ color: 'var(--text-muted, #8b8fa3)' }}>Duration:</span> <strong>{course.duration}</strong></div>
+            <div><span style={{ color: 'var(--text-muted, #8b8fa3)' }}>Required:</span> <strong>{course.required ? 'Yes' : 'No'}</strong></div>
+            <div><span style={{ color: 'var(--text-muted, #8b8fa3)' }}>Annual renewal:</span> <strong>{course.annual_reminder ? 'Yes' : 'No'}</strong></div>
+            {course.days_to_complete && (
+              <div><span style={{ color: 'var(--text-muted, #8b8fa3)' }}>Complete within:</span> <strong>{course.days_to_complete} days</strong></div>
+            )}
+            {course.deadline && (
+              <div><span style={{ color: 'var(--text-muted, #8b8fa3)' }}>Deadline:</span> <strong>{new Date(course.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</strong></div>
+            )}
+          </div>
+
+          {course.tags.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+              {course.tags.map(tag => (
+                <span key={tag} className="admin-tag-mini" style={{ background: 'var(--surface-alt, #f1f5f9)', fontSize: 11 }}>{tag}</span>
+              ))}
+            </div>
+          )}
+
+          {course.external_url && (
+            <div style={{ fontSize: 13, marginBottom: 14 }}>
+              <span style={{ color: 'var(--text-muted, #8b8fa3)' }}>External link:</span>{' '}
+              <a href={course.external_url} target="_blank" rel="noopener noreferrer" style={{ color: '#5c6bc0', wordBreak: 'break-all' }}>
+                {course.external_url}
+              </a>
+            </div>
+          )}
+        </div>
+
+        <div style={{ flex: '0 0 220px', background: 'var(--surface-alt, #f8fafc)', borderRadius: 10, padding: 16, border: '1px solid var(--border, #e5e7eb)' }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Configuration</h4>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>Enabled</span>
+            <label className="admin-toggle-switch">
+              <input type="checkbox" checked={enabled} onChange={onToggleEnable} disabled={saving} />
+              <span className="admin-toggle-slider" />
+            </label>
+          </div>
+
+          {departments.length > 0 && (
+            <div>
+              <span style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 6 }}>Departments</span>
+              <p style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)', margin: '0 0 6px' }}>
+                {targetDepts.length === 0 ? 'Visible to all departments' : `${targetDepts.length} department${targetDepts.length !== 1 ? 's' : ''} selected`}
+              </p>
+              <div style={{ maxHeight: 140, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {departments.map(dept => (
+                  <label key={dept} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.5 }}>
+                    <input type="checkbox" checked={targetDepts.includes(dept)} onChange={() => onToggleDept(dept)} disabled={!enabled} />
+                    {dept}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 

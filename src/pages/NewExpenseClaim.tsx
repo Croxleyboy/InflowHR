@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -16,10 +16,21 @@ export default function NewExpenseClaim() {
   const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl, companyUser } = useAuth()
   const [startDate, setStartDate] = useState(todayStr())
   const [endDate, setEndDate] = useState(todayStr())
-  const [costCenter, setCostCenter] = useState('External expenses')
+  const [costCenter, setCostCenter] = useState('')
+  const [costCenters, setCostCenters] = useState<string[]>([])
   const [title, setTitle] = useState('')
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!companyUser?.company_id) return
+    supabase.from('expense_cost_centers').select('name').eq('company_id', companyUser.company_id).order('sort_order')
+      .then(({ data }) => {
+        const names = (data || []).map((r: any) => r.name)
+        setCostCenters(names)
+        if (names.length > 0 && !costCenter) setCostCenter(names[0])
+      })
+  }, [companyUser?.company_id])
 
   async function handleCreate() {
     if (!title.trim()) {
@@ -118,8 +129,7 @@ export default function NewExpenseClaim() {
               onChange={e => setCostCenter(e.target.value)}
               className="form-select"
             >
-              <option value="External expenses">{t('cost_center.external')}</option>
-              <option value="Internal expenses">{t('cost_center.internal')}</option>
+              {costCenters.map(cc => <option key={cc} value={cc}>{cc}</option>)}
             </select>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5b9bd5" strokeWidth="2.5" className="select-arrow">
               <polyline points="6 9 12 15 18 9" />
