@@ -196,6 +196,7 @@ function AuthGate() {
           <Route element={<AdminLayout />}>
             <Route index element={<AdminDashboardIndex />} />
           <Route path="dashboard-classic" element={<AdminDashboard />} />
+            <Route path="getting-setup" element={<AdminGettingSetup />} />
             <Route path="expenses" element={<AdminExpenses />} />
             <Route path="leave" element={<AdminLeave />} />
             <Route path="payroll" element={<AdminPayroll />} />
