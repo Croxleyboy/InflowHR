@@ -78,6 +78,7 @@ import AdminUserGuides from './pages/admin/AdminUserGuides'
 import AdminDashboardModern from './pages/admin/AdminDashboardModern'
 import AdminAccess from './pages/admin/AdminAccess'
 import AdminCancellations from './pages/admin/AdminCancellations'
+import AdminGettingSetup from './pages/admin/AdminGettingSetup'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
 import TimesheetCheckIn from './pages/TimesheetCheckIn'
@@ -243,6 +244,7 @@ function AuthGate() {
         <Route element={<AdminLayout />}>
           <Route index element={<AdminDashboardModern />} />
           <Route path="dashboard-classic" element={<AdminDashboard />} />
+          <Route path="getting-setup" element={<AdminGettingSetup />} />
           <Route path="expenses" element={<AdminExpenses />} />
           <Route path="leave" element={<AdminLeave />} />
           <Route path="payroll" element={<AdminPayroll />} />
