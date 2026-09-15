@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
@@ -20,7 +20,20 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
   const { t, tExpenseType } = useLanguage()
   const { companyUser } = useAuth()
   const [title, setTitle] = useState('')
+  const [expenseTypes, setExpenseTypes] = useState<string[]>(EXPENSE_TYPE_KEYS)
   const [expenseType, setExpenseType] = useState(EXPENSE_TYPE_KEYS[0])
+
+  useEffect(() => {
+    if (!companyUser?.company_id) return
+    supabase.from('expense_expense_types').select('name').eq('company_id', companyUser.company_id).order('sort_order')
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const names = data.map((r: any) => r.name)
+          setExpenseTypes(names)
+          setExpenseType(names[0])
+        }
+      })
+  }, [companyUser?.company_id])
   const [description, setDescription] = useState('')
   const [dateOfPurchase, setDateOfPurchase] = useState(todayStr())
   const [amount, setAmount] = useState('')
@@ -115,7 +128,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
             <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.expense_type')}</label>
             <div className="select-wrap">
               <select value={expenseType} onChange={e => setExpenseType(e.target.value)} className="form-select">
-                {EXPENSE_TYPE_KEYS.map(tp => <option key={tp} value={tp}>{tExpenseType(tp)}</option>)}
+                {expenseTypes.map(tp => <option key={tp} value={tp}>{tExpenseType(tp)}</option>)}
               </select>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5b9bd5" strokeWidth="2.5" className="select-arrow">
                 <polyline points="6 9 12 15 18 9" />
