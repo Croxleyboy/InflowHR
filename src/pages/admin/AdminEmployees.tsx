@@ -80,6 +80,7 @@ export default function AdminEmployees() {
   const [recordsSearch, setRecordsSearch] = useState('')
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
@@ -414,7 +415,7 @@ export default function AdminEmployees() {
       {activeTab === 'records' && (
         <div style={{ display: 'flex', gap: 0, minHeight: 600 }}>
           {/* Left panel: letter nav + search + employee list */}
-          <div style={{ width: 320, flexShrink: 0, borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ width: sidebarCollapsed ? 0 : 320, flexShrink: 0, borderRight: sidebarCollapsed ? 'none' : '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'width 0.25s ease' }}>
             {/* Letter navigation */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '12px 12px 8px', borderBottom: '1px solid #f0f0f0' }}>
               <button
@@ -470,6 +471,24 @@ export default function AdminEmployees() {
               )}
             </div>
           </div>
+
+          {/* Collapse/expand chevron */}
+          <button
+            onClick={() => setSidebarCollapsed(c => !c)}
+            title={sidebarCollapsed ? 'Show employee list' : 'Hide employee list'}
+            style={{
+              width: 24, flexShrink: 0, border: 'none', borderRight: '1px solid #e0e0e0',
+              background: '#f5f5f5', cursor: 'pointer', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', padding: 0, color: '#666', transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#e8e8e8')}
+            onMouseLeave={e => (e.currentTarget.style.background = '#f5f5f5')}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s ease' }}>
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
 
           {/* Right panel: employee record detail */}
           <div style={{ flex: 1, overflowY: 'auto', background: '#fafafa' }}>
