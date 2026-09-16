@@ -668,12 +668,32 @@ h1 {
       </div>
       <div class="item-body">
         <h4>Verified — 14 September 2026</h4>
+
+        <h5>Cloudflare Pages (Frontend)</h5>
+        <table style="width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:13px;">
+          <tr><td style="padding:4px 8px;border:1px solid #ddd;font-weight:600;width:180px;">Usage model</td><td style="padding:4px 8px;border:1px solid #ddd;">Standard (global edge)</td></tr>
+          <tr><td style="padding:4px 8px;border:1px solid #ddd;font-weight:600;">Hosting location</td><td style="padding:4px 8px;border:1px solid #ddd;">Global — all Cloudflare edge locations</td></tr>
+          <tr><td style="padding:4px 8px;border:1px solid #ddd;font-weight:600;">Region pinning</td><td style="padding:4px 8px;border:1px solid #ddd;">None</td></tr>
+          <tr><td style="padding:4px 8px;border:1px solid #ddd;font-weight:600;">Smart Placement</td><td style="padding:4px 8px;border:1px solid #ddd;">Not enabled</td></tr>
+          <tr><td style="padding:4px 8px;border:1px solid #ddd;font-weight:600;">Static assets</td><td style="padding:4px 8px;border:1px solid #ddd;">Yes — globally distributed via CDN. No PII concern — the SPA is compiled HTML/JS/CSS with zero personal data.</td></tr>
+        </table>
+
+        <h5>Supabase Cloud (Backend — Managed Service)</h5>
         <ul>
-          <li><strong>Supabase (database, auth, storage):</strong> EU West — London. All employee PII stored in UK/EU.</li>
-          <li><strong>Cloudflare Pages (frontend CDN):</strong> Global CDN (free tier). No PII concern — the SPA is static HTML/JS/CSS with zero personal data; all PII lives in Supabase. Upgrading to Pro would not add region-locking, but it's not needed since no PII transits the CDN.</li>
-          <li><strong>Brevo (transactional email):</strong> EU-hosted. Primary hosting OVH in France and Germany; data stored on Google Cloud in Belgium. Data copied 3x across 2+ locations, encrypted backups on Google Cloud. Per Brevo documentation: "hosting servers are all located within the European Union."</li>
+          <li><strong>Postgres database:</strong> One primary database in West Europe (London) <code>eu-west-2</code> region. All employee PII stored in UK/EU.</li>
+          <li><strong>Auth and Storage:</strong> Hosted in the same primary region as the database (London).</li>
+          <li><strong>Edge Functions:</strong> Deployed across Supabase's global edge network. Function requests can execute near the caller, or can be configured for regional invocation when proximity to the database is more important.</li>
+          <li><strong>Infrastructure:</strong> InflowHR do not manage the underlying server, operating system, database replication infrastructure, or function servers — fully managed by Supabase.</li>
+          <li><strong>Backups:</strong> Daily backups with 7-day retention included. Point-in-Time Recovery (PITR) can be added as an add-on.</li>
+          <li><strong>Limits:</strong> 2 million edge function invocations per month. 100 GB storage included.</li>
         </ul>
-        <p>You're correct that only the backend matters for GDPR data residency — the Cloudflare CDN serves the compiled app bundle (no PII), so global distribution is fine. The privacy notice already names Supabase, Cloudflare, and Brevo as sub-processors.</p>
+
+        <h5>Brevo (Transactional Email)</h5>
+        <ul>
+          <li>EU-hosted. Primary hosting OVH in France and Germany; data stored on Google Cloud in Belgium. Data copied 3x across 2+ locations, encrypted backups on Google Cloud. Per Brevo documentation: "hosting servers are all located within the European Union."</li>
+        </ul>
+
+        <p>Only the backend matters for GDPR data residency — the Cloudflare CDN serves the compiled app bundle (no PII), so global distribution is fine. The privacy notice already names Supabase, Cloudflare, and Brevo as sub-processors.</p>
         <span class="effort-tag">verified</span>
       </div>
     </div>
