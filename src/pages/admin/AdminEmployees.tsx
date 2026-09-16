@@ -74,6 +74,10 @@ export default function AdminEmployees() {
   const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
   const [lieuDays, setLieuDays] = useState<Record<string, { balanceId: number; lieu_days: number }>>({})
   const [editLieuDays, setEditLieuDays] = useState<number>(0)
+  const [activeTab, setActiveTab] = useState<'management' | 'records'>('management')
+  const [recordsSearch, setRecordsSearch] = useState('')
+  const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
@@ -96,17 +100,18 @@ export default function AdminEmployees() {
   useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
   useEffect(() => {
-    if (!expandedId || !features.skills_passport || empSkills[expandedId]) return
+    const targetId = expandedId || selectedEmployeeId
+    if (!targetId || !features.skills_passport || empSkills[targetId]) return
     ;(async () => {
       const { data } = await supabase
         .from('employee_skills')
         .select('skill_name, proficiency, status')
-        .eq('employee_id', expandedId)
+        .eq('employee_id', targetId)
         .eq('company_id', selectedCompanyId)
         .eq('status', 'validated')
-      if (data) setEmpSkills(prev => ({ ...prev, [expandedId]: data }))
+      if (data) setEmpSkills(prev => ({ ...prev, [targetId]: data }))
     })()
-  }, [expandedId])
+  }, [expandedId, selectedEmployeeId])
 
   async function load() {
     setLoading(true)
@@ -328,13 +333,351 @@ export default function AdminEmployees() {
 
   useEffect(() => { setPage(1) }, [search, filterDept, filterActive])
 
+  const alphabeticalEmployees = useMemo(() => {
+    return [...employees].sort((a, b) => {
+      const nameA = `${a.first_name} ${a.last_name}`.toLowerCase()
+      const nameB = `${b.first_name} ${b.last_name}`.toLowerCase()
+      return nameA.localeCompare(nameB)
+    })
+  }, [employees])
+
+  const recordsFiltered = useMemo(() => {
+    return alphabeticalEmployees.filter(e => {
+      if (selectedLetter && !e.first_name.toUpperCase().startsWith(selectedLetter)) return false
+      if (recordsSearch) {
+        const q = recordsSearch.toLowerCase()
+        if (!`${e.first_name} ${e.last_name}`.toLowerCase().includes(q)) return false
+      }
+      return true
+    })
+  }, [alphabeticalEmployees, selectedLetter, recordsSearch])
+
+  const availableLetters = useMemo(() => {
+    const letters = new Set<string>()
+    employees.forEach(e => { if (e.first_name) letters.add(e.first_name[0].toUpperCase()) })
+    return letters
+  }, [employees])
+
+  const selectedEmployee = useMemo(() => {
+    if (!selectedEmployeeId) return null
+    return employees.find(e => e.id === selectedEmployeeId) || null
+  }, [employees, selectedEmployeeId])
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedEmployeeId) return -1
+    return alphabeticalEmployees.findIndex(e => e.id === selectedEmployeeId)
+  }, [alphabeticalEmployees, selectedEmployeeId])
+
+  function navigateEmployee(direction: 'prev' | 'next') {
+    if (selectedIndex < 0) return
+    const newIndex = direction === 'prev' ? selectedIndex - 1 : selectedIndex + 1
+    if (newIndex >= 0 && newIndex < alphabeticalEmployees.length) {
+      setSelectedEmployeeId(alphabeticalEmployees[newIndex].id)
+    }
+  }
+
+  function formatDate(dateStr: string | null): string {
+    if (!dateStr) return '—'
+    return new Date(dateStr).toLocaleDateString('en-GB')
+  }
+
+  function calculateDuration(startDate: string | null): string {
+    if (!startDate) return '—'
+    const start = new Date(startDate)
+    const now = new Date()
+    const years = now.getFullYear() - start.getFullYear()
+    const months = now.getMonth() - start.getMonth()
+    const totalMonths = years * 12 + months
+    if (totalMonths < 1) return 'Less than a month'
+    const y = Math.floor(totalMonths / 12)
+    const m = totalMonths % 12
+    const parts: string[] = []
+    if (y > 0) parts.push(`${y} year${y !== 1 ? 's' : ''}`)
+    if (m > 0) parts.push(`${m} month${m !== 1 ? 's' : ''}`)
+    return parts.join(', ')
+  }
+
   return (
     <div className="admin-section">
       <div className="admin-page-header">
-        <h2>Employee Management</h2>
+        <h2>Employees</h2>
         <p>{employees.length} employees · {employees.filter(e => e.is_active).length} active</p>
       </div>
 
+      <div className="admin-tabs">
+        <button className={`admin-tab ${activeTab === 'management' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('management')}>Employee Management</button>
+        <button className={`admin-tab ${activeTab === 'records' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('records')}>Employee Records</button>
+      </div>
+
+      {activeTab === 'records' && (
+        <div style={{ display: 'flex', gap: 0, minHeight: 600 }}>
+          {/* Left panel: letter nav + search + employee list */}
+          <div style={{ width: 320, flexShrink: 0, borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column' }}>
+            {/* Letter navigation */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '12px 12px 8px', borderBottom: '1px solid #f0f0f0' }}>
+              <button
+                onClick={() => setSelectedLetter(null)}
+                style={{ width: 28, height: 28, border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 11, fontWeight: selectedLetter === null ? 700 : 500, background: selectedLetter === null ? '#1565c0' : 'transparent', color: selectedLetter === null ? '#fff' : '#666' }}
+              >All</button>
+              {'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(letter => (
+                <button
+                  key={letter}
+                  onClick={() => setSelectedLetter(selectedLetter === letter ? null : letter)}
+                  disabled={!availableLetters.has(letter)}
+                  style={{ width: 28, height: 28, border: 'none', borderRadius: 4, cursor: availableLetters.has(letter) ? 'pointer' : 'default', fontSize: 12, fontWeight: selectedLetter === letter ? 700 : 500, background: selectedLetter === letter ? '#1565c0' : 'transparent', color: !availableLetters.has(letter) ? '#ccc' : selectedLetter === letter ? '#fff' : '#666', opacity: availableLetters.has(letter) ? 1 : 0.4 }}
+                >{letter}</button>
+              ))}
+            </div>
+            {/* Search */}
+            <div style={{ padding: '8px 12px' }}>
+              <input
+                placeholder="Search by name..."
+                value={recordsSearch}
+                onChange={e => setRecordsSearch(e.target.value)}
+                className="admin-input"
+                style={{ width: '100%', fontSize: 13 }}
+              />
+            </div>
+            {/* Employee list */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {loading ? <div style={{ padding: 20, textAlign: 'center', color: '#999' }}>Loading...</div> : (
+                recordsFiltered.length === 0 ? <div style={{ padding: 20, textAlign: 'center', color: '#999' }}>No employees found</div> : (
+                  recordsFiltered.map(emp => (
+                    <div
+                      key={emp.id}
+                      onClick={() => setSelectedEmployeeId(emp.id)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', background: selectedEmployeeId === emp.id ? '#e3f2fd' : 'transparent', transition: 'background 0.15s' }}
+                    >
+                      {emp.avatar_url ? (
+                        <img src={emp.avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: '#3730a3' }}>
+                          {emp.first_name[0]}{emp.last_name[0]}
+                        </div>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.first_name} {emp.last_name}</div>
+                        <div style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.job_title || emp.department || 'No role assigned'}</div>
+                      </div>
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600, background: emp.is_active ? '#e8f5e9' : '#ffebee', color: emp.is_active ? '#2e7d32' : '#c62828' }}>
+                        {emp.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                  ))
+                )
+              )}
+            </div>
+          </div>
+
+          {/* Right panel: employee record detail */}
+          <div style={{ flex: 1, overflowY: 'auto', background: '#fafafa' }}>
+            {!selectedEmployee ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#999', fontSize: 14 }}>
+                Select an employee to view their record
+              </div>
+            ) : (
+              <div style={{ padding: 24 }}>
+                {/* Navigation bar */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <button
+                    onClick={() => navigateEmployee('prev')}
+                    disabled={selectedIndex <= 0}
+                    className="admin-action-btn"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: selectedIndex <= 0 ? 0.4 : 1 }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                    Previous
+                  </button>
+                  <span style={{ fontSize: 12, color: '#888' }}>{selectedIndex + 1} of {alphabeticalEmployees.length}</span>
+                  <button
+                    onClick={() => navigateEmployee('next')}
+                    disabled={selectedIndex >= alphabeticalEmployees.length - 1}
+                    className="admin-action-btn"
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, opacity: selectedIndex >= alphabeticalEmployees.length - 1 ? 0.4 : 1 }}
+                  >
+                    Next
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                </div>
+
+                {/* Profile header card */}
+                <div style={{ background: '#fff', borderRadius: 10, padding: 24, marginBottom: 20, border: '1px solid #e8e8e8' }}>
+                  <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    {/* Photo */}
+                    <div style={{ flexShrink: 0 }}>
+                      {selectedEmployee.avatar_url ? (
+                        <img src={selectedEmployee.avatar_url} alt="" style={{ width: 100, height: 100, borderRadius: '50%', objectFit: 'cover', border: '3px solid #e0e7ff' }} />
+                      ) : (
+                        <div style={{ width: 100, height: 100, borderRadius: '50%', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, fontWeight: 700, color: '#fff' }}>
+                          {selectedEmployee.first_name[0]}{selectedEmployee.last_name[0]}
+                        </div>
+                      )}
+                    </div>
+                    {/* Name and key info */}
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1a1a1a' }}>{selectedEmployee.first_name} {selectedEmployee.last_name}</h3>
+                      <div style={{ fontSize: 14, color: '#666', marginTop: 4 }}>{selectedEmployee.job_title || '—'}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                        <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 600, background: selectedEmployee.is_active ? '#e8f5e9' : '#ffebee', color: selectedEmployee.is_active ? '#2e7d32' : '#c62828' }}>
+                          {selectedEmployee.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                        {selectedEmployee.contract_type && (
+                          <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 600, background: '#e3f2fd', color: '#1565c0' }}>{selectedEmployee.contract_type}</span>
+                        )}
+                        {selectedEmployee.is_admin && (
+                          <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 600, background: '#fff3e0', color: '#e65100' }}>Admin</span>
+                        )}
+                      </div>
+                    </div>
+                    {/* Key stats */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 12 }}>
+                      <div><span style={{ color: '#999', display: 'block' }}>Employee ID</span><strong>{selectedEmployee.employee_number}</strong></div>
+                      <div><span style={{ color: '#999', display: 'block' }}>Department</span><strong>{selectedEmployee.department || '—'}</strong></div>
+                      <div><span style={{ color: '#999', display: 'block' }}>Start Date</span><strong>{formatDate(selectedEmployee.start_date)}</strong></div>
+                      <div><span style={{ color: '#999', display: 'block' }}>Service</span><strong>{calculateDuration(selectedEmployee.start_date)}</strong></div>
+                      <div><span style={{ color: '#999', display: 'block' }}>Location</span><strong>{selectedEmployee.location || '—'}</strong></div>
+                      <div><span style={{ color: '#999', display: 'block' }}>Manager</span><strong>{selectedEmployee.manager_name || '—'}</strong></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detail sections grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                  {/* Personal Details */}
+                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
+                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      Personal Details
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Date of Birth</span>{formatDate(selectedEmployee.date_of_birth)}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Gender</span>{selectedEmployee.gender || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Nationality</span>{selectedEmployee.nationality || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Marital Status</span>{selectedEmployee.marital_status || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Religion</span>{selectedEmployee.religion || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>NI Number</span><span onClick={() => toggleReveal(selectedEmployee.id, 'ni')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(selectedEmployee.ni_number, selectedEmployee.id, 'ni')}</span></div>
+                    </div>
+                  </div>
+
+                  {/* Contact Information */}
+                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
+                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                      Contact Information
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, fontSize: 13 }}>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Work Email</span>{selectedEmployee.email}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Personal Email</span>{selectedEmployee.personal_email || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Phone</span>{selectedEmployee.phone || '—'}</div>
+                    </div>
+                  </div>
+
+                  {/* Address */}
+                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
+                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                      Address
+                    </h4>
+                    <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                      {selectedEmployee.address_line1 || selectedEmployee.city || selectedEmployee.postcode ? (
+                        <>
+                          {selectedEmployee.address_line1 && <div>{selectedEmployee.address_line1}</div>}
+                          {selectedEmployee.address_line2 && <div>{selectedEmployee.address_line2}</div>}
+                          {selectedEmployee.city && <div>{selectedEmployee.city}</div>}
+                          {selectedEmployee.county && <div>{selectedEmployee.county}</div>}
+                          {selectedEmployee.postcode && <div>{selectedEmployee.postcode}</div>}
+                          {selectedEmployee.country && <div>{selectedEmployee.country}</div>}
+                        </>
+                      ) : <span style={{ color: '#999' }}>No address on file</span>}
+                    </div>
+                  </div>
+
+                  {/* Emergency Contact */}
+                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
+                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      Emergency Contact
+                    </h4>
+                    {selectedEmployee.emergency_contact_name ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, fontSize: 13 }}>
+                        <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Name</span>{selectedEmployee.emergency_contact_name}</div>
+                        <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Phone</span>{selectedEmployee.emergency_contact_phone || '—'}</div>
+                        <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Relationship</span>{selectedEmployee.emergency_contact_relationship || '—'}</div>
+                      </div>
+                    ) : <span style={{ fontSize: 13, color: '#999' }}>No emergency contact on file</span>}
+                  </div>
+
+                  {/* Employment Details */}
+                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
+                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                      Employment
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Working Pattern</span>{selectedEmployee.working_pattern || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Weekly Hours</span>{selectedEmployee.weekly_hours ?? '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Contract Type</span>{selectedEmployee.contract_type || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Notice Period</span>{selectedEmployee.notice_period || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Probation End</span>{formatDate(selectedEmployee.probation_end_date)}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Leave Allowance</span>{selectedEmployee.leave_allowance ?? 15} days</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Lieu Days</span>{lieuDays[selectedEmployee.id]?.lieu_days ?? 0} days</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Salary Group</span>{selectedEmployee.salary_group || 'N/A'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Manager Email</span>{selectedEmployee.manager_email || '—'}</div>
+                    </div>
+                  </div>
+
+                  {/* Payroll & Banking */}
+                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
+                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                      Payroll & Banking
+                    </h4>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Annual Salary</span>{selectedEmployee.annual_salary ? `£${Number(selectedEmployee.annual_salary).toLocaleString()}` : '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Tax Code</span>{selectedEmployee.tax_code || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Payroll ID</span>{selectedEmployee.payroll_id || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Bank Account</span>{selectedEmployee.bank_account_name || '—'}</div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Sort Code</span><span onClick={() => toggleReveal(selectedEmployee.id, 'sc')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(selectedEmployee.bank_sort_code, selectedEmployee.id, 'sc')}</span></div>
+                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Account Number</span><span onClick={() => toggleReveal(selectedEmployee.id, 'ac')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(selectedEmployee.bank_account_number, selectedEmployee.id, 'ac')}</span></div>
+                    </div>
+                  </div>
+
+                  {/* Qualifications - full width */}
+                  {selectedEmployee.qualifications && (
+                    <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8', gridColumn: '1 / -1' }}>
+                      <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 1 2 3 6 3s6-2 6-3v-5"/></svg>
+                        Qualifications
+                      </h4>
+                      <div style={{ fontSize: 13, whiteSpace: 'pre-line', lineHeight: 1.6 }}>{selectedEmployee.qualifications}</div>
+                    </div>
+                  )}
+
+                  {/* Skills - full width */}
+                  {features.skills_passport && empSkills[selectedEmployee.id]?.length > 0 && (
+                    <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8', gridColumn: '1 / -1' }}>
+                      <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                        Validated Skills
+                      </h4>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {empSkills[selectedEmployee.id].map(s => (
+                          <span key={s.skill_name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 16, fontSize: 12, background: '#e0e7ff', color: '#3730a3', fontWeight: 500 }}>
+                            {s.skill_name}
+                            <span style={{ fontSize: 10, opacity: 0.7 }}>({['','Foundational','Developing','Proficient','Advanced','Expert'][s.proficiency]})</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'management' && <>
       <div className="admin-filters">
         <input placeholder="Search name, email, ID..." value={search} onChange={e => setSearch(e.target.value)} className="admin-input admin-search" />
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)} className="admin-select">
@@ -642,6 +985,7 @@ export default function AdminEmployees() {
           )}
         </div>
       )}
+      </>}
     </div>
   )
 }
