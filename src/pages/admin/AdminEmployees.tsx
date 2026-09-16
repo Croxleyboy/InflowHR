@@ -109,7 +109,6 @@ export default function AdminEmployees() {
         .select('skill_name, proficiency, status')
         .eq('employee_id', targetId)
         .eq('company_id', selectedCompanyId)
-        .eq('status', 'validated')
       if (data) setEmpSkills(prev => ({ ...prev, [targetId]: data }))
     })()
   }, [expandedId, selectedEmployeeId])
@@ -830,16 +829,25 @@ export default function AdminEmployees() {
                                 )}
                                 {features.skills_passport && empSkills[emp.id]?.length > 0 && (
                                   <div>
-                                    <strong style={{ display: 'block', marginBottom: 6 }}>Validated Skills</strong>
+                                    <strong style={{ display: 'block', marginBottom: 6 }}>Skills</strong>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                      {empSkills[emp.id].map(s => (
-                                        <span key={s.skill_name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 12, fontSize: 12, background: '#e0e7ff', color: '#3730a3' }}>
-                                          {s.skill_name}
-                                          <span style={{ fontSize: 10, opacity: 0.7 }}>
-                                            ({['','Foundational','Developing','Proficient','Advanced','Expert'][s.proficiency]})
+                                      {empSkills[emp.id].map(s => {
+                                        const statusColors: Record<string, { bg: string; color: string }> = {
+                                          validated: { bg: '#e0e7ff', color: '#3730a3' },
+                                          self_declared: { bg: '#f3e5f5', color: '#7b1fa2' },
+                                          pending_validation: { bg: '#fff3e0', color: '#e65100' },
+                                        }
+                                        const sc = statusColors[s.status] || statusColors.self_declared
+                                        return (
+                                          <span key={s.skill_name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 12, fontSize: 12, background: sc.bg, color: sc.color }}>
+                                            {s.skill_name}
+                                            <span style={{ fontSize: 10, opacity: 0.7 }}>
+                                              ({['','Foundational','Developing','Proficient','Advanced','Expert'][s.proficiency]})
+                                            </span>
+                                            {s.status !== 'validated' && <span style={{ fontSize: 9, textTransform: 'uppercase', opacity: 0.6 }}>{s.status.replace('_', ' ')}</span>}
                                           </span>
-                                        </span>
-                                      ))}
+                                        )
+                                      })}
                                     </div>
                                   </div>
                                 )}
