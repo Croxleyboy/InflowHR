@@ -690,7 +690,6 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
     const pendingEntries = entries.filter((e: any) => e.status === 'pending' || e.status === 'submitted')
     const approvedEntries = entries.filter((e: any) => e.status === 'approved')
 
-    const now = new Date()
     const lateSubmissions = entries.filter((e: any) => {
       if (!e.date || !e.created_at) return false
       const entryDate = new Date(e.date)
