@@ -172,7 +172,11 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
     if (!addSkillId) return
     setSaving(true)
     const { data: emp } = await supabase.from('employees').select('manager_id, first_name, last_name, email').eq('id', employeeId).single()
-    const hasManager = !!emp?.manager_id
+    let hasManager = !!emp?.manager_id
+    if (hasManager) {
+      const { data: mgrCheck } = await supabase.from('employees').select('id').eq('id', emp!.manager_id!).maybeSingle()
+      if (!mgrCheck) hasManager = false
+    }
     const { error } = await supabase.from('employee_skills').insert({
       company_id: companyId,
       employee_id: employeeId,
@@ -215,7 +219,12 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
   async function requestValidation(es: EmployeeSkill) {
     const { data: emp } = await supabase.from('employees').select('manager_id, first_name, last_name, email').eq('id', employeeId).single()
     if (!emp) { showError('Employee record not found'); return }
-    if (!emp.manager_id) {
+    let mgrValid = !!emp.manager_id
+    if (mgrValid) {
+      const { data: mgrCheck } = await supabase.from('employees').select('id').eq('id', emp.manager_id!).maybeSingle()
+      if (!mgrCheck) mgrValid = false
+    }
+    if (!mgrValid) {
       const { error } = await supabase.from('employee_skills').update({ status: 'validated', validated_at: new Date().toISOString(), validated_by: employeeId }).eq('id', es.id)
       if (error) { showError(error.message); return }
       await supabase.from('workflow_tracker').insert({
