@@ -154,8 +154,13 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         break
       }
       case 'education': {
-        const { data: skills } = await supabase.from('employee_skills').select('id, skill_id, proficiency, status, created_at, skill:skills(name)').eq('employee_id', employee.id).eq('company_id', companyId).order('created_at', { ascending: false })
-        data = { skills: skills || [], qualifications: employee.qualifications }
+        const [{ data: skills }, { data: certs }, { data: langs }, { data: aspirations }] = await Promise.all([
+          supabase.from('employee_skills').select('id, skill_id, proficiency, status, created_at, skill:skills(name)').eq('employee_id', employee.id).eq('company_id', companyId).order('created_at', { ascending: false }),
+          supabase.from('employee_certifications').select('id, name, issuing_body, issue_date, expiry_date, credential_id, status').eq('employee_id', employee.id).eq('company_id', companyId).order('issue_date', { ascending: false }),
+          supabase.from('employee_languages').select('id, language, proficiency').eq('employee_id', employee.id).eq('company_id', companyId).order('language'),
+          supabase.from('employee_career_aspirations').select('target_role, target_department, timeframe, notes').eq('employee_id', employee.id).eq('company_id', companyId).maybeSingle(),
+        ])
+        data = { skills: skills || [], qualifications: employee.qualifications, certifications: certs || [], languages: langs || [], aspirations: aspirations || null }
         break
       }
       case 'performance': {
@@ -415,7 +420,10 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
   }
 
   function renderEducation() {
-    const { skills, qualifications } = currentData
+    const { skills, qualifications, certifications, languages, aspirations } = currentData
+    const profLabels = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert']
+    const langProfLabels: Record<string, string> = { basic: 'Basic', conversational: 'Conversational', professional: 'Professional', fluent: 'Fluent', native: 'Native' }
+    const timeframeLabels: Record<string, string> = { '6_months': '6 months', '1_year': '1 year', '2_years': '2 years', '3_plus_years': '3+ years' }
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
         {qualifications && (
@@ -429,7 +437,6 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
           {skills.length === 0 ? <div style={emptyStyle}>No skills recorded</div> : (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {skills.map((s: any) => {
-                const profLabels = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert']
                 const statusColors: Record<string, { bg: string; color: string }> = {
                   validated: { bg: '#e0e7ff', color: '#3730a3' },
                   pending_validation: { bg: '#fff3e0', color: '#e65100' },
@@ -445,6 +452,83 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
                   </span>
                 )
               })}
+            </div>
+          )}
+        </div>
+        <div style={cardStyle}>
+          <h4 style={headingStyle}>Certifications ({certifications.length})</h4>
+          {certifications.length === 0 ? <div style={emptyStyle}>No certifications recorded</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {certifications.map((c: any) => {
+                const statusColors: Record<string, { bg: string; color: string }> = {
+                  active: { bg: '#dcfce7', color: '#16a34a' },
+                  expired: { bg: '#fee2e2', color: '#dc2626' },
+                  revoked: { bg: '#f3f4f6', color: '#6b7280' },
+                }
+                const sc = statusColors[c.status] || statusColors.active
+                return (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fafafa' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{c.name}</div>
+                      <div style={{ fontSize: 11, color: '#888' }}>{c.issuing_body}{c.credential_id ? ` — ${c.credential_id}` : ''}</div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: '#666' }}>
+                        {new Date(c.issue_date).toLocaleDateString('en-GB')}
+                        {c.expiry_date ? ` — ${new Date(c.expiry_date).toLocaleDateString('en-GB')}` : ''}
+                      </span>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: sc.bg, color: sc.color, textTransform: 'capitalize' }}>{c.status}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        <div style={cardStyle}>
+          <h4 style={headingStyle}>Languages ({languages.length})</h4>
+          {languages.length === 0 ? <div style={emptyStyle}>No languages recorded</div> : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {languages.map((l: any) => (
+                <span key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 16, fontSize: 12, background: '#dbeafe', color: '#1e40af', fontWeight: 500 }}>
+                  {l.language}
+                  <span style={{ fontSize: 10, opacity: 0.7 }}>({langProfLabels[l.proficiency] || l.proficiency})</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={cardStyle}>
+          <h4 style={headingStyle}>Career Aspirations</h4>
+          {!aspirations ? <div style={emptyStyle}>No career aspirations recorded</div> : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 13 }}>
+              {aspirations.target_role && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span style={{ fontWeight: 600, color: '#555', minWidth: 120 }}>Target Role</span>
+                  <span>{aspirations.target_role}</span>
+                </div>
+              )}
+              {aspirations.target_department && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span style={{ fontWeight: 600, color: '#555', minWidth: 120 }}>Department</span>
+                  <span>{aspirations.target_department}</span>
+                </div>
+              )}
+              {aspirations.timeframe && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span style={{ fontWeight: 600, color: '#555', minWidth: 120 }}>Timeframe</span>
+                  <span>{timeframeLabels[aspirations.timeframe] || aspirations.timeframe}</span>
+                </div>
+              )}
+              {aspirations.notes && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span style={{ fontWeight: 600, color: '#555', minWidth: 120 }}>Notes</span>
+                  <span style={{ whiteSpace: 'pre-line', lineHeight: 1.5 }}>{aspirations.notes}</span>
+                </div>
+              )}
+              {!aspirations.target_role && !aspirations.target_department && !aspirations.timeframe && !aspirations.notes && (
+                <div style={emptyStyle}>Aspirations submitted but no details provided</div>
+              )}
             </div>
           )}
         </div>
