@@ -171,16 +171,33 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
   async function addSkill() {
     if (!addSkillId) return
     setSaving(true)
+    const { data: emp } = await supabase.from('employees').select('manager_id, first_name, last_name, email').eq('id', employeeId).single()
+    const hasManager = !!emp?.manager_id
     const { error } = await supabase.from('employee_skills').insert({
       company_id: companyId,
       employee_id: employeeId,
       skill_id: addSkillId,
       proficiency: addProficiency,
-      status: 'self_declared',
+      status: hasManager ? 'self_declared' : 'validated',
+      ...(!hasManager ? { validated_by: employeeId, validated_at: new Date().toISOString() } : {}),
     })
     setSaving(false)
     if (error) { showError(error.message); return }
-    showSuccess('Skill added to your passport')
+    if (!hasManager && emp) {
+      const skill = allSkills.find(s => s.id === addSkillId)
+      await supabase.from('workflow_tracker').insert({
+        company_id: companyId,
+        emp_display_name: `${emp.first_name} ${emp.last_name}`,
+        step: 1,
+        status: 'Completed',
+        record_type: 'Skill Validation',
+        action: `Skill self-validated for ${skill?.name || 'Unknown'} (no manager assigned)`,
+        employee_email: emp.email,
+        assigned_to: emp.email,
+        task_description: `${emp.first_name} ${emp.last_name} self-validated the skill "${skill?.name || 'Unknown'}" — no manager assigned for review.`,
+      })
+    }
+    showSuccess(hasManager ? 'Skill added to your passport' : 'Skill added and self-validated — no manager assigned')
     setAddSkillId('')
     setAddProficiency(3)
     setShowAdd(false)
