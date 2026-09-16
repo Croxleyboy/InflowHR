@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
@@ -54,6 +54,7 @@ interface Employee {
   salary_group: string | null
   qualifications: string | null
   religion: string | null
+  manager_id: string | null
 }
 
 export default function AdminEmployees() {
@@ -75,7 +76,7 @@ export default function AdminEmployees() {
   const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
   const [lieuDays, setLieuDays] = useState<Record<string, { balanceId: number; lieu_days: number }>>({})
   const [editLieuDays, setEditLieuDays] = useState<number>(0)
-  const [activeTab, setActiveTab] = useState<'management' | 'records'>('management')
+  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart'>('management')
   const [recordsSearch, setRecordsSearch] = useState('')
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
@@ -407,6 +408,7 @@ export default function AdminEmployees() {
       <div className="admin-tabs">
         <button className={`admin-tab ${activeTab === 'management' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('management')}>Employee Management</button>
         <button className={`admin-tab ${activeTab === 'records' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('records')}>Employee Records</button>
+        <button className={`admin-tab ${activeTab === 'orgchart' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('orgchart')}>Org Chart</button>
       </div>
 
       {activeTab === 'records' && (
@@ -553,6 +555,10 @@ export default function AdminEmployees() {
             )}
           </div>
         </div>
+      )}
+
+      {activeTab === 'orgchart' && (
+        <OrgChart employees={employees} />
       )}
 
       {activeTab === 'management' && <>
@@ -873,6 +879,344 @@ export default function AdminEmployees() {
         </div>
       )}
       </>}
+    </div>
+  )
+}
+
+/* ─── Interactive Org Chart ─── */
+
+const DEPT_COLORS: Record<string, string> = {
+  'Human Resources': '#7c3aed',
+  'Engineering': '#2563eb',
+  'Marketing': '#d97706',
+  'Sales': '#059669',
+  'Finance': '#dc2626',
+  'Operations': '#0891b2',
+  'IT': '#4f46e5',
+  'Legal': '#6b7280',
+  'Design': '#ec4899',
+  'Customer Support': '#f59e0b',
+}
+
+function getDeptColor(dept: string | null): string {
+  if (!dept) return '#6b7280'
+  return DEPT_COLORS[dept] || '#' + (
+    Array.from(dept).reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0) >>> 0
+  ).toString(16).slice(0, 6).padStart(6, '5')
+}
+
+interface OrgNode {
+  employee: Employee
+  children: OrgNode[]
+  x: number
+  y: number
+}
+
+const NODE_W = 200
+const NODE_H = 80
+const H_GAP = 32
+const V_GAP = 60
+
+function buildTree(employees: Employee[]): OrgNode[] {
+  const byId = new Map(employees.map(e => [e.id, e]))
+  const childrenMap = new Map<string | null, Employee[]>()
+  employees.forEach(e => {
+    const pid = e.manager_id
+    if (!childrenMap.has(pid)) childrenMap.set(pid, [])
+    childrenMap.get(pid)!.push(e)
+  })
+
+  function makeNode(emp: Employee): OrgNode {
+    const kids = (childrenMap.get(emp.id) || []).map(makeNode)
+    return { employee: emp, children: kids, x: 0, y: 0 }
+  }
+
+  const roots = (childrenMap.get(null) || []).map(makeNode)
+  const orphanRoots = employees.filter(e => e.manager_id && !byId.has(e.manager_id))
+  orphanRoots.forEach(e => {
+    if (!roots.find(r => r.employee.id === e.id)) {
+      roots.push(makeNode(e))
+    }
+  })
+  return roots
+}
+
+function layoutTree(node: OrgNode, expandedIds: Set<string>, depth: number): number {
+  node.y = depth * (NODE_H + V_GAP)
+  const visibleChildren = expandedIds.has(node.employee.id) ? node.children : []
+
+  if (visibleChildren.length === 0) {
+    return NODE_W
+  }
+
+  let totalWidth = 0
+  const childWidths: number[] = []
+  visibleChildren.forEach((child, i) => {
+    const w = layoutTree(child, expandedIds, depth + 1)
+    childWidths.push(w)
+    totalWidth += w
+    if (i < visibleChildren.length - 1) totalWidth += H_GAP
+  })
+
+  let cx = -totalWidth / 2
+  visibleChildren.forEach((child, i) => {
+    child.x = cx + childWidths[i] / 2
+    cx += childWidths[i] + H_GAP
+  })
+
+  return Math.max(NODE_W, totalWidth)
+}
+
+function flattenVisible(node: OrgNode, expandedIds: Set<string>, offsetX: number, offsetY: number, result: { node: OrgNode; ax: number; ay: number; parentX?: number; parentY?: number }[], parentX?: number, parentY?: number) {
+  const ax = offsetX + node.x
+  const ay = offsetY + node.y
+  result.push({ node, ax, ay, parentX, parentY })
+  if (expandedIds.has(node.employee.id)) {
+    node.children.forEach(child => {
+      flattenVisible(child, expandedIds, ax, 0, result, ax, ay)
+    })
+  }
+}
+
+function OrgChart({ employees }: { employees: Employee[] }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [dragging, setDragging] = useState(false)
+  const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
+  const [initialized, setInitialized] = useState(false)
+
+  const activeEmployees = useMemo(() => employees.filter(e => e.is_active), [employees])
+  const roots = useMemo(() => buildTree(activeEmployees), [activeEmployees])
+
+  useEffect(() => {
+    if (roots.length > 0 && !initialized) {
+      const ids = new Set<string>()
+      roots.forEach(r => ids.add(r.employee.id))
+      setExpandedIds(ids)
+      setInitialized(true)
+    }
+  }, [roots, initialized])
+
+  const flatNodes = useMemo(() => {
+    const result: { node: OrgNode; ax: number; ay: number; parentX?: number; parentY?: number }[] = []
+    let totalRootWidth = 0
+    const rootWidths: number[] = []
+    roots.forEach((root, i) => {
+      const w = layoutTree(root, expandedIds, 0)
+      rootWidths.push(w)
+      totalRootWidth += w
+      if (i < roots.length - 1) totalRootWidth += H_GAP * 2
+    })
+
+    let rx = -totalRootWidth / 2
+    roots.forEach((root, i) => {
+      const offsetX = rx + rootWidths[i] / 2
+      flattenVisible(root, expandedIds, offsetX, 0, result)
+      rx += rootWidths[i] + H_GAP * 2
+    })
+    return result
+  }, [roots, expandedIds])
+
+  useEffect(() => {
+    if (containerRef.current && initialized && flatNodes.length > 0) {
+      const rect = containerRef.current.getBoundingClientRect()
+      setPan({ x: rect.width / 2, y: 40 })
+    }
+  }, [initialized])
+
+  function toggleExpand(id: string) {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleMouseDown(e: React.MouseEvent) {
+    if (e.button !== 0) return
+    setDragging(true)
+    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y }
+  }
+
+  function handleMouseMove(e: React.MouseEvent) {
+    if (!dragging) return
+    setPan({
+      x: dragStart.current.panX + (e.clientX - dragStart.current.x),
+      y: dragStart.current.panY + (e.clientY - dragStart.current.y),
+    })
+  }
+
+  function handleMouseUp() { setDragging(false) }
+
+  function handleWheel(e: React.WheelEvent) {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? -0.08 : 0.08
+    setZoom(z => Math.min(2, Math.max(0.2, z + delta)))
+  }
+
+  function handleReset() {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect()
+      setPan({ x: rect.width / 2, y: 40 })
+      setZoom(1)
+    }
+  }
+
+  function expandAll() {
+    const all = new Set<string>()
+    activeEmployees.forEach(e => all.add(e.id))
+    setExpandedIds(all)
+  }
+
+  function collapseAll() {
+    const rootOnly = new Set<string>()
+    roots.forEach(r => rootOnly.add(r.employee.id))
+    setExpandedIds(rootOnly)
+  }
+
+  const hasChildren = (id: string) => activeEmployees.some(e => e.manager_id === id)
+  const isExpanded = (id: string) => expandedIds.has(id)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="admin-btn" onClick={expandAll} style={{ fontSize: 12, padding: '5px 14px' }}>Expand All</button>
+        <button className="admin-btn" onClick={collapseAll} style={{ fontSize: 12, padding: '5px 14px' }}>Collapse All</button>
+        <button className="admin-btn" onClick={handleReset} style={{ fontSize: 12, padding: '5px 14px' }}>Reset View</button>
+        <span style={{ fontSize: 12, opacity: 0.5, marginLeft: 8 }}>Scroll to zoom, drag to pan, click nodes to expand</span>
+      </div>
+
+      <div
+        ref={containerRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+        style={{
+          width: '100%',
+          height: 'calc(100vh - 260px)',
+          minHeight: 400,
+          border: '1px solid var(--border, #e5e7eb)',
+          borderRadius: 12,
+          overflow: 'hidden',
+          cursor: dragging ? 'grabbing' : 'grab',
+          background: 'var(--bg, #fafafa)',
+          position: 'relative',
+          userSelect: 'none',
+        }}
+      >
+        <svg
+          width="100%"
+          height="100%"
+          style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
+        >
+          <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
+            {flatNodes.map(({ node, ax, ay, parentX, parentY }) => {
+              if (parentX === undefined || parentY === undefined) return null
+              const x1 = parentX
+              const y1 = parentY + NODE_H / 2
+              const x2 = ax
+              const y2 = ay - NODE_H / 2
+              const midY = (y1 + y2) / 2
+              return (
+                <path
+                  key={`line-${node.employee.id}`}
+                  d={`M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`}
+                  fill="none"
+                  stroke="var(--border, #cbd5e1)"
+                  strokeWidth={2}
+                  opacity={0.6}
+                />
+              )
+            })}
+          </g>
+        </svg>
+
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}>
+          {flatNodes.map(({ node, ax, ay }) => {
+            const emp = node.employee
+            const dept = emp.department
+            const deptColor = getDeptColor(dept)
+            const childCount = node.children.length
+            const expanded = isExpanded(emp.id)
+            const canExpand = hasChildren(emp.id)
+
+            return (
+              <div
+                key={emp.id}
+                onClick={(e) => { e.stopPropagation(); if (canExpand) toggleExpand(emp.id) }}
+                style={{
+                  position: 'absolute',
+                  left: pan.x + ax * zoom - (NODE_W * zoom) / 2,
+                  top: pan.y + ay * zoom - (NODE_H * zoom) / 2,
+                  width: NODE_W * zoom,
+                  height: NODE_H * zoom,
+                  transition: dragging ? 'none' : 'left 0.3s, top 0.3s',
+                }}
+              >
+                <div style={{
+                  width: NODE_W,
+                  height: NODE_H,
+                  transform: `scale(${zoom})`,
+                  transformOrigin: 'top left',
+                  background: 'var(--bg-card, #fff)',
+                  border: `2px solid ${canExpand && expanded ? deptColor : 'var(--border, #d1d5db)'}`,
+                  borderRadius: 10,
+                  padding: '8px 10px',
+                  display: 'flex',
+                  gap: 8,
+                  alignItems: 'center',
+                  cursor: canExpand ? 'pointer' : 'default',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                  boxSizing: 'border-box',
+                }}>
+                  {emp.avatar_url ? (
+                    <img src={emp.avatar_url} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+                  ) : (
+                    <div style={{
+                      width: 36, height: 36, borderRadius: '50%', background: deptColor,
+                      color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 13, fontWeight: 700, flexShrink: 0,
+                    }}>
+                      {emp.first_name[0]}{emp.last_name[0]}
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                    <div style={{ fontWeight: 700, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text, #1a1a1a)' }}>
+                      {emp.first_name} {emp.last_name}
+                    </div>
+                    <div style={{ fontSize: 10, opacity: 0.65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text, #333)' }}>
+                      {emp.job_title || 'No title'}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                      <span style={{
+                        fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                        background: deptColor + '18', color: deptColor,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 90,
+                      }}>
+                        {dept || 'Unassigned'}
+                      </span>
+                      {canExpand && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 4,
+                          background: expanded ? '#dbeafe' : '#f3f4f6',
+                          color: expanded ? '#2563eb' : '#6b7280',
+                        }}>
+                          {childCount} {expanded ? '▾' : '▸'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
