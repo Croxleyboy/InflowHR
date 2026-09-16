@@ -106,6 +106,15 @@ export default function AdminCancellations() {
       a.click()
       URL.revokeObjectURL(url)
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await supabase.rpc('log_gdpr_action' as any, {
+        p_company_id: companyId,
+        p_table_name: 'cancellation_export',
+        p_record_id: requestId,
+        p_action: 'CANCELLATION_DATA_EXPORT',
+        p_metadata: { format: 'json', company_name: companyName, storage_path: jsonFileName },
+      })
+
       showSuccess('Company data exported and saved to storage')
       loadRequests()
     } catch {
