@@ -171,14 +171,6 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
   async function addSkill() {
     if (!addSkillId) return
     setSaving(true)
-    const { data: inserted, error } = await supabase.from('employee_skills').insert({
-      company_id: companyId,
-      employee_id: employeeId,
-      skill_id: addSkillId,
-      proficiency: addProficiency,
-      status: 'self_declared',
-    }).select('id').single()
-    if (error) { setSaving(false); showError(error.message); return }
 
     const { data: emp } = await supabase.from('employees').select('manager_id, first_name, last_name, email').eq('id', employeeId).single()
     let hasManager = !!emp?.manager_id
@@ -187,30 +179,54 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
       if (!mgrCheck) hasManager = false
     }
 
-    if (!hasManager && inserted) {
-      await supabase.from('employee_skills').update({
+    const now = new Date().toISOString()
+    const insertPayload: Record<string, unknown> = {
+      company_id: companyId,
+      employee_id: employeeId,
+      skill_id: addSkillId,
+      proficiency: addProficiency,
+      status: hasManager ? 'self_declared' : 'validated',
+    }
+    if (!hasManager) {
+      insertPayload.validated_by = employeeId
+      insertPayload.validated_at = now
+    }
+
+    const { data: inserted, error } = await supabase.from('employee_skills').insert(insertPayload).select('id, status').single()
+    if (error) { setSaving(false); showError(error.message); return }
+
+    if (!hasManager && inserted && inserted.status !== 'validated') {
+      const { error: updErr } = await supabase.from('employee_skills').update({
         status: 'validated',
         validated_by: employeeId,
-        validated_at: new Date().toISOString(),
+        validated_at: now,
       }).eq('id', inserted.id)
+      if (updErr) { setSaving(false); showError('Skill added but self-validation failed: ' + updErr.message); onRefresh(); return }
+    }
 
-      if (emp) {
-        const skill = allSkills.find(s => s.id === addSkillId)
-        await supabase.from('workflow_tracker').insert({
-          company_id: companyId,
-          emp_display_name: `${emp.first_name} ${emp.last_name}`,
-          step: 1,
-          status: 'Completed',
-          record_type: 'Skill Validation',
-          action: `Skill self-validated for ${skill?.name || 'Unknown'} (no manager assigned)`,
-          employee_email: emp.email,
-          assigned_to: emp.email,
-          task_description: `${emp.first_name} ${emp.last_name} self-validated the skill "${skill?.name || 'Unknown'}" — no manager assigned for review.`,
-        })
-      }
+    if (!hasManager && emp) {
+      const skill = allSkills.find(s => s.id === addSkillId)
+      await supabase.from('workflow_tracker').insert({
+        company_id: companyId,
+        emp_display_name: `${emp.first_name} ${emp.last_name}`,
+        step: 1,
+        status: 'Completed',
+        record_type: 'Skill Validation',
+        action: `Skill self-validated for ${skill?.name || 'Unknown'} (no manager assigned)`,
+        employee_email: emp.email,
+        assigned_to: emp.email,
+        task_description: `${emp.first_name} ${emp.last_name} self-validated the skill "${skill?.name || 'Unknown'}" — no manager assigned for review.`,
+      })
     }
 
     setSaving(false)
+    const { data: verify } = await supabase.from('employee_skills').select('status').eq('id', inserted.id).single()
+    const finalStatus = verify?.status || inserted.status
+    if (!hasManager && finalStatus !== 'validated') {
+      showError(`Self-validation failed — status is "${finalStatus}" (manager_id: ${emp?.manager_id || 'null'}, hasManager: ${hasManager})`)
+      onRefresh()
+      return
+    }
     showSuccess(hasManager ? 'Skill added to your passport' : 'Skill added and self-validated — no manager assigned')
     setAddSkillId('')
     setAddProficiency(3)
