@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import JSZip from 'jszip'
 
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
@@ -432,4 +433,264 @@ export async function listAllCompanyArchives(): Promise<ArchiveFile[]> {
     }
   }
   return all
+}
+
+const STORAGE_BUCKETS = ['receipts', 'profile-photos'] as const
+
+const TABLE_INSERT_ORDER = [
+  'company', 'app_settings', 'company_features',
+  'employees', 'company_users',
+  'leave_types', 'leave_requests', 'leave_balances',
+  'payslips',
+  'expense_claims', 'expense_line_items',
+  'timesheets',
+  'benefits', 'benefit_types', 'benefit_options', 'benefit_enrollments', 'employee_benefits',
+  'rotas', 'shift_templates', 'shift_assignments', 'shift_swap_requests', 'employee_availability',
+  'performance_reviews', 'kudos',
+  'legal_clients', 'legal_matters', 'legal_timesheet_entries',
+  'hr_tickets',
+  'one_to_one_meetings', 'one_to_one_comments',
+  'onboarding',
+  'announcements', 'notifications',
+  'workflow_tracker',
+  'company_elearning_courses', 'courses', 'course_enrolments',
+  'checkin_records', 'break_records',
+  'space_bookings',
+  'employee_skills', 'employee_certifications', 'skill_evidence', 'skill_validations',
+  'company_assets', 'asset_updates',
+  'employee_consents',
+  'billing_snapshots',
+  'user_settings',
+  'gdpr_audit_logs',
+  'tenant_support_access',
+]
+
+const NON_RECOVERABLE_ITEMS = [
+  'Auth accounts — users must re-register or be re-invited via SSO/email',
+  'Active sessions and JWT tokens',
+  'SSO/SAML configuration — must be reconfigured with identity provider',
+  'Edge Function secrets and environment variables',
+  'External integration tokens (Xero, Slack webhooks)',
+  'Storage bucket files are included but must be re-uploaded via the restore script',
+  'pg_cron scheduled jobs must be recreated',
+  'RLS policies are part of the schema, not the data archive',
+]
+
+async function fetchStorageFiles(companyId: string): Promise<{ path: string; data: Blob }[]> {
+  const files: { path: string; data: Blob }[] = []
+
+  for (const bucket of STORAGE_BUCKETS) {
+    const { data: listing } = await supabase.storage
+      .from(bucket)
+      .list(companyId, { limit: 500 })
+
+    if (!listing || listing.length === 0) continue
+
+    for (const file of listing) {
+      if (!file.name || file.name.startsWith('.')) continue
+      const filePath = `${companyId}/${file.name}`
+      const { data: blob } = await supabase.storage
+        .from(bucket)
+        .download(filePath)
+
+      if (blob) {
+        files.push({ path: `storage/${bucket}/${file.name}`, data: blob })
+      }
+    }
+  }
+
+  return files
+}
+
+function buildRestoreSql(data: Record<string, unknown>, companyId: string): string {
+  const lines: string[] = [
+    '-- InflowHR Company Restore Script',
+    '-- Generated: ' + new Date().toISOString(),
+    `-- Company ID: ${companyId}`,
+    '-- WARNING: Run this in a transaction. UUIDs are preserved from the original.',
+    '-- Auth accounts must be recreated separately — see auth-mapping.json',
+    '',
+    'BEGIN;',
+    '',
+  ]
+
+  for (const table of TABLE_INSERT_ORDER) {
+    const rows = data[table]
+    if (!rows) continue
+
+    const rowArray = Array.isArray(rows) ? rows : [rows]
+    if (rowArray.length === 0) continue
+
+    lines.push(`-- ${table}: ${rowArray.length} row(s)`)
+
+    for (const row of rowArray) {
+      if (!row || typeof row !== 'object') continue
+      const record = row as Record<string, unknown>
+      const cols = Object.keys(record)
+      const vals = cols.map(c => {
+        const v = record[c]
+        if (v === null || v === undefined) return 'NULL'
+        if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE'
+        if (typeof v === 'number') return String(v)
+        if (typeof v === 'object') return "'" + JSON.stringify(v).replace(/'/g, "''") + "'::jsonb"
+        return "'" + String(v).replace(/'/g, "''") + "'"
+      })
+      lines.push(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${vals.join(', ')}) ON CONFLICT (id) DO NOTHING;`)
+    }
+    lines.push('')
+  }
+
+  lines.push('COMMIT;')
+  return lines.join('\n')
+}
+
+function buildAuthMapping(data: Record<string, unknown>): Record<string, unknown>[] {
+  const companyUsers = (data.company_users || []) as Record<string, unknown>[]
+  const employees = (data.employees || []) as Record<string, unknown>[]
+
+  return companyUsers.map(cu => {
+    const emp = employees.find(e => (e as Record<string, unknown>).id === cu.employee_id)
+    return {
+      original_auth_uid: cu.user_id,
+      employee_id: cu.employee_id,
+      employee_name: emp ? `${(emp as Record<string, unknown>).first_name} ${(emp as Record<string, unknown>).last_name}` : 'Unknown',
+      email: cu.email || (emp as Record<string, unknown>)?.email || null,
+      role: cu.role,
+      note: 'User must re-register. Map their new auth.uid to this employee_id in company_users.',
+    }
+  })
+}
+
+export interface RestorableArchiveResult {
+  success: boolean
+  blob?: Blob
+  filename?: string
+  tableCount: number
+  totalRows: number
+  storageFiles: number
+  error?: string
+}
+
+export async function buildRestorableArchive(
+  companyId: string,
+  companyName: string,
+  onProgress?: (msg: string) => void,
+): Promise<RestorableArchiveResult> {
+  const zip = new JSZip()
+  const tablesFolder = zip.folder('tables')!
+  let totalRows = 0
+  let tableCount = 0
+
+  onProgress?.('Exporting company data…')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await supabase.rpc('export_company_data' as any, { p_company_id: companyId })
+  if (error) {
+    return { success: false, tableCount: 0, totalRows: 0, storageFiles: 0, error: error.message }
+  }
+
+  const exportData = data as Record<string, unknown>
+
+  onProgress?.('Packaging tables…')
+
+  for (const [key, val] of Object.entries(exportData)) {
+    if (key === 'export_metadata') continue
+    const rows = Array.isArray(val) ? val : (val && typeof val === 'object' ? [val] : [])
+    if (rows.length === 0) continue
+    tablesFolder.file(`${key}.json`, JSON.stringify(rows, null, 2))
+    totalRows += rows.length
+    tableCount++
+  }
+
+  onProgress?.('Downloading storage files…')
+
+  const storageFiles = await fetchStorageFiles(companyId)
+  for (const sf of storageFiles) {
+    zip.file(sf.path, sf.data)
+  }
+
+  onProgress?.('Generating restore script…')
+
+  zip.file('restore.sql', buildRestoreSql(exportData, companyId))
+  zip.file('auth-mapping.json', JSON.stringify(buildAuthMapping(exportData), null, 2))
+
+  const manifest = {
+    format: 'InflowHR Restorable Archive v1',
+    created_at: new Date().toISOString(),
+    company_id: companyId,
+    company_name: companyName,
+    tables: tableCount,
+    total_rows: totalRows,
+    storage_files: storageFiles.length,
+    storage_buckets: STORAGE_BUCKETS.filter(b =>
+      storageFiles.some(sf => sf.path.startsWith(`storage/${b}/`))
+    ),
+    non_recoverable: NON_RECOVERABLE_ITEMS,
+    restore_instructions: 'See RESTORE_GUIDE.md for step-by-step instructions.',
+  }
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2))
+
+  zip.file('RESTORE_GUIDE.md', `# InflowHR Company Restore Guide
+
+## Archive Contents
+- \`tables/\` — JSON files for each database table (UUIDs preserved)
+- \`storage/\` — Bucket files (receipts, profile photos)
+- \`restore.sql\` — SQL script to re-insert all table data
+- \`auth-mapping.json\` — Maps original auth UIDs to employee records
+- \`manifest.json\` — Archive metadata and contents summary
+
+## Restore Steps
+
+### 1. Create a new company
+Register a new company on InflowHR or use an existing empty company.
+Note the new \`company_id\`.
+
+### 2. Update restore.sql
+If restoring to a DIFFERENT company_id:
+- Find and replace the original company_id with the new one in \`restore.sql\`
+- The original company_id is: \`${companyId}\`
+
+### 3. Run restore.sql
+Execute the SQL script against your Supabase database:
+\`\`\`
+psql -h <db-host> -U postgres -d postgres -f restore.sql
+\`\`\`
+The script uses \`ON CONFLICT DO NOTHING\` so it is safe to re-run.
+
+### 4. Re-upload storage files
+Upload files from the \`storage/\` folder back to their respective buckets:
+- \`storage/receipts/*\` → \`receipts/{company_id}/\`
+- \`storage/profile-photos/*\` → \`profile-photos/{company_id}/\`
+
+### 5. Re-create auth accounts
+Users must re-register or be re-invited. Use \`auth-mapping.json\` to:
+1. Invite each user by email
+2. Once they have a new auth UID, update \`company_users.user_id\` to the new UID
+
+### 6. Reconfigure integrations
+The following must be manually reconfigured:
+${NON_RECOVERABLE_ITEMS.map(item => `- ${item}`).join('\n')}
+
+## Data Integrity
+All UUIDs and foreign keys are preserved from the original database.
+If restoring to the same company_id, data will be re-inserted with matching references.
+
+## Company: ${companyName}
+## Archived: ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
+`)
+
+  onProgress?.('Creating ZIP archive…')
+
+  const blob = await zip.generateAsync({ type: 'blob' })
+  const dateStr = new Date().toLocaleDateString('en-GB').replace(/\//g, '-')
+  const filename = `${companyName.replace(/\s+/g, '-').toLowerCase()}-restorable-archive-${dateStr}.zip`
+
+  return {
+    success: true,
+    blob,
+    filename,
+    tableCount,
+    totalRows,
+    storageFiles: storageFiles.length,
+  }
 }

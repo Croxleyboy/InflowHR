@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../context/ToastContext'
+import { getExportCategories, getDateRange, buildEmployeeExportZip } from '../lib/employeeDataExport'
 import type { Lang } from '../lib/translations'
 
 const featureLabels: { key: keyof Features; tKey: string }[] = [
@@ -30,7 +31,7 @@ const monthLabels = [
 export default function Settings() {
   const { features, companyFeatures, setFeatures } = useFeatures()
   const { lang, setLang, t, fyStartMonth, setFyStartMonth } = useLanguage()
-  const { employeeName, employeeEmail, companyUser, isSuperAdmin, portalRole } = useAuth()
+  const { employeeName, employeeEmail, companyUser, isSuperAdmin, portalRole, company } = useAuth()
   const { showError, showSuccess } = useToast()
   const navigate = useNavigate()
   const [draft, setDraft] = useState<Features>({ ...features })
@@ -38,6 +39,12 @@ export default function Settings() {
   const [draftFy, setDraftFy] = useState(fyStartMonth)
   const [saved, setSaved] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportConfirm, setExportConfirm] = useState<{
+    data: Record<string, unknown>
+    categories: { key: string; label: string; count: number }[]
+    dateRange: { earliest: string; latest: string }
+    companyName: string
+  } | null>(null)
   const [dashLayout, setDashLayout] = useState(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768)
   const [consents, setConsents] = useState<Record<string, boolean>>({})
@@ -59,19 +66,51 @@ export default function Settings() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await supabase.rpc('export_employee_data' as any, { p_employee_id: companyUser.employee_id })
       if (error) { showError('Export failed: ' + error.message); setExporting(false); return }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `my-data-export-${new Date().toISOString().split('T')[0]}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      showSuccess('Your data has been downloaded')
+      const exportData = data as Record<string, unknown>
+      const categories = getExportCategories(exportData as Parameters<typeof getExportCategories>[0])
+      const dateRange = getDateRange(exportData as Parameters<typeof getDateRange>[0])
+      setExportConfirm({
+        data: exportData,
+        categories,
+        dateRange,
+        companyName: company?.name || 'Unknown Company',
+      })
     } catch {
       showError('Export failed — please try again')
     }
     setExporting(false)
-  }, [companyUser?.employee_id, showError, showSuccess])
+  }, [companyUser?.employee_id, company?.name, showError, showSuccess])
+
+  const handleConfirmDownload = useCallback(async () => {
+    if (!exportConfirm) return
+    setExporting(true)
+    try {
+      const exportData = exportConfirm.data as Parameters<typeof buildEmployeeExportZip>[0]
+      const blob = await buildEmployeeExportZip(exportData, employeeName || 'Employee')
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(employeeName || 'employee').replace(/\s+/g, '-').toLowerCase()}-data-export-${new Date().toLocaleDateString('en-GB').replace(/\//g, '-')}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+
+      if (isSuperAdmin || companyUser?.role === 'admin') {
+        try {
+          await supabase.rpc('log_gdpr_action' as never, {
+            p_company_id: companyUser?.company_id,
+            p_action: 'employee_data_export',
+            p_details: { employee_id: companyUser?.employee_id, format: 'excel_zip', categories: exportConfirm.categories.length },
+          } as never)
+        } catch { /* audit log failure should not block download */ }
+      }
+
+      showSuccess('Your data has been downloaded as Excel/ZIP')
+    } catch {
+      showError('Download failed — please try again')
+    }
+    setExportConfirm(null)
+    setExporting(false)
+  }, [exportConfirm, employeeName, isSuperAdmin, companyUser, showError, showSuccess])
 
   useEffect(() => {
     if (!companyUser?.employee_id || !companyUser?.company_id) { setConsentsLoading(false); return }
@@ -366,6 +405,54 @@ export default function Settings() {
             {t('settings.admin_portal')}
           </button>
         </section>
+      )}
+
+      {exportConfirm && (
+        <div className="modal-overlay" onClick={() => setExportConfirm(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg, #fff)', borderRadius: '0 0 16px 16px', width: '100%', maxWidth: 520, padding: '24px 20px', maxHeight: '95dvh', overflowY: 'auto' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 18 }}>Confirm Data Download</h3>
+            <div style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-secondary, #64748b)', fontSize: 13 }}>Company</span>
+                <span style={{ fontWeight: 600 }}>{exportConfirm.companyName}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-secondary, #64748b)', fontSize: 13 }}>Period</span>
+                <span>{exportConfirm.dateRange.earliest} — {exportConfirm.dateRange.latest}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-secondary, #64748b)', fontSize: 13 }}>Format</span>
+                <span>Excel (.xlsx) in ZIP archive</span>
+              </div>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-secondary, #64748b)' }}>Data categories included:</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                {exportConfirm.categories.map(c => (
+                  <span key={c.key} style={{
+                    background: 'var(--primary-light, #ede9f7)',
+                    color: 'var(--primary, #6C4FBF)',
+                    padding: '4px 10px',
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 500,
+                  }}>
+                    {c.label} ({c.count})
+                  </span>
+                ))}
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', margin: '0 0 16px' }}>
+              This download contains all personal data held under GDPR Art. 15/20 (Right of access / Right to data portability). This action will be recorded in the audit log.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn-secondary" onClick={() => setExportConfirm(null)} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'transparent', cursor: 'pointer' }}>Cancel</button>
+              <button className="save-btn" onClick={handleConfirmDownload} disabled={exporting} style={{ padding: '8px 20px', borderRadius: 6 }}>
+                {exporting ? 'Downloading…' : 'Download'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

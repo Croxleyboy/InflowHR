@@ -557,6 +557,14 @@ export default function AdminCompanies() {
         setArchiving(null)
         return
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await supabase.rpc('log_gdpr_action' as any, {
+        p_company_id: companyId,
+        p_table_name: 'company_archive',
+        p_record_id: companyId,
+        p_action: 'COMPANY_ARCHIVE',
+        p_metadata: { fy_label: fy.label, delete_data: deleteData, format: 'csv' },
+      })
       if (deleteData) {
         const delResult = await deleteCompanyFYData(companyId, fy)
         if (delResult.errors.length > 0) {
