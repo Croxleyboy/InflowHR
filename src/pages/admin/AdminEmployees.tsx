@@ -4,6 +4,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
+import EmployeeRecordModules from './EmployeeRecordModules'
 
 const PAGE_SIZE = 30
 
@@ -541,136 +542,14 @@ export default function AdminEmployees() {
                   </div>
                 </div>
 
-                {/* Detail sections grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                  {/* Personal Details */}
-                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
-                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      Personal Details
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Date of Birth</span>{formatDate(selectedEmployee.date_of_birth)}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Gender</span>{selectedEmployee.gender || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Nationality</span>{selectedEmployee.nationality || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Marital Status</span>{selectedEmployee.marital_status || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Religion</span>{selectedEmployee.religion || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>NI Number</span><span onClick={() => toggleReveal(selectedEmployee.id, 'ni')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(selectedEmployee.ni_number, selectedEmployee.id, 'ni')}</span></div>
-                    </div>
-                  </div>
-
-                  {/* Contact Information */}
-                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
-                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-                      Contact Information
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, fontSize: 13 }}>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Work Email</span>{selectedEmployee.email}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Personal Email</span>{selectedEmployee.personal_email || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Phone</span>{selectedEmployee.phone || '—'}</div>
-                    </div>
-                  </div>
-
-                  {/* Address */}
-                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
-                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                      Address
-                    </h4>
-                    <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                      {selectedEmployee.address_line1 || selectedEmployee.city || selectedEmployee.postcode ? (
-                        <>
-                          {selectedEmployee.address_line1 && <div>{selectedEmployee.address_line1}</div>}
-                          {selectedEmployee.address_line2 && <div>{selectedEmployee.address_line2}</div>}
-                          {selectedEmployee.city && <div>{selectedEmployee.city}</div>}
-                          {selectedEmployee.county && <div>{selectedEmployee.county}</div>}
-                          {selectedEmployee.postcode && <div>{selectedEmployee.postcode}</div>}
-                          {selectedEmployee.country && <div>{selectedEmployee.country}</div>}
-                        </>
-                      ) : <span style={{ color: '#999' }}>No address on file</span>}
-                    </div>
-                  </div>
-
-                  {/* Emergency Contact */}
-                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
-                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                      Emergency Contact
-                    </h4>
-                    {selectedEmployee.emergency_contact_name ? (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12, fontSize: 13 }}>
-                        <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Name</span>{selectedEmployee.emergency_contact_name}</div>
-                        <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Phone</span>{selectedEmployee.emergency_contact_phone || '—'}</div>
-                        <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Relationship</span>{selectedEmployee.emergency_contact_relationship || '—'}</div>
-                      </div>
-                    ) : <span style={{ fontSize: 13, color: '#999' }}>No emergency contact on file</span>}
-                  </div>
-
-                  {/* Employment Details */}
-                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
-                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-                      Employment
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Working Pattern</span>{selectedEmployee.working_pattern || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Weekly Hours</span>{selectedEmployee.weekly_hours ?? '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Contract Type</span>{selectedEmployee.contract_type || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Notice Period</span>{selectedEmployee.notice_period || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Probation End</span>{formatDate(selectedEmployee.probation_end_date)}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Leave Allowance</span>{selectedEmployee.leave_allowance ?? 15} days</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Lieu Days</span>{lieuDays[selectedEmployee.id]?.lieu_days ?? 0} days</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Salary Group</span>{selectedEmployee.salary_group || 'N/A'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Manager Email</span>{selectedEmployee.manager_email || '—'}</div>
-                    </div>
-                  </div>
-
-                  {/* Payroll & Banking */}
-                  <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8' }}>
-                    <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                      Payroll & Banking
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Annual Salary</span>{selectedEmployee.annual_salary ? `£${Number(selectedEmployee.annual_salary).toLocaleString()}` : '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Tax Code</span>{selectedEmployee.tax_code || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Payroll ID</span>{selectedEmployee.payroll_id || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Bank Account</span>{selectedEmployee.bank_account_name || '—'}</div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Sort Code</span><span onClick={() => toggleReveal(selectedEmployee.id, 'sc')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(selectedEmployee.bank_sort_code, selectedEmployee.id, 'sc')}</span></div>
-                      <div><span style={{ color: '#999', fontSize: 11, display: 'block' }}>Account Number</span><span onClick={() => toggleReveal(selectedEmployee.id, 'ac')} style={{ cursor: 'pointer' }} title="Click to reveal">{maskValue(selectedEmployee.bank_account_number, selectedEmployee.id, 'ac')}</span></div>
-                    </div>
-                  </div>
-
-                  {/* Qualifications - full width */}
-                  {selectedEmployee.qualifications && (
-                    <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8', gridColumn: '1 / -1' }}>
-                      <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 1 2 3 6 3s6-2 6-3v-5"/></svg>
-                        Qualifications
-                      </h4>
-                      <div style={{ fontSize: 13, whiteSpace: 'pre-line', lineHeight: 1.6 }}>{selectedEmployee.qualifications}</div>
-                    </div>
-                  )}
-
-                  {/* Skills - full width */}
-                  {features.skills_passport && empSkills[selectedEmployee.id]?.length > 0 && (
-                    <div style={{ background: '#fff', borderRadius: 10, padding: 20, border: '1px solid #e8e8e8', gridColumn: '1 / -1' }}>
-                      <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                        Validated Skills
-                      </h4>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        {empSkills[selectedEmployee.id].map(s => (
-                          <span key={s.skill_name} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 16, fontSize: 12, background: '#e0e7ff', color: '#3730a3', fontWeight: 500 }}>
-                            {s.skill_name}
-                            <span style={{ fontSize: 10, opacity: 0.7 }}>({['','Foundational','Developing','Proficient','Advanced','Expert'][s.proficiency]})</span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <EmployeeRecordModules
+                  employee={selectedEmployee}
+                  companyId={selectedCompanyId}
+                  lieuDays={lieuDays[selectedEmployee.id]?.lieu_days ?? 0}
+                  maskValue={maskValue}
+                  toggleReveal={toggleReveal}
+                  formatDate={formatDate}
+                />
               </div>
             )}
           </div>
