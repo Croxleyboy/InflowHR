@@ -154,7 +154,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         break
       }
       case 'education': {
-        const { data: skills } = await supabase.from('employee_skills').select('skill_name, proficiency, status, created_at').eq('employee_id', employee.id).eq('company_id', companyId).order('skill_name')
+        const { data: skills } = await supabase.from('employee_skills').select('id, skill_id, proficiency, status, created_at, skill:skills(name)').eq('employee_id', employee.id).eq('company_id', companyId).order('created_at', { ascending: false })
         data = { skills: skills || [], qualifications: employee.qualifications }
         break
       }
@@ -432,15 +432,16 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
                 const profLabels = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert']
                 const statusColors: Record<string, { bg: string; color: string }> = {
                   validated: { bg: '#e0e7ff', color: '#3730a3' },
-                  pending: { bg: '#fff3e0', color: '#e65100' },
-                  self_assessed: { bg: '#f3e5f5', color: '#7b1fa2' },
+                  pending_validation: { bg: '#fff3e0', color: '#e65100' },
+                  self_declared: { bg: '#f3e5f5', color: '#7b1fa2' },
                 }
-                const sc = statusColors[s.status] || statusColors.pending
+                const sc = statusColors[s.status] || statusColors.self_declared
+                const skillName = s.skill?.name || 'Unknown'
                 return (
-                  <span key={s.skill_name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 16, fontSize: 12, background: sc.bg, color: sc.color, fontWeight: 500 }}>
-                    {s.skill_name}
+                  <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 16, fontSize: 12, background: sc.bg, color: sc.color, fontWeight: 500 }}>
+                    {skillName}
                     <span style={{ fontSize: 10, opacity: 0.7 }}>({profLabels[s.proficiency] || '—'})</span>
-                    {s.status !== 'validated' && <span style={{ fontSize: 9, textTransform: 'uppercase', opacity: 0.6 }}>{s.status}</span>}
+                    {s.status !== 'validated' && <span style={{ fontSize: 9, textTransform: 'uppercase', opacity: 0.6 }}>{s.status.replace('_', ' ')}</span>}
                   </span>
                 )
               })}
