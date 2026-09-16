@@ -197,7 +197,26 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
 
   async function requestValidation(es: EmployeeSkill) {
     const { data: emp } = await supabase.from('employees').select('manager_id, first_name, last_name, email').eq('id', employeeId).single()
-    if (!emp?.manager_id) { showError('No manager assigned — cannot request validation'); return }
+    if (!emp) { showError('Employee record not found'); return }
+    if (!emp.manager_id) {
+      const { error } = await supabase.from('employee_skills').update({ status: 'validated', validated_at: new Date().toISOString(), validated_by: employeeId }).eq('id', es.id)
+      if (error) { showError(error.message); return }
+      await supabase.from('workflow_tracker').insert({
+        company_id: companyId,
+        emp_display_name: `${emp.first_name} ${emp.last_name}`,
+        step: 1,
+        status: 'Completed',
+        record_type: 'Skill Validation',
+        action: `Skill self-validated for ${es.skill_name} (no manager assigned)`,
+        employee_email: emp.email,
+        assigned_to: emp.email,
+        task_description: `${emp.first_name} ${emp.last_name} self-validated the skill "${es.skill_name}" — no manager assigned for review.`,
+        extra_info: es.id,
+      })
+      showSuccess('Skill self-validated — no manager assigned')
+      onRefresh()
+      return
+    }
     const { error: esErr } = await supabase.from('employee_skills').update({ status: 'pending_validation' }).eq('id', es.id)
     if (esErr) { showError(esErr.message); return }
     const { error } = await supabase.from('skill_validations').insert({
