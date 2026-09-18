@@ -71,22 +71,43 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Invalid or expired token' }), { status: 401, headers: corsHeaders })
     }
 
-    const payload = await req.json()
-    const record = payload.record
-
-    if (!record || !record.send_email || record.email_sent) {
-      return new Response(JSON.stringify({ skipped: true }), { status: 200, headers: corsHeaders })
-    }
-
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
+    const payload = await req.json()
+    const notificationId = payload?.record?.id ?? payload?.notification_id
+    if (!notificationId) {
+      return new Response(JSON.stringify({ error: 'notification_id required' }), { status: 400, headers: corsHeaders })
+    }
+
+    const { data: record } = await supabase
+      .from('notifications')
+      .select('id, title, message, link, employee_id, company_id, send_email, email_sent')
+      .eq('id', notificationId)
+      .single()
+
+    const { data: caller } = await supabase
+      .from('company_users')
+      .select('company_id')
+      .eq('auth_user_id', user.id)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (!record || !caller || record.company_id !== caller.company_id) {
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: corsHeaders })
+    }
+
+    if (!record.send_email || record.email_sent) {
+      return new Response(JSON.stringify({ skipped: true }), { status: 200, headers: corsHeaders })
+    }
+
     const { data: emp } = await supabase
       .from('employees')
       .select('email, first_name')
       .eq('id', record.employee_id)
+      .eq('company_id', record.company_id)
       .single()
 
     if (!emp?.email) {

@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
       .eq('company_id', company_id)
       .eq('is_active', true)
       .maybeSingle()
-    if (!cu) return json({ error: 'Access denied' }, 403)
+    if (!cu || (cu.role !== 'admin' && cu.role !== 'hr')) return json({ error: 'Access denied' }, 403)
 
     const creds = await getValidXeroToken(company_id)
     if (!creds) return json({ error: 'Xero not connected — please connect first' }, 400)

@@ -240,7 +240,7 @@ export default function AdminEmployees() {
       { table: 'expense_claims', column: 'employee_id', value: emp.id },
       { table: 'payslips', column: 'employee_id', value: emp.id },
       { table: 'shift_assignments', column: 'employee_id', value: emp.id },
-      { table: 'space_bookings', column: 'booked_by', value: emp.id },
+      { table: 'space_bookings', column: 'employee_id', value: emp.id },
       { table: 'legal_timesheet_entries', column: 'employee_id', value: emp.id },
       { table: 'frozen_employees', column: 'employee_id', value: emp.id },
       { table: 'offboarding', column: 'employee_id', value: emp.id },
