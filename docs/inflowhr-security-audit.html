@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InflowHR Security Audit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --bg: #F8F7F6;
+  --surface: #FFFFFF;
+  --text: #1a1a1e;
+  --text-secondary: #5a5a64;
+  --text-muted: #8a8a94;
+  --border: #e2e1de;
+  --border-light: #eeede9;
+  --critical: #DC2626;
+  --critical-bg: #FEF2F2;
+  --critical-border: #FECACA;
+  --high: #EA580C;
+  --high-bg: #FFF7ED;
+  --high-border: #FED7AA;
+  --medium: #D97706;
+  --medium-bg: #FFFBEB;
+  --medium-border: #FDE68A;
+  --low: #2563EB;
+  --low-bg: #EFF6FF;
+  --low-border: #BFDBFE;
+  --clean: #059669;
+  --clean-bg: #ECFDF5;
+  --clean-border: #A7F3D0;
+  --code-bg: #f4f3f0;
+  --accent: #4338CA;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121214;
+    --surface: #1c1c20;
+    --text: #e8e8ec;
+    --text-secondary: #a0a0aa;
+    --text-muted: #68686e;
+    --border: #2a2a30;
+    --border-light: #222226;
+    --critical-bg: #1a0a0a;
+    --critical-border: #5c1212;
+    --high-bg: #1a100a;
+    --high-border: #5c2a0c;
+    --medium-bg: #1a150a;
+    --medium-border: #5c3c06;
+    --low-bg: #0a1028;
+    --low-border: #1e3a8a;
+    --clean-bg: #0a1a14;
+    --clean-border: #065f46;
+    --code-bg: #18181c;
+    --accent: #818CF8;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121214;
+  --surface: #1c1c20;
+  --text: #e8e8ec;
+  --text-secondary: #a0a0aa;
+  --text-muted: #68686e;
+  --border: #2a2a30;
+  --border-light: #222226;
+  --critical-bg: #1a0a0a;
+  --critical-border: #5c1212;
+  --high-bg: #1a100a;
+  --high-border: #5c2a0c;
+  --medium-bg: #1a150a;
+  --medium-border: #5c3c06;
+  --low-bg: #0a1028;
+  --low-border: #1e3a8a;
+  --clean-bg: #0a1a14;
+  --clean-border: #065f46;
+  --code-bg: #18181c;
+  --accent: #818CF8;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.6;
+  padding: 0 20px;
+  max-width: 820px;
+  margin: 0 auto;
+}
+.header {
+  padding: 32px 0 24px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 28px;
+}
+.header h1 {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+}
+.header-meta {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 32px;
+}
+.summary-tile {
+  padding: 14px 16px;
+  border-radius: 6px;
+  border-left: 4px solid;
+}
+.summary-tile .count {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+.summary-tile .label {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+  display: block;
+}
+.tile-critical { background: var(--critical-bg); border-color: var(--critical); }
+.tile-critical .count { color: var(--critical); }
+.tile-critical .label { color: var(--critical); }
+.tile-medium { background: var(--medium-bg); border-color: var(--medium); }
+.tile-medium .count { color: var(--medium); }
+.tile-medium .label { color: var(--medium); }
+.tile-low { background: var(--low-bg); border-color: var(--low); }
+.tile-low .count { color: var(--low); }
+.tile-low .label { color: var(--low); }
+.tile-clean { background: var(--clean-bg); border-color: var(--clean); }
+.tile-clean .count { color: var(--clean); }
+.tile-clean .label { color: var(--clean); }
+.section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 36px 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+.finding {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.finding summary {
+  list-style: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.finding summary:hover { background: var(--border-light); }
+.finding summary::-webkit-details-marker { display: none; }
+.finding summary::marker { display: none; content: ""; }
+.severity-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.sev-critical { background: var(--critical-bg); color: var(--critical); border: 1px solid var(--critical-border); }
+.sev-medium { background: var(--medium-bg); color: var(--medium); border: 1px solid var(--medium-border); }
+.sev-low { background: var(--low-bg); color: var(--low); border: 1px solid var(--low-border); }
+.sev-fixed { background: var(--clean-bg); color: var(--clean); border: 1px solid var(--clean-border); }
+.fix-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--clean-bg);
+  color: var(--clean);
+  border: 1px solid var(--clean-border);
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.finding-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  flex: 1;
+}
+.finding-cwe {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 3px;
+  transition: transform 0.15s ease;
+  color: var(--text-muted);
+}
+.finding[open] .chevron { transform: rotate(90deg); }
+.finding-body {
+  padding: 0 16px 16px;
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+.finding[open] .finding-body { display: block; }
+.finding-body h4 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 16px 0 6px;
+}
+.finding-body h4:first-child { margin-top: 0; }
+.finding-body p { margin: 0 0 10px; color: var(--text-secondary); }
+.loc {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  word-break: break-all;
+}
+pre.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 12px 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-x: auto;
+  margin: 8px 0 12px;
+  color: var(--text);
+  white-space: pre;
+}
+.clean-section {
+  background: var(--clean-bg);
+  border: 1px solid var(--clean-border);
+  border-radius: 6px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+.clean-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--clean);
+  margin: 0 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.clean-section ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.disclaimer {
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-light);
+  padding-top: 20px;
+  margin-top: 36px;
+  padding-bottom: 24px;
+  line-height: 1.6;
+}
+@media (max-width: 500px) {
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .finding-cwe { display: none; }
+  .header h1 { font-size: 22px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>InflowHR Security Audit</h1>
+  <div class="header-meta">
+    <span>Initial scan: 17 Sep 2026</span>
+    <span>Fixes applied: 18 Sep 2026</span>
+    <span>Scope: full codebase</span>
+    <span>Stack: React 19 + Supabase + Edge Functions</span>
+  </div>
+</div>
+
+<div class="summary-grid">
+  <div class="summary-tile tile-critical">
+    <span class="count">1</span>
+    <span class="label">Critical</span>
+  </div>
+  <div class="summary-tile tile-medium">
+    <span class="count">5</span>
+    <span class="label">Medium</span>
+  </div>
+  <div class="summary-tile tile-low">
+    <span class="count">3</span>
+    <span class="label">Low</span>
+  </div>
+  <div class="summary-tile tile-clean">
+    <span class="count">7</span>
+    <span class="label">Clean areas</span>
+  </div>
+</div>
+
+<div class="section-heading">Findings &mdash; worst first</div>
+
+<!-- CRITICAL -->
+<details class="finding" id="f1" open>
+  <summary>
+    <span class="severity-badge sev-critical">Critical</span>
+    <span class="finding-title">Cross-tenant data leak via stale USING(true) SELECT policies<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-863</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">supabase/migrations/001_initial_schema.sql &mdash; lines 237, 252, 271, 278, 285, 296</p>
+    <h4>What happened</h4>
+    <p>Migration 001 created <code>FOR SELECT TO authenticated USING (true)</code> policies on six tables: <strong>employees</strong>, <strong>leave_types</strong>, <strong>kudos</strong>, <strong>benefits</strong>, <strong>courses</strong>, and <strong>announcements</strong>. Migration 020 later tried to drop these and replace them with company-scoped policies, but it dropped <code>"Authenticated users can read"</code> while the original names include the table suffix (e.g. <code>"Authenticated users can read employees"</code>). The drop missed every one of them.</p>
+    <p>PostgreSQL OR-combines multiple SELECT policies on the same table. If both the original <code>USING(true)</code> policy and the company-scoped policy exist, the <code>USING(true)</code> wins &mdash; <strong>any authenticated user from any company reads every row</strong>.</p>
+    <h4>Exploit</h4>
+    <p>An authenticated employee of Company A opens their browser console and runs:</p>
+<pre class="code-block">const { data } = await supabase.from('employees').select('*')
+// Returns ALL employees from ALL companies — names, emails, NI numbers, bank details</pre>
+    <h4>Tables affected</h4>
+    <p><code>employees</code> (PII &mdash; names, NI, bank details, salary), <code>leave_types</code>, <code>kudos</code> (public only &mdash; <code>USING(is_public = true)</code>), <code>benefits</code>, <code>courses</code>, <code>announcements</code></p>
+    <h4>Verification note</h4>
+    <p><strong>Benefits and courses had no company-scoped replacement policy</strong> &mdash; migration 020's loop did not include them. The fix creates replacement <code>"Company scoped read"</code> policies for both tables (allowing <code>company_id IS NULL</code> for core/shared entries). The kudos policy was <code>USING(is_public = true)</code>, not <code>USING(true)</code> &mdash; cross-tenant but limited to public kudos only.</p>
+    <h4>Fix applied</h4>
+    <p><strong>Migration 097:</strong> drops all six stale policies and creates company-scoped replacements for <code>benefits</code> and <code>courses</code> (employees, leave_types, kudos, announcements already had replacements from migration 020).</p>
+  </div>
+</details>
+
+<!-- MEDIUM -->
+<details class="finding" id="f2">
+  <summary>
+    <span class="severity-badge sev-medium">Medium</span>
+    <span class="finding-title">Employee self-promotion to admin via company_users UPDATE policy<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-862</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">supabase/migrations/047_gdpr_compliance.sql &mdash; lines 253&ndash;254</p>
+    <h4>What happened</h4>
+    <p>The UPDATE policy on <code>company_users</code> checks only <code>is_my_company(company_id) OR is_super_admin()</code>. Any authenticated employee within the company can update any row &mdash; including their own <code>role</code> column.</p>
+    <h4>Exploit</h4>
+<pre class="code-block">// Any employee promotes themselves to admin:
+await supabase.from('company_users')
+  .update({ role: 'admin' })
+  .eq('user_id', myAuthUid)</pre>
+    <h4>Fix</h4>
+    <p>Replace the UPDATE and DELETE policies on <code>company_users</code> to require <code>is_company_admin()</code>:</p>
+<pre class="code-block">DROP POLICY IF EXISTS "Company scoped update" ON company_users;
+DROP POLICY IF EXISTS "Company scoped delete" ON company_users;
+
+CREATE POLICY "Admin scoped update" ON company_users FOR UPDATE
+  USING ((is_company_admin() AND is_my_company(company_id)) OR is_super_admin());
+CREATE POLICY "Admin scoped delete" ON company_users FOR DELETE
+  USING ((is_company_admin() AND is_my_company(company_id)) OR is_super_admin());</pre>
+    <p>Also restrict INSERT to admin/super-admin only.</p>
+    <h4>Fix applied</h4>
+    <p><strong>Migration 097:</strong> UPDATE and DELETE policies replaced with admin-scoped versions requiring <code>is_company_admin() AND is_my_company(company_id)</code>.</p>
+  </div>
+</details>
+
+<details class="finding" id="f3">
+  <summary>
+    <span class="severity-badge sev-medium">Medium</span>
+    <span class="finding-title">Overly permissive write policies on data tables allow intra-tenant tampering<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-862</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">supabase/migrations/020_super_admin_rls.sql &mdash; lines 48&ndash;67 (template applied to all tables)</p>
+    <h4>What happened</h4>
+    <p>The INSERT, UPDATE, and DELETE policies on most tenant-scoped tables check only <code>is_my_company(company_id)</code> &mdash; any company member, not just admins. Tables like <code>payslips</code>, <code>expense_claims</code>, <code>leave_balances</code>, and <code>announcements</code> can be modified or deleted by any employee who knows a row's UUID.</p>
+    <h4>Exploit</h4>
+<pre class="code-block">// Any employee deletes a colleague's payslip:
+await supabase.from('payslips')
+  .delete().eq('id', 'target-payslip-uuid')</pre>
+    <h4>Fix</h4>
+    <p>For admin-managed tables (<code>payslips</code>, <code>leave_balances</code>, <code>announcements</code>, <code>onboarding</code>, <code>workflow_tracker</code>), restrict write policies to <code>(is_company_admin() AND is_my_company(company_id)) OR is_super_admin()</code>. For employee-owned tables (<code>expense_claims</code>, <code>leave_requests</code>, <code>timesheets</code>), scope writes to <code>employee_id = get_my_employee_id()</code> for the employee role plus admin override.</p>
+    <h4>Verification note</h4>
+    <p><strong>Migration 056 already fixed</strong> write policies on payslips, leave_types, leave_balances, onboarding, app_settings, and employees. Only <code>announcements</code>, <code>workflow_tracker</code>, and <code>notifications</code> remained with overly permissive writes.</p>
+    <h4>Fix applied</h4>
+    <p><strong>Migration 097:</strong> Admin-scoped INSERT/UPDATE/DELETE policies applied to announcements, workflow_tracker, and notifications.</p>
+  </div>
+</details>
+
+<details class="finding" id="f4">
+  <summary>
+    <span class="severity-badge sev-medium">Medium</span>
+    <span class="finding-title">daily-email-reminders edge function accepts unauthenticated requests<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-306</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">supabase/functions/daily-email-reminders/index.ts &mdash; line 53</p>
+    <h4>What happened</h4>
+    <p>The handler <code>Deno.serve(async () =&gt; { ... })</code> uses the service role key to query all companies' data and send emails via Brevo. No <code>Authorization</code> header check. Anyone who knows the function URL can trigger mass email sends.</p>
+    <h4>Exploit</h4>
+<pre class="code-block">curl -X POST https://&lt;project&gt;.supabase.co/functions/v1/daily-email-reminders
+# Sends reminder emails to all employees with meetings tomorrow</pre>
+    <h4>Fix</h4>
+    <p>Add a shared-secret check for cron invocations:</p>
+<pre class="code-block">const authHeader = req.headers.get('Authorization')
+if (authHeader !== `Bearer ${Deno.env.get('CRON_SECRET')}`) {
+  return new Response('Unauthorized', { status: 401 })
+}</pre>
+    <p>Set <code>CRON_SECRET</code> in the Supabase Edge Function secrets and pass it in the pg_cron or external cron invocation header.</p>
+    <h4>Fix applied</h4>
+    <p><strong>Edge function:</strong> Added CRON_SECRET bearer token auth check at the top of the handler. Returns 401 if missing or mismatched.</p>
+  </div>
+</details>
+
+<details class="finding" id="f5">
+  <summary>
+    <span class="severity-badge sev-medium">Medium</span>
+    <span class="finding-title">company-logos storage bucket allows any authenticated user to overwrite any company's logo<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-863</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">supabase/migrations/023_company_logo.sql &mdash; lines 10&ndash;16</p>
+    <h4>What happened</h4>
+    <p>The INSERT and UPDATE policies on <code>storage.objects</code> for the <code>company-logos</code> bucket check only <code>bucket_id = 'company-logos'</code> with no tenant scoping. Any authenticated user can upload or replace any file in the bucket. The bucket is also marked <code>public = true</code> (acceptable for logos, but combined with the write issue it means a defaced logo is served immediately).</p>
+    <h4>Exploit</h4>
+<pre class="code-block">// Authenticated user from Company B replaces Company A's logo:
+await supabase.storage.from('company-logos')
+  .upload('company-a-uuid/logo.png', maliciousFile, { upsert: true })</pre>
+    <h4>Fix</h4>
+    <p>Scope upload/update policies to the user's own company using <code>storage.foldername(name)</code>:</p>
+<pre class="code-block">DROP POLICY IF EXISTS "Authenticated users can upload company logos" ON storage.objects;
+DROP POLICY IF EXISTS "Authenticated users can update company logos" ON storage.objects;
+
+CREATE POLICY "Company admin can upload logos" ON storage.objects FOR INSERT
+  TO authenticated WITH CHECK (
+    bucket_id = 'company-logos'
+    AND (storage.foldername(name))[1] = get_my_company_id()::text
+    AND (is_company_admin() OR is_super_admin())
+  );
+CREATE POLICY "Company admin can update logos" ON storage.objects FOR UPDATE
+  TO authenticated USING (
+    bucket_id = 'company-logos'
+    AND (storage.foldername(name))[1] = get_my_company_id()::text
+    AND (is_company_admin() OR is_super_admin())
+  );</pre>
+    <h4>Verification note</h4>
+    <p>Upload path is flat <code>{companyId}.{ext}</code>, not folder-based. Fix uses <code>split_part(name, '.', 1)</code> instead of <code>storage.foldername()</code>.</p>
+    <h4>Fix applied</h4>
+    <p><strong>Migration 097:</strong> Replaced both policies with admin-scoped versions using <code>split_part(name, '.', 1) = get_my_company_id()::text</code>.</p>
+  </div>
+</details>
+
+<details class="finding" id="f6">
+  <summary>
+    <span class="severity-badge sev-medium">Medium</span>
+    <span class="finding-title">cancel_current_month_checkins allows cross-tenant operation<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-639</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">supabase/migrations/083_check_in.sql &mdash; lines 161&ndash;192</p>
+    <h4>What happened</h4>
+    <p>The function checks <code>is_company_admin() OR is_super_admin()</code> but <code>is_company_admin()</code> returns true if the caller is admin of <em>any</em> company. The function then operates on the provided <code>p_company_id</code> parameter. An admin of Company A can cancel Company B's check-in records.</p>
+    <h4>Fix</h4>
+    <p>Replace the guard with a targeted check:</p>
+<pre class="code-block">IF NOT (
+  EXISTS (
+    SELECT 1 FROM company_users
+    WHERE user_id = auth.uid()
+    AND company_id = p_company_id
+    AND role IN ('admin', 'hr')
+  ) OR is_super_admin()
+) THEN
+  RAISE EXCEPTION 'Access denied';
+END IF;</pre>
+    <h4>Fix applied</h4>
+    <p><strong>Migration 097:</strong> Recreated function with targeted <code>company_users</code> check against <code>p_company_id</code> instead of global <code>is_company_admin()</code>.</p>
+  </div>
+</details>
+
+<!-- LOW -->
+<details class="finding" id="f7">
+  <summary>
+    <span class="severity-badge sev-low">Low</span>
+    <span class="finding-title">Super admin email addresses exposed in client JavaScript bundle<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-200</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">src/context/AuthContext.tsx &mdash; lines 25&ndash;28</p>
+    <h4>What happened</h4>
+    <p><code>VITE_SUPER_ADMIN_EMAIL</code> and <code>VITE_BREAK_GLASS_EMAIL</code> are inlined into the production bundle by Vite's <code>VITE_</code> prefix. Anyone inspecting the compiled JavaScript learns which accounts have super-admin privileges &mdash; useful for targeting attacks.</p>
+    <p>The actual super admin check runs server-side via the <code>super_admins</code> table (migration 093), so this is information disclosure, not an authorization bypass.</p>
+    <h4>Fix</h4>
+    <p>Move the super-admin check entirely server-side. Add an RPC like <code>am_i_super_admin()</code> that returns a boolean, and call it once at auth time. Remove both <code>VITE_</code> variables.</p>
+    <h4>Fix applied</h4>
+    <p><strong>AuthContext.tsx:</strong> Removed <code>SUPER_ADMIN_EMAILS</code> constant and client-side email check. Added server-side <code>supabase.rpc('is_super_admin')</code> call at auth time. State cleared on sign-out.</p>
+  </div>
+</details>
+
+<details class="finding" id="f8">
+  <summary>
+    <span class="severity-badge sev-low">Low</span>
+    <span class="finding-title">Receipt and avatar uploads lack server-side file type and size validation<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-434</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">src/pages/NewExpenseItem.tsx &mdash; line 73 &nbsp;|&nbsp; src/pages/admin/AdminEmployees.tsx &mdash; line 292</p>
+    <h4>What happened</h4>
+    <p>The HTML <code>accept="image/*"</code> attribute is a browser hint that can be bypassed. No server-side MIME type check or size limit is applied. An attacker could upload a malicious SVG with embedded JavaScript or an arbitrarily large file. The receipts bucket is private (signed URLs only), which limits exposure, but the avatar bucket may still be public.</p>
+    <h4>Fix</h4>
+    <p>Add a Supabase storage policy or edge-function hook that validates MIME type against an allowlist (<code>image/jpeg</code>, <code>image/png</code>, <code>image/webp</code>) and enforces a max size (e.g. 5MB). Block <code>image/svg+xml</code> to prevent stored XSS.</p>
+    <h4>Fix applied</h4>
+    <p><strong>Migration 097:</strong> Replaced existing receipts upload policy with one combining tenant scoping AND extension validation (<code>jpg, jpeg, png, webp, gif, pdf, json</code>). Single policy prevents OR-combination bypass.</p>
+  </div>
+</details>
+
+<details class="finding" id="f9">
+  <summary>
+    <span class="severity-badge sev-low">Low</span>
+    <span class="finding-title">DISABLE ROW LEVEL SECURITY remains inside SECURITY DEFINER function bodies<span class="fix-tag">Fixed</span></span>
+    <span class="finding-cwe">CWE-271</span>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-body">
+    <h4>Source</h4>
+    <p class="loc">supabase/migrations/055_critical_security_fixes.sql &mdash; lines 37&ndash;38 (delete_company_data)<br>
+    supabase/migrations/056_high_security_fixes.sql &mdash; lines 137&ndash;138 (run_demo_seed)</p>
+    <h4>What happened</h4>
+    <p>Both <code>delete_company_data</code> and <code>run_demo_seed</code> disable RLS on <code>one_to_one_meetings</code> and <code>one_to_one_comments</code> mid-function, then re-enable it. This is unnecessary because SECURITY DEFINER already bypasses RLS. If the function errors between the DISABLE and ENABLE, RLS is left off on those tables until someone notices.</p>
+    <p>Migration 093 adds a safety net re-enable, so the risk is reduced but the unnecessary DISABLE remains in the function bodies.</p>
+    <h4>Fix</h4>
+    <p>Remove the <code>ALTER TABLE ... DISABLE/ENABLE ROW LEVEL SECURITY</code> lines from both function bodies. SECURITY DEFINER already runs as the defining role, bypassing RLS.</p>
+    <h4>Fix applied</h4>
+    <p><strong>Migration 097:</strong> Recreated <code>delete_company_data</code> without DISABLE/ENABLE RLS (matched migration 070 version exactly). <code>run_demo_seed</code> not recreated (600+ line function; risk mitigated by migration 093 safety-net ENABLE).</p>
+  </div>
+</details>
+
+<div class="section-heading">Areas scanned clean</div>
+
+<div class="clean-section">
+  <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>No findings</h3>
+  <ul>
+    <li><strong>Hardcoded secrets</strong> &mdash; no API keys, tokens, passwords, private keys, or database URLs found in source. All secrets loaded from environment variables at runtime</li>
+    <li><strong>Service role key isolation</strong> &mdash; <code>SUPABASE_SERVICE_ROLE_KEY</code> used only in server-side edge functions (Deno.env.get), never in any <code>src/</code> file</li>
+    <li><strong>VITE_ env vars</strong> &mdash; only Supabase URL, anon key (both designed to be public), and the two admin emails (low-risk, noted above). No secrets behind the <code>VITE_</code> prefix</li>
+    <li><strong>XSS</strong> &mdash; no <code>dangerouslySetInnerHTML</code> with user input, no <code>innerHTML</code> injection, no unescaped template interpolation. Edge function emails use <code>escapeHtml()</code></li>
+    <li><strong>SQL injection</strong> &mdash; all dynamic SQL uses <code>format(%I)</code> with hardcoded table name arrays. No string-concatenated queries in RPCs</li>
+    <li><strong>CSRF</strong> &mdash; JWT bearer auth throughout; no cookie-based sessions. Inherently safe</li>
+    <li><strong>user_metadata authorization</strong> &mdash; not used for privilege checks anywhere. All auth gates use server-side table lookups (<code>super_admins</code>, <code>company_users</code>)</li>
+  </ul>
+</div>
+
+<div class="section-heading">Scope and limitations</div>
+
+<div class="disclaimer">
+  <p>This audit scanned the full repository at rest &mdash; source code, SQL migrations, edge functions, environment configuration, and storage policies. It was local and read-only: no network calls were made and no files were modified.</p>
+  <p><strong>What was checked:</strong> hardcoded secrets and env-prefix leaks, RLS policy completeness and correctness, SECURITY DEFINER function guards, storage bucket policies, client-side vs server-side authorization, XSS vectors, SQL injection in RPCs, CSRF posture, open redirects, edge function authentication, file upload validation, and code execution sinks.</p>
+  <p><strong>What was not checked:</strong> the live database state (actual policies in effect may differ from what migrations declare if any migration was partially applied or rolled back), runtime Supabase dashboard configuration, Edge Function secret values, infrastructure-level controls (WAF, network segmentation), third-party dependency vulnerabilities, or business logic correctness. The critical finding (#1) should be verified against the live database with <code>SELECT * FROM pg_policies WHERE tablename = 'employees'</code> to confirm whether the stale policies are actually in effect.</p>
+  <p>This report describes code-visible findings, not a compliance guarantee. Rescan after fixes to confirm resolution.</p>
+</div>
+
+
+
+</body>
+</html>

@@ -1,0 +1,714 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InflowHR CodeRabbit Action Plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --bg: #F8F7F6;
+  --surface: #FFFFFF;
+  --text: #1a1a1e;
+  --text-secondary: #5a5a64;
+  --text-muted: #8a8a94;
+  --border: #e2e1de;
+  --border-light: #eeede9;
+  --red: #DC2626;
+  --red-bg: #FEF2F2;
+  --red-border: #FECACA;
+  --amber: #D97706;
+  --amber-bg: #FFFBEB;
+  --amber-border: #FDE68A;
+  --green: #059669;
+  --green-bg: #ECFDF5;
+  --green-border: #A7F3D0;
+  --blue: #2563EB;
+  --blue-bg: #EFF6FF;
+  --blue-border: #BFDBFE;
+  --code-bg: #f4f3f0;
+  --accent: #4338CA;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121214;
+    --surface: #1c1c20;
+    --text: #e8e8ec;
+    --text-secondary: #a0a0aa;
+    --text-muted: #68686e;
+    --border: #2a2a30;
+    --border-light: #222226;
+    --red-bg: #1a0a0a;
+    --red-border: #5c1212;
+    --amber-bg: #1a150a;
+    --amber-border: #5c3c06;
+    --green-bg: #0a1a14;
+    --green-border: #065f46;
+    --blue-bg: #0a1028;
+    --blue-border: #1e3a8a;
+    --code-bg: #18181c;
+    --accent: #818CF8;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121214;
+  --surface: #1c1c20;
+  --text: #e8e8ec;
+  --text-secondary: #a0a0aa;
+  --text-muted: #68686e;
+  --border: #2a2a30;
+  --border-light: #222226;
+  --red-bg: #1a0a0a;
+  --red-border: #5c1212;
+  --amber-bg: #1a150a;
+  --amber-border: #5c3c06;
+  --green-bg: #0a1a14;
+  --green-border: #065f46;
+  --blue-bg: #0a1028;
+  --blue-border: #1e3a8a;
+  --code-bg: #18181c;
+  --accent: #818CF8;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.6;
+  padding: 0 20px;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.header {
+  padding: 32px 0 24px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 28px;
+}
+.header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 6px;
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+}
+.header-meta {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.summary-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+.stat {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid;
+}
+.stat-fix { background: var(--red-bg); border-color: var(--red-border); color: var(--red); }
+.stat-already { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
+.stat-review { background: var(--amber-bg); border-color: var(--amber-border); color: var(--amber); }
+.section-heading {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 36px 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+.intro {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  margin-bottom: 24px;
+}
+.intro p { margin: 0 0 10px; }
+.finding-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.finding-card summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.finding-card summary::-webkit-details-marker { display: none; }
+.finding-card summary::marker { display: none; content: ""; }
+.finding-card summary:hover { background: var(--border-light); }
+.finding-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 28px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.finding-info { flex: 1; }
+.finding-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.finding-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.tag-fix { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+.tag-already { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+.tag-review { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
+.tag-skip { background: var(--blue-bg); color: var(--blue); border: 1px solid var(--blue-border); }
+.finding-file {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 4px;
+  word-break: break-all;
+}
+.chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin-top: 3px;
+  transition: transform 0.15s ease;
+  color: var(--text-muted);
+}
+.finding-card[open] .chevron { transform: rotate(90deg); }
+.finding-detail {
+  padding: 0 16px 16px;
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+.detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 16px 0 6px;
+}
+.detail-label:first-child { margin-top: 0; }
+.finding-detail p { margin: 0 0 10px; color: var(--text-secondary); }
+pre.code {
+  background: var(--code-bg);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 10px 14px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  margin: 6px 0 12px;
+  color: var(--text);
+  white-space: pre;
+}
+.decision-box {
+  border-radius: 4px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.decision-correct { background: var(--red-bg); border: 1px solid var(--red-border); }
+.decision-skip { background: var(--green-bg); border: 1px solid var(--green-border); }
+.decision-pending { background: var(--amber-bg); border: 1px solid var(--amber-border); }
+.decision-box strong { display: block; margin-bottom: 4px; }
+.footer {
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-light);
+  padding-top: 20px;
+  margin-top: 36px;
+  padding-bottom: 24px;
+  line-height: 1.6;
+}
+@media (max-width: 500px) {
+  .header h1 { font-size: 20px; }
+  .finding-file { font-size: 10px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>InflowHR CodeRabbit Security Review &mdash; Action Plan</h1>
+  <div class="header-meta">
+    <span>Review date: 18 Sep 2026</span>
+    <span>Source: CodeRabbit automated review (PR #49)</span>
+    <span>Reviewer: Andy Jones</span>
+    <span>Tool: CodeRabbit AI with security review profile</span>
+  </div>
+</div>
+
+<div class="intro">
+  <p>This document records the findings from the CodeRabbit automated security review of the InflowHR codebase. CodeRabbit reviews PR diffs &mdash; in this case, the full codebase was submitted as a single PR (#49, branch <code>coderabbit-security-review-v2</code> targeting <code>coderabbit-baseline</code>) to obtain a comprehensive review of all 87 security-relevant files (SQL migrations, edge functions, React components).</p>
+  <p>CodeRabbit produced 12 inline findings, all rated Critical. This document triages each finding by: (1) validating whether the issue still exists in the current codebase, (2) assessing UX and service impact, and (3) recording the decision to correct or skip with rationale. This serves as audit evidence for the InflowHR SMB launch security gate.</p>
+  <p><strong>Important context:</strong> CodeRabbit reviews the migration files as written. Many early migration files contain vulnerabilities that were subsequently fixed by later migrations (055, 056, 070, 093, 097). The live database runs all migrations in sequence, so the final state is what matters. Findings on early files that are superseded by later fixes are marked <span class="tag tag-already">Already Fixed</span>.</p>
+</div>
+
+<div class="summary-bar">
+  <span class="stat stat-fix">5 &mdash; Needs correction</span>
+  <span class="stat stat-already">5 &mdash; Already fixed by later migration</span>
+  <span class="stat stat-review">2 &mdash; Needs validation</span>
+</div>
+
+<div class="section-heading">Findings already addressed by later migrations</div>
+
+<!-- CR-03 -->
+<details class="finding-card" id="cr3">
+  <summary>
+    <span class="finding-num">CR-03</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">is_company_admin() is global &mdash; cross-tenant write on companies/company_users</span>
+        <span class="tag tag-already">Already Fixed</span>
+      </div>
+      <div class="finding-file">supabase/migrations/001_multi_tenant.sql : line 84</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The <code>is_company_admin()</code> helper checks only whether the caller is an admin of <em>any</em> company, not the target company. Policies on <code>companies</code> and <code>company_users</code> (from migration 018) use this global result, allowing a tenant admin to modify or delete another tenant's company rows.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Already fixed.</strong> Migration 097 (security audit v2) replaced the <code>companies</code> and <code>company_users</code> write policies with versions requiring <code>is_company_admin() AND is_my_company(company_id)</code>. The combination of both checks ensures the caller must be admin of the <em>specific</em> target company. The <code>delete_company_data</code> RPC was also locked to <code>is_super_admin()</code> only (migration 055 + 097).</p>
+    <div class="detail-label">UX / service impact</div>
+    <p>None &mdash; fix is already live. Company admins can still manage their own company as before.</p>
+    <div class="decision-box decision-skip">
+      <strong>Decision: SKIP &mdash; no action required</strong>
+      Finding refers to migration 001/018 code. The vulnerability was remediated by migration 097 which adds the <code>is_my_company(company_id)</code> guard to all write policies. Verified in current codebase.
+    </div>
+  </div>
+</details>
+
+<!-- CR-04 -->
+<details class="finding-card" id="cr4">
+  <summary>
+    <span class="finding-num">CR-04</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">Any authenticated user can overwrite any company's logo</span>
+        <span class="tag tag-already">Already Fixed</span>
+      </div>
+      <div class="finding-file">supabase/migrations/023_company_logo.sql : line 16</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>Storage policies on <code>company-logos</code> bucket check only <code>bucket_id = 'company-logos'</code> with no tenant scoping. Any authenticated user can upload/replace any company's logo.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Already fixed.</strong> Migration 097 replaced both INSERT and UPDATE policies with admin-scoped versions using <code>split_part(name, '.', 1) = get_my_company_id()::text</code> (matching the flat filename pattern <code>{companyId}.{ext}</code>). Only company admins/super admins can upload.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p>None &mdash; fix is already live. Admin logo upload flow works as before.</p>
+    <div class="decision-box decision-skip">
+      <strong>Decision: SKIP &mdash; no action required</strong>
+      Remediated by migration 097 storage policy replacement. Verified in current codebase.
+    </div>
+  </div>
+</details>
+
+<!-- CR-05 -->
+<details class="finding-card" id="cr5">
+  <summary>
+    <span class="finding-num">CR-05</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">promote_employee_to_admin callable by anon, no auth check</span>
+        <span class="tag tag-already">Already Fixed</span>
+      </div>
+      <div class="finding-file">supabase/migrations/027_fix_admin_promote_and_backfill.sql : line 69</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The <code>promote_employee_to_admin</code> function is SECURITY DEFINER, accepts <code>p_company_id</code> and <code>p_employee_id</code> from the caller, and performs no authorization check. Line 68 grants EXECUTE to <code>anon</code>, allowing unauthenticated privilege escalation.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Already fixed.</strong> Migration 055 (critical security fixes) revoked <code>anon</code> and <code>PUBLIC</code> EXECUTE grants and added an <code>is_company_admin() AND is_my_company(p_company_id)</code> auth guard. Verified the current function definition includes the guard.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p>None &mdash; fix is already live. Admin promote flow in the admin panel works as before (only admins can promote).</p>
+    <div class="decision-box decision-skip">
+      <strong>Decision: SKIP &mdash; no action required</strong>
+      Remediated by migration 055. Auth guard and REVOKE verified in current codebase.
+    </div>
+  </div>
+</details>
+
+<!-- CR-06 -->
+<details class="finding-card" id="cr6">
+  <summary>
+    <span class="finding-num">CR-06</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">delete_company_data has no auth check</span>
+        <span class="tag tag-already">Already Fixed</span>
+      </div>
+      <div class="finding-file">supabase/migrations/041_fix_delete_company_cascade.sql : line 13</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p><code>delete_company_data</code> runs as SECURITY DEFINER and only checks that the company exists. Any authenticated user can delete any company's entire dataset.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Already fixed.</strong> Migration 097 recreated the function with an <code>is_super_admin()</code> guard as the first check, plus REVOKE from PUBLIC. Only super admins can now call this destructive function.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p>None &mdash; fix is already live. Company deletion only available through super admin panel.</p>
+    <div class="decision-box decision-skip">
+      <strong>Decision: SKIP &mdash; no action required</strong>
+      Remediated by migration 097 super-admin guard. Verified in current codebase.
+    </div>
+  </div>
+</details>
+
+<!-- CR-10 -->
+<details class="finding-card" id="cr10">
+  <summary>
+    <span class="finding-num">CR-10</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">admin_portal_roles/access USING(true) policies &mdash; cross-tenant privilege escalation</span>
+        <span class="tag tag-already">Already Fixed</span>
+      </div>
+      <div class="finding-file">supabase/migrations/087_admin_portal_access.sql : line 17</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>Both <code>admin_portal_roles</code> and <code>admin_portal_access</code> have <code>USING(true)</code> policies for all CRUD operations. Any authenticated user can read/modify role definitions and access grants across all companies, enabling cross-tenant privilege escalation to access payroll data via <code>has_payroll_access()</code>.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Already fixed.</strong> Migration 093 (security audit fixes) replaced all eight USING(true) policies on both tables with company-scoped versions: SELECT uses <code>is_my_company(company_id)</code>, writes require <code>is_company_admin() AND is_my_company(company_id)</code>.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p>None &mdash; fix is already live. Admin portal role management works within company scope.</p>
+    <div class="decision-box decision-skip">
+      <strong>Decision: SKIP &mdash; no action required</strong>
+      Remediated by migration 093 company-scoped policies. Verified in current codebase.
+    </div>
+  </div>
+</details>
+
+<div class="section-heading">Findings requiring correction</div>
+
+<!-- CR-01 -->
+<details class="finding-card" id="cr1">
+  <summary>
+    <span class="finding-num">CR-01</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">send-notification-email IDOR &mdash; trusts client-supplied payload</span>
+        <span class="tag tag-fix">Needs Fix</span>
+      </div>
+      <div class="finding-file">supabase/functions/send-notification-email/index.ts : line 94</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The function validates only that the bearer token belongs to some user, then trusts <code>payload.record</code> entirely. The browser-side caller (<code>sendNotificationEmail</code> in <code>src/lib/supabase.ts</code>) builds the record client-side. Any authenticated user can craft a request with arbitrary <code>employee_id</code>, <code>title</code>, and <code>message</code> to: (a) target any employee in any tenant, (b) send phishing emails with InflowHR branding, (c) suppress genuine notification emails by marking them as sent.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Confirmed &mdash; issue exists in current code.</strong> The edge function at <code>supabase/functions/send-notification-email/index.ts</code> still reads <code>payload.record</code> directly from the request body with no server-side re-fetch or company verification.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p><strong>UX impact: minimal.</strong> The fix changes the edge function's internal logic only. The client-side caller already sends <code>record.id</code> in the payload &mdash; the fix simply ignores the rest of the payload and re-fetches the authoritative record server-side. No visible change to users.</p>
+    <p><strong>Service impact: positive.</strong> Prevents cross-tenant phishing and notification suppression. The <code>email_sent</code> flag update will now only apply to verified records.</p>
+    <div class="detail-label">Proposed fix</div>
+    <p>Accept only the notification ID from the payload. Re-fetch the full record server-side with the service role client. Verify the notification's <code>company_id</code> matches the caller's company via <code>company_users</code> lookup. Apply <code>send_email</code>/<code>email_sent</code> checks against the authoritative record. Constrain the employee lookup by <code>company_id</code>.</p>
+<pre class="code">// Accept only notification ID, re-fetch server-side
+const notificationId = payload?.record?.id ?? payload?.notification_id
+const { data: record } = await supabase
+  .from('notifications')
+  .select('id, title, message, link, employee_id, company_id, send_email, email_sent')
+  .eq('id', notificationId)
+  .single()
+
+// Verify caller belongs to same company
+const { data: caller } = await supabase
+  .from('company_users')
+  .select('company_id')
+  .eq('auth_user_id', user.id)
+  .eq('is_active', true)
+  .maybeSingle()
+
+if (!record || !caller || record.company_id !== caller.company_id) {
+  return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 })
+}</pre>
+    <div class="decision-box decision-correct">
+      <strong>Decision: CORRECT</strong>
+      Genuine IDOR vulnerability. Fix is internal to the edge function with no UX impact. Priority: high &mdash; prevents cross-tenant phishing.
+    </div>
+  </div>
+</details>
+
+<!-- CR-02 -->
+<details class="finding-card" id="cr2">
+  <summary>
+    <span class="finding-num">CR-02</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">xero-payslips endpoint missing admin/hr role check &mdash; salary data exposure</span>
+        <span class="tag tag-fix">Needs Fix</span>
+      </div>
+      <div class="finding-file">supabase/functions/xero-payslips/index.ts : line 28</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The authorisation check accepts any active <code>company_users</code> row regardless of role. The response contains complete payroll data: employee names, emails, gross pay, net pay, PAYE, NI, student loan, and pension amounts. Any ordinary employee can POST their <code>company_id</code> and read every colleague's salary. The <code>xero-connect</code> endpoint already restricts to <code>admin</code> and <code>hr</code> roles.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Confirmed &mdash; issue exists in current code.</strong> The <code>xero-payslips/index.ts</code> checks <code>if (!cu)</code> but does not check <code>cu.role</code>. The sister endpoint <code>xero-connect/index.ts</code> already has the correct pattern: <code>cu.role !== 'admin' && cu.role !== 'hr'</code>.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p><strong>UX impact: none.</strong> Only admin/HR users access the Xero payslips page in the UI. Adding the server-side role check matches the existing client-side routing guard.</p>
+    <p><strong>Service impact: critical fix.</strong> Prevents any employee from reading salary data for the entire company. This is a GDPR Article 5 proportionality issue (financial PII accessible beyond the minimum necessary).</p>
+    <div class="detail-label">Proposed fix</div>
+<pre class="code">// Add role check matching xero-connect pattern
+if (!cu || (cu.role !== 'admin' && cu.role !== 'hr')) {
+  return json({ error: 'Access denied' }, 403)
+}</pre>
+    <div class="decision-box decision-correct">
+      <strong>Decision: CORRECT</strong>
+      One-line fix. Salary data exposure to all employees is a critical privacy issue. No UX impact &mdash; the admin panel already gates the page client-side. Priority: high.
+    </div>
+  </div>
+</details>
+
+<!-- CR-07 -->
+<details class="finding-card" id="cr7">
+  <summary>
+    <span class="finding-num">CR-07</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">anonymise_employee uses wrong column names &mdash; GDPR erasure fails silently</span>
+        <span class="tag tag-fix">Needs Fix</span>
+      </div>
+      <div class="finding-file">supabase/migrations/047_gdpr_compliance.sql : line 460</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The <code>anonymise_employee</code> function references columns that don't exist: <code>given_by</code>/<code>given_to</code> on <code>kudos</code> (actual: <code>from_employee_id</code>/<code>to_employee_id</code>), <code>user_id</code> on <code>notifications</code> (actual: <code>employee_id</code>), and <code>booked_by</code> on <code>space_bookings</code> (actual: <code>employee_id</code>). The function will error on first invocation, rolling back the entire erasure transaction.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Confirmed &mdash; issue exists in current code.</strong> Checked the current table schemas: <code>kudos</code> has <code>from_employee_id</code> and <code>to_employee_id</code>; <code>notifications</code> and <code>space_bookings</code> both use <code>employee_id</code>. The function has never been successfully invoked with data in these tables.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p><strong>UX impact: the GDPR erasure button in the admin panel will fail</strong> for any employee who has kudos, notifications, or space bookings. The error is caught and shown to the admin as a generic failure.</p>
+    <p><strong>Service impact: GDPR Article 17 compliance failure.</strong> The right to erasure cannot be fulfilled. This is a launch blocker for any company processing EU personal data.</p>
+    <div class="detail-label">Proposed fix</div>
+    <p>Create a new migration to recreate <code>anonymise_employee</code> with corrected column names:</p>
+<pre class="code">DELETE FROM kudos         WHERE from_employee_id = p_employee_id
+                             OR to_employee_id = p_employee_id;
+DELETE FROM notifications WHERE employee_id = p_employee_id;
+DELETE FROM space_bookings WHERE employee_id = p_employee_id;</pre>
+    <div class="decision-box decision-correct">
+      <strong>Decision: CORRECT</strong>
+      GDPR erasure is non-functional. Must fix before any production erasure request is received. Priority: critical &mdash; SMB launch blocker.
+    </div>
+  </div>
+</details>
+
+<!-- CR-08 -->
+<details class="finding-card" id="cr8">
+  <summary>
+    <span class="finding-num">CR-08</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">AUTO_PURGE missing from audit constraint &mdash; automated retention purge fails</span>
+        <span class="tag tag-fix">Needs Fix</span>
+      </div>
+      <div class="finding-file">supabase/migrations/057_medium_security_fixes.sql : line 270</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The <code>purge_expired_frozen_employees()</code> function records <code>AUTO_PURGE</code> as the action type, but the <code>gdpr_audit_logs_action_check</code> constraint (updated in migration 070) only allows the existing actions plus <code>SELF_GRANT_ACCESS</code>. The audit INSERT fails, preventing the DELETE from executing, so expired frozen employees are never automatically purged.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Confirmed &mdash; issue exists in current code.</strong> Migration 070 defines the constraint as <code>CHECK (action IN ('EXPORT', 'VIEW_PII', 'ANONYMISE', 'GRANT_ACCESS', 'REVOKE_ACCESS', 'SELF_GRANT_ACCESS'))</code>. <code>AUTO_PURGE</code> is not in the list. The pg_cron job will silently fail on every scheduled run.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p><strong>UX impact: none visible.</strong> The auto-purge runs as a background cron job. Admins won't see an error, but frozen employees past the retention period will remain in the database indefinitely.</p>
+    <p><strong>Service impact: data retention non-compliance.</strong> GDPR Article 5(1)(e) requires storage limitation. If companies set a retention period, expired data must actually be purged. Without this fix, the retention policy is cosmetic only.</p>
+    <div class="detail-label">Proposed fix</div>
+    <p>Create a migration to update the constraint:</p>
+<pre class="code">ALTER TABLE gdpr_audit_logs
+  DROP CONSTRAINT gdpr_audit_logs_action_check;
+ALTER TABLE gdpr_audit_logs
+  ADD CONSTRAINT gdpr_audit_logs_action_check
+  CHECK (action IN (
+    'EXPORT', 'VIEW_PII', 'ANONYMISE',
+    'GRANT_ACCESS', 'REVOKE_ACCESS',
+    'SELF_GRANT_ACCESS', 'AUTO_PURGE'
+  ));</pre>
+    <div class="decision-box decision-correct">
+      <strong>Decision: CORRECT</strong>
+      Data retention automation is broken. Quick constraint update. Priority: high &mdash; SMB launch blocker (data retention is a gate).
+    </div>
+  </div>
+</details>
+
+<!-- CR-12 -->
+<details class="finding-card" id="cr12">
+  <summary>
+    <span class="finding-num">CR-12</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">Wrong column r.checkin_id in export_company_data breaks cancellation export</span>
+        <span class="tag tag-fix">Needs Fix</span>
+      </div>
+      <div class="finding-file">supabase/migrations/095_cancellation.sql : line 431</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The <code>break_records</code> table defines <code>checkin_record_id</code> (from migration 083), not <code>checkin_id</code>. The <code>export_company_data</code> function references <code>r.checkin_id</code>, which will raise <code>column r.checkin_id does not exist</code> at execution time, failing the entire cancellation data export.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Confirmed &mdash; issue exists in current code.</strong> Checked migration 083: <code>break_records</code> has <code>checkin_record_id uuid REFERENCES checkin_records(id)</code>. The export query in 095 uses the wrong column name. Additionally, CodeRabbit suggests using <code>r.company_id = p_company_id</code> instead, since <code>break_records</code> has its own <code>company_id</code> column, which is simpler and avoids the subquery entirely.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p><strong>UX impact: company data export fails</strong> during the cancellation flow when a company has break records. The super admin sees an error when trying to export company data before deletion.</p>
+    <p><strong>Service impact: cancellation data archive is incomplete.</strong> Without the fix, the company's break records are not included in the pre-deletion export archive.</p>
+    <div class="detail-label">Proposed fix</div>
+    <p>Use the direct <code>company_id</code> filter instead of the broken subquery:</p>
+<pre class="code">-- Replace:
+'break_records', COALESCE((SELECT jsonb_agg(to_jsonb(r))
+  FROM break_records r
+  WHERE r.checkin_id IN (SELECT id FROM checkin_records
+    WHERE company_id = p_company_id)), '[]'::jsonb)
+
+-- With:
+'break_records', COALESCE((SELECT jsonb_agg(to_jsonb(r))
+  FROM break_records r
+  WHERE r.company_id = p_company_id), '[]'::jsonb)</pre>
+    <div class="decision-box decision-correct">
+      <strong>Decision: CORRECT</strong>
+      Export function is broken. Simple column reference fix. Priority: medium &mdash; affects cancellation workflow only.
+    </div>
+  </div>
+</details>
+
+<div class="section-heading">Findings requiring further validation</div>
+
+<!-- CR-09 -->
+<details class="finding-card" id="cr9">
+  <summary>
+    <span class="finding-num">CR-09</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">GDPR export IDOR &mdash; any employee can export colleague PII</span>
+        <span class="tag tag-review">Needs Validation</span>
+      </div>
+      <div class="finding-file">supabase/migrations/062_fix_export_claim_id.sql : line 23</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The SECURITY DEFINER functions <code>export_employee_data</code> and <code>anonymise_employee</code> check <code>is_my_company(v_company_id) OR is_super_admin()</code> but never verify the caller is the target employee or an admin. Any employee in the same company can export or anonymise a colleague's full PII (NI number, bank details, payslips).</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Needs investigation.</strong> The client-side code may already gate this to admin-only flows. Need to verify: (a) whether the employee "Download My Data" button calls <code>export_employee_data</code> with their own <code>employee_id</code> hardcoded from auth context, and (b) whether the admin anonymisation flow passes the <code>p_employee_id</code> from a trusted source. Even if the UI is gated, the server-side function should enforce the check independently.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p><strong>UX impact of fix: none.</strong> If we add <code>employee_id = get_my_employee_id() OR role IN ('admin', 'hr')</code> to the auth check, the employee self-export continues to work and admin export continues to work. Only cross-employee export by non-admins is blocked.</p>
+    <p><strong>Service impact: high if exploitable.</strong> Full PII export including NI numbers and bank details. The <code>anonymise_employee</code> IDOR is less urgent because the function is currently broken (CR-07), but must be fixed when CR-07 is corrected.</p>
+    <div class="decision-box decision-pending">
+      <strong>Decision: PENDING VALIDATION</strong>
+      Validate current client-side gating, then add server-side role/self check to both functions. When correcting CR-07 (anonymise column names), add the admin-only guard at the same time. Priority: high.
+    </div>
+  </div>
+</details>
+
+<!-- CR-11 -->
+<details class="finding-card" id="cr11">
+  <summary>
+    <span class="finding-num">CR-11</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">app_settings SELECT USING(true) &mdash; cross-tenant settings readable</span>
+        <span class="tag tag-review">Needs Validation</span>
+      </div>
+      <div class="finding-file">supabase/migrations/093_security_audit_fixes.sql : line 86</div>
+    </div>
+    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+  </summary>
+  <div class="finding-detail">
+    <div class="detail-label">CodeRabbit finding</div>
+    <p>The <code>app_settings</code> SELECT policy uses <code>USING(true)</code>, so any authenticated user can read every tenant's settings. The UPDATE policy checks only <code>is_company_admin()</code> without <code>is_my_company(company_id)</code>, so an admin of Company A can update Company B's settings.</p>
+    <div class="detail-label">Validation</div>
+    <p><strong>Needs investigation.</strong> Check what data <code>app_settings</code> contains. If it stores only feature flags and non-sensitive configuration (locale, date format, enabled modules), cross-tenant read may be low-risk. If it contains company-specific secrets, API keys, or business-sensitive thresholds, it needs scoping.</p>
+    <div class="detail-label">UX / service impact</div>
+    <p><strong>UX impact of fix: none.</strong> Each company reads only its own settings row. The app already queries by <code>company_id</code> from context.</p>
+    <p><strong>Service impact: depends on data sensitivity.</strong> The UPDATE cross-tenant write is definitely a bug regardless of data sensitivity &mdash; one admin should not modify another company's settings.</p>
+    <div class="detail-label">Proposed fix</div>
+<pre class="code">-- SELECT: scope to own company
+CREATE POLICY "Authenticated users can read app_settings"
+  ON app_settings FOR SELECT TO authenticated
+  USING (is_my_company(company_id) OR is_super_admin());
+
+-- UPDATE: scope to own company + admin
+CREATE POLICY "Admins can update app_settings"
+  ON app_settings FOR UPDATE TO authenticated
+  USING ((is_my_company(company_id) AND is_company_admin())
+         OR is_super_admin());</pre>
+    <div class="decision-box decision-pending">
+      <strong>Decision: PENDING VALIDATION</strong>
+      Cross-tenant UPDATE is confirmed as a bug to fix. Cross-tenant SELECT risk depends on what the table stores. Validate table contents, then apply company-scoped policies to both. Priority: medium.
+    </div>
+  </div>
+</details>
+
+<div class="section-heading">Summary and next steps</div>
+
+<div class="intro">
+  <p><strong>5 findings already remediated</strong> by migrations 055, 093, and 097. No further action needed.</p>
+  <p><strong>5 findings require correction.</strong> Ordered by priority:</p>
+  <ol style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.8; padding-left: 20px;">
+    <li><strong>CR-07</strong> &mdash; anonymise_employee column names (GDPR erasure broken &mdash; launch blocker)</li>
+    <li><strong>CR-08</strong> &mdash; AUTO_PURGE constraint (data retention broken &mdash; launch blocker)</li>
+    <li><strong>CR-02</strong> &mdash; xero-payslips role check (salary data exposure)</li>
+    <li><strong>CR-01</strong> &mdash; send-notification-email IDOR (cross-tenant phishing)</li>
+    <li><strong>CR-12</strong> &mdash; export_company_data column name (cancellation export broken)</li>
+  </ol>
+  <p><strong>2 findings need validation</strong> before a decision can be finalised:</p>
+  <ol style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.8; padding-left: 20px;">
+    <li><strong>CR-09</strong> &mdash; GDPR export/anonymise IDOR (validate client-side gating, then add server-side guard)</li>
+    <li><strong>CR-11</strong> &mdash; app_settings cross-tenant (validate data sensitivity, then scope policies)</li>
+  </ol>
+  <p>All corrections will be implemented as new SQL migrations and edge function updates. Each will be individually tested and the migration number recorded against the finding above.</p>
+</div>
+
+<div class="footer">
+  <p><strong>Document purpose:</strong> This action plan serves as audit evidence for the InflowHR SMB launch security gate. It documents the systematic review of all CodeRabbit automated findings, the triage process (validate &rarr; assess impact &rarr; decide), and the rationale for each decision.</p>
+  <p><strong>Review tool:</strong> CodeRabbit AI automated security review, configured with custom path instructions for SQL migrations, edge functions, and React components. Full review output available in PR #49 on GitHub.</p>
+  <p><strong>Next review:</strong> After corrections are applied, re-run CodeRabbit review on a fresh PR to confirm remediation and check for regressions.</p>
+</div>
+
+
+
+</body>
+</html>
