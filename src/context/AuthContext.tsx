@@ -22,11 +22,6 @@ interface Company {
   is_cancelled?: boolean
 }
 
-const SUPER_ADMIN_EMAILS = [
-  import.meta.env.VITE_SUPER_ADMIN_EMAIL,
-  import.meta.env.VITE_BREAK_GLASS_EMAIL,
-].filter(Boolean).map((e: string) => e.toLowerCase())
-
 interface AuthState {
   user: User | null
   session: Session | null
@@ -68,10 +63,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
   const [isManager, setIsManager] = useState(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [canPostNotifications, setCanPostNotifications] = useState(false)
   const [portalRole, setPortalRole] = useState<string | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
+    // Check super admin status server-side
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: saResult } = await supabase.rpc('is_super_admin' as any)
+    setIsSuperAdmin(saResult === true)
+
     // Step 1: RPC ensures company_users row exists, claims orphans, resolves employee by local-part match
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: rpcResult } = await supabase.rpc('ensure_company_user' as any)
@@ -262,6 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setCompanyUser(null)
         setCompany(null)
+        setIsSuperAdmin(false)
         setLoading(false)
       }
     })
@@ -295,6 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCompany(null)
     setEmployeeId(null)
     setIsManager(false)
+    setIsSuperAdmin(false)
     setCanPostNotifications(false)
     setPortalRole(null)
   }
@@ -312,6 +315,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCompany(null)
     setEmployeeId(null)
     setIsManager(false)
+    setIsSuperAdmin(false)
     setCanPostNotifications(false)
     setPortalRole(null)
     window.location.href = '/'
@@ -350,7 +354,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const employeeName = user?.user_metadata?.full_name || user?.user_metadata?.name || ''
   const employeeEmail = user?.email || ''
-  const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(employeeEmail.toLowerCase())
 
   return (
     <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithPassword, signOut }}>
