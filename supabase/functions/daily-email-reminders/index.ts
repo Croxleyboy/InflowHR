@@ -50,7 +50,13 @@ async function sendEmail(to: string, firstName: string, title: string, message: 
   })
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  const authHeader = req.headers.get('Authorization')
+  const cronSecret = Deno.env.get('CRON_SECRET')
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return new Response('Unauthorized', { status: 401 })
+  }
+
   const supabase = createClient(supabaseUrl, supabaseKey)
 
   const tomorrow = new Date()
