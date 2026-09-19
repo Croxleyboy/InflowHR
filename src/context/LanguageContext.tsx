@@ -36,7 +36,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const [translations, setTranslations] = useState<Translations>(() => getTranslations('en'))
 
   useEffect(() => {
-    supabase.from('app_settings').select('language, financial_year_start_month').eq('id', 1).single()
+    supabase.from('app_settings').select('language, financial_year_start_month').limit(1).single()
       .then(({ data }) => {
         if (data) {
           const dbLang = (data.language as Lang) || 'en'

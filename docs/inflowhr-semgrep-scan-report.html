@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InflowHR Full Codebase Security Scan</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8f9fa; color: #1a1a2e; line-height: 1.6; padding: 24px 16px; }
+  .container { max-width: 900px; margin: 0 auto; }
+
+  .header { background: linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 100%); color: #fff; padding: 32px; border-radius: 12px; margin-bottom: 24px; }
+  .header h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .header .subtitle { font-size: 14px; opacity: 0.85; }
+  .header .scan-date { font-size: 13px; opacity: 0.7; margin-top: 12px; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .summary-card { background: #fff; border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .summary-card .num { font-size: 28px; font-weight: 700; }
+  .summary-card .label { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+  .num-green { color: #16a34a; }
+  .num-amber { color: #d97706; }
+  .num-red { color: #dc2626; }
+  .num-blue { color: #2563eb; }
+
+  .section { background: #fff; border-radius: 10px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .section h2 { font-size: 17px; font-weight: 700; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #e5e7eb; }
+
+  details.finding-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+  details.finding-card summary { padding: 16px 20px; cursor: pointer; display: flex; align-items: center; gap: 12px; list-style: none; }
+  details.finding-card summary::-webkit-details-marker { display: none; }
+  details.finding-card summary::marker { display: none; content: ''; }
+  details.finding-card summary::before { content: '▸'; font-size: 14px; color: #999; transition: transform 0.2s; flex-shrink: 0; }
+  details.finding-card[open] summary::before { transform: rotate(90deg); }
+  details.finding-card[open] { border-color: #c7d2fe; }
+
+  .finding-num { font-weight: 700; font-size: 13px; color: #4338ca; background: #eef2ff; padding: 3px 10px; border-radius: 6px; flex-shrink: 0; }
+  .finding-info { flex: 1; min-width: 0; }
+  .finding-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .finding-name { font-weight: 600; font-size: 14px; }
+
+  .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0; }
+  .tag-high { background: #fef2f2; color: #dc2626; }
+  .tag-medium { background: #fffbeb; color: #d97706; }
+  .tag-low { background: #f0fdf4; color: #16a34a; }
+  .tag-info { background: #eff6ff; color: #2563eb; }
+  .tag-clean { background: #f0fdf4; color: #16a34a; }
+
+  .finding-detail { padding: 0 20px 20px; }
+  .finding-detail h4 { font-size: 13px; font-weight: 700; color: #374151; margin: 12px 0 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+  .finding-detail p, .finding-detail ul { font-size: 14px; color: #4b5563; }
+  .finding-detail ul { padding-left: 20px; }
+  .finding-detail li { margin-bottom: 4px; }
+  .finding-detail code { background: #f3f4f6; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: 'SF Mono', Monaco, monospace; }
+  .finding-detail .file-ref { font-size: 12px; color: #6b7280; font-family: 'SF Mono', Monaco, monospace; }
+
+  .decision { margin-top: 12px; padding: 12px 16px; border-radius: 8px; font-size: 13px; }
+  .decision-correct { background: #fef3c7; border-left: 3px solid #d97706; }
+  .decision-fixed { background: #f0fdf4; border-left: 3px solid #16a34a; }
+  .decision-skip { background: #f0fdf4; border-left: 3px solid #16a34a; }
+  .decision-validate { background: #eff6ff; border-left: 3px solid #2563eb; }
+
+  .clean-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+  .clean-item { font-size: 13px; padding: 8px 12px; background: #f0fdf4; border-radius: 6px; color: #166534; }
+  .clean-item::before { content: '✓ '; font-weight: 700; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  th { background: #f9fafb; text-align: left; padding: 8px 12px; font-weight: 600; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
+
+  .footer { text-align: center; font-size: 12px; color: #9ca3af; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+
+  @media (max-width: 600px) {
+    .summary-grid { grid-template-columns: repeat(2, 1fr); }
+    .finding-title-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+  <h1>InflowHR Full Codebase Security Scan</h1>
+  <div class="subtitle">Semgrep SAST + manual Supabase-specific audit</div>
+  <div class="scan-date">Scan date: 19 September 2026 &bull; Scope: src/ and supabase/ directories &bull; 227 files scanned</div>
+</div>
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="num num-green">0</div>
+    <div class="label">Semgrep Findings</div>
+  </div>
+  <div class="summary-card">
+    <div class="num num-red">1</div>
+    <div class="label">High Severity</div>
+  </div>
+  <div class="summary-card">
+    <div class="num num-amber">3</div>
+    <div class="label">Medium Severity</div>
+  </div>
+  <div class="summary-card">
+    <div class="num num-blue">2</div>
+    <div class="label">Low / Info</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Scan methodology</h2>
+  <table>
+    <tr><th>Tool</th><th>What it checks</th><th>Result</th></tr>
+    <tr><td>Semgrep (auto + security-audit + owasp-top-ten)</td><td>218 rules: XSS, injection, hardcoded secrets, insecure crypto, OWASP Top 10</td><td>0 findings</td></tr>
+    <tr><td>Manual: Edge Functions</td><td>Auth, company scoping, role checks, IDOR, CORS, input validation</td><td>1 finding</td></tr>
+    <tr><td>Manual: SQL / RLS</td><td>SECURITY DEFINER access control, RLS policy gaps, REVOKE from anon, CHECK constraints</td><td>5 findings</td></tr>
+  </table>
+</div>
+
+<!-- ═══ FINDINGS ═══ -->
+
+<!-- SG-01 -->
+<details class="finding-card" id="sg1">
+  <summary>
+    <span class="finding-num">SG-01</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">get_super_admin_uid() hardcodes email address</span>
+        <span class="tag tag-high">High</span>
+      </div>
+    </div>
+  </summary>
+  <div class="finding-detail">
+    <p class="file-ref">supabase/migrations/048_auto_grant_support_access.sql:11</p>
+    <h4>Description</h4>
+    <p>The function <code>get_super_admin_uid()</code> is a <code>SECURITY DEFINER</code> function that returns the auth user ID by looking up <code>andy.jones@kumonix.com</code> directly from <code>auth.users</code>. This was written before the <code>super_admins</code> table existed (created in migration 093). It's used by <code>ensure_super_admin_access()</code> and <code>extend_support_access()</code> to auto-grant tenant support access.</p>
+    <h4>Impact</h4>
+    <ul>
+      <li>If the super admin email changes, the function silently returns NULL and auto-grants stop working</li>
+      <li>If a second super admin is added, they're ignored — only the hardcoded email gets support access</li>
+      <li>Hardcoded PII (email) in a database function</li>
+    </ul>
+    <h4>Proposed fix</h4>
+    <p>Rewrite to query the <code>super_admins</code> table instead: <code>SELECT auth_user_id FROM super_admins LIMIT 1</code>. Also add <code>REVOKE EXECUTE FROM anon</code>.</p>
+    <div class="decision decision-fixed"><strong>✓ Fixed</strong> &mdash; migration <code>102_scan_fixes.sql</code>: rewrote to JOIN <code>super_admins</code> → <code>auth.users</code> instead of hardcoding email.</div>
+  </div>
+</details>
+
+<!-- SG-02 -->
+<details class="finding-card" id="sg2">
+  <summary>
+    <span class="finding-num">SG-02</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">7 SECURITY DEFINER functions missing REVOKE from anon</span>
+        <span class="tag tag-medium">Medium</span>
+      </div>
+    </div>
+  </summary>
+  <div class="finding-detail">
+    <h4>Description</h4>
+    <p>These <code>SECURITY DEFINER</code> functions have internal access control guards but lack the outer <code>REVOKE EXECUTE FROM anon</code> defence-in-depth layer. While they check roles internally, an unauthenticated caller can still invoke them (they'll be rejected by the guard, but the function body executes up to that point).</p>
+    <h4>Affected functions</h4>
+    <ul>
+      <li><code>get_super_admin_uid()</code> &mdash; 048_auto_grant_support_access.sql</li>
+      <li><code>ensure_super_admin_access()</code> &mdash; 048_auto_grant_support_access.sql</li>
+      <li><code>extend_support_access()</code> &mdash; 048_auto_grant_support_access.sql</li>
+      <li><code>cancel_current_month_checkins()</code> &mdash; 083_check_in.sql (recreated in 097)</li>
+      <li><code>create_nonsso_account()</code> &mdash; 066/067</li>
+      <li><code>setup_non_sso_admin()</code> &mdash; 069</li>
+      <li><code>ensure_company_user()</code> &mdash; 043/068</li>
+    </ul>
+    <h4>Proposed fix</h4>
+    <p>Add <code>REVOKE EXECUTE ON FUNCTION &lt;name&gt;(&lt;args&gt;) FROM anon, public; GRANT EXECUTE ON FUNCTION &lt;name&gt;(&lt;args&gt;) TO authenticated;</code> for each function in a single migration.</p>
+    <div class="decision decision-fixed"><strong>✓ Fixed</strong> &mdash; migration <code>102_scan_fixes.sql</code>: REVOKE FROM anon + GRANT TO authenticated on all 7 functions.</div>
+  </div>
+</details>
+
+<!-- SG-03 -->
+<details class="finding-card" id="sg3">
+  <summary>
+    <span class="finding-num">SG-03</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">app_settings SELECT USING(true) overrides company-scoped policy</span>
+        <span class="tag tag-medium">Medium</span>
+      </div>
+    </div>
+  </summary>
+  <div class="finding-detail">
+    <p class="file-ref">supabase/migrations/093_security_audit_fixes.sql:81</p>
+    <h4>Description</h4>
+    <p>Migration 032 created a <code>"Company scoped read"</code> policy on <code>app_settings</code> with <code>USING(is_my_company(company_id))</code>. But migration 093 later added a second SELECT policy with <code>USING(true)</code>. In Supabase, multiple SELECT policies on the same table OR-combine &mdash; so the <code>USING(true)</code> policy wins and any authenticated user can read every company's settings.</p>
+    <h4>Impact</h4>
+    <p>Low data sensitivity &mdash; <code>app_settings</code> contains feature toggles and company preferences, not PII. But it still leaks which features a competitor company has enabled, and violates the tenant isolation principle.</p>
+    <h4>Proposed fix</h4>
+    <p>Drop the <code>USING(true)</code> policy from migration 093. The existing company-scoped policy from migration 032 already provides correct access.</p>
+    <div class="decision decision-fixed"><strong>✓ Fixed</strong> &mdash; client: <code>LanguageContext.tsx</code> changed <code>.eq('id', 1)</code> → <code>.limit(1)</code>. SQL: migration <code>102_scan_fixes.sql</code> drops the USING(true) policy.</div>
+  </div>
+</details>
+
+<!-- SG-04 -->
+<details class="finding-card" id="sg4">
+  <summary>
+    <span class="finding-num">SG-04</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">send-notification-email has no role check</span>
+        <span class="tag tag-medium">Medium</span>
+      </div>
+    </div>
+  </summary>
+  <div class="finding-detail">
+    <p class="file-ref">supabase/functions/send-notification-email/index.ts</p>
+    <h4>Description</h4>
+    <p>The edge function verifies the caller belongs to the same company as the notification (line 98) but does not check the caller's role. Any authenticated employee in the company could trigger email delivery for any notification record in their company &mdash; including notifications addressed to other employees.</p>
+    <h4>Impact</h4>
+    <p><strong>Low in practice.</strong> The function only sends the email for an already-created notification &mdash; it doesn't create one or change who receives it. The notification was already created via RLS-scoped insert. The worst case is an employee triggering a re-send of a colleague's notification email. No data is exposed beyond what's already in the notification record (which is company-scoped).</p>
+    <h4>Proposed fix</h4>
+    <p>Option A: Add role check (admin/HR/manager only). Option B: Verify that the notification's <code>employee_id</code> matches the caller's employee_id (self-only). Option C: Accept as-is since the function only triggers delivery of existing notifications.</p>
+    <div class="decision decision-validate"><strong>Decision: Validate</strong> &mdash; low practical risk. Consider adding self-only check if tightening is desired, but not a blocker.</div>
+  </div>
+</details>
+
+<!-- SG-05 -->
+<details class="finding-card" id="sg5">
+  <summary>
+    <span class="finding-num">SG-05</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">app_translations SELECT USING(true) &mdash; intentional but undocumented</span>
+        <span class="tag tag-low">Low</span>
+      </div>
+    </div>
+  </summary>
+  <div class="finding-detail">
+    <p class="file-ref">supabase/migrations/093_security_audit_fixes.sql:69</p>
+    <h4>Description</h4>
+    <p>The <code>app_translations</code> table uses <code>USING(true)</code> for SELECT, allowing any authenticated user to read all translations. This is likely intentional &mdash; translations are global reference data shared across all companies.</p>
+    <h4>Impact</h4>
+    <p>None &mdash; translations contain no sensitive data. The write policy correctly requires <code>is_super_admin()</code>.</p>
+    <div class="decision decision-skip"><strong>Decision: Skip (document)</strong> &mdash; intentional exception. Add a code comment to the policy for future auditors.</div>
+  </div>
+</details>
+
+<!-- SG-06 -->
+<details class="finding-card" id="sg6">
+  <summary>
+    <span class="finding-num">SG-06</span>
+    <div class="finding-info">
+      <div class="finding-title-row">
+        <span class="finding-name">is_super_admin() still references hardcoded email in migration 020</span>
+        <span class="tag tag-low">Low</span>
+      </div>
+    </div>
+  </summary>
+  <div class="finding-detail">
+    <p class="file-ref">supabase/migrations/020_super_admin_rls.sql:14</p>
+    <h4>Description</h4>
+    <p>The original <code>is_super_admin()</code> in migration 020 checked <code>email = 'andy.jones@kumonix.com'</code>. This was replaced in migration 093 to query the <code>super_admins</code> table. The old migration file still contains the hardcoded email but it's been overridden by CREATE OR REPLACE. No runtime impact.</p>
+    <h4>Impact</h4>
+    <p>None &mdash; the function was already fixed. The email remains in the migration file history (git) which is expected.</p>
+    <div class="decision decision-skip"><strong>Decision: Skip</strong> &mdash; already fixed in migration 093. Migration files are immutable history.</div>
+  </div>
+</details>
+
+<!-- ═══ CLEAN AREAS ═══ -->
+
+<div class="section">
+  <h2>Clean areas</h2>
+  <div class="clean-list">
+    <div class="clean-item">Semgrep SAST: 0 findings across 218 rules</div>
+    <div class="clean-item">CORS: all edge functions locked to app.inflowhr.com</div>
+    <div class="clean-item">Edge function auth: all have JWT validation</div>
+    <div class="clean-item">IDOR: all edge functions re-fetch server-side</div>
+    <div class="clean-item">xero-connect: auth + company + role check</div>
+    <div class="clean-item">xero-payslips: auth + company + admin/HR role</div>
+    <div class="clean-item">xero-callback: HMAC-signed state, no user context</div>
+    <div class="clean-item">daily-email-reminders: CRON_SECRET auth</div>
+    <div class="clean-item">HTML escaping: all email templates use escapeHtml()</div>
+    <div class="clean-item">DISABLE RLS: all paired with ENABLE in same function</div>
+    <div class="clean-item">gdpr_audit_logs constraint: complete (includes AUTO_PURGE)</div>
+    <div class="clean-item">Core table RLS: all tenant-scoped (is_my_company)</div>
+    <div class="clean-item">Input validation: all edge functions check required fields</div>
+    <div class="clean-item">No hardcoded secrets in client bundle</div>
+  </div>
+</div>
+
+<!-- ═══ ACTION PLAN ═══ -->
+
+<div class="section">
+  <h2>Action plan</h2>
+  <p style="font-size: 14px; color: #4b5563; margin-bottom: 12px;">Ordered by priority. Items marked "Correct" need a code change; "Skip" and "Validate" need a decision only.</p>
+  <table>
+    <tr><th>#</th><th>Finding</th><th>Severity</th><th>Decision</th><th>Effort</th></tr>
+    <tr><td>SG-01</td><td>Rewrite get_super_admin_uid() to use super_admins table</td><td><span class="tag tag-high">High</span></td><td><span class="tag tag-clean">Fixed</span></td><td>102_scan_fixes.sql</td></tr>
+    <tr><td>SG-02</td><td>REVOKE FROM anon on 7 SECURITY DEFINER functions</td><td><span class="tag tag-medium">Medium</span></td><td><span class="tag tag-clean">Fixed</span></td><td>102_scan_fixes.sql</td></tr>
+    <tr><td>SG-03</td><td>Drop app_settings USING(true) SELECT policy</td><td><span class="tag tag-medium">Medium</span></td><td><span class="tag tag-clean">Fixed</span></td><td>102_scan_fixes.sql + LanguageContext.tsx</td></tr>
+    <tr><td>SG-04</td><td>send-notification-email role/self check</td><td><span class="tag tag-medium">Medium</span></td><td>Validate</td><td>Small if needed</td></tr>
+    <tr><td>SG-05</td><td>Document app_translations USING(true) as intentional</td><td><span class="tag tag-low">Low</span></td><td>Skip (document)</td><td>Comment only</td></tr>
+    <tr><td>SG-06</td><td>Hardcoded email in migration 020 (already overridden)</td><td><span class="tag tag-low">Low</span></td><td>Skip</td><td>None</td></tr>
+  </table>
+</div>
+
+<div class="footer">
+  <p>InflowHR Security Scan &bull; Generated 19 September 2026 &bull; Tools: Semgrep 1.136.0 + manual Supabase audit</p>
+</div>
+
+</div>
+</body>
+</html>
