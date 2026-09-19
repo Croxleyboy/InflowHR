@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": {
+          "tool_name": "Edit",
+          "file_paths": ["src/**/*.ts", "src/**/*.tsx"]
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsc --noEmit 2>&1 | tail -20"
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "tool_name": "Write",
+          "file_paths": ["src/**/*.ts", "src/**/*.tsx"]
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsc --noEmit 2>&1 | tail -20"
+          }
+        ]
+      }
+    ]
+  }
+}
