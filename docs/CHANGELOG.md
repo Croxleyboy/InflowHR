@@ -48,6 +48,9 @@ Categories: `SECURITY` `FEATURE` `FIX` `GDPR` `INFRASTRUCTURE` `REFACTOR`
 |------|----------|-------------|-----------|-------------|
 | 19-09-2026 | INFRASTRUCTURE | AI development framework (CLAUDE.md, rules, hooks, skills) | — | Embeds GDPR guardrails into dev process |
 | 19-09-2026 | SECURITY | REVOKE remaining 10 SECURITY DEFINER functions from anon | migration 103 | Defence-in-depth on GDPR functions |
+| 19-09-2026 | GDPR | Subprocessor list documenting all third-party data processors | docs/SUBPROCESSORS.md | GDPR Article 28 compliance |
+| 19-09-2026 | INFRASTRUCTURE | Backup & recovery plan with RPO/RTO targets | docs/BACKUP_AND_RECOVERY.md | Supports GDPR Article 32 |
+| 19-09-2026 | SECURITY | Vulnerability disclosure policy (security.txt) | public/.well-known/security.txt | Responsible disclosure process |
 
 ---
 

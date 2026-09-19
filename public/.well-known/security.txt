@@ -1,0 +1,18 @@
+# InflowHR Security Contact
+# https://securitytxt.org/
+
+Contact: mailto:security@inflowhr.com
+Expires: 2027-09-19T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://app.inflowhr.com/.well-known/security.txt
+Policy: https://app.inflowhr.com/security-policy
+
+# If you have discovered a security vulnerability, please report it
+# responsibly to security@inflowhr.com. We will acknowledge receipt
+# within 48 hours and aim to provide a fix within 30 days.
+#
+# We do not pursue legal action against researchers who:
+# - Act in good faith
+# - Avoid accessing or modifying other users' data
+# - Do not disrupt our services
+# - Report findings privately before any public disclosure
