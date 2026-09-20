@@ -1,4 +1,5 @@
 # InflowHR Development Standards
+**Last updated:** 19-09-2026
 
 Human-readable reference for contributors and auditors. AI-enforced standards are in `CLAUDE.md` (project root).
 
