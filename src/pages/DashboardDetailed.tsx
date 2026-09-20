@@ -50,23 +50,15 @@ interface KudosItem {
   from_employee: { first_name: string; last_name: string } | null
 }
 
-const BORDER_COLORS: Record<string, string> = {
-  expenses: '#c62828',
-  leave: '#2e7d32',
-  profile: '#7b1fa2',
-  payslips: '#1a237e',
-  kudos: '#546e7a',
-  benefits: '#80deea',
-  elearning: '#f9a825',
-  performance: '#c2185b',
-  timesheets: '#1565c0',
-  shifts: '#e65100',
-  space_booking: '#263238',
-  legal_timesheets: '#00695c',
-  notifications: '#5c6bc0',
-  birthdays: '#e91e63',
-  anniversaries: '#ff9800',
-  announcements: '#8b0000',
+const SECTION_ICONS: Record<string, string> = {
+  leave: '🏖️',
+  notifications: '🔔',
+  expenses: '💷',
+  kudos: '⭐',
+  meetings: '👥',
+  newsfeed: '📢',
+  birthdays: '🎂',
+  anniversaries: '🎉',
 }
 
 export default function DashboardDetailed() {
@@ -91,6 +83,7 @@ export default function DashboardDetailed() {
   const [pendingOneToOnes, setPendingOneToOnes] = useState(0)
 
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
+  const firstName = employeeName.split(' ')[0] || employeeName
 
   useEffect(() => {
     if (!employeeId || !companyUser?.company_id) return
@@ -100,7 +93,6 @@ export default function DashboardDetailed() {
     const yearStart = `${year}-01-01`
     const yearEnd = `${year}-12-31`
 
-    // Leave data
     supabase.from('leave_types').select('id, name').eq('company_id', cid).eq('name', 'Annual Leave').limit(1).single()
       .then(async ({ data: annualType }) => {
         if (!annualType) return
@@ -126,7 +118,6 @@ export default function DashboardDetailed() {
         setLeaveRemaining(total - approved)
       })
 
-    // Upcoming leave
     supabase.from('leave_requests')
       .select('id, start_date, end_date, days_requested, status, leave_type:leave_types(name)')
       .eq('employee_id', employeeId).eq('company_id', cid)
@@ -134,14 +125,12 @@ export default function DashboardDetailed() {
       .order('start_date').limit(5)
       .then(({ data }) => { if (data) setUpcomingLeave(data as any) })
 
-    // Notifications
     supabase.from('notifications')
       .select('id, title, message, type, created_at, is_read')
       .eq('employee_id', employeeId).eq('company_id', cid)
       .order('created_at', { ascending: false }).limit(5)
       .then(({ data }) => { if (data) setRecentNotifications(data as Notification[]) })
 
-    // Birthdays (watchlist only, next 7 days) & anniversaries (all, next 30 days)
     let watchlistIds: string[] = []
     try { watchlistIds = JSON.parse(localStorage.getItem('inflowhr-kudos-watchlist') || '[]') } catch { /* empty */ }
 
@@ -182,7 +171,6 @@ export default function DashboardDetailed() {
         setAnniversaries(annivs.slice(0, 6))
       })
 
-    // Expenses
     if (features.expenses) {
       supabase.from('expense_claims')
         .select('id, amount, status, created_at, description')
@@ -196,7 +184,6 @@ export default function DashboardDetailed() {
         })
     }
 
-    // Kudos
     if (features.kudos) {
       supabase.from('kudos')
         .select('id, message, created_at, from_employee:employees!kudos_from_employee_id_fkey(first_name, last_name)')
@@ -205,13 +192,11 @@ export default function DashboardDetailed() {
         .then(({ data }) => { if (data) setRecentKudos(data as any) })
     }
 
-    // Announcements
     supabase.from('announcements')
       .select('title, body').eq('company_id', cid)
       .order('published_at', { ascending: false }).limit(1).single()
       .then(({ data }) => { if (data) setLatestAnnouncement(data) })
 
-    // 1:1 meetings
     if (features.performance) {
       supabase.from('one_to_one_meetings')
         .select('id', { count: 'exact', head: true })
@@ -228,49 +213,39 @@ export default function DashboardDetailed() {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
 
-  function Widget({ title, color, onClick, children, className }: {
-    title: string; color: string; onClick?: () => void; children: React.ReactNode; className?: string
-  }) {
-    return (
-      <div className={`dd-widget ${className || ''}`} style={{ borderTop: `3px solid ${color}` }} onClick={onClick}>
-        <div className="dd-widget-header">
-          <h3 className="dd-widget-title">{title}</h3>
-        </div>
-        <div className="dd-widget-body">{children}</div>
-      </div>
-    )
-  }
+  const unreadCount = recentNotifications.filter(n => !n.is_read).length
 
   return (
-    <div className="dashboard-detailed">
-      <header className="dd-header">
-        <div className="dd-header-left">
+    <div className="dd2">
+      {/* Header */}
+      <header className="dd2-header">
+        <div className="dd2-header-left">
           {avatarUrl ? (
-            <img className="dd-avatar" src={avatarUrl} alt={initials} />
+            <img className="dd2-avatar" src={avatarUrl} alt={initials} />
           ) : (
-            <div className="dd-avatar dd-avatar-initials">{initials}</div>
+            <div className="dd2-avatar dd2-avatar-initials">{initials}</div>
           )}
-          <div className="dd-header-info">
-            <h1 className="dd-greeting">{greeting} <span style={{ whiteSpace: 'nowrap' }}>{employeeName}</span></h1>
-            <p className="dd-date">{dateStr}</p>
+          <div>
+            <h1 className="dd2-greeting">{greeting} {firstName}</h1>
+            <p className="dd2-date">{dateStr}</p>
           </div>
         </div>
-        <div className="dd-header-right">
+        <div className="dd2-header-right">
           {company?.logo_url ? (
-            <img className="dd-company-logo" src={company.logo_url} alt={company.name} />
+            <img className="dd2-company-logo" src={company.logo_url} alt={company.name} />
           ) : (
-            <span className="dd-company-name">{company?.name || 'InflowHR'}</span>
+            <span className="dd2-company-name">{company?.name || 'InflowHR'}</span>
           )}
-          <div className="dd-header-actions">
-            <button className="dd-icon-btn" onClick={toggle} aria-label="Toggle dark mode" title="Toggle theme">
+          <div className="dd2-header-actions">
+            <button className="dd2-action-btn" onClick={toggle} title="Toggle theme">
               {dark ? (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></g></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></g></svg>
               ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
               )}
             </button>
-            <button className="dd-icon-btn" onClick={signOut} aria-label="Sign out" title="Sign out">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <button className="dd2-action-btn" onClick={signOut} title="Sign out">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
               </svg>
             </button>
@@ -278,191 +253,247 @@ export default function DashboardDetailed() {
         </div>
       </header>
 
-      <div className="dd-grid">
-        {/* My Allowances */}
-        {features.leave && (
-          <Widget title="My Allowances" color={BORDER_COLORS.leave} onClick={() => navigate('/leave')} className="dd-clickable">
-            <div className="dd-allowance-grid">
-              <div className="dd-stat">
-                <span className="dd-stat-label dd-stat-pending">Pending</span>
-                <span className="dd-stat-value">{leavePending ?? 0} Days</span>
+      {/* Summary strip */}
+      {features.leave && (
+        <div className="dd2-summary-strip">
+          <div className="dd2-summary-card dd2-summary-remaining" onClick={() => navigate('/leave')}>
+            <span className="dd2-summary-value">{leaveRemaining ?? '--'}</span>
+            <span className="dd2-summary-label">Days Remaining</span>
+          </div>
+          <div className="dd2-summary-card dd2-summary-approved" onClick={() => navigate('/leave')}>
+            <span className="dd2-summary-value">{leaveApproved ?? 0}</span>
+            <span className="dd2-summary-label">Approved</span>
+          </div>
+          <div className="dd2-summary-card dd2-summary-pending" onClick={() => navigate('/leave')}>
+            <span className="dd2-summary-value">{leavePending ?? 0}</span>
+            <span className="dd2-summary-label">Pending</span>
+          </div>
+          <div className="dd2-summary-card dd2-summary-total" onClick={() => navigate('/leave')}>
+            <span className="dd2-summary-value">{leaveTotal ?? '--'}</span>
+            <span className="dd2-summary-label">Total Allowance</span>
+          </div>
+        </div>
+      )}
+
+      {/* Main content grid */}
+      <div className="dd2-grid">
+        {/* Left column */}
+        <div className="dd2-col">
+          {/* Upcoming Leave */}
+          {features.leave && (
+            <section className="dd2-card" onClick={() => navigate('/leave')}>
+              <div className="dd2-card-header">
+                <span className="dd2-card-icon">{SECTION_ICONS.leave}</span>
+                <h2 className="dd2-card-title">Upcoming Leave</h2>
+                <span className="dd2-card-count">{upcomingLeave.length}</span>
               </div>
-              <div className="dd-stat">
-                <span className="dd-stat-label dd-stat-approved">Approved</span>
-                <span className="dd-stat-value">{leaveApproved ?? 0} Days</span>
+              <div className="dd2-card-body">
+                {upcomingLeave.length === 0 ? (
+                  <p className="dd2-empty">No upcoming leave planned</p>
+                ) : (
+                  <ul className="dd2-item-list">
+                    {upcomingLeave.map(lr => (
+                      <li key={lr.id} className="dd2-item">
+                        <span className={`dd2-badge dd2-badge-${lr.status}`}>{lr.status}</span>
+                        <div className="dd2-item-content">
+                          <span className="dd2-item-title">{(lr.leave_type as any)?.name || 'Leave'}</span>
+                          <span className="dd2-item-sub">{formatDate(lr.start_date)} – {formatDate(lr.end_date)} ({lr.days_requested}d)</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              <div className="dd-stat">
-                <span className="dd-stat-label dd-stat-remaining">Remaining</span>
-                <span className="dd-stat-value">{leaveRemaining ?? '--'} Days</span>
-              </div>
-              <div className="dd-stat">
-                <span className="dd-stat-label">Total</span>
-                <span className="dd-stat-value">{leaveTotal ?? '--'} Days</span>
-              </div>
+            </section>
+          )}
+
+          {/* Notifications */}
+          <section className="dd2-card" onClick={() => navigate('/notifications')}>
+            <div className="dd2-card-header">
+              <span className="dd2-card-icon">{SECTION_ICONS.notifications}</span>
+              <h2 className="dd2-card-title">Notifications</h2>
+              {unreadCount > 0 && <span className="dd2-card-count dd2-card-count-alert">{unreadCount} new</span>}
             </div>
-          </Widget>
-        )}
+            <div className="dd2-card-body">
+              {recentNotifications.length === 0 ? (
+                <p className="dd2-empty">No recent notifications</p>
+              ) : (
+                <ul className="dd2-item-list">
+                  {recentNotifications.map(n => (
+                    <li key={n.id} className={`dd2-item ${!n.is_read ? 'dd2-item-unread' : ''}`}>
+                      <span className={`dd2-notif-indicator dd2-notif-${n.type}`} />
+                      <div className="dd2-item-content">
+                        <span className="dd2-item-title">{n.title}</span>
+                        <span className="dd2-item-sub">{n.message.length > 60 ? n.message.slice(0, 60) + '…' : n.message}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
 
-        {/* Leave Countdown */}
-        {features.leave && (
-          <Widget title="Leave Countdown" color={BORDER_COLORS.leave} onClick={() => navigate('/leave')} className="dd-clickable">
-            {upcomingLeave.length === 0 ? (
-              <p className="dd-empty">No upcoming leave planned</p>
-            ) : (
-              <div className="dd-list">
-                {upcomingLeave.map(lr => (
-                  <div key={lr.id} className="dd-list-row">
-                    <span className={`dd-status-dot dd-status-${lr.status}`} />
-                    <div className="dd-list-detail">
-                      <span className="dd-list-primary">{(lr.leave_type as any)?.name || 'Leave'}</span>
-                      <span className="dd-list-secondary">{formatDate(lr.start_date)} – {formatDate(lr.end_date)} ({lr.days_requested}d)</span>
-                    </div>
-                  </div>
-                ))}
+          {/* Expenses */}
+          {features.expenses && (
+            <section className="dd2-card" onClick={() => navigate('/expenses')}>
+              <div className="dd2-card-header">
+                <span className="dd2-card-icon">{SECTION_ICONS.expenses}</span>
+                <h2 className="dd2-card-title">Expenses</h2>
+                <span className="dd2-card-count">&pound;{expenseTotal.toFixed(2)}</span>
               </div>
-            )}
-          </Widget>
-        )}
+              <div className="dd2-card-body">
+                {recentExpenses.length === 0 ? (
+                  <p className="dd2-empty">No expense claims</p>
+                ) : (
+                  <ul className="dd2-item-list">
+                    {recentExpenses.slice(0, 3).map(e => (
+                      <li key={e.id} className="dd2-item">
+                        <span className={`dd2-badge dd2-badge-${e.status}`}>{e.status}</span>
+                        <div className="dd2-item-content">
+                          <span className="dd2-item-title">&pound;{Number(e.amount).toFixed(2)}</span>
+                          <span className="dd2-item-sub">{e.description || e.status}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
 
-        {/* Notifications */}
-        <Widget title="Notifications" color={BORDER_COLORS.notifications} onClick={() => navigate('/notifications')} className="dd-clickable">
-          {recentNotifications.length === 0 ? (
-            <p className="dd-empty">No recent notifications</p>
-          ) : (
-            <div className="dd-list">
-              {recentNotifications.map(n => (
-                <div key={n.id} className={`dd-list-row ${!n.is_read ? 'dd-unread' : ''}`}>
-                  <span className={`dd-notif-dot dd-notif-${n.type}`} />
-                  <div className="dd-list-detail">
-                    <span className="dd-list-primary">{n.title}</span>
-                    <span className="dd-list-secondary">{n.message.length > 60 ? n.message.slice(0, 60) + '…' : n.message}</span>
-                  </div>
+        {/* Right column */}
+        <div className="dd2-col">
+          {/* Kudos */}
+          {features.kudos && (
+            <section className="dd2-card" onClick={() => navigate('/kudos')}>
+              <div className="dd2-card-header">
+                <span className="dd2-card-icon">{SECTION_ICONS.kudos}</span>
+                <h2 className="dd2-card-title">Recent Kudos</h2>
+                <span className="dd2-card-count">{recentKudos.length}</span>
+              </div>
+              <div className="dd2-card-body">
+                {recentKudos.length === 0 ? (
+                  <p className="dd2-empty">No kudos yet</p>
+                ) : (
+                  <ul className="dd2-item-list">
+                    {recentKudos.map(k => (
+                      <li key={k.id} className="dd2-item">
+                        <div className="dd2-person-circle">
+                          {k.from_employee ? `${k.from_employee.first_name[0]}${k.from_employee.last_name[0]}` : '?'}
+                        </div>
+                        <div className="dd2-item-content">
+                          <span className="dd2-item-title">{k.from_employee ? `${k.from_employee.first_name} ${k.from_employee.last_name}` : 'Someone'}</span>
+                          <span className="dd2-item-sub">{k.message.length > 50 ? k.message.slice(0, 50) + '…' : k.message}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* 1:1 Meetings */}
+          {features.performance && (
+            <section className="dd2-card" onClick={() => navigate('/one-to-ones')}>
+              <div className="dd2-card-header">
+                <span className="dd2-card-icon">{SECTION_ICONS.meetings}</span>
+                <h2 className="dd2-card-title">1:1 Meetings</h2>
+              </div>
+              <div className="dd2-card-body">
+                <div className="dd2-meeting-hero">
+                  <span className="dd2-meeting-num">{pendingOneToOnes}</span>
+                  <span className="dd2-meeting-text">upcoming meeting{pendingOneToOnes !== 1 ? 's' : ''}</span>
                 </div>
-              ))}
-            </div>
-          )}
-        </Widget>
-
-        {/* Expenses */}
-        {features.expenses && (
-          <Widget title="Expenses" color={BORDER_COLORS.expenses} onClick={() => navigate('/expenses')} className="dd-clickable">
-            <div className="dd-expense-summary">
-              <span className="dd-expense-total">&pound;{expenseTotal.toFixed(2)}</span>
-              <span className="dd-expense-label">Total claims</span>
-            </div>
-            {recentExpenses.length === 0 ? (
-              <p className="dd-empty">No expense claims</p>
-            ) : (
-              <div className="dd-list">
-                {recentExpenses.slice(0, 3).map(e => (
-                  <div key={e.id} className="dd-list-row">
-                    <span className={`dd-status-dot dd-status-${e.status}`} />
-                    <div className="dd-list-detail">
-                      <span className="dd-list-primary">&pound;{Number(e.amount).toFixed(2)}</span>
-                      <span className="dd-list-secondary">{e.description || e.status}</span>
-                    </div>
-                  </div>
-                ))}
               </div>
-            )}
-          </Widget>
-        )}
-
-        {/* Recent Kudos */}
-        {features.kudos && (
-          <Widget title="Recent Kudos" color={BORDER_COLORS.kudos} onClick={() => navigate('/kudos')} className="dd-clickable">
-            {recentKudos.length === 0 ? (
-              <p className="dd-empty">No kudos yet</p>
-            ) : (
-              <div className="dd-list">
-                {recentKudos.map(k => (
-                  <div key={k.id} className="dd-list-row">
-                    <div className="dd-kudos-avatar">{k.from_employee ? `${k.from_employee.first_name[0]}${k.from_employee.last_name[0]}` : '?'}</div>
-                    <div className="dd-list-detail">
-                      <span className="dd-list-primary">{k.from_employee ? `${k.from_employee.first_name} ${k.from_employee.last_name}` : 'Someone'}</span>
-                      <span className="dd-list-secondary">{k.message.length > 50 ? k.message.slice(0, 50) + '…' : k.message}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Widget>
-        )}
-
-        {/* 1:1 Meetings */}
-        {features.performance && (
-          <Widget title="1:1 Meetings" color={BORDER_COLORS.performance} onClick={() => navigate('/one-to-ones')} className="dd-clickable">
-            <div className="dd-meeting-count">
-              <span className="dd-meeting-number">{pendingOneToOnes}</span>
-              <span className="dd-meeting-label">upcoming meeting{pendingOneToOnes !== 1 ? 's' : ''}</span>
-            </div>
-          </Widget>
-        )}
-
-        {/* Newsfeed / Announcements */}
-        <Widget title="Newsfeed" color={BORDER_COLORS.announcements} onClick={() => navigate('/notifications', { state: { tab: 'company' } })} className="dd-clickable">
-          {latestAnnouncement ? (
-            <div className="dd-announcement">
-              <h4 className="dd-announcement-title">{latestAnnouncement.title}</h4>
-              <p className="dd-announcement-body">{latestAnnouncement.body.length > 120 ? latestAnnouncement.body.slice(0, 120) + '…' : latestAnnouncement.body}</p>
-            </div>
-          ) : (
-            <p className="dd-empty">No announcements</p>
+            </section>
           )}
-        </Widget>
 
-        {/* Birthdays */}
-        <Widget title={`Birthdays (${birthdays.length})`} color={BORDER_COLORS.birthdays}>
-          {birthdays.length === 0 ? (
-            <p className="dd-empty">No watchlist birthdays in the next 30 days — add colleagues via the Directory</p>
-          ) : (
-            <div className="dd-people-list">
-              {birthdays.map(c => {
-                const dob = new Date(c.date_of_birth!)
-                const bday = new Date(new Date().getFullYear(), dob.getMonth(), dob.getDate())
-                if (bday < new Date()) bday.setFullYear(bday.getFullYear() + 1)
-                const isToday = toLocalDateStr(bday) === toLocalDateStr()
-                return (
-                  <div key={c.id} className={`dd-person-row ${isToday ? 'dd-today' : ''}`}>
-                    {c.avatar_url ? (
-                      <img className="dd-person-avatar" src={c.avatar_url} alt="" />
-                    ) : (
-                      <div className="dd-person-avatar dd-person-initials">{c.first_name[0]}{c.last_name[0]}</div>
-                    )}
-                    <div className="dd-person-info">
-                      <span className="dd-person-name">{c.first_name} {c.last_name}</span>
-                      <span className="dd-person-date">{isToday ? 'Today!' : formatDate(bday.toISOString().split('T')[0])}</span>
-                    </div>
-                  </div>
-                )
-              })}
+          {/* Newsfeed */}
+          <section className="dd2-card" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
+            <div className="dd2-card-header">
+              <span className="dd2-card-icon">{SECTION_ICONS.newsfeed}</span>
+              <h2 className="dd2-card-title">Newsfeed</h2>
             </div>
-          )}
-        </Widget>
-
-        {/* Work Anniversaries */}
-        <Widget title={`Work Anniversaries (${anniversaries.length})`} color={BORDER_COLORS.anniversaries}>
-          {anniversaries.length === 0 ? (
-            <p className="dd-empty">No upcoming anniversaries</p>
-          ) : (
-            <div className="dd-people-list">
-              {anniversaries.map(c => (
-                <div key={c.id} className="dd-person-row">
-                  {c.avatar_url ? (
-                    <img className="dd-person-avatar" src={c.avatar_url} alt="" />
-                  ) : (
-                    <div className="dd-person-avatar dd-person-initials">{c.first_name[0]}{c.last_name[0]}</div>
-                  )}
-                  <div className="dd-person-info">
-                    <span className="dd-person-name">{c.first_name} {c.last_name}</span>
-                    <span className="dd-person-date">{c.department}</span>
-                  </div>
+            <div className="dd2-card-body">
+              {latestAnnouncement ? (
+                <div className="dd2-announcement">
+                  <h4 className="dd2-announcement-title">{latestAnnouncement.title}</h4>
+                  <p className="dd2-announcement-body">{latestAnnouncement.body.length > 120 ? latestAnnouncement.body.slice(0, 120) + '…' : latestAnnouncement.body}</p>
                 </div>
-              ))}
+              ) : (
+                <p className="dd2-empty">No announcements</p>
+              )}
             </div>
-          )}
-        </Widget>
+          </section>
 
+          {/* Birthdays */}
+          <section className="dd2-card">
+            <div className="dd2-card-header">
+              <span className="dd2-card-icon">{SECTION_ICONS.birthdays}</span>
+              <h2 className="dd2-card-title">Birthdays</h2>
+              <span className="dd2-card-count">{birthdays.length}</span>
+            </div>
+            <div className="dd2-card-body">
+              {birthdays.length === 0 ? (
+                <p className="dd2-empty">No watchlist birthdays in the next 30 days — add colleagues via the Directory</p>
+              ) : (
+                <ul className="dd2-item-list">
+                  {birthdays.map(c => {
+                    const dob = new Date(c.date_of_birth!)
+                    const bday = new Date(new Date().getFullYear(), dob.getMonth(), dob.getDate())
+                    if (bday < new Date()) bday.setFullYear(bday.getFullYear() + 1)
+                    const isToday = toLocalDateStr(bday) === toLocalDateStr()
+                    return (
+                      <li key={c.id} className={`dd2-item ${isToday ? 'dd2-item-highlight' : ''}`}>
+                        {c.avatar_url ? (
+                          <img className="dd2-person-circle dd2-person-img" src={c.avatar_url} alt="" />
+                        ) : (
+                          <div className="dd2-person-circle">{c.first_name[0]}{c.last_name[0]}</div>
+                        )}
+                        <div className="dd2-item-content">
+                          <span className="dd2-item-title">{c.first_name} {c.last_name}</span>
+                          <span className="dd2-item-sub">{isToday ? 'Today!' : formatDate(bday.toISOString().split('T')[0])}</span>
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          {/* Work Anniversaries */}
+          <section className="dd2-card">
+            <div className="dd2-card-header">
+              <span className="dd2-card-icon">{SECTION_ICONS.anniversaries}</span>
+              <h2 className="dd2-card-title">Work Anniversaries</h2>
+              <span className="dd2-card-count">{anniversaries.length}</span>
+            </div>
+            <div className="dd2-card-body">
+              {anniversaries.length === 0 ? (
+                <p className="dd2-empty">No upcoming anniversaries</p>
+              ) : (
+                <ul className="dd2-item-list">
+                  {anniversaries.map(c => (
+                    <li key={c.id} className="dd2-item">
+                      {c.avatar_url ? (
+                        <img className="dd2-person-circle dd2-person-img" src={c.avatar_url} alt="" />
+                      ) : (
+                        <div className="dd2-person-circle">{c.first_name[0]}{c.last_name[0]}</div>
+                      )}
+                      <div className="dd2-item-content">
+                        <span className="dd2-item-title">{c.first_name} {c.last_name}</span>
+                        <span className="dd2-item-sub">{c.department}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
 # InflowHR Change Log
+**Last updated:** 20-09-2026
 
 Format: `DD-MM-YYYY | Category | Description | PR/Migration | GDPR Impact`
 
