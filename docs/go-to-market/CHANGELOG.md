@@ -51,6 +51,9 @@ Categories: `SECURITY` `FEATURE` `FIX` `GDPR` `INFRASTRUCTURE` `REFACTOR`
 | 19-09-2026 | GDPR | Subprocessor list documenting all third-party data processors | docs/SUBPROCESSORS.md | GDPR Article 28 compliance |
 | 19-09-2026 | INFRASTRUCTURE | Backup & recovery plan with RPO/RTO targets | docs/BACKUP_AND_RECOVERY.md | Supports GDPR Article 32 |
 | 19-09-2026 | SECURITY | Vulnerability disclosure policy (security.txt) | public/.well-known/security.txt | Responsible disclosure process |
+| 20-09-2026 | GDPR | Incident response plan with ICO notification procedures | docs/go-to-market/INCIDENT_RESPONSE_PLAN.md | GDPR Articles 33-34 compliance |
+| 20-09-2026 | INFRASTRUCTURE | Service level agreement with uptime targets and credits | docs/go-to-market/SERVICE_LEVEL_AGREEMENT.md | Customer assurance |
+| 20-09-2026 | INFRASTRUCTURE | Consolidated go-to-market documentation folder | docs/go-to-market/ | All compliance docs in one place |
 
 ---
 

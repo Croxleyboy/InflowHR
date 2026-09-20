@@ -86,4 +86,4 @@ If any change request has any form of UI impact or changes the admin or end user
 3. Run `npx vite build` — verify production build
 4. Test on port 3003
 5. Highlight any SQL migrations the user needs to run
-6. Update `docs/CHANGELOG.md` for security/GDPR changes
+6. Update `docs/go-to-market/CHANGELOG.md` for security/GDPR changes
