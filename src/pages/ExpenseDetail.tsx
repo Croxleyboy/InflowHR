@@ -7,6 +7,7 @@ import NewExpenseItem from './NewExpenseItem'
 import { formatDateTime } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
+import { sendTeamsNotification } from '../lib/teamsNotifications'
 
 interface Claim {
   id: number
@@ -124,6 +125,17 @@ export default function ExpenseDetail() {
       approval_status: 'Submitted',
       company_id: companyUser?.company_id,
     })
+
+    if (companyUser?.company_id && managerEmail) {
+      try {
+        await sendTeamsNotification({
+          companyId: companyUser.company_id,
+          managerEmail,
+          employeeName: HARDCODED_EMPLOYEE_NAME,
+          message: `Expense claim needs your approval: ${claim.reference_number} - ${claim.title} - £${totalAmount.toFixed(2)}`,
+        })
+      } catch { /* notification failure should not block the user */ }
+    }
 
     showSuccess('Expense claim submitted')
     window.dispatchEvent(new Event('notifications-updated'))

@@ -240,7 +240,7 @@ export default function AdminIntegrations() {
           <div style={{ flex: 1 }}>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1a1a2e' }}>Microsoft Teams</h3>
             <p style={{ margin: '2px 0 0', fontSize: 13, color: '#8b8fa3' }}>
-              Presence status &amp; automated notifications via Teams Bot
+              Presence status &amp; automated leave/expense notifications via Teams Bot
             </p>
           </div>
           <label className="admin-toggle-switch">
@@ -257,7 +257,7 @@ export default function AdminIntegrations() {
           <p style={{ margin: '0 0 8px', fontWeight: 600 }}>When enabled:</p>
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             <li>Employee presence status (Available, Busy, Away, etc.) appears in the HR Directory</li>
-            <li>Managers receive a Teams message from the InflowHR bot when an employee submits a leave request</li>
+            <li>Managers receive a Teams message from the InflowHR bot when an employee submits a leave request or expense claim</li>
           </ul>
         </div>
 
@@ -317,13 +317,14 @@ export default function AdminIntegrations() {
                       <li>Go to the <a href="https://portal.azure.com/#create/Microsoft.AzureBotService" target="_blank" rel="noopener noreferrer" style={{ color: '#5b5fc7' }}>Azure Bot Service</a> in the Azure Portal</li>
                       <li>Click <strong>Create</strong> and choose <strong>Azure Bot</strong></li>
                       <li>Give it a name (e.g. &quot;InflowHR Bot&quot;) and select your subscription</li>
-                      <li>Under <strong>Microsoft App ID</strong>, choose <strong>Create new</strong> (Single Tenant)</li>
-                      <li>Once created, go to <strong>Configuration</strong> and set the <strong>Messaging endpoint</strong> to:<br />
+                      <li>Under <strong>Microsoft App ID</strong>, choose <strong>Create new</strong> and select <strong>Single Tenant</strong> (this is required — Multi-Tenant will not work)</li>
+                      <li>Once created, go to <strong>Configuration</strong> and verify <strong>Bot Type</strong> shows <strong>SingleTenant</strong></li>
+                      <li>Set the <strong>Messaging endpoint</strong> to:<br />
                         <code style={{ background: '#e8e8f0', padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>
                           https://YOUR_SUPABASE_PROJECT.supabase.co/functions/v1/teams-bot-webhook
                         </code>
                       </li>
-                      <li>Go to <strong>Channels</strong> and add <strong>Microsoft Teams</strong></li>
+                      <li>Go to <strong>Channels</strong> and add <strong>Microsoft Teams</strong> — wait until the status shows <strong>Healthy</strong></li>
                     </ol>
                   </div>
 
@@ -364,6 +365,7 @@ export default function AdminIntegrations() {
                       </li>
                       <li>In <strong>Teams Admin Centre</strong> → <strong>Manage apps</strong> → <strong>Upload new app</strong>, upload the ZIP</li>
                       <li>Set an <strong>App setup policy</strong> to install it for all users, or let users install it themselves from the Teams app store</li>
+                      <li><strong>Important:</strong> Each user must open a chat with the bot at least once to register their conversation. Until they do, they will not receive notifications. Once registered, their &quot;users with bot installed&quot; count increases above</li>
                     </ol>
                   </div>
 
@@ -372,7 +374,7 @@ export default function AdminIntegrations() {
                     border: '1px solid #c6d9f7',
                   }}>
                     <strong>Note:</strong> Each user who has the bot installed will appear in the &quot;users with bot installed&quot; count above.
-                    Only users with the bot installed will receive Teams notifications for leave requests.
+                    Only users with the bot installed will receive Teams notifications for leave requests and expense claims.
                   </div>
                 </div>
               </div>
