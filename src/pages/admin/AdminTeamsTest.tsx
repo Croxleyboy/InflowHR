@@ -192,26 +192,41 @@ export default function AdminTeamsTest() {
         throw new Error(`Could not find ${selectedEmployee.email} in Azure AD`)
       }
 
-      const chatRes = await graphFetch('/chats', {
-        method: 'POST',
-        body: JSON.stringify({
-          chatType: 'oneOnOne',
-          members: [
-            {
-              '@odata.type': '#microsoft.graph.aadUserConversationMember',
-              roles: ['owner'],
-              'user@odata.bind': `${GRAPH_BASE}/users('${myAzureId}')`,
-            },
-            {
-              '@odata.type': '#microsoft.graph.aadUserConversationMember',
-              roles: ['owner'],
-              'user@odata.bind': `${GRAPH_BASE}/users('${targetId}')`,
-            },
-          ],
-        }),
-      })
+      let chatId: string
+      try {
+        const chatRes = await graphFetch('/chats', {
+          method: 'POST',
+          body: JSON.stringify({
+            chatType: 'oneOnOne',
+            members: [
+              {
+                '@odata.type': '#microsoft.graph.aadUserConversationMember',
+                roles: ['owner'],
+                'user@odata.bind': `${GRAPH_BASE}/users('${myAzureId}')`,
+              },
+              {
+                '@odata.type': '#microsoft.graph.aadUserConversationMember',
+                roles: ['owner'],
+                'user@odata.bind': `${GRAPH_BASE}/users('${targetId}')`,
+              },
+            ],
+          }),
+        })
+        chatId = chatRes.id
+      } catch (chatErr: any) {
+        if (chatErr.message?.includes('Duplicate') || chatErr.message?.includes('duplicate')) {
+          const existing = await graphFetch(`/users/${myAzureId}/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`)
+          const found = existing.value?.find((c: any) =>
+            c.members?.some((m: any) => m.userId === targetId)
+          )
+          if (!found) throw new Error('Could not find existing chat with this user')
+          chatId = found.id
+        } else {
+          throw chatErr
+        }
+      }
 
-      await graphFetch(`/chats/${chatRes.id}/messages`, {
+      await graphFetch(`/chats/${chatId}/messages`, {
         method: 'POST',
         body: JSON.stringify({
           body: { content: message.trim() },
