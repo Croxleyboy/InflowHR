@@ -65,7 +65,7 @@ const EMPTY_COURSE: DbCourse = {
   annual_reminder: false, industry: null, external_url: null, is_active: true, company_id: null,
 }
 
-type TabKey = 'courses' | 'visibility' | 'company_courses' | 'library'
+type TabKey = 'courses' | 'visibility' | 'company_courses' | 'library' | 'analytics'
 
 export default function AdminELearning() {
   const { selectedCompanyId } = useAdminCompany()
@@ -119,6 +119,7 @@ export default function AdminELearning() {
     : [
         { key: 'library', label: 'Course Library', show: true },
         { key: 'company_courses', label: 'Company Courses', show: true },
+        { key: 'analytics', label: 'Analytics', show: true },
       ]
 
   return (
@@ -176,6 +177,9 @@ export default function AdminELearning() {
       )}
       {tab === 'company_courses' && !isSuperAdmin && (
         <CompanyCourseTab companyId={selectedCompanyId} showError={showError} showSuccess={showSuccess} />
+      )}
+      {tab === 'analytics' && !isSuperAdmin && (
+        <AnalyticsTab companyId={selectedCompanyId} />
       )}
     </div>
   )
@@ -1040,6 +1044,386 @@ function SuperAdminVisibilityTab() {
         </div>
       )}
     </>
+  )
+}
+
+/* ────── Analytics Tab (Company Admin) ────── */
+
+interface EnrolmentRow {
+  employee_id: string
+  course_id: string
+  status: string
+  progress_pct: number
+  started_at: string | null
+  completed_at: string | null
+  enrolled_at: string | null
+  company_id: string
+}
+
+interface CompletionRow {
+  employee_id: string
+  course_id: string
+  completed_at: string
+}
+
+interface EmployeeRow {
+  id: string
+  department: string | null
+  first_name: string
+  last_name: string
+}
+
+function AnalyticsTab({ companyId }: { companyId: string }) {
+  const [loading, setLoading] = useState(true)
+  const [courses, setCourses] = useState<DbCourse[]>([])
+  const [enrolments, setEnrolments] = useState<EnrolmentRow[]>([])
+  const [completions, setCompletions] = useState<CompletionRow[]>([])
+  const [employees, setEmployees] = useState<EmployeeRow[]>([])
+
+  const fetchData = useCallback(async () => {
+    if (!companyId) return
+    setLoading(true)
+    const [coursesRes, enrolRes, complRes, empRes] = await Promise.all([
+      supabase.from('elearning_courses').select('*').eq('is_active', true),
+      supabase.from('course_enrolments').select('employee_id, course_id, status, progress_pct, started_at, completed_at, enrolled_at, company_id').eq('company_id', companyId),
+      supabase.from('elearning_completions').select('employee_id, course_id, completed_at').eq('company_id', companyId),
+      supabase.from('employees').select('id, department, first_name, last_name').eq('company_id', companyId).eq('is_active', true),
+    ])
+    setCourses(((coursesRes.data as DbCourse[]) || []).filter(c => c.company_id === null || c.company_id === companyId))
+    setEnrolments((enrolRes.data as EnrolmentRow[]) || [])
+    setCompletions((complRes.data as CompletionRow[]) || [])
+    setEmployees((empRes.data as EmployeeRow[]) || [])
+    setLoading(false)
+  }, [companyId])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  const stats = useMemo(() => {
+    const totalEnrolments = enrolments.length
+    const completed = enrolments.filter(e => e.status === 'completed').length
+    const inProgress = enrolments.filter(e => e.status === 'in_progress').length
+    const notStarted = enrolments.filter(e => e.status === 'not_started').length
+    const completionRate = totalEnrolments > 0 ? Math.round((completed / totalEnrolments) * 100) : 0
+
+    const courseCompletionMap: Record<string, { completed: number; total: number; title: string }> = {}
+    for (const e of enrolments) {
+      if (!courseCompletionMap[e.course_id]) {
+        const course = courses.find(c => c.id === e.course_id)
+        courseCompletionMap[e.course_id] = { completed: 0, total: 0, title: course?.title || e.course_id }
+      }
+      courseCompletionMap[e.course_id].total++
+      if (e.status === 'completed') courseCompletionMap[e.course_id].completed++
+    }
+
+    const popularCourses = Object.entries(courseCompletionMap)
+      .map(([id, d]) => ({ id, ...d, rate: d.total > 0 ? Math.round((d.completed / d.total) * 100) : 0 }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8)
+
+    const lowCompletion = Object.entries(courseCompletionMap)
+      .map(([id, d]) => ({ id, ...d, rate: d.total > 0 ? Math.round((d.completed / d.total) * 100) : 0 }))
+      .filter(c => c.rate < 50 && c.total >= 2)
+      .sort((a, b) => a.rate - b.rate)
+      .slice(0, 6)
+
+    const now = new Date()
+    const atRisk: { courseTitle: string; employeeName: string; daysLeft: number; progress: number }[] = []
+    for (const e of enrolments) {
+      if (e.status === 'completed') continue
+      const course = courses.find(c => c.id === e.course_id)
+      if (!course?.days_to_complete || !e.enrolled_at) continue
+      const enrollDate = new Date(e.enrolled_at)
+      const deadlineDate = new Date(enrollDate.getTime() + course.days_to_complete * 86400000)
+      const daysLeft = Math.ceil((deadlineDate.getTime() - now.getTime()) / 86400000)
+      if (daysLeft <= 14) {
+        const emp = employees.find(em => em.id === e.employee_id)
+        atRisk.push({
+          courseTitle: course.title,
+          employeeName: emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown',
+          daysLeft,
+          progress: e.progress_pct || 0,
+        })
+      }
+    }
+    atRisk.sort((a, b) => a.daysLeft - b.daysLeft)
+
+    const deptMap: Record<string, { completed: number; total: number }> = {}
+    for (const e of enrolments) {
+      const emp = employees.find(em => em.id === e.employee_id)
+      const dept = emp?.department || 'Unassigned'
+      if (!deptMap[dept]) deptMap[dept] = { completed: 0, total: 0 }
+      deptMap[dept].total++
+      if (e.status === 'completed') deptMap[dept].completed++
+    }
+    const deptBreakdown = Object.entries(deptMap)
+      .map(([dept, d]) => ({ dept, ...d, rate: d.total > 0 ? Math.round((d.completed / d.total) * 100) : 0 }))
+      .sort((a, b) => b.rate - a.rate)
+
+    const monthlyTrend: { month: string; count: number }[] = []
+    const monthMap: Record<string, number> = {}
+    for (const c of completions) {
+      const d = new Date(c.completed_at)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      monthMap[key] = (monthMap[key] || 0) + 1
+    }
+    const sortedMonths = Object.keys(monthMap).sort()
+    const recentMonths = sortedMonths.slice(-6)
+    for (const m of recentMonths) {
+      const [y, mo] = m.split('-')
+      const label = new Date(parseInt(y), parseInt(mo) - 1).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })
+      monthlyTrend.push({ month: label, count: monthMap[m] })
+    }
+
+    return { totalEnrolments, completed, inProgress, notStarted, completionRate, popularCourses, lowCompletion, atRisk, deptBreakdown, monthlyTrend }
+  }, [enrolments, completions, courses, employees])
+
+  if (loading) return <div className="admin-loading">Loading analytics...</div>
+
+  if (enrolments.length === 0) {
+    return (
+      <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted, #8b8fa3)' }}>
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ marginBottom: 12, opacity: 0.4 }}>
+          <path d="M18 20V10M12 20V4M6 20v-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <p style={{ fontSize: 15, fontWeight: 600 }}>No enrolment data yet</p>
+        <p style={{ fontSize: 13 }}>Analytics will appear once employees begin enrolling in courses.</p>
+      </div>
+    )
+  }
+
+  const maxPopular = Math.max(...stats.popularCourses.map(c => c.total), 1)
+  const maxTrend = Math.max(...stats.monthlyTrend.map(m => m.count), 1)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Summary cards */}
+      <div className="admin-mini-stats">
+        <div className="admin-mini-stat">
+          <span className="admin-mini-value">{stats.totalEnrolments}</span>
+          <span>Enrolments</span>
+        </div>
+        <div className="admin-mini-stat">
+          <span className="admin-mini-value" style={{ color: '#43a047' }}>{stats.completed}</span>
+          <span>Completed</span>
+        </div>
+        <div className="admin-mini-stat">
+          <span className="admin-mini-value" style={{ color: '#fb8c00' }}>{stats.inProgress}</span>
+          <span>In Progress</span>
+        </div>
+        <div className="admin-mini-stat">
+          <span className="admin-mini-value" style={{ color: '#e53935' }}>{stats.notStarted}</span>
+          <span>Not Started</span>
+        </div>
+        <div className="admin-mini-stat">
+          <span className="admin-mini-value" style={{ color: '#5c6bc0' }}>{stats.completionRate}%</span>
+          <span>Completion Rate</span>
+        </div>
+      </div>
+
+      {/* Charts row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+        {/* Donut chart */}
+        <div className="admin-el-editor" style={{ padding: 20 }}>
+          <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>Completion Overview</h3>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 24 }}>
+            <svg viewBox="0 0 120 120" width="140" height="140">
+              {(() => {
+                const total = stats.totalEnrolments || 1
+                const slices = [
+                  { value: stats.completed, color: '#43a047', label: 'Completed' },
+                  { value: stats.inProgress, color: '#fb8c00', label: 'In Progress' },
+                  { value: stats.notStarted, color: '#e53935', label: 'Not Started' },
+                ]
+                const r = 42
+                const cx = 60
+                const cy = 60
+                const circumference = 2 * Math.PI * r
+                let offset = 0
+                return (
+                  <>
+                    {slices.map((s, i) => {
+                      const pct = s.value / total
+                      const dashLength = pct * circumference
+                      const el = (
+                        <circle
+                          key={i}
+                          cx={cx} cy={cy} r={r}
+                          fill="none"
+                          stroke={s.color}
+                          strokeWidth="16"
+                          strokeDasharray={`${dashLength} ${circumference - dashLength}`}
+                          strokeDashoffset={-offset}
+                          transform={`rotate(-90 ${cx} ${cy})`}
+                        />
+                      )
+                      offset += dashLength
+                      return el
+                    })}
+                    <text x={cx} y={cy - 4} textAnchor="middle" fill="var(--text-primary, #1e293b)" fontSize="22" fontWeight="700">{stats.completionRate}%</text>
+                    <text x={cx} y={cy + 14} textAnchor="middle" fill="var(--text-muted, #8b8fa3)" fontSize="10">complete</text>
+                  </>
+                )
+              })()}
+            </svg>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: '#43a047', flexShrink: 0 }} />
+                Completed ({stats.completed})
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: '#fb8c00', flexShrink: 0 }} />
+                In Progress ({stats.inProgress})
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 3, background: '#e53935', flexShrink: 0 }} />
+                Not Started ({stats.notStarted})
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Monthly trend */}
+        {stats.monthlyTrend.length > 0 && (
+          <div className="admin-el-editor" style={{ padding: 20 }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>Monthly Completions</h3>
+            <svg viewBox={`0 0 ${Math.max(stats.monthlyTrend.length * 60, 200)} 140`} width="100%" height="160" style={{ overflow: 'visible' }}>
+              {stats.monthlyTrend.map((m, i) => {
+                const barW = 36
+                const x = i * 60 + 20
+                const barH = (m.count / maxTrend) * 100
+                const y = 110 - barH
+                return (
+                  <g key={i}>
+                    <rect x={x} y={y} width={barW} height={barH} rx={4} fill="#5c6bc0" opacity={0.85} />
+                    <text x={x + barW / 2} y={y - 6} textAnchor="middle" fill="var(--text-primary, #1e293b)" fontSize="11" fontWeight="600">{m.count}</text>
+                    <text x={x + barW / 2} y={128} textAnchor="middle" fill="var(--text-muted, #8b8fa3)" fontSize="10">{m.month}</text>
+                  </g>
+                )
+              })}
+              <line x1="10" y1="110" x2={stats.monthlyTrend.length * 60 + 10} y2="110" stroke="var(--border, #e5e7eb)" strokeWidth="1" />
+            </svg>
+          </div>
+        )}
+      </div>
+
+      {/* Popular courses */}
+      {stats.popularCourses.length > 0 && (
+        <div className="admin-el-editor" style={{ padding: 20 }}>
+          <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>Most Enrolled Courses</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {stats.popularCourses.map(c => (
+              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ flex: '0 0 200px', fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.title}>{c.title}</span>
+                <div style={{ flex: 1, height: 20, background: 'var(--surface-alt, #f1f5f9)', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                  <div style={{ height: '100%', width: `${(c.total / maxPopular) * 100}%`, background: '#5c6bc0', borderRadius: 4, position: 'relative' }}>
+                    <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${c.rate}%`, background: '#43a047', borderRadius: '4px 0 0 4px' }} />
+                  </div>
+                </div>
+                <span style={{ flex: '0 0 80px', fontSize: 12, textAlign: 'right', color: 'var(--text-muted, #8b8fa3)' }}>
+                  {c.completed}/{c.total} ({c.rate}%)
+                </span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--text-muted, #8b8fa3)', marginTop: 4 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: '#43a047' }} /> Completed
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: '#5c6bc0' }} /> Enrolled
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Department breakdown + At Risk / Low completion */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
+        {/* Department breakdown */}
+        {stats.deptBreakdown.length > 0 && (
+          <div className="admin-el-editor" style={{ padding: 20 }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>Department Completion</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {stats.deptBreakdown.map(d => (
+                <div key={d.dept}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                    <span style={{ fontWeight: 500 }}>{d.dept}</span>
+                    <span style={{ color: 'var(--text-muted, #8b8fa3)' }}>{d.rate}% ({d.completed}/{d.total})</span>
+                  </div>
+                  <div style={{ height: 10, background: 'var(--surface-alt, #f1f5f9)', borderRadius: 5, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${d.rate}%`, background: d.rate >= 75 ? '#43a047' : d.rate >= 50 ? '#fb8c00' : '#e53935', borderRadius: 5, transition: 'width 0.3s' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* At risk */}
+        {stats.atRisk.length > 0 && (
+          <div className="admin-el-editor" style={{ padding: 20 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#e53935' }}>
+              At Risk — Approaching Deadline
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-muted, #8b8fa3)' }}>
+              Courses due within 14 days that are not yet completed
+            </p>
+            <div className="admin-table-wrap">
+              <table className="admin-table" style={{ fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Course</th>
+                    <th>Progress</th>
+                    <th>Days Left</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stats.atRisk.slice(0, 10).map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.employeeName}</td>
+                      <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.courseTitle}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 60, height: 6, background: 'var(--surface-alt, #f1f5f9)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${r.progress}%`, background: r.daysLeft <= 3 ? '#e53935' : '#fb8c00', borderRadius: 3 }} />
+                          </div>
+                          <span style={{ fontSize: 11 }}>{r.progress}%</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 700, color: r.daysLeft <= 0 ? '#e53935' : r.daysLeft <= 3 ? '#fb8c00' : 'var(--text-primary, #1e293b)' }}>
+                          {r.daysLeft <= 0 ? 'Overdue' : `${r.daysLeft}d`}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Low completion courses */}
+        {stats.lowCompletion.length > 0 && (
+          <div className="admin-el-editor" style={{ padding: 20 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: '#fb8c00' }}>
+              Low Completion Courses
+            </h3>
+            <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-muted, #8b8fa3)' }}>
+              Courses with under 50% completion rate (2+ enrolments)
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {stats.lowCompletion.map(c => (
+                <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--surface-alt, #f8fafc)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)' }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }} title={c.title}>{c.title}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: c.rate < 25 ? '#e53935' : '#fb8c00' }}>{c.rate}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 

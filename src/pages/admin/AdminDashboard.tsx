@@ -35,6 +35,11 @@ interface CompanyStats {
   pendingExpenses: number
   pendingLeave: number
   kudos: number
+  elearningRate: number
+  upcomingShifts: number
+  spacesAvailable: number
+  totalAssets: number
+  assetsChange: number
 }
 
 interface TrendPoint { label: string; value: number }
@@ -112,6 +117,29 @@ export default function AdminDashboard() {
       eq(supabase.from('kudos').select('id', { count: 'exact', head: true })),
     ])
 
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const now = new Date()
+    const monthAgoStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10)
+    const monthAgoEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10)
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+
+    const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev] = await Promise.all([
+      eq(supabase.from('course_enrolments').select('id', { count: 'exact', head: true })),
+      eq(supabase.from('course_enrolments').select('id', { count: 'exact', head: true }).eq('status', 'completed')),
+      eq(supabase.from('shift_assignments').select('id', { count: 'exact', head: true }).gte('shift_date', todayStr)),
+      eq(supabase.from('spaces').select('id', { count: 'exact', head: true }).eq('is_active', true)),
+      eq(supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('booking_date', todayStr)),
+      eq(supabase.from('company_assets').select('id', { count: 'exact', head: true })),
+      eq(supabase.from('company_assets').select('id', { count: 'exact', head: true }).lte('created_at', monthAgoEnd + 'T23:59:59')),
+    ])
+
+    const enrolTotal = enrolAll.count ?? 0
+    const enrolComplete = enrolDone.count ?? 0
+    const elearningRate = enrolTotal > 0 ? Math.round((enrolComplete / enrolTotal) * 100) : 0
+    const assetsNowCount = assetsNow.count ?? 0
+    const assetsPrevCount = assetsPrev.count ?? 0
+    const assetsChange = assetsPrevCount > 0 ? Math.round(((assetsNowCount - assetsPrevCount) / assetsPrevCount) * 100) : (assetsNowCount > 0 ? 100 : 0)
+
     setCompanyStats({
       totalEmployees: emp.count ?? 0,
       benefits: ben.count ?? 0,
@@ -125,6 +153,11 @@ export default function AdminDashboard() {
       pendingExpenses: exp.count ?? 0,
       pendingLeave: leave.count ?? 0,
       kudos: kudos.count ?? 0,
+      elearningRate,
+      upcomingShifts: upShifts.count ?? 0,
+      spacesAvailable: Math.max(0, (totalSpaces.count ?? 0) - (bookedSpaces.count ?? 0)),
+      totalAssets: assetsNowCount,
+      assetsChange,
     })
 
     const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -344,6 +377,7 @@ function CompanyDash({
   const cards: {
     label: string; value: number; color: string; path: string
     chart?: 'line' | 'bar'; chartData?: TrendPoint[]
+    suffix?: string; subtitle?: string; change?: number
   }[] = [
     { label: 'Total Employees', value: stats.totalEmployees, color: '#1565c0', path: '/admin/employees', chart: 'line', chartData: empTrend },
     { label: 'New Onboarders', value: stats.newOnboarders, color: '#e91e63', path: '/admin/onboarding' },
@@ -357,6 +391,10 @@ function CompanyDash({
     { label: 'Pending Expenses', value: stats.pendingExpenses, color: '#43a047', path: '/admin/expenses' },
     { label: 'Pending Leave', value: stats.pendingLeave, color: '#ff9800', path: '/admin/leave' },
     { label: 'Kudos Given', value: stats.kudos, color: '#fbc02d', path: '/admin/kudos' },
+    { label: 'E-Learning', value: stats.elearningRate, color: '#26a69a', path: '/admin/elearning', suffix: '%' },
+    { label: 'Upcoming Shifts', value: stats.upcomingShifts, color: '#ef6c00', path: '/admin/shifts' },
+    { label: 'Spaces Available', value: stats.spacesAvailable, color: '#5e35b1', path: '/admin/space-management', subtitle: 'today' },
+    { label: 'Assets Registered', value: stats.totalAssets, color: '#0277bd', path: '/admin/asset-management', change: stats.assetsChange },
   ]
 
   return (
@@ -391,11 +429,18 @@ function CompanyDash({
           <button key={c.label} className="cd-card" onClick={() => navigate(c.path)}>
             <div className="cd-card-top">
               <div className="cd-card-meta">
-                <span className="cd-card-label">{c.label}</span>
-                <span className="cd-card-value" style={{ color: c.color }}>{c.value}</span>
+                <span className="cd-card-label">{c.label}{c.subtitle && <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--text-muted, #8b8fa3)', marginLeft: 4 }}>({c.subtitle})</span>}</span>
+                <span className="cd-card-value" style={{ color: c.color }}>
+                  {c.value}{c.suffix || ''}
+                  {c.change !== undefined && c.change !== 0 && (
+                    <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 6, color: c.change > 0 ? '#43a047' : '#e53935' }}>
+                      {c.change > 0 ? '+' : ''}{c.change}%
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="cd-card-icon" style={{ background: c.color }}>
-                <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{c.value}</span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{c.value}{c.suffix || ''}</span>
               </div>
             </div>
             {c.chart && c.chartData && c.chartData.length > 1 && (
