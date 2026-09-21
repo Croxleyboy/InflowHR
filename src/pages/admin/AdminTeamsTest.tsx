@@ -19,7 +19,7 @@ interface Presence {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 
-const TEAMS_SCOPES = 'openid email profile User.Read Presence.Read.All Chat.ReadWrite ChatMessage.Send offline_access'
+const TEAMS_SCOPES = 'openid email profile User.Read User.Read.All Presence.Read.All Chat.ReadWrite ChatMessage.Send offline_access'
 
 const PRESENCE_COLOURS: Record<string, string> = {
   Available: '#2e7d32',
@@ -191,8 +191,8 @@ export default function AdminTeamsTest() {
       try {
         const userRes = await graphFetch(`/users/${encodeURIComponent(selectedEmployee.email)}`)
         targetId = userRes.id
-      } catch {
-        throw new Error(`Could not find ${selectedEmployee.email} in Azure AD`)
+      } catch (lookupErr: any) {
+        throw new Error(`Could not find ${selectedEmployee.email} in Azure AD: ${lookupErr.message}`)
       }
 
       const isSelfChat = myAzureId === targetId
@@ -295,7 +295,7 @@ export default function AdminTeamsTest() {
             <p className="teams-test-hint" style={{ margin: '8px 0 0' }}>
               {providerToken && !needsConsent
                 ? 'If presence or messaging fails, re-authorise to request the additional Teams scopes.'
-                : 'Click the button below to authenticate with Graph API scopes (Presence.Read.All, Chat.ReadWrite, ChatMessage.Send). Azure AD will prompt you to consent to the new permissions.'}
+                : 'Click the button below to authenticate with Graph API scopes (User.Read.All, Presence.Read.All, Chat.ReadWrite, ChatMessage.Send). Azure AD will prompt you to consent to the new permissions.'}
             </p>
           </div>
           <button className="teams-test-auth-btn" onClick={authoriseTeamsPermissions}>
