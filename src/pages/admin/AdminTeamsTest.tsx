@@ -144,6 +144,23 @@ export default function AdminTeamsTest() {
     return data
   }
 
+  async function resolveUserId(email: string): Promise<string> {
+    const user = await graphFetch(`/users/${encodeURIComponent(email)}`)
+    return user.id
+  }
+
+  async function fetchPresenceBatch(userIds: string[]): Promise<Record<string, Presence>> {
+    const data = await graphFetch('/communications/getPresencesByUserId', {
+      method: 'POST',
+      body: JSON.stringify({ ids: userIds }),
+    })
+    const result: Record<string, Presence> = {}
+    for (const p of data.value || []) {
+      result[p.id] = { availability: p.availability, activity: p.activity }
+    }
+    return result
+  }
+
   async function runDiagnostics() {
     setDiagLoading(true)
     setDiagResult('')
@@ -151,31 +168,39 @@ export default function AdminTeamsTest() {
     try {
       const me = await graphFetch('/me')
       results.push(`/me: ${me.displayName} (${me.userPrincipalName})`)
+
+      try {
+        const myPresence = await graphFetch('/me/presence')
+        results.push(`/me/presence (individual): ${myPresence.availability}`)
+      } catch (err: any) {
+        results.push(`/me/presence (individual): FAILED — ${err.message}`)
+      }
+
+      try {
+        const batch = await fetchPresenceBatch([me.id])
+        const bp = batch[me.id]
+        results.push(`/communications/getPresencesByUserId (batch): ${bp?.availability || 'no result'}`)
+      } catch (err: any) {
+        results.push(`/communications/getPresencesByUserId (batch): FAILED — ${err.message}`)
+      }
+
+      if (selectedEmployee) {
+        try {
+          const targetId = await resolveUserId(selectedEmployee.email)
+          results.push(`/users/${selectedEmployee.email}: found (id: ${targetId})`)
+          try {
+            const batch = await fetchPresenceBatch([targetId])
+            const bp = batch[targetId]
+            results.push(`batch presence for ${selectedEmployee.email}: ${bp?.availability || 'no result'}`)
+          } catch (err: any) {
+            results.push(`batch presence for ${selectedEmployee.email}: FAILED — ${err.message}`)
+          }
+        } catch (err: any) {
+          results.push(`/users/${selectedEmployee.email}: FAILED — ${err.message}`)
+        }
+      }
     } catch (err: any) {
       results.push(`/me: FAILED — ${err.message}`)
-      setDiagResult(results.join('\n'))
-      setDiagLoading(false)
-      return
-    }
-    try {
-      const myPresence = await graphFetch('/me/presence')
-      results.push(`/me/presence: ${myPresence.availability} (own presence works)`)
-    } catch (err: any) {
-      results.push(`/me/presence: FAILED — ${err.message}`)
-    }
-    if (selectedEmployee) {
-      try {
-        const user = await graphFetch(`/users/${encodeURIComponent(selectedEmployee.email)}`)
-        results.push(`/users/${selectedEmployee.email}: found (id: ${user.id})`)
-        try {
-          const p = await graphFetch(`/users/${encodeURIComponent(selectedEmployee.email)}/presence`)
-          results.push(`/users/${selectedEmployee.email}/presence: ${p.availability}`)
-        } catch (err: any) {
-          results.push(`/users/${selectedEmployee.email}/presence: FAILED — ${err.message}`)
-        }
-      } catch (err: any) {
-        results.push(`/users/${selectedEmployee.email}: FAILED — ${err.message}`)
-      }
     }
     setDiagResult(results.join('\n'))
     setDiagLoading(false)
@@ -185,8 +210,14 @@ export default function AdminTeamsTest() {
     setPresenceLoading(true)
     setPresenceError('')
     try {
-      const data = await graphFetch(`/users/${encodeURIComponent(email)}/presence`)
-      setPresence({ availability: data.availability, activity: data.activity })
+      const userId = await resolveUserId(email)
+      const batch = await fetchPresenceBatch([userId])
+      const p = batch[userId]
+      if (p) {
+        setPresence(p)
+      } else {
+        setPresence({ availability: 'PresenceUnknown', activity: 'PresenceUnknown' })
+      }
       setNeedsConsent(false)
       return true
     } catch (err: any) {

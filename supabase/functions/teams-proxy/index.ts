@@ -18,6 +18,7 @@ const ALLOWED_ENDPOINTS = [
   '/me',
   '/users/',
   '/chats',
+  '/communications/',
 ]
 
 function isAllowedEndpoint(endpoint: string): boolean {
