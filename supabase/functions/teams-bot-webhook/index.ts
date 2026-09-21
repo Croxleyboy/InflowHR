@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
     const isBotAdded = activity.membersAdded.some(
       (m: { id: string }) => m.id === botId,
     )
-    if (isBotAdded) {
+    if (!isBotAdded) {
       return json({ ok: true })
     }
 
