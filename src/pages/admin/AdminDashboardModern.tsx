@@ -96,6 +96,10 @@ export default function AdminDashboardModern() {
   const [expenseStats, setExpenseStats] = useState({ submitted: 0, pending: 0, approved: 0, declined: 0 })
   const [fyLabel, setFyLabel] = useState('')
   const [deptFilter, setDeptFilter] = useState('')
+  const [elearningStats, setElearningStats] = useState({ total: 0, completed: 0, rate: 0 })
+  const [upcomingShifts, setUpcomingShifts] = useState(0)
+  const [spacesStats, setSpacesStats] = useState({ total: 0, booked: 0, available: 0 })
+  const [assetsStats, setAssetsStats] = useState({ total: 0, change: 0 })
   const [supportGrant, setSupportGrant] = useState<{ active: boolean; expires_at: string; reason: string } | null>(null)
   const [grantingAccess, setGrantingAccess] = useState(false)
   const [revokingAccess, setRevokingAccess] = useState(false)
@@ -189,6 +193,32 @@ export default function AdminDashboardModern() {
       approved: activeExp.filter(r => r.status === 'approved').length,
       declined: activeExp.filter(r => r.status === 'rejected' || r.status === 'declined').length,
     })
+
+    const todayStr = fmtIso(new Date())
+    const monthAgo = new Date()
+    monthAgo.setMonth(monthAgo.getMonth() - 1)
+    const monthAgoEnd = fmtIso(monthAgo)
+
+    const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev] = await Promise.all([
+      supabase.from('course_enrolments').select('id', { count: 'exact', head: true }).eq('company_id', cid),
+      supabase.from('course_enrolments').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('status', 'completed'),
+      supabase.from('shift_assignments').select('id', { count: 'exact', head: true }).eq('company_id', cid).gte('shift_date', todayStr),
+      supabase.from('spaces').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('is_active', true),
+      supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('booking_date', todayStr),
+      supabase.from('company_assets').select('id', { count: 'exact', head: true }).eq('company_id', cid),
+      supabase.from('company_assets').select('id', { count: 'exact', head: true }).eq('company_id', cid).lte('created_at', monthAgoEnd + 'T23:59:59'),
+    ])
+
+    const eTotal = enrolAll.count || 0
+    const eCompleted = enrolDone.count || 0
+    setElearningStats({ total: eTotal, completed: eCompleted, rate: eTotal > 0 ? Math.round((eCompleted / eTotal) * 100) : 0 })
+    setUpcomingShifts(upShifts.count || 0)
+    const sTotal = totalSpaces.count || 0
+    const sBooked = bookedSpaces.count || 0
+    setSpacesStats({ total: sTotal, booked: sBooked, available: Math.max(0, sTotal - sBooked) })
+    const aNow = assetsNow.count || 0
+    const aPrev = assetsPrev.count || 0
+    setAssetsStats({ total: aNow, change: aPrev > 0 ? Math.round(((aNow - aPrev) / aPrev) * 100) : 0 })
 
     await loadSupportStatus(cid)
     setLoading(false)
@@ -353,6 +383,87 @@ export default function AdminDashboardModern() {
         {loading && <div className="dm-loading">Loading dashboard…</div>}
 
         {!loading && (<>
+          {/* ── KPI Strip ── */}
+          <div className="dm-kpi-strip">
+            {/* E-Learning Completion */}
+            <section className="dm-kpi" onClick={() => navigate('/admin/e-learning')}>
+              <div className="dm-kpi-visual">
+                <svg viewBox="0 0 80 80" className="dm-kpi-ring">
+                  <circle cx="40" cy="40" r="32" fill="none" stroke="#e5e7eb" strokeWidth="7" />
+                  <circle cx="40" cy="40" r="32" fill="none" stroke="#6366f1" strokeWidth="7"
+                    strokeLinecap="round"
+                    strokeDasharray={`${(elearningStats.rate / 100) * 2 * Math.PI * 32} ${2 * Math.PI * 32}`}
+                    transform="rotate(-90 40 40)"
+                  />
+                  <text x="40" y="38" textAnchor="middle" className="dm-kpi-ring-num">{elearningStats.rate}</text>
+                  <text x="40" y="50" textAnchor="middle" className="dm-kpi-ring-pct">%</text>
+                </svg>
+              </div>
+              <div className="dm-kpi-info">
+                <span className="dm-kpi-label">E-Learning</span>
+                <span className="dm-kpi-detail">{elearningStats.completed}/{elearningStats.total} completed</span>
+              </div>
+            </section>
+
+            {/* Upcoming Shifts */}
+            <section className="dm-kpi" onClick={() => navigate('/admin/shifts-rotas')}>
+              <div className="dm-kpi-visual">
+                <div className="dm-kpi-icon dm-kpi-icon-shifts">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                </div>
+              </div>
+              <div className="dm-kpi-info">
+                <span className="dm-kpi-big">{upcomingShifts}</span>
+                <span className="dm-kpi-label">Upcoming Shifts</span>
+              </div>
+            </section>
+
+            {/* Spaces Available Today */}
+            <section className="dm-kpi" onClick={() => navigate('/admin/space-management')}>
+              <div className="dm-kpi-visual">
+                <div className="dm-kpi-gauge">
+                  <div className="dm-kpi-gauge-track">
+                    <div className="dm-kpi-gauge-fill" style={{ width: spacesStats.total > 0 ? `${Math.min(100, (spacesStats.booked / spacesStats.total) * 100)}%` : '0%' }} />
+                  </div>
+                  <span className="dm-kpi-gauge-label">{spacesStats.booked}/{spacesStats.total} booked</span>
+                </div>
+              </div>
+              <div className="dm-kpi-info">
+                <span className="dm-kpi-big">{spacesStats.available}</span>
+                <span className="dm-kpi-label">Spaces Available</span>
+                <span className="dm-kpi-detail">Today</span>
+              </div>
+            </section>
+
+            {/* Assets Registered */}
+            <section className="dm-kpi" onClick={() => navigate('/admin/asset-management')}>
+              <div className="dm-kpi-visual">
+                <div className="dm-kpi-icon dm-kpi-icon-assets">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><polyline points="17 2 12 7 7 2" />
+                  </svg>
+                </div>
+              </div>
+              <div className="dm-kpi-info">
+                <span className="dm-kpi-big">{assetsStats.total}</span>
+                <span className="dm-kpi-label">Assets Registered</span>
+                {assetsStats.change !== 0 && (
+                  <span className={`dm-kpi-change ${assetsStats.change > 0 ? 'dm-kpi-up' : 'dm-kpi-down'}`}>
+                    <svg viewBox="0 0 12 12" width="12" height="12">
+                      {assetsStats.change > 0
+                        ? <path d="M6 2L10 7H2L6 2Z" fill="currentColor" />
+                        : <path d="M6 10L2 5H10L6 10Z" fill="currentColor" />
+                      }
+                    </svg>
+                    {Math.abs(assetsStats.change)}% vs last month
+                  </span>
+                )}
+              </div>
+            </section>
+          </div>
+
           <div className="dm-grid">
             {/* ── Leave Calendar (Hiring slot) ── */}
             <section className="dm-card dm-card-cal">
@@ -599,6 +710,30 @@ const CSS = `
 
 .dm-loading { padding: 60px; text-align: center; color: #94a3b8; }
 
+/* KPI Strip */
+.dm-kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+.dm-kpi { display: flex; align-items: center; gap: 14px; background: #fff; border-radius: 16px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); border: 1px solid #eef0f4; cursor: pointer; transition: box-shadow 0.2s, transform 0.15s; }
+.dm-kpi:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); transform: translateY(-1px); }
+.dm-kpi-visual { flex-shrink: 0; }
+.dm-kpi-ring { width: 64px; height: 64px; }
+.dm-kpi-ring-num { font-size: 18px; font-weight: 800; fill: #0f172a; }
+.dm-kpi-ring-pct { font-size: 9px; font-weight: 700; fill: #94a3b8; letter-spacing: 0.04em; }
+.dm-kpi-icon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; }
+.dm-kpi-icon svg { width: 26px; height: 26px; }
+.dm-kpi-icon-shifts { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #2563eb; }
+.dm-kpi-icon-assets { background: linear-gradient(135deg, #fce7f3, #fbcfe8); color: #db2777; }
+.dm-kpi-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dm-kpi-big { font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1; }
+.dm-kpi-label { font-size: 13px; font-weight: 700; color: #475569; }
+.dm-kpi-detail { font-size: 11px; color: #94a3b8; }
+.dm-kpi-gauge { display: flex; flex-direction: column; gap: 4px; width: 64px; }
+.dm-kpi-gauge-track { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+.dm-kpi-gauge-fill { height: 100%; background: linear-gradient(90deg, #10b981, #059669); border-radius: 4px; transition: width 0.4s ease; }
+.dm-kpi-gauge-label { font-size: 10px; color: #94a3b8; font-weight: 600; white-space: nowrap; }
+.dm-kpi-change { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; }
+.dm-kpi-up { color: #16a34a; }
+.dm-kpi-down { color: #dc2626; }
+
 /* Grid */
 .dm-grid { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr auto; gap: 16px; }
 .dm-card-cal { grid-column: 1; grid-row: 1 / span 2; }
@@ -695,11 +830,13 @@ const CSS = `
 .dm-support-revoke:hover:not(:disabled) { background: #b91c1c; }
 
 @media (max-width: 1024px) {
+  .dm-kpi-strip { grid-template-columns: repeat(2, 1fr); }
   .dm-grid { grid-template-columns: 1fr; }
   .dm-card-cal, .dm-card-leave, .dm-card-expense, .dm-card-tasks, .dm-card-emps { grid-column: 1; grid-row: auto; }
 }
 @media (max-width: 640px) {
   .dm { padding: 12px; }
+  .dm-kpi-strip { grid-template-columns: 1fr; }
   .dm-cal-cell { min-height: 60px; padding: 4px; }
   .dm-task-row { grid-template-columns: 4px 1fr auto; }
   .dm-task-time { display: none; }
