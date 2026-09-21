@@ -158,7 +158,7 @@ export default function AdminIntegrations() {
       name: { short: 'InflowHR', full: 'InflowHR HR Platform' },
       description: {
         short: 'HR notifications from InflowHR',
-        full: 'Receive leave request approvals and HR notifications directly in Microsoft Teams from your InflowHR HR platform.',
+        full: 'Receive leave and expense approval notifications directly in Microsoft Teams from your InflowHR HR platform.',
       },
       icons: { outline: 'outline.png', color: 'color.png' },
       accentColor: '#5B5FC7',
@@ -488,7 +488,7 @@ export default function AdminIntegrations() {
                   <div>
                     <div style={{ fontWeight: 600, color: '#333' }}>Bot messaging (personal scope)</div>
                     <div style={{ color: '#777', fontSize: 12 }}>
-                      The bot sends one-to-one notifications to managers when leave requests need their approval.
+                      The bot sends one-to-one notifications to managers when leave requests or expense claims need their approval.
                       It can only message users who have the bot installed — no access to existing chats or channels.
                     </div>
                   </div>
