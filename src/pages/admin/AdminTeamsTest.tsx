@@ -323,6 +323,45 @@ export default function AdminTeamsTest() {
         </div>
       </div>
 
+      {/* Token debug — decode the provider token to show actual scopes */}
+      {providerToken && (
+        <div className="teams-test-section">
+          <h3 className="teams-test-heading">Token Debug</h3>
+          <div className="teams-test-guidance" style={{ fontSize: 13 }}>
+            {(() => {
+              try {
+                const parts = providerToken.split('.')
+                if (parts.length < 2) return <p>Token is not a JWT</p>
+                const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+                const scopes = payload.scp || payload.scope || '(none)'
+                const audience = payload.aud || '(none)'
+                const expires = payload.exp ? new Date(payload.exp * 1000).toLocaleString('en-GB') : '(unknown)'
+                return (
+                  <>
+                    <p><strong>Scopes in token:</strong> <code>{scopes}</code></p>
+                    <p><strong>Audience:</strong> <code>{audience}</code></p>
+                    <p><strong>Expires:</strong> {expires}</p>
+                    <p><strong>Expected scopes:</strong> <code>User.Read User.Read.All Presence.Read.All Chat.ReadWrite ChatMessage.Send</code></p>
+                    {typeof scopes === 'string' && !scopes.includes('Presence.Read.All') && (
+                      <p style={{ color: '#c62828', fontWeight: 600 }}>
+                        Presence.Read.All is NOT in this token — re-authorise to request it.
+                      </p>
+                    )}
+                    {typeof scopes === 'string' && audience !== 'https://graph.microsoft.com' && (
+                      <p style={{ color: '#c62828', fontWeight: 600 }}>
+                        Token audience is not Graph API — this token may be for a different API.
+                      </p>
+                    )}
+                  </>
+                )
+              } catch {
+                return <p>Could not decode token</p>
+              }
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Consent required banner — shown inline when a Graph call fails */}
       {needsConsent && providerToken && (
         <div className="teams-test-section">
