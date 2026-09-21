@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { supabase } from '../../lib/supabase'
@@ -77,7 +77,8 @@ export default function AdminTeamsTest() {
   const [sendError, setSendError] = useState('')
 
   const [isPolling, setIsPolling] = useState(false)
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollingActiveRef = useRef(false)
+  const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const providerToken = session?.provider_token || null
   const companyDomain = selectedCompany?.domain || ''
@@ -94,7 +95,7 @@ export default function AdminTeamsTest() {
   }, [selectedCompany?.id, companyUser?.company_id])
 
   useEffect(() => {
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
+    return () => { pollingActiveRef.current = false; if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current) }
   }, [])
 
   async function authoriseTeamsPermissions() {
@@ -140,32 +141,45 @@ export default function AdminTeamsTest() {
     return data
   }
 
-  async function fetchPresence(email: string) {
+  async function fetchPresenceOnce(email: string): Promise<boolean> {
     setPresenceLoading(true)
     setPresenceError('')
-    setPresence(null)
     try {
       const data = await graphFetch(`/users/${encodeURIComponent(email)}/presence`)
       setPresence({ availability: data.availability, activity: data.activity })
       setNeedsConsent(false)
+      return true
     } catch (err: any) {
       setPresenceError(err.message)
-      stopPolling()
+      return false
     } finally {
       setPresenceLoading(false)
     }
   }
 
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
+  function stopPolling() {
+    pollingActiveRef.current = false
+    if (pollingTimerRef.current) { clearTimeout(pollingTimerRef.current); pollingTimerRef.current = null }
     setIsPolling(false)
-  }, [])
+  }
 
   function startPolling(email: string) {
     stopPolling()
-    fetchPresence(email)
-    pollingRef.current = setInterval(() => fetchPresence(email), 15000)
+    pollingActiveRef.current = true
     setIsPolling(true)
+    setPresence(null)
+
+    async function tick() {
+      if (!pollingActiveRef.current) return
+      const ok = await fetchPresenceOnce(email)
+      if (!ok || !pollingActiveRef.current) {
+        pollingActiveRef.current = false
+        setIsPolling(false)
+        return
+      }
+      pollingTimerRef.current = setTimeout(tick, 15000)
+    }
+    tick()
   }
 
   function selectEmployee(emp: Employee) {
