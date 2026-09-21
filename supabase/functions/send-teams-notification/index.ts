@@ -20,9 +20,9 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
 }
 
-async function getBotToken(appId: string, appSecret: string): Promise<string | null> {
+async function getBotToken(tenantId: string, appId: string, appSecret: string): Promise<string | null> {
   const res = await fetch(
-    'https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token',
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
 
     const { data: config } = await sb
       .from('company_teams_config')
-      .select('is_enabled, bot_configured, bot_app_id, bot_app_secret_encrypted')
+      .select('is_enabled, bot_configured, bot_app_id, bot_app_secret_encrypted, azure_tenant_id')
       .eq('company_id', company_id)
       .maybeSingle()
 
@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
       return json({ error: 'Manager does not have the InflowHR bot installed in Teams' }, 404)
     }
 
-    const botToken = await getBotToken(config.bot_app_id, config.bot_app_secret_encrypted)
+    const botToken = await getBotToken(config.azure_tenant_id, config.bot_app_id, config.bot_app_secret_encrypted)
     if (!botToken) {
       return json({ error: 'Failed to authenticate bot with Microsoft' }, 500)
     }
@@ -109,16 +109,15 @@ Deno.serve(async (req) => {
         },
         body: JSON.stringify({
           type: 'message',
-          textFormat: 'html',
-          text: `<strong>InflowHR</strong> — ${safeName}: ${safeMessage}`,
+          text: `**InflowHR** — ${safeName}: ${safeMessage}`,
         }),
       },
     )
 
     if (!activityRes.ok) {
-      const err = await activityRes.json().catch(() => ({}))
+      const errText = await activityRes.text().catch(() => '')
       return json({
-        error: `Failed to send message: ${err?.message || activityRes.status}`,
+        error: `Failed to send message: ${activityRes.status} ${errText}`,
       }, 500)
     }
 
