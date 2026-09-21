@@ -70,6 +70,7 @@ export default function AdminTeamsTest() {
   const [presenceLoading, setPresenceLoading] = useState(false)
   const [presenceError, setPresenceError] = useState('')
   const [needsConsent, setNeedsConsent] = useState(false)
+  const [lastGraphError, setLastGraphError] = useState('')
 
   const [message, setMessage] = useState('')
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
@@ -130,6 +131,7 @@ export default function AdminTeamsTest() {
       const errMsg = data?.error || `Graph API ${res.status}`
       if (res.status === 401 || res.status === 403 || isConsentError({ message: errMsg })) {
         setNeedsConsent(true)
+        setLastGraphError(`${res.status}: ${errMsg}`)
       }
       throw new Error(errMsg)
     }
@@ -285,9 +287,14 @@ export default function AdminTeamsTest() {
             </svg>
             <div>
               <strong>Permission denied by Microsoft Graph</strong>
+              {lastGraphError && (
+                <p style={{ margin: '4px 0 0', fontFamily: 'monospace', fontSize: 12 }}>
+                  {lastGraphError}
+                </p>
+              )}
               <p style={{ margin: '4px 0 0' }}>
-                Your current session token does not include Chat or Presence permissions.
-                Click the button above to re-authorise with the required scopes.
+                Ensure all permissions have <strong>admin consent granted</strong> in Azure Portal
+                (green checkmarks). Then click the Authorise button above to get a fresh token.
               </p>
             </div>
           </div>
