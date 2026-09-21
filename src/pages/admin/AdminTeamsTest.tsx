@@ -150,7 +150,7 @@ export default function AdminTeamsTest() {
       setNeedsConsent(false)
     } catch (err: any) {
       setPresenceError(err.message)
-      if (isConsentError(err)) stopPolling()
+      stopPolling()
     } finally {
       setPresenceLoading(false)
     }
