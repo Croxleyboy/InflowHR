@@ -116,6 +116,12 @@ export default function MyLeaveHistory() {
     fetchData()
   }, [fetchData, EMPLOYEE_ID])
 
+  useEffect(() => {
+    const onFocus = () => { if (EMPLOYEE_ID) fetchData() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [fetchData, EMPLOYEE_ID])
+
   const filtered = filter === 'all'
     ? requests
     : requests.filter(r => r.status === filter)

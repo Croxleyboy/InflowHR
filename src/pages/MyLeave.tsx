@@ -88,6 +88,12 @@ export default function MyLeave() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  useEffect(() => {
+    const onFocus = () => { if (EMPLOYEE_ID) loadData() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadData, EMPLOYEE_ID])
+
   const primary = balances.find(b => b.leave_type_name === 'Annual Leave')
   const basAllowance = primary ? primary.total_allowance : 0
   const primaryLieu = primary ? (primary.lieu_days || 0) : 0
