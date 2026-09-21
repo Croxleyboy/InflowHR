@@ -149,6 +149,7 @@ export default function AdminTeamsTest() {
       setNeedsConsent(false)
     } catch (err: any) {
       setPresenceError(err.message)
+      if (isConsentError(err)) stopPolling()
     } finally {
       setPresenceLoading(false)
     }
@@ -216,9 +217,12 @@ export default function AdminTeamsTest() {
       } catch (chatErr: any) {
         if (chatErr.message?.includes('Duplicate') || chatErr.message?.includes('duplicate')) {
           const existing = await graphFetch(`/users/${myAzureId}/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`)
-          const found = existing.value?.find((c: any) =>
-            c.members?.some((m: any) => m.userId === targetId)
-          )
+          const isSelfChat = myAzureId === targetId
+          const found = existing.value?.find((c: any) => {
+            if (!c.members || c.members.length < 2) return false
+            if (isSelfChat) return c.members.every((m: any) => m.userId === myAzureId)
+            return c.members.some((m: any) => m.userId === targetId && m.userId !== myAzureId)
+          })
           if (!found) throw new Error('Could not find existing chat with this user')
           chatId = found.id
         } else {
