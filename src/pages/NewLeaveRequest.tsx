@@ -395,12 +395,14 @@ export default function NewLeaveRequest() {
     })
 
     if (companyUser?.company_id && managerEmail) {
-      sendTeamsNotification({
-        companyId: companyUser.company_id,
-        managerEmail,
-        employeeName: EMPLOYEE_NAME,
-        message: `Leave request needs your approval: ${taskDesc}`,
-      })
+      try {
+        await sendTeamsNotification({
+          companyId: companyUser.company_id,
+          managerEmail,
+          employeeName: EMPLOYEE_NAME,
+          message: `Leave request needs your approval: ${taskDesc}`,
+        })
+      } catch { /* notification failure should not block the user */ }
     }
 
     window.dispatchEvent(new Event('notifications-updated'))
