@@ -41,18 +41,15 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
     // Only super admins can use the Teams proxy
+    const userEmail = user.email
+    if (!userEmail) return json({ error: 'No email on user record' }, 400)
     const { data: sa } = await sb
       .from('super_admins')
       .select('id')
-      .eq('auth_user_id', user.id)
+      .eq('email', userEmail)
       .maybeSingle()
     if (!sa) return json({ error: 'Super admin access required' }, 403)
 
-    // Get the provider token from the user's session identity
-    const azureIdentity = user.identities?.find(i => i.provider === 'azure')
-    if (!azureIdentity) return json({ error: 'No Azure identity found' }, 400)
-
-    // We need the provider_token from the session, which the client must send
     const body = await req.json()
     const { endpoint, method, body: graphBody, provider_token } = body
 
