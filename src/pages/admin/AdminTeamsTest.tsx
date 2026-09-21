@@ -80,6 +80,9 @@ export default function AdminTeamsTest() {
   const pollingActiveRef = useRef(false)
   const pollingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const [diagResult, setDiagResult] = useState('')
+  const [diagLoading, setDiagLoading] = useState(false)
+
   const providerToken = session?.provider_token || null
   const companyDomain = selectedCompany?.domain || ''
 
@@ -139,6 +142,43 @@ export default function AdminTeamsTest() {
       throw new Error(errMsg)
     }
     return data
+  }
+
+  async function runDiagnostics() {
+    setDiagLoading(true)
+    setDiagResult('')
+    const results: string[] = []
+    try {
+      const me = await graphFetch('/me')
+      results.push(`/me: ${me.displayName} (${me.userPrincipalName})`)
+    } catch (err: any) {
+      results.push(`/me: FAILED — ${err.message}`)
+      setDiagResult(results.join('\n'))
+      setDiagLoading(false)
+      return
+    }
+    try {
+      const myPresence = await graphFetch('/me/presence')
+      results.push(`/me/presence: ${myPresence.availability} (own presence works)`)
+    } catch (err: any) {
+      results.push(`/me/presence: FAILED — ${err.message}`)
+    }
+    if (selectedEmployee) {
+      try {
+        const user = await graphFetch(`/users/${encodeURIComponent(selectedEmployee.email)}`)
+        results.push(`/users/${selectedEmployee.email}: found (id: ${user.id})`)
+        try {
+          const p = await graphFetch(`/users/${encodeURIComponent(selectedEmployee.email)}/presence`)
+          results.push(`/users/${selectedEmployee.email}/presence: ${p.availability}`)
+        } catch (err: any) {
+          results.push(`/users/${selectedEmployee.email}/presence: FAILED — ${err.message}`)
+        }
+      } catch (err: any) {
+        results.push(`/users/${selectedEmployee.email}: FAILED — ${err.message}`)
+      }
+    }
+    setDiagResult(results.join('\n'))
+    setDiagLoading(false)
   }
 
   async function fetchPresenceOnce(email: string): Promise<boolean> {
@@ -347,7 +387,7 @@ export default function AdminTeamsTest() {
                         Presence.Read.All is NOT in this token — re-authorise to request it.
                       </p>
                     )}
-                    {typeof scopes === 'string' && audience !== 'https://graph.microsoft.com' && (
+                    {typeof scopes === 'string' && audience !== 'https://graph.microsoft.com' && audience !== '00000003-0000-0000-c000-000000000000' && (
                       <p style={{ color: '#c62828', fontWeight: 600 }}>
                         Token audience is not Graph API — this token may be for a different API.
                       </p>
@@ -358,6 +398,24 @@ export default function AdminTeamsTest() {
                 return <p>Could not decode token</p>
               }
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Diagnostics */}
+      {providerToken && (
+        <div className="teams-test-section">
+          <h3 className="teams-test-heading">API Diagnostics</h3>
+          <div className="teams-test-guidance">
+            <p style={{ margin: '0 0 8px' }}>Tests each Graph API endpoint individually to isolate which call is failing.</p>
+            <button className="admin-add-btn" onClick={runDiagnostics} disabled={diagLoading}>
+              {diagLoading ? 'Running…' : 'Run Diagnostics'}
+            </button>
+            {diagResult && (
+              <pre style={{ margin: '12px 0 0', padding: 12, background: 'var(--surface, #f5f5f5)', borderRadius: 6, fontSize: 12, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
+                {diagResult}
+              </pre>
+            )}
           </div>
         </div>
       )}
