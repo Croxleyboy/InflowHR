@@ -49,6 +49,7 @@ export default function AdminTeamsTest() {
   const { session, companyUser } = useAuth()
 
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [searchTerm, setSearchTerm] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [presence, setPresence] = useState<Presence | null>(null)
   const [presenceLoading, setPresenceLoading] = useState(false)
@@ -191,6 +192,13 @@ export default function AdminTeamsTest() {
     }
   }
 
+  const filteredEmployees = employees.filter(emp => {
+    if (!searchTerm.trim()) return true
+    const term = searchTerm.toLowerCase()
+    return `${emp.first_name} ${emp.last_name}`.toLowerCase().includes(term)
+      || emp.email.toLowerCase().includes(term)
+  })
+
   const initials = (emp: Employee) =>
     `${emp.first_name[0] || ''}${emp.last_name[0] || ''}`.toUpperCase()
 
@@ -223,11 +231,28 @@ export default function AdminTeamsTest() {
         </p>
       </div>
 
-      {/* Employee picker */}
+      {/* Person picker */}
       <div className="teams-test-section">
         <h3 className="teams-test-heading">Select Employee</h3>
+        <div className="teams-test-search">
+          <svg className="teams-test-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            className="teams-test-search-input"
+            placeholder="Search by name or email…"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+          {searchTerm && (
+            <button className="teams-test-search-clear" onClick={() => setSearchTerm('')} title="Clear search">
+              &times;
+            </button>
+          )}
+        </div>
         <div className="teams-test-employee-grid">
-          {employees.map(emp => (
+          {filteredEmployees.map(emp => (
             <button
               key={emp.id}
               className={`teams-test-emp-card ${selectedEmployee?.id === emp.id ? 'teams-test-emp-selected' : ''}`}
@@ -244,7 +269,9 @@ export default function AdminTeamsTest() {
               </div>
             </button>
           ))}
-          {employees.length === 0 && <p className="dd2-empty">No employees found</p>}
+          {filteredEmployees.length === 0 && (
+            <p className="dd2-empty">{employees.length === 0 ? 'No employees found' : 'No matches — try a different search'}</p>
+          )}
         </div>
       </div>
 
