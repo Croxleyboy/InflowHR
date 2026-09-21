@@ -16,6 +16,7 @@ interface Presence {
   activity: string
 }
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
 
 const TEAMS_SCOPES = 'openid email profile User.Read Presence.Read.All Chat.ReadWrite ChatMessage.Send offline_access'
@@ -105,26 +106,34 @@ export default function AdminTeamsTest() {
     })
   }
 
-  async function graphFetch(endpoint: string, options: RequestInit = {}) {
+  async function graphFetch(endpoint: string, options: { method?: string; body?: string } = {}) {
     if (!providerToken) throw new Error('No Teams token — authorise permissions first')
-    const res = await fetch(`${GRAPH_BASE}${endpoint}`, {
-      ...options,
+    const { data: { session: currentSession } } = await supabase.auth.getSession()
+    const jwt = currentSession?.access_token
+    if (!jwt) throw new Error('No session — please sign in again')
+
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/teams-proxy`, {
+      method: 'POST',
       headers: {
-        'Authorization': `Bearer ${providerToken}`,
+        'Authorization': `Bearer ${jwt}`,
         'Content-Type': 'application/json',
-        ...options.headers,
       },
+      body: JSON.stringify({
+        endpoint,
+        method: options.method || 'GET',
+        body: options.body ? JSON.parse(options.body) : undefined,
+        provider_token: providerToken,
+      }),
     })
+    const data = await res.json().catch(() => ({}))
     if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      const errMsg = body?.error?.message || `Graph API ${res.status}`
-      const err = new Error(errMsg)
-      if (res.status === 401 || res.status === 403 || isConsentError(err)) {
+      const errMsg = data?.error || `Graph API ${res.status}`
+      if (res.status === 401 || res.status === 403 || isConsentError({ message: errMsg })) {
         setNeedsConsent(true)
       }
-      throw err
+      throw new Error(errMsg)
     }
-    return res.json()
+    return data
   }
 
   async function fetchPresence(email: string) {
