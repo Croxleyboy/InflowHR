@@ -1,7 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const GRAPH_BASE = 'https://graph.microsoft.com/v1.0'
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': 'https://app.inflowhr.com',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -22,6 +20,25 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
 }
 
+async function getBotToken(appId: string, appSecret: string): Promise<string | null> {
+  const res = await fetch(
+    'https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        client_id: appId,
+        client_secret: appSecret,
+        scope: 'https://api.botframework.com/.default',
+      }),
+    },
+  )
+  if (!res.ok) return null
+  const data = await res.json()
+  return data.access_token || null
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -38,17 +55,13 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await sb.auth.getUser(jwt)
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
-    const userEmail = user.email
-    if (!userEmail) return json({ error: 'No email on user record' }, 400)
-
     const body = await req.json()
-    const { company_id, manager_email, employee_name, message, provider_token } = body
+    const { company_id, manager_email, employee_name, message } = body
 
-    if (!company_id || !manager_email || !message || !provider_token) {
-      return json({ error: 'company_id, manager_email, message and provider_token are required' }, 400)
+    if (!company_id || !manager_email || !message) {
+      return json({ error: 'company_id, manager_email and message are required' }, 400)
     }
 
-    // Verify user belongs to this company
     const { data: cu } = await sb
       .from('company_users')
       .select('id')
@@ -57,87 +70,56 @@ Deno.serve(async (req) => {
       .maybeSingle()
     if (!cu) return json({ error: 'Not a member of this company' }, 403)
 
-    // Check Teams integration is enabled and consented for this company
     const { data: config } = await sb
       .from('company_teams_config')
-      .select('is_enabled, consent_granted')
+      .select('is_enabled, bot_configured, bot_app_id, bot_app_secret_encrypted')
       .eq('company_id', company_id)
       .maybeSingle()
-    if (!config?.is_enabled || !config?.consent_granted) {
-      return json({ error: 'Teams integration not enabled for this company' }, 403)
+
+    if (!config?.is_enabled || !config?.bot_configured) {
+      return json({ error: 'Teams bot not configured for this company' }, 403)
     }
 
-    // Resolve manager Azure AD user ID
-    const managerRes = await fetch(`${GRAPH_BASE}/users/${encodeURIComponent(manager_email)}`, {
-      headers: { 'Authorization': `Bearer ${provider_token}`, 'Content-Type': 'application/json' },
-    })
-    if (!managerRes.ok) {
-      const err = await managerRes.json().catch(() => ({}))
-      return json({ error: `Could not resolve manager: ${err?.error?.message || managerRes.status}` }, 400)
-    }
-    const managerUser = await managerRes.json()
-    const managerId = managerUser.id
+    const { data: conv } = await sb
+      .from('company_teams_bot_conversations')
+      .select('conversation_id, service_url')
+      .eq('company_id', company_id)
+      .eq('user_email', manager_email.toLowerCase())
+      .maybeSingle()
 
-    // Resolve sender Azure AD user ID
-    const senderRes = await fetch(`${GRAPH_BASE}/me`, {
-      headers: { 'Authorization': `Bearer ${provider_token}`, 'Content-Type': 'application/json' },
-    })
-    if (!senderRes.ok) return json({ error: 'Could not resolve sender identity' }, 400)
-    const senderUser = await senderRes.json()
-    const senderId = senderUser.id
-
-    // Find or create a 1:1 chat
-    let chatId: string | null = null
-
-    const chatsRes = await fetch(`${GRAPH_BASE}/users/${senderId}/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`, {
-      headers: { 'Authorization': `Bearer ${provider_token}`, 'Content-Type': 'application/json' },
-    })
-    if (chatsRes.ok) {
-      const chats = await chatsRes.json()
-      const found = chats.value?.find((c: any) =>
-        c.members?.some((m: any) => m.userId === managerId && m.userId !== senderId)
-      )
-      if (found) chatId = found.id
+    if (!conv) {
+      return json({ error: 'Manager does not have the InflowHR bot installed in Teams' }, 404)
     }
 
-    if (!chatId) {
-      const createRes = await fetch(`${GRAPH_BASE}/chats`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${provider_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chatType: 'oneOnOne',
-          members: [
-            { '@odata.type': '#microsoft.graph.aadUserConversationMember', roles: ['owner'], 'user@odata.bind': `https://graph.microsoft.com/v1.0/users('${senderId}')` },
-            { '@odata.type': '#microsoft.graph.aadUserConversationMember', roles: ['owner'], 'user@odata.bind': `https://graph.microsoft.com/v1.0/users('${managerId}')` },
-          ],
-        }),
-      })
-      if (!createRes.ok) {
-        const err = await createRes.json().catch(() => ({}))
-        return json({ error: `Could not create chat: ${err?.error?.message || createRes.status}` }, 500)
-      }
-      const chat = await createRes.json()
-      chatId = chat.id
+    const botToken = await getBotToken(config.bot_app_id, config.bot_app_secret_encrypted)
+    if (!botToken) {
+      return json({ error: 'Failed to authenticate bot with Microsoft' }, 500)
     }
 
-    // Send the message
     const safeName = escapeHtml(employee_name || 'An employee')
     const safeMessage = escapeHtml(message)
 
-    const msgRes = await fetch(`${GRAPH_BASE}/chats/${chatId}/messages`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${provider_token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        body: {
-          contentType: 'html',
-          content: `<strong>InflowHR</strong> — ${safeName}: ${safeMessage}`,
+    const activityRes = await fetch(
+      `${conv.service_url}/v3/conversations/${conv.conversation_id}/activities`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${botToken}`,
+          'Content-Type': 'application/json',
         },
-      }),
-    })
+        body: JSON.stringify({
+          type: 'message',
+          textFormat: 'html',
+          text: `<strong>InflowHR</strong> — ${safeName}: ${safeMessage}`,
+        }),
+      },
+    )
 
-    if (!msgRes.ok) {
-      const err = await msgRes.json().catch(() => ({}))
-      return json({ error: `Failed to send message: ${err?.error?.message || msgRes.status}` }, 500)
+    if (!activityRes.ok) {
+      const err = await activityRes.json().catch(() => ({}))
+      return json({
+        error: `Failed to send message: ${err?.message || activityRes.status}`,
+      }, 500)
     }
 
     return json({ success: true })

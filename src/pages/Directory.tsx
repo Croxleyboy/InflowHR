@@ -43,7 +43,7 @@ function getWatchlist(): string[] {
 export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { companyUser, employeeId: currentEmployeeId, isManager, session } = useAuth()
+  const { companyUser, employeeId: currentEmployeeId, isManager } = useAuth()
   const { features } = useFeatures()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
@@ -120,56 +120,30 @@ export default function Directory() {
     if (!companyUser?.company_id || !features.teams_integration) return
     supabase
       .from('company_teams_config')
-      .select('is_enabled, consent_granted')
+      .select('is_enabled, bot_configured')
       .eq('company_id', companyUser.company_id)
       .maybeSingle()
       .then(({ data }) => {
-        setTeamsEnabled(!!data?.is_enabled && !!data?.consent_granted)
+        setTeamsEnabled(!!data?.is_enabled && !!data?.bot_configured)
       })
   }, [companyUser?.company_id, features.teams_integration])
 
   const fetchPresence = useCallback(async () => {
-    if (!teamsEnabled || entries.length === 0 || !session?.provider_token) return
-    const token = session.provider_token
+    if (!teamsEnabled || entries.length === 0) return
     const emails = entries.map(e => e.user_email).filter(Boolean)
     if (emails.length === 0) return
 
     try {
-      const resolvedIds: Record<string, string> = {}
-      const idToEmail: Record<string, string> = {}
-
-      for (const email of emails) {
-        const { data } = await supabase.functions.invoke('teams-proxy', {
-          body: { endpoint: `/users/${encodeURIComponent(email)}`, provider_token: token },
-        })
-        if (data?.id) {
-          resolvedIds[email] = data.id
-          idToEmail[data.id] = email
-        }
-      }
-
-      const userIds = Object.values(resolvedIds)
-      if (userIds.length === 0) return
-
-      const { data: batchResult } = await supabase.functions.invoke('teams-proxy', {
-        body: {
-          endpoint: '/communications/getPresencesByUserId',
-          method: 'POST',
-          body: { ids: userIds },
-          provider_token: token,
-        },
+      const { data } = await supabase.functions.invoke('teams-presence', {
+        body: { emails },
       })
-
-      const map: Record<string, string> = {}
-      for (const p of batchResult?.value || []) {
-        const email = idToEmail[p.id]
-        if (email) map[email] = p.availability || 'PresenceUnknown'
+      if (data?.presence) {
+        setPresenceMap(data.presence)
       }
-      setPresenceMap(map)
     } catch {
       // presence fetch failed — not blocking
     }
-  }, [teamsEnabled, entries, session?.provider_token])
+  }, [teamsEnabled, entries])
 
   useEffect(() => {
     if (!teamsEnabled) return
