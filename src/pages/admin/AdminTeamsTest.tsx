@@ -97,6 +97,7 @@ export default function AdminTeamsTest() {
   }, [pollingId])
 
   async function authoriseTeamsPermissions() {
+    await supabase.auth.signOut()
     await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: {
