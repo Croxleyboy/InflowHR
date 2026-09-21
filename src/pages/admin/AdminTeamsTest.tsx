@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { supabase } from '../../lib/supabase'
@@ -76,7 +76,8 @@ export default function AdminTeamsTest() {
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   const [sendError, setSendError] = useState('')
 
-  const [pollingId, setPollingId] = useState<ReturnType<typeof setInterval> | null>(null)
+  const [isPolling, setIsPolling] = useState(false)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const providerToken = session?.provider_token || null
   const companyDomain = selectedCompany?.domain || ''
@@ -93,8 +94,8 @@ export default function AdminTeamsTest() {
   }, [selectedCompany?.id, companyUser?.company_id])
 
   useEffect(() => {
-    return () => { if (pollingId) clearInterval(pollingId) }
-  }, [pollingId])
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current) }
+  }, [])
 
   async function authoriseTeamsPermissions() {
     await supabase.auth.signOut()
@@ -155,15 +156,16 @@ export default function AdminTeamsTest() {
     }
   }
 
-  function startPolling(email: string) {
-    if (pollingId) clearInterval(pollingId)
-    fetchPresence(email)
-    const id = setInterval(() => fetchPresence(email), 15000)
-    setPollingId(id)
-  }
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
+    setIsPolling(false)
+  }, [])
 
-  function stopPolling() {
-    if (pollingId) { clearInterval(pollingId); setPollingId(null) }
+  function startPolling(email: string) {
+    stopPolling()
+    fetchPresence(email)
+    pollingRef.current = setInterval(() => fetchPresence(email), 15000)
+    setIsPolling(true)
   }
 
   function selectEmployee(emp: Employee) {
@@ -193,40 +195,49 @@ export default function AdminTeamsTest() {
         throw new Error(`Could not find ${selectedEmployee.email} in Azure AD`)
       }
 
+      const isSelfChat = myAzureId === targetId
       let chatId: string
-      try {
-        const chatRes = await graphFetch('/chats', {
-          method: 'POST',
-          body: JSON.stringify({
-            chatType: 'oneOnOne',
-            members: [
-              {
-                '@odata.type': '#microsoft.graph.aadUserConversationMember',
-                roles: ['owner'],
-                'user@odata.bind': `${GRAPH_BASE}/users('${myAzureId}')`,
-              },
-              {
-                '@odata.type': '#microsoft.graph.aadUserConversationMember',
-                roles: ['owner'],
-                'user@odata.bind': `${GRAPH_BASE}/users('${targetId}')`,
-              },
-            ],
-          }),
-        })
-        chatId = chatRes.id
-      } catch (chatErr: any) {
-        if (chatErr.message?.includes('Duplicate') || chatErr.message?.includes('duplicate')) {
-          const existing = await graphFetch(`/users/${myAzureId}/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`)
-          const isSelfChat = myAzureId === targetId
-          const found = existing.value?.find((c: any) => {
-            if (!c.members || c.members.length < 2) return false
-            if (isSelfChat) return c.members.every((m: any) => m.userId === myAzureId)
-            return c.members.some((m: any) => m.userId === targetId && m.userId !== myAzureId)
+
+      if (isSelfChat) {
+        const existing = await graphFetch(`/users/${myAzureId}/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`)
+        const found = existing.value?.find((c: any) =>
+          c.members?.length === 1 ||
+          (c.members?.length >= 1 && c.members.every((m: any) => m.userId === myAzureId))
+        )
+        if (!found) throw new Error('No self-chat found — open a chat with yourself in Teams first, then retry here')
+        chatId = found.id
+      } else {
+        try {
+          const chatRes = await graphFetch('/chats', {
+            method: 'POST',
+            body: JSON.stringify({
+              chatType: 'oneOnOne',
+              members: [
+                {
+                  '@odata.type': '#microsoft.graph.aadUserConversationMember',
+                  roles: ['owner'],
+                  'user@odata.bind': `${GRAPH_BASE}/users('${myAzureId}')`,
+                },
+                {
+                  '@odata.type': '#microsoft.graph.aadUserConversationMember',
+                  roles: ['owner'],
+                  'user@odata.bind': `${GRAPH_BASE}/users('${targetId}')`,
+                },
+              ],
+            }),
           })
-          if (!found) throw new Error('Could not find existing chat with this user')
-          chatId = found.id
-        } else {
-          throw chatErr
+          chatId = chatRes.id
+        } catch (chatErr: any) {
+          if (chatErr.message?.includes('Duplicate') || chatErr.message?.includes('duplicate')) {
+            const existing = await graphFetch(`/users/${myAzureId}/chats?$filter=chatType eq 'oneOnOne'&$expand=members&$top=50`)
+            const found = existing.value?.find((c: any) =>
+              c.members?.some((m: any) => m.userId === targetId && m.userId !== myAzureId)
+            )
+            if (!found) throw new Error('Could not find existing chat with this user')
+            chatId = found.id
+          } else {
+            throw chatErr
+          }
         }
       }
 
@@ -394,7 +405,7 @@ export default function AdminTeamsTest() {
                   </span>
                 </div>
                 <div className="teams-test-presence-actions">
-                  {pollingId ? (
+                  {isPolling ? (
                     <button className="admin-add-btn" onClick={stopPolling}>Stop Polling</button>
                   ) : (
                     <button className="admin-add-btn" onClick={() => startPolling(selectedEmployee.email)}>
