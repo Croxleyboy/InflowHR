@@ -131,7 +131,6 @@ export default function Directory() {
   const fetchPresence = useCallback(async () => {
     if (!teamsEnabled || entries.length === 0 || !session?.provider_token) return
     const token = session.provider_token
-    const jwtPayload = session.access_token
     const emails = entries.map(e => e.user_email).filter(Boolean)
     if (emails.length === 0) return
 
