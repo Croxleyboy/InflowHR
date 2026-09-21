@@ -80,6 +80,7 @@ import AdminAccess from './pages/admin/AdminAccess'
 import AdminCancellations from './pages/admin/AdminCancellations'
 import AdminGettingSetup from './pages/admin/AdminGettingSetup'
 import AdminTeamsTest from './pages/admin/AdminTeamsTest'
+import AdminIntegrations from './pages/admin/AdminIntegrations'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
 import TimesheetCheckIn from './pages/TimesheetCheckIn'
@@ -218,6 +219,7 @@ function AuthGate() {
             <Route path="assets" element={<AdminAssetManagement />} />
             <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
+            <Route path="integrations" element={<AdminIntegrations />} />
             <Route path="access" element={<AdminAccess />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
@@ -264,6 +266,7 @@ function AuthGate() {
           <Route path="billing" element={<AdminBilling />} />
           <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
           <Route path="user-guides" element={<AdminUserGuides />} />
+          <Route path="integrations" element={<AdminIntegrations />} />
           <Route path="access" element={<AdminAccess />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />

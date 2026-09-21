@@ -17,6 +17,7 @@ export interface Features {
   asset_management: boolean
   skills_passport: boolean
   email_notifications: boolean
+  teams_integration: boolean
 }
 
 const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management']
@@ -31,6 +32,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   space_booking: 'space_booking',
   skills_passport: 'skills_passport',
   email_notifications: 'email_notifications',
+  teams_integration: 'teams_integration',
 }
 
 const defaultFeatures: Features = {
@@ -49,6 +51,7 @@ const defaultFeatures: Features = {
   asset_management: true,
   skills_passport: true,
   email_notifications: false,
+  teams_integration: false,
 }
 
 interface FeatureContextType {

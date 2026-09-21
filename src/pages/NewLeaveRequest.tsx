@@ -8,6 +8,7 @@ import { countWorkingDays } from '../lib/workingDays'
 import { formatDate, formatDateDisplay } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
+import { sendTeamsNotification } from '../lib/teamsNotifications'
 
 const VACATION_OPTION_LEAVE_TYPES: Record<string, { name: string; translationKey: string }> = {
   buy_leave: { name: 'Buy Additional Leave', translationKey: 'buy_leave' },
@@ -392,6 +393,15 @@ export default function NewLeaveRequest() {
       approval_status: 'Submitted',
       company_id: companyUser?.company_id,
     })
+
+    if (companyUser?.company_id && managerEmail) {
+      sendTeamsNotification({
+        companyId: companyUser.company_id,
+        managerEmail,
+        employeeName: EMPLOYEE_NAME,
+        message: `Leave request needs your approval: ${taskDesc}`,
+      })
+    }
 
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/leave')

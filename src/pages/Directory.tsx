@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -43,7 +43,7 @@ function getWatchlist(): string[] {
 export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { companyUser, employeeId: currentEmployeeId, isManager } = useAuth()
+  const { companyUser, employeeId: currentEmployeeId, isManager, session } = useAuth()
   const { features } = useFeatures()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
@@ -58,6 +58,9 @@ export default function Directory() {
   const [showTeamCheckins, setShowTeamCheckins] = useState(false)
   const [teamCheckins, setTeamCheckins] = useState<TeamCheckinRow[]>([])
   const [teamCheckinsLoading, setTeamCheckinsLoading] = useState(false)
+  const [presenceMap, setPresenceMap] = useState<Record<string, string>>({})
+  const [teamsEnabled, setTeamsEnabled] = useState(false)
+  const presenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -112,6 +115,81 @@ export default function Directory() {
   }, [companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  useEffect(() => {
+    if (!companyUser?.company_id || !features.teams_integration) return
+    supabase
+      .from('company_teams_config')
+      .select('is_enabled, consent_granted')
+      .eq('company_id', companyUser.company_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setTeamsEnabled(!!data?.is_enabled && !!data?.consent_granted)
+      })
+  }, [companyUser?.company_id, features.teams_integration])
+
+  const fetchPresence = useCallback(async () => {
+    if (!teamsEnabled || entries.length === 0 || !session?.provider_token) return
+    const token = session.provider_token
+    const jwtPayload = session.access_token
+    const emails = entries.map(e => e.user_email).filter(Boolean)
+    if (emails.length === 0) return
+
+    try {
+      const resolvedIds: Record<string, string> = {}
+      const idToEmail: Record<string, string> = {}
+
+      for (const email of emails) {
+        const { data } = await supabase.functions.invoke('teams-proxy', {
+          body: { endpoint: `/users/${encodeURIComponent(email)}`, provider_token: token },
+        })
+        if (data?.id) {
+          resolvedIds[email] = data.id
+          idToEmail[data.id] = email
+        }
+      }
+
+      const userIds = Object.values(resolvedIds)
+      if (userIds.length === 0) return
+
+      const { data: batchResult } = await supabase.functions.invoke('teams-proxy', {
+        body: {
+          endpoint: '/communications/getPresencesByUserId',
+          method: 'POST',
+          body: { ids: userIds },
+          provider_token: token,
+        },
+      })
+
+      const map: Record<string, string> = {}
+      for (const p of batchResult?.value || []) {
+        const email = idToEmail[p.id]
+        if (email) map[email] = p.availability || 'PresenceUnknown'
+      }
+      setPresenceMap(map)
+    } catch {
+      // presence fetch failed — not blocking
+    }
+  }, [teamsEnabled, entries, session?.provider_token])
+
+  useEffect(() => {
+    if (!teamsEnabled) return
+    fetchPresence()
+    presenceTimerRef.current = setInterval(fetchPresence, 60000)
+    return () => {
+      if (presenceTimerRef.current) clearInterval(presenceTimerRef.current)
+    }
+  }, [teamsEnabled, fetchPresence])
+
+  function getPresenceColor(availability: string): string {
+    switch (availability) {
+      case 'Available': return '#43a047'
+      case 'Busy': case 'DoNotDisturb': case 'BusyIdle': return '#e53935'
+      case 'Away': case 'BeRightBack': return '#fb8c00'
+      case 'Offline': return '#9e9e9e'
+      default: return '#bdbdbd'
+    }
+  }
 
   async function openProfile(entry: DirectoryEntry) {
     setSelected(entry)
@@ -316,6 +394,13 @@ export default function Directory() {
                 </button>
                 {isOnLeave(entry) && (
                   <span className="directory-leave-badge">{t('directory.on_leave')}</span>
+                )}
+                {teamsEnabled && presenceMap[entry.user_email] && presenceMap[entry.user_email] !== 'PresenceUnknown' && (
+                  <span
+                    className="directory-presence-dot"
+                    title={presenceMap[entry.user_email]}
+                    style={{ background: getPresenceColor(presenceMap[entry.user_email]) }}
+                  />
                 )}
               </div>
               <div className="directory-card-info">

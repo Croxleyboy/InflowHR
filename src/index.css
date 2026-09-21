@@ -3169,6 +3169,14 @@ body {
   letter-spacing: 0.3px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
+.directory-presence-dot {
+  position: absolute;
+  bottom: 2px; right: 2px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
 .directory-leave-badge-modal {
   display: inline-block;
   background: #43a047;
