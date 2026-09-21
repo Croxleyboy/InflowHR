@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
     const { data: cu } = await sb
       .from('company_users')
       .select('company_id')
-      .eq('user_id', user.id)
+      .eq('auth_user_id', user.id)
       .limit(1)
       .maybeSingle()
     if (!cu) return json({ error: 'No company membership' }, 403)
