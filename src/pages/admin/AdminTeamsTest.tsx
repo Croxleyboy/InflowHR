@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { supabase } from '../../lib/supabase'
 
 interface Employee {
@@ -45,8 +46,21 @@ const PRESENCE_LABELS: Record<string, string> = {
   UrgentInterruptionsOnly: 'Urgent Only',
 }
 
+function isConsentError(err: any): boolean {
+  const msg = (err?.message || '').toLowerCase()
+  return msg.includes('authorization_requestdenied')
+    || msg.includes('insufficient privileges')
+    || msg.includes('access denied')
+    || msg.includes('forbidden')
+    || msg.includes('interaction_required')
+    || msg.includes('consent')
+    || msg.includes('401')
+    || msg.includes('403')
+}
+
 export default function AdminTeamsTest() {
   const { session, companyUser } = useAuth()
+  const { selectedCompany } = useAdminCompany()
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -54,6 +68,7 @@ export default function AdminTeamsTest() {
   const [presence, setPresence] = useState<Presence | null>(null)
   const [presenceLoading, setPresenceLoading] = useState(false)
   const [presenceError, setPresenceError] = useState('')
+  const [needsConsent, setNeedsConsent] = useState(false)
 
   const [message, setMessage] = useState('')
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
@@ -62,22 +77,24 @@ export default function AdminTeamsTest() {
   const [pollingId, setPollingId] = useState<ReturnType<typeof setInterval> | null>(null)
 
   const providerToken = session?.provider_token || null
+  const companyDomain = selectedCompany?.domain || ''
 
   useEffect(() => {
-    if (!companyUser?.company_id) return
+    const cid = selectedCompany?.id || companyUser?.company_id
+    if (!cid) return
     supabase.from('employees')
       .select('id, first_name, last_name, email, avatar_url')
-      .eq('company_id', companyUser.company_id)
+      .eq('company_id', cid)
       .eq('is_active', true)
       .order('first_name')
       .then(({ data }) => { if (data) setEmployees(data as Employee[]) })
-  }, [companyUser?.company_id])
+  }, [selectedCompany?.id, companyUser?.company_id])
 
   useEffect(() => {
     return () => { if (pollingId) clearInterval(pollingId) }
   }, [pollingId])
 
-  async function connectTeams() {
+  async function authoriseTeamsPermissions() {
     await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: {
@@ -89,7 +106,7 @@ export default function AdminTeamsTest() {
   }
 
   async function graphFetch(endpoint: string, options: RequestInit = {}) {
-    if (!providerToken) throw new Error('No Teams token — connect first')
+    if (!providerToken) throw new Error('No Teams token — authorise permissions first')
     const res = await fetch(`${GRAPH_BASE}${endpoint}`, {
       ...options,
       headers: {
@@ -100,7 +117,12 @@ export default function AdminTeamsTest() {
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      throw new Error(body?.error?.message || `Graph API ${res.status}`)
+      const errMsg = body?.error?.message || `Graph API ${res.status}`
+      const err = new Error(errMsg)
+      if (res.status === 401 || res.status === 403 || isConsentError(err)) {
+        setNeedsConsent(true)
+      }
+      throw err
     }
     return res.json()
   }
@@ -112,6 +134,7 @@ export default function AdminTeamsTest() {
     try {
       const data = await graphFetch(`/users/${encodeURIComponent(email)}/presence`)
       setPresence({ availability: data.availability, activity: data.activity })
+      setNeedsConsent(false)
     } catch (err: any) {
       setPresenceError(err.message)
     } finally {
@@ -185,6 +208,7 @@ export default function AdminTeamsTest() {
 
       setSendStatus('sent')
       setMessage('')
+      setNeedsConsent(false)
       setTimeout(() => setSendStatus('idle'), 4000)
     } catch (err: any) {
       setSendError(err.message)
@@ -207,29 +231,64 @@ export default function AdminTeamsTest() {
       <h2 className="admin-page-title">Teams Integration Test</h2>
       <p className="admin-page-subtitle">Super admin only — test Microsoft Teams presence and messaging via Graph API</p>
 
-      {/* Connection status */}
+      {/* Authorisation status */}
       <div className="teams-test-section">
-        <h3 className="teams-test-heading">Connection</h3>
-        {providerToken ? (
+        <h3 className="teams-test-heading">Authorisation</h3>
+        {providerToken && !needsConsent ? (
           <div className="teams-test-status teams-test-connected">
             <span className="teams-test-dot" style={{ background: '#2e7d32' }} />
             Connected — Azure AD token available
+            {companyDomain && <span className="teams-test-domain">{companyDomain}</span>}
           </div>
         ) : (
-          <div className="teams-test-status teams-test-disconnected">
-            <span className="teams-test-dot" style={{ background: '#c62828' }} />
-            Not connected — token missing or expired
-            <button className="admin-add-btn" style={{ marginLeft: 16 }} onClick={connectTeams}>
-              Connect to Teams
+          <div className="teams-test-auth-card">
+            <div className="teams-test-auth-info">
+              <div className="teams-test-status teams-test-disconnected">
+                <span className="teams-test-dot" style={{ background: '#c62828' }} />
+                {needsConsent
+                  ? 'Insufficient permissions — consent required for Chat and Presence scopes'
+                  : 'Not connected — Teams permissions not yet authorised'}
+              </div>
+              {companyDomain && (
+                <p className="teams-test-hint" style={{ margin: '8px 0 0' }}>
+                  Domain: <strong>{companyDomain}</strong>
+                </p>
+              )}
+              <p className="teams-test-hint" style={{ margin: '6px 0 0' }}>
+                Clicking the button below re-authenticates with additional Graph API scopes
+                (Presence.Read.All, Chat.ReadWrite, ChatMessage.Send). Azure AD will prompt
+                you to consent to the new permissions.
+              </p>
+            </div>
+            <button className="teams-test-auth-btn" onClick={authoriseTeamsPermissions}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              Authorise Teams Permissions
+              {companyDomain && <span className="teams-test-auth-domain">for {companyDomain}</span>}
             </button>
           </div>
         )}
-        <p className="teams-test-hint">
-          Clicking "Connect to Teams" re-authenticates with additional Graph API scopes
-          (Presence.Read.All, Chat.ReadWrite, ChatMessage.Send). Azure AD will prompt you to
-          consent to the new permissions.
-        </p>
       </div>
+
+      {/* Consent required banner — shown inline when a Graph call fails */}
+      {needsConsent && providerToken && (
+        <div className="teams-test-section">
+          <div className="teams-test-consent-banner">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <div>
+              <strong>Permission denied by Microsoft Graph</strong>
+              <p style={{ margin: '4px 0 0' }}>
+                Your current session token does not include Chat or Presence permissions.
+                Click the button above to re-authorise with the required scopes.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Person picker */}
       <div className="teams-test-section">
@@ -283,8 +342,8 @@ export default function AdminTeamsTest() {
             <h3 className="teams-test-heading">
               Presence — {selectedEmployee.first_name} {selectedEmployee.last_name}
             </h3>
-            {!providerToken ? (
-              <p className="teams-test-hint">Connect to Teams first to view presence</p>
+            {!providerToken || needsConsent ? (
+              <p className="teams-test-hint">Authorise Teams permissions above to view presence</p>
             ) : presenceLoading && !presence ? (
               <p className="teams-test-hint">Loading…</p>
             ) : presenceError ? (
@@ -321,8 +380,8 @@ export default function AdminTeamsTest() {
             <h3 className="teams-test-heading">
               Send Message — {selectedEmployee.first_name} {selectedEmployee.last_name}
             </h3>
-            {!providerToken ? (
-              <p className="teams-test-hint">Connect to Teams first to send messages</p>
+            {!providerToken || needsConsent ? (
+              <p className="teams-test-hint">Authorise Teams permissions above to send messages</p>
             ) : (
               <>
                 <textarea
