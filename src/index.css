@@ -6556,6 +6556,50 @@ body {
   border-radius: 4px;
   font-size: 12px;
 }
+.teams-test-search {
+  position: relative;
+  margin-bottom: 12px;
+}
+.teams-test-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.45;
+  pointer-events: none;
+}
+.teams-test-search-input {
+  width: 100%;
+  padding: 10px 36px 10px 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.teams-test-search-input:focus {
+  border-color: var(--primary);
+}
+.teams-test-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+  border-radius: 4px;
+}
+.teams-test-search-clear:hover {
+  background: var(--hover);
+}
 .teams-test-employee-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
