@@ -70,6 +70,7 @@ export default function AdminExpenses() {
   const [newExpenseType, setNewExpenseType] = useState('')
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportingXero, setExportingXero] = useState(false)
   const [exportLogs, setExportLogs] = useState<ExportLog[]>([])
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -257,6 +258,107 @@ export default function AdminExpenses() {
       showError('Export failed: ' + (err.message || 'Unknown error'))
     }
     setExporting(false)
+  }
+
+  const XERO_ACCOUNT_MAP: Record<string, string> = {
+    'Flights': '493', 'Trains': '493', 'Taxis': '493', 'Car rental': '493',
+    'Mileage': '494', 'Parking and tolls': '493', 'Hotel stays for business': '489',
+    'Meals while travelling': '424', 'Client entertainment': '420',
+    'Stationery': '461', 'Equipment or tools': '461', 'Software or subscriptions': '463',
+    'Mobile phone usage': '449', 'Internet/data charges': '449',
+    'Course fees/certifications or conferences': '404',
+  }
+
+  async function exportXero() {
+    if (!selectedCompanyId) return
+    setExportingXero(true)
+    try {
+      let rangeStart: Date
+      let rangeEnd: Date
+      let rangeLabel: string
+
+      if (exportMonth === 'all') {
+        const now = new Date()
+        const currentMonth = now.getMonth() + 1
+        const fyStartYear = currentMonth >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+        rangeStart = new Date(fyStartYear, fyStartMonth - 1, 1)
+        rangeEnd = new Date(fyStartYear + 1, fyStartMonth - 1, 1)
+        rangeLabel = `FY ${fyStartYear}-${fyStartYear + 1}`
+      } else {
+        const selected = fyMonthOptions.find(o => o.value === exportMonth)
+        if (!selected) { setExportingXero(false); return }
+        rangeStart = selected.start
+        rangeEnd = selected.end
+        rangeLabel = selected.label
+      }
+
+      const { data: expClaims } = await supabase
+        .from('expense_claims')
+        .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email)')
+        .eq('company_id', selectedCompanyId)
+        .in('status', ['pending', 'approved'])
+        .gte('submitted_at', rangeStart.toISOString())
+        .lt('submitted_at', rangeEnd.toISOString())
+        .order('submitted_at', { ascending: false })
+
+      if (!expClaims || expClaims.length === 0) {
+        showError(`No submitted or approved expenses for ${rangeLabel}`)
+        setExportingXero(false)
+        return
+      }
+
+      const claimIds = expClaims.map(c => c.id)
+      const { data: lineItems } = await supabase
+        .from('expense_line_items')
+        .select('*')
+        .in('expense_claim_id', claimIds)
+        .order('date_of_purchase')
+
+      const linesByClaimId: Record<number, LineItem[]> = {}
+      lineItems?.forEach((li: any) => {
+        if (!linesByClaimId[li.expense_claim_id]) linesByClaimId[li.expense_claim_id] = []
+        linesByClaimId[li.expense_claim_id].push(li)
+      })
+
+      const xeroHeader = 'ContactName,InvoiceNumber,Reference,InvoiceDate,DueDate,Description,Quantity,UnitAmount,AccountCode,TaxType,TrackingName1,TrackingOption1\n'
+      let xeroRows = ''
+
+      for (const claim of expClaims) {
+        const contactName = claim.employee ? `${claim.employee.first_name} ${claim.employee.last_name}` : ''
+        const invoiceDate = claim.submitted_at ? new Date(claim.submitted_at).toLocaleDateString('en-GB') : ''
+        const dueDate = claim.submitted_at
+          ? new Date(new Date(claim.submitted_at).getTime() + 30 * 86400000).toLocaleDateString('en-GB')
+          : ''
+        const lines = linesByClaimId[claim.id] || []
+
+        if (lines.length === 0) {
+          xeroRows += `"${contactName}","${claim.reference_number}","${claim.title}","${invoiceDate}","${dueDate}","${claim.title}","1","${Number(claim.amount).toFixed(2)}","429","20% (VAT on Expenses)","",""\n`
+          continue
+        }
+
+        for (const li of lines) {
+          const desc = `${li.title} (${li.expense_type})`
+          const accountCode = XERO_ACCOUNT_MAP[li.expense_type] || '429'
+          xeroRows += `"${contactName}","${claim.reference_number}","${claim.title}","${invoiceDate}","${dueDate}","${desc}","1","${Number(li.amount).toFixed(2)}","${accountCode}","20% (VAT on Expenses)","${claim.cost_center ? 'Cost Centre' : ''}","${claim.cost_center || ''}"\n`
+        }
+      }
+
+      const csvContent = xeroHeader + xeroRows
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const now = new Date()
+      const fileName = `Xero_Bills_${rangeLabel.replace(/\s+/g, '_')}_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}.csv`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      a.click()
+      URL.revokeObjectURL(url)
+
+      showSuccess(`Xero export: ${expClaims.length} claims ready for import`)
+    } catch (err: any) {
+      showError('Xero export failed: ' + (err.message || 'Unknown error'))
+    }
+    setExportingXero(false)
   }
 
   async function loadClaims() {
@@ -531,6 +633,12 @@ export default function AdminExpenses() {
                 </svg>
                 {exporting ? 'Exporting...' : 'Export'}
               </button>
+              <button className="admin-btn-sm" onClick={exportXero} disabled={exportingXero} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', background: '#13b5ea', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {exportingXero ? 'Exporting...' : 'Export for Xero'}
+              </button>
             </div>
           </div>
 
@@ -716,6 +824,12 @@ export default function AdminExpenses() {
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
                 {exporting ? 'Exporting...' : 'Export'}
+              </button>
+              <button className="admin-btn-sm" onClick={exportXero} disabled={exportingXero} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', background: '#13b5ea', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {exportingXero ? 'Exporting...' : 'Export for Xero'}
               </button>
             </div>
           </div>
