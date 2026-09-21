@@ -253,6 +253,13 @@ export default function AdminLeave() {
       const typeName = req.leave_type?.name || 'Leave'
       const dateRange = `${formatDate(req.start_date)} to ${formatDate(req.end_date)}`
 
+      await supabase.from('workflow_tracker')
+        .update({ status: 'Complete', approval_status: 'Deleted' })
+        .eq('approval_id', id)
+        .eq('record_type', 'Leave')
+        .eq('status', 'Pending')
+        .eq('company_id', selectedCompanyId)
+
       await supabase.from('notifications').insert({
         employee_id: req.employee_id,
         title: `${typeName} request deleted`,
