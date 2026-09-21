@@ -118,10 +118,7 @@ export default function AdminDashboard() {
     ])
 
     const todayStr = new Date().toISOString().slice(0, 10)
-    const now = new Date()
-    const monthAgoStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10)
-    const monthAgoEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().slice(0, 10)
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+    const monthAgoEnd = new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0, 10)
 
     const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev] = await Promise.all([
       eq(supabase.from('course_enrolments').select('id', { count: 'exact', head: true })),
