@@ -6516,6 +6516,201 @@ body {
   margin: 0;
 }
 
+/* ===== Teams Test ===== */
+.teams-test-section {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: var(--bg-card);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.teams-test-heading {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 12px;
+}
+.teams-test-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.teams-test-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.teams-test-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+.teams-test-hint code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.teams-test-employee-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.teams-test-emp-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: left;
+}
+.teams-test-emp-card:hover {
+  border-color: #1976d2;
+}
+.teams-test-emp-selected {
+  border-color: #1976d2;
+  box-shadow: 0 0 0 2px rgba(25,118,210,0.2);
+  background: rgba(25,118,210,0.04);
+}
+.teams-test-emp-avatar {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.teams-test-emp-initials {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+}
+.teams-test-emp-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.teams-test-emp-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.teams-test-emp-email {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.teams-test-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 800px) {
+  .teams-test-panels { grid-template-columns: 1fr; }
+}
+.teams-test-panel {
+  margin-bottom: 0;
+}
+.teams-test-presence {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+.teams-test-presence-dot {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+}
+.teams-test-presence-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.teams-test-presence-status {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.teams-test-presence-activity {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.teams-test-presence-actions {
+  flex-shrink: 0;
+}
+.teams-test-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.teams-test-textarea:focus {
+  outline: none;
+  border-color: #1976d2;
+}
+.teams-test-send-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.teams-test-success {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2e7d32;
+}
+.teams-test-error {
+  font-size: 13px;
+  font-weight: 600;
+  color: #c62828;
+  padding: 8px 12px;
+  background: #ffebee;
+  border-radius: 8px;
+}
+[data-theme="dark"] .teams-test-error {
+  background: rgba(198,40,40,0.15);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .teams-test-error {
+    background: rgba(198,40,40,0.15);
+  }
+}
+.teams-test-guidance {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.6;
+}
+.teams-test-guidance p { margin: 0 0 10px; }
+.teams-test-guidance h4 { font-size: 13px; font-weight: 700; margin: 14px 0 6px; }
+.teams-test-guidance ol { margin: 0 0 10px; padding-left: 20px; }
+.teams-test-guidance li { margin-bottom: 4px; }
+.teams-test-guidance code {
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
 /* ===== Labour Demand ===== */
 .ld-card {
   background: var(--card-bg, #fff);
