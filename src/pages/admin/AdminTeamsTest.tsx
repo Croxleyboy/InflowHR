@@ -234,42 +234,37 @@ export default function AdminTeamsTest() {
       {/* Authorisation status */}
       <div className="teams-test-section">
         <h3 className="teams-test-heading">Authorisation</h3>
-        {providerToken && !needsConsent ? (
-          <div className="teams-test-status teams-test-connected">
-            <span className="teams-test-dot" style={{ background: '#2e7d32' }} />
-            Connected — Azure AD token available
-            {companyDomain && <span className="teams-test-domain">{companyDomain}</span>}
-          </div>
-        ) : (
-          <div className="teams-test-auth-card">
-            <div className="teams-test-auth-info">
+        <div className="teams-test-auth-card">
+          <div className="teams-test-auth-info">
+            {providerToken && !needsConsent ? (
+              <div className="teams-test-status teams-test-connected">
+                <span className="teams-test-dot" style={{ background: '#2e7d32' }} />
+                Azure AD token available
+                {companyDomain && <span className="teams-test-domain">{companyDomain}</span>}
+              </div>
+            ) : (
               <div className="teams-test-status teams-test-disconnected">
                 <span className="teams-test-dot" style={{ background: '#c62828' }} />
                 {needsConsent
                   ? 'Insufficient permissions — consent required for Chat and Presence scopes'
                   : 'Not connected — Teams permissions not yet authorised'}
               </div>
-              {companyDomain && (
-                <p className="teams-test-hint" style={{ margin: '8px 0 0' }}>
-                  Domain: <strong>{companyDomain}</strong>
-                </p>
-              )}
-              <p className="teams-test-hint" style={{ margin: '6px 0 0' }}>
-                Clicking the button below re-authenticates with additional Graph API scopes
-                (Presence.Read.All, Chat.ReadWrite, ChatMessage.Send). Azure AD will prompt
-                you to consent to the new permissions.
-              </p>
-            </div>
-            <button className="teams-test-auth-btn" onClick={authoriseTeamsPermissions}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              Authorise Teams Permissions
-              {companyDomain && <span className="teams-test-auth-domain">for {companyDomain}</span>}
-            </button>
+            )}
+            <p className="teams-test-hint" style={{ margin: '8px 0 0' }}>
+              {providerToken && !needsConsent
+                ? 'If presence or messaging fails, re-authorise to request the additional Teams scopes.'
+                : 'Click the button below to authenticate with Graph API scopes (Presence.Read.All, Chat.ReadWrite, ChatMessage.Send). Azure AD will prompt you to consent to the new permissions.'}
+            </p>
           </div>
-        )}
+          <button className="teams-test-auth-btn" onClick={authoriseTeamsPermissions}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            Authorise Teams Permissions
+            {companyDomain && <span className="teams-test-auth-domain">for {companyDomain}</span>}
+          </button>
+        </div>
       </div>
 
       {/* Consent required banner — shown inline when a Graph call fails */}
