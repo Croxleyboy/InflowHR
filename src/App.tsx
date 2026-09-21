@@ -79,6 +79,7 @@ import AdminDashboardModern from './pages/admin/AdminDashboardModern'
 import AdminAccess from './pages/admin/AdminAccess'
 import AdminCancellations from './pages/admin/AdminCancellations'
 import AdminGettingSetup from './pages/admin/AdminGettingSetup'
+import AdminTeamsTest from './pages/admin/AdminTeamsTest'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
 import TimesheetCheckIn from './pages/TimesheetCheckIn'
@@ -223,6 +224,7 @@ function AuthGate() {
               <Route path="subscriptions" element={<AdminSubscriptions />} />
               <Route path="cancellations" element={<AdminCancellations />} />
               <Route path="demo-seed" element={<AdminDemoSeed />} />
+              <Route path="teams-test" element={<AdminTeamsTest />} />
             </Route>
           </Route>
         </Route>
@@ -268,6 +270,7 @@ function AuthGate() {
             <Route path="subscriptions" element={<AdminSubscriptions />} />
             <Route path="cancellations" element={<AdminCancellations />} />
             <Route path="demo-seed" element={<AdminDemoSeed />} />
+            <Route path="teams-test" element={<AdminTeamsTest />} />
           </Route>
         </Route>
       </Route>
