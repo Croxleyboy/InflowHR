@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
     const conversationId = activity.conversation?.id
     const serviceUrl = activity.serviceUrl
     const tenantId = activity.conversation?.tenantId || activity.channelData?.tenant?.id
-    const userAadId = activity.from?.id
+    const userAadId = activity.from?.aadObjectId || activity.from?.id
     const userName = activity.from?.name
 
     if (!conversationId || !serviceUrl || !tenantId || !userAadId) {
