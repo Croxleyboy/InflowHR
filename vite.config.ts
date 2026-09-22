@@ -62,6 +62,15 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.includes('pdfjs-dist')) return 'pdf-worker'
+        },
+      },
+    },
+  },
   base: '/',
   server: {
     port: 3000,
