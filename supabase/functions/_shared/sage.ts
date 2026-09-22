@@ -1,41 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const SAGE_TOKEN_URL = 'https://oauth.accounting.sage.com/token'
-
 export function getSupabase() {
   return createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
-}
-
-export function getSageRedirectUri(): string {
-  const redirectUri = Deno.env.get('SAGE_REDIRECT_URI')
-  if (!redirectUri) throw new Error('Missing SAGE_REDIRECT_URI env var')
-  return redirectUri
-}
-
-export async function getSageCredentials(companyId: string): Promise<{
-  clientId: string
-  clientSecret: string
-  redirectUri: string
-}> {
-  const sb = getSupabase()
-  const { data: row } = await sb
-    .from('sage_integrations')
-    .select('client_id, client_secret_encrypted')
-    .eq('company_id', companyId)
-    .single()
-
-  if (!row?.client_id || !row?.client_secret_encrypted) {
-    throw new Error('Sage credentials not configured — enter Client ID and Secret in Integrations')
-  }
-
-  return {
-    clientId: row.client_id,
-    clientSecret: row.client_secret_encrypted,
-    redirectUri: getSageRedirectUri(),
-  }
 }
 
 export const corsHeaders = {
@@ -50,88 +19,151 @@ export function json(data: unknown, status = 200) {
   })
 }
 
-export function redirect(url: string) {
-  return new Response(null, { status: 302, headers: { Location: url } })
+export interface ParsedPayslip {
+  employee_name: string
+  employee_number: string
+  department: string
+  ni_number: string
+  tax_code: string
+  gross_pay: number
+  tax: number
+  national_insurance: number
+  pension: number
+  other_deductions: number
+  net_pay: number
+  pay_period_start: string
+  pay_period_end: string
+  payment_date: string
 }
 
-async function hmacKey(secret: string): Promise<CryptoKey> {
-  const enc = new TextEncoder()
-  return crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify'])
-}
+export function parseSagePayslipText(text: string): ParsedPayslip[] {
+  const normalised = text.replace(/Â£/g, '£').replace(/Â£/g, '£')
 
-export async function signState(payload: string, secret: string): Promise<string> {
-  const key = await hmacKey(secret)
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload))
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
-  return `${payload}.${sigB64}`
-}
+  const pages = normalised.split(/={10,}|\f/).filter(s => s.trim())
+  const payslips: ParsedPayslip[] = []
 
-export async function verifyState(signed: string, secret: string): Promise<string | null> {
-  const dotIdx = signed.lastIndexOf('.')
-  if (dotIdx < 0) return null
-  const payload = signed.slice(0, dotIdx)
-  const sigB64 = signed.slice(dotIdx + 1)
-  const key = await hmacKey(secret)
-  const sigBytes = Uint8Array.from(atob(sigB64), c => c.charCodeAt(0))
-  const valid = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
-  return valid ? payload : null
-}
+  for (const page of pages) {
+    const lines = page.split('\n').map(l => l.trim()).filter(Boolean)
+    const block = lines.join(' ')
 
-export async function getValidSageToken(companyId: string): Promise<{
-  accessToken: string
-  resourceOwnerId: string
-} | null> {
-  const sb = getSupabase()
-  const { data: row } = await sb
-    .from('sage_integrations')
-    .select('*')
-    .eq('company_id', companyId)
-    .single()
+    let empName = ''
+    let empNo = ''
+    let dept = ''
+    let niNumber = ''
+    let taxCode = ''
+    let grossPay = 0
+    let tax = 0
+    let ni = 0
+    let pension = 0
+    let netPay = 0
+    let payDate = ''
 
-  if (!row?.access_token || !row?.resource_owner_id) return null
+    const namePatterns = [
+      /Employee\s+Name:\s*(.+?)\s{2,}/i,
+      /Employee\s+Name:\s*(.+?)(?:\s+Employee\s+No)/i,
+      /Employee\s+Name:\s*(.+?)$/im,
+      /Name:\s*(.+?)\s{2,}/i,
+    ]
+    for (const pat of namePatterns) {
+      const m = block.match(pat) || lines.join('\n').match(pat)
+      if (m) { empName = m[1].trim(); break }
+    }
 
-  if (row.expires_at && new Date(row.expires_at) > new Date(Date.now() + 60_000)) {
-    return { accessToken: row.access_token, resourceOwnerId: row.resource_owner_id }
+    const noPatterns = [
+      /Employee\s+No\.?:\s*(\S+)/i,
+      /Emp\.?\s+No\.?:\s*(\S+)/i,
+      /Employee\s+Number:\s*(\S+)/i,
+      /Employee\s+ID:\s*(\S+)/i,
+      /Payroll\s+(?:No|Number|ID)\.?:\s*(\S+)/i,
+    ]
+    for (const pat of noPatterns) {
+      const m = block.match(pat)
+      if (m) { empNo = m[1].trim(); break }
+    }
+
+    if (!empName || !empNo) continue
+
+    const deptM = block.match(/Department:\s*([A-Za-z][A-Za-z0-9 &/-]*?)(?:\s{2,}|$)/i)
+    if (deptM) dept = deptM[1].trim()
+
+    const niM = block.match(/NI\s+(?:Number|No\.?):\s*([A-Z]{2}\d{6}[A-D])/i)
+    if (niM) niNumber = niM[1].trim()
+
+    const tcM = block.match(/Tax\s+Code:\s*(\S+)/i)
+    if (tcM) taxCode = tcM[1].trim()
+
+    const datePatterns = [
+      /Pay(?:ment)?\s+Date:\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i,
+      /Date\s+(?:of\s+)?Pay(?:ment)?:\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i,
+      /Payment:\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i,
+    ]
+    for (const pat of datePatterns) {
+      const m = block.match(pat)
+      if (m) { payDate = m[1].trim(); break }
+    }
+
+    const moneyRe = (label: string) =>
+      new RegExp(label + '\\s*:?\\s*£?([\\d,]+\\.\\d{2})', 'i')
+
+    const grossM = block.match(moneyRe('Gross\\s+Pay'))
+    if (grossM) grossPay = parseFloat(grossM[1].replace(/,/g, ''))
+
+    const netM = block.match(/NET\s+PAY\s*:?\s*£?([\d,]+\.\d{2})/i)
+      || block.match(/Net\s+Pay\s*:?\s*£?([\d,]+\.\d{2})/i)
+    if (netM) netPay = parseFloat(netM[1].replace(/,/g, ''))
+
+    const taxM = block.match(/PAYE\s+(?:Tax)?\s*:?\s*£?([\d,]+\.\d{2})/i)
+      || block.match(/Income\s+Tax\s*:?\s*£?([\d,]+\.\d{2})/i)
+      || block.match(/Tax\s+Deducted\s*:?\s*£?([\d,]+\.\d{2})/i)
+    if (taxM) tax = parseFloat(taxM[1].replace(/,/g, ''))
+
+    const niAmtM = block.match(/National\s+Insurance\s*(?:\(Employee\))?\s*:?\s*£?([\d,]+\.\d{2})/i)
+      || block.match(/Employee(?:'s)?\s+NIC?\s*:?\s*£?([\d,]+\.\d{2})/i)
+      || block.match(/NI\s+Contribution\s*:?\s*£?([\d,]+\.\d{2})/i)
+    if (niAmtM) ni = parseFloat(niAmtM[1].replace(/,/g, ''))
+
+    const penM = block.match(/Pension\s*\(Employee\)\s*:?\s*£?([\d,]+\.\d{2})/i)
+      || block.match(/Employee(?:'s)?\s+Pension\s*:?\s*£?([\d,]+\.\d{2})/i)
+      || block.match(/Pension\s+Contribution\s*:?\s*£?([\d,]+\.\d{2})/i)
+      || block.match(/Pension\s*:?\s*£?([\d,]+\.\d{2})/i)
+    if (penM) pension = parseFloat(penM[1].replace(/,/g, ''))
+
+    let periodStart = ''
+    let periodEnd = ''
+    let payDateISO = ''
+    if (payDate) {
+      const sep = payDate.includes('/') ? '/' : '-'
+      const parts = payDate.split(sep)
+      let dd = parseInt(parts[0]), mm = parseInt(parts[1]), yyyy = parseInt(parts[2])
+      if (yyyy < 100) yyyy += 2000
+      const payDateObj = new Date(yyyy, mm - 1, dd)
+      const monthStart = new Date(payDateObj.getFullYear(), payDateObj.getMonth(), 1)
+      const monthEnd = new Date(payDateObj.getFullYear(), payDateObj.getMonth() + 1, 0)
+      periodStart = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-01`
+      periodEnd = `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`
+      payDateISO = `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+    }
+
+    const totalNamedDed = tax + ni + pension
+    const otherDed = Math.round(Math.max(0, grossPay - netPay - totalNamedDed) * 100) / 100
+
+    payslips.push({
+      employee_name: empName,
+      employee_number: empNo,
+      department: dept,
+      ni_number: niNumber,
+      tax_code: taxCode,
+      gross_pay: grossPay,
+      tax,
+      national_insurance: ni,
+      pension,
+      other_deductions: otherDed,
+      net_pay: netPay,
+      pay_period_start: periodStart,
+      pay_period_end: periodEnd,
+      payment_date: payDateISO,
+    })
   }
 
-  if (!row.refresh_token || !row.client_id || !row.client_secret_encrypted) return null
-
-  const res = await fetch(SAGE_TOKEN_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: row.refresh_token,
-      client_id: row.client_id,
-      client_secret: row.client_secret_encrypted,
-    }),
-  })
-
-  if (!res.ok) {
-    await sb.from('sage_integrations').update({
-      sync_status: 'error',
-      sync_error: 'Token refresh failed — reconnect to Sage',
-      updated_at: new Date().toISOString(),
-    }).eq('company_id', companyId)
-    return null
-  }
-
-  const tokens = await res.json()
-  const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString()
-
-  await sb.from('sage_integrations').update({
-    access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token || row.refresh_token,
-    expires_at: expiresAt,
-    updated_at: new Date().toISOString(),
-  }).eq('company_id', companyId)
-
-  await sb.rpc('log_gdpr_action', {
-    p_action: 'GRANT_ACCESS',
-    p_entity_type: 'sage_integration',
-    p_entity_id: companyId,
-    p_details: JSON.stringify({ event: 'token_refreshed' }),
-  })
-
-  return { accessToken: tokens.access_token, resourceOwnerId: row.resource_owner_id }
+  return payslips
 }

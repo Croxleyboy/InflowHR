@@ -28,11 +28,11 @@ interface XeroIntegration {
 interface SageIntegration {
   id: string
   company_id: string
-  client_id: string | null
-  client_secret_encrypted: string | null
   sync_status: string
   sync_error: string | null
   last_sync_at: string | null
+  last_upload_at: string | null
+  last_upload_filename: string | null
   payslip_source: 'inflowhr' | 'sage'
 }
 
@@ -106,10 +106,6 @@ export default function AdminIntegrations() {
   // Sage state
   const [sageIntegration, setSageIntegration] = useState<SageIntegration | null>(null)
   const [sageExpanded, setSageExpanded] = useState(false)
-  const [sageClientId, setSageClientId] = useState('')
-  const [sageClientSecret, setSageClientSecret] = useState('')
-  const [savingSageCreds, setSavingSageCreds] = useState(false)
-  const [sageConnecting, setSageConnecting] = useState(false)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -135,7 +131,7 @@ export default function AdminIntegrations() {
       supabase.from('company_teams_config').select('*').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_teams_bot_conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', companyId).maybeSingle(),
-      supabase.from('sage_integrations').select('id, company_id, client_id, client_secret_encrypted, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', companyId).maybeSingle(),
+      supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
     ])
 
     if (teamsRes.data) {
@@ -152,8 +148,6 @@ export default function AdminIntegrations() {
     setXeroIntegration(xeroRes.data as XeroIntegration | null)
     const sage = sageRes.data as SageIntegration | null
     setSageIntegration(sage)
-    if (sage?.client_id) setSageClientId(sage.client_id)
-    if (sage?.client_secret_encrypted) setSageClientSecret('••••••••••••••••')
 
     setLoading(false)
   }
@@ -173,18 +167,6 @@ export default function AdminIntegrations() {
       showError(`Xero connection failed: ${reason}`)
       window.history.replaceState({}, '', window.location.pathname)
       setXeroExpanded(true)
-    }
-    const sageParam = params.get('sage')
-    if (sageParam === 'connected') {
-      showSuccess('Connected to Sage successfully')
-      window.history.replaceState({}, '', window.location.pathname)
-      setSageExpanded(true)
-      loadAll()
-    } else if (sageParam === 'error') {
-      const reason = params.get('reason') || 'unknown'
-      showError(`Sage connection failed: ${reason}`)
-      window.history.replaceState({}, '', window.location.pathname)
-      setSageExpanded(true)
     }
   }, [])
 
@@ -283,40 +265,21 @@ export default function AdminIntegrations() {
 
   // ── Sage handlers ─────────────────────────────────────────────────────────
 
-  async function saveSageCreds() {
+  async function enableSage() {
     if (!companyId) return
-    if (!sageClientId.trim() || !sageClientSecret.trim() || sageClientSecret.startsWith('••')) {
-      showError('Client ID and Client Secret are required')
-      return
-    }
-    setSavingSageCreds(true)
-    const row = {
-      company_id: companyId,
-      client_id: sageClientId.trim(),
-      client_secret_encrypted: sageClientSecret.trim(),
-      updated_at: new Date().toISOString(),
-    }
-    if (sageIntegration) {
-      const { error } = await supabase.from('sage_integrations').update(row).eq('company_id', companyId)
-      if (error) { showError('Failed to save: ' + error.message); setSavingSageCreds(false); return }
-    } else {
-      const { error } = await supabase.from('sage_integrations').insert(row)
-      if (error) { showError('Failed to save: ' + error.message); setSavingSageCreds(false); return }
-    }
-    showSuccess('Sage credentials saved')
-    await loadAll()
-    setSavingSageCreds(false)
-  }
-
-  async function connectSage() {
     if (otherPayrollActive('sage')) {
       showError('Another payroll provider (Xero) is already connected. Disconnect it first on this page.')
       return
     }
-    setSageConnecting(true)
-    const result = await callEdgeFunction('sage-connect')
-    setSageConnecting(false)
-    if (result?.url) window.location.href = result.url
+    const { error } = await supabase.from('sage_integrations').upsert({
+      company_id: companyId,
+      sync_status: 'connected',
+      payslip_source: 'sage',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id' })
+    if (error) { showError('Failed to enable: ' + error.message); return }
+    showSuccess('Sage Payroll enabled — upload payslips from the Payroll page')
+    loadAll()
   }
 
   async function disconnectSage() {
@@ -592,7 +555,7 @@ export default function AdminIntegrations() {
             <div style={{ flex: 1 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Sage Payroll</h3>
               <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
-                Sync payslip data from Sage Business Cloud Payroll
+                Import payslip PDFs exported from Sage Payroll
               </p>
             </div>
             {sageSubscribed && statusBadge(sageIntegration?.sync_status || 'not_connected')}
@@ -609,25 +572,15 @@ export default function AdminIntegrations() {
                 <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
                     <div>
-                      <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Sage</strong>
-                      {sageIntegration.last_sync_at && (
+                      <strong style={{ fontSize: 13, color: '#2e7d32' }}>Sage Payroll Enabled</strong>
+                      {sageIntegration.last_upload_at && (
                         <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
-                          Last synced: {new Date(sageIntegration.last_sync_at).toLocaleString('en-GB')}
+                          Last upload: {new Date(sageIntegration.last_upload_at).toLocaleString('en-GB')}
+                          {sageIntegration.last_upload_filename && ` — ${sageIntegration.last_upload_filename}`}
                         </p>
                       )}
                     </div>
                     <button className="admin-btn" onClick={disconnectSage}>Disconnect</button>
-                  </div>
-                </div>
-              )}
-
-              {sageIntegration?.sync_status === 'error' && (
-                <div style={{ ...sectionStyle, background: 'rgba(255,235,238,.5)', borderColor: '#ef9a9a' }}>
-                  <strong style={{ fontSize: 13, color: '#c62828' }}>Connection Error</strong>
-                  {sageIntegration.sync_error && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>{sageIntegration.sync_error}</p>}
-                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                    <button className="admin-btn admin-btn-primary" onClick={connectSage} disabled={sageConnecting}>{sageConnecting ? 'Redirecting...' : 'Reconnect'}</button>
-                    <button className="admin-btn" onClick={disconnectSage}>Remove</button>
                   </div>
                 </div>
               )}
@@ -642,56 +595,23 @@ export default function AdminIntegrations() {
                     </div>
                   )}
 
-                  <div style={sectionStyle}>
-                    <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: 14, color: 'var(--text, #333)' }}>Connection Setup</p>
-                    <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)', marginBottom: 16 }}>
-                      <p style={{ margin: '0 0 8px' }}>To connect Sage Payroll:</p>
-                      <ol style={{ margin: 0, paddingLeft: 20 }}>
-                        <li>Go to the <a href="https://developerselfservice.sageone.com" target="_blank" rel="noopener noreferrer" style={{ color: '#00DC00', fontWeight: 600 }}>Sage Developer Portal</a></li>
-                        <li>Create an app or use your existing one</li>
-                        <li>Set the callback URL to your InflowHR Supabase edge function URL</li>
-                        <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> below</li>
-                        <li>Click <strong>Connect to Sage</strong> to authorise</li>
-                      </ol>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <div>
-                        <label style={labelStyle}>Client ID</label>
-                        <input type="text" value={sageClientId} onChange={e => setSageClientId(e.target.value)}
-                          placeholder="Enter Sage Client ID" style={inputStyle} />
-                      </div>
-                      <div>
-                        <label style={labelStyle}>Client Secret</label>
-                        <input type="password" value={sageClientSecret} onChange={e => setSageClientSecret(e.target.value)}
-                          placeholder={sageIntegration?.client_secret_encrypted ? 'Secret saved — enter new to update' : 'Enter Sage Client Secret'} style={inputStyle} />
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-                      <button onClick={saveSageCreds} disabled={savingSageCreds || otherPayrollActive('sage')}
-                        style={{ background: 'var(--bg-card, #fff)', color: '#00a600', border: '1px solid #00a600', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: savingSageCreds ? 'not-allowed' : 'pointer', opacity: savingSageCreds ? 0.6 : 1 }}>
-                        {savingSageCreds ? 'Saving...' : 'Save Credentials'}
-                      </button>
-                      {(sageIntegration?.client_id || sageClientId.trim()) && (
-                        <button className="admin-btn admin-btn-primary" onClick={connectSage}
-                          disabled={sageConnecting || otherPayrollActive('sage')}
-                          style={{ fontSize: 14, padding: '10px 24px', background: '#00a600' }}>
-                          {sageConnecting ? 'Redirecting to Sage...' : 'Connect to Sage'}
-                        </button>
-                      )}
-                    </div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                    <button className="admin-btn admin-btn-primary" onClick={enableSage}
+                      disabled={otherPayrollActive('sage')}
+                      style={{ fontSize: 14, padding: '10px 24px', background: '#00a600' }}>
+                      Enable Sage Payroll
+                    </button>
                   </div>
                 </div>
               )}
 
-              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)' }}>
+              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
                 <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>How it works</p>
                 <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
-                  <li>OAuth 2.0 connection — InflowHR never stores your Sage password</li>
-                  <li>Read-only access to payroll data (pay runs, payslips)</li>
-                  <li>Payslips are matched to InflowHR employees by email address</li>
-                  <li>Sync payslips on demand from the Payroll page once connected</li>
+                  <li>Your accountant processes payroll in Sage and exports a monthly payslip PDF</li>
+                  <li>Upload the PDF on the <strong>Payroll &gt; Sage Pay</strong> tab</li>
+                  <li>InflowHR parses the PDF and matches employees by their Employee ID</li>
+                  <li>Matched payslips are saved and visible to employees on their Payslips page</li>
                   <li>Only one external payroll provider can be active at a time</li>
                 </ul>
               </div>
