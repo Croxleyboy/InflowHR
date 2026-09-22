@@ -263,29 +263,18 @@ export default function AdminDashboardModern() {
     const totalSlots = empList.length * workingDaysThis
     const totalSlotsPrev = empList.length * workingDaysPrev
 
-    const [sickThis, offThis, sickPrev, offPrev] = await Promise.all([
-      supabase.from('leave_requests').select('days_requested')
-        .eq('company_id', cid).eq('status', 'approved')
-        .or('leave_type_id.is.null')
-        .gte('start_date', fmtIso(monthStart)).lte('start_date', fmtIso(now)),
-      supabase.from('leave_requests').select('days_requested')
+    const [allLeaveThis, offPrev, sickLeaveTypes] = await Promise.all([
+      supabase.from('leave_requests')
+        .select('days_requested, leave_type_id')
         .eq('company_id', cid).eq('status', 'approved')
         .gte('start_date', fmtIso(monthStart)).lte('start_date', fmtIso(now)),
       supabase.from('leave_requests').select('days_requested')
         .eq('company_id', cid).eq('status', 'approved')
         .gte('start_date', fmtIso(prevMonthStart)).lte('start_date', fmtIso(prevMonthEnd)),
-      supabase.from('leave_requests').select('days_requested')
-        .eq('company_id', cid).eq('status', 'approved')
-        .gte('start_date', fmtIso(prevMonthStart)).lte('start_date', fmtIso(prevMonthEnd)),
+      supabase.from('leave_types').select('id').eq('company_id', cid).ilike('name', '%sick%'),
     ])
 
-    const sickLeaveTypes = await supabase.from('leave_types').select('id').eq('company_id', cid).ilike('name', '%sick%')
     const sickTypeIds = new Set(((sickLeaveTypes.data as { id: number }[]) || []).map(t => t.id))
-
-    const allLeaveThis = await supabase.from('leave_requests')
-      .select('days_requested, leave_type_id')
-      .eq('company_id', cid).eq('status', 'approved')
-      .gte('start_date', fmtIso(monthStart)).lte('start_date', fmtIso(now))
 
     const leaveRowsThis = (allLeaveThis.data as { days_requested: number; leave_type_id: number | null }[]) || []
     const sickDaysThis = leaveRowsThis.filter(r => r.leave_type_id && sickTypeIds.has(r.leave_type_id)).reduce((s, r) => s + (r.days_requested || 0), 0)
