@@ -475,13 +475,58 @@ export default function AdminExpenses() {
     showSuccess('Expense claim saved')
   }
 
-  async function deleteClaim(id: number) {
-    if (!confirm('Delete this expense claim and all line items?')) return
+  async function deleteClaim(id: number, skipConfirm = false) {
+    if (!skipConfirm && !confirm('Delete this expense claim and all line items?')) return
+
+    const claim = claims.find(c => c.id === id)
+
     const { error } = await supabase.from('expense_claims').delete().eq('id', id)
     if (error) { showError('Failed to delete expense claim: ' + error.message); return }
-    setClaims(prev => prev.filter(c => c.id !== id))
-    setExpandedId(null)
-    showSuccess('Expense claim deleted')
+
+    if (claim && selectedCompanyId) {
+      const empName = claim.employee ? `${claim.employee.first_name} ${claim.employee.last_name}` : ''
+      const empEmail = claim.employee?.email || ''
+
+      await supabase.from('workflow_tracker')
+        .update({ status: 'Complete', approval_status: 'Deleted' })
+        .eq('approval_id', id)
+        .eq('record_type', 'Expense')
+        .eq('status', 'Pending')
+        .eq('company_id', selectedCompanyId)
+
+      await supabase.from('notifications').insert({
+        employee_id: claim.employee_id,
+        title: 'Expense claim deleted',
+        message: `Your expense claim "${claim.title}" (${claim.reference_number}) has been deleted by an administrator.`,
+        type: 'warning',
+        link: '/expenses',
+        is_read: false,
+        company_id: selectedCompanyId,
+      })
+
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: empName,
+        step: 1,
+        status: 'Complete',
+        record_type: 'Expense',
+        action: 'Expense claim deleted',
+        employee_email: empEmail,
+        assigned_to: empEmail,
+        approval_id: id,
+        reminder_count: 0,
+        task_description: `Expense claim "${claim.title}" (${claim.reference_number}) has been deleted by an administrator.`,
+        approval_status: 'Deleted',
+        company_id: selectedCompanyId,
+      })
+
+      window.dispatchEvent(new Event('notifications-updated'))
+    }
+
+    if (!skipConfirm) {
+      setClaims(prev => prev.filter(c => c.id !== id))
+      setExpandedId(null)
+      showSuccess('Expense claim deleted')
+    }
   }
 
   async function bulkDeleteClaims() {
@@ -489,7 +534,7 @@ export default function AdminExpenses() {
     if (!confirm(`Delete ${selectedIds.size} selected expense claim${selectedIds.size > 1 ? 's' : ''} and all their line items? This cannot be undone.`)) return
     setBulkDeleting(true)
     for (const id of selectedIds) {
-      await supabase.from('expense_claims').delete().eq('id', id)
+      await deleteClaim(id, true)
     }
     setClaims(prev => prev.filter(c => !selectedIds.has(c.id)))
     setSelectedIds(new Set())
