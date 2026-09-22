@@ -16,7 +16,7 @@ interface LeaveRequest {
   reason: string | null
   created_at: string
   leave_type: { name: string } | null
-  employee: { first_name: string; last_name: string; email: string; avatar_url: string | null } | null
+  employee: { first_name: string; last_name: string; email: string; avatar_url: string | null; manager_id: string | null } | null
 }
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
@@ -48,6 +48,7 @@ export default function AdminLeave() {
   const [savingCarry, setSavingCarry] = useState<number | null>(null)
   const [fyStartMonth, setFyStartMonth] = useState(4)
   const [activeTab, setActiveTab] = useState<'requests' | 'settings'>('requests')
+  const [managerNames, setManagerNames] = useState<Record<string, string>>({})
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -107,10 +108,25 @@ export default function AdminLeave() {
     setLoading(true)
     const { data } = await supabase
       .from('leave_requests')
-      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, email, avatar_url)')
+      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, email, avatar_url, manager_id)')
       .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
-    setRequests((data as LeaveRequest[]) || [])
+    const rows = (data as LeaveRequest[]) || []
+    setRequests(rows)
+
+    const mgrIds = [...new Set(rows.map(r => r.employee?.manager_id).filter(Boolean))] as string[]
+    if (mgrIds.length > 0) {
+      const { data: mgrs } = await supabase.from('employees')
+        .select('id, first_name, last_name').in('id', mgrIds)
+      const names: Record<string, string> = {}
+      ;(mgrs || []).forEach((m: { id: string; first_name: string; last_name: string }) => {
+        names[m.id] = `${m.first_name} ${m.last_name}`
+      })
+      setManagerNames(names)
+    } else {
+      setManagerNames({})
+    }
+
     setLoading(false)
   }
 
@@ -584,11 +600,12 @@ export default function AdminLeave() {
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Employee</th><th>Manager</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {paginated.map(r => (
                     <tr key={r.id}>
                       <td>{r.employee ? <span className="admin-inline-avatar">{r.employee.avatar_url ? <img src={r.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{r.employee.first_name[0]}{r.employee.last_name[0]}</span>}{r.employee.first_name} {r.employee.last_name}</span> : '—'}</td>
+                      <td className="admin-hide-mobile" style={{ fontSize: 13, color: '#64748b' }}>{r.employee?.manager_id ? managerNames[r.employee.manager_id] || '—' : '—'}</td>
                       <td>{r.leave_type?.name || '—'}</td>
                       <td>{editingId === r.id ? (
                         <div className="admin-date-inputs">
