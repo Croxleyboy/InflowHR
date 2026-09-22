@@ -4,8 +4,9 @@
 
 /* Shell */
 .admin-shell {
-  display: flex; flex-direction: column; min-height: 100vh;
+  display: flex; flex-direction: column; height: 100%;
   background: #f5f6fa; color: #1e1e2d; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
 }
 
 /* Top Bar */
@@ -105,7 +106,7 @@
 .admin-need-help:hover .admin-need-help-inner { background: #2a2a2a; }
 
 /* Main content */
-.admin-main { flex: 1; padding: 20px 16px 40px; max-width: 1200px; width: 100%; margin: 0 auto; }
+.admin-main { flex: 1; padding: 20px 16px 40px; max-width: 1200px; width: 100%; margin: 0 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
 /* Page header */
 .admin-page-header { margin-bottom: 20px; }
@@ -409,15 +410,16 @@
 /* ── Desktop: persistent sidebar ── */
 @media (min-width: 769px) {
   .admin-shell { flex-direction: row; flex-wrap: wrap; }
-  .admin-topbar { width: 100%; }
+  .admin-topbar { width: 100%; flex-shrink: 0; }
   .admin-burger { display: none; }
   .admin-overlay { display: none; }
   .admin-sidebar {
-    position: sticky; top: 56px;
+    position: sticky; top: 0;
     transform: translateX(0); height: calc(100vh - 56px);
     box-shadow: none;
     transition: width 0.25s ease;
     display: flex; flex-direction: column;
+    flex-shrink: 0;
   }
   .admin-sidebar .admin-nav { flex: 1; overflow-y: auto; }
   .admin-sidebar-toggle {
@@ -435,7 +437,7 @@
   .admin-sidebar-collapsed .admin-nav-label { display: none; }
   .admin-sidebar-collapsed .admin-nav-item { justify-content: center; padding: 10px 0; }
   .admin-sidebar-collapsed .admin-nav-icon { margin: 0; }
-  .admin-main { flex: 1; padding: 24px 32px 40px; }
+  .admin-main { flex: 1; padding: 24px 32px 40px; overflow-y: auto; min-width: 0; }
   .admin-stat-grid { grid-template-columns: repeat(4, 1fr); }
 }
 
