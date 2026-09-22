@@ -991,32 +991,34 @@ function GapSection({ data }: { data: AnalyticsData }) {
             <h3 style={{ margin: 0, fontSize: 15 }}>{role.role}</h3>
             <span style={{ fontSize: 12, color: 'var(--text-muted)', padding: '2px 8px', borderRadius: 12, background: 'var(--bg-card)', border: '1px solid var(--border)' }}>{role.dept}</span>
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th>
-                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Required</th>
-                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Avg Actual</th>
-                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Qualified Staff</th>
-                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Priority</th>
-              </tr>
-            </thead>
-            <tbody>
-              {role.gaps.map((g, gi) => (
-                <tr key={gi} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '6px 8px' }}>{g.skill}</td>
-                  <td style={{ textAlign: 'center', padding: '6px 8px' }}>{PROFICIENCY_LABELS[g.required]}</td>
-                  <td style={{ textAlign: 'center', padding: '6px 8px', color: g.actual < g.required ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{g.actual || '—'}</td>
-                  <td style={{ textAlign: 'center', padding: '6px 8px', color: g.holders === 0 ? '#dc2626' : 'var(--text)' }}>{g.holders}</td>
-                  <td style={{ textAlign: 'center', padding: '6px 8px' }}>
-                    <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 11, background: g.essential && g.holders === 0 ? '#fef2f2' : g.essential ? '#fef9c3' : '#f0f9ff', color: g.essential && g.holders === 0 ? '#dc2626' : g.essential ? '#92400e' : '#1e40af' }}>
-                      {g.essential && g.holders === 0 ? 'Critical' : g.essential ? 'High' : 'Medium'}
-                    </span>
-                  </td>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                  <th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th>
+                  <th style={{ textAlign: 'center', padding: '6px 8px' }}>Required</th>
+                  <th style={{ textAlign: 'center', padding: '6px 8px' }}>Avg Actual</th>
+                  <th style={{ textAlign: 'center', padding: '6px 8px' }}>Qualified Staff</th>
+                  <th style={{ textAlign: 'center', padding: '6px 8px' }}>Priority</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {role.gaps.map((g, gi) => (
+                  <tr key={gi} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '6px 8px' }}>{g.skill}</td>
+                    <td style={{ textAlign: 'center', padding: '6px 8px' }}>{PROFICIENCY_LABELS[g.required]}</td>
+                    <td style={{ textAlign: 'center', padding: '6px 8px', color: g.actual < g.required ? '#dc2626' : '#16a34a', fontWeight: 600 }}>{g.actual || '—'}</td>
+                    <td style={{ textAlign: 'center', padding: '6px 8px', color: g.holders === 0 ? '#dc2626' : 'var(--text)' }}>{g.holders}</td>
+                    <td style={{ textAlign: 'center', padding: '6px 8px' }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 11, background: g.essential && g.holders === 0 ? '#fef2f2' : g.essential ? '#fef9c3' : '#f0f9ff', color: g.essential && g.holders === 0 ? '#dc2626' : g.essential ? '#92400e' : '#1e40af' }}>
+                        {g.essential && g.holders === 0 ? 'Critical' : g.essential ? 'High' : 'Medium'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ))}
     </div>
@@ -1032,36 +1034,40 @@ function BusFactorSection({ data }: { data: AnalyticsData }) {
         <h3 style={{ marginTop: 0, fontSize: 15, color: '#dc2626' }}>Single-Point-of-Failure Skills ({soloRisks.length})</h3>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>Skills held by only one employee — if they leave, the capability is lost.</p>
         {soloRisks.length === 0 ? <p className="admin-empty">No single-point risks detected.</p> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead><tr style={{ borderBottom: '2px solid var(--border)' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Sole Holder</th></tr></thead>
-            <tbody>
-              {soloRisks.map((r, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: '#fef2f2' }}>
-                  <td style={{ padding: '6px 8px', fontWeight: 500 }}>{r.skill}</td>
-                  <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{r.category}</td>
-                  <td style={{ padding: '6px 8px' }}>{r.holders[0]}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr style={{ borderBottom: '2px solid var(--border)' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Sole Holder</th></tr></thead>
+              <tbody>
+                {soloRisks.map((r, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: '#fef2f2' }}>
+                    <td style={{ padding: '6px 8px', fontWeight: 500 }}>{r.skill}</td>
+                    <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{r.category}</td>
+                    <td style={{ padding: '6px 8px' }}>{r.holders[0]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       <div className="admin-card" style={{ padding: 16 }}>
         <h3 style={{ marginTop: 0, fontSize: 15, color: '#f59e0b' }}>Limited Coverage Skills ({dualRisks.length})</h3>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>Skills held by only two employees — succession risk if either leaves.</p>
         {dualRisks.length === 0 ? <p className="admin-empty">No limited-coverage risks detected.</p> : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead><tr style={{ borderBottom: '2px solid var(--border)' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Holders</th></tr></thead>
-            <tbody>
-              {dualRisks.map((r, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '6px 8px', fontWeight: 500 }}>{r.skill}</td>
-                  <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{r.category}</td>
-                  <td style={{ padding: '6px 8px' }}>{r.holders.join(', ')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead><tr style={{ borderBottom: '2px solid var(--border)' }}><th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th><th style={{ textAlign: 'left', padding: '6px 8px' }}>Holders</th></tr></thead>
+              <tbody>
+                {dualRisks.map((r, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '6px 8px', fontWeight: 500 }}>{r.skill}</td>
+                    <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{r.category}</td>
+                    <td style={{ padding: '6px 8px' }}>{r.holders.join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>
@@ -1113,32 +1119,34 @@ function TrainingSection({ data }: { data: AnalyticsData }) {
       <h3 style={{ marginTop: 0, fontSize: 15 }}>Training Needs Analysis</h3>
       <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>Skills where employees are below Proficient level — candidates for targeted training investment.</p>
       {data.trainingNeeds.length === 0 ? <p className="admin-empty">No training gaps detected.</p> : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid var(--border)' }}>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th>
-              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Avg Proficiency</th>
-              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Total Holders</th>
-              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Below Proficient</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.trainingNeeds.map((t, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '6px 8px', fontWeight: 500 }}>{t.skill}</td>
-                <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{t.category}</td>
-                <td style={{ textAlign: 'center', padding: '6px 8px' }}>
-                  <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, background: t.avgProf < 2 ? '#fef2f2' : t.avgProf < 3 ? '#fef9c3' : '#f0fdf4', color: t.avgProf < 2 ? '#dc2626' : t.avgProf < 3 ? '#92400e' : '#16a34a' }}>
-                    {t.avgProf} — {PROFICIENCY_LABELS[Math.round(t.avgProf)] || 'Foundational'}
-                  </span>
-                </td>
-                <td style={{ textAlign: 'center', padding: '6px 8px' }}>{t.count}</td>
-                <td style={{ textAlign: 'center', padding: '6px 8px', color: t.belowProficient > 0 ? '#dc2626' : 'var(--text)', fontWeight: t.belowProficient > 0 ? 600 : 400 }}>{t.belowProficient}</td>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Skill</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Category</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Avg Proficiency</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Total Holders</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Below Proficient</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.trainingNeeds.map((t, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '6px 8px', fontWeight: 500 }}>{t.skill}</td>
+                  <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{t.category}</td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, background: t.avgProf < 2 ? '#fef2f2' : t.avgProf < 3 ? '#fef9c3' : '#f0fdf4', color: t.avgProf < 2 ? '#dc2626' : t.avgProf < 3 ? '#92400e' : '#16a34a' }}>
+                      {t.avgProf} — {PROFICIENCY_LABELS[Math.round(t.avgProf)] || 'Foundational'}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px' }}>{t.count}</td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px', color: t.belowProficient > 0 ? '#dc2626' : 'var(--text)', fontWeight: t.belowProficient > 0 ? 600 : 400 }}>{t.belowProficient}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
@@ -1150,32 +1158,34 @@ function MatchingSection({ data }: { data: AnalyticsData }) {
       <h3 style={{ marginTop: 0, fontSize: 15 }}>Internal Role Matching</h3>
       <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>Employees who meet 50%+ of a role profile's skill requirements — candidates for internal mobility or succession.</p>
       {data.roleMatches.length === 0 ? <p className="admin-empty">No matches found. Add role profiles with skill requirements to enable matching.</p> : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid var(--border)' }}>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Employee</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Current Dept</th>
-              <th style={{ textAlign: 'left', padding: '6px 8px' }}>Matching Role</th>
-              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Match</th>
-              <th style={{ textAlign: 'center', padding: '6px 8px' }}>Skills Met</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.roleMatches.slice(0, 20).map((m, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '6px 8px', fontWeight: 500 }}>{m.employee}</td>
-                <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{m.dept}</td>
-                <td style={{ padding: '6px 8px' }}>{m.role}</td>
-                <td style={{ textAlign: 'center', padding: '6px 8px' }}>
-                  <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, background: m.matchPct >= 80 ? '#dcfce7' : m.matchPct >= 60 ? '#fef9c3' : '#fee2e2', color: m.matchPct >= 80 ? '#16a34a' : m.matchPct >= 60 ? '#92400e' : '#dc2626' }}>
-                    {m.matchPct}%
-                  </span>
-                </td>
-                <td style={{ textAlign: 'center', padding: '6px 8px' }}>{m.met}/{m.total}</td>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Employee</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Current Dept</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>Matching Role</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Match</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px' }}>Skills Met</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.roleMatches.slice(0, 20).map((m, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '6px 8px', fontWeight: 500 }}>{m.employee}</td>
+                  <td style={{ padding: '6px 8px', color: 'var(--text-muted)' }}>{m.dept}</td>
+                  <td style={{ padding: '6px 8px' }}>{m.role}</td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, background: m.matchPct >= 80 ? '#dcfce7' : m.matchPct >= 60 ? '#fef9c3' : '#fee2e2', color: m.matchPct >= 80 ? '#16a34a' : m.matchPct >= 60 ? '#92400e' : '#dc2626' }}>
+                      {m.matchPct}%
+                    </span>
+                  </td>
+                  <td style={{ textAlign: 'center', padding: '6px 8px' }}>{m.met}/{m.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

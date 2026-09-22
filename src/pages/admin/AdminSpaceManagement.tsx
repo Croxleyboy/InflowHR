@@ -564,7 +564,7 @@ export default function AdminSpaceManagement() {
         <p style={{ color: '#666', marginTop: 4 }}>Manage locations, floors, desks, and meeting rooms</p>
       </div>
 
-      <div className="admin-sub-tabs">
+      <div className="admin-sub-tabs" style={{ flexWrap: 'wrap' }}>
         <button className={`admin-sub-tab ${subTab === 'locations' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('locations')}>Locations &amp; Floors</button>
         <button className={`admin-sub-tab ${subTab === 'spaces' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('spaces')}>Spaces Directory</button>
         <button className={`admin-sub-tab ${subTab === 'bookings' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('bookings')}>Bookings</button>
@@ -599,24 +599,26 @@ export default function AdminSpaceManagement() {
             </div>
           )}
 
-          <table className="admin-table">
-            <thead><tr><th>Name</th><th>Address</th><th>Timezone</th><th>Floors</th><th>Actions</th></tr></thead>
-            <tbody>
-              {locations.map(loc => (
-                <tr key={loc.id}>
-                  <td>{loc.name}</td>
-                  <td>{loc.address}</td>
-                  <td>{loc.timezone}</td>
-                  <td>{floors.filter(f => f.location_id === loc.id).length}</td>
-                  <td>
-                    <button className="admin-action-btn" onClick={() => editLoc(loc)}>Edit</button>
-                    <button className="admin-action-btn admin-delete-btn" onClick={() => deleteLoc(loc.id)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {locations.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#999' }}>No locations yet</td></tr>}
-            </tbody>
-          </table>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Name</th><th>Address</th><th>Timezone</th><th>Floors</th><th>Actions</th></tr></thead>
+              <tbody>
+                {locations.map(loc => (
+                  <tr key={loc.id}>
+                    <td>{loc.name}</td>
+                    <td>{loc.address}</td>
+                    <td>{loc.timezone}</td>
+                    <td>{floors.filter(f => f.location_id === loc.id).length}</td>
+                    <td>
+                      <button className="admin-action-btn" onClick={() => editLoc(loc)}>Edit</button>
+                      <button className="admin-action-btn admin-delete-btn" onClick={() => deleteLoc(loc.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+                {locations.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#999' }}>No locations yet</td></tr>}
+              </tbody>
+            </table>
+          </div>
 
           <div className="admin-section-header" style={{ marginTop: 32 }}>
             <h2>Floors / Zones</h2>
@@ -636,22 +638,24 @@ export default function AdminSpaceManagement() {
             </div>
           )}
 
-          <table className="admin-table">
-            <thead><tr><th>Floor / Zone</th><th>Location</th><th>Actions</th></tr></thead>
-            <tbody>
-              {floors.map(floor => (
-                <tr key={floor.id}>
-                  <td>{floor.name}</td>
-                  <td>{getLocName(floor.location_id)}</td>
-                  <td>
-                    <button className="admin-action-btn" onClick={() => editFloor(floor)}>Edit</button>
-                    <button className="admin-action-btn admin-delete-btn" onClick={() => deleteFloor(floor.id)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {floors.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: '#999' }}>No floors yet</td></tr>}
-            </tbody>
-          </table>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Floor / Zone</th><th>Location</th><th>Actions</th></tr></thead>
+              <tbody>
+                {floors.map(floor => (
+                  <tr key={floor.id}>
+                    <td>{floor.name}</td>
+                    <td>{getLocName(floor.location_id)}</td>
+                    <td>
+                      <button className="admin-action-btn" onClick={() => editFloor(floor)}>Edit</button>
+                      <button className="admin-action-btn admin-delete-btn" onClick={() => deleteFloor(floor.id)}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+                {floors.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: '#999' }}>No floors yet</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -730,6 +734,7 @@ export default function AdminSpaceManagement() {
             </div>
           )}
 
+          <div className="admin-table-wrap">
           <table className="admin-table">
             <thead><tr><th>Name</th><th>Floor</th><th>Type</th><th>Capacity</th><th>Equipment</th>{companyFeatures.asset_management && <th>Assets</th>}<th>Status</th><th>Actions</th></tr></thead>
             <tbody>
@@ -753,6 +758,7 @@ export default function AdminSpaceManagement() {
               {spaces.length === 0 && <tr><td colSpan={companyFeatures.asset_management ? 8 : 7} style={{ textAlign: 'center', color: '#999' }}>No spaces yet — add locations and floors first</td></tr>}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -761,7 +767,7 @@ export default function AdminSpaceManagement() {
         <div className="admin-section">
           <div className="admin-section-header">
             <h2>Bookings</h2>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button className={`admin-action-btn ${bookingFilter === 'upcoming' ? 'admin-filter-active' : ''}`} onClick={() => setBookingFilter('upcoming')}>Upcoming</button>
               <button className={`admin-action-btn ${bookingFilter === 'past' ? 'admin-filter-active' : ''}`} onClick={() => setBookingFilter('past')}>Past</button>
               <button className={`admin-action-btn ${bookingFilter === 'cancelled' ? 'admin-filter-active' : ''}`} onClick={() => setBookingFilter('cancelled')}>Cancelled</button>
@@ -817,6 +823,7 @@ export default function AdminSpaceManagement() {
           {bookingsLoading ? (
             <div className="admin-loading">Loading...</div>
           ) : (
+            <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
                 <tr>
@@ -851,6 +858,7 @@ export default function AdminSpaceManagement() {
                 {paginatedBookings.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No bookings found</td></tr>}
               </tbody>
             </table>
+            </div>
           )}
           {bookingTotalPages > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
@@ -867,7 +875,7 @@ export default function AdminSpaceManagement() {
         <div className="admin-section">
           <div className="admin-section-header">
             <h2>Occupancy Analytics</h2>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               {([7, 30, 90] as const).map(d => (
                 <button key={d} className={`admin-action-btn ${analyticsRange === d ? 'admin-filter-active' : ''}`} onClick={() => setAnalyticsRange(d)}>
                   {d}d
@@ -911,7 +919,7 @@ export default function AdminSpaceManagement() {
                 <div className="admin-mini-stat"><span className="admin-mini-value">{analyticsData.avgDailyBookings}</span><span>Avg / Day</span></div>
               </div>
 
-              <div className="admin-analytics-rates" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, margin: '16px 0' }}>
+              <div className="admin-analytics-rates" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, margin: '16px 0' }}>
                 <div className="admin-analytics-card">
                   <h4>Check-in Rate</h4>
                   <div className="admin-analytics-big-num" style={{ color: '#43a047' }}>
@@ -926,7 +934,7 @@ export default function AdminSpaceManagement() {
                 </div>
               </div>
 
-              <div className="admin-analytics-rates" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, margin: '16px 0' }}>
+              <div className="admin-analytics-rates" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, margin: '16px 0' }}>
                 <div className="admin-analytics-card">
                   <h4>Capacity vs Headcount</h4>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
@@ -962,6 +970,7 @@ export default function AdminSpaceManagement() {
               {analyticsData.spaceUtilisation.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
                   <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Per-Space Utilisation</h3>
+                  <div className="admin-table-wrap">
                   <table className="admin-table">
                     <thead><tr><th>Space</th><th>Type</th><th>Bookings</th><th>Utilisation</th><th>Check-in Rate</th><th>Status</th></tr></thead>
                     <tbody>
@@ -984,12 +993,14 @@ export default function AdminSpaceManagement() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
 
               {analyticsData.topSpaces.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
                   <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Most Popular Spaces</h3>
+                  <div className="admin-table-wrap">
                   <table className="admin-table">
                     <thead><tr><th>Space</th><th>Type</th><th>Bookings</th><th>Share</th></tr></thead>
                     <tbody>
@@ -1003,10 +1014,11 @@ export default function AdminSpaceManagement() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
                 <div className="admin-analytics-card">
                   <h4>Bookings by Day of Week</h4>
                   <div className="admin-bar-chart">

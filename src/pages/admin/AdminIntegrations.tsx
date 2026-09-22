@@ -224,7 +224,7 @@ export default function AdminIntegrations() {
         borderRadius: 12, padding: 24, maxWidth: 700,
       }}>
         {/* Card header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
           <div style={{
             width: 48, height: 48, borderRadius: 10,
             background: 'linear-gradient(135deg, #5b5fc7, #7b83eb)',

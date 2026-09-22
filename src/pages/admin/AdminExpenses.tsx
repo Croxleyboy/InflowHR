@@ -622,7 +622,7 @@ export default function AdminExpenses() {
               <option value="">All Statuses</option>
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <select value={exportMonth} onChange={e => setExportMonth(e.target.value)} className="admin-select" style={{ minWidth: 130 }}>
                 <option value="all">All Months</option>
                 {fyMonthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -777,7 +777,7 @@ export default function AdminExpenses() {
               const submittedPct = chartData.max > 0 ? (m.submitted / chartData.max) * 100 : 0
               const declinedPct = chartData.max > 0 ? (m.declined / chartData.max) * 100 : 0
               return (
-                <div key={m.label} style={{ display: 'grid', gridTemplateColumns: '80px 1fr 70px', alignItems: 'center', gap: 10 }}>
+                <div key={m.label} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b', textAlign: 'right' }}>{m.label}</span>
                   <div style={{ display: 'flex', height: 22, borderRadius: 4, overflow: 'hidden', background: '#f1f5f9' }}>
                     {m.approved > 0 && <div style={{ width: `${approvedPct}%`, background: '#22c55e', minWidth: 2 }} title={`Approved: £${m.approved.toFixed(2)}`} />}
@@ -789,7 +789,7 @@ export default function AdminExpenses() {
               )
             })}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 20, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, marginTop: 20, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>£{chartData.overallTotal.toFixed(2)}</div>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>OVERALL TOTAL</div>
@@ -812,9 +812,9 @@ export default function AdminExpenses() {
 
       {tab === 'exports' && (
         <div className="admin-settings-section">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
             <h3 style={{ margin: 0 }}>Export History</h3>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <select value={exportMonth} onChange={e => setExportMonth(e.target.value)} className="admin-select" style={{ minWidth: 130 }}>
                 <option value="all">All Months</option>
                 {fyMonthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}

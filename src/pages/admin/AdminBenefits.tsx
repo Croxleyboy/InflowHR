@@ -498,15 +498,16 @@ export default function AdminBenefits() {
                             </div>
 
                             {showNewOption === b.id && (
-                              <div className="admin-benefit-new-option">
+                              <div className="admin-benefit-new-option" style={{ flexWrap: 'wrap' }}>
                                 <input className="admin-input" placeholder="Icon" value={newOption.icon} onChange={e => setNewOption(p => ({...p, icon: e.target.value}))} style={{width:'60px'}} />
-                                <input className="admin-input" placeholder="Title" value={newOption.title} onChange={e => setNewOption(p => ({...p, title: e.target.value}))} style={{flex:1}} />
-                                <input className="admin-input" placeholder="Description" value={newOption.description} onChange={e => setNewOption(p => ({...p, description: e.target.value}))} style={{flex:2}} />
+                                <input className="admin-input" placeholder="Title" value={newOption.title} onChange={e => setNewOption(p => ({...p, title: e.target.value}))} style={{flex:1, minWidth: 120}} />
+                                <input className="admin-input" placeholder="Description" value={newOption.description} onChange={e => setNewOption(p => ({...p, description: e.target.value}))} style={{flex:2, minWidth: 150}} />
                                 <button className="admin-btn-sm admin-btn-save" onClick={() => addNewOption(b.id)}>Add</button>
                                 <button className="admin-btn-sm admin-btn-cancel" onClick={() => setShowNewOption(null)}>Cancel</button>
                               </div>
                             )}
 
+                            <div className="admin-table-wrap">
                             <table className="admin-table admin-table-nested">
                               <thead><tr><th style={{width:'36px'}}></th><th>Option</th><th>Description</th><th>Visible</th><th>Actions</th></tr></thead>
                               <tbody>
@@ -542,6 +543,7 @@ export default function AdminBenefits() {
                                 ))}
                               </tbody>
                             </table>
+                            </div>
                             {b.options.length === 0 && <div className="admin-empty">No options configured</div>}
                           </div>
                         </td>

@@ -345,7 +345,7 @@ export default function AdminPerformance() {
             </div>
           </div>
 
-          <div className="admin-table-wrapper">
+          <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
                 <tr>
@@ -443,7 +443,7 @@ export default function AdminPerformance() {
           {employees.filter(e => !e.manager_id).length > 0 && (
             <>
               <h2 style={{ margin: '24px 0 12px', fontSize: '1.1em' }}>Unmanaged Employees</h2>
-              <div className="admin-table-wrapper">
+              <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
                     <tr>

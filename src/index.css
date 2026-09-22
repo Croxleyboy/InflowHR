@@ -6902,7 +6902,7 @@ body {
   box-shadow: 0 0 0 2px rgba(92, 107, 192, 0.15);
 }
 @media (max-width: 640px) {
-  .ld-grid { grid-template-columns: repeat(4, 1fr); }
+  .ld-grid { grid-template-columns: repeat(7, 1fr); min-width: 500px; }
 }
 
 /* ===== Admin Availability Overview ===== */

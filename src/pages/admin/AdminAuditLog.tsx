@@ -53,7 +53,7 @@ export default function AdminAuditLog() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>GDPR Audit Log</h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#8b8fa3' }}>

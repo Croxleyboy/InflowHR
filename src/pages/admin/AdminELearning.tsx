@@ -150,16 +150,12 @@ export default function AdminELearning() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid var(--border, #e5e7eb)' }}>
+      <div className="admin-tabs">
         {tabs.filter(t => t.show).map(t => (
           <button
             key={t.key}
+            className={`admin-tab ${tab === t.key ? 'admin-tab-active' : ''}`}
             onClick={() => setTab(t.key)}
-            style={{
-              padding: '10px 24px', border: 'none', background: 'none', fontWeight: 700, fontSize: 14, cursor: 'pointer',
-              borderBottom: tab === t.key ? '3px solid #5c6bc0' : '3px solid transparent',
-              color: tab === t.key ? '#5c6bc0' : 'var(--text-muted, #8b8fa3)', marginBottom: -2,
-            }}
           >
             {t.label}
           </button>
@@ -1313,7 +1309,7 @@ function AnalyticsTab({ companyId }: { companyId: string }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {stats.popularCourses.map(c => (
               <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ flex: '0 0 200px', fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.title}>{c.title}</span>
+                <span style={{ flex: '1 1 200px', fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.title}>{c.title}</span>
                 <div style={{ flex: 1, height: 20, background: 'var(--surface-alt, #f1f5f9)', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
                   <div style={{ height: '100%', width: `${(c.total / maxPopular) * 100}%`, background: '#5c6bc0', borderRadius: 4, position: 'relative' }}>
                     <div style={{ position: 'absolute', top: 0, left: 0, height: '100%', width: `${c.rate}%`, background: '#43a047', borderRadius: '4px 0 0 4px' }} />
@@ -1484,7 +1480,7 @@ function CoursePreviewPanel({ course, enabled, targetDepts, departments, onToggl
           )}
         </div>
 
-        <div style={{ flex: '0 0 220px', background: 'var(--surface-alt, #f8fafc)', borderRadius: 10, padding: 16, border: '1px solid var(--border, #e5e7eb)' }}>
+        <div style={{ flex: '0 0 220px', minWidth: 0, background: 'var(--surface-alt, #f8fafc)', borderRadius: 10, padding: 16, border: '1px solid var(--border, #e5e7eb)' }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Configuration</h4>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>

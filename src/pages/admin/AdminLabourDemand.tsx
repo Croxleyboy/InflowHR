@@ -180,7 +180,7 @@ export default function AdminLabourDemand() {
               {getTemplateTotalDemand(tmpl.id)} min/wk
             </span>
           </div>
-          <div className="ld-grid">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}><div className="ld-grid">
             {DAY_LABELS.map((label, dayIdx) => {
               const d = getDemand(tmpl.id, dayIdx)
               return (
@@ -213,7 +213,7 @@ export default function AdminLabourDemand() {
                 </div>
               )
             })}
-          </div>
+          </div></div>
         </div>
       ))}
 

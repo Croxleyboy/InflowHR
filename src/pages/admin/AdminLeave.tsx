@@ -382,7 +382,7 @@ export default function AdminLeave() {
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Approved Leave Distribution</h3>
             <span style={{ fontSize: 12, color: '#888' }}>{chartData.fyLabel}</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 160 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 160, overflowX: 'auto' }}>
             {chartData.monthData.map((d, i) => (
               <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
                 {d.total > 0 && (
@@ -465,7 +465,7 @@ export default function AdminLeave() {
             Set the maximum number of unused leave days that can be carried over into the next financial year per leave type. Set to 0 for no carry-over.
           </span>
           {leaveTypeSettings.filter(lt => lt.deducts_from_allowance).map(lt => (
-            <div key={lt.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <div key={lt.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
               <span style={{ minWidth: 140, fontSize: 13 }}>{lt.name}</span>
               <input
                 type="number"

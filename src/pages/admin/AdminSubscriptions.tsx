@@ -303,7 +303,7 @@ export default function AdminSubscriptions() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e5e7eb' }}>
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e5e7eb', flexWrap: 'wrap' }}>
         <button
           onClick={() => setTab('pricing')}
           style={{
@@ -580,7 +580,7 @@ export default function AdminSubscriptions() {
 
                       {/* Pricing row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#fff', borderRadius: 6, padding: 12, border: '1px solid #e0e0e0' }}>
-                        <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px' }}>
+                        <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px', minWidth: 0 }}>
                           <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
                           <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{baseline.default_price.toFixed(2)}</div>
                           <div style={{ fontSize: 10, color: '#bbb' }}>from Pricing tab</div>
@@ -696,6 +696,7 @@ export default function AdminSubscriptions() {
                   </div>
 
                   {/* Monthly Financial Breakdown */}
+                  <div className="admin-table-wrap">
                   <table className="sub-cost-table">
                     <thead>
                       <tr>
@@ -733,6 +734,7 @@ export default function AdminSubscriptions() {
                       </tr>
                     </tbody>
                   </table>
+                  </div>
                 </>
               )}
             </>

@@ -251,35 +251,37 @@ export default function AdminCancellations() {
       {history.length > 0 && (
         <>
           <h2 style={{ fontSize: 16, margin: '28px 0 12px', color: '#64748b' }}>History</h2>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
-                <th style={{ padding: 8 }}>Company</th>
-                <th style={{ padding: 8 }}>Requested</th>
-                <th style={{ padding: 8 }}>Status</th>
-                <th style={{ padding: 8 }}>Data Sent</th>
-                <th style={{ padding: 8 }}>Purge After</th>
-              </tr>
-            </thead>
-            <tbody>
-              {history.map(req => {
-                const status = STATUS_COLORS[req.status] || STATUS_COLORS.cancelled
-                return (
-                  <tr key={req.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: 8 }}>{req.companies?.name || 'Unknown'}</td>
-                    <td style={{ padding: 8 }}>{formatDate(req.requested_at)}</td>
-                    <td style={{ padding: 8 }}>
-                      <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, background: status.bg, color: status.text }}>
-                        {status.label}
-                      </span>
-                    </td>
-                    <td style={{ padding: 8 }}>{formatDate(req.export_sent_at)}</td>
-                    <td style={{ padding: 8 }}>{formatDate(req.purge_after)}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="admin-table-wrap">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #e5e7eb', textAlign: 'left' }}>
+                  <th style={{ padding: 8 }}>Company</th>
+                  <th style={{ padding: 8 }}>Requested</th>
+                  <th style={{ padding: 8 }}>Status</th>
+                  <th style={{ padding: 8 }}>Data Sent</th>
+                  <th style={{ padding: 8 }}>Purge After</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map(req => {
+                  const status = STATUS_COLORS[req.status] || STATUS_COLORS.cancelled
+                  return (
+                    <tr key={req.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: 8 }}>{req.companies?.name || 'Unknown'}</td>
+                      <td style={{ padding: 8 }}>{formatDate(req.requested_at)}</td>
+                      <td style={{ padding: 8 }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, fontWeight: 600, background: status.bg, color: status.text }}>
+                          {status.label}
+                        </span>
+                      </td>
+                      <td style={{ padding: 8 }}>{formatDate(req.export_sent_at)}</td>
+                      <td style={{ padding: 8 }}>{formatDate(req.purge_after)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>

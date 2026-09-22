@@ -413,9 +413,9 @@ export default function AdminEmployees() {
       </div>
 
       {activeTab === 'records' && (
-        <div style={{ display: 'flex', gap: 0, minHeight: 600 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0, minHeight: 600 }}>
           {/* Left panel: letter nav + search + employee list */}
-          <div style={{ width: sidebarCollapsed ? 0 : 320, flexShrink: 0, borderRight: sidebarCollapsed ? 'none' : '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'width 0.25s ease' }}>
+          <div style={{ flex: '0 0 320px', minWidth: 0, width: sidebarCollapsed ? 0 : 320, flexShrink: 0, borderRight: sidebarCollapsed ? 'none' : '1px solid #e0e0e0', display: 'flex', flexDirection: 'column', overflow: 'hidden', transition: 'width 0.25s ease' }}>
             {/* Letter navigation */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '12px 12px 8px', borderBottom: '1px solid #f0f0f0' }}>
               <button

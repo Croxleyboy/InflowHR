@@ -395,6 +395,8 @@
 .admin-photo-actions { display: flex; flex-direction: column; gap: 4px; align-items: center; }
 .admin-photo-upload-label { cursor: pointer; text-align: center; }
 .admin-detail-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.admin-hide-mobile { }
+.admin-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* Payroll schedule */
 .admin-schedule h3 { font-size: 16px; font-weight: 700; margin: 0 0 12px; }
@@ -457,6 +459,13 @@
   .admin-wf-step { padding-left: 20px; }
   .admin-edit-admin-cell { flex-direction: column; align-items: flex-start; }
   .admin-admin-select { max-width: 100%; width: 100%; }
+  .admin-detail-grid-3 { grid-template-columns: 1fr; }
+  .admin-hide-mobile { display: none !important; }
+  .admin-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; gap: 0; }
+  .admin-tab { flex-shrink: 0; padding: 10px 14px; font-size: 13px; }
+  .sub-cost-table { font-size: 12px; }
+  .sub-cost-table th, .sub-cost-table td { padding: 8px 10px; }
+  .billing-summary { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ── Time Breakdown ── */

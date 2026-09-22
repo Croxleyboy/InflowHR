@@ -678,7 +678,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       </div>
 
       {isFixed && (
-        <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <span style={{ fontSize: 18 }}>&#9679;</span>
           <span style={{ fontWeight: 600, color: '#2e7d32' }}>Fixed Annual Billing</span>
           <span style={{ color: '#555', fontSize: 13 }}>&mdash; &pound;{fixedAnnualPrice.toFixed(2)}/year (FY {getFYLabel()})</span>
@@ -935,21 +935,21 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
               <>
                 <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 16, marginBottom: 16 }}>
                   <h3 style={{ margin: '0 0 8px', fontSize: 15, color: '#991b1b' }}>Outstanding Charges</h3>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 4 }}>
                     <span>Billing type</span>
                     <strong>{cancelBilling.billing_type === 'fixed' ? 'Fixed Annual' : 'Monthly per employee'}</strong>
                   </div>
                   {cancelBilling.employee_count != null && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 4 }}>
                       <span>Active employees</span>
                       <strong>{cancelBilling.employee_count}</strong>
                     </div>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 4 }}>
                     <span>Amount due</span>
                     <strong style={{ color: '#dc2626', fontSize: 18 }}>&pound;{cancelBilling.outstanding_amount.toFixed(2)}</strong>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                     <span>Service until</span>
                     <strong>{new Date(cancelBilling.billing_end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>
                   </div>

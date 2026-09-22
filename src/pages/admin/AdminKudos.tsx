@@ -408,9 +408,9 @@ function KudosAnalytics({ kudos, employees, fyStartMonth }: {
       </div>
 
       {/* Monthly kudos chart */}
-      <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 10, padding: '16px 16px 12px', marginBottom: 16, border: '1px solid var(--border, #e0e0e0)' }}>
+      <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 10, padding: '16px 16px 12px', marginBottom: 16, border: '1px solid var(--border, #e0e0e0)', overflowX: 'auto' }}>
         <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 600 }}>Kudos per Month</h3>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 180 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 180, minWidth: 500 }}>
           {monthlyData.map((m, i) => (
             <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end', opacity: m.isFuture ? 0.3 : 1 }}>
               {m.count > 0 && (
@@ -445,7 +445,7 @@ function KudosAnalytics({ kudos, employees, fyStartMonth }: {
       </div>
 
       {/* Recognition coverage per month */}
-      <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 10, padding: '16px 16px 12px', marginBottom: 16, border: '1px solid var(--border, #e0e0e0)' }}>
+      <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 10, padding: '16px 16px 12px', marginBottom: 16, border: '1px solid var(--border, #e0e0e0)', overflowX: 'auto' }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 600 }}>Recognition Coverage per Month</h3>
         <p style={{ fontSize: 12, color: 'var(--text-muted, #888)', margin: '0 0 12px' }}>Percentage of active employees who received at least one kudos each month</p>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 140 }}>
@@ -465,7 +465,7 @@ function KudosAnalytics({ kudos, employees, fyStartMonth }: {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, marginBottom: 16 }}>
         {/* Category breakdown */}
         <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 10, padding: 16, border: '1px solid var(--border, #e0e0e0)' }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 600 }}>Category Breakdown</h3>
@@ -551,7 +551,7 @@ function KudosAnalytics({ kudos, employees, fyStartMonth }: {
                   <th>Received</th>
                   <th>Per Capita</th>
                   <th>Recognition %</th>
-                  <th style={{ width: 180 }}>Engagement</th>
+                  <th>Engagement</th>
                 </tr>
               </thead>
               <tbody>

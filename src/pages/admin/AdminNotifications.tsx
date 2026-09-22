@@ -303,7 +303,7 @@ export default function AdminNotifications() {
         <p className="admin-section-subtitle">{t('admin_notif.subtitle')}</p>
       </div>
 
-      <div className="admin-tabs" style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid var(--border-color, #e0e0e0)' }}>
+      <div className="admin-tabs" style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid var(--border-color, #e0e0e0)', overflowX: 'auto' }}>
         <button
           onClick={() => setTab('workflow')}
           style={{
