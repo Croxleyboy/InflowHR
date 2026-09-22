@@ -1,7 +1,3 @@
-// POST /functions/v1/sage-upload
-// Receives a Sage payslip PDF (as text extracted client-side), matches employees
-// by employee_number within the company, and upserts payslip records.
-
 import { getSupabase, parseSagePayslipText, corsHeaders, json } from '../_shared/sage.ts'
 
 Deno.serve(async (req) => {
@@ -17,9 +13,13 @@ Deno.serve(async (req) => {
     )
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
-    const { company_id, pdf_text, filename } = await req.json()
+    const { company_id, file_path, filename } = await req.json()
     if (!company_id) return json({ error: 'company_id required' }, 400)
-    if (!pdf_text) return json({ error: 'pdf_text required' }, 400)
+    if (!file_path) return json({ error: 'file_path required' }, 400)
+
+    if (!file_path.startsWith(`${company_id}/`)) {
+      return json({ error: 'File path must be scoped to your company' }, 403)
+    }
 
     const { data: cu } = await sb
       .from('company_users')
@@ -32,7 +32,22 @@ Deno.serve(async (req) => {
       return json({ error: 'Only admins/HR can upload Sage payslips' }, 403)
     }
 
-    const parsed = parseSagePayslipText(pdf_text)
+    const { data: fileData, error: dlErr } = await sb.storage
+      .from('sage-payslips')
+      .download(file_path)
+    if (dlErr || !fileData) {
+      return json({ error: `Failed to download file: ${dlErr?.message || 'not found'}` }, 400)
+    }
+
+    let pdfText: string
+    if (file_path.endsWith('.txt')) {
+      pdfText = await fileData.text()
+    } else {
+      const arrayBuf = await fileData.arrayBuffer()
+      pdfText = await extractTextFromPdfBytes(new Uint8Array(arrayBuf))
+    }
+
+    const parsed = parseSagePayslipText(pdfText)
     if (parsed.length === 0) {
       return json({ error: 'No payslip data found in the uploaded file. Ensure it is a Sage payslip export.' }, 400)
     }
@@ -55,6 +70,7 @@ Deno.serve(async (req) => {
 
     const matched: { employee_name: string; employee_number: string; net_pay: number; period: string }[] = []
     const unmatched: { employee_name: string; employee_number: string }[] = []
+    const upsertRows: Record<string, unknown>[] = []
 
     for (const ps of parsed) {
       const emp = empByNumber[ps.employee_number.toUpperCase()]
@@ -65,14 +81,7 @@ Deno.serve(async (req) => {
 
       const ref = `SAGE-${ps.employee_number}-${ps.pay_period_start}`
 
-      const { data: existing } = await sb
-        .from('payslips')
-        .select('id')
-        .eq('reference_number', ref)
-        .eq('company_id', company_id)
-        .maybeSingle()
-
-      const row = {
+      upsertRows.push({
         employee_id: emp.id,
         company_id,
         reference_number: ref,
@@ -88,13 +97,7 @@ Deno.serve(async (req) => {
         status: 'paid',
         source: 'sage',
         tax_code: ps.tax_code,
-      }
-
-      if (existing) {
-        await sb.from('payslips').update(row).eq('id', existing.id)
-      } else {
-        await sb.from('payslips').insert(row)
-      }
+      })
 
       matched.push({
         employee_name: emp.name,
@@ -104,13 +107,26 @@ Deno.serve(async (req) => {
       })
     }
 
+    if (upsertRows.length > 0) {
+      const batchSize = 50
+      for (let i = 0; i < upsertRows.length; i += batchSize) {
+        const batch = upsertRows.slice(i, i + batchSize)
+        const { error: upsertErr } = await sb
+          .from('payslips')
+          .upsert(batch, { onConflict: 'reference_number,company_id' })
+        if (upsertErr) {
+          return json({ error: `Failed to save payslips (batch ${Math.floor(i / batchSize) + 1}): ${upsertErr.message}` }, 500)
+        }
+      }
+    }
+
     await sb.from('sage_integrations').upsert({
       company_id,
       sync_status: 'connected',
       sync_error: null,
       payslip_source: 'sage',
       last_upload_at: new Date().toISOString(),
-      last_upload_filename: filename || 'sage-payslips.pdf',
+      last_upload_filename: filename || file_path.split('/').pop() || 'sage-payslips.pdf',
       last_sync_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'company_id' })
@@ -120,7 +136,8 @@ Deno.serve(async (req) => {
       p_entity_type: 'sage_payslip_upload',
       p_entity_id: company_id,
       p_details: JSON.stringify({
-        filename: filename || 'sage-payslips.pdf',
+        filename: filename || file_path.split('/').pop(),
+        file_path,
         matched_count: matched.length,
         unmatched_count: unmatched.length,
         uploaded_by: user.id,
@@ -132,3 +149,164 @@ Deno.serve(async (req) => {
     return json({ error: (err as Error).message }, 500)
   }
 })
+
+async function extractTextFromPdfBytes(bytes: Uint8Array): Promise<string> {
+  const raw = new TextDecoder('latin1').decode(bytes)
+
+  const streamBlocks: { start: number; end: number; compressed: boolean }[] = []
+  let searchPos = 0
+  while (searchPos < raw.length) {
+    const si = raw.indexOf('stream', searchPos)
+    if (si === -1) break
+    let contentStart = si + 6
+    if (raw.charCodeAt(contentStart) === 13) contentStart++
+    if (raw.charCodeAt(contentStart) === 10) contentStart++
+
+    const ei = raw.indexOf('endstream', contentStart)
+    if (ei === -1) break
+
+    const dictStart = raw.lastIndexOf('<<', si)
+    const dictSlice = dictStart >= 0 ? raw.slice(dictStart, si) : ''
+    const compressed = /\/FlateDecode/.test(dictSlice)
+
+    streamBlocks.push({ start: contentStart, end: ei, compressed })
+    searchPos = ei + 9
+  }
+
+  const pageTexts: string[] = []
+
+  for (const block of streamBlocks) {
+    const streamBytes = bytes.slice(block.start, block.end)
+    let content: string
+
+    if (block.compressed) {
+      try {
+        const ds = new DecompressionStream('deflate')
+        const writer = ds.writable.getWriter()
+        writer.write(streamBytes)
+        writer.close()
+        const reader = ds.readable.getReader()
+        const chunks: Uint8Array[] = []
+        let totalLen = 0
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+          totalLen += value.length
+        }
+        const result = new Uint8Array(totalLen)
+        let offset = 0
+        for (const chunk of chunks) {
+          result.set(chunk, offset)
+          offset += chunk.length
+        }
+        content = new TextDecoder('latin1').decode(result)
+      } catch {
+        continue
+      }
+    } else {
+      content = new TextDecoder('latin1').decode(streamBytes)
+    }
+
+    if (!content.includes('BT')) continue
+
+    const lines: { y: number; x: number; text: string }[] = []
+    let curX = 0, curY = 0
+    const btBlocks = content.split(/\bBT\b/)
+
+    for (let i = 1; i < btBlocks.length; i++) {
+      const btContent = btBlocks[i].split(/\bET\b/)[0]
+      if (!btContent) continue
+
+      const ops = btContent.split('\n')
+      for (const op of ops) {
+        const trimmed = op.trim()
+        if (!trimmed) continue
+
+        const tdMatch = trimmed.match(/^([-\d.]+)\s+([-\d.]+)\s+Td$/i)
+        if (tdMatch) {
+          curX += parseFloat(tdMatch[1])
+          curY += parseFloat(tdMatch[2])
+          continue
+        }
+
+        const tmMatch = trimmed.match(/^[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+[-\d.]+\s+([-\d.]+)\s+([-\d.]+)\s+Tm$/i)
+        if (tmMatch) {
+          curX = parseFloat(tmMatch[1])
+          curY = parseFloat(tmMatch[2])
+          continue
+        }
+
+        if (trimmed === 'T*') {
+          curY -= 12
+          continue
+        }
+
+        const tjMatch = trimmed.match(/^\((.+)\)\s*Tj$/s)
+        if (tjMatch) {
+          lines.push({ y: Math.round(curY), x: Math.round(curX), text: decodePdfString(tjMatch[1]) })
+          continue
+        }
+
+        const tjArrMatch = trimmed.match(/^\[(.+)\]\s*TJ$/s)
+        if (tjArrMatch) {
+          const parts: string[] = []
+          const itemRe = /\(([^)]*)\)|(-?\d+(?:\.\d+)?)/g
+          let m
+          while ((m = itemRe.exec(tjArrMatch[1])) !== null) {
+            if (m[1] !== undefined) parts.push(decodePdfString(m[1]))
+            else if (m[2] !== undefined) {
+              const kern = parseFloat(m[2])
+              if (kern < -100) parts.push(' ')
+            }
+          }
+          if (parts.length) {
+            lines.push({ y: Math.round(curY), x: Math.round(curX), text: parts.join('') })
+          }
+          continue
+        }
+
+        const quoteMatch = trimmed.match(/^\((.+)\)\s*'$/s)
+        if (quoteMatch) {
+          curY -= 12
+          lines.push({ y: Math.round(curY), x: Math.round(curX), text: decodePdfString(quoteMatch[1]) })
+        }
+      }
+    }
+
+    if (lines.length === 0) continue
+
+    lines.sort((a, b) => b.y - a.y || a.x - b.x)
+
+    const output: string[] = []
+    let lastY = lines[0]?.y
+    for (const line of lines) {
+      if (lastY !== undefined && Math.abs(line.y - lastY) > 2) {
+        output.push('\n')
+      } else if (output.length > 0 && output[output.length - 1] !== '\n') {
+        output.push(' ')
+      }
+      output.push(line.text)
+      lastY = line.y
+    }
+    pageTexts.push(output.join('').trim())
+  }
+
+  return pageTexts.filter(Boolean).join('\n==========================================================\n')
+}
+
+function decodePdfString(s: string): string {
+  return s.replace(/\\([nrtbf\\()]|\d{1,3})/g, (_: string, c: string) => {
+    switch (c) {
+      case 'n': return '\n'
+      case 'r': return '\r'
+      case 't': return '\t'
+      case 'b': return '\b'
+      case 'f': return '\f'
+      case '\\': return '\\'
+      case '(': return '('
+      case ')': return ')'
+      default: return String.fromCharCode(parseInt(c, 8))
+    }
+  })
+}
