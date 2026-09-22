@@ -4,6 +4,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/formatters'
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 const PAGE_SIZE = 30
 
@@ -1097,7 +1098,7 @@ export default function AdminPayroll() {
       } else {
         const arrayBuf = await file.arrayBuffer()
         const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise
         const pages: string[] = []
         for (let i = 1; i <= pdf.numPages; i++) {
