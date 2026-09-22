@@ -223,6 +223,69 @@ export default function AdminLeave() {
     load()
   }
 
+  async function quickApproveDecline(id: number, action: 'approved' | 'rejected') {
+    const req = requests.find(r => r.id === id)
+    if (!req || req.status !== 'pending') return
+
+    const { error } = await supabase.from('leave_requests').update({
+      status: action,
+      approved_at: action === 'approved' ? new Date().toISOString() : null,
+    }).eq('id', id)
+    if (error) { showError('Failed to update: ' + error.message); return }
+
+    if (action === 'approved') {
+      const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
+      if (!typeSetting || typeSetting.deducts_from_allowance) {
+        const year = new Date(req.start_date).getFullYear()
+        const { data: balance } = await supabase.from('leave_balances')
+          .select('id, used').eq('employee_id', req.employee_id).eq('year', year).limit(1).single()
+        if (balance) {
+          await supabase.from('leave_balances').update({ used: balance.used + Number(req.days_requested) }).eq('id', balance.id)
+        }
+      }
+    }
+
+    const empName = req.employee ? `${req.employee.first_name} ${req.employee.last_name}` : ''
+    const empEmail = req.employee?.email || ''
+    const typeName = req.leave_type?.name || 'Leave'
+    const approved = action === 'approved'
+    const now = new Date().toISOString()
+    const dateRange = `${formatDate(req.start_date)} to ${formatDate(req.end_date)}`
+
+    await supabase.from('workflow_tracker').update({
+      status: 'Complete',
+      approval_status: approved ? 'Approved' : 'Declined',
+      updated_at: now,
+      task_description: approved ? `${typeName} approved - ${dateRange}` : `${typeName} declined`,
+    }).eq('record_type', 'Leave').eq('approval_id', id).eq('status', 'Pending').eq('company_id', selectedCompanyId)
+
+    await supabase.from('workflow_tracker').insert({
+      emp_display_name: empName, step: 2, status: 'Complete', record_type: 'Leave',
+      action: approved ? 'Leave approved' : 'Leave declined',
+      employee_email: empEmail, assigned_to: empEmail,
+      approval_id: id, reminder_count: 1,
+      task_description: approved
+        ? `Your ${typeName} from ${dateRange} has been approved.`
+        : `Your ${typeName} request from ${dateRange} has been declined. Please contact your manager.`,
+      approval_status: approved ? 'Approved' : 'Declined',
+      company_id: selectedCompanyId,
+    })
+
+    if (selectedCompanyId) {
+      sendFeatureEmail({
+        companyId: selectedCompanyId, employeeId: req.employee_id, featureKey: 'leave_enabled',
+        title: approved ? `${typeName} Approved` : `${typeName} Declined`,
+        message: approved
+          ? `Your ${typeName} from ${dateRange} (${req.days_requested} days) has been approved.`
+          : `Your ${typeName} request from ${dateRange} has been declined. Please contact your manager.`,
+        type: approved ? 'info' : 'alert', link: '/leave',
+      })
+    }
+
+    window.dispatchEvent(new Event('notifications-updated'))
+    load()
+  }
+
   async function deleteRequest(id: number) {
     if (!confirm('Delete this leave request?')) return
 
@@ -553,6 +616,16 @@ export default function AdminLeave() {
                           </>
                         ) : (
                           <>
+                            {r.status === 'pending' && (
+                              <>
+                                <button className="admin-btn-icon" title="Approve" onClick={() => quickApproveDecline(r.id, 'approved')} style={{ color: '#43a047' }}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                </button>
+                                <button className="admin-btn-icon" title="Decline" onClick={() => quickApproveDecline(r.id, 'rejected')} style={{ color: '#e53935' }}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                              </>
+                            )}
                             <button className="admin-btn-icon" title="Edit" onClick={() => startEdit(r)}>
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                             </button>
