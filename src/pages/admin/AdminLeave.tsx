@@ -47,6 +47,7 @@ export default function AdminLeave() {
   const [savingDeduct, setSavingDeduct] = useState<number | null>(null)
   const [savingCarry, setSavingCarry] = useState<number | null>(null)
   const [fyStartMonth, setFyStartMonth] = useState(4)
+  const [activeTab, setActiveTab] = useState<'requests' | 'settings'>('requests')
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -376,7 +377,12 @@ export default function AdminLeave() {
         <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.totalDays}</span><span>Days Used</span></div>
       </div>
 
-      {!loading && chartData.monthData.some(d => d.total > 0) && (
+      <div className="admin-tabs">
+        <button className={`admin-tab${activeTab === 'requests' ? ' active' : ''}`} onClick={() => setActiveTab('requests')}>Leave Requests</button>
+        <button className={`admin-tab${activeTab === 'settings' ? ' active' : ''}`} onClick={() => setActiveTab('settings')}>Settings</button>
+      </div>
+
+      {activeTab === 'requests' && !loading && chartData.monthData.some(d => d.total > 0) && (
         <div style={{ background: 'var(--card-bg, #fff)', borderRadius: 10, padding: '16px 16px 12px', marginBottom: 16, border: '1px solid var(--border-color, #e0e0e0)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Approved Leave Distribution</h3>
@@ -421,142 +427,156 @@ export default function AdminLeave() {
         </div>
       )}
 
-      <div className="admin-weekend-toggle">
-        <label className="admin-toggle-label">
-          <input
-            type="checkbox"
-            checked={weekendsAsWorkdays}
-            onChange={toggleWeekends}
-            disabled={savingWeekend}
-          />
-          <span>Count weekends as working days</span>
-        </label>
-        <span className="admin-toggle-hint">
-          {weekendsAsWorkdays
-            ? 'Weekends will be included when employees request leave'
-            : 'Weekends are excluded from leave day calculations (UK bank holidays always excluded)'}
-        </span>
-      </div>
-
-      {leaveTypeSettings.length > 0 && (
-        <div className="admin-weekend-toggle" style={{ marginTop: 12 }}>
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>{t('leave.deductions_title')}</h4>
-          <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
-            {t('leave.deductions_hint')}
-          </span>
-          {leaveTypeSettings.filter(lt => ['Sick Leave', 'Jury Duty', 'Compassionate Leave', 'Bereavement', 'Exam Leave', 'Carers Leave'].includes(lt.name)).map(lt => (
-              <label key={lt.id} className="admin-toggle-label" style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={lt.deducts_from_allowance}
-                  onChange={() => toggleDeductsFromAllowance(lt.id, lt.deducts_from_allowance)}
-                  disabled={savingDeduct === lt.id}
-                />
-                <span>{lt.name} — {lt.deducts_from_allowance ? t('leave.deducts_from_allowance') : t('leave.does_not_deduct')}</span>
-              </label>
-            ))}
-        </div>
-      )}
-
-      {leaveTypeSettings.length > 0 && (
-        <div className="admin-weekend-toggle" style={{ marginTop: 12 }}>
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Carry-Over Days</h4>
-          <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
-            Set the maximum number of unused leave days that can be carried over into the next financial year per leave type. Set to 0 for no carry-over.
-          </span>
-          {leaveTypeSettings.filter(lt => lt.deducts_from_allowance).map(lt => (
-            <div key={lt.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-              <span style={{ minWidth: 140, fontSize: 13 }}>{lt.name}</span>
+      {activeTab === 'settings' && (
+        <>
+          <div className="admin-weekend-toggle">
+            <label className="admin-toggle-label">
               <input
-                type="number"
-                min={0}
-                max={365}
-                className="admin-inline-input admin-inline-sm"
-                value={lt.max_carry_over_days}
-                onChange={e => {
-                  const val = Math.max(0, Number(e.target.value) || 0)
-                  setLeaveTypeSettings(prev => prev.map(t => t.id === lt.id ? { ...t, max_carry_over_days: val } : t))
-                }}
-                onBlur={e => updateCarryOverDays(lt.id, Math.max(0, Number(e.target.value) || 0))}
-                disabled={savingCarry === lt.id}
-                style={{ width: 70, textAlign: 'center' }}
+                type="checkbox"
+                checked={weekendsAsWorkdays}
+                onChange={toggleWeekends}
+                disabled={savingWeekend}
               />
-              <span style={{ fontSize: 12, color: '#888' }}>days max</span>
-            </div>
-          ))}
-        </div>
-      )}
+              <span>Count weekends as working days</span>
+            </label>
+            <span className="admin-toggle-hint">
+              {weekendsAsWorkdays
+                ? 'Weekends will be included when employees request leave'
+                : 'Weekends are excluded from leave day calculations (UK bank holidays always excluded)'}
+            </span>
+          </div>
 
-      <div className="admin-filters">
-        <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="admin-select">
-          <option value="">All Employees</option>
-          {employees.map(n => <option key={n} value={n}>{n}</option>)}
-        </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="admin-select">
-          <option value="">All Statuses</option>
-          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-        </select>
-      </div>
-
-      <input
-        className="admin-input"
-        placeholder="Search leave requests..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
-      />
-
-      {loading ? <div className="admin-loading">Loading...</div> : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>
-              {paginated.map(r => (
-                <tr key={r.id}>
-                  <td>{r.employee ? <span className="admin-inline-avatar">{r.employee.avatar_url ? <img src={r.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{r.employee.first_name[0]}{r.employee.last_name[0]}</span>}{r.employee.first_name} {r.employee.last_name}</span> : '—'}</td>
-                  <td>{r.leave_type?.name || '—'}</td>
-                  <td>{editingId === r.id ? (
-                    <div className="admin-date-inputs">
-                      <input type="date" className="admin-inline-input" value={editForm.start_date} onChange={e => setEditForm(p => ({...p, start_date: e.target.value}))} />
-                      <input type="date" className="admin-inline-input" value={editForm.end_date} onChange={e => setEditForm(p => ({...p, end_date: e.target.value}))} />
-                    </div>
-                  ) : `${new Date(r.start_date).toLocaleDateString('en-GB')} – ${new Date(r.end_date).toLocaleDateString('en-GB')}`}</td>
-                  <td>{editingId === r.id ? <input type="number" step="0.5" className="admin-inline-input admin-inline-sm" value={editForm.days_requested} onChange={e => setEditForm(p => ({...p, days_requested: +e.target.value}))} /> : r.days_requested}</td>
-                  <td>{editingId === r.id ? (
-                    <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(p => ({...p, status: e.target.value}))}>
-                      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  ) : <span className={`admin-badge admin-badge-${r.status}`}>{r.status}</span>}</td>
-                  <td className="admin-actions">
-                    {editingId === r.id ? (
-                      <>
-                        <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(r.id)}>Save</button>
-                        <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="admin-btn-icon" title="Edit" onClick={() => startEdit(r)}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
-                        <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteRequest(r.id)}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && <div className="admin-empty">No leave requests found</div>}
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
-              <button className="admin-btn-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</button>
-              <span>Page {page} of {totalPages}</span>
-              <button className="admin-btn-sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+          {leaveTypeSettings.length > 0 && (
+            <div className="admin-weekend-toggle" style={{ marginTop: 12 }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>{t('leave.deductions_title')}</h4>
+              <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
+                {t('leave.deductions_hint')}
+              </span>
+              {leaveTypeSettings.filter(lt => ['Sick Leave', 'Jury Duty', 'Compassionate Leave', 'Bereavement', 'Exam Leave', 'Carers Leave'].includes(lt.name)).map(lt => (
+                  <label key={lt.id} className="admin-toggle-label" style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={lt.deducts_from_allowance}
+                      onChange={() => toggleDeductsFromAllowance(lt.id, lt.deducts_from_allowance)}
+                      disabled={savingDeduct === lt.id}
+                    />
+                    <span>{lt.name} — {lt.deducts_from_allowance ? t('leave.deducts_from_allowance') : t('leave.does_not_deduct')}</span>
+                  </label>
+                ))}
             </div>
           )}
-        </div>
+
+          {leaveTypeSettings.length > 0 && (
+            <div className="admin-weekend-toggle" style={{ marginTop: 12 }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Carry-Over Days</h4>
+              <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
+                Set the maximum number of unused leave days that can be carried over into the next financial year per leave type. Set to 0 for no carry-over.
+              </span>
+              {leaveTypeSettings.filter(lt => lt.deducts_from_allowance).map(lt => (
+                <div key={lt.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                  <span style={{ minWidth: 140, fontSize: 13 }}>{lt.name}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    className="admin-inline-input admin-inline-sm"
+                    value={lt.max_carry_over_days}
+                    onChange={e => {
+                      const val = Math.max(0, Number(e.target.value) || 0)
+                      setLeaveTypeSettings(prev => prev.map(t => t.id === lt.id ? { ...t, max_carry_over_days: val } : t))
+                    }}
+                    onBlur={e => updateCarryOverDays(lt.id, Math.max(0, Number(e.target.value) || 0))}
+                    disabled={savingCarry === lt.id}
+                    style={{ width: 70, textAlign: 'center' }}
+                  />
+                  <span style={{ fontSize: 12, color: '#888' }}>days max</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === 'requests' && (
+        <>
+          <div className="admin-filters">
+            <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="admin-select">
+              <option value="">All Employees</option>
+              {employees.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="admin-select">
+              <option value="">All Statuses</option>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+            </select>
+          </div>
+
+          <input
+            className="admin-input"
+            placeholder="Search leave requests..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
+          />
+
+          {loading ? <div className="admin-loading">Loading...</div> : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>
+                  {paginated.map(r => (
+                    <tr key={r.id}>
+                      <td>{r.employee ? <span className="admin-inline-avatar">{r.employee.avatar_url ? <img src={r.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{r.employee.first_name[0]}{r.employee.last_name[0]}</span>}{r.employee.first_name} {r.employee.last_name}</span> : '—'}</td>
+                      <td>{r.leave_type?.name || '—'}</td>
+                      <td>{editingId === r.id ? (
+                        <div className="admin-date-inputs">
+                          <input type="date" className="admin-inline-input" value={editForm.start_date} onChange={e => setEditForm(p => ({...p, start_date: e.target.value}))} />
+                          <input type="date" className="admin-inline-input" value={editForm.end_date} onChange={e => setEditForm(p => ({...p, end_date: e.target.value}))} />
+                        </div>
+                      ) : `${new Date(r.start_date).toLocaleDateString('en-GB')} – ${new Date(r.end_date).toLocaleDateString('en-GB')}`}</td>
+                      <td>{editingId === r.id ? <input type="number" step="0.5" className="admin-inline-input admin-inline-sm" value={editForm.days_requested} onChange={e => setEditForm(p => ({...p, days_requested: +e.target.value}))} /> : r.days_requested}</td>
+                      <td>{editingId === r.id ? (
+                        <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(p => ({...p, status: e.target.value}))}>
+                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      ) : (
+                        <span className={`admin-badge admin-badge-${r.status}`}>
+                          {r.status === 'approved' && <span style={{ color: '#43a047', fontWeight: 700, marginRight: 4 }}>✓</span>}
+                          {r.status === 'rejected' && <span style={{ color: '#e53935', fontWeight: 700, marginRight: 4 }}>✗</span>}
+                          {r.status}
+                        </span>
+                      )}</td>
+                      <td className="admin-actions">
+                        {editingId === r.id ? (
+                          <>
+                            <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(r.id)}>Save</button>
+                            <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="admin-btn-icon" title="Edit" onClick={() => startEdit(r)}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                            <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteRequest(r.id)}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filtered.length === 0 && <div className="admin-empty">No leave requests found</div>}
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
+                  <button className="admin-btn-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+                  <span>Page {page} of {totalPages}</span>
+                  <button className="admin-btn-sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
