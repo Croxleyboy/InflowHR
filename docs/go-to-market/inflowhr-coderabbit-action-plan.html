@@ -274,9 +274,7 @@ pre.code {
 </div>
 
 <div class="summary-bar">
-  <span class="stat stat-fix">5 &mdash; Needs correction</span>
-  <span class="stat stat-already">5 &mdash; Already fixed by later migration</span>
-  <span class="stat stat-review">2 &mdash; Needs validation</span>
+  <span class="stat stat-already">12 &mdash; All findings resolved</span>
 </div>
 
 <div class="section-heading">Findings already addressed by later migrations</div>
@@ -425,7 +423,7 @@ pre.code {
     <div class="finding-info">
       <div class="finding-title-row">
         <span class="finding-name">send-notification-email IDOR &mdash; trusts client-supplied payload</span>
-        <span class="tag tag-fix">Needs Fix</span>
+        <span class="tag tag-already">Fixed</span>
       </div>
       <div class="finding-file">supabase/functions/send-notification-email/index.ts : line 94</div>
     </div>
@@ -460,9 +458,9 @@ const { data: caller } = await supabase
 if (!record || !caller || record.company_id !== caller.company_id) {
   return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 })
 }</pre>
-    <div class="decision-box decision-correct">
-      <strong>Decision: CORRECT</strong>
-      Genuine IDOR vulnerability. Fix is internal to the edge function with no UX impact. Priority: high &mdash; prevents cross-tenant phishing.
+    <div class="decision-box decision-skip">
+      <strong>Decision: FIXED</strong>
+      Fixed in migration 099 and edge function update. Server-side re-fetch with company verification added. PR #50.
     </div>
   </div>
 </details>
@@ -474,7 +472,7 @@ if (!record || !caller || record.company_id !== caller.company_id) {
     <div class="finding-info">
       <div class="finding-title-row">
         <span class="finding-name">xero-payslips endpoint missing admin/hr role check &mdash; salary data exposure</span>
-        <span class="tag tag-fix">Needs Fix</span>
+        <span class="tag tag-already">Fixed</span>
       </div>
       <div class="finding-file">supabase/functions/xero-payslips/index.ts : line 28</div>
     </div>
@@ -493,9 +491,9 @@ if (!record || !caller || record.company_id !== caller.company_id) {
 if (!cu || (cu.role !== 'admin' && cu.role !== 'hr')) {
   return json({ error: 'Access denied' }, 403)
 }</pre>
-    <div class="decision-box decision-correct">
-      <strong>Decision: CORRECT</strong>
-      One-line fix. Salary data exposure to all employees is a critical privacy issue. No UX impact &mdash; the admin panel already gates the page client-side. Priority: high.
+    <div class="decision-box decision-skip">
+      <strong>Decision: FIXED</strong>
+      Fixed in edge function update. Admin/HR role check added matching xero-connect pattern. PR #50.
     </div>
   </div>
 </details>
@@ -507,7 +505,7 @@ if (!cu || (cu.role !== 'admin' && cu.role !== 'hr')) {
     <div class="finding-info">
       <div class="finding-title-row">
         <span class="finding-name">anonymise_employee uses wrong column names &mdash; GDPR erasure fails silently</span>
-        <span class="tag tag-fix">Needs Fix</span>
+        <span class="tag tag-already">Fixed</span>
       </div>
       <div class="finding-file">supabase/migrations/047_gdpr_compliance.sql : line 460</div>
     </div>
@@ -527,9 +525,9 @@ if (!cu || (cu.role !== 'admin' && cu.role !== 'hr')) {
                              OR to_employee_id = p_employee_id;
 DELETE FROM notifications WHERE employee_id = p_employee_id;
 DELETE FROM space_bookings WHERE employee_id = p_employee_id;</pre>
-    <div class="decision-box decision-correct">
-      <strong>Decision: CORRECT</strong>
-      GDPR erasure is non-functional. Must fix before any production erasure request is received. Priority: critical &mdash; SMB launch blocker.
+    <div class="decision-box decision-skip">
+      <strong>Decision: FIXED</strong>
+      Fixed in migration 099. Column names corrected and admin-only guard added. PR #50.
     </div>
   </div>
 </details>
@@ -541,7 +539,7 @@ DELETE FROM space_bookings WHERE employee_id = p_employee_id;</pre>
     <div class="finding-info">
       <div class="finding-title-row">
         <span class="finding-name">AUTO_PURGE missing from audit constraint &mdash; automated retention purge fails</span>
-        <span class="tag tag-fix">Needs Fix</span>
+        <span class="tag tag-already">Fixed</span>
       </div>
       <div class="finding-file">supabase/migrations/057_medium_security_fixes.sql : line 270</div>
     </div>
@@ -566,9 +564,9 @@ ALTER TABLE gdpr_audit_logs
     'GRANT_ACCESS', 'REVOKE_ACCESS',
     'SELF_GRANT_ACCESS', 'AUTO_PURGE'
   ));</pre>
-    <div class="decision-box decision-correct">
-      <strong>Decision: CORRECT</strong>
-      Data retention automation is broken. Quick constraint update. Priority: high &mdash; SMB launch blocker (data retention is a gate).
+    <div class="decision-box decision-skip">
+      <strong>Decision: FIXED</strong>
+      Fixed in migration 100. AUTO_PURGE and INSERT added to constraint. PR #51.
     </div>
   </div>
 </details>
@@ -580,7 +578,7 @@ ALTER TABLE gdpr_audit_logs
     <div class="finding-info">
       <div class="finding-title-row">
         <span class="finding-name">Wrong column r.checkin_id in export_company_data breaks cancellation export</span>
-        <span class="tag tag-fix">Needs Fix</span>
+        <span class="tag tag-already">Fixed</span>
       </div>
       <div class="finding-file">supabase/migrations/095_cancellation.sql : line 431</div>
     </div>
@@ -606,9 +604,9 @@ ALTER TABLE gdpr_audit_logs
 'break_records', COALESCE((SELECT jsonb_agg(to_jsonb(r))
   FROM break_records r
   WHERE r.company_id = p_company_id), '[]'::jsonb)</pre>
-    <div class="decision-box decision-correct">
-      <strong>Decision: CORRECT</strong>
-      Export function is broken. Simple column reference fix. Priority: medium &mdash; affects cancellation workflow only.
+    <div class="decision-box decision-skip">
+      <strong>Decision: FIXED</strong>
+      Fixed in migration 101. Column reference corrected to use direct company_id filter. PR #51.
     </div>
   </div>
 </details>
@@ -622,7 +620,7 @@ ALTER TABLE gdpr_audit_logs
     <div class="finding-info">
       <div class="finding-title-row">
         <span class="finding-name">GDPR export IDOR &mdash; any employee can export colleague PII</span>
-        <span class="tag tag-review">Needs Validation</span>
+        <span class="tag tag-already">Fixed</span>
       </div>
       <div class="finding-file">supabase/migrations/062_fix_export_claim_id.sql : line 23</div>
     </div>
@@ -636,9 +634,9 @@ ALTER TABLE gdpr_audit_logs
     <div class="detail-label">UX / service impact</div>
     <p><strong>UX impact of fix: none.</strong> If we add <code>employee_id = get_my_employee_id() OR role IN ('admin', 'hr')</code> to the auth check, the employee self-export continues to work and admin export continues to work. Only cross-employee export by non-admins is blocked.</p>
     <p><strong>Service impact: high if exploitable.</strong> Full PII export including NI numbers and bank details. The <code>anonymise_employee</code> IDOR is less urgent because the function is currently broken (CR-07), but must be fixed when CR-07 is corrected.</p>
-    <div class="decision-box decision-pending">
-      <strong>Decision: PENDING VALIDATION</strong>
-      Validate current client-side gating, then add server-side role/self check to both functions. When correcting CR-07 (anonymise column names), add the admin-only guard at the same time. Priority: high.
+    <div class="decision-box decision-skip">
+      <strong>Decision: FIXED</strong>
+      Validated and fixed in migration 099. Server-side guard added: employee can only export own data, admin/HR can export any employee in their company. PR #50.
     </div>
   </div>
 </details>
@@ -650,7 +648,7 @@ ALTER TABLE gdpr_audit_logs
     <div class="finding-info">
       <div class="finding-title-row">
         <span class="finding-name">app_settings SELECT USING(true) &mdash; cross-tenant settings readable</span>
-        <span class="tag tag-review">Needs Validation</span>
+        <span class="tag tag-already">Fixed</span>
       </div>
       <div class="finding-file">supabase/migrations/093_security_audit_fixes.sql : line 86</div>
     </div>
@@ -675,9 +673,9 @@ CREATE POLICY "Admins can update app_settings"
   ON app_settings FOR UPDATE TO authenticated
   USING ((is_my_company(company_id) AND is_company_admin())
          OR is_super_admin());</pre>
-    <div class="decision-box decision-pending">
-      <strong>Decision: PENDING VALIDATION</strong>
-      Cross-tenant UPDATE is confirmed as a bug to fix. Cross-tenant SELECT risk depends on what the table stores. Validate table contents, then apply company-scoped policies to both. Priority: medium.
+    <div class="decision-box decision-skip">
+      <strong>Decision: FIXED</strong>
+      Fixed in migration 102. SELECT and UPDATE policies scoped to company_id with admin check. PR #52.
     </div>
   </div>
 </details>
@@ -685,21 +683,8 @@ CREATE POLICY "Admins can update app_settings"
 <div class="section-heading">Summary and next steps</div>
 
 <div class="intro">
-  <p><strong>5 findings already remediated</strong> by migrations 055, 093, and 097. No further action needed.</p>
-  <p><strong>5 findings require correction.</strong> Ordered by priority:</p>
-  <ol style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.8; padding-left: 20px;">
-    <li><strong>CR-07</strong> &mdash; anonymise_employee column names (GDPR erasure broken &mdash; launch blocker)</li>
-    <li><strong>CR-08</strong> &mdash; AUTO_PURGE constraint (data retention broken &mdash; launch blocker)</li>
-    <li><strong>CR-02</strong> &mdash; xero-payslips role check (salary data exposure)</li>
-    <li><strong>CR-01</strong> &mdash; send-notification-email IDOR (cross-tenant phishing)</li>
-    <li><strong>CR-12</strong> &mdash; export_company_data column name (cancellation export broken)</li>
-  </ol>
-  <p><strong>2 findings need validation</strong> before a decision can be finalised:</p>
-  <ol style="color: var(--text-secondary); font-size: 13.5px; line-height: 1.8; padding-left: 20px;">
-    <li><strong>CR-09</strong> &mdash; GDPR export/anonymise IDOR (validate client-side gating, then add server-side guard)</li>
-    <li><strong>CR-11</strong> &mdash; app_settings cross-tenant (validate data sensitivity, then scope policies)</li>
-  </ol>
-  <p>All corrections will be implemented as new SQL migrations and edge function updates. Each will be individually tested and the migration number recorded against the finding above.</p>
+  <p><strong>All 12 findings resolved.</strong> 5 were already fixed by earlier migrations (055, 093, 097). The remaining 7 were corrected in migrations 099&ndash;102 and corresponding edge function updates (PRs #50&ndash;#52).</p>
+  <p>No outstanding items. All CodeRabbit findings are closed as of 22-09-2026.</p>
 </div>
 
 <div class="footer">

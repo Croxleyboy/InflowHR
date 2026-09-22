@@ -1,5 +1,5 @@
 # InflowHR Change Log
-**Last updated:** 20-09-2026
+**Last updated:** 22-09-2026
 
 Format: `DD-MM-YYYY | Category | Description | PR/Migration | GDPR Impact`
 
@@ -42,6 +42,31 @@ Categories: `SECURITY` `FEATURE` `FIX` `GDPR` `INFRASTRUCTURE` `REFACTOR`
 | 15-09-2026 | SECURITY | SG-01: Rewrite get_super_admin_uid() | PR #52, migration 102 | Removes hardcoded email from function |
 | 15-09-2026 | SECURITY | SG-02: REVOKE EXECUTE FROM anon on 7 functions | PR #52, migration 102 | Defence-in-depth on SECURITY DEFINER |
 | 15-09-2026 | SECURITY | SG-03: Drop overly-permissive app_settings policy | PR #52, migration 102 | Removes USING(true) on tenant data |
+
+### Features — Integrations & Payroll
+
+| Date | Category | Description | Reference | GDPR Impact |
+|------|----------|-------------|-----------|-------------|
+| 20-09-2026 | FEATURE | Microsoft Teams integration — presence sync and leave notifications | PR #85, migrations 105-107 | Employee presence data shared with Teams when enabled |
+| 20-09-2026 | FEATURE | Sage payroll integration — PDF payslip upload and parsing | PR #90, migrations 108-109 | Payslip PII processed via Sage upload edge function |
+| 20-09-2026 | FEATURE | Payroll source migration — multi-provider payslip support with source badges | PR #98 | None |
+| 22-09-2026 | FIX | Fix duplicate company_users — unique constraint and ensure_company_user ambiguity guard | PR #100, migration 110 | Prevents orphaned/duplicate user-tenant mappings |
+
+### UI Improvements
+
+| Date | Category | Description | Reference | GDPR Impact |
+|------|----------|-------------|-----------|-------------|
+| 22-09-2026 | FEATURE | Asset duplicate button with -copy suffix on admin asset management | PR #99 | None |
+| 22-09-2026 | FEATURE | Bulk delete checkboxes on admin leave and expense management | PR #99 | GDPR audit logged via existing delete handlers |
+
+### CodeRabbit Follow-up Fixes
+
+| Date | Category | Description | Reference | GDPR Impact |
+|------|----------|-------------|-----------|-------------|
+| 22-09-2026 | FIX | CB-1: AdminCompanies addAdmin/removeAdmin error handling — early return on failure | PR #100 | Prevents inconsistent admin state |
+| 22-09-2026 | FIX | CB-2: sage-upload GDPR audit log — corrected to use actual log_gdpr_action parameters | PR #100 | Fixes GDPR audit trail for Sage uploads |
+| 22-09-2026 | SECURITY | CB-3: Normal unique constraint on (employee_id, company_id) replacing partial index | PR #100, migration 110 | Prevents duplicate tenant user records |
+| 22-09-2026 | SECURITY | CB-4: ensure_company_user local-part ambiguity guard — rejects when multiple matches | PR #100, migration 110 | Prevents wrong employee auto-linking on login |
 
 ### Development Framework
 

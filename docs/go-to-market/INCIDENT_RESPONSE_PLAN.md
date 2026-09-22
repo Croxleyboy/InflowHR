@@ -1,6 +1,6 @@
 # InflowHR — Incident Response Plan
 
-**Last updated:** 20-09-2026
+**Last updated:** 22-09-2026
 **Document owner:** Andy Jones, Kumonix Ltd
 **Review frequency:** Annually, or after any incident
 
@@ -18,6 +18,8 @@ Covers all systems processing InflowHR customer data:
 - Supabase Storage (employee receipts, documents)
 - Brevo transactional email service
 - Xero payroll integration (where enabled)
+- Sage payroll integration (where enabled)
+- Microsoft Teams integration (where enabled)
 - Application frontend (app.inflowhr.com)
 
 ## 3. Incident Classification
