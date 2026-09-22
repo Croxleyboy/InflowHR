@@ -1186,28 +1186,29 @@ export default function AdminPayroll() {
         <>
           {(xeroConnected || sageConnected) && (
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', marginBottom: 12,
-              background: 'var(--bg-card, #fff)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)', flexWrap: 'wrap',
+              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', marginBottom: 12,
+              background: 'var(--bg-card, #fff)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
             }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>Payslip Source:</span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
-                <input type="radio" name="payslipSource" checked={activeSource === 'inflowhr'} onChange={() => togglePayslipSource('inflowhr')} />
-                <span>InflowHR</span>
-              </label>
-              {xeroConnected && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
-                  <input type="radio" name="payslipSource" checked={activeSource === 'xero'} onChange={() => togglePayslipSource('xero')} />
-                  <span>Xero</span>
-                </label>
-              )}
-              {sageConnected && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
-                  <input type="radio" name="payslipSource" checked={activeSource === 'sage'} onChange={() => togglePayslipSource('sage')} />
-                  <span>Sage</span>
-                </label>
-              )}
-              <span className="admin-badge admin-badge-approved" style={{ marginLeft: 'auto' }}>
-                {activeSource === 'xero' ? 'Xero Active' : activeSource === 'sage' ? 'Sage Active' : 'InflowHR Active'}
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Payroll Provider:</span>
+              <select
+                className="admin-select"
+                value={activeSource}
+                onChange={e => togglePayslipSource(e.target.value as 'inflowhr' | 'xero' | 'sage')}
+                style={{ fontSize: 13, padding: '4px 8px', minWidth: 120 }}
+              >
+                <option value="inflowhr">InflowHR</option>
+                {xeroConnected && <option value="xero">Xero</option>}
+                {sageConnected && <option value="sage">Sage</option>}
+              </select>
+              <span style={{
+                fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 10, marginLeft: 4,
+                background: activeSource === 'sage' ? '#e0f2e9' : activeSource === 'xero' ? '#dbeafe' : '#f3f0ff',
+                color: activeSource === 'sage' ? '#166534' : activeSource === 'xero' ? '#1e40af' : '#5b21b6',
+              }}>
+                {activeSource === 'xero' ? 'Xero' : activeSource === 'sage' ? 'Sage' : 'InflowHR'} Active
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted, #6b7280)', marginLeft: 'auto' }}>
+                Controls which tools appear for new payslips
               </span>
             </div>
           )}
