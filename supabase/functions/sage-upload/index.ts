@@ -171,16 +171,17 @@ Deno.serve(async (req) => {
     }, { onConflict: 'company_id' })
 
     await sb.rpc('log_gdpr_action', {
-      p_action: 'CREATE',
-      p_entity_type: 'sage_payslip_upload',
-      p_entity_id: company_id,
-      p_details: JSON.stringify({
+      p_company_id: company_id,
+      p_table_name: 'payslips',
+      p_record_id: file_path,
+      p_action: 'INSERT',
+      p_new_data: {
         filename: filename || file_path.split('/').pop(),
         file_path,
         matched_count: matched.length,
         unmatched_count: unmatched.length,
         uploaded_by: user.id,
-      }),
+      },
     })
 
     return json({ matched, unmatched, skipped, total_parsed: parsed.length })

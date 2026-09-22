@@ -460,12 +460,20 @@ export default function AdminCompanies() {
         .from('company_users')
         .update({ role: 'admin' })
         .eq('id', cuByEmp.id)
-      if (error) showError('Failed to assign admin: ' + error.message)
+      if (error) {
+        showError('Failed to assign admin: ' + error.message)
+        setSavingAdmin(false)
+        return
+      }
     } else {
       const { error } = await supabase
         .from('company_users')
         .insert({ company_id: companyId, employee_id: employeeId, role: 'admin', is_active: true })
-      if (error) showError('Failed to assign admin: ' + error.message)
+      if (error) {
+        showError('Failed to assign admin: ' + error.message)
+        setSavingAdmin(false)
+        return
+      }
     }
 
     setEditingAdmin(null)
@@ -493,7 +501,11 @@ export default function AdminCompanies() {
       .update({ role: 'employee' })
       .eq('company_id', companyId)
       .eq('employee_id', employeeId)
-    if (demoteCuError) showError('Failed to remove admin: ' + demoteCuError.message)
+    if (demoteCuError) {
+      showError('Failed to remove admin: ' + demoteCuError.message)
+      setSavingAdmin(false)
+      return
+    }
 
     setSavingAdmin(false)
     setEmployees(prev => { const next = { ...prev }; delete next[companyId]; return next })
