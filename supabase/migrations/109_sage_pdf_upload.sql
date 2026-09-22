@@ -25,6 +25,7 @@ VALUES ('sage-payslips', 'sage-payslips', false)
 ON CONFLICT (id) DO NOTHING;
 
 -- Storage policies: company-scoped via path prefix {company_id}/
+DROP POLICY IF EXISTS "Admin/HR can upload sage PDFs" ON storage.objects;
 CREATE POLICY "Admin/HR can upload sage PDFs"
   ON storage.objects FOR INSERT
   WITH CHECK (
@@ -38,6 +39,7 @@ CREATE POLICY "Admin/HR can upload sage PDFs"
     )
   );
 
+DROP POLICY IF EXISTS "Company users can read sage PDFs" ON storage.objects;
 CREATE POLICY "Company users can read sage PDFs"
   ON storage.objects FOR SELECT
   USING (
@@ -45,6 +47,7 @@ CREATE POLICY "Company users can read sage PDFs"
     AND (storage.foldername(name))[1] = get_my_company_id()::text
   );
 
+DROP POLICY IF EXISTS "Admins can delete sage PDFs" ON storage.objects;
 CREATE POLICY "Admins can delete sage PDFs"
   ON storage.objects FOR DELETE
   USING (
