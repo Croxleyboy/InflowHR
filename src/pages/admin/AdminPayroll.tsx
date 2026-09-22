@@ -4,18 +4,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/formatters'
-import pdfjsWorkerRaw from 'pdfjs-dist/build/pdf.worker.min.mjs?raw'
-
 const PAGE_SIZE = 30
-
-let _workerBlobUrl: string | null = null
-function getPdfWorkerUrl(): string {
-  if (!_workerBlobUrl) {
-    const blob = new Blob([pdfjsWorkerRaw], { type: 'application/javascript' })
-    _workerBlobUrl = URL.createObjectURL(blob)
-  }
-  return _workerBlobUrl
-}
 
 // UK 2024/25 tax & NI brackets applied to monthly taxable pay (annual salary after sacrifice)
 function calcMonthlyTax(annualTaxable: number): number {
@@ -1101,35 +1090,15 @@ export default function AdminPayroll() {
     setSageUploading(true)
     setSageUploadResult(null)
     try {
-      let pdfText = ''
-      if (file.name.endsWith('.txt')) {
-        pdfText = await file.text()
-      } else {
-        const arrayBuf = await file.arrayBuffer()
-        const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl()
-        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise
-        const pages: string[] = []
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const pg = await pdf.getPage(i)
-          const tc = await pg.getTextContent()
-          let lastY = -1
-          const parts: string[] = []
-          for (const item of tc.items as any[]) {
-            if (!('str' in item)) continue
-            const y = Math.round(item.transform?.[5] ?? 0)
-            if (lastY >= 0 && Math.abs(y - lastY) > 2) parts.push('\n')
-            else if (parts.length > 0) parts.push(' ')
-            parts.push(item.str)
-            lastY = y
-          }
-          pages.push(parts.join(''))
-        }
-        pdfText = pages.join('\n==========================================================\n')
-      }
-
       const token = session?.access_token
       if (!token) { showError('Not authenticated'); setSageUploading(false); return }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const storagePath = `${selectedCompanyId}/${timestamp}_${file.name}`
+      const { error: uploadErr } = await supabase.storage
+        .from('sage-payslips')
+        .upload(storagePath, file, { upsert: false })
+      if (uploadErr) { showError(`Upload failed: ${uploadErr.message}`); setSageUploading(false); return }
 
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sage-upload`, {
         method: 'POST',
@@ -1137,7 +1106,7 @@ export default function AdminPayroll() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ company_id: selectedCompanyId, pdf_text: pdfText, filename: file.name }),
+        body: JSON.stringify({ company_id: selectedCompanyId, file_path: storagePath, filename: file.name }),
       })
 
       const data = await resp.json()
