@@ -71,9 +71,10 @@ interface SageIntegration {
   id: string
   company_id: string
   sync_status: string
-  sync_error: string | null
   last_sync_at: string | null
   payslip_source: 'inflowhr' | 'sage'
+  last_upload_at: string | null
+  last_upload_filename: string | null
 }
 
 interface XeroPayslipRow {
@@ -182,9 +183,12 @@ export default function AdminPayroll() {
 
   // Sage integration state
   const [sageIntegration, setSageIntegration] = useState<SageIntegration | null>(null)
-  const [sageSyncing, setSageSyncing] = useState(false)
-  const [sageLivePayslips, setSageLivePayslips] = useState<XeroPayslipRow[]>([])
-  const [sagePayRun, setSagePayRun] = useState<XeroPayRun | null>(null)
+  const [sageUploading, setSageUploading] = useState(false)
+  const [sageUploadResult, setSageUploadResult] = useState<{
+    matched: { employee_name: string; employee_number: string; net_pay: number; period: string }[]
+    unmatched: { employee_name: string; employee_number: string }[]
+    total_parsed: number
+  } | null>(null)
 
   // Employee Pay tab month navigation
   const [empPayMonthIdx, setEmpPayMonthIdx] = useState(0)
@@ -246,7 +250,7 @@ export default function AdminPayroll() {
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
       supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
-      supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('sage_integrations').select('id, company_id, sync_status, last_sync_at, payslip_source, last_upload_at, last_upload_filename').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
     setPayslips((pRes.data as Payslip[]) || [])
     setEmployees((eRes.data as Employee[]) || [])
@@ -254,10 +258,7 @@ export default function AdminPayroll() {
     setXeroIntegration(xero)
     if (xero?.cached_pay_run) setXeroPayRun(xero.cached_pay_run)
     if (xero?.cached_payslips?.length) setXeroLivePayslips(xero.cached_payslips)
-    const sage = sRes.data as (SageIntegration & { cached_pay_run?: XeroPayRun; cached_payslips?: XeroPayslipRow[] }) | null
-    setSageIntegration(sage)
-    if (sage?.cached_pay_run) setSagePayRun(sage.cached_pay_run)
-    if (sage?.cached_payslips?.length) setSageLivePayslips(sage.cached_payslips)
+    setSageIntegration(sRes.data as SageIntegration | null)
     setLoading(false)
   }
 
@@ -1086,15 +1087,59 @@ export default function AdminPayroll() {
     }
   }
 
-  async function fetchSagePayslips() {
-    setSageSyncing(true)
-    const result = await callXeroFunction('sage-payslips')
-    setSageSyncing(false)
-    if (result) {
-      setSagePayRun(result.payRun)
-      setSageLivePayslips(result.payslips || [])
+  async function handleSagePdfUpload(file: File) {
+    setSageUploading(true)
+    setSageUploadResult(null)
+    try {
+      let pdfText = ''
+      if (file.name.endsWith('.txt')) {
+        pdfText = await file.text()
+      } else {
+        const arrayBuf = await file.arrayBuffer()
+        const pdfjsLib = await import('pdfjs-dist')
+        pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise
+        const pages: string[] = []
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const pg = await pdf.getPage(i)
+          const tc = await pg.getTextContent()
+          let lastY = -1
+          const parts: string[] = []
+          for (const item of tc.items as any[]) {
+            if (!('str' in item)) continue
+            const y = Math.round(item.transform?.[5] ?? 0)
+            if (lastY >= 0 && Math.abs(y - lastY) > 2) parts.push('\n')
+            else if (parts.length > 0) parts.push(' ')
+            parts.push(item.str)
+            lastY = y
+          }
+          pages.push(parts.join(''))
+        }
+        pdfText = pages.join('\n==========================================================\n')
+      }
+
+      const token = session?.access_token
+      if (!token) { showError('Not authenticated'); setSageUploading(false); return }
+
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sage-upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ company_id: selectedCompanyId, pdf_text: pdfText, filename: file.name }),
+      })
+
+      const data = await resp.json()
+      if (!resp.ok) { showError(data.error || 'Upload failed'); setSageUploading(false); return }
+
+      setSageUploadResult(data)
+      showSuccess(`${data.matched.length} payslip(s) imported successfully`)
       loadAll()
+    } catch (err: any) {
+      showError('Failed to process file: ' + (err.message || 'Unknown error'))
     }
+    setSageUploading(false)
   }
 
   const fyLabel = `FY ${fyRange.startYear}/${fyRange.startYear + 1}`
@@ -1998,83 +2043,156 @@ export default function AdminPayroll() {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
           }}>
             <div>
-              <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Sage</strong>
-              {sageIntegration?.last_sync_at && (
+              <strong style={{ fontSize: 13, color: '#2e7d32' }}>Sage Payroll Enabled</strong>
+              {sageIntegration?.last_upload_at && (
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
-                  Last synced: {new Date(sageIntegration.last_sync_at).toLocaleString('en-GB')}
+                  Last upload: {new Date(sageIntegration.last_upload_at).toLocaleString('en-GB')}
+                  {sageIntegration.last_upload_filename && ` — ${sageIntegration.last_upload_filename}`}
                 </p>
               )}
             </div>
-            <button className="admin-btn admin-btn-primary" onClick={fetchSagePayslips} disabled={sageSyncing}>
-              {sageSyncing ? 'Fetching...' : 'Fetch Payslips'}
-            </button>
           </div>
 
-          {sagePayRun && (
+          <div
+            style={{
+              border: '2px dashed var(--border, #d1d5db)', borderRadius: 12, padding: 32,
+              textAlign: 'center', background: 'var(--bg-card, #fff)', marginBottom: 16,
+              cursor: sageUploading ? 'not-allowed' : 'pointer', opacity: sageUploading ? 0.6 : 1,
+            }}
+            onDragOver={e => { e.preventDefault(); e.stopPropagation() }}
+            onDrop={e => {
+              e.preventDefault(); e.stopPropagation()
+              const f = e.dataTransfer.files[0]
+              if (f && (f.name.endsWith('.pdf') || f.name.endsWith('.txt'))) handleSagePdfUpload(f)
+              else showError('Please upload a .pdf or .txt file')
+            }}
+            onClick={() => {
+              if (sageUploading) return
+              const input = document.createElement('input')
+              input.type = 'file'
+              input.accept = '.pdf,.txt'
+              input.onchange = () => {
+                const f = input.files?.[0]
+                if (f) handleSagePdfUpload(f)
+              }
+              input.click()
+            }}
+          >
+            <div style={{ fontSize: 32, marginBottom: 8 }}>&#128196;</div>
+            <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>
+              {sageUploading ? 'Processing...' : 'Upload Sage Payslip PDF'}
+            </p>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>
+              Drag and drop or click to select a .pdf or .txt file exported from Sage Payroll
+            </p>
+          </div>
+
+          {sageUploadResult && (
             <div style={{
-              padding: '10px 14px', marginBottom: 12, background: 'var(--bg-card, #fff)',
-              borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
-              display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', fontSize: 13, color: 'var(--text, #1a1a2e)',
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
+              background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <span><strong>Pay Run:</strong> {sagePayRun.status}</span>
-              <span><strong>Period:</strong> {new Date(sagePayRun.period_start).toLocaleDateString('en-GB')} — {new Date(sagePayRun.period_end).toLocaleDateString('en-GB')}</span>
-              {sagePayRun.payment_date && <span><strong>Payment:</strong> {new Date(sagePayRun.payment_date).toLocaleDateString('en-GB')}</span>}
+              <div style={{
+                background: 'var(--bg-card, #fff)', borderRadius: 12, padding: 24, maxWidth: 560, width: '90%',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)', maxHeight: '80vh', overflowY: 'auto',
+              }}>
+                <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#2e7d32' }}>
+                  Sage Payslip Import Complete
+                </h3>
+
+                {sageUploadResult.matched.length > 0 && (
+                  <>
+                    <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>
+                      Matched ({sageUploadResult.matched.length})
+                    </p>
+                    <div className="admin-table-wrap" style={{ marginBottom: 16 }}>
+                      <table className="admin-table">
+                        <thead>
+                          <tr><th>Employee</th><th>Employee ID</th><th>Net Pay</th><th>Period</th></tr>
+                        </thead>
+                        <tbody>
+                          {sageUploadResult.matched.map((m, i) => (
+                            <tr key={i}>
+                              <td><strong>{m.employee_name}</strong></td>
+                              <td>{m.employee_number}</td>
+                              <td>£{m.net_pay.toFixed(2)}</td>
+                              <td>{m.period}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                {sageUploadResult.unmatched.length > 0 && (
+                  <>
+                    <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: '#dc2626' }}>
+                      Unmatched ({sageUploadResult.unmatched.length})
+                    </p>
+                    <div className="admin-table-wrap" style={{ marginBottom: 16 }}>
+                      <table className="admin-table">
+                        <thead>
+                          <tr><th>Employee Name</th><th>Employee ID</th></tr>
+                        </thead>
+                        <tbody>
+                          {sageUploadResult.unmatched.map((u, i) => (
+                            <tr key={i}>
+                              <td>{u.employee_name}</td>
+                              <td>{u.employee_number}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p style={{ margin: '0 0 12px', fontSize: 12, color: '#dc2626' }}>
+                      These employees could not be matched. Check their Employee ID in Admin &gt; Employees &gt; Employment Management.
+                    </p>
+                  </>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button className="admin-btn admin-btn-primary" onClick={() => setSageUploadResult(null)}>Close</button>
+                </div>
+              </div>
             </div>
           )}
 
-          {sageLivePayslips.length > 0 && (
+          {sourcePayslips.length > 0 && (
             <>
               <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>
-                Sage Payslips ({sageLivePayslips.length})
+                Imported Sage Payslips ({sourcePayslips.length})
               </h3>
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>Employee</th><th>Matched</th><th>Total Earnings</th><th>Tax (PAYE)</th>
-                      <th>Employee NI</th><th>Deductions</th><th>Employer NI</th>
-                      <th>Employer Pension</th><th>Reimbursements</th><th>Student Loan</th><th>Net Pay</th>
+                      <th>Employee</th><th>Period</th><th>Gross</th><th>Tax</th>
+                      <th>NI</th><th>Pension</th><th>Net Pay</th><th>Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sageLivePayslips.map(s => (
-                      <tr key={s.payslip_id}>
-                        <td><strong>{s.first_name} {s.last_name}</strong></td>
-                        <td>{s.inflow_employee_id ? <span style={{ color: '#16a34a' }}>Yes</span> : <span style={{ color: '#dc2626' }}>No</span>}</td>
-                        <td>£{Number(s.total_earnings).toFixed(2)}</td>
-                        <td>£{Number(s.tax).toFixed(2)}</td>
-                        <td>£{Number(s.employee_ni).toFixed(2)}</td>
-                        <td>£{(s.deductions || []).reduce((sum, d) => sum + d.amount, 0).toFixed(2)}</td>
-                        <td>£{Number(s.employer_ni).toFixed(2)}</td>
-                        <td>£{Number(s.employer_pension).toFixed(2)}</td>
-                        <td>£{Number(s.total_reimbursements || 0).toFixed(2)}</td>
-                        <td>£{Number(s.student_loan).toFixed(2)}</td>
-                        <td><strong>£{Number(s.net_pay).toFixed(2)}</strong></td>
+                    {sourcePayslips.map(p => (
+                      <tr key={p.id}>
+                        <td><strong>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</strong></td>
+                        <td>{formatDate(p.pay_period_start)} — {formatDate(p.pay_period_end)}</td>
+                        <td>£{Number(p.gross_pay).toFixed(2)}</td>
+                        <td>£{Number(p.tax).toFixed(2)}</td>
+                        <td>£{Number(p.national_insurance).toFixed(2)}</td>
+                        <td>£{Number(p.pension).toFixed(2)}</td>
+                        <td><strong>£{Number(p.net_pay).toFixed(2)}</strong></td>
+                        <td><span style={{ color: p.status === 'paid' ? '#16a34a' : '#f59e0b', fontWeight: 600 }}>{p.status}</span></td>
                       </tr>
                     ))}
                   </tbody>
-                  <tfoot>
-                    <tr style={{ fontWeight: 700 }}>
-                      <td>Totals</td><td></td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.total_earnings), 0).toFixed(2)}</td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.employee_ni), 0).toFixed(2)}</td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + (p.deductions || []).reduce((sum, d) => sum + d.amount, 0), 0).toFixed(2)}</td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.employer_ni), 0).toFixed(2)}</td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.employer_pension), 0).toFixed(2)}</td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.total_reimbursements || 0), 0).toFixed(2)}</td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.student_loan), 0).toFixed(2)}</td>
-                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
-                    </tr>
-                  </tfoot>
                 </table>
               </div>
             </>
           )}
 
-          {sageLivePayslips.length === 0 && !sageSyncing && (
+          {sourcePayslips.length === 0 && !sageUploading && (
             <div className="admin-empty" style={{ marginTop: 16 }}>
-              No payslips fetched yet. Click &ldquo;Fetch Payslips&rdquo; to pull the latest pay run from Sage.
+              No Sage payslips imported yet. Upload a payslip PDF to get started.
             </div>
           )}
         </>
