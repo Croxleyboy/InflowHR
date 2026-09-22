@@ -460,7 +460,7 @@ export default function AdminSubscriptions() {
 
       {/* Company Features Tab */}
       {tab === 'features' && (
-        <>
+        <div className="sub-features-scroll">
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontWeight: 600, fontSize: 13, marginRight: 8 }}>Company</label>
             <select
@@ -739,7 +739,7 @@ export default function AdminSubscriptions() {
               )}
             </>
           )}
-        </>
+        </div>
       )}
 
       {/* Companies Tab */}

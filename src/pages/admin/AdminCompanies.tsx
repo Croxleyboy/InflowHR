@@ -107,6 +107,8 @@ export default function AdminCompanies() {
   const importFileRef = useRef<HTMLInputElement>(null)
 
   const isMobile = useMediaQuery('(max-width: 1024px)')
+  const [currentPage, setCurrentPage] = useState(1)
+  const PAGE_SIZE = 10
 
   async function load() {
     setLoading(true)
@@ -116,6 +118,7 @@ export default function AdminCompanies() {
       .order('created_at', { ascending: false })
     const cos = (data as Company[]) || []
     setCompanies(cos)
+    setCurrentPage(1)
 
     const adminMap: Record<string, CompanyAdminEntry[]> = {}
     const companyIds = cos.map(co => co.id)
@@ -844,10 +847,58 @@ export default function AdminCompanies() {
     )
   }
 
+  const totalPages = Math.max(1, Math.ceil(companies.length / PAGE_SIZE))
+  const paginatedCompanies = companies.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  function renderPagination() {
+    if (totalPages <= 1) return null
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+        <button
+          className="admin-btn-sm"
+          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+          disabled={currentPage === 1}
+          style={{ padding: '6px 12px', fontSize: 13 }}
+        >
+          Previous
+        </button>
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+          <button
+            key={page}
+            onClick={() => setCurrentPage(page)}
+            style={{
+              padding: '6px 12px',
+              fontSize: 13,
+              fontWeight: currentPage === page ? 700 : 400,
+              background: currentPage === page ? '#1565c0' : '#f5f5f5',
+              color: currentPage === page ? '#fff' : '#333',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+            }}
+          >
+            {page}
+          </button>
+        ))}
+        <button
+          className="admin-btn-sm"
+          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+          disabled={currentPage === totalPages}
+          style={{ padding: '6px 12px', fontSize: 13 }}
+        >
+          Next
+        </button>
+        <span style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>
+          Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, companies.length)} of {companies.length}
+        </span>
+      </div>
+    )
+  }
+
   function renderCardView() {
     return (
       <div className="admin-co-cards">
-        {companies.map(c => (
+        {paginatedCompanies.map(c => (
           <div key={c.id} className="admin-co-card">
             <div className="admin-co-card-header">
               {c.logo_url ? (
@@ -933,6 +984,7 @@ export default function AdminCompanies() {
           </div>
         ))}
         {companies.length === 0 && <div className="admin-empty">No companies registered</div>}
+        {renderPagination()}
       </div>
     )
   }
@@ -956,7 +1008,7 @@ export default function AdminCompanies() {
             </tr>
           </thead>
           <tbody>
-            {companies.map(c => (
+            {paginatedCompanies.map(c => (
               <tr key={c.id} className="admin-co-row">
                 <td data-label="Logo">{renderLogoCell(c)}</td>
                 <td data-label="Company">
@@ -1014,6 +1066,7 @@ export default function AdminCompanies() {
           </tbody>
         </table>
         {companies.length === 0 && <div className="admin-empty">No companies registered</div>}
+        {renderPagination()}
       </div>
     )
   }

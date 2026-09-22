@@ -1262,6 +1262,8 @@
 .sub-cost-table td { padding: 10px 14px; border-top: 1px solid #f0f1f5; font-size: 13px; }
 .sub-cost-table tr:last-child td { font-weight: 700; border-top: 2px solid #1565c0; font-size: 14px; }
 .sub-cost-total { background: #f0f4ff; }
+.sub-features-scroll { overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.sub-features-scroll::-webkit-scrollbar { display: none; }
 
 /* ===== Admin Legal Timesheets (alt-*) ===== */
 .alt-section { }
