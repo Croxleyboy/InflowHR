@@ -77,6 +77,8 @@ export default function AdminExpenses() {
   const [fyStartMonth, setFyStartMonth] = useState(4)
   const [fyLabel, setFyLabel] = useState('')
   const [exportMonth, setExportMonth] = useState('all')
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const fyMonthOptions = useMemo(() => {
     const opts: { value: string; label: string; start: Date; end: Date }[] = []
@@ -482,6 +484,37 @@ export default function AdminExpenses() {
     showSuccess('Expense claim deleted')
   }
 
+  async function bulkDeleteClaims() {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Delete ${selectedIds.size} selected expense claim${selectedIds.size > 1 ? 's' : ''} and all their line items? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    for (const id of selectedIds) {
+      await supabase.from('expense_claims').delete().eq('id', id)
+    }
+    setClaims(prev => prev.filter(c => !selectedIds.has(c.id)))
+    setSelectedIds(new Set())
+    setExpandedId(null)
+    setBulkDeleting(false)
+    showSuccess(`Deleted ${selectedIds.size} expense claim${selectedIds.size > 1 ? 's' : ''}`)
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === paginated.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(paginated.map(c => c.id)))
+    }
+  }
+
   function startLineEdit(item: LineItem) {
     setEditingLineId(item.id)
     setLineForm({ title: item.title, expense_type: item.expense_type, amount: item.amount, date_of_purchase: item.date_of_purchase })
@@ -650,11 +683,26 @@ export default function AdminExpenses() {
             style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
           />
 
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
+              <button
+                className="admin-btn admin-btn-danger"
+                onClick={bulkDeleteClaims}
+                disabled={bulkDeleting}
+                style={{ fontSize: 13 }}
+              >
+                {bulkDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.size})`}
+              </button>
+              <button className="admin-btn" onClick={() => setSelectedIds(new Set())} style={{ fontSize: 13 }}>Clear Selection</button>
+            </div>
+          )}
+
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 36 }}><input type="checkbox" checked={paginated.length > 0 && selectedIds.size === paginated.length} onChange={toggleSelectAll} /></th>
                     <th>Ref</th><th>Employee</th><th>Title</th><th>Amount</th><th>Status</th><th>Actions</th>
                   </tr>
                 </thead>
@@ -662,6 +710,7 @@ export default function AdminExpenses() {
                   {paginated.map(claim => (
                     <>
                       <tr key={claim.id} className={expandedId === claim.id ? 'admin-row-active' : ''}>
+                        <td><input type="checkbox" checked={selectedIds.has(claim.id)} onChange={() => toggleSelect(claim.id)} /></td>
                         <td className="admin-td-mono">{claim.reference_number}</td>
                         <td>{claim.employee ? <span className="admin-inline-avatar">{claim.employee.avatar_url ? <img src={claim.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{claim.employee.first_name[0]}{claim.employee.last_name[0]}</span>}{claim.employee.first_name} {claim.employee.last_name}</span> : '—'}</td>
                         <td>{editingId === claim.id ? <input className="admin-inline-input" value={editForm.title || ''} onChange={e => setEditForm(p => ({...p, title: e.target.value}))} /> : claim.title}</td>
@@ -694,7 +743,7 @@ export default function AdminExpenses() {
                       </tr>
                       {expandedId === claim.id && (
                         <tr key={`exp-${claim.id}`} className="admin-expanded-row">
-                          <td colSpan={6}>
+                          <td colSpan={7}>
                             <div className="admin-expanded-content">
                               <div className="admin-detail-grid">
                                 <div><strong>Cost Center:</strong> {claim.cost_center || '—'}</div>

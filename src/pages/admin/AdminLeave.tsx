@@ -49,6 +49,8 @@ export default function AdminLeave() {
   const [fyStartMonth, setFyStartMonth] = useState(4)
   const [activeTab, setActiveTab] = useState<'requests' | 'settings'>('requests')
   const [managerNames, setManagerNames] = useState<Record<string, string>>({})
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -371,6 +373,34 @@ export default function AdminLeave() {
     setRequests(prev => prev.filter(r => r.id !== id))
   }
 
+  async function bulkDeleteRequests() {
+    if (selectedIds.size === 0) return
+    if (!confirm(`Delete ${selectedIds.size} selected leave request${selectedIds.size > 1 ? 's' : ''}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    for (const id of selectedIds) {
+      await deleteRequest(id)
+    }
+    setSelectedIds(new Set())
+    setBulkDeleting(false)
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === paginated.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(paginated.map(r => r.id)))
+    }
+  }
+
   const employees = useMemo(() => {
     const names = new Set<string>()
     requests.forEach(r => { if (r.employee) names.add(`${r.employee.first_name} ${r.employee.last_name}`) })
@@ -597,13 +627,28 @@ export default function AdminLeave() {
             style={{ marginBottom: 12, width: '100%', maxWidth: 320 }}
           />
 
+          {selectedIds.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
+              <button
+                className="admin-btn admin-btn-danger"
+                onClick={bulkDeleteRequests}
+                disabled={bulkDeleting}
+                style={{ fontSize: 13 }}
+              >
+                {bulkDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.size})`}
+              </button>
+              <button className="admin-btn" onClick={() => setSelectedIds(new Set())} style={{ fontSize: 13 }}>Clear Selection</button>
+            </div>
+          )}
+
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Employee</th><th>Manager</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th style={{ width: 36 }}><input type="checkbox" checked={paginated.length > 0 && selectedIds.size === paginated.length} onChange={toggleSelectAll} /></th><th>Employee</th><th>Manager</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {paginated.map(r => (
                     <tr key={r.id}>
+                      <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
                       <td>{r.employee ? <span className="admin-inline-avatar">{r.employee.avatar_url ? <img src={r.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{r.employee.first_name[0]}{r.employee.last_name[0]}</span>}{r.employee.first_name} {r.employee.last_name}</span> : '—'}</td>
                       <td className="admin-hide-mobile" style={{ fontSize: 13, color: '#64748b' }}>{r.employee?.manager_id ? managerNames[r.employee.manager_id] || '—' : '—'}</td>
                       <td>{r.leave_type?.name || '—'}</td>

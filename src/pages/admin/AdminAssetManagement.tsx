@@ -345,6 +345,31 @@ export default function AdminAssetManagement() {
     loadAssets()
   }
 
+  async function duplicateAsset(asset: Asset) {
+    if (!companyId) return
+    setSaving(true)
+    const newName = `${asset.asset_name}-copy`
+    const { error } = await supabase.from('company_assets').insert({
+      company_id: companyId,
+      asset_name: newName,
+      asset_type: asset.asset_type,
+      brand: asset.brand,
+      model: asset.model,
+      serial_number: '',
+      purchase_date: asset.purchase_date,
+      warranty_expiry: asset.warranty_expiry,
+      status: 'Unassigned',
+      assigned_to: null,
+      assigned_to_name: null,
+      notes: asset.notes,
+      is_space_asset: asset.is_space_asset,
+    })
+    if (error) { showError('Failed to duplicate asset: ' + error.message); setSaving(false); return }
+    showSuccess(`Asset duplicated as ${newName}`)
+    setSaving(false)
+    loadAssets()
+  }
+
   async function deleteAsset(id: string) {
     if (!confirm('Delete this asset and all its history? This cannot be undone.')) return
     await supabase.from('asset_history').delete().eq('asset_id', id)
@@ -755,6 +780,9 @@ export default function AdminAssetManagement() {
                       </button>
                       <button className="admin-btn-icon" title="History" onClick={() => loadHistory(asset.id)}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      </button>
+                      <button className="admin-btn-icon" title="Duplicate" onClick={() => duplicateAsset(asset)} disabled={saving}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                       </button>
                       <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteAsset(asset.id)}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
