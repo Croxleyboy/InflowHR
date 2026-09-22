@@ -175,7 +175,6 @@ export default function AdminPayroll() {
 
   // Xero integration state
   const [xeroIntegration, setXeroIntegration] = useState<XeroIntegration | null>(null)
-  const [xeroConnecting, setXeroConnecting] = useState(false)
   const [xeroSyncing, setXeroSyncing] = useState(false)
   const [xeroLivePayslips, setXeroLivePayslips] = useState<XeroPayslipRow[]>([])
   const [xeroPayRun, setXeroPayRun] = useState<XeroPayRun | null>(null)
@@ -606,8 +605,6 @@ export default function AdminPayroll() {
 
   const xeroConnected = xeroIntegration?.sync_status === 'connected'
   const sageConnected = sageIntegration?.sync_status === 'connected'
-  const activeProviderName = xeroConnected ? 'Xero' : sageConnected ? 'Sage' : null
-
   const sourcePayslips = useMemo(() => {
     if (activeSource === 'xero') return payslips.filter(p => p.source === 'xero')
     if (activeSource === 'sage') return payslips.filter(p => p.source === 'sage')
