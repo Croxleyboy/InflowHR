@@ -31,6 +31,8 @@ export default function AdminAuditLog() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const PAGE_SIZE = 50
 
   async function loadEntries() {
     setLoading(true)
@@ -46,10 +48,59 @@ export default function AdminAuditLog() {
 
     const { data } = await query
     setEntries((data as AuditEntry[]) || [])
+    setCurrentPage(1)
     setLoading(false)
   }
 
   useEffect(() => { loadEntries() }, [filter])
+
+  const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE))
+  const paginatedEntries = entries.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  function renderPagination() {
+    if (totalPages <= 1) return null
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+        <button
+          className="admin-btn-sm"
+          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+          disabled={currentPage === 1}
+          style={{ padding: '6px 12px', fontSize: 13 }}
+        >
+          Previous
+        </button>
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+          <button
+            key={page}
+            onClick={() => setCurrentPage(page)}
+            style={{
+              padding: '6px 12px',
+              fontSize: 13,
+              fontWeight: currentPage === page ? 700 : 400,
+              background: currentPage === page ? '#1565c0' : '#f5f5f5',
+              color: currentPage === page ? '#fff' : '#333',
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+            }}
+          >
+            {page}
+          </button>
+        ))}
+        <button
+          className="admin-btn-sm"
+          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+          disabled={currentPage === totalPages}
+          style={{ padding: '6px 12px', fontSize: 13 }}
+        >
+          Next
+        </button>
+        <span style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>
+          Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, entries.length)} of {entries.length}
+        </span>
+      </div>
+    )
+  }
 
   return (
     <div>
@@ -84,7 +135,7 @@ export default function AdminAuditLog() {
       <div style={{ padding: '10px 14px', background: '#f8f9fc', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b8fa3" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
         <span style={{ fontSize: 12, color: '#8b8fa3' }}>
-          This log is append-only — entries cannot be edited or deleted. Showing the most recent 100 entries.
+          This log is append-only — entries cannot be edited or deleted. Showing the most recent entries.
         </span>
       </div>
 
@@ -106,7 +157,7 @@ export default function AdminAuditLog() {
               </tr>
             </thead>
             <tbody>
-              {entries.map(e => {
+              {paginatedEntries.map(e => {
                 const colors = ACTION_COLORS[e.action] || { bg: '#f5f5f5', color: '#666' }
                 const isExpanded = expanded === e.id
                 return (
@@ -180,6 +231,7 @@ export default function AdminAuditLog() {
             </tbody>
           </table>
         </div>
+        {renderPagination()}
       )}
     </div>
   )
