@@ -57,7 +57,7 @@ export default function Payslips() {
   const [employeeRole, setEmployeeRole] = useState('')
   const [benefitDeductions, setBenefitDeductions] = useState<BenefitDeduction[]>([])
   const [initialised, setInitialised] = useState(false)
-  const [payslipSource, setPayslipSource] = useState<'inflowhr' | 'xero'>('inflowhr')
+  const [payslipSource, setPayslipSource] = useState<'inflowhr' | 'xero' | 'sage'>('inflowhr')
   const monthNames = lang === 'de' ? MONTH_NAMES_DE : MONTH_NAMES_EN
 
   const fyMonths = getFYMonths()
@@ -67,13 +67,15 @@ export default function Payslips() {
 
   useEffect(() => {
     if (!companyUser?.company_id) return
-    supabase.from('xero_integrations')
-      .select('payslip_source')
-      .eq('company_id', companyUser.company_id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.payslip_source) setPayslipSource(data.payslip_source as 'inflowhr' | 'xero')
-      })
+    const cid = companyUser.company_id
+    Promise.all([
+      supabase.from('xero_integrations').select('payslip_source').eq('company_id', cid).maybeSingle(),
+      supabase.from('sage_integrations').select('payslip_source').eq('company_id', cid).maybeSingle(),
+    ]).then(([xeroRes, sageRes]) => {
+      if (xeroRes.data?.payslip_source === 'xero') { setPayslipSource('xero'); return }
+      if (sageRes.data?.payslip_source === 'sage') { setPayslipSource('sage'); return }
+      setPayslipSource('inflowhr')
+    })
   }, [companyUser?.company_id])
 
   const loadPayslip = useCallback(async () => {
@@ -92,8 +94,10 @@ export default function Payslips() {
 
     if (payslipSource === 'xero') {
       query = query.eq('source', 'xero')
+    } else if (payslipSource === 'sage') {
+      query = query.eq('source', 'sage')
     } else {
-      query = query.neq('source', 'xero')
+      query = query.or('source.is.null,source.eq.')
     }
 
     const { data } = await query.limit(1).single()
@@ -237,11 +241,11 @@ export default function Payslips() {
             </div>
             <div className="payslips-info-item">
               <span className="payslips-info-label">{t('payslips.pay_period')}</span>
-              <span className="payslips-info-value">{payslip.pay_period_start} — {payslip.pay_period_end}</span>
+              <span className="payslips-info-value">{new Date(payslip.pay_period_start).toLocaleDateString('en-GB')} — {new Date(payslip.pay_period_end).toLocaleDateString('en-GB')}</span>
             </div>
             <div className="payslips-info-item">
               <span className="payslips-info-label">{t('payslips.payment_date')}</span>
-              <span className="payslips-info-value">{payslip.payment_date}</span>
+              <span className="payslips-info-value">{new Date(payslip.payment_date).toLocaleDateString('en-GB')}</span>
             </div>
           </div>
 

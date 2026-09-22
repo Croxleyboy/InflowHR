@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { useFeatures } from '../../context/FeatureContext'
 import { useToast } from '../../context/ToastContext'
 
 interface TeamsConfig {
@@ -15,201 +16,359 @@ interface TeamsConfig {
   consent_granted_at: string | null
 }
 
-export default function AdminIntegrations() {
-  const { companyUser } = useAuth()
-  const { showSuccess, showError } = useToast()
-  const [teamsConfig, setTeamsConfig] = useState<TeamsConfig | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [botUserCount, setBotUserCount] = useState(0)
+interface XeroIntegration {
+  id: string
+  company_id: string
+  sync_status: string
+  sync_error: string | null
+  last_sync_at: string | null
+  payslip_source: 'inflowhr' | 'xero'
+}
 
+interface SageIntegration {
+  id: string
+  company_id: string
+  client_id: string | null
+  client_secret_encrypted: string | null
+  sync_status: string
+  sync_error: string | null
+  last_sync_at: string | null
+  payslip_source: 'inflowhr' | 'sage'
+}
+
+// ── Official brand logos as inline SVGs ──────────────────────────────────────
+
+function TeamsLogo() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 2228.833 2073.333" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1554.637 777.5h575.713c54.391 0 98.483 44.092 98.483 98.483v524.398c0 199.901-162.051 361.952-361.952 361.952h-1.711c-199.901.028-361.975-161.996-362.004-361.897V828.971c0-28.427 23.044-51.471 51.471-51.471z" fill="#5059C9"/>
+      <circle cx="1943.75" cy="440.583" r="233.25" fill="#5059C9"/>
+      <circle cx="1218.083" cy="336.917" r="336.917" fill="#7B83EB"/>
+      <path d="M1667.323 777.5H717.01c-53.743 1.33-96.257 45.931-95.01 99.676v598.105c-7.505 322.519 247.657 590.16 570.167 598.053 322.51-7.893 577.671-275.534 570.167-598.053V877.176c1.245-53.745-41.269-98.346-95.011-99.676z" fill="#7B83EB"/>
+      <path d="M1244 777.5v838.145c-.258 38.435-23.549 72.964-59.09 87.598a91.856 91.856 0 01-35.765 7.257H783.86c-5.769-21.09-10.956-42.18-15.562-63.852a631.574 631.574 0 01-16.144-142.042V877.176c-1.246-53.745 41.267-98.346 95.01-99.676H1244z" opacity=".1"/>
+      <path d="M1192.167 777.5v889.978a91.802 91.802 0 01-7.257 35.765c-14.634 35.541-49.163 58.832-87.598 59.09H799.315a520.605 520.605 0 01-15.455-63.852 631.574 631.574 0 01-16.144-142.042V877.176c-1.246-53.745 41.267-98.346 95.01-99.676h329.441z" opacity=".2"/>
+      <path d="M1192.167 777.5v786.312c-.395 52.223-42.632 94.46-94.855 94.855H768.272a631.574 631.574 0 01-16.144-142.042V877.176c-1.246-53.745 41.267-98.346 95.01-99.676h345.029z" opacity=".2"/>
+      <path d="M1140.333 777.5v786.312c-.395 52.223-42.632 94.46-94.855 94.855H768.272a631.574 631.574 0 01-16.144-142.042V877.176c-1.246-53.745 41.267-98.346 95.01-99.676h293.195z" opacity=".2"/>
+      <linearGradient id="teams_a" x1="198.099" y1="1683.0726" x2="942.2344" y2="394.2607" gradientUnits="userSpaceOnUse" gradientTransform="matrix(1 0 0 -1 0 2075.333)">
+        <stop offset="0" stopColor="#5A62C3"/>
+        <stop offset=".5" stopColor="#4D55BD"/>
+        <stop offset="1" stopColor="#3940AB"/>
+      </linearGradient>
+      <path d="M95.01 777.5h950.312c52.473 0 95.01 42.538 95.01 95.01v950.312c0 52.473-42.538 95.01-95.01 95.01H95.01c-52.473 0-95.01-42.538-95.01-95.01V872.51c0-52.472 42.538-95.01 95.01-95.01z" fill="url(#teams_a)"/>
+      <path d="M820.211 1100.522H630.17v441.783H536.2v-441.783H348.005v-81.855h472.206v81.855z" fill="#fff"/>
+    </svg>
+  )
+}
+
+function XeroLogo() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="256" cy="256" r="256" fill="#13B5EA"/>
+      <path d="M156.2 256l-72.4-72.7c-4.6-4.6-4.6-12.1 0-16.7 4.6-4.6 12.1-4.6 16.7 0l64 64.3 64-64.3c4.6-4.6 12.1-4.6 16.7 0 4.6 4.6 4.6 12.1 0 16.7L173 256l72.2 72.7c4.6 4.6 4.6 12.1 0 16.7-2.3 2.3-5.3 3.5-8.3 3.5s-6-1.2-8.3-3.5l-64-64.3-64 64.3c-2.3 2.3-5.3 3.5-8.3 3.5s-6-1.2-8.3-3.5c-4.6-4.6-4.6-12.1 0-16.7l72.2-72.7zm134.2-83.4c-6.5 0-11.8-5.3-11.8-11.8s5.3-11.8 11.8-11.8 11.8 5.3 11.8 11.8-5.3 11.8-11.8 11.8zm11.8 35.2v127.8c0 6.5-5.3 11.8-11.8 11.8s-11.8-5.3-11.8-11.8V207.8c0-6.5 5.3-11.8 11.8-11.8s11.8 5.3 11.8 11.8zm116.2 36.3l-50.2 47.7 52.6 56.2c4.5 4.8 4.2 12.3-.6 16.7-2.3 2.1-5.2 3.2-8.1 3.2-3.2 0-6.3-1.3-8.6-3.8l-51.5-55.1-51.1 48.5c-2.3 2.2-5.2 3.3-8.2 3.3-3.1 0-6.3-1.2-8.6-3.7-4.5-4.8-4.3-12.3.5-16.8l52.3-49.7-50.6-54.1c-4.5-4.8-4.2-12.3.6-16.7 4.8-4.5 12.3-4.2 16.7.6l49.5 53 49.1-46.7c4.7-4.5 12.2-4.3 16.8.4 4.5 4.8 4.2 12.3-.6 16.8z" fill="#fff"/>
+    </svg>
+  )
+}
+
+function SageLogo() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect width="512" height="512" rx="64" fill="#00DC00"/>
+      <g fill="#fff">
+        <path d="M180.5 305.4c0 18.6-7.1 33.4-21.2 44.5-14.1 11-33.1 16.6-57.1 16.6-21.7 0-40.4-4.4-56.2-13.1v-41.8c13.1 7.2 24.4 12.2 33.8 14.9 9.4 2.8 17.9 4.1 25.4 4.1 9.1 0 16.1-1.7 21.1-5.2 4.9-3.5 7.4-8.4 7.4-14.7 0-4-1.2-7.5-3.5-10.5-2.3-3-5.5-5.8-9.5-8.5-4-2.7-11.9-7.1-23.6-13.3-11.1-5.8-19.6-11.3-25.5-16.6-5.9-5.3-10.6-11.4-14.2-18.4-3.5-7-5.3-15.2-5.3-24.5 0-17.9 6.5-32 19.6-42.3 13.1-10.3 30.8-15.5 53.1-15.5 21 0 41.2 5.1 60.6 15.3l-14.5 34.6c-17.4-9-33-13.5-46.6-13.5-7.8 0-13.8 1.6-18 4.9-4.2 3.3-6.3 7.6-6.3 12.9 0 3.8 1 7.1 3 9.8 2 2.8 5 5.4 9 7.9 4 2.5 12.1 7.1 24.3 13.7 16.6 8.9 28 17.5 34.1 25.8 6.2 8.3 9.1 18.4 9.1 30.3zM268.8 363.2c-7.1 1.3-15 1.9-23.8 1.9-22.1 0-38.5-5.4-49.1-16.3-10.6-10.9-15.9-27-15.9-48.4v-5.2h-1.3c-.4-3.5-.6-7.4-.6-11.8V185.8h42.8v88.6c0 6.5.2 11.2.6 14.3h1.3c0 13.1 2.8 22.7 8.4 28.9 5.6 6.2 14.2 9.3 25.8 9.3 3.5 0 7.6-.5 11.8-1.5v37.8z"/>
+        <path d="M416.9 292.8H320c.8 12.3 5 21.6 12.5 28.1 7.5 6.5 17.5 9.7 29.9 9.7 14.2 0 27.4-4.2 39.5-12.5v35.2c-12.7 8.5-29.3 12.7-49.8 12.7-22.6 0-40.2-6.8-52.9-20.3-12.7-13.5-19.1-32.5-19.1-57 0-15.5 2.9-29.2 8.8-41.2 5.8-12 14.1-21.3 24.7-27.8 10.6-6.5 22.7-9.8 36.2-9.8 19.6 0 34.9 6.1 45.8 18.4 10.9 12.3 16.4 29.5 16.4 51.7v13.8zm-39.3-30.8c0-10.2-2.5-18.3-7.5-24.1-5-5.9-11.9-8.8-20.6-8.8-8.5 0-15.7 3.2-21.5 9.5-5.8 6.3-9.5 14.2-11.1 23.4h60.7z"/>
+      </g>
+    </svg>
+  )
+}
+
+// ── Main Component ──────────────────────────────────────────────────────────
+
+export default function AdminIntegrations() {
+  const { companyUser, session } = useAuth()
+  const { companyFeatures } = useFeatures()
+  const { showSuccess, showError } = useToast()
+
+  // Teams state
+  const [teamsConfig, setTeamsConfig] = useState<TeamsConfig | null>(null)
+  const [teamsExpanded, setTeamsExpanded] = useState(false)
   const [tenantId, setTenantId] = useState('')
   const [botAppId, setBotAppId] = useState('')
   const [botAppSecret, setBotAppSecret] = useState('')
   const [savingCreds, setSavingCreds] = useState(false)
+  const [botUserCount, setBotUserCount] = useState(0)
   const [showSetupGuide, setShowSetupGuide] = useState(false)
+
+  // Xero state
+  const [xeroIntegration, setXeroIntegration] = useState<XeroIntegration | null>(null)
+  const [xeroExpanded, setXeroExpanded] = useState(false)
+  const [xeroConnecting, setXeroConnecting] = useState(false)
+
+  // Sage state
+  const [sageIntegration, setSageIntegration] = useState<SageIntegration | null>(null)
+  const [sageExpanded, setSageExpanded] = useState(false)
+  const [sageClientId, setSageClientId] = useState('')
+  const [sageClientSecret, setSageClientSecret] = useState('')
+  const [savingSageCreds, setSavingSageCreds] = useState(false)
+  const [sageConnecting, setSageConnecting] = useState(false)
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   const companyId = companyUser?.company_id
 
-  async function loadConfig() {
+  const teamsSubscribed = companyFeatures.teams_integration
+  const xeroSubscribed = companyFeatures.xero_integration
+  const sageSubscribed = companyFeatures.sage_integration
+
+  const otherPayrollActive = (provider: 'xero' | 'sage') => {
+    if (provider === 'xero') return sageIntegration?.sync_status === 'connected'
+    return xeroIntegration?.sync_status === 'connected'
+  }
+
+  // ── Data loading ──────────────────────────────────────────────────────────
+
+  async function loadAll() {
     if (!companyId) return
     setLoading(true)
 
-    const { data } = await supabase
-      .from('company_teams_config')
-      .select('*')
-      .eq('company_id', companyId)
-      .maybeSingle()
+    const [teamsRes, teamsBotRes, xeroRes, sageRes] = await Promise.all([
+      supabase.from('company_teams_config').select('*').eq('company_id', companyId).maybeSingle(),
+      supabase.from('company_teams_bot_conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
+      supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', companyId).maybeSingle(),
+      supabase.from('sage_integrations').select('id, company_id, client_id, client_secret_encrypted, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', companyId).maybeSingle(),
+    ])
 
-    if (data) {
-      setTeamsConfig(data as TeamsConfig)
-      setTenantId(data.azure_tenant_id || '')
-      setBotAppId(data.bot_app_id || '')
-      setBotAppSecret(data.bot_app_secret_encrypted ? '••••••••••••••••' : '')
+    if (teamsRes.data) {
+      const t = teamsRes.data as TeamsConfig
+      setTeamsConfig(t)
+      setTenantId(t.azure_tenant_id || '')
+      setBotAppId(t.bot_app_id || '')
+      setBotAppSecret(t.bot_app_secret_encrypted ? '••••••••••••••••' : '')
     } else {
       setTeamsConfig(null)
     }
+    setBotUserCount(teamsBotRes.count || 0)
 
-    const { count } = await supabase
-      .from('company_teams_bot_conversations')
-      .select('id', { count: 'exact', head: true })
-      .eq('company_id', companyId)
-    setBotUserCount(count || 0)
+    setXeroIntegration(xeroRes.data as XeroIntegration | null)
+    const sage = sageRes.data as SageIntegration | null
+    setSageIntegration(sage)
+    if (sage?.client_id) setSageClientId(sage.client_id)
+    if (sage?.client_secret_encrypted) setSageClientSecret('••••••••••••••••')
 
     setLoading(false)
   }
 
-  useEffect(() => { loadConfig() }, [companyId])
+  useEffect(() => { loadAll() }, [companyId])
 
-  async function toggleEnabled() {
-    if (!companyId) return
-    setSaving(true)
-
-    const newEnabled = !teamsConfig?.is_enabled
-
-    if (teamsConfig) {
-      const { error } = await supabase
-        .from('company_teams_config')
-        .update({ is_enabled: newEnabled, updated_at: new Date().toISOString() })
-        .eq('company_id', companyId)
-      if (error) {
-        showError('Failed to update: ' + error.message)
-        setSaving(false)
-        return
-      }
-    } else {
-      const { error } = await supabase
-        .from('company_teams_config')
-        .insert({ company_id: companyId, is_enabled: newEnabled })
-      if (error) {
-        showError('Failed to save: ' + error.message)
-        setSaving(false)
-        return
-      }
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const xeroParam = params.get('xero')
+    if (xeroParam === 'connected') {
+      showSuccess('Connected to Xero successfully')
+      window.history.replaceState({}, '', window.location.pathname)
+      setXeroExpanded(true)
+      loadAll()
+    } else if (xeroParam === 'error') {
+      const reason = params.get('reason') || 'unknown'
+      showError(`Xero connection failed: ${reason}`)
+      window.history.replaceState({}, '', window.location.pathname)
+      setXeroExpanded(true)
     }
+    const sageParam = params.get('sage')
+    if (sageParam === 'connected') {
+      showSuccess('Connected to Sage successfully')
+      window.history.replaceState({}, '', window.location.pathname)
+      setSageExpanded(true)
+      loadAll()
+    } else if (sageParam === 'error') {
+      const reason = params.get('reason') || 'unknown'
+      showError(`Sage connection failed: ${reason}`)
+      window.history.replaceState({}, '', window.location.pathname)
+      setSageExpanded(true)
+    }
+  }, [])
 
+  // ── Teams handlers ────────────────────────────────────────────────────────
+
+  async function toggleTeams() {
+    if (!companyId || !teamsSubscribed) return
+    setSaving(true)
+    const newEnabled = !teamsConfig?.is_enabled
+    if (teamsConfig) {
+      const { error } = await supabase.from('company_teams_config').update({ is_enabled: newEnabled, updated_at: new Date().toISOString() }).eq('company_id', companyId)
+      if (error) { showError('Failed to update: ' + error.message); setSaving(false); return }
+    } else {
+      const { error } = await supabase.from('company_teams_config').insert({ company_id: companyId, is_enabled: newEnabled })
+      if (error) { showError('Failed to save: ' + error.message); setSaving(false); return }
+    }
     showSuccess(`Teams integration ${newEnabled ? 'enabled' : 'disabled'}`)
-    await loadConfig()
+    await loadAll()
     setSaving(false)
   }
 
-  async function saveCredentials() {
+  async function saveTeamsCreds() {
     if (!companyId) return
-    if (!tenantId.trim() || !botAppId.trim()) {
-      showError('Azure Tenant ID and Bot App ID are required')
-      return
-    }
-
+    if (!tenantId.trim() || !botAppId.trim()) { showError('Azure Tenant ID and Bot App ID are required'); return }
     setSavingCreds(true)
-
     const updates: Record<string, unknown> = {
-      azure_tenant_id: tenantId.trim(),
-      bot_app_id: botAppId.trim(),
-      bot_configured: true,
-      updated_at: new Date().toISOString(),
+      azure_tenant_id: tenantId.trim(), bot_app_id: botAppId.trim(),
+      bot_configured: true, updated_at: new Date().toISOString(),
     }
-    if (botAppSecret && !botAppSecret.startsWith('••')) {
-      updates.bot_app_secret_encrypted = botAppSecret.trim()
-    }
-
+    if (botAppSecret && !botAppSecret.startsWith('••')) updates.bot_app_secret_encrypted = botAppSecret.trim()
     if (teamsConfig) {
-      const { error } = await supabase
-        .from('company_teams_config')
-        .update(updates)
-        .eq('company_id', companyId)
-      if (error) {
-        showError('Failed to save credentials: ' + error.message)
-        setSavingCreds(false)
-        return
-      }
+      const { error } = await supabase.from('company_teams_config').update(updates).eq('company_id', companyId)
+      if (error) { showError('Failed to save: ' + error.message); setSavingCreds(false); return }
     } else {
-      const { error } = await supabase
-        .from('company_teams_config')
-        .insert({ company_id: companyId, is_enabled: true, ...updates })
-      if (error) {
-        showError('Failed to save credentials: ' + error.message)
-        setSavingCreds(false)
-        return
-      }
+      const { error } = await supabase.from('company_teams_config').insert({ company_id: companyId, is_enabled: true, ...updates })
+      if (error) { showError('Failed to save: ' + error.message); setSavingCreds(false); return }
     }
-
     showSuccess('Bot credentials saved')
-    await loadConfig()
+    await loadAll()
     setSavingCreds(false)
   }
 
   function generateManifest() {
-    if (!botAppId.trim()) {
-      showError('Enter and save the Bot App ID first')
-      return
-    }
-
+    if (!botAppId.trim()) { showError('Enter and save the Bot App ID first'); return }
     const manifest = {
       '$schema': 'https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json',
-      manifestVersion: '1.16',
-      version: '1.0.0',
-      id: botAppId.trim(),
-      developer: {
-        name: 'InflowHR',
-        websiteUrl: 'https://www.inflowhr.com',
-        privacyUrl: 'https://www.inflowhr.com/privacy',
-        termsOfUseUrl: 'https://www.inflowhr.com/terms',
-      },
+      manifestVersion: '1.16', version: '1.0.0', id: botAppId.trim(),
+      developer: { name: 'InflowHR', websiteUrl: 'https://www.inflowhr.com', privacyUrl: 'https://www.inflowhr.com/privacy', termsOfUseUrl: 'https://www.inflowhr.com/terms' },
       name: { short: 'InflowHR', full: 'InflowHR HR Platform' },
-      description: {
-        short: 'HR notifications from InflowHR',
-        full: 'Receive leave and expense approval notifications directly in Microsoft Teams from your InflowHR HR platform.',
-      },
-      icons: { outline: 'outline.png', color: 'color.png' },
-      accentColor: '#5B5FC7',
-      bots: [
-        {
-          botId: botAppId.trim(),
-          scopes: ['personal'],
-          supportsFiles: false,
-          isNotificationOnly: true,
-        },
-      ],
-      permissions: ['messageTeamMembers'],
-      validDomains: ['app.inflowhr.com'],
+      description: { short: 'HR notifications from InflowHR', full: 'Receive leave and expense approval notifications directly in Microsoft Teams from your InflowHR HR platform.' },
+      icons: { outline: 'outline.png', color: 'color.png' }, accentColor: '#5B5FC7',
+      bots: [{ botId: botAppId.trim(), scopes: ['personal'], supportsFiles: false, isNotificationOnly: true }],
+      permissions: ['messageTeamMembers'], validDomains: ['app.inflowhr.com'],
     }
-
     const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'manifest.json'
-    a.click()
+    const a = document.createElement('a'); a.href = url; a.download = 'manifest.json'; a.click()
     URL.revokeObjectURL(url)
+  }
+
+  // ── Xero handlers ─────────────────────────────────────────────────────────
+
+  async function callEdgeFunction(fnName: string, body: Record<string, unknown> = {}) {
+    if (!session) { showError('Not authenticated'); return null }
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const res = await fetch(`${supabaseUrl}/functions/v1/${fnName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ company_id: companyId, ...body }),
+    })
+    const data = await res.json()
+    if (!res.ok) { showError(data.error || 'Request failed'); return null }
+    return data
+  }
+
+  async function connectXero() {
+    if (otherPayrollActive('xero')) {
+      showError('Another payroll provider (Sage) is already connected. Disconnect it first on this page.')
+      return
+    }
+    setXeroConnecting(true)
+    const result = await callEdgeFunction('xero-connect')
+    setXeroConnecting(false)
+    if (result?.url) window.location.href = result.url
+  }
+
+  async function disconnectXero() {
+    if (!confirm('Disconnect from Xero? This will remove the integration and delete all Xero payslip data.')) return
+    if (!companyId) return
+    await supabase.from('payslips').delete().eq('company_id', companyId).eq('source', 'xero')
+    await supabase.from('xero_integrations').delete().eq('company_id', companyId)
+    setXeroIntegration(null)
+    showSuccess('Xero disconnected')
+    loadAll()
+  }
+
+  // ── Sage handlers ─────────────────────────────────────────────────────────
+
+  async function saveSageCreds() {
+    if (!companyId) return
+    if (!sageClientId.trim() || !sageClientSecret.trim() || sageClientSecret.startsWith('••')) {
+      showError('Client ID and Client Secret are required')
+      return
+    }
+    setSavingSageCreds(true)
+    const row = {
+      company_id: companyId,
+      client_id: sageClientId.trim(),
+      client_secret_encrypted: sageClientSecret.trim(),
+      updated_at: new Date().toISOString(),
+    }
+    if (sageIntegration) {
+      const { error } = await supabase.from('sage_integrations').update(row).eq('company_id', companyId)
+      if (error) { showError('Failed to save: ' + error.message); setSavingSageCreds(false); return }
+    } else {
+      const { error } = await supabase.from('sage_integrations').insert(row)
+      if (error) { showError('Failed to save: ' + error.message); setSavingSageCreds(false); return }
+    }
+    showSuccess('Sage credentials saved')
+    await loadAll()
+    setSavingSageCreds(false)
+  }
+
+  async function connectSage() {
+    if (otherPayrollActive('sage')) {
+      showError('Another payroll provider (Xero) is already connected. Disconnect it first on this page.')
+      return
+    }
+    setSageConnecting(true)
+    const result = await callEdgeFunction('sage-connect')
+    setSageConnecting(false)
+    if (result?.url) window.location.href = result.url
+  }
+
+  async function disconnectSage() {
+    if (!confirm('Disconnect from Sage? This will remove the integration and delete all Sage payslip data.')) return
+    if (!companyId) return
+    await supabase.from('payslips').delete().eq('company_id', companyId).eq('source', 'sage')
+    await supabase.from('sage_integrations').delete().eq('company_id', companyId)
+    setSageIntegration(null)
+    showSuccess('Sage disconnected')
+    loadAll()
+  }
+
+  // ── Shared styles ─────────────────────────────────────────────────────────
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '10px 12px', borderRadius: 8,
+    border: '1px solid var(--border, #ddd)', fontSize: 14, fontFamily: 'monospace',
+    background: 'var(--bg, #fafafa)', color: 'var(--text, #1a1a2e)', boxSizing: 'border-box',
+  }
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)', marginBottom: 4 }
+  const sectionStyle: React.CSSProperties = { border: '1px solid var(--border, #e0e0e0)', borderRadius: 8, padding: 16, marginBottom: 16 }
+
+  function statusBadge(status: string) {
+    if (status === 'connected') return <span className="admin-badge admin-badge-approved">Connected</span>
+    if (status === 'error') return <span className="admin-badge admin-badge-rejected">Error</span>
+    if (status === 'syncing') return <span className="admin-badge admin-badge-pending">Syncing</span>
+    return <span className="admin-badge" style={{ background: 'var(--bg, #f1f5f9)', color: 'var(--text-muted, #64748b)' }}>Not Connected</span>
   }
 
   if (loading) {
     return (
       <div className="admin-section">
-        <div className="admin-page-header">
-          <h2>Integrations</h2>
-        </div>
+        <div className="admin-page-header"><h2>Integrations</h2></div>
         <div className="admin-loading">Loading...</div>
       </div>
     )
   }
 
-  const isEnabled = teamsConfig?.is_enabled ?? false
+  const teamsEnabled = teamsConfig?.is_enabled ?? false
   const isBotConfigured = teamsConfig?.bot_configured ?? false
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '10px 12px', borderRadius: 8,
-    border: '1px solid #ddd', fontSize: 14, fontFamily: 'monospace',
-    background: '#fafafa', boxSizing: 'border-box',
-  }
+  const cardStyle = (subscribed: boolean): React.CSSProperties => ({
+    background: 'var(--bg-card, #fff)', border: '1px solid var(--border, #e0e0e0)',
+    borderRadius: 12, padding: 24, marginBottom: 16,
+    opacity: subscribed ? 1 : 0.55, pointerEvents: subscribed ? 'auto' : 'none',
+    position: 'relative',
+  })
 
-  const labelStyle: React.CSSProperties = {
-    display: 'block', fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 4,
-  }
-
-  const sectionStyle: React.CSSProperties = {
-    border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16,
-  }
+  const chevronStyle = (expanded: boolean): React.CSSProperties => ({
+    width: 20, height: 20, transform: expanded ? 'rotate(90deg)' : 'none',
+    transition: 'transform 0.2s', cursor: 'pointer', flexShrink: 0,
+  })
 
   return (
     <div className="admin-section">
@@ -218,291 +377,328 @@ export default function AdminIntegrations() {
         <p>Connect external services to enhance your HR platform</p>
       </div>
 
-      {/* Microsoft Teams Card */}
-      <div style={{
-        background: '#fff', border: '1px solid #e0e0e0',
-        borderRadius: 12, padding: 24, maxWidth: 700,
-      }}>
-        {/* Card header */}
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 10,
-            background: 'linear-gradient(135deg, #5b5fc7, #7b83eb)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-          </div>
-          <div style={{ flex: 1 }}>
-            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#1a1a2e' }}>Microsoft Teams</h3>
-            <p style={{ margin: '2px 0 0', fontSize: 13, color: '#8b8fa3' }}>
-              Presence status &amp; automated leave/expense notifications via Teams Bot
-            </p>
-          </div>
-          <label className="admin-toggle-switch">
-            <input type="checkbox" checked={isEnabled} onChange={toggleEnabled} disabled={saving} />
-            <span className="admin-toggle-slider" />
-          </label>
-        </div>
+      <div style={{ maxWidth: 740 }}>
 
-        {/* Description */}
-        <div style={{
-          background: '#f8f9fa', borderRadius: 8, padding: 16, marginBottom: 20,
-          fontSize: 13, lineHeight: 1.6, color: '#444',
-        }}>
-          <p style={{ margin: '0 0 8px', fontWeight: 600 }}>When enabled:</p>
-          <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li>Employee presence status (Available, Busy, Away, etc.) appears in the HR Directory</li>
-            <li>Managers receive a Teams message from the InflowHR bot when an employee submits a leave request or expense claim</li>
-          </ul>
-        </div>
-
-        {isEnabled && (
-          <>
-            {/* Bot status */}
-            <div style={{
-              ...sectionStyle,
-              border: `1px solid ${isBotConfigured ? '#c8e6c9' : '#fff3e0'}`,
-              background: isBotConfigured ? '#e8f5e9' : '#fff8e1',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={isBotConfigured ? '#2e7d32' : '#e65100'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  {isBotConfigured
-                    ? <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>
-                    : <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>
-                  }
-                </svg>
-                <span style={{ fontWeight: 700, fontSize: 14, color: isBotConfigured ? '#2e7d32' : '#e65100' }}>
-                  {isBotConfigured ? 'Bot configured' : 'Bot setup required'}
-                </span>
-              </div>
-              {isBotConfigured && (
-                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>
-                  {botUserCount} user{botUserCount !== 1 ? 's' : ''} with the bot installed in Teams
-                </p>
-              )}
+        {/* ── Microsoft Teams Card ── */}
+        <div style={cardStyle(teamsSubscribed)}>
+          {!teamsSubscribed && (
+            <div style={{ position: 'absolute', top: 12, right: 16, background: '#f59e0b', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, pointerEvents: 'auto' }}>
+              Premium Add-on
             </div>
-
-            {/* Setup guide toggle */}
-            <button
-              onClick={() => setShowSetupGuide(!showSetupGuide)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                padding: '12px 16px', borderRadius: 8, border: '1px solid #e0e0e0',
-                background: '#fafafa', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                color: '#333', marginBottom: 16, textAlign: 'left',
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b5fc7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                style={{ transform: showSetupGuide ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: teamsSubscribed ? 'pointer' : 'default' }}
+            onClick={() => teamsSubscribed && setTeamsExpanded(!teamsExpanded)}>
+            <TeamsLogo />
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Microsoft Teams</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+                Presence status &amp; automated leave/expense notifications
+              </p>
+            </div>
+            {teamsSubscribed && statusBadge(teamsEnabled ? (isBotConfigured ? 'connected' : 'not_connected') : 'not_connected')}
+            {teamsSubscribed && (
+              <label className="admin-toggle-switch" onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={teamsEnabled} onChange={toggleTeams} disabled={saving} />
+                <span className="admin-toggle-slider" />
+              </label>
+            )}
+            {teamsSubscribed && (
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(teamsExpanded)}>
                 <polyline points="9 18 15 12 9 6" />
               </svg>
-              Setup Guide
-            </button>
-
-            {showSetupGuide && (
-              <div style={{ ...sectionStyle, background: '#f8f9ff', borderColor: '#d0d4f0' }}>
-                <div style={{ fontSize: 13, lineHeight: 1.8, color: '#444' }}>
-                  <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: 15, color: '#333' }}>
-                    How to set up the InflowHR Teams Bot
-                  </p>
-
-                  <div style={{ marginBottom: 16 }}>
-                    <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#5b5fc7' }}>Step 1: Register a Bot in Azure</p>
-                    <ol style={{ margin: '0 0 8px', paddingLeft: 20, lineHeight: 2 }}>
-                      <li>Go to the <a href="https://portal.azure.com/#create/Microsoft.AzureBotService" target="_blank" rel="noopener noreferrer" style={{ color: '#5b5fc7' }}>Azure Bot Service</a> in the Azure Portal</li>
-                      <li>Click <strong>Create</strong> and choose <strong>Azure Bot</strong></li>
-                      <li>Give it a name (e.g. &quot;InflowHR Bot&quot;) and select your subscription</li>
-                      <li>Under <strong>Microsoft App ID</strong>, choose <strong>Create new</strong> and select <strong>Single Tenant</strong> (this is required — Multi-Tenant will not work)</li>
-                      <li>Once created, go to <strong>Configuration</strong> and verify <strong>Bot Type</strong> shows <strong>SingleTenant</strong></li>
-                      <li>Set the <strong>Messaging endpoint</strong> to:<br />
-                        <code style={{ background: '#e8e8f0', padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>
-                          https://YOUR_SUPABASE_PROJECT.supabase.co/functions/v1/teams-bot-webhook
-                        </code>
-                      </li>
-                      <li>Go to <strong>Channels</strong> and add <strong>Microsoft Teams</strong> — wait until the status shows <strong>Healthy</strong></li>
-                    </ol>
-                  </div>
-
-                  <div style={{ marginBottom: 16 }}>
-                    <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#5b5fc7' }}>Step 2: Add Application Permissions</p>
-                    <ol style={{ margin: '0 0 8px', paddingLeft: 20, lineHeight: 2 }}>
-                      <li>In Azure Portal, go to <strong>App registrations</strong> and find the bot&apos;s app</li>
-                      <li>Go to <strong>API permissions</strong> → <strong>Add a permission</strong> → <strong>Microsoft Graph</strong></li>
-                      <li>Select <strong>Application permissions</strong> and add:
-                        <ul style={{ listStyle: 'disc', paddingLeft: 20, margin: '4px 0' }}>
-                          <li><strong>User.Read.All</strong> — resolve employee emails to Azure AD identities</li>
-                          <li><strong>Presence.Read.All</strong> — show real-time availability in the HR Directory</li>
-                        </ul>
-                      </li>
-                      <li>Click <strong>Grant admin consent</strong> for your organisation</li>
-                      <li>Go to <strong>Certificates &amp; secrets</strong> → <strong>New client secret</strong> and copy the value</li>
-                    </ol>
-                  </div>
-
-                  <div style={{ marginBottom: 16 }}>
-                    <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#5b5fc7' }}>Step 3: Enter Credentials Below</p>
-                    <p style={{ margin: 0 }}>
-                      Copy your Azure Tenant ID (from Azure AD → Overview), the Bot&apos;s Application (client) ID,
-                      and the client secret into the form below and save.
-                    </p>
-                  </div>
-
-                  <div style={{ marginBottom: 16 }}>
-                    <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#5b5fc7' }}>Step 4: Create &amp; Install the Teams App</p>
-                    <ol style={{ margin: '0 0 8px', paddingLeft: 20, lineHeight: 2 }}>
-                      <li>Click <strong>Download manifest.json</strong> below to get the Teams app manifest</li>
-                      <li>Create a ZIP file containing:
-                        <ul style={{ listStyle: 'disc', paddingLeft: 20, margin: '4px 0' }}>
-                          <li><strong>manifest.json</strong> (the downloaded file)</li>
-                          <li><strong>color.png</strong> — 192×192px app icon (your company logo or the InflowHR logo)</li>
-                          <li><strong>outline.png</strong> — 32×32px outline icon (transparent background, white outline)</li>
-                        </ul>
-                      </li>
-                      <li>In <strong>Teams Admin Centre</strong> → <strong>Manage apps</strong> → <strong>Upload new app</strong>, upload the ZIP</li>
-                      <li>Set an <strong>App setup policy</strong> to install it for all users, or let users install it themselves from the Teams app store</li>
-                      <li><strong>Important:</strong> Each user must open a chat with the bot at least once to register their conversation. Until they do, they will not receive notifications. Once registered, their &quot;users with bot installed&quot; count increases above</li>
-                    </ol>
-                  </div>
-
-                  <div style={{
-                    background: '#e8f0fe', borderRadius: 6, padding: 12, fontSize: 12, color: '#1a56db',
-                    border: '1px solid #c6d9f7',
-                  }}>
-                    <strong>Note:</strong> Each user who has the bot installed will appear in the &quot;users with bot installed&quot; count above.
-                    Only users with the bot installed will receive Teams notifications for leave requests and expense claims.
-                  </div>
-                </div>
-              </div>
             )}
+          </div>
 
-            {/* Bot credentials form */}
-            <div style={sectionStyle}>
-              <p style={{ margin: '0 0 16px', fontWeight: 700, fontSize: 14, color: '#333' }}>Bot Credentials</p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div>
-                  <label style={labelStyle}>Azure Tenant ID</label>
-                  <input
-                    type="text"
-                    value={tenantId}
-                    onChange={e => setTenantId(e.target.value)}
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>Bot Application (Client) ID</label>
-                  <input
-                    type="text"
-                    value={botAppId}
-                    onChange={e => setBotAppId(e.target.value)}
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>Client Secret</label>
-                  <input
-                    type="password"
-                    value={botAppSecret}
-                    onChange={e => setBotAppSecret(e.target.value)}
-                    placeholder={teamsConfig?.bot_app_secret_encrypted ? 'Secret saved — enter new value to update' : 'Enter client secret'}
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-                <button
-                  onClick={saveCredentials}
-                  disabled={savingCreds}
-                  style={{
-                    background: '#5b5fc7', color: '#fff', border: 'none',
-                    borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600,
-                    cursor: savingCreds ? 'not-allowed' : 'pointer',
-                    opacity: savingCreds ? 0.6 : 1,
-                  }}
-                >
-                  {savingCreds ? 'Saving...' : 'Save Credentials'}
-                </button>
-
-                <button
-                  onClick={generateManifest}
-                  style={{
-                    background: '#fff', color: '#5b5fc7', border: '1px solid #5b5fc7',
-                    borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Download manifest.json
-                </button>
-              </div>
-            </div>
-
-            {/* Permissions summary */}
-            <div style={{ marginBottom: 8 }}>
-              <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: '#444' }}>
-                Application permissions used by the bot
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {[
-                  {
-                    scope: 'User.Read.All',
-                    label: 'Read all users\' profiles',
-                    why: 'Look up employee emails in your Microsoft 365 directory to resolve Azure AD identities for presence and messaging.',
-                  },
-                  {
-                    scope: 'Presence.Read.All',
-                    label: 'Read all users\' presence',
-                    why: 'Show real-time availability (Available, Busy, Away, etc.) on employee profiles in the HR Directory.',
-                  },
-                ].map(p => (
-                  <div key={p.scope} style={{
-                    display: 'flex', gap: 10, fontSize: 13, lineHeight: 1.5,
-                    padding: '10px 12px', background: '#fafafa', borderRadius: 6,
-                    border: '1px solid #eee',
-                  }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b5fc7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                    <div>
-                      <div style={{ fontWeight: 600, color: '#333' }}>{p.label}</div>
-                      <div style={{ color: '#777', fontSize: 12 }}>{p.why}</div>
-                    </div>
-                  </div>
-                ))}
-                <div style={{
-                  display: 'flex', gap: 10, fontSize: 13, lineHeight: 1.5,
-                  padding: '10px 12px', background: '#fafafa', borderRadius: 6,
-                  border: '1px solid #eee',
-                }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b5fc7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          {teamsExpanded && teamsEnabled && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{
+                ...sectionStyle,
+                border: `1px solid ${isBotConfigured ? '#c8e6c9' : '#fff3e0'}`,
+                background: isBotConfigured ? 'rgba(232,245,233,.5)' : 'rgba(255,248,225,.5)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={isBotConfigured ? '#2e7d32' : '#e65100'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {isBotConfigured
+                      ? <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>
+                      : <><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>
+                    }
                   </svg>
-                  <div>
-                    <div style={{ fontWeight: 600, color: '#333' }}>Bot messaging (personal scope)</div>
-                    <div style={{ color: '#777', fontSize: 12 }}>
-                      The bot sends one-to-one notifications to managers when leave requests or expense claims need their approval.
-                      It can only message users who have the bot installed — no access to existing chats or channels.
+                  <span style={{ fontWeight: 700, fontSize: 14, color: isBotConfigured ? '#2e7d32' : '#e65100' }}>
+                    {isBotConfigured ? 'Bot configured' : 'Bot setup required'}
+                  </span>
+                </div>
+                {isBotConfigured && <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #666)' }}>{botUserCount} user{botUserCount !== 1 ? 's' : ''} with the bot installed</p>}
+              </div>
+
+              <button onClick={() => setShowSetupGuide(!showSetupGuide)} style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                padding: '12px 16px', borderRadius: 8, border: '1px solid var(--border, #e0e0e0)',
+                background: 'var(--bg, #fafafa)', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+                color: 'var(--text, #333)', marginBottom: 16, textAlign: 'left',
+              }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b5fc7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{ transform: showSetupGuide ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+                Setup Guide
+              </button>
+
+              {showSetupGuide && (
+                <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', borderColor: '#d0d4f0' }}>
+                  <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                    <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: 15 }}>How to set up the InflowHR Teams Bot</p>
+                    <div style={{ marginBottom: 16 }}>
+                      <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#5b5fc7' }}>Step 1: Register a Bot in Azure</p>
+                      <ol style={{ margin: '0 0 8px', paddingLeft: 20, lineHeight: 2 }}>
+                        <li>Go to the <a href="https://portal.azure.com/#create/Microsoft.AzureBotService" target="_blank" rel="noopener noreferrer" style={{ color: '#5b5fc7' }}>Azure Bot Service</a></li>
+                        <li>Create an <strong>Azure Bot</strong>, choose <strong>Single Tenant</strong></li>
+                        <li>Set messaging endpoint to your Supabase edge function URL</li>
+                        <li>Add <strong>Microsoft Teams</strong> channel</li>
+                      </ol>
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#5b5fc7' }}>Step 2: Add Permissions</p>
+                      <ol style={{ margin: '0 0 8px', paddingLeft: 20, lineHeight: 2 }}>
+                        <li>Add <strong>User.Read.All</strong> and <strong>Presence.Read.All</strong> application permissions</li>
+                        <li>Grant admin consent, then create a client secret</li>
+                      </ol>
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#5b5fc7' }}>Step 3: Enter Credentials Below</p>
+                    </div>
+                    <div>
+                      <p style={{ margin: '0 0 4px', fontWeight: 700, color: '#5b5fc7' }}>Step 4: Download &amp; Install the Teams App</p>
+                      <p style={{ margin: 0, fontSize: 12 }}>Download the manifest, create a ZIP with icons, upload to Teams Admin Centre.</p>
                     </div>
                   </div>
                 </div>
+              )}
+
+              <div style={sectionStyle}>
+                <p style={{ margin: '0 0 16px', fontWeight: 700, fontSize: 14, color: 'var(--text, #333)' }}>Bot Credentials</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div><label style={labelStyle}>Azure Tenant ID</label><input type="text" value={tenantId} onChange={e => setTenantId(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style={inputStyle} /></div>
+                  <div><label style={labelStyle}>Bot Application (Client) ID</label><input type="text" value={botAppId} onChange={e => setBotAppId(e.target.value)} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" style={inputStyle} /></div>
+                  <div><label style={labelStyle}>Client Secret</label><input type="password" value={botAppSecret} onChange={e => setBotAppSecret(e.target.value)} placeholder={teamsConfig?.bot_app_secret_encrypted ? 'Secret saved — enter new to update' : 'Enter client secret'} style={inputStyle} /></div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+                  <button onClick={saveTeamsCreds} disabled={savingCreds} style={{ background: '#5b5fc7', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: savingCreds ? 'not-allowed' : 'pointer', opacity: savingCreds ? 0.6 : 1 }}>
+                    {savingCreds ? 'Saving...' : 'Save Credentials'}
+                  </button>
+                  <button onClick={generateManifest} style={{ background: 'var(--bg-card, #fff)', color: '#5b5fc7', border: '1px solid #5b5fc7', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                    Download manifest.json
+                  </button>
+                </div>
               </div>
             </div>
-          </>
-        )}
+          )}
+        </div>
 
-        {!isEnabled && (
-          <p style={{ margin: 0, fontSize: 13, color: '#999', fontStyle: 'italic' }}>
-            Switch on to configure Microsoft Teams integration for your company.
-          </p>
-        )}
+        {/* ── Xero Card ── */}
+        <div style={cardStyle(xeroSubscribed)}>
+          {!xeroSubscribed && (
+            <div style={{ position: 'absolute', top: 12, right: 16, background: '#f59e0b', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, pointerEvents: 'auto' }}>
+              Premium Add-on
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: xeroSubscribed ? 'pointer' : 'default' }}
+            onClick={() => xeroSubscribed && setXeroExpanded(!xeroExpanded)}>
+            <XeroLogo />
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Xero Payroll</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+                Sync payslip data from Xero Payroll UK
+              </p>
+            </div>
+            {xeroSubscribed && statusBadge(xeroIntegration?.sync_status || 'not_connected')}
+            {xeroSubscribed && (
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(xeroExpanded)}>
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            )}
+          </div>
+
+          {xeroExpanded && (
+            <div style={{ marginTop: 20 }}>
+              {xeroIntegration?.sync_status === 'connected' && (
+                <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Xero</strong>
+                      {xeroIntegration.last_sync_at && (
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
+                          Last synced: {new Date(xeroIntegration.last_sync_at).toLocaleString('en-GB')}
+                        </p>
+                      )}
+                    </div>
+                    <button className="admin-btn" onClick={disconnectXero}>Disconnect</button>
+                  </div>
+                </div>
+              )}
+
+              {xeroIntegration?.sync_status === 'error' && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,235,238,.5)', borderColor: '#ef9a9a' }}>
+                  <strong style={{ fontSize: 13, color: '#c62828' }}>Connection Error</strong>
+                  {xeroIntegration.sync_error && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>{xeroIntegration.sync_error}</p>}
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <button className="admin-btn admin-btn-primary" onClick={connectXero} disabled={xeroConnecting}>{xeroConnecting ? 'Redirecting...' : 'Reconnect'}</button>
+                    <button className="admin-btn" onClick={disconnectXero}>Remove</button>
+                  </div>
+                </div>
+              )}
+
+              {(!xeroIntegration || xeroIntegration.sync_status === 'not_connected') && (
+                <div style={{ ...sectionStyle, textAlign: 'center', padding: 24 }}>
+                  {otherPayrollActive('xero') && (
+                    <p style={{ margin: '0 0 12px', fontSize: 13, color: '#dc2626', fontWeight: 600 }}>
+                      Sage is currently connected. Disconnect Sage before connecting Xero.
+                    </p>
+                  )}
+                  <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
+                    Click below to authorise InflowHR to access your Xero payroll data. You will be redirected to Xero to sign in.
+                  </p>
+                  <button className="admin-btn admin-btn-primary" onClick={connectXero}
+                    disabled={xeroConnecting || otherPayrollActive('xero')}
+                    style={{ fontSize: 14, padding: '10px 24px' }}>
+                    {xeroConnecting ? 'Redirecting to Xero...' : 'Connect to Xero'}
+                  </button>
+                </div>
+              )}
+
+              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)' }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>How it works</p>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                  <li>OAuth 2.0 connection — InflowHR never stores your Xero password</li>
+                  <li>Read-only access to payroll data (pay runs, payslips, employee records)</li>
+                  <li>Payslips are matched to InflowHR employees by email address</li>
+                  <li>Sync payslips on demand from the Payroll page once connected</li>
+                  <li>Only one external payroll provider can be active at a time</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Sage Card ── */}
+        <div style={cardStyle(sageSubscribed)}>
+          {!sageSubscribed && (
+            <div style={{ position: 'absolute', top: 12, right: 16, background: '#f59e0b', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, pointerEvents: 'auto' }}>
+              Premium Add-on
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: sageSubscribed ? 'pointer' : 'default' }}
+            onClick={() => sageSubscribed && setSageExpanded(!sageExpanded)}>
+            <SageLogo />
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Sage Payroll</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+                Sync payslip data from Sage Business Cloud Payroll
+              </p>
+            </div>
+            {sageSubscribed && statusBadge(sageIntegration?.sync_status || 'not_connected')}
+            {sageSubscribed && (
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(sageExpanded)}>
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            )}
+          </div>
+
+          {sageExpanded && (
+            <div style={{ marginTop: 20 }}>
+              {sageIntegration?.sync_status === 'connected' && (
+                <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Sage</strong>
+                      {sageIntegration.last_sync_at && (
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
+                          Last synced: {new Date(sageIntegration.last_sync_at).toLocaleString('en-GB')}
+                        </p>
+                      )}
+                    </div>
+                    <button className="admin-btn" onClick={disconnectSage}>Disconnect</button>
+                  </div>
+                </div>
+              )}
+
+              {sageIntegration?.sync_status === 'error' && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,235,238,.5)', borderColor: '#ef9a9a' }}>
+                  <strong style={{ fontSize: 13, color: '#c62828' }}>Connection Error</strong>
+                  {sageIntegration.sync_error && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>{sageIntegration.sync_error}</p>}
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <button className="admin-btn admin-btn-primary" onClick={connectSage} disabled={sageConnecting}>{sageConnecting ? 'Redirecting...' : 'Reconnect'}</button>
+                    <button className="admin-btn" onClick={disconnectSage}>Remove</button>
+                  </div>
+                </div>
+              )}
+
+              {(!sageIntegration || sageIntegration.sync_status === 'not_connected') && (
+                <div style={{ marginTop: 0 }}>
+                  {otherPayrollActive('sage') && (
+                    <div style={{ ...sectionStyle, background: 'rgba(255,248,225,.5)', borderColor: '#ffe0b2' }}>
+                      <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>
+                        Xero is currently connected. Disconnect Xero before connecting Sage.
+                      </p>
+                    </div>
+                  )}
+
+                  <div style={sectionStyle}>
+                    <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: 14, color: 'var(--text, #333)' }}>Connection Setup</p>
+                    <div style={{ fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)', marginBottom: 16 }}>
+                      <p style={{ margin: '0 0 8px' }}>To connect Sage Payroll:</p>
+                      <ol style={{ margin: 0, paddingLeft: 20 }}>
+                        <li>Go to the <a href="https://developerselfservice.sageone.com" target="_blank" rel="noopener noreferrer" style={{ color: '#00DC00', fontWeight: 600 }}>Sage Developer Portal</a></li>
+                        <li>Create an app or use your existing one</li>
+                        <li>Set the callback URL to your InflowHR Supabase edge function URL</li>
+                        <li>Copy the <strong>Client ID</strong> and <strong>Client Secret</strong> below</li>
+                        <li>Click <strong>Connect to Sage</strong> to authorise</li>
+                      </ol>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <div>
+                        <label style={labelStyle}>Client ID</label>
+                        <input type="text" value={sageClientId} onChange={e => setSageClientId(e.target.value)}
+                          placeholder="Enter Sage Client ID" style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Client Secret</label>
+                        <input type="password" value={sageClientSecret} onChange={e => setSageClientSecret(e.target.value)}
+                          placeholder={sageIntegration?.client_secret_encrypted ? 'Secret saved — enter new to update' : 'Enter Sage Client Secret'} style={inputStyle} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+                      <button onClick={saveSageCreds} disabled={savingSageCreds || otherPayrollActive('sage')}
+                        style={{ background: 'var(--bg-card, #fff)', color: '#00a600', border: '1px solid #00a600', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: savingSageCreds ? 'not-allowed' : 'pointer', opacity: savingSageCreds ? 0.6 : 1 }}>
+                        {savingSageCreds ? 'Saving...' : 'Save Credentials'}
+                      </button>
+                      {(sageIntegration?.client_id || sageClientId.trim()) && (
+                        <button className="admin-btn admin-btn-primary" onClick={connectSage}
+                          disabled={sageConnecting || otherPayrollActive('sage')}
+                          style={{ fontSize: 14, padding: '10px 24px', background: '#00a600' }}>
+                          {sageConnecting ? 'Redirecting to Sage...' : 'Connect to Sage'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)' }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>How it works</p>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                  <li>OAuth 2.0 connection — InflowHR never stores your Sage password</li>
+                  <li>Read-only access to payroll data (pay runs, payslips)</li>
+                  <li>Payslips are matched to InflowHR employees by email address</li>
+                  <li>Sync payslips on demand from the Payroll page once connected</li>
+                  <li>Only one external payroll provider can be active at a time</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   )

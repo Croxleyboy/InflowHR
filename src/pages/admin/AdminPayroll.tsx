@@ -67,6 +67,15 @@ interface XeroIntegration {
   payslip_source: 'inflowhr' | 'xero'
 }
 
+interface SageIntegration {
+  id: string
+  company_id: string
+  sync_status: string
+  sync_error: string | null
+  last_sync_at: string | null
+  payslip_source: 'inflowhr' | 'sage'
+}
+
 interface XeroPayslipRow {
   payslip_id: string
   xero_employee_id: string
@@ -150,7 +159,7 @@ export default function AdminPayroll() {
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics' | 'xero_pay'>('payslips')
+  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics' | 'xero_pay' | 'sage_pay'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [page, setPage] = useState(1)
@@ -171,6 +180,12 @@ export default function AdminPayroll() {
   const [xeroLivePayslips, setXeroLivePayslips] = useState<XeroPayslipRow[]>([])
   const [xeroPayRun, setXeroPayRun] = useState<XeroPayRun | null>(null)
   const [showXeroDisconnectModal, setShowXeroDisconnectModal] = useState(false)
+
+  // Sage integration state
+  const [sageIntegration, setSageIntegration] = useState<SageIntegration | null>(null)
+  const [sageSyncing, setSageSyncing] = useState(false)
+  const [sageLivePayslips, setSageLivePayslips] = useState<XeroPayslipRow[]>([])
+  const [sagePayRun, setSagePayRun] = useState<XeroPayRun | null>(null)
 
   // Employee Pay tab month navigation
   const [empPayMonthIdx, setEmpPayMonthIdx] = useState(0)
@@ -228,10 +243,11 @@ export default function AdminPayroll() {
     setLoading(true)
     const fyStart = localDateStr(fyRange.startDate)
     const fyEnd = localDateStr(fyRange.endDate)
-    const [pRes, eRes, xRes] = await Promise.all([
+    const [pRes, eRes, xRes, sRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
       supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
     setPayslips((pRes.data as Payslip[]) || [])
     setEmployees((eRes.data as Employee[]) || [])
@@ -239,6 +255,10 @@ export default function AdminPayroll() {
     setXeroIntegration(xero)
     if (xero?.cached_pay_run) setXeroPayRun(xero.cached_pay_run)
     if (xero?.cached_payslips?.length) setXeroLivePayslips(xero.cached_payslips)
+    const sage = sRes.data as (SageIntegration & { cached_pay_run?: XeroPayRun; cached_payslips?: XeroPayslipRow[] }) | null
+    setSageIntegration(sage)
+    if (sage?.cached_pay_run) setSagePayRun(sage.cached_pay_run)
+    if (sage?.cached_payslips?.length) setSageLivePayslips(sage.cached_payslips)
     setLoading(false)
   }
 
@@ -579,11 +599,19 @@ export default function AdminPayroll() {
 
   const [saving, setSaving] = useState(false)
 
-  const activeSource = xeroIntegration?.payslip_source || 'inflowhr'
+  const activeSource: 'inflowhr' | 'xero' | 'sage' =
+    xeroIntegration?.payslip_source === 'xero' ? 'xero'
+    : sageIntegration?.payslip_source === 'sage' ? 'sage'
+    : 'inflowhr'
+
+  const xeroConnected = xeroIntegration?.sync_status === 'connected'
+  const sageConnected = sageIntegration?.sync_status === 'connected'
+  const activeProviderName = xeroConnected ? 'Xero' : sageConnected ? 'Sage' : null
 
   const sourcePayslips = useMemo(() => {
     if (activeSource === 'xero') return payslips.filter(p => p.source === 'xero')
-    return payslips.filter(p => p.source !== 'xero')
+    if (activeSource === 'sage') return payslips.filter(p => p.source === 'sage')
+    return payslips.filter(p => p.source !== 'xero' && p.source !== 'sage')
   }, [payslips, activeSource])
 
   const filtered = useMemo(() => {
@@ -921,29 +949,23 @@ export default function AdminPayroll() {
 
   // ── Payslip source toggle ──
 
-  async function togglePayslipSource(source: 'inflowhr' | 'xero') {
+  async function togglePayslipSource(source: 'inflowhr' | 'xero' | 'sage') {
     if (!selectedCompanyId) return
 
-    // Switching from Xero to InflowHR — show confirmation modal
-    if (source === 'inflowhr' && activeSource === 'xero') {
+    if (source === 'inflowhr' && (activeSource === 'xero' || activeSource === 'sage')) {
       setShowXeroDisconnectModal(true)
       return
     }
 
-    if (xeroIntegration) {
-      const { error } = await supabase.from('xero_integrations').update({
-        payslip_source: source,
-        updated_at: new Date().toISOString(),
-      }).eq('company_id', selectedCompanyId)
+    if (source === 'xero' && xeroIntegration) {
+      const { error } = await supabase.from('xero_integrations').update({ payslip_source: source, updated_at: new Date().toISOString() }).eq('company_id', selectedCompanyId)
       if (error) { showError('Failed to update: ' + error.message); return }
-    } else {
-      const { error } = await supabase.from('xero_integrations').insert({
-        company_id: selectedCompanyId,
-        payslip_source: source,
-      })
+    } else if (source === 'sage' && sageIntegration) {
+      const { error } = await supabase.from('sage_integrations').update({ payslip_source: source, updated_at: new Date().toISOString() }).eq('company_id', selectedCompanyId)
       if (error) { showError('Failed to update: ' + error.message); return }
     }
-    showSuccess(source === 'xero' ? 'Switched to Xero Payslips' : 'Switched to InflowHR Payslips')
+    const label = source === 'xero' ? 'Xero' : source === 'sage' ? 'Sage' : 'InflowHR'
+    showSuccess(`Switched to ${label} Payslips`)
     loadAll()
   }
 
@@ -951,18 +973,12 @@ export default function AdminPayroll() {
     if (!selectedCompanyId) return
     setShowXeroDisconnectModal(false)
 
-    // Delete all Xero-sourced payslips for this company
-    await supabase.from('payslips').delete()
-      .eq('company_id', selectedCompanyId)
-      .eq('source', 'xero')
-
-    // Delete the xero_integrations row (disconnects and clears cached data)
-    await supabase.from('xero_integrations').delete().eq('company_id', selectedCompanyId)
-
-    setXeroIntegration(null)
-    setXeroLivePayslips([])
-    setXeroPayRun(null)
-    showSuccess('Switched to InflowHR Payslips. Xero disconnected and Xero payslip data cleared.')
+    if (activeSource === 'xero') {
+      await supabase.from('xero_integrations').update({ payslip_source: 'inflowhr', updated_at: new Date().toISOString() }).eq('company_id', selectedCompanyId)
+    } else if (activeSource === 'sage') {
+      await supabase.from('sage_integrations').update({ payslip_source: 'inflowhr', updated_at: new Date().toISOString() }).eq('company_id', selectedCompanyId)
+    }
+    showSuccess('Switched to InflowHR Payslips')
     loadAll()
   }
 
@@ -1030,13 +1046,19 @@ export default function AdminPayroll() {
     if (xeroParam === 'connected') {
       showSuccess('Connected to Xero successfully')
       window.history.replaceState({}, '', window.location.pathname)
-      setTab('xero_pay')
       if (selectedCompanyId) loadAll()
     } else if (xeroParam === 'error') {
-      const reason = params.get('reason') || 'unknown'
-      showError(`Xero connection failed: ${reason}`)
+      showError(`Xero connection failed: ${params.get('reason') || 'unknown'}`)
       window.history.replaceState({}, '', window.location.pathname)
-      setTab('xero_pay')
+    }
+    const sageParam = params.get('sage')
+    if (sageParam === 'connected') {
+      showSuccess('Connected to Sage successfully')
+      window.history.replaceState({}, '', window.location.pathname)
+      if (selectedCompanyId) loadAll()
+    } else if (sageParam === 'error') {
+      showError(`Sage connection failed: ${params.get('reason') || 'unknown'}`)
+      window.history.replaceState({}, '', window.location.pathname)
     }
   }, [])
 
@@ -1056,15 +1078,6 @@ export default function AdminPayroll() {
     return data
   }
 
-  async function connectXero() {
-    setXeroConnecting(true)
-    const result = await callXeroFunction('xero-connect')
-    setXeroConnecting(false)
-    if (result?.url) {
-      window.location.href = result.url
-    }
-  }
-
   async function fetchXeroPayslips() {
     setXeroSyncing(true)
     const result = await callXeroFunction('xero-payslips')
@@ -1076,22 +1089,22 @@ export default function AdminPayroll() {
     }
   }
 
-  async function disconnectXero() {
-    if (!confirm('Disconnect from Xero? This will remove the integration.')) return
-    if (!selectedCompanyId) return
-    const { error } = await supabase.from('xero_integrations').delete().eq('company_id', selectedCompanyId)
-    if (error) { showError('Failed to disconnect: ' + error.message); return }
-    setXeroIntegration(null)
-    setXeroLivePayslips([])
-    setXeroPayRun(null)
-    showSuccess('Disconnected from Xero')
+  async function fetchSagePayslips() {
+    setSageSyncing(true)
+    const result = await callXeroFunction('sage-payslips')
+    setSageSyncing(false)
+    if (result) {
+      setSagePayRun(result.payRun)
+      setSageLivePayslips(result.payslips || [])
+      loadAll()
+    }
   }
 
   const fyLabel = `FY ${fyRange.startYear}/${fyRange.startYear + 1}`
 
   return (
     <div className="admin-section">
-      {/* Xero disconnect confirmation modal */}
+      {/* Payslip source switch confirmation modal */}
       {showXeroDisconnectModal && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999,
@@ -1103,20 +1116,12 @@ export default function AdminPayroll() {
           }}>
             <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#dc2626' }}>Switch to InflowHR Payslips?</h3>
             <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text, #1a1a2e)', lineHeight: 1.5 }}>
-              This will:
+              This will switch employees to see InflowHR payslips only. The {activeSource === 'xero' ? 'Xero' : 'Sage'} integration remains connected — you can switch back at any time.
             </p>
-            <ul style={{ margin: '0 0 16px', paddingLeft: 20, fontSize: 13, color: 'var(--text, #1a1a2e)', lineHeight: 1.8 }}>
-              <li><strong>Disconnect</strong> the Xero integration</li>
-              <li><strong>Delete all Xero payslip data</strong> for this company</li>
-              <li>Switch employees to see InflowHR payslips only</li>
-            </ul>
-            <p style={{ margin: '0 0 16px', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
-              This action cannot be undone. You will need to reconnect to Xero to use Xero payslips again.
-            </p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
               <button className="admin-btn" onClick={() => setShowXeroDisconnectModal(false)}>Cancel</button>
               <button className="admin-btn admin-btn-danger" onClick={confirmSwitchToInflowHR} style={{ background: '#dc2626', color: '#fff', border: 'none' }}>
-                Continue — Disconnect Xero
+                Switch to InflowHR
               </button>
             </div>
           </div>
@@ -1142,7 +1147,12 @@ export default function AdminPayroll() {
 
       <div className="admin-tabs">
         <button className={`admin-tab ${tab === 'payslips' ? 'admin-tab-active' : ''}`} onClick={() => setTab('payslips')}>Payslips</button>
-        <button className={`admin-tab ${tab === 'xero_pay' ? 'admin-tab-active' : ''}`} onClick={() => setTab('xero_pay')}>Xero Pay</button>
+        {xeroConnected && (
+          <button className={`admin-tab ${tab === 'xero_pay' ? 'admin-tab-active' : ''}`} onClick={() => setTab('xero_pay')}>Xero Payslips</button>
+        )}
+        {sageConnected && (
+          <button className={`admin-tab ${tab === 'sage_pay' ? 'admin-tab-active' : ''}`} onClick={() => setTab('sage_pay')}>Sage Payslips</button>
+        )}
         <button className={`admin-tab ${tab === 'employees' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employees')}>Employee Pay</button>
         <button className={`admin-tab ${tab === 'schedule' ? 'admin-tab-active' : ''}`} onClick={() => setTab('schedule')}>Payroll Schedule</button>
         {(enabledFeatures.timesheets || enabledFeatures.shifts || enabledFeatures.legal_timesheets) && (
@@ -1155,22 +1165,30 @@ export default function AdminPayroll() {
 
       {tab === 'payslips' && (
         <>
-          {xeroIntegration?.sync_status === 'connected' && (
+          {(xeroConnected || sageConnected) && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', marginBottom: 12,
-              background: 'var(--bg-card, #fff)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
+              background: 'var(--bg-card, #fff)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)', flexWrap: 'wrap',
             }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>Payslip Source:</span>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
                 <input type="radio" name="payslipSource" checked={activeSource === 'inflowhr'} onChange={() => togglePayslipSource('inflowhr')} />
-                <span>InflowHR Payslips</span>
+                <span>InflowHR</span>
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
-                <input type="radio" name="payslipSource" checked={activeSource === 'xero'} onChange={() => togglePayslipSource('xero')} />
-                <span>Xero Payslips</span>
-              </label>
+              {xeroConnected && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
+                  <input type="radio" name="payslipSource" checked={activeSource === 'xero'} onChange={() => togglePayslipSource('xero')} />
+                  <span>Xero</span>
+                </label>
+              )}
+              {sageConnected && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
+                  <input type="radio" name="payslipSource" checked={activeSource === 'sage'} onChange={() => togglePayslipSource('sage')} />
+                  <span>Sage</span>
+                </label>
+              )}
               <span className="admin-badge admin-badge-approved" style={{ marginLeft: 'auto' }}>
-                {activeSource === 'xero' ? 'Xero Active' : 'InflowHR Active'}
+                {activeSource === 'xero' ? 'Xero Active' : activeSource === 'sage' ? 'Sage Active' : 'InflowHR Active'}
               </span>
             </div>
           )}
@@ -1868,88 +1886,24 @@ export default function AdminPayroll() {
         </>
       )}
 
-      {tab === 'xero_pay' && (
+      {tab === 'xero_pay' && xeroConnected && (
         <>
           <div style={{
-            padding: 20, background: 'var(--bg-card, #fff)', borderRadius: 12,
-            border: '1px solid var(--border, #e5e7eb)', marginBottom: 16,
+            padding: '10px 14px', marginBottom: 12, background: 'var(--bg-card, #fff)',
+            borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-              <div>
-                <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>
-                  Xero Payroll Integration
-                </h3>
-                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #8b8fa3)' }}>
-                  Connect your Xero account to view payslip data directly from Xero Payroll UK.
+            <div>
+              <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Xero</strong>
+              {xeroIntegration?.last_sync_at && (
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
+                  Last synced: {new Date(xeroIntegration.last_sync_at).toLocaleString('en-GB')}
                 </p>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {xeroIntegration?.sync_status === 'connected' && (
-                  <span className="admin-badge admin-badge-approved">Connected</span>
-                )}
-                {xeroIntegration?.sync_status === 'error' && (
-                  <span className="admin-badge admin-badge-rejected">Error</span>
-                )}
-                {(!xeroIntegration || xeroIntegration.sync_status === 'not_connected') && (
-                  <span className="admin-badge admin-badge-pending">Not Connected</span>
-                )}
-              </div>
+              )}
             </div>
-
-            {xeroIntegration?.sync_status === 'connected' && (
-              <div style={{
-                marginTop: 16, padding: 12, borderRadius: 8, background: '#e8f5e9',
-                border: '1px solid #a5d6a7', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
-              }}>
-                <div>
-                  <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Xero</strong>
-                  {xeroIntegration.last_sync_at && (
-                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
-                      Last synced: {new Date(xeroIntegration.last_sync_at).toLocaleString('en-GB')}
-                    </p>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="admin-btn admin-btn-primary" onClick={fetchXeroPayslips} disabled={xeroSyncing}>
-                    {xeroSyncing ? 'Fetching...' : 'Fetch Payslips'}
-                  </button>
-                  <button className="admin-btn" onClick={disconnectXero}>Disconnect</button>
-                </div>
-              </div>
-            )}
-
-            {xeroIntegration?.sync_status === 'error' && (
-              <div style={{
-                marginTop: 16, padding: 12, borderRadius: 8, background: '#ffebee',
-                border: '1px solid #ef9a9a',
-              }}>
-                <strong style={{ fontSize: 13, color: '#c62828' }}>Connection Error</strong>
-                {xeroIntegration.sync_error && (
-                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>{xeroIntegration.sync_error}</p>
-                )}
-                <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                  <button className="admin-btn admin-btn-primary" onClick={connectXero} disabled={xeroConnecting}>
-                    {xeroConnecting ? 'Redirecting...' : 'Reconnect to Xero'}
-                  </button>
-                  <button className="admin-btn" onClick={disconnectXero}>Remove</button>
-                </div>
-              </div>
-            )}
-
-            {(!xeroIntegration || xeroIntegration.sync_status === 'not_connected') && (
-              <div style={{
-                marginTop: 16, padding: 24, borderRadius: 8, background: 'var(--bg, #f8f9fa)',
-                border: '1px solid var(--border, #e5e7eb)', textAlign: 'center',
-              }}>
-                <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
-                  Click below to authorise InflowHR to access your Xero payroll data.
-                  You will be redirected to Xero to sign in and grant access.
-                </p>
-                <button className="admin-btn admin-btn-primary" onClick={connectXero} disabled={xeroConnecting} style={{ fontSize: 14, padding: '10px 24px' }}>
-                  {xeroConnecting ? 'Redirecting to Xero...' : 'Connect to Xero'}
-                </button>
-              </div>
-            )}
+            <button className="admin-btn admin-btn-primary" onClick={fetchXeroPayslips} disabled={xeroSyncing}>
+              {xeroSyncing ? 'Fetching...' : 'Fetch Payslips'}
+            </button>
           </div>
 
           {xeroPayRun && (
@@ -2031,9 +1985,99 @@ export default function AdminPayroll() {
             </>
           )}
 
-          {xeroLivePayslips.length === 0 && xeroIntegration?.sync_status === 'connected' && !xeroSyncing && (
+          {xeroLivePayslips.length === 0 && !xeroSyncing && (
             <div className="admin-empty" style={{ marginTop: 16 }}>
-              No payslips fetched yet. Click "Fetch Payslips" to pull the latest pay run from Xero.
+              No payslips fetched yet. Click &ldquo;Fetch Payslips&rdquo; to pull the latest pay run from Xero.
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'sage_pay' && sageConnected && (
+        <>
+          <div style={{
+            padding: '10px 14px', marginBottom: 12, background: 'var(--bg-card, #fff)',
+            borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+          }}>
+            <div>
+              <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Sage</strong>
+              {sageIntegration?.last_sync_at && (
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
+                  Last synced: {new Date(sageIntegration.last_sync_at).toLocaleString('en-GB')}
+                </p>
+              )}
+            </div>
+            <button className="admin-btn admin-btn-primary" onClick={fetchSagePayslips} disabled={sageSyncing}>
+              {sageSyncing ? 'Fetching...' : 'Fetch Payslips'}
+            </button>
+          </div>
+
+          {sagePayRun && (
+            <div style={{
+              padding: '10px 14px', marginBottom: 12, background: 'var(--bg-card, #fff)',
+              borderRadius: 8, border: '1px solid var(--border, #e5e7eb)',
+              display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', fontSize: 13, color: 'var(--text, #1a1a2e)',
+            }}>
+              <span><strong>Pay Run:</strong> {sagePayRun.status}</span>
+              <span><strong>Period:</strong> {new Date(sagePayRun.period_start).toLocaleDateString('en-GB')} — {new Date(sagePayRun.period_end).toLocaleDateString('en-GB')}</span>
+              {sagePayRun.payment_date && <span><strong>Payment:</strong> {new Date(sagePayRun.payment_date).toLocaleDateString('en-GB')}</span>}
+            </div>
+          )}
+
+          {sageLivePayslips.length > 0 && (
+            <>
+              <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600, color: 'var(--text, #1a1a2e)' }}>
+                Sage Payslips ({sageLivePayslips.length})
+              </h3>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Employee</th><th>Matched</th><th>Total Earnings</th><th>Tax (PAYE)</th>
+                      <th>Employee NI</th><th>Deductions</th><th>Employer NI</th>
+                      <th>Employer Pension</th><th>Reimbursements</th><th>Student Loan</th><th>Net Pay</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sageLivePayslips.map(s => (
+                      <tr key={s.payslip_id}>
+                        <td><strong>{s.first_name} {s.last_name}</strong></td>
+                        <td>{s.inflow_employee_id ? <span style={{ color: '#16a34a' }}>Yes</span> : <span style={{ color: '#dc2626' }}>No</span>}</td>
+                        <td>£{Number(s.total_earnings).toFixed(2)}</td>
+                        <td>£{Number(s.tax).toFixed(2)}</td>
+                        <td>£{Number(s.employee_ni).toFixed(2)}</td>
+                        <td>£{(s.deductions || []).reduce((sum, d) => sum + d.amount, 0).toFixed(2)}</td>
+                        <td>£{Number(s.employer_ni).toFixed(2)}</td>
+                        <td>£{Number(s.employer_pension).toFixed(2)}</td>
+                        <td>£{Number(s.total_reimbursements || 0).toFixed(2)}</td>
+                        <td>£{Number(s.student_loan).toFixed(2)}</td>
+                        <td><strong>£{Number(s.net_pay).toFixed(2)}</strong></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ fontWeight: 700 }}>
+                      <td>Totals</td><td></td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.total_earnings), 0).toFixed(2)}</td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.employee_ni), 0).toFixed(2)}</td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + (p.deductions || []).reduce((sum, d) => sum + d.amount, 0), 0).toFixed(2)}</td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.employer_ni), 0).toFixed(2)}</td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.employer_pension), 0).toFixed(2)}</td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.total_reimbursements || 0), 0).toFixed(2)}</td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.student_loan), 0).toFixed(2)}</td>
+                      <td>£{sageLivePayslips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </>
+          )}
+
+          {sageLivePayslips.length === 0 && !sageSyncing && (
+            <div className="admin-empty" style={{ marginTop: 16 }}>
+              No payslips fetched yet. Click &ldquo;Fetch Payslips&rdquo; to pull the latest pay run from Sage.
             </div>
           )}
         </>
