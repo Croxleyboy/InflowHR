@@ -50,6 +50,7 @@ export default function Settings() {
   const [consents, setConsents] = useState<Record<string, boolean>>({})
   const [consentsLoading, setConsentsLoading] = useState(true)
   const [consentSaving, setConsentSaving] = useState<string | null>(null)
+  const [hasFeatureSwitching, setHasFeatureSwitching] = useState(false)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)')
     const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
@@ -57,7 +58,20 @@ export default function Settings() {
     return () => mq.removeEventListener('change', handler)
   }, [])
   const isCompanyAdmin = isSuperAdmin || companyUser?.role === 'admin'
+  const canSwitchFeatures = isCompanyAdmin || hasFeatureSwitching
   const hasPortalAccess = isCompanyAdmin || !!portalRole
+
+  useEffect(() => {
+    if (isCompanyAdmin || !portalRole || !companyUser?.company_id) return
+    supabase.from('admin_portal_roles')
+      .select('permissions')
+      .eq('company_id', companyUser.company_id)
+      .eq('role_key', portalRole)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.permissions?.feature_switching) setHasFeatureSwitching(true)
+      })
+  }, [isCompanyAdmin, portalRole, companyUser?.company_id])
 
   const handleDownloadMyData = useCallback(async () => {
     if (!companyUser?.employee_id) { showError('No employee record linked'); return }
@@ -265,7 +279,7 @@ export default function Settings() {
         </section>
       )}
 
-      {isCompanyAdmin && (
+      {canSwitchFeatures && (
         <section className="settings-section">
           <h2>{t('settings.features')}</h2>
           <p className="settings-hint">{t('settings.features_hint')}</p>
@@ -292,7 +306,7 @@ export default function Settings() {
         </section>
       )}
 
-      {isCompanyAdmin && (
+      {canSwitchFeatures && (
         <button className="save-btn" onClick={handleSave}>
           {saved ? t('settings.saved') : t('settings.save')}
         </button>
