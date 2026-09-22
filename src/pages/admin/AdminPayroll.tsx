@@ -186,6 +186,7 @@ export default function AdminPayroll() {
   const [sageUploadResult, setSageUploadResult] = useState<{
     matched: { employee_name: string; employee_number: string; net_pay: number; period: string }[]
     unmatched: { employee_name: string; employee_number: string }[]
+    skipped?: { employee_name: string; employee_number: string; month: string; existing_source: string }[]
     total_parsed: number
   } | null>(null)
 
@@ -394,10 +395,11 @@ export default function AdminPayroll() {
       return
     }
 
-    // Check next month doesn't already have payslips
+    // Check next month doesn't already have payslips from any source
     const existingNext = sourcePayslips.filter(p => p.pay_period_start.startsWith(nextKey))
     if (existingNext.length > 0) {
-      showError(`Payslips for ${MONTH_NAMES[nextMonth]} ${nextYear} already exist`)
+      const existingSources = [...new Set(existingNext.map(p => p.source === 'sage' ? 'Sage' : p.source === 'xero' ? 'Xero' : 'InflowHR'))]
+      showError(`Payslips for ${MONTH_NAMES[nextMonth]} ${nextYear} already exist (via ${existingSources.join(', ')})`)
       setGenerating(false)
       return
     }
@@ -605,11 +607,7 @@ export default function AdminPayroll() {
 
   const xeroConnected = xeroIntegration?.sync_status === 'connected'
   const sageConnected = sageIntegration?.sync_status === 'connected'
-  const sourcePayslips = useMemo(() => {
-    if (activeSource === 'xero') return payslips.filter(p => p.source === 'xero')
-    if (activeSource === 'sage') return payslips.filter(p => p.source === 'sage')
-    return payslips.filter(p => p.source !== 'xero' && p.source !== 'sage')
-  }, [payslips, activeSource])
+  const sourcePayslips = useMemo(() => payslips, [payslips])
 
   const filtered = useMemo(() => {
     const base = sourcePayslips.filter(p => {
@@ -1290,7 +1288,7 @@ export default function AdminPayroll() {
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Source</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody>
                   {paginated.map(p => (
                     <>
@@ -1298,6 +1296,11 @@ export default function AdminPayroll() {
                         <td className="admin-td-mono">{p.reference_number}</td>
                         <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
                         <td>{new Date(p.pay_period_start + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</td>
+                        <td><span style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                          background: p.source === 'sage' ? '#e0f2e9' : p.source === 'xero' ? '#dbeafe' : '#f3f0ff',
+                          color: p.source === 'sage' ? '#166534' : p.source === 'xero' ? '#1e40af' : '#5b21b6',
+                        }}>{p.source === 'sage' ? 'Sage' : p.source === 'xero' ? 'Xero' : 'InflowHR'}</span></td>
                         <td>£{Number(p.gross_pay).toFixed(2)}</td>
                         <td>£{Number(p.tax).toFixed(2)}</td>
                         <td>£{Number(p.national_insurance).toFixed(2)}</td>
@@ -1327,7 +1330,7 @@ export default function AdminPayroll() {
                       </tr>
                       {expandedId === p.id && (
                         <tr key={`exp-${p.id}`} className="admin-expanded-row">
-                          <td colSpan={10}>
+                          <td colSpan={11}>
                             {editingId === p.id ? (
                               <div className="admin-detail-grid admin-detail-grid-4">
                                 <div><label style={{ fontSize: 12, fontWeight: 600 }}>Gross Pay</label><input type="number" className="admin-inline-input" value={editForm.gross_pay} onChange={e => setEditForm(f => ({...f, gross_pay: +e.target.value}))} /></div>
@@ -2126,6 +2129,34 @@ export default function AdminPayroll() {
                     </div>
                     <p style={{ margin: '0 0 12px', fontSize: 12, color: '#dc2626' }}>
                       These employees could not be matched. Check their Employee ID in Admin &gt; Employees &gt; Employment Management.
+                    </p>
+                  </>
+                )}
+
+                {sageUploadResult.skipped && sageUploadResult.skipped.length > 0 && (
+                  <>
+                    <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: '#b45309' }}>
+                      Skipped — Already Paid ({sageUploadResult.skipped.length})
+                    </p>
+                    <div className="admin-table-wrap" style={{ marginBottom: 16 }}>
+                      <table className="admin-table">
+                        <thead>
+                          <tr><th>Employee</th><th>Employee ID</th><th>Month</th><th>Existing Source</th></tr>
+                        </thead>
+                        <tbody>
+                          {sageUploadResult.skipped.map((s, i) => (
+                            <tr key={i}>
+                              <td>{s.employee_name}</td>
+                              <td>{s.employee_number}</td>
+                              <td>{s.month}</td>
+                              <td style={{ textTransform: 'capitalize' }}>{s.existing_source}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p style={{ margin: '0 0 12px', fontSize: 12, color: '#b45309' }}>
+                      These payslips were not imported because the employee already has a payslip for that month from another source.
                     </p>
                   </>
                 )}

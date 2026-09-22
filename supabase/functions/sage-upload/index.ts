@@ -107,6 +107,45 @@ Deno.serve(async (req) => {
       })
     }
 
+    // Check for month conflicts — block import for months already paid by another source
+    const importMonths = [...new Set(upsertRows.map((r: any) => r.pay_period_start?.slice(0, 7)).filter(Boolean))]
+    const skipped: { employee_name: string; employee_number: string; month: string; existing_source: string }[] = []
+    if (importMonths.length > 0) {
+      const { data: existingPayslips } = await sb
+        .from('payslips')
+        .select('employee_id, pay_period_start, source')
+        .eq('company_id', company_id)
+        .neq('source', 'sage')
+        .in('pay_period_start', upsertRows.map((r: any) => r.pay_period_start))
+
+      if (existingPayslips && existingPayslips.length > 0) {
+        const paidSet = new Set(existingPayslips.map((p: any) => `${p.employee_id}|${p.pay_period_start}`))
+        const paidSourceMap: Record<string, string> = {}
+        for (const p of existingPayslips) paidSourceMap[`${p.employee_id}|${p.pay_period_start}`] = p.source || 'inflowhr'
+
+        const filteredRows: Record<string, unknown>[] = []
+        const filteredMatched: typeof matched = []
+        for (let i = 0; i < upsertRows.length; i++) {
+          const key = `${(upsertRows[i] as any).employee_id}|${(upsertRows[i] as any).pay_period_start}`
+          if (paidSet.has(key)) {
+            skipped.push({
+              employee_name: matched[i]?.employee_name || '',
+              employee_number: matched[i]?.employee_number || '',
+              month: (upsertRows[i] as any).pay_period_start?.slice(0, 7),
+              existing_source: paidSourceMap[key] || 'inflowhr',
+            })
+          } else {
+            filteredRows.push(upsertRows[i])
+            if (matched[i]) filteredMatched.push(matched[i])
+          }
+        }
+        upsertRows.length = 0
+        upsertRows.push(...filteredRows)
+        matched.length = 0
+        matched.push(...filteredMatched)
+      }
+    }
+
     if (upsertRows.length > 0) {
       const batchSize = 50
       for (let i = 0; i < upsertRows.length; i += batchSize) {
@@ -144,7 +183,7 @@ Deno.serve(async (req) => {
       }),
     })
 
-    return json({ matched, unmatched, total_parsed: parsed.length })
+    return json({ matched, unmatched, skipped, total_parsed: parsed.length })
   } catch (err) {
     return json({ error: (err as Error).message }, 500)
   }

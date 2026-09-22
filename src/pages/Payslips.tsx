@@ -41,6 +41,7 @@ interface PayslipData {
   payroll_id: string
   bank_account: string
   payroll_office: string
+  source: string | null
 }
 
 interface BenefitDeduction {
@@ -57,26 +58,12 @@ export default function Payslips() {
   const [employeeRole, setEmployeeRole] = useState('')
   const [benefitDeductions, setBenefitDeductions] = useState<BenefitDeduction[]>([])
   const [initialised, setInitialised] = useState(false)
-  const [payslipSource, setPayslipSource] = useState<'inflowhr' | 'xero' | 'sage'>('inflowhr')
   const monthNames = lang === 'de' ? MONTH_NAMES_DE : MONTH_NAMES_EN
 
   const fyMonths = getFYMonths()
   const [monthIdx, setMonthIdx] = useState(fyMonths.length - 1)
 
   const current = fyMonths[monthIdx]
-
-  useEffect(() => {
-    if (!companyUser?.company_id) return
-    const cid = companyUser.company_id
-    Promise.all([
-      supabase.from('xero_integrations').select('payslip_source').eq('company_id', cid).maybeSingle(),
-      supabase.from('sage_integrations').select('payslip_source').eq('company_id', cid).maybeSingle(),
-    ]).then(([xeroRes, sageRes]) => {
-      if (xeroRes.data?.payslip_source === 'xero') { setPayslipSource('xero'); return }
-      if (sageRes.data?.payslip_source === 'sage') { setPayslipSource('sage'); return }
-      setPayslipSource('inflowhr')
-    })
-  }, [companyUser?.company_id])
 
   const loadPayslip = useCallback(async () => {
     if (!current || !EMPLOYEE_ID) return
@@ -85,22 +72,15 @@ export default function Payslips() {
     const endOfMonth = new Date(current.year, current.month + 1, 0)
     const endStr = `${current.year}-${String(current.month + 1).padStart(2, '0')}-${String(endOfMonth.getDate()).padStart(2, '0')}`
 
-    let query = supabase.from('payslips')
+    const { data } = await supabase.from('payslips')
       .select('*')
       .eq('employee_id', EMPLOYEE_ID)
       .eq('company_id', companyUser?.company_id)
       .gte('pay_period_start', startOfMonth)
       .lte('pay_period_start', endStr)
-
-    if (payslipSource === 'xero') {
-      query = query.eq('source', 'xero')
-    } else if (payslipSource === 'sage') {
-      query = query.eq('source', 'sage')
-    } else {
-      query = query.or('source.is.null,source.eq.')
-    }
-
-    const { data } = await query.limit(1).single()
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
     setPayslip(data as PayslipData | null)
 
     if (!data && !initialised && monthIdx > 0) {
@@ -110,7 +90,7 @@ export default function Payslips() {
     }
     setInitialised(true)
     setLoading(false)
-  }, [EMPLOYEE_ID, current?.year, current?.month, companyUser?.company_id, initialised, monthIdx, payslipSource])
+  }, [EMPLOYEE_ID, current?.year, current?.month, companyUser?.company_id, initialised, monthIdx])
 
   useEffect(() => { loadPayslip() }, [loadPayslip])
 
@@ -197,6 +177,16 @@ export default function Payslips() {
         </button>
         <span className="payslips-month-label">
           {current ? `${monthNames[current.month]} ${current.year}` : ''}
+          {payslip?.source && (
+            <span style={{
+              marginLeft: 8, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+              background: payslip.source === 'sage' ? '#e0f2e9' : payslip.source === 'xero' ? '#dbeafe' : '#f3f0ff',
+              color: payslip.source === 'sage' ? '#166534' : payslip.source === 'xero' ? '#1e40af' : '#5b21b6',
+              verticalAlign: 'middle',
+            }}>
+              {payslip.source === 'sage' ? 'Sage' : payslip.source === 'xero' ? 'Xero' : 'InflowHR'}
+            </span>
+          )}
         </span>
         <button className="payslips-nav-btn" disabled={!canNext} onClick={() => setMonthIdx(i => i + 1)}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
