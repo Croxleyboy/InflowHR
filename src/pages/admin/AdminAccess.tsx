@@ -61,6 +61,7 @@ const FEATURE_KEYS = [
   { key: 'talent_intelligence', label: 'Talent Intelligence' },
   { key: 'user_guides', label: 'User Guides' },
   { key: 'access', label: 'Access Management' },
+  { key: 'feature_switching', label: 'Feature Switching' },
 ]
 
 function defaultPerms(roleKey: string): Record<string, boolean> {
@@ -143,6 +144,21 @@ export default function AdminAccess() {
     employees.filter(e => !assignedIds.has(e.id)),
   [employees, assignedIds])
 
+  async function promoteToAdmin(companyId: string, employeeId: string) {
+    await supabase.from('employees').update({ is_admin: true }).eq('id', employeeId)
+    const { data: cuRow } = await supabase.from('company_users')
+      .select('id').eq('company_id', companyId).eq('employee_id', employeeId).maybeSingle()
+    if (cuRow) {
+      await supabase.from('company_users').update({ role: 'admin' }).eq('id', cuRow.id)
+    }
+  }
+
+  async function demoteFromAdmin(companyId: string, employeeId: string) {
+    await supabase.from('employees').update({ is_admin: false }).eq('id', employeeId)
+    await supabase.from('company_users').update({ role: 'employee' })
+      .eq('company_id', companyId).eq('employee_id', employeeId)
+  }
+
   async function grantAccess() {
     if (!selectedEmployee || !selectedCompanyId) return
     setSaving(true)
@@ -153,6 +169,11 @@ export default function AdminAccess() {
       granted_by: employeeName,
     })
     if (error) { showError('Failed to grant access: ' + error.message); setSaving(false); return }
+
+    if (selectedRole === 'company_admin') {
+      await promoteToAdmin(selectedCompanyId, selectedEmployee)
+    }
+
     showSuccess('Access granted')
     setSelectedEmployee('')
     setSelectedRole('read_only')
@@ -162,17 +183,34 @@ export default function AdminAccess() {
 
   async function revokeAccess(id: number) {
     if (!confirm('Revoke this employee\'s admin portal access?')) return
+    const row = accessList.find(a => a.id === id)
     const { error } = await supabase.from('admin_portal_access').delete().eq('id', id)
     if (error) { showError('Failed to revoke: ' + error.message); return }
+
+    if (row?.role_key === 'company_admin' && selectedCompanyId) {
+      await demoteFromAdmin(selectedCompanyId, row.employee_id)
+    }
+
     showSuccess('Access revoked')
     loadData()
   }
 
   async function updateAccessRole(id: number, newRole: string) {
+    const row = accessList.find(a => a.id === id)
+    const oldRole = row?.role_key
     const { error } = await supabase.from('admin_portal_access')
       .update({ role_key: newRole })
       .eq('id', id)
     if (error) { showError('Failed to update role: ' + error.message); return }
+
+    if (selectedCompanyId && row) {
+      if (newRole === 'company_admin' && oldRole !== 'company_admin') {
+        await promoteToAdmin(selectedCompanyId, row.employee_id)
+      } else if (oldRole === 'company_admin' && newRole !== 'company_admin') {
+        await demoteFromAdmin(selectedCompanyId, row.employee_id)
+      }
+    }
+
     showSuccess('Role updated')
     loadData()
   }
