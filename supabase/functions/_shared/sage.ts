@@ -83,8 +83,10 @@ export function parseSagePayslipText(text: string): ParsedPayslip[] {
 
     if (!empName || !empNo) continue
 
-    const deptM = block.match(/Department:\s*([A-Za-z][A-Za-z0-9 &/-]*?)(?:\s{2,}|$)/i)
-    if (deptM) dept = deptM[1].trim()
+    for (const line of lines) {
+      const dm = line.match(/Department:\s*([A-Za-z][A-Za-z0-9 &/-]+)/i)
+      if (dm) { dept = dm[1].trim(); break }
+    }
 
     const niM = block.match(/NI\s+(?:Number|No\.?):\s*([A-Z]{2}\d{6}[A-D])/i)
     if (niM) niNumber = niM[1].trim()
