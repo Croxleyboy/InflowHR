@@ -12,6 +12,7 @@ interface Employee {
   job_title: string | null
   department: string | null
   avatar_url: string | null
+  contract_type: string | null
 }
 
 interface LeaveRow {
@@ -54,6 +55,17 @@ function fmtIso(d: Date): string {
 function fmtDate(iso: string): string {
   const d = new Date(iso)
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function countWorkingDays(from: Date, to: Date): number {
+  let count = 0
+  const d = new Date(from)
+  while (d <= to) {
+    const dow = d.getDay()
+    if (dow !== 0 && dow !== 6) count++
+    d.setDate(d.getDate() + 1)
+  }
+  return count
 }
 
 function fmtRelative(iso: string): string {
@@ -103,6 +115,10 @@ export default function AdminDashboardModern() {
   const [supportGrant, setSupportGrant] = useState<{ active: boolean; expires_at: string; reason: string } | null>(null)
   const [grantingAccess, setGrantingAccess] = useState(false)
   const [revokingAccess, setRevokingAccess] = useState(false)
+  const [popupDate, setPopupDate] = useState<string | null>(null)
+  const [empBreakdown, setEmpBreakdown] = useState({ fulltime: 0, parttime: 0, freelance: 0, ftChange: 0, flChange: 0 })
+  const [attendanceRate, setAttendanceRate] = useState({ rate: 0, change: 0 , sickDays: 0, daysOff: 0, onTime: 0 })
+  const [topAssets, setTopAssets] = useState<{ type: string; count: number; color: string }[]>([])
 
   const firstName = employeeName.split(' ')[0] || 'Admin'
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
@@ -125,7 +141,7 @@ export default function AdminDashboardModern() {
 
     const [emp, lvCal, lvFY, expFY, notif, leaveTypes] = await Promise.all([
       supabase.from('employees')
-        .select('id, first_name, last_name, job_title, department, avatar_url')
+        .select('id, first_name, last_name, job_title, department, avatar_url, contract_type')
         .eq('company_id', cid).eq('is_active', true)
         .order('first_name', { ascending: true }),
       supabase.from('leave_requests')
@@ -220,6 +236,78 @@ export default function AdminDashboardModern() {
     const aPrev = assetsPrev.count || 0
     setAssetsStats({ total: aNow, change: aPrev > 0 ? Math.round(((aNow - aPrev) / aPrev) * 100) : 0 })
 
+    // ── Card data: employee breakdown, attendance, top assets ──
+    const empList = employeeList
+    const ft = empList.filter(e => e.contract_type === 'Full-time' || !e.contract_type).length
+    const fl = empList.filter(e => e.contract_type === 'Freelance').length
+    const pt = empList.length - ft - fl
+
+    const [ftPrev, flPrev] = await Promise.all([
+      supabase.from('employees').select('id', { count: 'exact', head: true })
+        .eq('company_id', cid).eq('is_active', true).eq('contract_type', 'Full-time').lte('created_at', monthAgoEnd + 'T23:59:59'),
+      supabase.from('employees').select('id', { count: 'exact', head: true })
+        .eq('company_id', cid).eq('is_active', true).eq('contract_type', 'Freelance').lte('created_at', monthAgoEnd + 'T23:59:59'),
+    ])
+    setEmpBreakdown({
+      fulltime: ft, parttime: pt, freelance: fl,
+      ftChange: ft - (ftPrev.count || 0),
+      flChange: fl - (flPrev.count || 0),
+    })
+
+    const now = new Date()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+    const workingDaysThis = countWorkingDays(monthStart, now)
+    const workingDaysPrev = countWorkingDays(prevMonthStart, prevMonthEnd)
+    const totalSlots = empList.length * workingDaysThis
+    const totalSlotsPrev = empList.length * workingDaysPrev
+
+    const [sickThis, offThis, sickPrev, offPrev] = await Promise.all([
+      supabase.from('leave_requests').select('days_requested')
+        .eq('company_id', cid).eq('status', 'approved')
+        .or('leave_type_id.is.null')
+        .gte('start_date', fmtIso(monthStart)).lte('start_date', fmtIso(now)),
+      supabase.from('leave_requests').select('days_requested')
+        .eq('company_id', cid).eq('status', 'approved')
+        .gte('start_date', fmtIso(monthStart)).lte('start_date', fmtIso(now)),
+      supabase.from('leave_requests').select('days_requested')
+        .eq('company_id', cid).eq('status', 'approved')
+        .gte('start_date', fmtIso(prevMonthStart)).lte('start_date', fmtIso(prevMonthEnd)),
+      supabase.from('leave_requests').select('days_requested')
+        .eq('company_id', cid).eq('status', 'approved')
+        .gte('start_date', fmtIso(prevMonthStart)).lte('start_date', fmtIso(prevMonthEnd)),
+    ])
+
+    const sickLeaveTypes = await supabase.from('leave_types').select('id').eq('company_id', cid).ilike('name', '%sick%')
+    const sickTypeIds = new Set(((sickLeaveTypes.data as { id: number }[]) || []).map(t => t.id))
+
+    const allLeaveThis = await supabase.from('leave_requests')
+      .select('days_requested, leave_type_id')
+      .eq('company_id', cid).eq('status', 'approved')
+      .gte('start_date', fmtIso(monthStart)).lte('start_date', fmtIso(now))
+
+    const leaveRowsThis = (allLeaveThis.data as { days_requested: number; leave_type_id: number | null }[]) || []
+    const sickDaysThis = leaveRowsThis.filter(r => r.leave_type_id && sickTypeIds.has(r.leave_type_id)).reduce((s, r) => s + (r.days_requested || 0), 0)
+    const totalOffThis = leaveRowsThis.reduce((s, r) => s + (r.days_requested || 0), 0)
+    const daysOffThis = totalOffThis - sickDaysThis
+
+    const offDaysPrev = ((offPrev.data as { days_requested: number }[]) || []).reduce((s, r) => s + (r.days_requested || 0), 0)
+    const rateThis = totalSlots > 0 ? Math.round(((totalSlots - totalOffThis) / totalSlots) * 100) : 100
+    const ratePrev = totalSlotsPrev > 0 ? Math.round(((totalSlotsPrev - offDaysPrev) / totalSlotsPrev) * 100) : 100
+    setAttendanceRate({ rate: rateThis, change: rateThis - ratePrev, sickDays: Math.round(sickDaysThis), daysOff: Math.round(daysOffThis), onTime: Math.round(totalSlots - totalOffThis) })
+
+    const { data: assetRows } = await supabase.from('company_assets')
+      .select('asset_type')
+      .eq('company_id', cid)
+    const typeCounts: Record<string, number> = {}
+    ;((assetRows as { asset_type: string }[]) || []).forEach(r => {
+      typeCounts[r.asset_type] = (typeCounts[r.asset_type] || 0) + 1
+    })
+    const ASSET_COLOURS = ['#6366f1', '#f59e0b', '#10b981', '#ec4899', '#3b82f6']
+    const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 3)
+    setTopAssets(sorted.map(([type, count], i) => ({ type, count, color: ASSET_COLOURS[i % ASSET_COLOURS.length] })))
+
     await loadSupportStatus(cid)
     setLoading(false)
   }
@@ -309,6 +397,8 @@ export default function AdminDashboardModern() {
     }
     return m
   }, [employees])
+
+  const empById = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees])
 
   function leavesForDay(iso: string) {
     return filteredLeaves.filter(l => {
@@ -464,6 +554,132 @@ export default function AdminDashboardModern() {
             </section>
           </div>
 
+          {/* ── Insight Cards ── */}
+          <div className="dm-insight-strip">
+            {/* Total Employees */}
+            <section className="dm-insight-card" onClick={() => navigate('/admin/employees')}>
+              <div className="dm-insight-head">
+                <span className="dm-insight-title">Total Employees</span>
+                <span className="dm-insight-dots">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                </span>
+              </div>
+              <div className="dm-insight-body dm-insight-emp">
+                <div className="dm-emp-col">
+                  <div className="dm-emp-row-big">
+                    <span className="dm-emp-num">{empBreakdown.fulltime}</span>
+                    {empBreakdown.ftChange !== 0 && (
+                      <span className={`dm-emp-badge ${empBreakdown.ftChange > 0 ? 'dm-emp-badge-up' : 'dm-emp-badge-down'}`}>
+                        <svg width="10" height="10" viewBox="0 0 12 12"><path d={empBreakdown.ftChange > 0 ? 'M6 2L10 7H2Z' : 'M6 10L2 5H10Z'} fill="currentColor"/></svg>
+                        {Math.abs(empBreakdown.ftChange)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="dm-emp-row-big">
+                    <span className="dm-emp-num dm-emp-num-sm">{empBreakdown.freelance}</span>
+                    {empBreakdown.flChange !== 0 && (
+                      <span className={`dm-emp-badge ${empBreakdown.flChange > 0 ? 'dm-emp-badge-up' : 'dm-emp-badge-down'}`}>
+                        <svg width="10" height="10" viewBox="0 0 12 12"><path d={empBreakdown.flChange > 0 ? 'M6 2L10 7H2Z' : 'M6 10L2 5H10Z'} fill="currentColor"/></svg>
+                        {Math.abs(empBreakdown.flChange)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="dm-emp-col dm-emp-labels">
+                  <div className="dm-emp-bar-row">
+                    <div className="dm-emp-bar"><div className="dm-emp-bar-fill dm-emp-bar-ft" style={{ width: employees.length > 0 ? `${(empBreakdown.fulltime / employees.length) * 100}%` : '0%' }}/></div>
+                    <span className="dm-emp-bar-label">Full-time</span>
+                  </div>
+                  <div className="dm-emp-bar-row">
+                    <div className="dm-emp-bar"><div className="dm-emp-bar-fill dm-emp-bar-fl" style={{ width: employees.length > 0 ? `${(empBreakdown.freelance / employees.length) * 100}%` : '0%' }}/></div>
+                    <span className="dm-emp-bar-label">Freelance</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Attendance Overview */}
+            <section className="dm-insight-card">
+              <div className="dm-insight-head">
+                <span className="dm-insight-title">Attendance Overview</span>
+                <span className="dm-insight-dots">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                </span>
+              </div>
+              <div className="dm-insight-body dm-insight-attend">
+                <div className="dm-attend-left">
+                  <div className="dm-attend-ring-wrap">
+                    <svg viewBox="0 0 100 100" className="dm-attend-ring">
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="#f3f4f6" strokeWidth="10"/>
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="#8b5cf6" strokeWidth="10"
+                        strokeLinecap="round"
+                        strokeDasharray={`${(attendanceRate.rate / 100) * 2 * Math.PI * 40} ${2 * Math.PI * 40}`}
+                        transform="rotate(-90 50 50)"/>
+                      <text x="50" y="48" textAnchor="middle" className="dm-attend-num">{attendanceRate.rate}%</text>
+                    </svg>
+                  </div>
+                  <div className={`dm-attend-change ${attendanceRate.change >= 0 ? 'dm-attend-up' : 'dm-attend-down'}`}>
+                    <svg width="10" height="10" viewBox="0 0 12 12"><path d={attendanceRate.change >= 0 ? 'M6 2L10 7H2Z' : 'M6 10L2 5H10Z'} fill="currentColor"/></svg>
+                    {Math.abs(attendanceRate.change)}% <span className="dm-attend-since">since last month</span>
+                  </div>
+                </div>
+                <div className="dm-attend-legend">
+                  <div className="dm-attend-legend-row"><span className="dm-attend-dot" style={{ background: '#10b981' }}/> <span>On time</span> <span className="dm-attend-legend-val">{attendanceRate.onTime}</span></div>
+                  <div className="dm-attend-legend-row"><span className="dm-attend-dot" style={{ background: '#f59e0b' }}/> <span>Day Off</span> <span className="dm-attend-legend-val">{attendanceRate.daysOff}</span></div>
+                  <div className="dm-attend-legend-row"><span className="dm-attend-dot" style={{ background: '#8b5cf6' }}/> <span>Sick Leave</span> <span className="dm-attend-legend-val">{attendanceRate.sickDays}</span></div>
+                </div>
+              </div>
+            </section>
+
+            {/* Assets Deployed */}
+            <section className="dm-insight-card" onClick={() => navigate('/admin/asset-management')}>
+              <div className="dm-insight-head">
+                <span className="dm-insight-title">Assets Deployed</span>
+                <span className="dm-insight-dots">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                </span>
+              </div>
+              <div className="dm-insight-body dm-insight-assets">
+                <div className="dm-asset-gauge-wrap">
+                  <svg viewBox="0 0 120 70" className="dm-asset-gauge">
+                    <path d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke="#e5e7eb" strokeWidth="10" strokeLinecap="round"/>
+                    {(() => {
+                      const total = assetsStats.total
+                      const maxVal = Math.max(total, 1)
+                      let offset = 0
+                      return topAssets.map((a, i) => {
+                        const frac = a.count / maxVal
+                        const arcLen = frac * Math.PI * 50
+                        const totalArc = Math.PI * 50
+                        const el = (
+                          <path key={i} d="M10 65 A50 50 0 0 1 110 65" fill="none" stroke={a.color} strokeWidth="10"
+                            strokeLinecap="round"
+                            strokeDasharray={`${arcLen} ${totalArc}`}
+                            strokeDashoffset={-offset}
+                          />
+                        )
+                        offset += arcLen
+                        return el
+                      })
+                    })()}
+                    <text x="60" y="55" textAnchor="middle" className="dm-asset-gauge-num">{assetsStats.total}</text>
+                    <text x="60" y="67" textAnchor="middle" className="dm-asset-gauge-lbl">Overall</text>
+                  </svg>
+                </div>
+                <div className="dm-asset-list">
+                  {topAssets.map((a, i) => (
+                    <div key={i} className="dm-asset-list-row">
+                      <span className="dm-asset-dot" style={{ background: a.color }}/>
+                      <span className="dm-asset-count">{String(a.count).padStart(2, '0')}</span>
+                      <span className="dm-asset-type">{a.type}</span>
+                    </div>
+                  ))}
+                  {topAssets.length === 0 && <span className="dm-empty" style={{ padding: 8, fontSize: 12 }}>No assets</span>}
+                </div>
+              </div>
+            </section>
+          </div>
+
           <div className="dm-grid">
             {/* ── Leave Calendar (Hiring slot) ── */}
             <section className="dm-card dm-card-cal">
@@ -489,13 +705,13 @@ export default function AdminDashboardModern() {
                       const hasPending = all.some(l => l.status === 'pending')
                       const hasHalf = all.some(l => Number(l.days_requested) === 0.5 && l.start_date === l.end_date)
                       const statusClass = hasApproved ? 'dm-cal-approved' : hasPending ? 'dm-cal-pending' : ''
-                      const dayLeaves = all.slice(0, 3)
-                      const more = all.length - dayLeaves.length
+                      const preview = all.slice(0, 2)
+                      const extra = all.length - preview.length
                       return (
                         <div key={iso} className={`dm-cal-cell ${statusClass} ${isToday ? 'dm-cal-today' : ''} ${isWeekend ? 'dm-cal-weekend' : ''} ${hasHalf ? 'dm-cal-half' : ''}`}>
                           <span className="dm-cal-num">{day.getDate()}</span>
                           <div className="dm-cal-chips">
-                            {dayLeaves.map(l => {
+                            {preview.map(l => {
                               const half = Number(l.days_requested) === 0.5 && l.start_date === l.end_date
                               return (
                                 <div
@@ -508,8 +724,17 @@ export default function AdminDashboardModern() {
                                 </div>
                               )
                             })}
-                            {more > 0 && <div className="dm-cal-chip dm-cal-chip-more">+{more}</div>}
+                            {extra > 0 && (
+                              <button className="dm-cal-chip dm-cal-chip-expand" onClick={() => setPopupDate(iso)}>
+                                +{extra} <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                              </button>
+                            )}
                           </div>
+                          {all.length > 0 && all.length <= 2 && (
+                            <button className="dm-cal-more-btn" onClick={() => setPopupDate(iso)} title="View details">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
+                          )}
                         </div>
                       )
                     })}
@@ -521,6 +746,56 @@ export default function AdminDashboardModern() {
                 <span className="dm-cal-legend-item"><span className="dm-cal-legend-swatch dm-cal-legend-pending"/>Pending</span>
                 <span className="dm-cal-legend-item"><span className="dm-cal-legend-swatch dm-cal-legend-half"/>Half day</span>
               </div>
+
+              {popupDate && (() => {
+                const dayLeaves = leavesForDay(popupDate)
+                  .sort((a, b) => {
+                    const an = `${a.employee?.first_name || ''} ${a.employee?.last_name || ''}`.toLowerCase()
+                    const bn = `${b.employee?.first_name || ''} ${b.employee?.last_name || ''}`.toLowerCase()
+                    return an.localeCompare(bn)
+                  })
+                const popupD = new Date(popupDate + 'T00:00:00')
+                const dateLabel = `${String(popupD.getDate()).padStart(2, '0')}/${String(popupD.getMonth() + 1).padStart(2, '0')}/${popupD.getFullYear()}`
+                return (
+                  <div className="dm-cal-popup-overlay" onClick={() => setPopupDate(null)}>
+                    <div className="dm-cal-popup" onClick={e => e.stopPropagation()}>
+                      <div className="dm-cal-popup-head">
+                        <h3 className="dm-cal-popup-title">On Leave — {dateLabel}</h3>
+                        <button className="dm-cal-popup-close" onClick={() => setPopupDate(null)}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                      <div className="dm-cal-popup-count">{dayLeaves.length} {dayLeaves.length === 1 ? 'person' : 'people'} off</div>
+                      <div className="dm-cal-popup-list">
+                        {dayLeaves.map(l => {
+                          const emp = empById.get(l.employee_id)
+                          const half = Number(l.days_requested) === 0.5 && l.start_date === l.end_date
+                          return (
+                            <div key={l.id} className="dm-cal-popup-row">
+                              <div className="dm-cal-popup-avatar">
+                                {emp?.avatar_url
+                                  ? <img src={emp.avatar_url} alt="" className="dm-cal-popup-img" />
+                                  : <span className="dm-cal-popup-initials" style={{ background: empColour.get(l.employee_id) || '#6b7280' }}>
+                                      {(l.employee?.first_name || '?')[0]}{(l.employee?.last_name || '?')[0]}
+                                    </span>
+                                }
+                              </div>
+                              <div className="dm-cal-popup-info">
+                                <span className="dm-cal-popup-name">{l.employee?.first_name} {l.employee?.last_name}</span>
+                                <span className="dm-cal-popup-dept">{l.employee?.department || '—'}</span>
+                              </div>
+                              <div className="dm-cal-popup-meta">
+                                <span className={`dm-cal-popup-status dm-cal-popup-status-${l.status}`}>{l.status}{half ? ' (½)' : ''}</span>
+                                <span className="dm-cal-popup-type">{l.leave_type?.name || 'Leave'}</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
             </section>
 
             {/* ── Leave Donut ── */}
@@ -778,6 +1053,89 @@ const CSS = `
 .dm-cal-legend-pending { background: #fef3c7; border-color: #fcd34d; }
 .dm-cal-legend-half { background: linear-gradient(135deg, #dcfce7 0%, #dcfce7 50%, #f8fafc 50%, #f8fafc 100%); border-color: #86efac; }
 
+.dm-cal-chip-expand { background: #e2e8f0 !important; color: #475569; box-shadow: none; border: none; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 3px; height: 18px; border-radius: 4px; font-size: 10px; font-weight: 700; padding: 0 6px; }
+.dm-cal-chip-expand:hover { background: #cbd5e1 !important; }
+.dm-cal-more-btn { position: absolute; bottom: 3px; right: 3px; width: 16px; height: 16px; border-radius: 50%; background: #e2e8f0; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #64748b; padding: 0; z-index: 2; }
+.dm-cal-more-btn:hover { background: #cbd5e1; }
+
+.dm-cal-popup-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; z-index: 1000; animation: dm-fade-in 0.15s ease-out; }
+@keyframes dm-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.dm-cal-popup { background: #fff; border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,0.18); width: 420px; max-width: calc(100vw - 32px); max-height: 80vh; display: flex; flex-direction: column; animation: dm-slide-up 0.2s ease-out; }
+@keyframes dm-slide-up { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.dm-cal-popup-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 0; }
+.dm-cal-popup-title { margin: 0; font-size: 16px; font-weight: 700; color: #0f172a; }
+.dm-cal-popup-close { background: none; border: none; cursor: pointer; color: #94a3b8; padding: 4px; border-radius: 6px; display: flex; }
+.dm-cal-popup-close:hover { background: #f1f5f9; color: #475569; }
+.dm-cal-popup-count { padding: 4px 20px 14px; font-size: 12px; color: #94a3b8; font-weight: 600; border-bottom: 1px solid #f1f5f9; }
+.dm-cal-popup-list { overflow-y: auto; padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 2px; }
+.dm-cal-popup-row { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 10px; }
+.dm-cal-popup-row:hover { background: #f8fafc; }
+.dm-cal-popup-avatar { flex-shrink: 0; }
+.dm-cal-popup-img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+.dm-cal-popup-initials { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 700; }
+.dm-cal-popup-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.dm-cal-popup-name { font-size: 13px; font-weight: 700; color: #0f172a; }
+.dm-cal-popup-dept { font-size: 11px; color: #94a3b8; }
+.dm-cal-popup-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
+.dm-cal-popup-status { font-size: 11px; font-weight: 700; text-transform: capitalize; padding: 2px 8px; border-radius: 999px; }
+.dm-cal-popup-status-approved { background: #dcfce7; color: #15803d; }
+.dm-cal-popup-status-pending { background: #fef3c7; color: #92400e; }
+.dm-cal-popup-type { font-size: 10px; color: #94a3b8; }
+
+/* Insight Cards */
+.dm-insight-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+.dm-insight-card { background: #fff; border-radius: 14px; border: 1px solid #eef0f4; padding: 18px 20px; cursor: pointer; transition: box-shadow 0.2s, transform 0.15s; }
+.dm-insight-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.06); transform: translateY(-1px); }
+.dm-insight-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.dm-insight-title { font-size: 13px; font-weight: 700; color: #475569; letter-spacing: 0.01em; }
+.dm-insight-dots { opacity: 0.5; }
+.dm-insight-body { display: flex; gap: 16px; align-items: center; }
+
+/* Employees card */
+.dm-insight-emp { gap: 20px; }
+.dm-emp-col { display: flex; flex-direction: column; gap: 10px; }
+.dm-emp-row-big { display: flex; align-items: center; gap: 8px; }
+.dm-emp-num { font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1; }
+.dm-emp-num-sm { font-size: 22px; color: #475569; }
+.dm-emp-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; }
+.dm-emp-badge-up { background: #dcfce7; color: #15803d; }
+.dm-emp-badge-down { background: #fee2e2; color: #dc2626; }
+.dm-emp-labels { flex: 1; min-width: 0; gap: 12px; }
+.dm-emp-bar-row { display: flex; flex-direction: column; gap: 4px; }
+.dm-emp-bar { height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden; width: 100%; }
+.dm-emp-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+.dm-emp-bar-ft { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.dm-emp-bar-fl { background: linear-gradient(90deg, #10b981, #34d399); }
+.dm-emp-bar-label { font-size: 11px; color: #94a3b8; font-weight: 600; }
+
+/* Attendance card */
+.dm-insight-attend { gap: 16px; }
+.dm-attend-left { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
+.dm-attend-ring-wrap { width: 90px; height: 90px; }
+.dm-attend-ring { width: 100%; height: 100%; }
+.dm-attend-num { font-size: 18px; font-weight: 800; fill: #0f172a; }
+.dm-attend-change { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.dm-attend-up { color: #15803d; }
+.dm-attend-down { color: #dc2626; }
+.dm-attend-since { color: #94a3b8; font-weight: 500; }
+.dm-attend-legend { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.dm-attend-legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; font-weight: 500; }
+.dm-attend-legend-row span:last-child { margin-left: auto; }
+.dm-attend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dm-attend-legend-val { font-weight: 700; color: #0f172a; }
+
+/* Assets card */
+.dm-insight-assets { gap: 12px; }
+.dm-asset-gauge-wrap { flex-shrink: 0; width: 110px; }
+.dm-asset-gauge { width: 100%; height: auto; }
+.dm-asset-gauge-num { font-size: 22px; font-weight: 800; fill: #0f172a; }
+.dm-asset-gauge-lbl { font-size: 9px; font-weight: 600; fill: #94a3b8; letter-spacing: 0.05em; text-transform: uppercase; }
+.dm-asset-list { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.dm-asset-list-row { display: flex; align-items: center; gap: 8px; }
+.dm-asset-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dm-asset-count { font-size: 14px; font-weight: 800; color: #0f172a; min-width: 22px; }
+.dm-asset-type { font-size: 12px; color: #64748b; font-weight: 500; }
+
 /* Donut */
 .dm-donut-wrap { display: flex; justify-content: center; padding: 6px 0 14px; }
 .dm-donut { width: 180px; height: 180px; }
@@ -831,12 +1189,14 @@ const CSS = `
 
 @media (max-width: 1024px) {
   .dm-kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .dm-insight-strip { grid-template-columns: 1fr; }
   .dm-grid { grid-template-columns: 1fr; }
   .dm-card-cal, .dm-card-leave, .dm-card-expense, .dm-card-tasks, .dm-card-emps { grid-column: 1; grid-row: auto; }
 }
 @media (max-width: 640px) {
   .dm { padding: 12px; }
   .dm-kpi-strip { grid-template-columns: 1fr; }
+  .dm-insight-strip { grid-template-columns: 1fr; }
   .dm-cal-cell { min-height: 60px; padding: 4px; }
   .dm-task-row { grid-template-columns: 4px 1fr auto; }
   .dm-task-time { display: none; }
