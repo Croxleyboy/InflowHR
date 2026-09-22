@@ -4,9 +4,18 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/formatters'
-import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import pdfjsWorkerRaw from 'pdfjs-dist/build/pdf.worker.min.mjs?raw'
 
 const PAGE_SIZE = 30
+
+let _workerBlobUrl: string | null = null
+function getPdfWorkerUrl(): string {
+  if (!_workerBlobUrl) {
+    const blob = new Blob([pdfjsWorkerRaw], { type: 'application/javascript' })
+    _workerBlobUrl = URL.createObjectURL(blob)
+  }
+  return _workerBlobUrl
+}
 
 // UK 2024/25 tax & NI brackets applied to monthly taxable pay (annual salary after sacrifice)
 function calcMonthlyTax(annualTaxable: number): number {
@@ -1098,7 +1107,7 @@ export default function AdminPayroll() {
       } else {
         const arrayBuf = await file.arrayBuffer()
         const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl
+        pdfjsLib.GlobalWorkerOptions.workerSrc = getPdfWorkerUrl()
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuf) }).promise
         const pages: string[] = []
         for (let i = 1; i <= pdf.numPages; i++) {
