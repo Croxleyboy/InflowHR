@@ -1,6 +1,6 @@
 # InflowHR — List of Subprocessors
 
-**Last updated:** 19-09-2026
+**Last updated:** 22-09-2026
 
 Under GDPR Article 28, InflowHR maintains this list of subprocessors that process personal data on behalf of our customers. We will notify customers of any changes to this list at least 30 days before a new subprocessor begins processing data.
 
@@ -24,7 +24,9 @@ These subprocessors are only engaged when a customer explicitly enables the inte
 | Subprocessor | Purpose | Data processed | Location | DPA in place |
 |-------------|---------|---------------|----------|-------------|
 | **Xero Ltd** | Payroll integration and payslip retrieval | Employee names, payroll data, payslip PDFs | AU/UK/Global | Yes — Xero DPA |
+| **Sage Group plc** | Payroll integration and payslip upload | Employee names, payroll data, payslip PDFs | UK | Yes — Sage DPA |
 | **Microsoft (Azure AD)** | Single sign-on authentication | Email addresses, authentication tokens | EU/Global | Yes — Microsoft DPA |
+| **Microsoft (Teams)** | Teams presence and leave notifications (where enabled) | Employee names, email addresses, leave status | EU/Global | Yes — Microsoft DPA |
 
 ## Embedded Services
 

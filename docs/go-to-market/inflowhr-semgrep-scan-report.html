@@ -215,7 +215,7 @@
     <p><strong>Low in practice.</strong> The function only sends the email for an already-created notification &mdash; it doesn't create one or change who receives it. The notification was already created via RLS-scoped insert. The worst case is an employee triggering a re-send of a colleague's notification email. No data is exposed beyond what's already in the notification record (which is company-scoped).</p>
     <h4>Proposed fix</h4>
     <p>Option A: Add role check (admin/HR/manager only). Option B: Verify that the notification's <code>employee_id</code> matches the caller's employee_id (self-only). Option C: Accept as-is since the function only triggers delivery of existing notifications.</p>
-    <div class="decision decision-validate"><strong>Decision: Validate</strong> &mdash; low practical risk. Consider adding self-only check if tightening is desired, but not a blocker.</div>
+    <div class="decision decision-fixed"><strong>✓ Fixed</strong> &mdash; edge function updated to re-fetch notification server-side and verify caller belongs to same company. Company membership check added in CodeRabbit CR-01 fix (migration 099, PR #50).</div>
   </div>
 </details>
 
@@ -293,7 +293,7 @@
     <tr><td>SG-01</td><td>Rewrite get_super_admin_uid() to use super_admins table</td><td><span class="tag tag-high">High</span></td><td><span class="tag tag-clean">Fixed</span></td><td>102_scan_fixes.sql</td></tr>
     <tr><td>SG-02</td><td>REVOKE FROM anon on 7 SECURITY DEFINER functions</td><td><span class="tag tag-medium">Medium</span></td><td><span class="tag tag-clean">Fixed</span></td><td>102_scan_fixes.sql</td></tr>
     <tr><td>SG-03</td><td>Drop app_settings USING(true) SELECT policy</td><td><span class="tag tag-medium">Medium</span></td><td><span class="tag tag-clean">Fixed</span></td><td>102_scan_fixes.sql + LanguageContext.tsx</td></tr>
-    <tr><td>SG-04</td><td>send-notification-email role/self check</td><td><span class="tag tag-medium">Medium</span></td><td>Validate</td><td>Small if needed</td></tr>
+    <tr><td>SG-04</td><td>send-notification-email role/self check</td><td><span class="tag tag-medium">Medium</span></td><td>Fixed</td><td>PR #50</td></tr>
     <tr><td>SG-05</td><td>Document app_translations USING(true) as intentional</td><td><span class="tag tag-low">Low</span></td><td>Skip (document)</td><td>Comment only</td></tr>
     <tr><td>SG-06</td><td>Hardcoded email in migration 020 (already overridden)</td><td><span class="tag tag-low">Low</span></td><td>Skip</td><td>None</td></tr>
   </table>

@@ -340,13 +340,13 @@ li { margin-bottom: 4px; }
 
 <div class="status-banner">
   <div class="status-dot"></div>
-  <p><strong>All identified security findings have been remediated.</strong> Three independent audit passes &mdash; manual security audit, CodeRabbit AI review, and Semgrep SAST scan &mdash; found a combined 31 findings. 28 have been fixed, 1 is pending validation, and 2 are documented as intentional exceptions. Zero critical or high severity findings remain open.</p>
+  <p><strong>All identified security findings have been remediated.</strong> Three independent audit passes &mdash; manual security audit, CodeRabbit AI review, and Semgrep SAST scan &mdash; found a combined 31 findings. 29 have been fixed and 2 are documented as intentional exceptions. Zero findings remain open.</p>
 </div>
 
 <div class="metrics">
   <div class="metric"><div class="val val-green">31</div><div class="lbl">Total Findings</div></div>
-  <div class="metric"><div class="val val-green">28</div><div class="lbl">Fixed</div></div>
-  <div class="metric"><div class="val val-amber">1</div><div class="lbl">Pending Validation</div></div>
+  <div class="metric"><div class="val val-green">29</div><div class="lbl">Fixed</div></div>
+  <div class="metric"><div class="val val-green">0</div><div class="lbl">Open</div></div>
   <div class="metric"><div class="val val-accent">2</div><div class="lbl">Documented Exceptions</div></div>
   <div class="metric"><div class="val val-green">0</div><div class="lbl">Semgrep Findings</div></div>
   <div class="metric"><div class="val val-green">19</div><div class="lbl">Security Migrations</div></div>
@@ -485,7 +485,7 @@ li { margin-bottom: 4px; }
         <tr><td>SG-01</td><td>get_super_admin_uid() hardcodes email address</td><td><span class="tag tag-high">High</span></td><td><span class="tag tag-fixed">Fixed (102)</span></td></tr>
         <tr><td>SG-02</td><td>7 SECURITY DEFINER functions missing REVOKE from anon</td><td><span class="tag tag-medium">Medium</span></td><td><span class="tag tag-fixed">Fixed (102)</span></td></tr>
         <tr><td>SG-03</td><td>app_settings USING(true) overrides company-scoped policy</td><td><span class="tag tag-medium">Medium</span></td><td><span class="tag tag-fixed">Fixed (102 + client)</span></td></tr>
-        <tr><td>SG-04</td><td>send-notification-email has no role check</td><td><span class="tag tag-medium">Medium</span></td><td><span class="tag tag-validate">Validate</span></td></tr>
+        <tr><td>SG-04</td><td>send-notification-email has no role check</td><td><span class="tag tag-medium">Medium</span></td><td><span class="tag tag-fixed">Fixed (099)</span></td></tr>
         <tr><td>SG-05</td><td>app_translations USING(true) &mdash; intentional for shared reference data</td><td><span class="tag tag-low">Low</span></td><td><span class="tag tag-skip">Documented</span></td></tr>
         <tr><td>SG-06</td><td>Hardcoded email in migration 020 &mdash; already overridden by 093</td><td><span class="tag tag-low">Low</span></td><td><span class="tag tag-skip">No action</span></td></tr>
       </table>
@@ -545,6 +545,11 @@ li { margin-bottom: 4px; }
     <li><span class="mig-file">100_fix_audit_constraint_and_export.sql</span> Add AUTO_PURGE to constraint; fix export column</li>
     <li><span class="mig-file">101_fix_export_anonymise_role_guard.sql</span> Role guards on export (self/admin) and anonymise (admin)</li>
     <li><span class="mig-file">102_scan_fixes.sql</span> Remove hardcoded email; REVOKE from anon; drop permissive policy</li>
+    <li><span class="mig-file">103_revoke_remaining_anon.sql</span> REVOKE 10 remaining SECURITY DEFINER functions from anon</li>
+    <li><span class="mig-file">105_teams_integration.sql</span> Teams integration tables</li>
+    <li><span class="mig-file">108_sage_integration.sql</span> Sage integration tables</li>
+    <li><span class="mig-file">109_sage_pdf_upload.sql</span> Sage PDF upload support</li>
+    <li><span class="mig-file">110_fix_duplicate_company_users.sql</span> Fix duplicate company_users; unique constraint; ensure_company_user ambiguity guard</li>
   </ul>
 </div>
 
@@ -587,12 +592,6 @@ li { margin-bottom: 4px; }
 
 <div class="section">
   <h2>7. Open items and next steps</h2>
-  <h3>Pending validation (low risk)</h3>
-  <table>
-    <tr><th>ID</th><th>Item</th><th>Risk</th><th>Status</th></tr>
-    <tr><td>SG-04</td><td>send-notification-email Edge Function has no role check &mdash; any employee in a company can trigger email delivery for existing notifications. Low practical risk as notifications are already RLS-scoped.</td><td><span class="tag tag-low">Low</span></td><td><span class="tag tag-validate">Decision needed</span></td></tr>
-  </table>
-
   <h3>Documented intentional exceptions</h3>
   <table>
     <tr><th>ID</th><th>Item</th><th>Rationale</th></tr>
