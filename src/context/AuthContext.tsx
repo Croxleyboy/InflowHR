@@ -40,6 +40,7 @@ interface AuthState {
   setupComplete: boolean | null
   markSetupComplete: () => void
   signInWithMicrosoft: () => Promise<void>
+  signInWithGoogle: () => Promise<void>
   signInWithPassword: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
 }
@@ -284,6 +285,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  async function signInWithGoogle() {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'select_account',
+        },
+      },
+    })
+  }
+
   async function signInWithPassword(email: string, password: string): Promise<string | null> {
     const { error } = await signInDirect(email, password)
     return error
@@ -356,7 +370,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const employeeEmail = user?.email || ''
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithPassword, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
       {children}
     </AuthContext.Provider>
   )
