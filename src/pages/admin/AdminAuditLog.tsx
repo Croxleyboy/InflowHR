@@ -144,6 +144,7 @@ export default function AdminAuditLog() {
       ) : entries.length === 0 ? (
         <div className="admin-empty" style={{ padding: 40 }}>No audit log entries found</div>
       ) : (
+        <>
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead>
@@ -232,6 +233,7 @@ export default function AdminAuditLog() {
           </table>
         </div>
         {renderPagination()}
+        </>
       )}
     </div>
   )
