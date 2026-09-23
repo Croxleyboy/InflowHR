@@ -63,6 +63,7 @@ export default function MyProfile() {
     emergency_contact_relationship: string | null;
     gender: string | null; nationality: string | null; marital_status: string | null;
     religion: string | null;
+    manager?: { first_name: string; last_name: string } | null;
   } | null>(null)
   const [showAssets, setShowAssets] = useState(false)
   const [myAssets, setMyAssets] = useState<{ asset_name: string; asset_type: string }[]>([])
@@ -103,11 +104,11 @@ export default function MyProfile() {
     if (employeeId && companyUser?.company_id) {
       const { data: emp } = await supabase
         .from('employees')
-        .select('date_of_birth, salary_group, qualifications, contract_type, phone, personal_email, address_line1, address_line2, city, county, postcode, country, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, gender, nationality, marital_status, religion')
+        .select('date_of_birth, salary_group, qualifications, contract_type, phone, personal_email, address_line1, address_line2, city, county, postcode, country, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, gender, nationality, marital_status, religion, manager:employees!manager_id(first_name, last_name)')
         .eq('id', employeeId)
         .eq('company_id', companyUser.company_id)
         .maybeSingle()
-      if (emp) setEmpData(emp)
+      if (emp) setEmpData(emp as any)
     }
 
     setLoading(false)
@@ -389,7 +390,7 @@ export default function MyProfile() {
               </div>
               <div className="my-profile-field">
                 <span className="my-profile-field-label">{t('my_profile.manager_assigned')}</span>
-                <span className="my-profile-field-value">{profile.manager || ''}</span>
+                <span className="my-profile-field-value">{empData?.manager ? `${empData.manager.first_name} ${empData.manager.last_name}` : profile.manager || ''}</span>
               </div>
               <div className="my-profile-field">
                 <span className="my-profile-field-label">{t('my_profile.work_location')}</span>
