@@ -52,6 +52,8 @@ const OFFBOARD_STEPS = [
 
 interface OnboardRecord {
   id: number
+  company_id: string
+  company?: { name: string } | null
   firstname: string
   surname: string
   user_email: string
@@ -279,7 +281,15 @@ export default function AdminOnboarding() {
     XLSX.writeFile(wb, 'new-starter-template.xlsx')
   }
 
-  useEffect(() => { if (selectedCompanyId) { load(); loadOffboarding() } }, [selectedCompanyId])
+  useEffect(() => {
+    if (selectedCompanyId) {
+      setRecords([])
+      setOffboardRecords([])
+      setFrozenEmployees([])
+      load()
+      loadOffboarding()
+    }
+  }, [selectedCompanyId])
 
   useEffect(() => {
     setOnbPage(1)
@@ -290,7 +300,7 @@ export default function AdminOnboarding() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('onboarding').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false })
+    const { data } = await supabase.from('onboarding').select('*, company:companies(name)').eq('company_id', selectedCompanyId).order('created_at', { ascending: false })
     setRecords((data as OnboardRecord[]) || [])
     setLoading(false)
   }
@@ -1111,7 +1121,7 @@ export default function AdminOnboarding() {
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Name</th><th>Role</th><th>Start Date</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Name</th><th>Company</th><th>Role</th><th>Start Date</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
                 <tbody>
                   {paginatedFiltered.map(r => {
                     const skipped = r.skipped_steps || {}
@@ -1121,6 +1131,7 @@ export default function AdminOnboarding() {
                     return (
                       <tr key={r.id}>
                         <td><strong>{r.firstname} {r.surname}</strong></td>
+                        <td style={{ fontSize: 12, color: '#666' }}>{r.company?.name || '—'}</td>
                         <td>{r.job_title || '—'}</td>
                         <td>{r.start_date ? new Date(r.start_date).toLocaleDateString('en-GB') : '—'}</td>
                         <td><span className={`admin-badge ${r.is_complete ? 'admin-badge-approved' : 'admin-badge-pending'}`}>{r.is_complete ? 'Onboarded' : r.status}</span></td>
