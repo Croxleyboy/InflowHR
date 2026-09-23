@@ -4389,28 +4389,49 @@ body {
 }
 .login-account-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.login-microsoft-btn {
+.login-sso-buttons {
+  display: flex;
+  gap: 12px;
+}
+@media (max-width: 600px) {
+  .login-sso-buttons { flex-direction: column; }
+}
+.login-microsoft-btn,
+.login-google-btn {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  background: #1e1e2d;
+  gap: 10px;
   border: none;
   border-radius: 10px;
-  padding: 16px 28px;
-  font-size: 15px;
+  padding: 14px 20px;
+  font-size: 14px;
   font-weight: 600;
-  color: #fff;
   cursor: pointer;
   transition: all 0.2s;
-  width: 100%;
+  flex: 1;
   justify-content: center;
+}
+.login-microsoft-btn {
+  background: #1e1e2d;
+  color: #fff;
+}
+.login-google-btn {
+  background: #fff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
 }
 .login-microsoft-btn:hover {
   background: #2d2d4a;
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(30,30,45,0.3);
 }
-.login-microsoft-btn:active {
+.login-google-btn:hover {
+  background: #f8f9fa;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+.login-microsoft-btn:active,
+.login-google-btn:active {
   transform: translateY(0);
 }
 .login-divider {
