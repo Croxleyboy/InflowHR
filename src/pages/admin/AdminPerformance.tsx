@@ -266,9 +266,18 @@ export default function AdminPerformance() {
   async function handleReassign() {
     if (!reassignModal || !newManagerId) return
     setSaving(true)
+    const resolvedId = newManagerId === '__none__' ? null : newManagerId
     await supabase.from('employees')
-      .update({ manager_id: newManagerId === '__none__' ? null : newManagerId })
+      .update({ manager_id: resolvedId })
       .eq('id', reassignModal.employee.id)
+    const empEmail = reassignModal.employee.email
+    if (empEmail) {
+      const managerName = resolvedId ? (nameMap[resolvedId] || null) : null
+      await supabase.from('onboarding')
+        .update({ manager: managerName })
+        .eq('user_email', empEmail)
+        .eq('company_id', selectedCompanyId)
+    }
     setSaving(false)
     setReassignModal(null)
     setNewManagerId('')
