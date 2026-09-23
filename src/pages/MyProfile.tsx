@@ -390,7 +390,7 @@ export default function MyProfile() {
               </div>
               <div className="my-profile-field">
                 <span className="my-profile-field-label">{t('my_profile.manager_assigned')}</span>
-                <span className="my-profile-field-value">{empData?.manager ? `${empData.manager.first_name} ${empData.manager.last_name}` : profile.manager || ''}</span>
+                <span className="my-profile-field-value">{empData?.manager?.first_name ? `${empData.manager.first_name} ${empData.manager.last_name}` : (profile.manager || 'None Assigned')}</span>
               </div>
               <div className="my-profile-field">
                 <span className="my-profile-field-label">{t('my_profile.work_location')}</span>

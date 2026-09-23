@@ -267,16 +267,29 @@ export default function AdminPerformance() {
     if (!reassignModal || !newManagerId) return
     setSaving(true)
     const resolvedId = newManagerId === '__none__' ? null : newManagerId
+    const newManager = resolvedId ? employees.find(e => e.id === resolvedId) : null
+    const newManagerEmail = newManager?.email || null
+    const newManagerName = resolvedId ? (nameMap[resolvedId] || null) : null
     await supabase.from('employees')
-      .update({ manager_id: resolvedId })
+      .update({ manager_id: resolvedId, manager_email: newManagerEmail })
       .eq('id', reassignModal.employee.id)
     const empEmail = reassignModal.employee.email
     if (empEmail) {
-      const managerName = resolvedId ? (nameMap[resolvedId] || null) : null
       await supabase.from('onboarding')
-        .update({ manager: managerName })
+        .update({ manager: newManagerName })
         .eq('user_email', empEmail)
         .eq('company_id', selectedCompanyId)
+    }
+    const oldManagerId = reassignModal.currentManagerId
+    if (oldManagerId) {
+      const oldManager = employees.find(e => e.id === oldManagerId)
+      if (oldManager?.email && newManagerEmail && oldManager.email !== newManagerEmail) {
+        await supabase.from('workflow_tracker')
+          .update({ assigned_to: newManagerEmail })
+          .eq('assigned_to', oldManager.email)
+          .eq('status', 'pending')
+          .eq('company_id', selectedCompanyId)
+      }
     }
     setSaving(false)
     setReassignModal(null)
