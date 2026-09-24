@@ -131,7 +131,7 @@ export default function InitialSetup() {
 
           <div className="form-field">
             <label className="field-label">{t('setup.date_of_birth')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{dob ? formatDateDisplay(dob) : t('setup.select_dob')}</span>
               <input type="date" value={dob} onChange={e => setDob(e.target.value)} className="date-input-hidden" />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e91e63" strokeWidth="2" className="date-icon">

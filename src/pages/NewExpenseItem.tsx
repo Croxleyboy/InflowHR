@@ -147,7 +147,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
           <div className="date-mileage-row">
             <div className="date-field" style={{ flex: 1 }}>
               <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.date_of_purchase')}</label>
-              <div className="date-input-wrap">
+              <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
                 <span className="date-display">{formatDateDisplay(dateOfPurchase)}</span>
                 <input type="date" value={dateOfPurchase} onChange={e => setDateOfPurchase(e.target.value)} className="date-input-hidden" />
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5b9bd5" strokeWidth="2" className="date-icon">
