@@ -5,6 +5,8 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { formatDateDisplay, toLocalDateStr } from '../lib/formatters'
 
+const DEFAULT_COST_CENTERS = ['External expenses', 'Internal costs', 'Travel & Transport', 'Client entertainment', 'Office supplies', 'IT & Software', 'Training & Development']
+
 function todayStr() {
   const d = new Date()
   return toLocalDateStr(d)
@@ -26,7 +28,7 @@ export default function NewExpenseClaim() {
     if (!companyUser?.company_id) return
     supabase.from('expense_cost_centers').select('name').eq('company_id', companyUser.company_id).order('sort_order')
       .then(({ data }) => {
-        const names = (data || []).map((r: any) => r.name)
+        const names = data && data.length > 0 ? data.map((r: any) => r.name) : [...DEFAULT_COST_CENTERS]
         setCostCenters(names)
         if (names.length > 0 && !costCenter) setCostCenter(names[0])
       })

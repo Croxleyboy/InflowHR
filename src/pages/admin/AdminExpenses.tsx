@@ -116,16 +116,20 @@ export default function AdminExpenses() {
     if (ccResult.data && ccResult.data.length > 0) {
       setCostCenters(ccResult.data.map((r: any) => r.name))
     } else {
-      setCostCenters([...DEFAULT_COST_CENTERS])
       const rows = DEFAULT_COST_CENTERS.map((name, i) => ({ company_id: selectedCompanyId, name, sort_order: i }))
-      await supabase.from('expense_cost_centers').insert(rows)
+      const { error: ccErr } = await supabase.from('expense_cost_centers').insert(rows, { defaultToNull: false } as any)
+      if (ccErr) { showError('Failed to seed default cost centers: ' + ccErr.message) }
+      const { data: refreshed } = await supabase.from('expense_cost_centers').select('name').eq('company_id', selectedCompanyId).order('sort_order')
+      setCostCenters(refreshed && refreshed.length > 0 ? refreshed.map((r: any) => r.name) : [...DEFAULT_COST_CENTERS])
     }
     if (etResult.data && etResult.data.length > 0) {
       setExpenseTypes(etResult.data.map((r: any) => r.name))
     } else {
-      setExpenseTypes([...DEFAULT_EXPENSE_TYPES])
       const rows = DEFAULT_EXPENSE_TYPES.map((name, i) => ({ company_id: selectedCompanyId, name, sort_order: i }))
-      await supabase.from('expense_expense_types').insert(rows)
+      const { error: etErr } = await supabase.from('expense_expense_types').insert(rows, { defaultToNull: false } as any)
+      if (etErr) { showError('Failed to seed default expense types: ' + etErr.message) }
+      const { data: refreshed } = await supabase.from('expense_expense_types').select('name').eq('company_id', selectedCompanyId).order('sort_order')
+      setExpenseTypes(refreshed && refreshed.length > 0 ? refreshed.map((r: any) => r.name) : [...DEFAULT_EXPENSE_TYPES])
     }
     setSettingsLoading(false)
   }, [selectedCompanyId])
