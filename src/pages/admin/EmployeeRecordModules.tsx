@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useFeatures } from '../../context/FeatureContext'
+import { useAuth } from '../../context/AuthContext'
 
-type Module = 'overview' | 'timeoff' | 'assets' | 'benefits' | 'dependents' | 'education' | 'grievances' | 'performance' | 'elearning' | 'onboarding' | 'expenses' | 'timesheets'
+type Module = 'overview' | 'timeoff' | 'assets' | 'benefits' | 'dependents' | 'education' | 'grievances' | 'performance' | 'elearning' | 'onboarding' | 'expenses' | 'timesheets' | 'documents'
 
 interface Employee {
   id: string
@@ -74,7 +75,21 @@ const MODULES: { key: Module; label: string; icon: string }[] = [
   { key: 'onboarding', label: 'Onboarding', icon: 'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2|M9 12l2 2 4-4|M15 2H9v2h6V2z' },
   { key: 'expenses', label: 'Expenses', icon: 'M12 1v22|M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
   { key: 'timesheets', label: 'Timesheets', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z|M12 6v6l4 2' },
+  { key: 'documents', label: 'Documents', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z|M14 2v6h6|M12 18v-6|M9 15h6' },
 ]
+
+const DOC_CATEGORIES: { key: string; label: string; expiryTracking?: boolean }[] = [
+  { key: 'right_to_work', label: 'Right to Work & Identity', expiryTracking: true },
+  { key: 'contracts', label: 'Contracts & Salary Terms' },
+  { key: 'absence', label: 'Absence & Fit Notes' },
+  { key: 'performance', label: 'Performance & Training' },
+  { key: 'employee_relations', label: 'Employee Relations & Disciplinary' },
+  { key: 'offboarding', label: 'Offboarding & Exit Records' },
+]
+
+const ACCEPTED_FILE_TYPES = '.pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.txt,.rtf,.odt,.xls,.xlsx,.csv'
+const ACCEPTED_MIME_DISPLAY = 'PDF, JPEG, PNG, GIF, Word (.doc/.docx), Text (.txt/.rtf), OpenDocument (.odt), Excel (.xls/.xlsx), CSV'
+const MAX_FILE_SIZE_MB = 10
 
 function ModuleIcon({ icon }: { icon: string }) {
   const parts = icon.split('|')
@@ -117,9 +132,18 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function EmployeeRecordModules({ employee, companyId, lieuDays, maskValue, toggleReveal, formatDate }: Props) {
   const { features } = useFeatures()
+  const { employeeName } = useAuth()
   const [activeModule, setActiveModule] = useState<Module>('overview')
   const [moduleData, setModuleData] = useState<Record<string, any>>({})
   const [loadingModule, setLoadingModule] = useState(false)
+  const [docUploading, setDocUploading] = useState(false)
+  const [docCategory, setDocCategory] = useState(DOC_CATEGORIES[0].key)
+  const [docExpiry, setDocExpiry] = useState('')
+  const [docNotes, setDocNotes] = useState('')
+  const [docError, setDocError] = useState('')
+  const [docDeleting, setDocDeleting] = useState<string | null>(null)
+  const [expandedDocCat, setExpandedDocCat] = useState<string | null>(null)
+  const docFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setActiveModule('overview'); setModuleData({}) }, [employee.id])
 
@@ -197,6 +221,11 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         data = { entries: entries || [] }
         break
       }
+      case 'documents': {
+        const { data: docs } = await supabase.from('employee_documents').select('*').eq('employee_id', employee.id).eq('company_id', companyId).order('created_at', { ascending: false })
+        data = { documents: docs || [] }
+        break
+      }
     }
 
     if (data) setModuleData(prev => ({ ...prev, [cacheKey]: data }))
@@ -229,6 +258,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
       case 'onboarding': return renderOnboarding()
       case 'expenses': return renderExpenses()
       case 'timesheets': return renderTimesheets()
+      case 'documents': return renderDocuments()
       default: return null
     }
   }
@@ -832,6 +862,294 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
             </div>
           )}
         </div>
+      </div>
+    )
+  }
+
+  async function uploadDocument(file: File) {
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      setDocError(`File too large. Maximum size is ${MAX_FILE_SIZE_MB}MB.`)
+      return
+    }
+    setDocUploading(true)
+    setDocError('')
+
+    const ext = file.name.split('.').pop()?.toLowerCase() || ''
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+    const storagePath = `${companyId}/${employee.id}/${Date.now()}_${safeName}`
+
+    const { error: uploadErr } = await supabase.storage
+      .from('employee-documents')
+      .upload(storagePath, file)
+
+    if (uploadErr) {
+      setDocError(uploadErr.message)
+      setDocUploading(false)
+      return
+    }
+
+    const { data: userData } = await supabase.auth.getUser()
+
+    const { error: insertErr } = await supabase.from('employee_documents').insert({
+      employee_id: employee.id,
+      company_id: companyId,
+      category: docCategory,
+      file_name: file.name,
+      file_path: storagePath,
+      file_type: ext,
+      file_size: file.size,
+      expiry_date: docExpiry || null,
+      notes: docNotes.trim() || null,
+      uploaded_by: userData?.user?.id || null,
+      uploaded_by_name: employeeName || null,
+    })
+
+    if (insertErr) {
+      setDocError(insertErr.message)
+      setDocUploading(false)
+      return
+    }
+
+    setDocExpiry('')
+    setDocNotes('')
+    if (docFileRef.current) docFileRef.current.value = ''
+
+    const cacheKey = `${employee.id}:documents`
+    setModuleData(prev => { const copy = { ...prev }; delete copy[cacheKey]; return copy })
+    await loadModuleData('documents', cacheKey)
+    setDocUploading(false)
+  }
+
+  async function deleteDocument(doc: any) {
+    if (!confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return
+    setDocDeleting(doc.id)
+
+    await supabase.storage.from('employee-documents').remove([doc.file_path])
+    await supabase.from('employee_documents').delete().eq('id', doc.id)
+
+    const cacheKey = `${employee.id}:documents`
+    setModuleData(prev => { const copy = { ...prev }; delete copy[cacheKey]; return copy })
+    await loadModuleData('documents', cacheKey)
+    setDocDeleting(null)
+  }
+
+  async function downloadDocument(doc: any) {
+    const { data, error } = await supabase.storage.from('employee-documents').download(doc.file_path)
+    if (error || !data) { setDocError('Failed to download: ' + (error?.message || 'Unknown error')); return }
+    const url = URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = doc.file_name
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return bytes + ' B'
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  }
+
+  function isExpiringSoon(date: string): boolean {
+    const exp = new Date(date)
+    const now = new Date()
+    const diff = (exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+    return diff <= 30 && diff > 0
+  }
+
+  function isExpired(date: string): boolean {
+    return new Date(date) < new Date()
+  }
+
+  function getFileIcon(type: string): string {
+    if (['pdf'].includes(type)) return '📄'
+    if (['jpg', 'jpeg', 'png', 'gif'].includes(type)) return '🖼️'
+    if (['doc', 'docx'].includes(type)) return '📝'
+    if (['xls', 'xlsx', 'csv'].includes(type)) return '📊'
+    return '📎'
+  }
+
+  function renderDocuments() {
+    const documents: any[] = currentData?.documents || []
+    const catWithExpiry = DOC_CATEGORIES.find(c => c.key === docCategory)?.expiryTracking
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        {/* Upload section */}
+        <div style={cardStyle}>
+          <h4 style={headingStyle}>Upload Document</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={{ ...labelStyle, marginBottom: 4 }}>Category</label>
+              <select
+                value={docCategory}
+                onChange={e => setDocCategory(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13 }}
+              >
+                {DOC_CATEGORIES.map(c => (
+                  <option key={c.key} value={c.key}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            {catWithExpiry && (
+              <div>
+                <label style={{ ...labelStyle, marginBottom: 4 }}>Expiry Date</label>
+                <input
+                  type="date"
+                  value={docExpiry}
+                  onChange={e => setDocExpiry(e.target.value)}
+                  style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+            <div style={{ gridColumn: catWithExpiry ? 'span 2' : 'span 1' }}>
+              <label style={{ ...labelStyle, marginBottom: 4 }}>Notes (optional)</label>
+              <input
+                type="text"
+                value={docNotes}
+                onChange={e => setDocNotes(e.target.value)}
+                placeholder="e.g. Passport, BRP card, Contract amendment..."
+                style={{ width: '100%', padding: '8px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }}
+              />
+            </div>
+            {!catWithExpiry && <div />}
+          </div>
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <input
+              ref={docFileRef}
+              type="file"
+              accept={ACCEPTED_FILE_TYPES}
+              style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocument(f) }}
+            />
+            <button
+              onClick={() => docFileRef.current?.click()}
+              disabled={docUploading}
+              style={{
+                padding: '8px 20px', border: 'none', borderRadius: 6, background: '#1565c0', color: '#fff',
+                fontSize: 13, fontWeight: 600, cursor: docUploading ? 'not-allowed' : 'pointer', opacity: docUploading ? 0.6 : 1,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              {docUploading ? 'Uploading...' : 'Choose File & Upload'}
+            </button>
+            <span style={{ fontSize: 11, color: '#999' }}>Max {MAX_FILE_SIZE_MB}MB per file</span>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: '#888' }}>
+            Accepted formats: {ACCEPTED_MIME_DISPLAY}
+          </div>
+          {docError && <div style={{ marginTop: 8, fontSize: 12, color: '#c62828', background: '#ffebee', padding: '6px 10px', borderRadius: 4 }}>{docError}</div>}
+        </div>
+
+        {/* Document folders by category */}
+        {DOC_CATEGORIES.map(cat => {
+          const catDocs = documents.filter((d: any) => d.category === cat.key)
+          const isExpanded = expandedDocCat === cat.key
+          const hasExpiring = cat.expiryTracking && catDocs.some((d: any) => d.expiry_date && (isExpired(d.expiry_date) || isExpiringSoon(d.expiry_date)))
+
+          return (
+            <div key={cat.key} style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
+              <button
+                onClick={() => setExpandedDocCat(isExpanded ? null : cat.key)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px',
+                  border: 'none', background: isExpanded ? '#e3f2fd' : '#fff', cursor: 'pointer', textAlign: 'left',
+                  transition: 'background 0.15s',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill={isExpanded ? '#1565c0' : '#999'} stroke="none">
+                  <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/>
+                </svg>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: isExpanded ? '#1565c0' : '#333' }}>{cat.label}</span>
+                {hasExpiring && (
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, fontWeight: 600, background: '#ffebee', color: '#c62828' }}>
+                    ⚠ Expiry
+                  </span>
+                )}
+                <span style={{ fontSize: 11, color: '#999', fontWeight: 500 }}>{catDocs.length} {catDocs.length === 1 ? 'file' : 'files'}</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+
+              {isExpanded && (
+                <div style={{ borderTop: '1px solid #e8e8e8' }}>
+                  {catDocs.length === 0 ? (
+                    <div style={{ padding: 20, textAlign: 'center', color: '#999', fontSize: 12 }}>No documents in this category</div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: '#f9f9f9' }}>
+                          <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 600, color: '#666' }}>File</th>
+                          <th style={{ textAlign: 'left', padding: 8, fontWeight: 600, color: '#666' }}>Notes</th>
+                          {cat.expiryTracking && <th style={{ textAlign: 'left', padding: 8, fontWeight: 600, color: '#666' }}>Expiry</th>}
+                          <th style={{ textAlign: 'left', padding: 8, fontWeight: 600, color: '#666' }}>Size</th>
+                          <th style={{ textAlign: 'left', padding: 8, fontWeight: 600, color: '#666' }}>Uploaded</th>
+                          <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600, color: '#666' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {catDocs.map((doc: any) => {
+                          const expired = doc.expiry_date && isExpired(doc.expiry_date)
+                          const expiring = doc.expiry_date && !expired && isExpiringSoon(doc.expiry_date)
+                          return (
+                            <tr key={doc.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                              <td style={{ padding: '8px 12px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span>{getFileIcon(doc.file_type)}</span>
+                                  <span style={{ fontWeight: 500, color: '#333', wordBreak: 'break-all' }}>{doc.file_name}</span>
+                                </div>
+                              </td>
+                              <td style={{ padding: 8, color: '#666' }}>{doc.notes || '—'}</td>
+                              {cat.expiryTracking && (
+                                <td style={{ padding: 8 }}>
+                                  {doc.expiry_date ? (
+                                    <span style={{
+                                      fontSize: 11, padding: '2px 8px', borderRadius: 4, fontWeight: 600,
+                                      background: expired ? '#ffebee' : expiring ? '#fff3e0' : '#e8f5e9',
+                                      color: expired ? '#c62828' : expiring ? '#e65100' : '#2e7d32',
+                                    }}>
+                                      {expired ? 'Expired' : expiring ? 'Expiring soon' : 'Valid'} — {fmtUK(doc.expiry_date)}
+                                    </span>
+                                  ) : '—'}
+                                </td>
+                              )}
+                              <td style={{ padding: 8, color: '#888' }}>{formatFileSize(doc.file_size)}</td>
+                              <td style={{ padding: 8, color: '#888' }}>
+                                <div>{fmtUK(doc.created_at)}</div>
+                                <div style={{ fontSize: 10, color: '#aaa' }}>{doc.uploaded_by_name || ''}</div>
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                                  <button
+                                    onClick={() => downloadDocument(doc)}
+                                    title="Download"
+                                    style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#1565c0', borderRadius: 4 }}
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                  </button>
+                                  <button
+                                    onClick={() => deleteDocument(doc)}
+                                    disabled={docDeleting === doc.id}
+                                    title="Delete"
+                                    style={{ padding: 4, border: 'none', background: 'none', cursor: 'pointer', color: '#c62828', borderRadius: 4, opacity: docDeleting === doc.id ? 0.4 : 1 }}
+                                  >
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     )
   }
