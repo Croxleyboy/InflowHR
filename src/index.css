@@ -4391,10 +4391,8 @@ body {
 
 .login-sso-buttons {
   display: flex;
+  flex-direction: column;
   gap: 12px;
-}
-@media (max-width: 600px) {
-  .login-sso-buttons { flex-direction: column; }
 }
 .login-microsoft-btn,
 .login-google-btn {
