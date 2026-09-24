@@ -145,7 +145,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
           />
 
           <div className="date-mileage-row">
-            <div className="date-field" style={{ flex: 2 }}>
+            <div className="date-field" style={{ flex: 1 }}>
               <label className="field-label" style={{ color: '#c62828' }}>{t('new_item.date_of_purchase')}</label>
               <div className="date-input-wrap">
                 <span className="date-display">{formatDateDisplay(dateOfPurchase)}</span>
