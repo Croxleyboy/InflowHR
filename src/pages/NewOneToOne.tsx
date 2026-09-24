@@ -145,7 +145,7 @@ export default function NewOneToOne() {
         <div className="date-row">
           <div className="date-field">
             <label className="field-label">{t('one_to_one.meeting_date')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{date ? formatDateDisplay(date) : t('one_to_one.select_date')}</span>
               <input type="date" value={date} min={today} onChange={e => setDate(e.target.value)} className="date-input-hidden" />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ec407a" strokeWidth="2" className="date-icon">
@@ -157,7 +157,7 @@ export default function NewOneToOne() {
           </div>
           <div className="date-field">
             <label className="field-label">{t('one_to_one.meeting_time')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{time}</span>
               <input type="time" value={time} onChange={e => setTime(e.target.value)} className="date-input-hidden" />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ec407a" strokeWidth="2" className="date-icon">

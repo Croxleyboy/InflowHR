@@ -89,7 +89,7 @@ export default function NewExpenseClaim() {
         <div className="date-row">
           <div className="date-field">
             <label className="field-label">{t('new_claim.start_date')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{formatDateDisplay(startDate)}</span>
               <input
                 type="date"
@@ -106,7 +106,7 @@ export default function NewExpenseClaim() {
           </div>
           <div className="date-field">
             <label className="field-label">{t('new_claim.end_date')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{formatDateDisplay(endDate)}</span>
               <input
                 type="date"

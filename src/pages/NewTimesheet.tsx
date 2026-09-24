@@ -265,7 +265,7 @@ export default function NewTimesheet() {
         <div className="date-row">
           <div className="date-field">
             <label className="field-label">{t('timesheets.start_date')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{formatDateDisplay(startDate)}</span>
               <input type="date" value={startDate} onChange={e => handleStartDateChange(e.target.value)} className="date-input-hidden" />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" className="date-icon">
@@ -277,7 +277,7 @@ export default function NewTimesheet() {
           </div>
           <div className="date-field">
             <label className="field-label">{t('timesheets.end_date')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{formatDateDisplay(endDate)}</span>
               <input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} className="date-input-hidden" />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" className="date-icon">
@@ -292,7 +292,7 @@ export default function NewTimesheet() {
         <div className="date-row">
           <div className="date-field">
             <label className="field-label">{t('timesheets.start_time')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{startTime}</span>
               <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} className="date-input-hidden" />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" className="date-icon">
@@ -303,7 +303,7 @@ export default function NewTimesheet() {
           </div>
           <div className="date-field">
             <label className="field-label">{t('timesheets.end_time')}</label>
-            <div className="date-input-wrap">
+            <div className="date-input-wrap" onClick={e => { const i = e.currentTarget.querySelector('input'); if (i) try { i.showPicker() } catch {} }}>
               <span className="date-display">{endTime}</span>
               <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} className="date-input-hidden" />
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" className="date-icon">
