@@ -4548,6 +4548,10 @@ body {
 @media (max-width: 900px) {
   .login-page {
     flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .login-hero {
     padding: 40px 32px;
