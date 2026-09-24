@@ -1034,14 +1034,20 @@ body {
   border-radius: 10px;
   padding: 10px 12px;
   background: var(--bg-card);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
 }
-.date-display { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; }
+.date-display { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; pointer-events: none; }
 .date-input-hidden {
-  position: absolute; inset: 0;
+  position: absolute; inset: -4px;
   opacity: 0; cursor: pointer;
-  width: 100%; height: 100%;
+  width: calc(100% + 8px); height: calc(100% + 8px);
+  z-index: 2;
+  font-size: 16px;
+  -webkit-appearance: none;
 }
-.date-icon { flex-shrink: 0; }
+.date-icon { flex-shrink: 0; pointer-events: none; }
 
 .form-field { margin-bottom: 16px; min-width: 0; }
 
@@ -1285,8 +1291,9 @@ body {
 .total-cost-label { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
 .total-cost-currency { font-size: 14px; font-weight: 700; color: var(--text); }
 .total-cost-input {
-  width: 80px !important; padding: 10px 8px !important;
+  width: 120px !important; padding: 10px 8px !important;
   text-align: right; font-weight: 700 !important;
+  font-size: 16px !important;
 }
 
 /* ── Notifications Page ── */
