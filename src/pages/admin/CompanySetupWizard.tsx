@@ -461,14 +461,41 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         if (!payErr) payslipCount++
       }
 
-      // 4. Create company_users record for admin role
+      // 4. Create/update company_users record for admin role
       if (row.user_email === adminEmail && company && employeeId) {
-        const { error: adminErr } = await supabase.from('company_users').insert({
-          company_id: setupCompanyId,
-          role: 'admin',
-          is_active: true,
-          employee_id: employeeId,
-        })
+        const { data: sessionData } = await supabase.auth.getUser()
+        const authUserId = sessionData?.user?.id
+        let adminErr: any = null
+        if (authUserId) {
+          const { data: existingCU } = await supabase.from('company_users')
+            .select('id')
+            .eq('auth_user_id', authUserId)
+            .eq('company_id', setupCompanyId)
+            .maybeSingle()
+          if (existingCU) {
+            const { error } = await supabase.from('company_users')
+              .update({ role: 'admin', is_active: true, employee_id: employeeId })
+              .eq('id', existingCU.id)
+            adminErr = error
+          } else {
+            const { error } = await supabase.from('company_users').insert({
+              auth_user_id: authUserId,
+              company_id: setupCompanyId,
+              role: 'admin',
+              is_active: true,
+              employee_id: employeeId,
+            })
+            adminErr = error
+          }
+        } else {
+          const { error } = await supabase.from('company_users').insert({
+            company_id: setupCompanyId,
+            role: 'admin',
+            is_active: true,
+            employee_id: employeeId,
+          })
+          adminErr = error
+        }
         if (!adminErr) {
           assignedAdmin = `${row.firstname} ${row.surname} (${row.user_email})`
         } else {
