@@ -9,6 +9,27 @@ import { useToast } from '../context/ToastContext'
 import { getExportCategories, getDateRange, buildEmployeeExportZip } from '../lib/employeeDataExport'
 import type { Lang } from '../lib/translations'
 
+const INFO_CARD_LABELS: { key: string; label: string; featureKey?: keyof Features }[] = [
+  { key: 'checkin', label: "Today's Status" },
+  { key: 'leave', label: 'Leave Balance', featureKey: 'leave' },
+  { key: 'expenses', label: 'Expenses', featureKey: 'expenses' },
+  { key: 'documents', label: 'Documents', featureKey: 'profile' },
+  { key: 'profile', label: 'My Profile', featureKey: 'profile' },
+  { key: 'payslips', label: 'Payslips', featureKey: 'payslips' },
+  { key: 'kudos', label: 'Kudos', featureKey: 'kudos' },
+  { key: 'performance', label: '1:1 Meetings', featureKey: 'performance' },
+  { key: 'elearning', label: 'E-Learning', featureKey: 'elearning' },
+  { key: 'benefits', label: 'Benefits', featureKey: 'benefits' },
+  { key: 'timesheets', label: 'Timesheets', featureKey: 'timesheets' },
+  { key: 'shifts', label: 'My Shifts', featureKey: 'shifts' },
+  { key: 'space_booking', label: 'Space Booking', featureKey: 'space_booking' },
+  { key: 'legal_timesheets', label: 'Legal Timesheets', featureKey: 'legal_timesheets' },
+  { key: 'asset_management', label: 'My Assets', featureKey: 'asset_management' },
+  { key: 'skills_passport', label: 'Skills Passport', featureKey: 'skills_passport' },
+]
+
+const DEFAULT_INFO_KEYS = INFO_CARD_LABELS.map(c => c.key)
+
 const featureLabels: { key: keyof Features; tKey: string }[] = [
   { key: 'expenses', tKey: 'dashboard.expenses' },
   { key: 'leave', tKey: 'dashboard.leave_remaining' },
@@ -48,6 +69,26 @@ export default function Settings() {
     companyName: string
   } | null>(null)
   const [dashLayout, setDashLayout] = useState(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
+  const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
+  const [cardOrder, setCardOrder] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem('inflowhr-info-card-order')
+      if (stored) {
+        const parsed = JSON.parse(stored) as string[]
+        const valid = parsed.filter(k => DEFAULT_INFO_KEYS.includes(k))
+        const missing = DEFAULT_INFO_KEYS.filter(k => !valid.includes(k))
+        return [...valid, ...missing]
+      }
+    } catch { /* empty */ }
+    return [...DEFAULT_INFO_KEYS]
+  })
+  const [cardHidden, setCardHidden] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem('inflowhr-info-card-hidden')
+      if (stored) return new Set(JSON.parse(stored))
+    } catch { /* empty */ }
+    return new Set()
+  })
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768)
   const [consents, setConsents] = useState<Record<string, boolean>>({})
   const [consentsLoading, setConsentsLoading] = useState(true)
@@ -335,6 +376,96 @@ export default function Settings() {
         <button className="save-btn" onClick={handleSave}>
           {saved ? t('settings.saved') : t('settings.save')}
         </button>
+      )}
+
+      <section className="settings-section">
+        <h2>Dashboard Style</h2>
+        <div className="settings-info">
+          <div className="settings-row">
+            <span className="settings-label">Card style</span>
+            <div className="language-selector">
+              <button
+                className={`lang-btn ${dashMode === 'simple' ? 'lang-active' : ''}`}
+                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'simple'); setDashMode('simple') }}
+              >Simple</button>
+              <button
+                className={`lang-btn ${dashMode === 'info' ? 'lang-active' : ''}`}
+                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'info'); setDashMode('info') }}
+              >Info Cards</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {dashMode === 'info' && (
+        <section className="settings-section">
+          <h2>Dashboard Cards</h2>
+          <p className="settings-hint" style={{ marginBottom: 10 }}>Toggle cards on or off and reorder them with the arrows.</p>
+          <div className="card-manager-list">
+            {cardOrder.filter(key => {
+              const def = INFO_CARD_LABELS.find(c => c.key === key)
+              if (!def) return false
+              if (def.featureKey && !features[def.featureKey]) return false
+              return true
+            }).map((key, idx, arr) => {
+              const def = INFO_CARD_LABELS.find(c => c.key === key)!
+              const hidden = cardHidden.has(key)
+              return (
+                <div className="card-manager-row" key={key}>
+                  <div className="card-manager-arrows">
+                    <button
+                      disabled={idx === 0}
+                      onClick={() => {
+                        const newOrder = [...cardOrder]
+                        const fullIdx = newOrder.indexOf(key)
+                        const prevKey = arr[idx - 1]
+                        const prevFullIdx = newOrder.indexOf(prevKey)
+                        newOrder[prevFullIdx] = key
+                        newOrder[fullIdx] = prevKey
+                        setCardOrder(newOrder)
+                        localStorage.setItem('inflowhr-info-card-order', JSON.stringify(newOrder))
+                      }}
+                      aria-label="Move up"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+                    </button>
+                    <button
+                      disabled={idx === arr.length - 1}
+                      onClick={() => {
+                        const newOrder = [...cardOrder]
+                        const fullIdx = newOrder.indexOf(key)
+                        const nextKey = arr[idx + 1]
+                        const nextFullIdx = newOrder.indexOf(nextKey)
+                        newOrder[nextFullIdx] = key
+                        newOrder[fullIdx] = nextKey
+                        setCardOrder(newOrder)
+                        localStorage.setItem('inflowhr-info-card-order', JSON.stringify(newOrder))
+                      }}
+                      aria-label="Move down"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                  </div>
+                  <span className="card-manager-label">{def.label}</span>
+                  <button
+                    className={`toggle-switch ${!hidden ? 'toggle-on' : 'toggle-off'}`}
+                    onClick={() => {
+                      const newHidden = new Set(cardHidden)
+                      if (hidden) newHidden.delete(key)
+                      else newHidden.add(key)
+                      setCardHidden(newHidden)
+                      localStorage.setItem('inflowhr-info-card-hidden', JSON.stringify([...newHidden]))
+                    }}
+                    role="switch"
+                    aria-checked={!hidden}
+                  >
+                    <span className="toggle-knob" />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </section>
       )}
 
       {isDesktop && (

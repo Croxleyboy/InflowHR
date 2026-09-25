@@ -33,6 +33,55 @@ interface LatestAnnouncement {
   body: string
 }
 
+const INFO_CARD_KEYS = [
+  'checkin', 'leave', 'expenses', 'documents', 'profile',
+  'payslips', 'kudos', 'performance', 'elearning', 'benefits',
+  'timesheets', 'shifts', 'space_booking', 'legal_timesheets',
+  'asset_management', 'skills_passport',
+] as const
+
+type InfoCardKey = typeof INFO_CARD_KEYS[number]
+
+const INFO_CARD_FEATURE_MAP: Record<string, string | null> = {
+  checkin: null,
+  leave: 'leave',
+  expenses: 'expenses',
+  documents: 'profile',
+  profile: 'profile',
+  payslips: 'payslips',
+  kudos: 'kudos',
+  performance: 'performance',
+  elearning: 'elearning',
+  benefits: 'benefits',
+  timesheets: 'timesheets',
+  shifts: 'shifts',
+  space_booking: 'space_booking',
+  legal_timesheets: 'legal_timesheets',
+  asset_management: 'asset_management',
+  skills_passport: 'skills_passport',
+}
+
+function getInfoCardOrder(): InfoCardKey[] {
+  try {
+    const stored = localStorage.getItem('inflowhr-info-card-order')
+    if (stored) {
+      const parsed = JSON.parse(stored) as string[]
+      const valid = parsed.filter(k => (INFO_CARD_KEYS as readonly string[]).includes(k)) as InfoCardKey[]
+      const missing = INFO_CARD_KEYS.filter(k => !valid.includes(k))
+      return [...valid, ...missing]
+    }
+  } catch { /* empty */ }
+  return [...INFO_CARD_KEYS]
+}
+
+function getInfoCardHidden(): Set<string> {
+  try {
+    const stored = localStorage.getItem('inflowhr-info-card-hidden')
+    if (stored) return new Set(JSON.parse(stored))
+  } catch { /* empty */ }
+  return new Set()
+}
+
 export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features, dashboardStyle } = useFeatures()
@@ -49,7 +98,18 @@ export default function Dashboard() {
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const [leavePending, setLeavePending] = useState<number | null>(null)
   const [reminderCount, setReminderCount] = useState(0)
+  const [docCount, setDocCount] = useState(0)
+  const [docMissing, setDocMissing] = useState(0)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
+
+  const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
+  useEffect(() => {
+    const handler = () => setDashMode(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }, [])
+  const infoCardOrder = getInfoCardOrder()
+  const infoCardHidden = getInfoCardHidden()
 
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768)
   useEffect(() => {
@@ -263,11 +323,318 @@ export default function Dashboard() {
           setLeaveRemaining(balRow.total_allowance + (Number(balRow.lieu_days) || 0) - approvedDays)
           setLeavePending(pendingDays)
         })
+
+      supabase.from('employee_documents')
+        .select('id, category, expiry_date', { count: 'exact' })
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .then(({ data, count }) => {
+          setDocCount(count || 0)
+          if (data) {
+            const now = new Date()
+            const missing = data.filter((d: any) => {
+              if (d.category !== 'right_to_work' || !d.expiry_date) return false
+              return new Date(d.expiry_date) < now
+            }).length
+            setDocMissing(missing)
+          }
+        })
     }
   }, [employeeId, employeeEmail, companyUser?.company_id, features.elearning])
 
   const h = new Date().getHours()
   const greeting = h < 12 ? t('dashboard.greeting_morning') : h < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening')
+
+  const checkinEnabled = ciSettings?.timesheets_checkin_enabled || ciSettings?.shifts_checkin_enabled
+
+  function renderInfoCard(key: InfoCardKey) {
+    const featureKey = INFO_CARD_FEATURE_MAP[key]
+    if (featureKey && !(features as any)[featureKey]) return null
+    if (key === 'checkin' && !checkinEnabled) return null
+    if (infoCardHidden.has(key)) return null
+
+    switch (key) {
+      case 'checkin': {
+        const isActive = !!activeCheckin
+        const mins = isActive ? Math.floor((Date.now() - new Date(activeCheckin!.check_in_at).getTime()) / 60000) : 0
+        const elapsed = isActive ? `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}` : ''
+        return (
+          <button key={key} className="info-card" onClick={() => navigate(activeCheckin?.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Today's Status</span>
+              <span className="info-card-icon" style={{ background: '#e8f5e9' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">{isActive ? `Checked In` : 'Not Clocked In'}</span>
+              {isActive ? (
+                <div className={`info-card-status info-card-status-ok`}><span className="info-card-dot" />{elapsed} elapsed</div>
+              ) : (
+                <span className="info-card-sub">Tap to clock in</span>
+              )}
+            </div>
+          </button>
+        )
+      }
+      case 'leave':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/leave')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Leave Balance</span>
+              <span className="info-card-icon" style={{ background: '#e8f5e9' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">{leaveRemaining !== null ? leaveRemaining : '--'} <span className="info-card-value-unit">days remaining</span></span>
+              {leavePending !== null && leavePending > 0 && (
+                <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />{leavePending} request{leavePending !== 1 ? 's' : ''} pending</div>
+              )}
+            </div>
+          </button>
+        )
+      case 'expenses':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/expenses')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Expenses</span>
+              <span className="info-card-icon" style={{ background: '#ffebee' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e53935" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}</span>
+              <span className="info-card-sub">Last approved claim</span>
+              {pendingExpense !== null && (
+                <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />&pound;{pendingExpense.toFixed(2)} pending</div>
+              )}
+            </div>
+          </button>
+        )
+      case 'documents':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/my-profile')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Documents</span>
+              <span className="info-card-icon" style={{ background: '#e3f2fd' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">{docCount} <span className="info-card-value-unit">uploaded</span></span>
+              {docMissing > 0 ? (
+                <div className="info-card-status info-card-status-warn"><span className="info-card-dot" />{docMissing} document{docMissing !== 1 ? 's' : ''} expired</div>
+              ) : docCount > 0 ? (
+                <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />All documents valid</div>
+              ) : (
+                <span className="info-card-sub">No documents uploaded</span>
+              )}
+            </div>
+          </button>
+        )
+      case 'profile':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/my-profile')}>
+            <div className="info-card-head">
+              <span className="info-card-title">My Profile</span>
+              <span className="info-card-icon" style={{ background: '#f3e5f5' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7b1fa2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">View Profile</span>
+              <span className="info-card-sub">Personal details & settings</span>
+            </div>
+          </button>
+        )
+      case 'payslips':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/payslips')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Payslips</span>
+              <span className="info-card-icon" style={{ background: '#e8eaf6' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#303f9f" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">View Payslips</span>
+              <span className="info-card-sub">Salary & payment history</span>
+            </div>
+          </button>
+        )
+      case 'kudos':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/kudos')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Kudos</span>
+              <span className="info-card-icon" style={{ background: '#eceff1' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#546e7a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              {kudosUnread > 0 ? (
+                <>
+                  <span className="info-card-value">{kudosUnread} <span className="info-card-value-unit">new</span></span>
+                  <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />Unread recognitions</div>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Kudos</span>
+                  <span className="info-card-sub">Give & receive recognition</span>
+                </>
+              )}
+            </div>
+          </button>
+        )
+      case 'performance':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/one-to-ones')}>
+            <div className="info-card-head">
+              <span className="info-card-title">1:1 Meetings</span>
+              <span className="info-card-icon" style={{ background: '#fce4ec' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c2185b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              {pendingOneToOnes > 0 ? (
+                <>
+                  <span className="info-card-value">{pendingOneToOnes} <span className="info-card-value-unit">pending</span></span>
+                  <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />Upcoming meetings</div>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">1:1 Meetings</span>
+                  <span className="info-card-sub">Schedule & review meetings</span>
+                </>
+              )}
+            </div>
+          </button>
+        )
+      case 'elearning':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/elearning')}>
+            <div className="info-card-head">
+              <span className="info-card-title">E-Learning</span>
+              <span className="info-card-icon" style={{ background: '#fff9c4' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f9a825" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 1.1 2.7 3 6 3s6-1.9 6-3v-5"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">E-Learning</span>
+              <span className="info-card-sub">Courses & training</span>
+            </div>
+          </button>
+        )
+      case 'benefits':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/benefits')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Benefits</span>
+              <span className="info-card-icon" style={{ background: '#e0f7fa' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">Benefits</span>
+              <span className="info-card-sub">Your company benefits</span>
+            </div>
+          </button>
+        )
+      case 'timesheets':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/timesheets')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Timesheets</span>
+              <span className="info-card-icon" style={{ background: '#e3f2fd' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">Timesheets</span>
+              <span className="info-card-sub">Log & view hours</span>
+            </div>
+          </button>
+        )
+      case 'shifts':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/shifts')}>
+            <div className="info-card-head">
+              <span className="info-card-title">My Shifts</span>
+              <span className="info-card-icon" style={{ background: '#fff3e0' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">My Shifts</span>
+              <span className="info-card-sub">View rota & availability</span>
+            </div>
+          </button>
+        )
+      case 'space_booking':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/space-booking')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Space Booking</span>
+              <span className="info-card-icon" style={{ background: '#eceff1' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#455a64" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">Book a Space</span>
+              <span className="info-card-sub">Meeting rooms & desks</span>
+            </div>
+          </button>
+        )
+      case 'legal_timesheets':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/legal-timesheets')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Legal Timesheets</span>
+              <span className="info-card-icon" style={{ background: '#e0f2f1' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00695c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">Legal Timesheets</span>
+              <span className="info-card-sub">Billable hours & matters</span>
+            </div>
+          </button>
+        )
+      case 'asset_management':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/my-profile')}>
+            <div className="info-card-head">
+              <span className="info-card-title">My Assets</span>
+              <span className="info-card-icon" style={{ background: '#e8eaf6' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3949ab" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 7V5a4 4 0 0 0-8 0v2"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">My Assets</span>
+              <span className="info-card-sub">Company equipment assigned to you</span>
+            </div>
+          </button>
+        )
+      case 'skills_passport':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/skills-passport')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Skills Passport</span>
+              <span className="info-card-icon" style={{ background: '#fce4ec' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ad1457" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">Skills Passport</span>
+              <span className="info-card-sub">Your skills & endorsements</span>
+            </div>
+          </button>
+        )
+      default:
+        return null
+    }
+  }
 
   if (isDesktop && dashPref === 'detailed') {
     return <DashboardDetailed />
@@ -432,115 +799,121 @@ export default function Dashboard() {
         )
       })()}
 
-      <div className={`card-grid${dashboardStyle === 'slim' ? ' card-grid-slim' : ''}`}>
-        {features.expenses && (
-          <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.expenses')}</span>
-              <span className="card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}{lastExpenseHasReceipt && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 4, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>}</span>
-              <span className="card-sub">{t('dashboard.last_claim')}</span>
-              {pendingExpense !== null && (
-                <span className="card-sub card-expense-pending">&pound;{pendingExpense.toFixed(2)} {t('dashboard.pending')}</span>
-              )}
-            </div>
-            <Chevron color="#c62828" />
-          </button>
-        )}
-        {features.leave && (
-          <button className="dash-card card-leave" onClick={() => navigate('/leave')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.leave_remaining')}</span>
-              <span className="card-value card-value-large">{leaveRemaining !== null ? leaveRemaining : '--'} <span className="card-value-unit">{t('dashboard.days')}</span></span>
-              {leavePending !== null && leavePending > 0 && (
-                <span className="card-sub card-leave-pending">{leavePending} {t('dashboard.days_pending')}</span>
-              )}
-            </div>
-            <Chevron color="#2e7d32" />
-          </button>
-        )}
-        {features.profile && (
-          <button className="dash-card card-profile" onClick={() => navigate('/my-profile')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.my_profile')}</span>
-            </div>
-            <Chevron color="#7b1fa2" />
-          </button>
-        )}
-        {features.payslips && (
-          <button className="dash-card card-payslips" onClick={() => navigate('/payslips')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.payslips')}</span>
-            </div>
-            <Chevron color="#1a237e" />
-          </button>
-        )}
-        {features.kudos && (
-          <button className="dash-card card-kudos" onClick={() => navigate('/kudos')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.kudos')}</span>
-            </div>
-            {kudosUnread > 0 && <span className="kudos-unread-badge">{kudosUnread}</span>}
-            <Chevron color="#546e7a" />
-          </button>
-        )}
-        {features.benefits && (
-          <button className="dash-card card-benefits" onClick={() => navigate('/benefits')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.benefits')}</span>
-            </div>
-            <Chevron color="#80deea" />
-          </button>
-        )}
-        {features.elearning && (
-          <button className="dash-card card-elearning" onClick={() => navigate('/elearning')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.elearning')}</span>
-            </div>
-            <Chevron color="#f9a825" />
-          </button>
-        )}
-        {features.performance && (
-          <button className="dash-card card-performance" onClick={() => navigate('/one-to-ones')}>
-            <div className="card-content">
-              <span className="card-label">{t('one_to_one.nav_label')}</span>
-            </div>
-            {pendingOneToOnes > 0 && <span className="kudos-unread-badge">{pendingOneToOnes}</span>}
-            <Chevron color="#ad1457" />
-          </button>
-        )}
-        {features.timesheets && (
-          <button className="dash-card card-timesheets" onClick={() => navigate('/timesheets')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.timesheets')}</span>
-            </div>
-            <Chevron color="#1565c0" />
-          </button>
-        )}
-        {features.shifts && (
-          <button className="dash-card card-shifts" onClick={() => navigate('/shifts')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.shifts')}</span>
-            </div>
-            <Chevron color="#e65100" />
-          </button>
-        )}
-        {features.space_booking && (
-          <button className="dash-card card-space-booking" onClick={() => navigate('/space-booking')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.space_booking')}</span>
-            </div>
-            <Chevron color="#263238" />
-          </button>
-        )}
-        {features.legal_timesheets && (
-          <button className="dash-card card-legal-ts" onClick={() => navigate('/legal-timesheets')}>
-            <div className="card-content">
-              <span className="card-label">{t('dashboard.legal_timesheets')}</span>
-            </div>
-            <Chevron color="#00695c" />
-          </button>
-        )}
-      </div>
+      {dashMode === 'info' ? (
+        <div className="info-card-grid">
+          {infoCardOrder.map(key => renderInfoCard(key))}
+        </div>
+      ) : (
+        <div className={`card-grid${dashboardStyle === 'slim' ? ' card-grid-slim' : ''}`}>
+          {features.expenses && (
+            <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.expenses')}</span>
+                <span className="card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}{lastExpenseHasReceipt && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 4, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>}</span>
+                <span className="card-sub">{t('dashboard.last_claim')}</span>
+                {pendingExpense !== null && (
+                  <span className="card-sub card-expense-pending">&pound;{pendingExpense.toFixed(2)} {t('dashboard.pending')}</span>
+                )}
+              </div>
+              <Chevron color="#c62828" />
+            </button>
+          )}
+          {features.leave && (
+            <button className="dash-card card-leave" onClick={() => navigate('/leave')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.leave_remaining')}</span>
+                <span className="card-value card-value-large">{leaveRemaining !== null ? leaveRemaining : '--'} <span className="card-value-unit">{t('dashboard.days')}</span></span>
+                {leavePending !== null && leavePending > 0 && (
+                  <span className="card-sub card-leave-pending">{leavePending} {t('dashboard.days_pending')}</span>
+                )}
+              </div>
+              <Chevron color="#2e7d32" />
+            </button>
+          )}
+          {features.profile && (
+            <button className="dash-card card-profile" onClick={() => navigate('/my-profile')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.my_profile')}</span>
+              </div>
+              <Chevron color="#7b1fa2" />
+            </button>
+          )}
+          {features.payslips && (
+            <button className="dash-card card-payslips" onClick={() => navigate('/payslips')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.payslips')}</span>
+              </div>
+              <Chevron color="#1a237e" />
+            </button>
+          )}
+          {features.kudos && (
+            <button className="dash-card card-kudos" onClick={() => navigate('/kudos')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.kudos')}</span>
+              </div>
+              {kudosUnread > 0 && <span className="kudos-unread-badge">{kudosUnread}</span>}
+              <Chevron color="#546e7a" />
+            </button>
+          )}
+          {features.benefits && (
+            <button className="dash-card card-benefits" onClick={() => navigate('/benefits')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.benefits')}</span>
+              </div>
+              <Chevron color="#80deea" />
+            </button>
+          )}
+          {features.elearning && (
+            <button className="dash-card card-elearning" onClick={() => navigate('/elearning')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.elearning')}</span>
+              </div>
+              <Chevron color="#f9a825" />
+            </button>
+          )}
+          {features.performance && (
+            <button className="dash-card card-performance" onClick={() => navigate('/one-to-ones')}>
+              <div className="card-content">
+                <span className="card-label">{t('one_to_one.nav_label')}</span>
+              </div>
+              {pendingOneToOnes > 0 && <span className="kudos-unread-badge">{pendingOneToOnes}</span>}
+              <Chevron color="#ad1457" />
+            </button>
+          )}
+          {features.timesheets && (
+            <button className="dash-card card-timesheets" onClick={() => navigate('/timesheets')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.timesheets')}</span>
+              </div>
+              <Chevron color="#1565c0" />
+            </button>
+          )}
+          {features.shifts && (
+            <button className="dash-card card-shifts" onClick={() => navigate('/shifts')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.shifts')}</span>
+              </div>
+              <Chevron color="#e65100" />
+            </button>
+          )}
+          {features.space_booking && (
+            <button className="dash-card card-space-booking" onClick={() => navigate('/space-booking')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.space_booking')}</span>
+              </div>
+              <Chevron color="#263238" />
+            </button>
+          )}
+          {features.legal_timesheets && (
+            <button className="dash-card card-legal-ts" onClick={() => navigate('/legal-timesheets')}>
+              <div className="card-content">
+                <span className="card-label">{t('dashboard.legal_timesheets')}</span>
+              </div>
+              <Chevron color="#00695c" />
+            </button>
+          )}
+        </div>
+      )}
 
       {latest && (
         <section className="announcements">
