@@ -1049,7 +1049,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {latest && (
+      {dashMode !== 'info' && latest && (
         <section className="announcements">
           <h3 className="announcements-title">{t('dashboard.announcements')}</h3>
           <button className="announcement-card" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
