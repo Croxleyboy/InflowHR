@@ -35,9 +35,10 @@ interface LatestAnnouncement {
   priority?: 'low' | 'medium' | 'high'
 }
 
-interface DashNotification {
+interface DashTask {
   id: number
   title: string
+  link: string | null
   created_at: string
 }
 
@@ -51,7 +52,7 @@ const INFO_CARD_KEYS = [
   'checkin', 'leave', 'expenses', 'documents', 'profile',
   'payslips', 'kudos', 'performance', 'elearning', 'benefits',
   'timesheets', 'shifts', 'space_booking', 'legal_timesheets',
-  'asset_management', 'skills_passport',
+  'asset_management', 'skills_passport', 'notifications',
 ] as const
 
 type InfoCardKey = typeof INFO_CARD_KEYS[number]
@@ -73,6 +74,7 @@ const INFO_CARD_FEATURE_MAP: Record<string, string | null> = {
   legal_timesheets: 'legal_timesheets',
   asset_management: 'asset_management',
   skills_passport: 'skills_passport',
+  notifications: null,
 }
 
 function getInfoCardOrder(): InfoCardKey[] {
@@ -115,7 +117,7 @@ export default function Dashboard() {
   const [docCount, setDocCount] = useState(0)
   const [docMissing, setDocMissing] = useState(0)
   const [cardsExpanded, setCardsExpanded] = useState(false)
-  const [latestNotifications, setLatestNotifications] = useState<DashNotification[]>([])
+  const [latestTasks, setLatestTasks] = useState<DashTask[]>([])
   const [openShifts, setOpenShifts] = useState<OpenShift[]>([])
   const [announcements, setAnnouncements] = useState<LatestAnnouncement[]>([])
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
@@ -158,7 +160,7 @@ export default function Dashboard() {
         .select('title, body, published_at, priority')
         .eq('company_id', companyUser.company_id)
         .order('published_at', { ascending: false })
-        .limit(3)
+        .limit(1)
         .then(({ data }) => { if (data) setAnnouncements(data as LatestAnnouncement[]) })
     }
 
@@ -366,12 +368,14 @@ export default function Dashboard() {
         })
 
       supabase.from('notifications')
-        .select('id, title, created_at')
+        .select('id, title, link, created_at')
         .eq('employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
+        .eq('type', 'action')
+        .eq('is_read', false)
         .order('created_at', { ascending: false })
-        .limit(2)
-        .then(({ data }) => { if (data) setLatestNotifications(data as DashNotification[]) })
+        .limit(3)
+        .then(({ data }) => { if (data) setLatestTasks(data as DashTask[]) })
 
       if (features.shifts) {
         const todayStr = toLocalDateStr()
@@ -676,6 +680,21 @@ export default function Dashboard() {
             </div>
           </button>
         )
+      case 'notifications':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/notifications')}>
+            <div className="info-card-head">
+              <span className="info-card-title">My Notifications</span>
+              <span className="info-card-icon" style={{ background: '#e3f2fd' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value">Notifications</span>
+              <span className="info-card-sub">Your alerts & updates</span>
+            </div>
+          </button>
+        )
       default:
         return null
     }
@@ -867,38 +886,34 @@ export default function Dashboard() {
                     <span className="info-section-title">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                       Company Announcements
-                      {announcements.length > 0 && <span className="info-section-badge">{announcements.length}</span>}
                     </span>
                     <button className="info-section-viewall" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>View All <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
                   </div>
-                  {announcements.map((a, i) => (
-                    <button key={i} className="info-card-announce-item" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
-                      <span className="info-card-announce-row">
-                        <span className="info-card-announce-title">{a.title}</span>
-                        {a.priority && <span className={`info-card-announce-priority info-card-announce-priority--${a.priority}`}>{a.priority === 'high' ? 'High' : a.priority === 'medium' ? 'Medium' : 'Low'}</span>}
-                      </span>
-                      <span className="info-card-announce-text">{a.body?.length > 80 ? a.body.slice(0, 80) + '...' : a.body}</span>
-                      {a.published_at && <span className="info-card-announce-date"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> {new Date(a.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                    </button>
-                  ))}
+                  <button className="info-card-announce-item" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
+                    <span className="info-card-announce-row">
+                      <span className="info-card-announce-title">{announcements[0].title}</span>
+                      {announcements[0].priority && <span className={`info-card-announce-priority info-card-announce-priority--${announcements[0].priority}`}>{announcements[0].priority === 'high' ? 'High' : announcements[0].priority === 'medium' ? 'Medium' : 'Low'}</span>}
+                    </span>
+                    <span className="info-card-announce-text">{announcements[0].body?.length > 80 ? announcements[0].body.slice(0, 80) + '...' : announcements[0].body}</span>
+                    {announcements[0].published_at && <span className="info-card-announce-date"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> {new Date(announcements[0].published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                  </button>
                 </div>
               </div>
             )}
 
-            {latestNotifications.length > 0 && (
+            {latestTasks.length > 0 && (
               <div className="info-section">
                 <div className="info-section-card">
                   <div className="info-section-head">
                     <span className="info-section-title">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                      My Notifications
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      My Tasks
                     </span>
                     <button className="info-section-viewall" onClick={() => navigate('/notifications')}>View All <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
                   </div>
-                  {latestNotifications.map(n => (
-                    <button key={n.id} className="info-card-announce-item" onClick={() => navigate('/notifications')}>
-                      <span className="info-card-announce-title">{n.title}</span>
-                      <span className="info-card-announce-date">{new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                  {latestTasks.map(t => (
+                    <button key={t.id} className="info-card-task-line" onClick={() => navigate(t.link || '/notifications')}>
+                      <span className="info-card-task-line-text">{t.title}</span>
                     </button>
                   ))}
                 </div>

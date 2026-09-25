@@ -26,6 +26,7 @@ const INFO_CARD_LABELS: { key: string; label: string; featureKey?: keyof Feature
   { key: 'legal_timesheets', label: 'Legal Timesheets', featureKey: 'legal_timesheets' },
   { key: 'asset_management', label: 'My Assets', featureKey: 'asset_management' },
   { key: 'skills_passport', label: 'Skills Passport', featureKey: 'skills_passport' },
+  { key: 'notifications', label: 'My Notifications' },
 ]
 
 const DEFAULT_INFO_KEYS = INFO_CARD_LABELS.map(c => c.key)
