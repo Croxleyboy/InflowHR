@@ -37,8 +37,10 @@ interface LatestAnnouncement {
 
 interface DashTask {
   id: number
-  title: string
-  link: string | null
+  record_type: string
+  action: string
+  task_description: string | null
+  approval_status: string | null
   created_at: string
 }
 
@@ -367,12 +369,11 @@ export default function Dashboard() {
           }
         })
 
-      supabase.from('notifications')
-        .select('id, title, link, created_at')
-        .eq('employee_id', employeeId)
+      supabase.from('workflow_tracker')
+        .select('id, record_type, action, task_description, approval_status, created_at')
+        .ilike('assigned_to', `%${employeeEmail}%`)
+        .eq('status', 'Pending')
         .eq('company_id', companyUser.company_id)
-        .eq('type', 'action')
-        .eq('is_read', false)
         .order('created_at', { ascending: false })
         .limit(3)
         .then(({ data }) => { if (data) setLatestTasks(data as DashTask[]) })
@@ -911,11 +912,25 @@ export default function Dashboard() {
                     </span>
                     <button className="info-section-viewall" onClick={() => navigate('/notifications')}>View All <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
                   </div>
-                  {latestTasks.map(t => (
-                    <button key={t.id} className="info-card-task-line" onClick={() => navigate(t.link || '/notifications')}>
-                      <span className="info-card-task-line-text">{t.title}</span>
-                    </button>
-                  ))}
+                  {latestTasks.map(t => {
+                    const nav = t.record_type === 'Leave' ? '/leave' : t.record_type === 'Expense' ? '/expenses' : t.record_type === 'Timesheet' ? '/timesheets' : '/notifications'
+                    const label = t.record_type === 'Leave' ? (t.task_description?.split(' - ')[0] || 'Leave') + ' Request'
+                      : t.record_type === 'Expense' ? 'Expense Claim'
+                      : t.record_type === 'Timesheet' ? 'Timesheet Review'
+                      : t.action
+                    const detail = t.record_type === 'Leave' ? t.task_description?.split(' - ').slice(1).join(' - ')
+                      : t.record_type === 'Expense' ? t.task_description
+                      : null
+                    return (
+                      <button key={t.id} className="info-card-task-line" onClick={() => navigate(nav)}>
+                        <span className="info-card-task-line-text">
+                          <span className="task-status-dot" />
+                          {label}
+                        </span>
+                        {detail && <span className="info-card-task-line-detail">{detail}</span>}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}

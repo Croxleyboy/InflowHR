@@ -400,7 +400,9 @@ body {
   cursor: pointer;
 }
 .info-card-task-line:last-child { border-bottom: none; padding-bottom: 0; }
-.info-card-task-line-text { font-size: 14px; font-weight: 500; color: var(--text); }
+.info-card-task-line-text { font-size: 14px; font-weight: 500; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.task-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #e67e22; flex-shrink: 0; }
+.info-card-task-line-detail { display: block; font-size: 12px; color: var(--text-secondary, #666); margin-top: 2px; padding-left: 16px; }
 .info-card-task-item {
   display: flex;
   align-items: center;
