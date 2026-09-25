@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
@@ -41,13 +41,26 @@ interface OnboardingRecord {
   avatar_url: string | null
 }
 
+interface EmployeeDocument {
+  id: string
+  category: string
+  file_name: string
+  file_path: string
+  file_type: string
+  file_size: number
+  notes: string | null
+  created_at: string
+}
+
 export default function MyProfile() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const locState = location.state as { tab?: string; scrollTo?: string } | null
   const { t } = useLanguage()
   const { employeeEmail: EMPLOYEE_EMAIL, employeeId, companyUser, updateAvatarUrl } = useAuth()
   const { showError, showSuccess } = useToast()
   const { features } = useFeatures()
-  const [tab, setTab] = useState<'personal' | 'job'>('personal')
+  const [tab, setTab] = useState<'personal' | 'job'>(locState?.tab === 'job' ? 'job' : 'personal')
   const [profile, setProfile] = useState<OnboardingRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [showMembers, setShowMembers] = useState(false)
@@ -74,6 +87,9 @@ export default function MyProfile() {
   const [newInfo, setNewInfo] = useState('')
   const [additionalDetails, setAdditionalDetails] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [myDocs, setMyDocs] = useState<EmployeeDocument[]>([])
+  const [docsLoading, setDocsLoading] = useState(false)
+  const docsRef = useRef<HTMLDivElement>(null)
 
   const fetchData = useCallback(async () => {
     if (!EMPLOYEE_EMAIL || !companyUser?.company_id) return
@@ -115,6 +131,38 @@ export default function MyProfile() {
   }, [EMPLOYEE_EMAIL, employeeId, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  useEffect(() => {
+    if (!employeeId || !companyUser?.company_id) return
+    setDocsLoading(true)
+    supabase.from('employee_documents')
+      .select('id, category, file_name, file_path, file_type, file_size, notes, created_at')
+      .eq('employee_id', employeeId)
+      .eq('company_id', companyUser.company_id)
+      .eq('visible_to_employee', true)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setMyDocs((data || []) as EmployeeDocument[])
+        setDocsLoading(false)
+      })
+  }, [employeeId, companyUser?.company_id])
+
+  useEffect(() => {
+    if (locState?.scrollTo === 'documents' && tab === 'job' && docsRef.current) {
+      setTimeout(() => docsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300)
+    }
+  }, [tab, locState?.scrollTo])
+
+  async function downloadMyDoc(doc: EmployeeDocument) {
+    const { data, error } = await supabase.storage.from('employee-documents').download(doc.file_path)
+    if (error || !data) { showError('Failed to download: ' + (error?.message || 'Unknown error')); return }
+    const url = URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = doc.file_name
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -440,6 +488,49 @@ export default function MyProfile() {
               <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{t('my_profile.emp_type')}</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{empData?.contract_type || profile.contract_type}</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'job' && (
+        <div ref={docsRef} style={{ padding: '0 16px 16px' }}>
+          <div style={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>My Documents</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 'auto' }}>{myDocs.length} file{myDocs.length !== 1 ? 's' : ''}</span>
+            </div>
+            {docsLoading ? (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>Loading...</div>
+            ) : myDocs.length === 0 ? (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No documents available</div>
+            ) : (
+              myDocs.map(doc => (
+                <button
+                  key={doc.id}
+                  onClick={() => downloadMyDoc(doc)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', width: '100%',
+                    borderBottom: '1px solid var(--border)', background: 'none', border: 'none',
+                    borderBottomStyle: 'solid', borderBottomWidth: 1, borderBottomColor: 'var(--border)',
+                    cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span style={{ fontSize: 18 }}>
+                    {['pdf'].includes(doc.file_type) ? '📄' : ['jpg', 'jpeg', 'png', 'gif'].includes(doc.file_type) ? '🖼️' : ['doc', 'docx'].includes(doc.file_type) ? '📝' : '📎'}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.file_name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {doc.category.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                      {doc.notes ? ` · ${doc.notes}` : ''}
+                      {' · '}{new Date(doc.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </button>
+              ))
+            )}
           </div>
         </div>
       )}

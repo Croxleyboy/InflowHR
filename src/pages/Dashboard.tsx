@@ -357,6 +357,7 @@ export default function Dashboard() {
         .select('id, category, expiry_date', { count: 'exact' })
         .eq('employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
+        .eq('visible_to_employee', true)
         .then(({ data, count }) => {
           setDocCount(count || 0)
           if (data) {
@@ -464,7 +465,7 @@ export default function Dashboard() {
         )
       case 'documents':
         return (
-          <button key={key} className="info-card" onClick={() => navigate('/my-profile')}>
+          <button key={key} className="info-card" onClick={() => navigate('/my-profile', { state: { tab: 'job', scrollTo: 'documents' } })}>
             <div className="info-card-head">
               <span className="info-card-title">Documents</span>
               <span className="info-card-icon" style={{ background: '#e3f2fd' }}>

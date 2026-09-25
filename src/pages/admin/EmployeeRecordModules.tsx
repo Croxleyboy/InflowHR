@@ -143,6 +143,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
   const [docError, setDocError] = useState('')
   const [docDeleting, setDocDeleting] = useState<string | null>(null)
   const [expandedDocCat, setExpandedDocCat] = useState<string | null>(null)
+  const [docVisibleToEmp, setDocVisibleToEmp] = useState(false)
   const docFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setActiveModule('overview'); setModuleData({}) }, [employee.id])
@@ -903,6 +904,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
       uploaded_by: userData?.user?.id || null,
       uploaded_by_name: employeeName || null,
       scan_status: 'pending',
+      visible_to_employee: docVisibleToEmp,
     }).select('id').single()
 
     if (insertErr) {
@@ -913,6 +915,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
 
     setDocExpiry('')
     setDocNotes('')
+    setDocVisibleToEmp(false)
     if (docFileRef.current) docFileRef.current.value = ''
 
     const cacheKey = `${employee.id}:documents`
@@ -1033,6 +1036,17 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
             </div>
             {!catWithExpiry && <div />}
           </div>
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: '#333' }}>
+              <input
+                type="checkbox"
+                checked={docVisibleToEmp}
+                onChange={e => setDocVisibleToEmp(e.target.checked)}
+                style={{ width: 16, height: 16, accentColor: '#1565c0' }}
+              />
+              Visible to employee
+            </label>
+          </div>
           <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
             <input
               ref={docFileRef}
@@ -1105,6 +1119,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
                           {cat.expiryTracking && <th style={{ textAlign: 'left', padding: 8, fontWeight: 600, color: '#666' }}>Expiry</th>}
                           <th style={{ textAlign: 'left', padding: 8, fontWeight: 600, color: '#666' }}>Size</th>
                           <th style={{ textAlign: 'left', padding: 8, fontWeight: 600, color: '#666' }}>Uploaded</th>
+                          <th style={{ textAlign: 'center', padding: 8, fontWeight: 600, color: '#666' }}>Visible</th>
                           <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600, color: '#666' }}>Actions</th>
                         </tr>
                       </thead>
@@ -1147,6 +1162,20 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
                               <td style={{ padding: 8, color: '#888' }}>
                                 <div>{fmtUK(doc.created_at)}</div>
                                 <div style={{ fontSize: 10, color: '#aaa' }}>{doc.uploaded_by_name || ''}</div>
+                              </td>
+                              <td style={{ padding: 8, textAlign: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!doc.visible_to_employee}
+                                  onChange={async () => {
+                                    await supabase.from('employee_documents').update({ visible_to_employee: !doc.visible_to_employee }).eq('id', doc.id)
+                                    const ck = `${employee.id}:documents`
+                                    setModuleData(prev => { const copy = { ...prev }; delete copy[ck]; return copy })
+                                    loadModuleData('documents', ck)
+                                  }}
+                                  style={{ width: 16, height: 16, accentColor: '#1565c0', cursor: 'pointer' }}
+                                  title={doc.visible_to_employee ? 'Visible to employee — click to hide' : 'Hidden from employee — click to show'}
+                                />
                               </td>
                               <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                                 <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
