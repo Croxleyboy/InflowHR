@@ -43,7 +43,7 @@ interface DashNotification {
 interface OpenShift {
   id: string
   date: string
-  shift_template: { name: string; start_time: string; end_time: string } | null
+  shift_template: { name: string; start_time: string; end_time: string }[] | null
 }
 
 const INFO_CARD_KEYS = [
@@ -921,8 +921,8 @@ export default function Dashboard() {
                           <span className="info-card-shift-month">{d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</span>
                         </div>
                         <div className="info-card-shift-details">
-                          <span className="info-card-shift-time">{s.shift_template?.start_time?.slice(0, 5) || '--:--'} – {s.shift_template?.end_time?.slice(0, 5) || '--:--'}</span>
-                          <span className="info-card-shift-role">{s.shift_template?.name || 'Open Shift'}</span>
+                          <span className="info-card-shift-time">{s.shift_template?.[0]?.start_time?.slice(0, 5) || '--:--'} – {s.shift_template?.[0]?.end_time?.slice(0, 5) || '--:--'}</span>
+                          <span className="info-card-shift-role">{s.shift_template?.[0]?.name || 'Open Shift'}</span>
                         </div>
                         <span className="info-card-shift-badge">Available</span>
                       </button>
