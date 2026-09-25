@@ -62,7 +62,7 @@ body {
   padding-bottom: 72px;
   background: var(--bg);
 }
-.dashboard { background: #fff; overflow-x: hidden; }
+.dashboard { background: var(--bg); overflow-x: hidden; }
 [data-theme="dark"] .dashboard { background: var(--bg); }
 
 /* ── Dashboard Header ── */
