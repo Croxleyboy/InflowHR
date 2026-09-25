@@ -373,6 +373,9 @@ body {
   padding: 6px 0;
   text-align: left;
   cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
 }
 .info-card-announce-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .info-card-announce-title { font-size: 14px; font-weight: 600; color: var(--text); }
@@ -391,7 +394,9 @@ body {
   width: 100%;
   text-align: left;
   padding: 10px 0;
+  border: none;
   border-bottom: 1px solid var(--border);
+  background: none;
   cursor: pointer;
 }
 .info-card-task-line:last-child { border-bottom: none; padding-bottom: 0; }
