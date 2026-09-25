@@ -370,14 +370,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 10px 12px;
-  border-left: 3px solid var(--border);
+  padding: 6px 0;
   text-align: left;
   cursor: pointer;
-  margin: 6px 0;
 }
-.info-card-announce-item:first-child { margin-top: 0; }
-.info-card-announce-item:last-child { margin-bottom: 0; }
 .info-card-announce-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .info-card-announce-title { font-size: 14px; font-weight: 600; color: var(--text); }
 .info-card-announce-text { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
@@ -457,7 +453,6 @@ body {
   background: var(--bg-card);
   border-radius: 14px;
   padding: 14px 16px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 .info-section-head {
   display: flex;
