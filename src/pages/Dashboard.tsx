@@ -32,6 +32,7 @@ interface LatestAnnouncement {
   title: string
   body: string
   published_at?: string
+  priority?: 'low' | 'medium' | 'high'
 }
 
 interface DashNotification {
@@ -146,7 +147,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (companyUser?.company_id) {
       supabase.from('announcements')
-        .select('title, body, published_at')
+        .select('title, body, published_at, priority')
         .eq('company_id', companyUser.company_id)
         .order('published_at', { ascending: false })
         .limit(1)
@@ -154,7 +155,7 @@ export default function Dashboard() {
         .then(({ data }) => { if (data) setLatest(data as LatestAnnouncement) })
 
       supabase.from('announcements')
-        .select('title, body, published_at')
+        .select('title, body, published_at, priority')
         .eq('company_id', companyUser.company_id)
         .order('published_at', { ascending: false })
         .limit(3)
@@ -872,9 +873,12 @@ export default function Dashboard() {
                   </div>
                   {announcements.map((a, i) => (
                     <button key={i} className="info-card-announce-item" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
-                      <span className="info-card-announce-title">{a.title}</span>
+                      <span className="info-card-announce-row">
+                        <span className="info-card-announce-title">{a.title}</span>
+                        {a.priority && <span className={`info-card-announce-priority info-card-announce-priority--${a.priority}`}>{a.priority === 'high' ? 'High' : a.priority === 'medium' ? 'Medium' : 'Low'}</span>}
+                      </span>
                       <span className="info-card-announce-text">{a.body?.length > 80 ? a.body.slice(0, 80) + '...' : a.body}</span>
-                      {a.published_at && <span className="info-card-announce-date">{new Date(a.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                      {a.published_at && <span className="info-card-announce-date"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> {new Date(a.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                     </button>
                   ))}
                 </div>

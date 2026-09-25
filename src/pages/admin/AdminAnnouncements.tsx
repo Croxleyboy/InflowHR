@@ -8,6 +8,7 @@ interface Announcement {
   title: string
   body: string
   is_pinned: boolean
+  priority: 'low' | 'medium' | 'high'
   published_at: string
   expires_at: string | null
   author: { first_name: string; last_name: string } | null
@@ -37,13 +38,13 @@ export default function AdminAnnouncements() {
 
   function startEdit(a: Announcement) {
     setEditingId(a.id)
-    setEditForm({ title: a.title, body: a.body, is_pinned: a.is_pinned, expires_at: a.expires_at || '' })
+    setEditForm({ title: a.title, body: a.body, is_pinned: a.is_pinned, priority: a.priority || 'medium', expires_at: a.expires_at || '' })
   }
 
   async function saveEdit(id: number) {
     const { error } = await supabase.from('announcements').update({
       title: editForm.title, body: editForm.body, is_pinned: editForm.is_pinned,
-      expires_at: editForm.expires_at || null,
+      priority: editForm.priority || 'medium', expires_at: editForm.expires_at || null,
     }).eq('id', id)
     if (error) { showError('Failed to save announcement: ' + error.message); return }
     setEditingId(null)
@@ -93,7 +94,7 @@ export default function AdminAnnouncements() {
       {loading ? <div className="admin-loading">Loading...</div> : (
         <div className="admin-table-wrap">
           <table className="admin-table">
-            <thead><tr><th>Title</th><th>Author</th><th>Published</th><th>Expires</th><th>Pinned</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Title</th><th>Priority</th><th>Author</th><th>Published</th><th>Expires</th><th>Pinned</th><th>Actions</th></tr></thead>
             <tbody>
               {filtered.map(a => (
                 <tr key={a.id}>
@@ -104,6 +105,15 @@ export default function AdminAnnouncements() {
                     </div>
                   ) : (
                     <div><strong>{a.title}</strong><br/><span className="admin-td-desc">{a.body.slice(0, 80)}{a.body.length > 80 ? '...' : ''}</span></div>
+                  )}</td>
+                  <td>{editingId === a.id ? (
+                    <select className="admin-inline-input" value={editForm.priority} onChange={e => setEditForm(f => ({...f, priority: e.target.value}))}>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  ) : (
+                    <span style={{ fontWeight: 600, color: a.priority === 'high' ? '#d32f2f' : a.priority === 'medium' ? '#e65100' : '#2e7d32' }}>{a.priority ? a.priority.charAt(0).toUpperCase() + a.priority.slice(1) : 'Medium'}</span>
                   )}</td>
                   <td>{a.author ? `${a.author.first_name} ${a.author.last_name}` : '—'}</td>
                   <td>{new Date(a.published_at).toLocaleDateString('en-GB')}</td>

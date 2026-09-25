@@ -15,6 +15,7 @@ export default function CreateNotification() {
   }, [canPostNotifications, isSuperAdmin, companyUser?.role, navigate])
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium')
   const [submitting, setSubmitting] = useState(false)
 
   const canSubmit = title.trim().length > 0 && message.trim().length > 0
@@ -31,6 +32,7 @@ export default function CreateNotification() {
       body: message.trim(),
       submitted_by_name: HARDCODED_EMPLOYEE_NAME,
       is_pinned: false,
+      priority,
       company_id: companyUser?.company_id,
       published_at: new Date().toISOString(),
     }
@@ -104,6 +106,13 @@ export default function CreateNotification() {
           onChange={e => setMessage(e.target.value)}
           rows={5}
         />
+
+        <label className="create-notif-label">Priority</label>
+        <select className="create-notif-input" value={priority} onChange={e => setPriority(e.target.value as 'low' | 'medium' | 'high')}>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
 
         <p className="create-notif-hint">{t('create_notif.hint')}</p>
 
