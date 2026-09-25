@@ -370,12 +370,14 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  border-left: 3px solid var(--border);
   text-align: left;
   cursor: pointer;
+  margin: 6px 0;
 }
-.info-card-announce-item:last-child { border-bottom: none; padding-bottom: 0; }
+.info-card-announce-item:first-child { margin-top: 0; }
+.info-card-announce-item:last-child { margin-bottom: 0; }
 .info-card-announce-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .info-card-announce-title { font-size: 14px; font-weight: 600; color: var(--text); }
 .info-card-announce-text { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
@@ -443,10 +445,9 @@ body {
 .info-section { padding: 6px 16px; }
 .info-section-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 .info-section-head {
   display: flex;
@@ -4538,6 +4539,7 @@ body {
 /* ── Login Page ── */
 .login-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   position: relative;
 }
@@ -4559,6 +4561,7 @@ body {
   flex-direction: column;
   justify-content: center;
   padding: 60px;
+  padding-top: calc(60px + env(safe-area-inset-top, 0px));
   position: relative;
   overflow: hidden;
 }
@@ -4891,12 +4894,13 @@ body {
 @media (max-width: 900px) {
   .login-page {
     flex-direction: column;
-    min-height: 0;
-    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
   .login-hero {
+    flex: 0 0 auto;
     padding: 40px 32px;
     min-height: auto;
   }
@@ -4913,10 +4917,13 @@ body {
     font-size: 13px;
   }
   .login-form-side {
+    flex: 1 1 auto;
     width: 100%;
     min-height: auto;
     padding: 40px 24px;
   }
+  .login-hero-decoration { display: none; }
+  .login-hero-logo-img { height: 64px; }
 }
 .auth-loading {
   min-height: 100vh;
