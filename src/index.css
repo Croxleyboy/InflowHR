@@ -416,6 +416,126 @@ body {
   gap: 2px;
 }
 
+/* Info cards expand/collapse */
+.info-cards-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: calc(100% - 32px);
+  margin: 4px 16px 2px;
+  padding: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.info-cards-expand:active { background: var(--border); }
+
+/* Info section cards (announcements, notifications, shifts) */
+.info-section { padding: 6px 16px; }
+.info-section-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.info-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.info-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.info-section-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #43a047;
+  border-radius: 10px;
+  padding: 1px 8px;
+  min-width: 20px;
+  text-align: center;
+}
+.info-section-viewall {
+  font-size: 13px;
+  font-weight: 600;
+  color: #43a047;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+}
+
+/* Info section shift items */
+.info-card-shift-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+.info-card-shift-item:last-child { border-bottom: none; padding-bottom: 0; }
+.info-card-shift-date {
+  text-align: center;
+  flex-shrink: 0;
+  min-width: 36px;
+}
+.info-card-shift-day {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+  display: block;
+}
+.info-card-shift-month {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  display: block;
+}
+.info-card-shift-details { flex: 1; }
+.info-card-shift-time {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  display: block;
+}
+.info-card-shift-role {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: block;
+}
+.info-card-shift-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #43a047;
+  background: #e8f5e9;
+  border-radius: 4px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
 /* Settings – card manager */
 .card-manager-list { display: flex; flex-direction: column; gap: 2px; }
 .card-manager-row {
@@ -963,6 +1083,32 @@ body {
   transition: opacity 0.15s;
 }
 .save-btn:active { opacity: 0.85; }
+
+/* Settings collapsible sections */
+.settings-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+.settings-section-toggle h2 { margin-bottom: 0; }
+
+/* Sticky save button */
+.settings-save-sticky {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(to top, var(--bg) 70%, transparent);
+  z-index: 10;
+}
 
 .settings-admin-section { margin-top: 8px; }
 .settings-admin-btn {

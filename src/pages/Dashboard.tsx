@@ -31,6 +31,19 @@ function getDateString(lang: string) {
 interface LatestAnnouncement {
   title: string
   body: string
+  published_at?: string
+}
+
+interface DashNotification {
+  id: number
+  title: string
+  created_at: string
+}
+
+interface OpenShift {
+  id: string
+  date: string
+  shift_template: { name: string; start_time: string; end_time: string } | null
 }
 
 const INFO_CARD_KEYS = [
@@ -100,6 +113,10 @@ export default function Dashboard() {
   const [reminderCount, setReminderCount] = useState(0)
   const [docCount, setDocCount] = useState(0)
   const [docMissing, setDocMissing] = useState(0)
+  const [cardsExpanded, setCardsExpanded] = useState(false)
+  const [latestNotifications, setLatestNotifications] = useState<DashNotification[]>([])
+  const [openShifts, setOpenShifts] = useState<OpenShift[]>([])
+  const [announcements, setAnnouncements] = useState<LatestAnnouncement[]>([])
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
@@ -129,12 +146,19 @@ export default function Dashboard() {
   useEffect(() => {
     if (companyUser?.company_id) {
       supabase.from('announcements')
-        .select('title, body')
+        .select('title, body, published_at')
         .eq('company_id', companyUser.company_id)
         .order('published_at', { ascending: false })
         .limit(1)
         .single()
         .then(({ data }) => { if (data) setLatest(data as LatestAnnouncement) })
+
+      supabase.from('announcements')
+        .select('title, body, published_at')
+        .eq('company_id', companyUser.company_id)
+        .order('published_at', { ascending: false })
+        .limit(3)
+        .then(({ data }) => { if (data) setAnnouncements(data as LatestAnnouncement[]) })
     }
 
     if (employeeId && companyUser?.company_id) {
@@ -339,6 +363,26 @@ export default function Dashboard() {
             setDocMissing(missing)
           }
         })
+
+      supabase.from('notifications')
+        .select('id, title, created_at')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .order('created_at', { ascending: false })
+        .limit(2)
+        .then(({ data }) => { if (data) setLatestNotifications(data as DashNotification[]) })
+
+      if (features.shifts) {
+        const todayStr = toLocalDateStr()
+        supabase.from('shift_assignments')
+          .select('id, date, shift_template:shift_templates(name, start_time, end_time)')
+          .eq('company_id', companyUser.company_id)
+          .is('employee_id', null)
+          .gte('date', todayStr)
+          .order('date', { ascending: true })
+          .limit(3)
+          .then(({ data }) => { if (data) setOpenShifts(data as OpenShift[]) })
+      }
     }
   }, [employeeId, employeeEmail, companyUser?.company_id, features.elearning])
 
@@ -799,11 +843,97 @@ export default function Dashboard() {
         )
       })()}
 
-      {dashMode === 'info' ? (
-        <div className="info-card-grid">
-          {infoCardOrder.map(key => renderInfoCard(key))}
-        </div>
-      ) : (
+      {dashMode === 'info' ? (() => {
+        const visibleCards = infoCardOrder.map(key => renderInfoCard(key)).filter(Boolean)
+        const hasMore = visibleCards.length > 4
+        const displayCards = cardsExpanded ? visibleCards : visibleCards.slice(0, 4)
+        return (
+          <>
+            <div className="info-card-grid">
+              {displayCards}
+            </div>
+            {hasMore && (
+              <button className="info-cards-expand" onClick={() => setCardsExpanded(v => !v)}>
+                <span>{cardsExpanded ? 'Show less' : `Show all (${visibleCards.length})`}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: cardsExpanded ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }}><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+            )}
+
+            {announcements.length > 0 && (
+              <div className="info-section">
+                <div className="info-section-card">
+                  <div className="info-section-head">
+                    <span className="info-section-title">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                      Company Announcements
+                      {announcements.length > 0 && <span className="info-section-badge">{announcements.length}</span>}
+                    </span>
+                    <button className="info-section-viewall" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>View All <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+                  </div>
+                  {announcements.map((a, i) => (
+                    <button key={i} className="info-card-announce-item" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
+                      <span className="info-card-announce-title">{a.title}</span>
+                      <span className="info-card-announce-text">{a.body?.length > 80 ? a.body.slice(0, 80) + '...' : a.body}</span>
+                      {a.published_at && <span className="info-card-announce-date">{new Date(a.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {latestNotifications.length > 0 && (
+              <div className="info-section">
+                <div className="info-section-card">
+                  <div className="info-section-head">
+                    <span className="info-section-title">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                      My Notifications
+                    </span>
+                    <button className="info-section-viewall" onClick={() => navigate('/notifications')}>View All <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+                  </div>
+                  {latestNotifications.map(n => (
+                    <button key={n.id} className="info-card-announce-item" onClick={() => navigate('/notifications')}>
+                      <span className="info-card-announce-title">{n.title}</span>
+                      <span className="info-card-announce-date">{new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {features.shifts && openShifts.length > 0 && (
+              <div className="info-section">
+                <div className="info-section-card">
+                  <div className="info-section-head">
+                    <span className="info-section-title">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      Open Shifts
+                      <span className="info-section-badge">{openShifts.length}</span>
+                    </span>
+                    <button className="info-section-viewall" onClick={() => navigate('/shifts')}>View All <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg></button>
+                  </div>
+                  {openShifts.map(s => {
+                    const d = new Date(s.date + 'T00:00:00')
+                    return (
+                      <button key={s.id} className="info-card-shift-item" onClick={() => navigate('/shifts')}>
+                        <div className="info-card-shift-date">
+                          <span className="info-card-shift-day">{d.getDate()}</span>
+                          <span className="info-card-shift-month">{d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase()}</span>
+                        </div>
+                        <div className="info-card-shift-details">
+                          <span className="info-card-shift-time">{s.shift_template?.start_time?.slice(0, 5) || '--:--'} – {s.shift_template?.end_time?.slice(0, 5) || '--:--'}</span>
+                          <span className="info-card-shift-role">{s.shift_template?.name || 'Open Shift'}</span>
+                        </div>
+                        <span className="info-card-shift-badge">Available</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )
+      })() : (
         <div className={`card-grid${dashboardStyle === 'slim' ? ' card-grid-slim' : ''}`}>
           {features.expenses && (
             <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>

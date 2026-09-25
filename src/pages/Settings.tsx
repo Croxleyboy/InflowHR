@@ -94,6 +94,8 @@ export default function Settings() {
   const [consentsLoading, setConsentsLoading] = useState(true)
   const [consentSaving, setConsentSaving] = useState<string | null>(null)
   const [hasFeatureSwitching, setHasFeatureSwitching] = useState(false)
+  const [dashCardsOpen, setDashCardsOpen] = useState(true)
+  const [featuresOpen, setFeaturesOpen] = useState(true)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)')
     const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
@@ -347,35 +349,36 @@ export default function Settings() {
 
       {canSwitchFeatures && (
         <section className="settings-section">
-          <h2>{t('settings.features')}</h2>
-          <p className="settings-hint">{t('settings.features_hint')}</p>
-          <div className="feature-toggles">
-            {featureLabels.filter(({ key }) => companyFeatures[key] || key === 'elearning').map(({ key, tKey }) => {
-              const disabled = !companyFeatures[key]
-              return (
-                <div className="toggle-row" key={key} style={disabled ? { opacity: 0.5 } : undefined}>
-                  <span>{t(tKey)}{disabled ? ' (disabled)' : ''}</span>
-                  <button
-                    className={`toggle-switch ${draft[key] && !disabled ? 'toggle-on' : 'toggle-off'}`}
-                    onClick={() => !disabled && handleToggle(key)}
-                    role="switch"
-                    aria-checked={draft[key] && !disabled}
-                    disabled={disabled}
-                    style={disabled ? { cursor: 'not-allowed' } : undefined}
-                  >
-                    <span className="toggle-knob" />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
+          <button className="settings-section-toggle" onClick={() => setFeaturesOpen(v => !v)}>
+            <h2>{t('settings.features')}</h2>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: featuresOpen ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }}><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {featuresOpen && (
+            <>
+              <p className="settings-hint">{t('settings.features_hint')}</p>
+              <div className="feature-toggles">
+                {featureLabels.filter(({ key }) => companyFeatures[key] || key === 'elearning').map(({ key, tKey }) => {
+                  const disabled = !companyFeatures[key]
+                  return (
+                    <div className="toggle-row" key={key} style={disabled ? { opacity: 0.5 } : undefined}>
+                      <span>{t(tKey)}{disabled ? ' (disabled)' : ''}</span>
+                      <button
+                        className={`toggle-switch ${draft[key] && !disabled ? 'toggle-on' : 'toggle-off'}`}
+                        onClick={() => !disabled && handleToggle(key)}
+                        role="switch"
+                        aria-checked={draft[key] && !disabled}
+                        disabled={disabled}
+                        style={disabled ? { cursor: 'not-allowed' } : undefined}
+                      >
+                        <span className="toggle-knob" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </section>
-      )}
-
-      {canSwitchFeatures && (
-        <button className="save-btn" onClick={handleSave}>
-          {saved ? t('settings.saved') : t('settings.save')}
-        </button>
       )}
 
       <section className="settings-section">
@@ -399,7 +402,11 @@ export default function Settings() {
 
       {dashMode === 'info' && (
         <section className="settings-section">
-          <h2>Dashboard Cards</h2>
+          <button className="settings-section-toggle" onClick={() => setDashCardsOpen(v => !v)}>
+            <h2>Dashboard Cards</h2>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: dashCardsOpen ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }}><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {dashCardsOpen && <>
           <p className="settings-hint" style={{ marginBottom: 10 }}>Toggle cards on or off and reorder them with the arrows.</p>
           <div className="card-manager-list">
             {cardOrder.filter(key => {
@@ -465,6 +472,7 @@ export default function Settings() {
               )
             })}
           </div>
+          </>}
         </section>
       )}
 
@@ -576,6 +584,12 @@ export default function Settings() {
           </button>
         </section>
       )}
+
+      <div className="settings-save-sticky">
+        <button className="save-btn" onClick={handleSave}>
+          {saved ? t('settings.saved') : t('settings.save')}
+        </button>
+      </div>
 
       {exportConfirm && (
         <div className="modal-overlay" onClick={() => setExportConfirm(null)}>
