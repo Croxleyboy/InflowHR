@@ -122,6 +122,15 @@ export default function Dashboard() {
   const [latestTasks, setLatestTasks] = useState<DashTask[]>([])
   const [openShifts, setOpenShifts] = useState<OpenShift[]>([])
   const [announcements, setAnnouncements] = useState<LatestAnnouncement[]>([])
+  const [nextBooking, setNextBooking] = useState<{ space_name: string; booking_date: string; start_time: string | null } | null>(null)
+  const [nextShift, setNextShift] = useState<{ date: string; shift_name: string; start_time: string; end_time: string } | null>(null)
+  const [latestLegalTs, setLatestLegalTs] = useState<{ date: string; duration_hrs: number; status: string } | null>(null)
+  const [latestAsset, setLatestAsset] = useState<{ asset_name: string; asset_type: string } | null>(null)
+  const [latestSkill, setLatestSkill] = useState<{ name: string; kind: string } | null>(null)
+  const [latestNotif, setLatestNotif] = useState<{ title: string; created_at: string } | null>(null)
+  const [nextElearning, setNextElearning] = useState<{ title: string; deadline: string } | null>(null)
+  const [nextMeeting, setNextMeeting] = useState<{ scheduled_date: string; scheduled_time: string; label: string } | null>(null)
+  const [latestBenefit, setLatestBenefit] = useState<{ name: string } | null>(null)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
@@ -379,13 +388,137 @@ export default function Dashboard() {
         .limit(3)
         .then(({ data }) => { if (data) setLatestTasks(data as DashTask[]) })
 
+      const todayDate = toLocalDateStr()
+
+      supabase.from('space_bookings')
+        .select('booking_date, start_time, space:spaces(name)')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'confirmed')
+        .gte('booking_date', todayDate)
+        .order('booking_date', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setNextBooking({ space_name: (data.space as any)?.name || 'Space', booking_date: data.booking_date, start_time: data.start_time })
+        })
+
+      supabase.from('shift_assignments')
+        .select('date, shift_template:shift_templates(name, start_time, end_time)')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .gte('date', todayDate)
+        .order('date', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            const tpl = data.shift_template as any
+            setNextShift({ date: data.date, shift_name: tpl?.name || 'Shift', start_time: tpl?.start_time || '', end_time: tpl?.end_time || '' })
+          }
+        })
+
+      supabase.from('legal_timesheet_entries')
+        .select('date, duration_hrs, status')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => { if (data) setLatestLegalTs(data as any) })
+
+      supabase.from('company_assets')
+        .select('asset_name, asset_type')
+        .eq('assigned_to', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'Assigned')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => { if (data) setLatestAsset(data as any) })
+
+      ;(async () => {
+        const { data: sk } = await supabase.from('employee_skills')
+          .select('skill:skills(name)')
+          .eq('employee_id', employeeId)
+          .eq('company_id', companyUser.company_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (sk) { setLatestSkill({ name: (sk.skill as any)?.name || 'Skill', kind: 'skill' }); return }
+        const { data: lang } = await supabase.from('employee_languages')
+          .select('language')
+          .eq('employee_id', employeeId)
+          .eq('company_id', companyUser.company_id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (lang) setLatestSkill({ name: lang.language, kind: 'language' })
+      })()
+
+      supabase.from('notifications')
+        .select('title, created_at')
+        .eq('employee_id', employeeId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => { if (data) setLatestNotif(data as any) })
+
+      supabase.from('course_enrolments')
+        .select('enrolled_at, course:elearning_courses(title, deadline)')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .in('status', ['not_started', 'in_progress'])
+        .limit(50)
+        .then(({ data }) => {
+          if (!data || data.length === 0) return
+          const now = new Date()
+          const withDeadline = data
+            .map((e: any) => ({ title: e.course?.title, deadline: e.course?.deadline }))
+            .filter((e: any) => e.deadline && new Date(e.deadline) >= now)
+            .sort((a: any, b: any) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+          if (withDeadline.length > 0) setNextElearning(withDeadline[0])
+        })
+
+      ;(async () => {
+        const { data: upcoming } = await supabase.from('one_to_one_meetings')
+          .select('scheduled_date, scheduled_time')
+          .eq('company_id', companyUser.company_id)
+          .in('status', ['pending', 'accepted'])
+          .gte('scheduled_date', todayDate)
+          .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
+          .order('scheduled_date', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (upcoming) { setNextMeeting({ ...upcoming, label: 'Next' }); return }
+        const { data: last } = await supabase.from('one_to_one_meetings')
+          .select('scheduled_date, scheduled_time')
+          .eq('company_id', companyUser.company_id)
+          .eq('status', 'completed')
+          .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
+          .order('scheduled_date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (last) setNextMeeting({ ...last, label: 'Last' })
+      })()
+
+      supabase.from('benefit_enrollments')
+        .select('benefit_type:benefit_types(name)')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .order('enrolled_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setLatestBenefit({ name: (data.benefit_type as any)?.name || 'Benefit' })
+        })
+
       if (features.shifts) {
-        const todayStr = toLocalDateStr()
         supabase.from('shift_assignments')
           .select('id, date, shift_template:shift_templates(name, start_time, end_time)')
           .eq('company_id', companyUser.company_id)
           .is('employee_id', null)
-          .gte('date', todayStr)
+          .gte('date', todayDate)
           .order('date', { ascending: true })
           .limit(3)
           .then(({ data }) => { if (data) setOpenShifts(data as OpenShift[]) })
@@ -548,15 +681,15 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              {pendingOneToOnes > 0 ? (
+              {nextMeeting ? (
                 <>
-                  <span className="info-card-value">{pendingOneToOnes} <span className="info-card-value-unit">pending</span></span>
-                  <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />Upcoming meetings</div>
+                  <span className="info-card-value">{nextMeeting.label}</span>
+                  <span className="info-card-sub">{new Date(nextMeeting.scheduled_date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} at {nextMeeting.scheduled_time?.slice(0, 5)}</span>
                 </>
               ) : (
                 <>
                   <span className="info-card-value">1:1 Meetings</span>
-                  <span className="info-card-sub">Schedule & review meetings</span>
+                  <span className="info-card-sub">No meetings scheduled</span>
                 </>
               )}
             </div>
@@ -572,8 +705,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">E-Learning</span>
-              <span className="info-card-sub">Courses & training</span>
+              {nextElearning ? (
+                <>
+                  <span className="info-card-value" style={{ fontSize: 14 }}>{nextElearning.title}</span>
+                  <div className="info-card-status info-card-status-warn"><span className="info-card-dot" />Due {new Date(nextElearning.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">E-Learning</span>
+                  <span className="info-card-sub">Courses & training</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -587,8 +729,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">Benefits</span>
-              <span className="info-card-sub">Your company benefits</span>
+              {latestBenefit ? (
+                <>
+                  <span className="info-card-value" style={{ fontSize: 14 }}>{latestBenefit.name}</span>
+                  <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />Subscribed</div>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Benefits</span>
+                  <span className="info-card-sub">No subscriptions</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -617,8 +768,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">My Shifts</span>
-              <span className="info-card-sub">View rota & availability</span>
+              {nextShift ? (
+                <>
+                  <span className="info-card-value" style={{ fontSize: 14 }}>{nextShift.shift_name}</span>
+                  <span className="info-card-sub">{new Date(nextShift.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {nextShift.start_time?.slice(0, 5)}–{nextShift.end_time?.slice(0, 5)}</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">My Shifts</span>
+                  <span className="info-card-sub">No upcoming shifts</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -632,8 +792,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">Book a Space</span>
-              <span className="info-card-sub">Meeting rooms & desks</span>
+              {nextBooking ? (
+                <>
+                  <span className="info-card-value" style={{ fontSize: 14 }}>{nextBooking.space_name}</span>
+                  <span className="info-card-sub">{new Date(nextBooking.booking_date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{nextBooking.start_time ? ` at ${nextBooking.start_time.slice(0, 5)}` : ''}</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Book a Space</span>
+                  <span className="info-card-sub">No upcoming bookings</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -647,8 +816,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">Legal Timesheets</span>
-              <span className="info-card-sub">Billable hours & matters</span>
+              {latestLegalTs ? (
+                <>
+                  <span className="info-card-value">{latestLegalTs.duration_hrs}h <span className="info-card-value-unit">{latestLegalTs.status}</span></span>
+                  <span className="info-card-sub">{new Date(latestLegalTs.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Legal Timesheets</span>
+                  <span className="info-card-sub">No entries yet</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -662,8 +840,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">My Assets</span>
-              <span className="info-card-sub">Company equipment assigned to you</span>
+              {latestAsset ? (
+                <>
+                  <span className="info-card-value" style={{ fontSize: 14 }}>{latestAsset.asset_name}</span>
+                  <span className="info-card-sub">{latestAsset.asset_type}</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">My Assets</span>
+                  <span className="info-card-sub">No assets assigned</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -677,8 +864,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">Skills Passport</span>
-              <span className="info-card-sub">Your skills & endorsements</span>
+              {latestSkill ? (
+                <>
+                  <span className="info-card-value" style={{ fontSize: 14 }}>{latestSkill.name}</span>
+                  <span className="info-card-sub">Latest {latestSkill.kind}</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Skills Passport</span>
+                  <span className="info-card-sub">Add your skills</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -692,8 +888,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">Notifications</span>
-              <span className="info-card-sub">Your alerts & updates</span>
+              {latestNotif ? (
+                <>
+                  <span className="info-card-value" style={{ fontSize: 13 }}>{latestNotif.title.length > 28 ? latestNotif.title.slice(0, 28) + '…' : latestNotif.title}</span>
+                  <span className="info-card-sub">{new Date(latestNotif.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Notifications</span>
+                  <span className="info-card-sub">No notifications yet</span>
+                </>
+              )}
             </div>
           </button>
         )
