@@ -1,6 +1,6 @@
 # InflowHR — List of Subprocessors
 
-**Last updated:** 22-09-2026
+**Last updated:** 25-09-2026
 
 Under GDPR Article 28, InflowHR maintains this list of subprocessors that process personal data on behalf of our customers. We will notify customers of any changes to this list at least 30 days before a new subprocessor begins processing data.
 
@@ -27,6 +27,14 @@ These subprocessors are only engaged when a customer explicitly enables the inte
 | **Sage Group plc** | Payroll integration and payslip upload | Employee names, payroll data, payslip PDFs | UK | Yes — Sage DPA |
 | **Microsoft (Azure AD)** | Single sign-on authentication | Email addresses, authentication tokens | EU/Global | Yes — Microsoft DPA |
 | **Microsoft (Teams)** | Teams presence and leave notifications (where enabled) | Employee names, email addresses, leave status | EU/Global | Yes — Microsoft DPA |
+
+## Security Scanning
+
+| Subprocessor | Purpose | Data processed | Location | DPA in place |
+|-------------|---------|---------------|----------|-------------|
+| **VirusTotal (Google/Chronicle)** | Malware scanning of uploaded employee documents | File content (uploaded for analysis, not retained beyond scan on free tier) | Global (US-based) | Yes — Google Cloud DPA (VirusTotal is a Chronicle/Google subsidiary) |
+
+> **Note:** VirusTotal scanning is optional. If no API key is configured, documents are uploaded without scanning (scan status: `skipped`). File content is sent to VirusTotal solely for malware analysis. See `docs/go-to-market/EMPLOYEE_DOCUMENT_MANAGEMENT.md` for full details.
 
 ## Embedded Services
 

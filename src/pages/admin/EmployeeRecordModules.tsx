@@ -890,7 +890,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
 
     const { data: userData } = await supabase.auth.getUser()
 
-    const { error: insertErr } = await supabase.from('employee_documents').insert({
+    const { data: insertData, error: insertErr } = await supabase.from('employee_documents').insert({
       employee_id: employee.id,
       company_id: companyId,
       category: docCategory,
@@ -902,7 +902,8 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
       notes: docNotes.trim() || null,
       uploaded_by: userData?.user?.id || null,
       uploaded_by_name: employeeName || null,
-    })
+      scan_status: 'pending',
+    }).select('id').single()
 
     if (insertErr) {
       setDocError(insertErr.message)
@@ -918,6 +919,24 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
     setModuleData(prev => { const copy = { ...prev }; delete copy[cacheKey]; return copy })
     await loadModuleData('documents', cacheKey)
     setDocUploading(false)
+
+    if (insertData?.id) {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        fetch(`${(supabase as any).supabaseUrl}/functions/v1/scan-document`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            apikey: (supabase as any).supabaseKey,
+          },
+          body: JSON.stringify({ storagePath, documentId: insertData.id }),
+        }).then(async () => {
+          setModuleData(prev => { const copy = { ...prev }; delete copy[cacheKey]; return copy })
+          loadModuleData('documents', cacheKey)
+        }).catch(() => {})
+      }
+    }
   }
 
   async function deleteDocument(doc: any) {
@@ -1096,9 +1115,18 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
                           return (
                             <tr key={doc.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                               <td style={{ padding: '8px 12px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                   <span>{getFileIcon(doc.file_type)}</span>
                                   <span style={{ fontWeight: 500, color: '#333', wordBreak: 'break-all' }}>{doc.file_name}</span>
+                                  {doc.scan_status && doc.scan_status !== 'clean' && (
+                                    <span style={{
+                                      fontSize: 9, padding: '1px 6px', borderRadius: 3, fontWeight: 600,
+                                      background: doc.scan_status === 'infected' ? '#ffebee' : doc.scan_status === 'scanning' || doc.scan_status === 'pending' ? '#e3f2fd' : doc.scan_status === 'skipped' ? '#f5f5f5' : '#fff3e0',
+                                      color: doc.scan_status === 'infected' ? '#c62828' : doc.scan_status === 'scanning' || doc.scan_status === 'pending' ? '#1565c0' : doc.scan_status === 'skipped' ? '#888' : '#e65100',
+                                    }}>
+                                      {doc.scan_status === 'infected' ? '⚠ Malware detected' : doc.scan_status === 'scanning' ? 'Scanning…' : doc.scan_status === 'pending' ? 'Scan pending' : doc.scan_status === 'skipped' ? 'Scan skipped' : 'Scan ' + doc.scan_status}
+                                    </span>
+                                  )}
                                 </div>
                               </td>
                               <td style={{ padding: 8, color: '#666' }}>{doc.notes || '—'}</td>

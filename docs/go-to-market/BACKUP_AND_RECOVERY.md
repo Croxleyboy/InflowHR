@@ -1,6 +1,6 @@
 # InflowHR — Backup, Recovery & Business Continuity
 
-**Last updated:** 19-09-2026
+**Last updated:** 25-09-2026
 
 ## Recovery Objectives
 
@@ -25,6 +25,7 @@
 | Content | Backup | Encryption |
 |---------|--------|------------|
 | Employee receipts | Included in Supabase backup | AES-256 at rest, TLS in transit |
+| Employee documents | Included in Supabase backup (private bucket `employee-documents`) | AES-256 at rest, TLS in transit |
 | Company archives | Stored as ZIP with all associated files | AES-256 at rest |
 | Profile avatars | Included in Supabase backup | AES-256 at rest |
 

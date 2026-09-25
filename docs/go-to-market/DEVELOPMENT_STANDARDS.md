@@ -1,5 +1,5 @@
 # InflowHR Development Standards
-**Last updated:** 19-09-2026
+**Last updated:** 25-09-2026
 
 Human-readable reference for contributors and auditors. AI-enforced standards are in `CLAUDE.md` (project root).
 
@@ -90,6 +90,20 @@ import { formatDate, formatDateFriendly, formatDateTime } from '../lib/formatter
 ```tsx
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../lib/validators'
 ```
+
+## Employee Document Management
+
+Employee documents are stored in Supabase Storage (private bucket `employee-documents`) with full RLS and virus scanning via VirusTotal. Key points for contributors:
+
+- **Storage**: private Supabase Storage bucket, AES-256 at rest, TLS in transit
+- **Path structure**: `{company_id}/{employee_id}/{timestamp}_{filename}`
+- **RLS**: all CRUD scoped to `company_id = get_my_company_id() OR is_super_admin()` on both `employee_documents` table and storage policies
+- **Virus scanning**: every upload triggers the `scan-document` Edge Function which submits to VirusTotal; infected files are automatically deleted
+- **Accepted types**: PDF, images (JPG/PNG/GIF), Word (DOC/DOCX), text (TXT/RTF), OpenDocument (ODT), spreadsheets (XLS/XLSX/CSV) — max 10 MB
+- **Categories**: right_to_work (with expiry tracking), contracts, absence, performance, employee_relations, offboarding
+- **Expiry tracking**: Right to Work documents require an expiry date; the UI shows Valid/Expiring soon (≤30 days)/Expired badges
+
+Full documentation: `docs/go-to-market/EMPLOYEE_DOCUMENT_MANAGEMENT.md`
 
 ## External References
 
