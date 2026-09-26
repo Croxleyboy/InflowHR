@@ -131,6 +131,11 @@ export default function Dashboard() {
   const [nextElearning, setNextElearning] = useState<{ title: string; deadline: string } | null>(null)
   const [nextMeeting, setNextMeeting] = useState<{ scheduled_date: string; scheduled_time: string; label: string } | null>(null)
   const [latestBenefit, setLatestBenefit] = useState<{ name: string } | null>(null)
+  const [nextLeaveDate, setNextLeaveDate] = useState<{ date: string; status: string } | null>(null)
+  const [lastPayslipNet, setLastPayslipNet] = useState<number | null>(null)
+  const [lastKudos, setLastKudos] = useState<{ message: string; from_name: string } | null>(null)
+  const [tsHoursThisWeek, setTsHoursThisWeek] = useState<number | null>(null)
+  const [tsExpectedHours] = useState(37.5)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
@@ -523,6 +528,57 @@ export default function Dashboard() {
           .limit(3)
           .then(({ data }) => { if (data) setOpenShifts(data as OpenShift[]) })
       }
+
+      supabase.from('leave_requests')
+        .select('start_date, status')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .in('status', ['approved', 'pending'])
+        .gte('start_date', todayDate)
+        .order('start_date', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => { if (data) setNextLeaveDate({ date: data.start_date, status: data.status }) })
+
+      supabase.from('payslips')
+        .select('net_pay')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .order('pay_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => { if (data) setLastPayslipNet(data.net_pay) })
+
+      supabase.from('kudos')
+        .select('message, from_employee:employees!kudos_from_employee_id_fkey(first_name)')
+        .eq('to_employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setLastKudos({ message: data.message || '', from_name: (data.from_employee as any)?.first_name || '' })
+        })
+
+      ;(async () => {
+        const now = new Date()
+        const dayOfWeek = now.getDay()
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+        const monday = new Date(now)
+        monday.setDate(now.getDate() + mondayOffset)
+        const sunday = new Date(monday)
+        sunday.setDate(monday.getDate() + 6)
+        const { data: tsEntries } = await supabase.from('timesheet_entries')
+          .select('hours')
+          .eq('employee_id', employeeId)
+          .eq('company_id', companyUser.company_id)
+          .gte('date', toLocalDateStr(monday))
+          .lte('date', toLocalDateStr(sunday))
+        if (tsEntries) {
+          const total = tsEntries.reduce((s: number, e: any) => s + Number(e.hours || 0), 0)
+          setTsHoursThisWeek(total)
+        }
+      })()
     }
   }, [employeeId, employeeEmail, companyUser?.company_id, features.elearning])
 
@@ -572,9 +628,11 @@ export default function Dashboard() {
             </div>
             <div className="info-card-body">
               <span className="info-card-value">{leaveRemaining !== null ? leaveRemaining : '--'} <span className="info-card-value-unit">days remaining</span></span>
-              {leavePending !== null && leavePending > 0 && (
+              {nextLeaveDate ? (
+                <div className={`info-card-status ${nextLeaveDate.status === 'approved' ? 'info-card-status-ok' : 'info-card-status-pending'}`}><span className="info-card-dot" />{nextLeaveDate.status === 'approved' ? 'Next' : 'Pending'}: {new Date(nextLeaveDate.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
+              ) : leavePending !== null && leavePending > 0 ? (
                 <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />{leavePending} request{leavePending !== 1 ? 's' : ''} pending</div>
-              )}
+              ) : null}
             </div>
           </button>
         )
@@ -588,10 +646,21 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}</span>
-              <span className="info-card-sub">Last approved claim</span>
-              {pendingExpense !== null && (
-                <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />&pound;{pendingExpense.toFixed(2)} pending</div>
+              {pendingExpense !== null ? (
+                <>
+                  <span className="info-card-value">&pound;{pendingExpense.toFixed(2)}</span>
+                  <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />Claim pending approval</div>
+                </>
+              ) : lastExpense !== null ? (
+                <>
+                  <span className="info-card-value">&pound;{lastExpense.toFixed(2)}</span>
+                  <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />Last claim approved</div>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Expenses</span>
+                  <span className="info-card-sub">Submit & track claims</span>
+                </>
               )}
             </div>
           </button>
@@ -642,8 +711,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">View Payslips</span>
-              <span className="info-card-sub">Salary & payment history</span>
+              {lastPayslipNet !== null ? (
+                <>
+                  <span className="info-card-value">&pound;{lastPayslipNet.toFixed(2)}</span>
+                  <span className="info-card-sub">Last net pay</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Payslips</span>
+                  <span className="info-card-sub">Salary & payment history</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -661,6 +739,11 @@ export default function Dashboard() {
                 <>
                   <span className="info-card-value">{kudosUnread} <span className="info-card-value-unit">new</span></span>
                   <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />Unread recognitions</div>
+                </>
+              ) : lastKudos ? (
+                <>
+                  <span className="info-card-value" style={{ fontSize: 13 }}>{lastKudos.message.length > 35 ? lastKudos.message.slice(0, 35) + '…' : lastKudos.message || 'Recognition received'}</span>
+                  {lastKudos.from_name && <span className="info-card-sub">From {lastKudos.from_name}</span>}
                 </>
               ) : (
                 <>
@@ -684,7 +767,7 @@ export default function Dashboard() {
               {nextMeeting ? (
                 <>
                   <span className="info-card-value">{nextMeeting.label}</span>
-                  <span className="info-card-sub">{new Date(nextMeeting.scheduled_date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} at {nextMeeting.scheduled_time?.slice(0, 5)}</span>
+                  <span className="info-card-sub" style={nextMeeting.label === 'Next' ? { color: '#1565c0', fontWeight: 600 } : undefined}>{new Date(nextMeeting.scheduled_date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} at {nextMeeting.scheduled_time?.slice(0, 5)}</span>
                 </>
               ) : (
                 <>
@@ -753,8 +836,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">Timesheets</span>
-              <span className="info-card-sub">Log & view hours</span>
+              {tsHoursThisWeek !== null ? (
+                <>
+                  <span className="info-card-value">{Math.max(0, tsExpectedHours - tsHoursThisWeek).toFixed(1)}h <span className="info-card-value-unit">to book</span></span>
+                  <span className="info-card-sub">{tsHoursThisWeek.toFixed(1)}h logged this week</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value">Timesheets</span>
+                  <span className="info-card-sub">Log & view hours</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -794,13 +886,13 @@ export default function Dashboard() {
             <div className="info-card-body">
               {nextBooking ? (
                 <>
-                  <span className="info-card-value" style={{ fontSize: 14 }}>{nextBooking.space_name}</span>
+                  <span className="info-card-value" style={{ fontSize: 14, color: '#2e7d32' }}>{nextBooking.space_name}</span>
                   <span className="info-card-sub">{new Date(nextBooking.booking_date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{nextBooking.start_time ? ` at ${nextBooking.start_time.slice(0, 5)}` : ''}</span>
                 </>
               ) : (
                 <>
-                  <span className="info-card-value">Book a Space</span>
-                  <span className="info-card-sub">No upcoming bookings</span>
+                  <span className="info-card-value">No spaces booked</span>
+                  <span className="info-card-sub">Tap to book a room or desk</span>
                 </>
               )}
             </div>
@@ -818,7 +910,7 @@ export default function Dashboard() {
             <div className="info-card-body">
               {latestLegalTs ? (
                 <>
-                  <span className="info-card-value">{latestLegalTs.duration_hrs}h <span className="info-card-value-unit">{latestLegalTs.status}</span></span>
+                  <span className="info-card-value" style={{ fontSize: 14 }}>{Number(latestLegalTs.duration_hrs).toFixed(2)}h — {latestLegalTs.status}</span>
                   <span className="info-card-sub">{new Date(latestLegalTs.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
                 </>
               ) : (
@@ -842,8 +934,8 @@ export default function Dashboard() {
             <div className="info-card-body">
               {latestAsset ? (
                 <>
-                  <span className="info-card-value" style={{ fontSize: 14 }}>{latestAsset.asset_name}</span>
-                  <span className="info-card-sub">{latestAsset.asset_type}</span>
+                  <span className="info-card-value" style={{ fontSize: 14, color: '#3949ab' }}>{latestAsset.asset_name}</span>
+                  <span className="info-card-sub" style={{ color: '#5c6bc0' }}>{latestAsset.asset_type}</span>
                 </>
               ) : (
                 <>

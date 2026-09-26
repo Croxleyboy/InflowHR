@@ -99,6 +99,21 @@ export default function ShiftSwap() {
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [actioningId, setActioningId] = useState<string | null>(null)
+  const [sameShiftEmployees, setSameShiftEmployees] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!selectedShiftId || !companyUser?.company_id) { setSameShiftEmployees(new Set()); return }
+    const shift = shifts.find(s => s.id === selectedShiftId) as any
+    if (!shift) return
+    supabase.from('shift_assignments')
+      .select('employee_id')
+      .eq('company_id', companyUser.company_id)
+      .eq('date', shift.date)
+      .eq('shift_template_id', shift.shift_template?.id || shift.shift_template_id)
+      .then(({ data }) => {
+        setSameShiftEmployees(new Set((data || []).map((r: any) => r.employee_id)))
+      })
+  }, [selectedShiftId, companyUser?.company_id, shifts])
 
   const employeeMap = useMemo(() => {
     const map: Record<string, Employee> = {}
@@ -314,7 +329,7 @@ export default function ShiftSwap() {
                             <label>{t('shifts.swap_with')}</label>
                             <select value={targetEmployeeId} onChange={e => setTargetEmployeeId(e.target.value)}>
                               <option value="">{t('shifts.select_colleague')}</option>
-                              {employees.filter(e => e.id !== employeeId).map(emp => (
+                              {employees.filter(e => e.id !== employeeId && !sameShiftEmployees.has(e.id)).map(emp => (
                                 <option key={emp.id} value={emp.id}>
                                   {emp.first_name} {emp.last_name}
                                 </option>

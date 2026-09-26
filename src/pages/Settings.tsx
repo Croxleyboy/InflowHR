@@ -95,8 +95,8 @@ export default function Settings() {
   const [consentsLoading, setConsentsLoading] = useState(true)
   const [consentSaving, setConsentSaving] = useState<string | null>(null)
   const [hasFeatureSwitching, setHasFeatureSwitching] = useState(false)
-  const [dashCardsOpen, setDashCardsOpen] = useState(true)
-  const [featuresOpen, setFeaturesOpen] = useState(true)
+  const [dashCardsOpen, setDashCardsOpen] = useState(false)
+  const [featuresOpen, setFeaturesOpen] = useState(false)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)')
     const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)

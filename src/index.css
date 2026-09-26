@@ -1091,6 +1091,11 @@ body {
 .toggle-on .toggle-knob { left: 23px; }
 .toggle-off .toggle-knob { left: 3px; }
 
+@media (max-width: 600px) {
+  .feature-toggles .toggle-switch { width: 56px; }
+  .feature-toggles .toggle-on .toggle-knob { left: 31px; }
+}
+
 .save-btn {
   width: 100%; padding: 14px;
   border-radius: 12px; border: none;
@@ -1107,14 +1112,18 @@ body {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  background: none;
-  border: none;
-  padding: 0;
+  background: var(--card-bg, #f5f5f5);
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: 10px;
+  padding: 12px 14px;
   cursor: pointer;
   color: var(--text);
   margin-bottom: 10px;
+  transition: background 0.15s;
 }
-.settings-section-toggle h2 { margin-bottom: 0; }
+.settings-section-toggle:active { opacity: 0.85; }
+.settings-section-toggle h2 { margin-bottom: 0; font-size: 16px; }
+.settings-section-toggle svg { width: 20px; height: 20px; flex-shrink: 0; }
 
 /* Sticky save button */
 .settings-save-sticky {

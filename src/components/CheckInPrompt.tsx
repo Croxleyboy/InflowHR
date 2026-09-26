@@ -76,6 +76,7 @@ export default function CheckInPrompt() {
   }, [loading, employeeId, companyUser, dismissed, activeCheckin, enabled, location.pathname, checkShiftAvailability])
 
   if (!visible || !enabled || activeCheckin) return null
+  if (!tsEnabled && !shiftRostered) return null
 
   function dismiss(remember: boolean) {
     setVisible(false)
