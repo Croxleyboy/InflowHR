@@ -15,6 +15,9 @@ interface PricingItem {
   default_price: number
   is_addon: boolean
   is_active: boolean
+  pack: string | null
+  is_support_package: boolean
+  flat_price: number | null
 }
 
 interface CompanyOption {
@@ -36,10 +39,17 @@ interface CompanyFeature {
   created_at: string
 }
 
-const BASELINE_FEATURES = [
-  'Expenses', 'Leave', 'Kudos', 'Announcements', 'Onboarding',
-  'HR Tickets', 'E-Learning', 'Timesheets', 'Payroll / Payslips', 'Performance',
+const CORE_FEATURES = [
+  'Leave', 'Performance', 'E-Learning', 'Expenses', 'Onboarding/Offboarding',
+  'Payroll / Xero / Sage', 'Kudos', 'Announcements & Notifications',
+  'Benefits', 'GDPR Document Storage', 'Timesheets', 'HR Tickets', 'Email Notifications',
 ]
+
+const PACK_A_FEATURE_KEYS = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
+const PACK_B_FEATURE_KEYS = ['teams_integration', 'skills_passport']
+
+const PACK_A_LABELS = ['Shifts & Rotas', 'Legal Timesheets', 'Space & Desk Booking', 'Asset Management']
+const PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligence']
 
 export default function AdminSubscriptions() {
   const { isSuperAdmin } = useAuth()
@@ -50,6 +60,7 @@ export default function AdminSubscriptions() {
   const [pricing, setPricing] = useState<PricingItem[]>([])
   const [pricingLoading, setPricingLoading] = useState(true)
   const [editPrices, setEditPrices] = useState<Record<string, string>>({})
+  const [editFlatPrices, setEditFlatPrices] = useState<Record<string, string>>({})
   const [savingPricing, setSavingPricing] = useState<string | null>(null)
 
   // Company features state
@@ -74,7 +85,6 @@ export default function AdminSubscriptions() {
   const [dashboardStyle, setDashboardStyleState] = useState<'default' | 'slim'>('default')
   const [savedDashboardStyle, setSavedDashboardStyle] = useState<'default' | 'slim'>('default')
 
-  // Load pricing
   async function loadPricing() {
     setPricingLoading(true)
     const { data } = await supabase
@@ -84,12 +94,16 @@ export default function AdminSubscriptions() {
     const items = (data as PricingItem[]) || []
     setPricing(items)
     const prices: Record<string, string> = {}
-    items.forEach(p => { prices[p.id] = String(p.default_price) })
+    const flatPrices: Record<string, string> = {}
+    items.forEach(p => {
+      prices[p.id] = String(p.default_price)
+      if (p.flat_price != null) flatPrices[p.id] = String(p.flat_price)
+    })
     setEditPrices(prices)
+    setEditFlatPrices(flatPrices)
     setPricingLoading(false)
   }
 
-  // Load companies (include inactive so newly registered companies appear)
   async function loadCompanies() {
     const { data } = await supabase
       .from('companies')
@@ -98,7 +112,6 @@ export default function AdminSubscriptions() {
     setCompanies((data as CompanyOption[]) || [])
   }
 
-  // Load company features
   async function loadCompanyFeatures(companyId: string) {
     setFeaturesLoading(true)
     const company = companies.find(c => c.id === companyId)
@@ -145,19 +158,20 @@ export default function AdminSubscriptions() {
     if (selectedCompanyId) loadCompanyFeatures(selectedCompanyId)
   }, [selectedCompanyId])
 
-  // Save pricing item
   async function savePricingItem(item: PricingItem) {
     setSavingPricing(item.id)
-    const newPrice = parseFloat(editPrices[item.id] || '0')
+    const update: Record<string, unknown> = { default_price: parseFloat(editPrices[item.id] || '0') }
+    if (item.is_support_package && editFlatPrices[item.id] != null) {
+      update.flat_price = parseFloat(editFlatPrices[item.id] || '0')
+    }
     await supabase
       .from('subscription_pricing')
-      .update({ default_price: newPrice })
+      .update(update)
       .eq('id', item.id)
     await loadPricing()
     setSavingPricing(null)
   }
 
-  // Toggle pricing active
   async function togglePricingActive(item: PricingItem) {
     await supabase
       .from('subscription_pricing')
@@ -166,51 +180,75 @@ export default function AdminSubscriptions() {
     await loadPricing()
   }
 
-  // Toggle company feature
-  async function toggleFeature(featureKey: string, currentlyEnabled: boolean) {
+  async function togglePack(packKey: string, currentlyEnabled: boolean) {
     if (!selectedCompanyId) return
-    setSavingFeature(featureKey)
-    const customPrice = customPrices[featureKey]
-    const { error } = await supabase
+    setSavingFeature(packKey)
+    const featureKeys = packKey === 'pack_a' ? PACK_A_FEATURE_KEYS : PACK_B_FEATURE_KEYS
+    const newState = !currentlyEnabled
+    let errorCount = 0
+
+    const { error: packErr } = await supabase
       .from('company_features')
       .upsert(
-        {
-          company_id: selectedCompanyId,
-          feature_key: featureKey,
-          is_enabled: !currentlyEnabled,
-          custom_price: customPrice ? parseFloat(customPrice) : null,
-        },
+        { company_id: selectedCompanyId, feature_key: packKey, is_enabled: newState, custom_price: customPrices[packKey] ? parseFloat(customPrices[packKey]) : null },
         { onConflict: 'company_id,feature_key' }
       )
-    if (error) {
-      showError('Failed to update feature: ' + error.message)
+    if (packErr) errorCount++
+
+    for (const fk of featureKeys) {
+      const { error } = await supabase
+        .from('company_features')
+        .upsert(
+          { company_id: selectedCompanyId, feature_key: fk, is_enabled: newState, custom_price: null },
+          { onConflict: 'company_id,feature_key' }
+        )
+      if (error) errorCount++
+    }
+
+    if (errorCount > 0) {
+      showError(`Failed to update ${errorCount} feature(s)`)
     } else {
-      showSuccess(`${featureKey.replace(/_/g, ' ')} ${!currentlyEnabled ? 'enabled' : 'disabled'}`)
+      const label = packKey === 'pack_a' ? 'Workforce & Operations' : 'Enterprise Integrations'
+      showSuccess(`${label} ${newState ? 'enabled' : 'disabled'}`)
     }
     await loadCompanyFeatures(selectedCompanyId)
     setSavingFeature(null)
   }
 
-  // Save all custom prices + billing type at once
+  async function toggleSupportPackage(featureKey: string, currentlyEnabled: boolean) {
+    if (!selectedCompanyId) return
+    setSavingFeature(featureKey)
+    const { error } = await supabase
+      .from('company_features')
+      .upsert(
+        { company_id: selectedCompanyId, feature_key: featureKey, is_enabled: !currentlyEnabled, custom_price: null },
+        { onConflict: 'company_id,feature_key' }
+      )
+    if (error) {
+      showError('Failed to update support package')
+    } else {
+      showSuccess(`Support package ${!currentlyEnabled ? 'added' : 'removed'}`)
+    }
+    await loadCompanyFeatures(selectedCompanyId)
+    setSavingFeature(null)
+  }
+
   async function saveAllCustomPrices() {
     if (!selectedCompanyId) return
     setSavingAllPrices(true)
 
-    const allFeatureKeys = pricing.map(p => p.feature_key)
     let errorCount = 0
 
-    for (const featureKey of allFeatureKeys) {
-      const existing = companyFeatures.find(f => f.feature_key === featureKey)
-      const pricingItem = pricing.find(p => p.feature_key === featureKey)
-      const isCore = pricingItem && !pricingItem.is_addon
-      const customPrice = customPrices[featureKey]
+    for (const key of ['hr_core', 'pack_a', 'pack_b']) {
+      const existing = companyFeatures.find(f => f.feature_key === key)
+      const customPrice = customPrices[key]
       const { error } = await supabase
         .from('company_features')
         .upsert(
           {
             company_id: selectedCompanyId,
-            feature_key: featureKey,
-            is_enabled: existing?.is_enabled ?? isCore ?? false,
+            feature_key: key,
+            is_enabled: existing?.is_enabled ?? (key === 'hr_core'),
             custom_price: customPrice ? parseFloat(customPrice) : null,
           },
           { onConflict: 'company_id,feature_key' }
@@ -218,14 +256,12 @@ export default function AdminSubscriptions() {
       if (error) errorCount++
     }
 
-    // Save billing type and fixed price to companies table
     const companyUpdate: Record<string, unknown> = {
       billing_type: billingType,
       fixed_annual_price: billingType === 'fixed' && fixedAnnualPrice ? parseFloat(fixedAnnualPrice) : null,
       dashboard_style: dashboardStyle,
     }
 
-    // When switching to fixed, lock until start of next FY
     if (billingType === 'fixed' && savedBillingType === 'monthly') {
       const now = new Date()
       const currentMonth = now.getMonth() + 1
@@ -261,7 +297,6 @@ export default function AdminSubscriptions() {
 
   const isLockedToFixed = billingType === 'fixed' && billingTypeLocked && new Date(billingTypeLocked) > new Date()
 
-  // Helpers for cost table
   function getEffectivePrice(featureKey: string): number {
     const cf = companyFeatures.find(f => f.feature_key === featureKey)
     if (cf?.custom_price != null) return cf.custom_price
@@ -272,6 +307,10 @@ export default function AdminSubscriptions() {
   function isFeatureEnabled(featureKey: string): boolean {
     const cf = companyFeatures.find(f => f.feature_key === featureKey)
     return cf?.is_enabled ?? false
+  }
+
+  function getPackPartialCount(packKeys: string[]): number {
+    return packKeys.filter(k => isFeatureEnabled(k)).length
   }
 
   if (!isSuperAdmin) {
@@ -285,15 +324,34 @@ export default function AdminSubscriptions() {
     )
   }
 
-  const baseline = pricing.find(p => !p.is_addon)
-  const addons = pricing.filter(p => p.is_addon)
-  const enabledAddons = addons.filter(a => isFeatureEnabled(a.feature_key))
+  const corePricing = pricing.find(p => p.feature_key === 'hr_core')
+  const packAPricing = pricing.find(p => p.feature_key === 'pack_a')
+  const packBPricing = pricing.find(p => p.feature_key === 'pack_b')
+  const supportPackages = pricing.filter(p => p.is_support_package)
 
-  const baselineCost = baseline ? getEffectivePrice(baseline.feature_key) * employeeCount : 0
-  const totalCost = enabledAddons.reduce(
-    (sum, a) => sum + getEffectivePrice(a.feature_key) * employeeCount,
-    baselineCost
-  )
+  const packAEnabled = isFeatureEnabled('pack_a')
+  const packBEnabled = isFeatureEnabled('pack_b')
+
+  const coreCost = corePricing ? getEffectivePrice('hr_core') * employeeCount : 0
+  const packACost = packAEnabled && packAPricing ? getEffectivePrice('pack_a') * employeeCount : 0
+  const packBCost = packBEnabled && packBPricing ? getEffectivePrice('pack_b') * employeeCount : 0
+  const supportCost = supportPackages.reduce((sum, sp) => {
+    if (!isFeatureEnabled(sp.feature_key)) return sum
+    return sum + (sp.flat_price ?? 0)
+  }, 0)
+  const totalCost = coreCost + packACost + packBCost + supportCost
+
+  const tabStyle = (t: string) => ({
+    padding: '10px 24px',
+    border: 'none',
+    background: 'none',
+    fontWeight: 700 as const,
+    fontSize: 14,
+    cursor: 'pointer' as const,
+    borderBottom: tab === t ? '3px solid #1565c0' : '3px solid transparent',
+    color: tab === t ? '#1565c0' : '#8b8fa3',
+    marginBottom: -2,
+  })
 
   return (
     <div className="admin-section">
@@ -302,104 +360,13 @@ export default function AdminSubscriptions() {
         <p>Manage pricing and company feature assignments</p>
       </div>
 
-      {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid #e5e7eb', flexWrap: 'wrap' }}>
-        <button
-          onClick={() => setTab('pricing')}
-          style={{
-            padding: '10px 24px',
-            border: 'none',
-            background: 'none',
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: 'pointer',
-            borderBottom: tab === 'pricing' ? '3px solid #1565c0' : '3px solid transparent',
-            color: tab === 'pricing' ? '#1565c0' : '#8b8fa3',
-            marginBottom: -2,
-          }}
-        >
-          Pricing
-        </button>
-        <button
-          onClick={() => { setTab('features'); loadCompanies() }}
-          style={{
-            padding: '10px 24px',
-            border: 'none',
-            background: 'none',
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: 'pointer',
-            borderBottom: tab === 'features' ? '3px solid #1565c0' : '3px solid transparent',
-            color: tab === 'features' ? '#1565c0' : '#8b8fa3',
-            marginBottom: -2,
-          }}
-        >
-          Company Features
-        </button>
-        <button
-          onClick={() => setTab('companies')}
-          style={{
-            padding: '10px 24px',
-            border: 'none',
-            background: 'none',
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: 'pointer',
-            borderBottom: tab === 'companies' ? '3px solid #1565c0' : '3px solid transparent',
-            color: tab === 'companies' ? '#1565c0' : '#8b8fa3',
-            marginBottom: -2,
-          }}
-        >
-          Companies
-        </button>
-        <button
-          onClick={() => setTab('demo-seed')}
-          style={{
-            padding: '10px 24px',
-            border: 'none',
-            background: 'none',
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: 'pointer',
-            borderBottom: tab === 'demo-seed' ? '3px solid #1565c0' : '3px solid transparent',
-            color: tab === 'demo-seed' ? '#1565c0' : '#8b8fa3',
-            marginBottom: -2,
-          }}
-        >
-          Demo Seed
-        </button>
-        <button
-          onClick={() => setTab('support-access')}
-          style={{
-            padding: '10px 24px',
-            border: 'none',
-            background: 'none',
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: 'pointer',
-            borderBottom: tab === 'support-access' ? '3px solid #1565c0' : '3px solid transparent',
-            color: tab === 'support-access' ? '#1565c0' : '#8b8fa3',
-            marginBottom: -2,
-          }}
-        >
-          Support Access
-        </button>
-        <button
-          onClick={() => setTab('audit-log')}
-          style={{
-            padding: '10px 24px',
-            border: 'none',
-            background: 'none',
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: 'pointer',
-            borderBottom: tab === 'audit-log' ? '3px solid #1565c0' : '3px solid transparent',
-            color: tab === 'audit-log' ? '#1565c0' : '#8b8fa3',
-            marginBottom: -2,
-          }}
-        >
-          Audit Log
-        </button>
+        <button onClick={() => setTab('pricing')} style={tabStyle('pricing')}>Pricing</button>
+        <button onClick={() => { setTab('features'); loadCompanies() }} style={tabStyle('features')}>Company Features</button>
+        <button onClick={() => setTab('companies')} style={tabStyle('companies')}>Companies</button>
+        <button onClick={() => setTab('demo-seed')} style={tabStyle('demo-seed')}>Demo Seed</button>
+        <button onClick={() => setTab('support-access')} style={tabStyle('support-access')}>Support Access</button>
+        <button onClick={() => setTab('audit-log')} style={tabStyle('audit-log')}>Audit Log</button>
       </div>
 
       {/* Pricing Tab */}
@@ -408,48 +375,146 @@ export default function AdminSubscriptions() {
           {pricingLoading ? (
             <div className="admin-loading">Loading...</div>
           ) : (
-            <div className="sub-pricing-grid">
-              {pricing.map(item => (
-                <div
-                  key={item.id}
-                  className={`sub-pricing-card ${item.is_addon ? 'sub-pricing-card-addon' : 'sub-pricing-card-baseline'}`}
-                >
-                  <div className="sub-pricing-name">{item.display_name}</div>
-                  <div className="sub-pricing-desc">{item.description}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Core */}
+              {corePricing && (
+                <div className="sub-pricing-card sub-pricing-card-baseline">
+                  <div className="sub-pricing-name">{corePricing.display_name}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {CORE_FEATURES.map(f => (
+                      <span key={f} style={{ fontSize: 11, background: '#e3f2fd', color: '#1565c0', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
+                    ))}
+                  </div>
                   <div className="sub-pricing-input-row">
                     <label>Price</label>
-                    <span>£</span>
+                    <span>&pound;</span>
                     <input
                       type="number"
                       step="0.01"
                       min="0"
                       className="sub-pricing-input"
-                      value={editPrices[item.id] || ''}
-                      onChange={e =>
-                        setEditPrices(prev => ({ ...prev, [item.id]: e.target.value }))
-                      }
+                      value={editPrices[corePricing.id] || ''}
+                      onChange={e => setEditPrices(prev => ({ ...prev, [corePricing.id]: e.target.value }))}
                     />
                     <span>/user/month</span>
                   </div>
                   <div className="sub-pricing-actions">
                     <label className="admin-toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={item.is_active}
-                        onChange={() => togglePricingActive(item)}
-                      />
+                      <input type="checkbox" checked={corePricing.is_active} onChange={() => togglePricingActive(corePricing)} />
                       <span className="admin-toggle-slider" />
                     </label>
-                    <button
-                      className="sub-pricing-save"
-                      onClick={() => savePricingItem(item)}
-                      disabled={savingPricing === item.id}
-                    >
-                      {savingPricing === item.id ? 'Saving...' : 'Save'}
+                    <button className="sub-pricing-save" onClick={() => savePricingItem(corePricing)} disabled={savingPricing === corePricing.id}>
+                      {savingPricing === corePricing.id ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 </div>
-              ))}
+              )}
+
+              {/* Pack A */}
+              {packAPricing && (
+                <div className="sub-pricing-card sub-pricing-card-addon" style={{ borderLeft: '4px solid #43a047' }}>
+                  <div className="sub-pricing-name">Pack A: {packAPricing.display_name}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {PACK_A_LABELS.map(f => (
+                      <span key={f} style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
+                    ))}
+                  </div>
+                  <div className="sub-pricing-input-row">
+                    <label>Price</label>
+                    <span>&pound;</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="sub-pricing-input"
+                      value={editPrices[packAPricing.id] || ''}
+                      onChange={e => setEditPrices(prev => ({ ...prev, [packAPricing.id]: e.target.value }))}
+                    />
+                    <span>/user/month</span>
+                  </div>
+                  <div className="sub-pricing-actions">
+                    <label className="admin-toggle-switch">
+                      <input type="checkbox" checked={packAPricing.is_active} onChange={() => togglePricingActive(packAPricing)} />
+                      <span className="admin-toggle-slider" />
+                    </label>
+                    <button className="sub-pricing-save" onClick={() => savePricingItem(packAPricing)} disabled={savingPricing === packAPricing.id}>
+                      {savingPricing === packAPricing.id ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Pack B */}
+              {packBPricing && (
+                <div className="sub-pricing-card sub-pricing-card-addon" style={{ borderLeft: '4px solid #7b1fa2' }}>
+                  <div className="sub-pricing-name">Pack B: {packBPricing.display_name}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {PACK_B_LABELS.map(f => (
+                      <span key={f} style={{ fontSize: 11, background: '#f3e5f5', color: '#7b1fa2', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
+                    ))}
+                  </div>
+                  <div className="sub-pricing-input-row">
+                    <label>Price</label>
+                    <span>&pound;</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="sub-pricing-input"
+                      value={editPrices[packBPricing.id] || ''}
+                      onChange={e => setEditPrices(prev => ({ ...prev, [packBPricing.id]: e.target.value }))}
+                    />
+                    <span>/user/month</span>
+                  </div>
+                  <div className="sub-pricing-actions">
+                    <label className="admin-toggle-switch">
+                      <input type="checkbox" checked={packBPricing.is_active} onChange={() => togglePricingActive(packBPricing)} />
+                      <span className="admin-toggle-slider" />
+                    </label>
+                    <button className="sub-pricing-save" onClick={() => savePricingItem(packBPricing)} disabled={savingPricing === packBPricing.id}>
+                      {savingPricing === packBPricing.id ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Support Packages */}
+              {supportPackages.length > 0 && (
+                <>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#333', marginTop: 8 }}>Support Packages</div>
+                  <div className="sub-pricing-grid">
+                    {supportPackages.map(sp => (
+                      <div key={sp.id} className="sub-pricing-card sub-pricing-card-addon" style={{ borderLeft: '4px solid #e65100' }}>
+                        <div className="sub-pricing-name">{sp.display_name}</div>
+                        <div className="sub-pricing-desc">{sp.description}</div>
+                        <div className="sub-pricing-input-row">
+                          <label>Flat Price</label>
+                          <span>&pound;</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            className="sub-pricing-input"
+                            value={editFlatPrices[sp.id] || ''}
+                            onChange={e => setEditFlatPrices(prev => ({ ...prev, [sp.id]: e.target.value }))}
+                          />
+                          <span>(one-off)</span>
+                        </div>
+                        <div className="sub-pricing-actions">
+                          <label className="admin-toggle-switch">
+                            <input type="checkbox" checked={sp.is_active} onChange={() => togglePricingActive(sp)} />
+                            <span className="admin-toggle-slider" />
+                          </label>
+                          <button className="sub-pricing-save" onClick={() => savePricingItem(sp)} disabled={savingPricing === sp.id}>
+                            {savingPricing === sp.id ? 'Saving...' : 'Save'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
               {pricing.length === 0 && (
                 <div className="admin-empty">No pricing items found</div>
               )}
@@ -514,7 +579,7 @@ export default function AdminSubscriptions() {
                     </div>
                     {billingType === 'fixed' && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-                        <label style={{ fontWeight: 600, fontSize: 13 }}>Annual Price £</label>
+                        <label style={{ fontWeight: 600, fontSize: 13 }}>Annual Price &pound;</label>
                         <input
                           type="number"
                           step="0.01"
@@ -561,28 +626,27 @@ export default function AdminSubscriptions() {
                   </div>
 
                   {/* HR Core Features */}
-                  {baseline && (
+                  {corePricing && (
                     <div style={{ background: '#f8faff', border: '2px solid #1565c0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                         <span style={{ fontSize: 16 }}>&#9733;</span>
-                        <span style={{ fontWeight: 700, fontSize: 15, color: '#1565c0' }}>HR Core Features</span>
-                        {customPrices[baseline.feature_key] && customPrices[baseline.feature_key] !== '' && (
+                        <span style={{ fontWeight: 700, fontSize: 15, color: '#1565c0' }}>Core Features</span>
+                        <span style={{ fontSize: 11, color: '#43a047', fontWeight: 600 }}>Always included</span>
+                        {customPrices['hr_core'] && customPrices['hr_core'] !== '' && (
                           <span style={{ fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
                         )}
                       </div>
 
-                      {/* Included features */}
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                        {BASELINE_FEATURES.map(f => (
+                        {CORE_FEATURES.map(f => (
                           <span key={f} style={{ fontSize: 11, background: '#e3f2fd', color: '#1565c0', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
                         ))}
                       </div>
 
-                      {/* Pricing row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#fff', borderRadius: 6, padding: 12, border: '1px solid #e0e0e0' }}>
                         <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px', minWidth: 0 }}>
                           <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{baseline.default_price.toFixed(2)}</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{corePricing.default_price.toFixed(2)}</div>
                           <div style={{ fontSize: 10, color: '#bbb' }}>from Pricing tab</div>
                         </div>
                         <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
@@ -596,91 +660,201 @@ export default function AdminSubscriptions() {
                               min="0"
                               className="admin-input"
                               style={{ width: 100, fontWeight: 700, fontSize: 16, textAlign: 'center' }}
-                              placeholder={baseline.default_price.toFixed(2)}
-                              value={customPrices[baseline.feature_key] ?? ''}
-                              onChange={e =>
-                                setCustomPrices(prev => ({
-                                  ...prev,
-                                  [baseline.feature_key]: e.target.value,
-                                }))
-                              }
+                              placeholder={corePricing.default_price.toFixed(2)}
+                              value={customPrices['hr_core'] ?? ''}
+                              onChange={e => setCustomPrices(prev => ({ ...prev, hr_core: e.target.value }))}
                             />
                             <span style={{ fontSize: 12, color: '#666' }}>/user/mo</span>
                           </div>
                           <div style={{ fontSize: 10, color: '#bbb' }}>leave empty to use default</div>
                         </div>
                         <div style={{ flex: 1, minWidth: 120, textAlign: 'right' }}>
-                          {customPrices[baseline.feature_key] && customPrices[baseline.feature_key] !== '' ? (
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: '#1565c0' }}>
-                                &pound;{(parseFloat(customPrices[baseline.feature_key] || '0') * employeeCount).toFixed(2)}/mo
-                              </div>
-                              <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; &pound;{parseFloat(customPrices[baseline.feature_key] || '0').toFixed(2)}</div>
-                              {parseFloat(customPrices[baseline.feature_key]) < baseline.default_price && (
-                                <div style={{ fontSize: 11, color: '#43a047', fontWeight: 600 }}>&#9660; {((1 - parseFloat(customPrices[baseline.feature_key]) / baseline.default_price) * 100).toFixed(0)}% discount</div>
-                              )}
-                              {parseFloat(customPrices[baseline.feature_key]) > baseline.default_price && (
-                                <div style={{ fontSize: 11, color: '#e65100', fontWeight: 600 }}>&#9650; {((parseFloat(customPrices[baseline.feature_key]) / baseline.default_price - 1) * 100).toFixed(0)}% premium</div>
-                              )}
-                            </div>
-                          ) : (
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#999' }}>
-                                &pound;{(baseline.default_price * employeeCount).toFixed(2)}/mo
-                              </div>
-                              <div style={{ fontSize: 11, color: '#bbb' }}>{employeeCount} users &times; &pound;{baseline.default_price.toFixed(2)} (default)</div>
-                            </div>
-                          )}
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1565c0' }}>
+                            &pound;{coreCost.toFixed(2)}/mo
+                          </div>
+                          <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; &pound;{getEffectivePrice('hr_core').toFixed(2)}</div>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {/* Add-on feature toggles */}
-                  {addons.length > 0 && (
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#333', marginBottom: 8, marginTop: 8 }}>Add-on Features</div>
-                  )}
-                  {addons.map(addon => {
-                    const enabled = isFeatureEnabled(addon.feature_key)
-                    const hasCustom = customPrices[addon.feature_key] && customPrices[addon.feature_key] !== ''
+                  {/* Pack A: Workforce & Operations */}
+                  {packAPricing && (() => {
+                    const partialCount = getPackPartialCount(PACK_A_FEATURE_KEYS)
+                    const isPartial = !packAEnabled && partialCount > 0
                     return (
-                      <div key={addon.feature_key} className="sub-feature-card">
-                        <label className="admin-toggle-switch">
-                          <input
-                            type="checkbox"
-                            checked={enabled}
-                            onChange={() => toggleFeature(addon.feature_key, enabled)}
-                            disabled={savingFeature === addon.feature_key}
-                          />
-                          <span className="admin-toggle-slider" />
-                        </label>
-                        <div className="sub-feature-info">
-                          <div className="sub-feature-name">
-                            {addon.display_name}
-                            {hasCustom && <span style={{ marginLeft: 6, fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>Custom</span>}
+                      <div style={{ background: packAEnabled ? '#e8f5e9' : '#f5f5f5', border: `2px solid ${packAEnabled ? '#43a047' : isPartial ? '#ff9800' : '#e0e0e0'}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                          <label className="admin-toggle-switch">
+                            <input
+                              type="checkbox"
+                              checked={packAEnabled}
+                              onChange={() => togglePack('pack_a', packAEnabled)}
+                              disabled={savingFeature === 'pack_a'}
+                            />
+                            <span className="admin-toggle-slider" />
+                          </label>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#2e7d32' }}>Pack A: Workforce &amp; Operations</div>
+                            {isPartial && (
+                              <div style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>
+                                {partialCount} of {PACK_A_FEATURE_KEYS.length} features enabled individually — enable pack to include all
+                              </div>
+                            )}
                           </div>
-                          <div className="sub-feature-desc">{addon.description}</div>
+                          {customPrices['pack_a'] && customPrices['pack_a'] !== '' && (
+                            <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
+                          )}
                         </div>
-                        <div className="sub-feature-price" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 11, color: '#999' }} title="Set on the Pricing tab">Default £{addon.default_price.toFixed(2)}</span>
-                          <label>Company £</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            placeholder={addon.default_price.toFixed(2)}
-                            value={customPrices[addon.feature_key] ?? ''}
-                            onChange={e =>
-                              setCustomPrices(prev => ({
-                                ...prev,
-                                [addon.feature_key]: e.target.value,
-                              }))
-                            }
-                          />
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                          {PACK_A_LABELS.map((f, i) => {
+                            const fEnabled = isFeatureEnabled(PACK_A_FEATURE_KEYS[i])
+                            return (
+                              <span key={f} style={{ fontSize: 11, background: fEnabled ? '#c8e6c9' : '#eee', color: fEnabled ? '#2e7d32' : '#999', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
+                            )
+                          })}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#fff', borderRadius: 6, padding: 12, border: '1px solid #e0e0e0' }}>
+                          <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px' }}>
+                            <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{packAPricing.default_price.toFixed(2)}</div>
+                          </div>
+                          <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: '#2e7d32', fontWeight: 600, textTransform: 'uppercase' }}>Company Price</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontWeight: 600 }}>&pound;</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                className="admin-input"
+                                style={{ width: 100, fontWeight: 700, fontSize: 16, textAlign: 'center' }}
+                                placeholder={packAPricing.default_price.toFixed(2)}
+                                value={customPrices['pack_a'] ?? ''}
+                                onChange={e => setCustomPrices(prev => ({ ...prev, pack_a: e.target.value }))}
+                              />
+                              <span style={{ fontSize: 12, color: '#666' }}>/user/mo</span>
+                            </div>
+                          </div>
+                          {packAEnabled && (
+                            <div style={{ flex: 1, minWidth: 120, textAlign: 'right' }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#2e7d32' }}>
+                                &pound;{packACost.toFixed(2)}/mo
+                              </div>
+                              <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; &pound;{getEffectivePrice('pack_a').toFixed(2)}</div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
-                  })}
+                  })()}
+
+                  {/* Pack B: Enterprise Integrations */}
+                  {packBPricing && (() => {
+                    const partialCount = getPackPartialCount(PACK_B_FEATURE_KEYS)
+                    const isPartial = !packBEnabled && partialCount > 0
+                    return (
+                      <div style={{ background: packBEnabled ? '#f3e5f5' : '#f5f5f5', border: `2px solid ${packBEnabled ? '#7b1fa2' : isPartial ? '#ff9800' : '#e0e0e0'}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                          <label className="admin-toggle-switch">
+                            <input
+                              type="checkbox"
+                              checked={packBEnabled}
+                              onChange={() => togglePack('pack_b', packBEnabled)}
+                              disabled={savingFeature === 'pack_b'}
+                            />
+                            <span className="admin-toggle-slider" />
+                          </label>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#7b1fa2' }}>Pack B: Enterprise Integrations</div>
+                            {isPartial && (
+                              <div style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>
+                                {partialCount} of {PACK_B_FEATURE_KEYS.length} features enabled individually — enable pack to include all
+                              </div>
+                            )}
+                          </div>
+                          {customPrices['pack_b'] && customPrices['pack_b'] !== '' && (
+                            <span style={{ fontSize: 10, background: '#f3e5f5', color: '#7b1fa2', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                          {PACK_B_LABELS.map((f, i) => {
+                            const fEnabled = isFeatureEnabled(PACK_B_FEATURE_KEYS[i])
+                            return (
+                              <span key={f} style={{ fontSize: 11, background: fEnabled ? '#e1bee7' : '#eee', color: fEnabled ? '#7b1fa2' : '#999', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
+                            )
+                          })}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#fff', borderRadius: 6, padding: 12, border: '1px solid #e0e0e0' }}>
+                          <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px' }}>
+                            <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{packBPricing.default_price.toFixed(2)}</div>
+                          </div>
+                          <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: '#7b1fa2', fontWeight: 600, textTransform: 'uppercase' }}>Company Price</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontWeight: 600 }}>&pound;</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                className="admin-input"
+                                style={{ width: 100, fontWeight: 700, fontSize: 16, textAlign: 'center' }}
+                                placeholder={packBPricing.default_price.toFixed(2)}
+                                value={customPrices['pack_b'] ?? ''}
+                                onChange={e => setCustomPrices(prev => ({ ...prev, pack_b: e.target.value }))}
+                              />
+                              <span style={{ fontSize: 12, color: '#666' }}>/user/mo</span>
+                            </div>
+                          </div>
+                          {packBEnabled && (
+                            <div style={{ flex: 1, minWidth: 120, textAlign: 'right' }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#7b1fa2' }}>
+                                &pound;{packBCost.toFixed(2)}/mo
+                              </div>
+                              <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; &pound;{getEffectivePrice('pack_b').toFixed(2)}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Support Packages */}
+                  {supportPackages.length > 0 && (
+                    <div style={{ background: '#fff8e1', border: '2px solid #f9a825', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#e65100', marginBottom: 10 }}>Support Packages</div>
+                      {supportPackages.map(sp => {
+                        const purchased = isFeatureEnabled(sp.feature_key)
+                        return (
+                          <div key={sp.feature_key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid #ffe082' }}>
+                            <label className="admin-toggle-switch">
+                              <input
+                                type="checkbox"
+                                checked={purchased}
+                                onChange={() => toggleSupportPackage(sp.feature_key, purchased)}
+                                disabled={savingFeature === sp.feature_key}
+                              />
+                              <span className="admin-toggle-slider" />
+                            </label>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13 }}>{sp.display_name}</div>
+                              <div style={{ fontSize: 12, color: '#666' }}>{sp.description}</div>
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: '#e65100' }}>
+                              &pound;{(sp.flat_price ?? 0).toFixed(2)}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
                     <button
@@ -697,43 +871,56 @@ export default function AdminSubscriptions() {
 
                   {/* Monthly Financial Breakdown */}
                   <div className="admin-table-wrap">
-                  <table className="sub-cost-table">
-                    <thead>
-                      <tr>
-                        <th>Item</th>
-                        <th>Price/User</th>
-                        <th>Users</th>
-                        <th>Monthly Cost</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {baseline && (
+                    <table className="sub-cost-table">
+                      <thead>
                         <tr>
-                          <td>{baseline.display_name}</td>
-                          <td>£{getEffectivePrice(baseline.feature_key).toFixed(2)}</td>
-                          <td>{employeeCount}</td>
-                          <td>£{baselineCost.toFixed(2)}</td>
+                          <th>Item</th>
+                          <th>Price</th>
+                          <th>Users</th>
+                          <th>Monthly Cost</th>
                         </tr>
-                      )}
-                      {enabledAddons.map(addon => {
-                        const price = getEffectivePrice(addon.feature_key)
-                        return (
-                          <tr key={addon.feature_key}>
-                            <td>{addon.display_name}</td>
-                            <td>£{price.toFixed(2)}</td>
+                      </thead>
+                      <tbody>
+                        {corePricing && (
+                          <tr>
+                            <td>Core Features</td>
+                            <td>&pound;{getEffectivePrice('hr_core').toFixed(2)}/user</td>
                             <td>{employeeCount}</td>
-                            <td>£{(price * employeeCount).toFixed(2)}</td>
+                            <td>&pound;{coreCost.toFixed(2)}</td>
                           </tr>
-                        )
-                      })}
-                      <tr className="sub-cost-total">
-                        <td>Total</td>
-                        <td></td>
-                        <td></td>
-                        <td>£{totalCost.toFixed(2)}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+                        )}
+                        {packAEnabled && packAPricing && (
+                          <tr>
+                            <td>Pack A: Workforce &amp; Operations</td>
+                            <td>&pound;{getEffectivePrice('pack_a').toFixed(2)}/user</td>
+                            <td>{employeeCount}</td>
+                            <td>&pound;{packACost.toFixed(2)}</td>
+                          </tr>
+                        )}
+                        {packBEnabled && packBPricing && (
+                          <tr>
+                            <td>Pack B: Enterprise Integrations</td>
+                            <td>&pound;{getEffectivePrice('pack_b').toFixed(2)}/user</td>
+                            <td>{employeeCount}</td>
+                            <td>&pound;{packBCost.toFixed(2)}</td>
+                          </tr>
+                        )}
+                        {supportPackages.filter(sp => isFeatureEnabled(sp.feature_key)).map(sp => (
+                          <tr key={sp.feature_key}>
+                            <td>{sp.display_name}</td>
+                            <td>&pound;{(sp.flat_price ?? 0).toFixed(2)} flat</td>
+                            <td>—</td>
+                            <td>&pound;{(sp.flat_price ?? 0).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                        <tr className="sub-cost-total">
+                          <td>Total</td>
+                          <td></td>
+                          <td></td>
+                          <td>&pound;{totalCost.toFixed(2)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 </>
               )}
@@ -742,16 +929,9 @@ export default function AdminSubscriptions() {
         </div>
       )}
 
-      {/* Companies Tab */}
       {tab === 'companies' && <AdminCompanies />}
-
-      {/* Demo Seed Tab */}
       {tab === 'demo-seed' && <AdminDemoSeed />}
-
-      {/* Support Access Tab */}
       {tab === 'support-access' && <AdminSupportAccess />}
-
-      {/* Audit Log Tab */}
       {tab === 'audit-log' && <AdminAuditLog />}
     </div>
   )
