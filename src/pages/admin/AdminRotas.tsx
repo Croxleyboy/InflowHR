@@ -32,6 +32,13 @@ interface Employee {
   id: string
   first_name: string
   last_name: string
+  work_pattern_id: string | null
+}
+
+interface WorkPattern {
+  id: string
+  days: boolean[]
+  pattern_type: string
 }
 
 interface ShiftTemplate {
@@ -128,6 +135,9 @@ export default function AdminRotas() {
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: true, legal_timesheets: false })
   const [checkinRecords, setCheckinRecords] = useState<{ employee_id: string; check_in_at: string; check_out_at: string | null; status: string }[]>([])
   const [shiftsCheckinEnabled, setShiftsCheckinEnabled] = useState(false)
+  const [workPatterns, setWorkPatterns] = useState<WorkPattern[]>([])
+  const [templateSkillMap, setTemplateSkillMap] = useState<Record<string, string[]>>({})
+  const [employeeSkillMap, setEmployeeSkillMap] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
     if (selectedCompanyId) {
@@ -254,18 +264,34 @@ export default function AdminRotas() {
   const loadGridData = useCallback(async (rota: Rota, ws?: Date) => {
     const weekS = ws || weekStart
     const weekEnd = addDays(weekS, 6)
-    const [empRes, tmplRes, assignRes, leaveRes, availRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
+    const [empRes, tmplRes, assignRes, leaveRes, availRes, wpRes, tsRes, esRes] = await Promise.all([
+      supabase.from('employees').select('id, first_name, last_name, work_pattern_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
       supabase.from('shift_templates').select('id, name, colour, start_time, end_time, break_minutes').eq('company_id', selectedCompanyId).eq('is_active', true),
       supabase.from('shift_assignments').select('*').eq('rota_id', rota.id),
       supabase.from('leave_requests').select('employee_id, start_date, end_date').eq('company_id', selectedCompanyId).in('status', ['pending', 'approved']),
       supabase.from('employee_availability').select('employee_id, day_of_week, start_time, end_time, is_available').eq('company_id', selectedCompanyId),
+      supabase.from('work_patterns').select('id, days, pattern_type').eq('company_id', selectedCompanyId).eq('is_active', true),
+      supabase.from('shift_template_skills').select('shift_template_id, shift_skill_id').eq('company_id', selectedCompanyId),
+      supabase.from('employee_shift_skills').select('employee_id, shift_skill_id').eq('company_id', selectedCompanyId),
     ])
     setEmployees((empRes.data as Employee[]) || [])
     setShiftTemplates((tmplRes.data as ShiftTemplate[]) || [])
     setAssignments((assignRes.data as ShiftAssignment[]) || [])
     setLeaveConflicts((leaveRes.data as LeaveConflict[]) || [])
     setAvailability((availRes.data as EmployeeAvailability[]) || [])
+    setWorkPatterns((wpRes.data as WorkPattern[]) || [])
+    const tsMap: Record<string, string[]> = {}
+    ;(tsRes.data || []).forEach((r: any) => {
+      if (!tsMap[r.shift_template_id]) tsMap[r.shift_template_id] = []
+      tsMap[r.shift_template_id].push(r.shift_skill_id)
+    })
+    setTemplateSkillMap(tsMap)
+    const esMap: Record<string, string[]> = {}
+    ;(esRes.data || []).forEach((r: any) => {
+      if (!esMap[r.employee_id]) esMap[r.employee_id] = []
+      esMap[r.employee_id].push(r.shift_skill_id)
+    })
+    setEmployeeSkillMap(esMap)
     if (shiftsCheckinEnabled) {
       const { data: ciData } = await supabase.from('checkin_records').select('employee_id, check_in_at, check_out_at, status')
         .eq('company_id', selectedCompanyId).eq('source', 'shifts')
@@ -352,6 +378,31 @@ export default function AdminRotas() {
       alert(`Cannot assign shifts outside rota dates (${selectedRota!.start_date} to ${selectedRota!.end_date})`)
       setActiveCell(null)
       return
+    }
+
+    const emp = employees.find(e => e.id === employeeId)
+    if (emp?.work_pattern_id) {
+      const wp = workPatterns.find(p => p.id === emp.work_pattern_id)
+      if (wp && wp.pattern_type === 'fixed') {
+        const dow = (new Date(date + 'T00:00:00').getDay() + 6) % 7
+        if (!wp.days[dow]) {
+          const dayName = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][dow]
+          alert(`Cannot assign shift: this employee is not contracted to work on ${dayName}.`)
+          setActiveCell(null)
+          return
+        }
+      }
+    }
+
+    const requiredSkills = templateSkillMap[templateId] || []
+    if (requiredSkills.length > 0) {
+      const empSkills = employeeSkillMap[employeeId] || []
+      const hasMatch = requiredSkills.some(sid => empSkills.includes(sid))
+      if (!hasMatch) {
+        alert('Cannot assign shift: this employee does not have any of the required skills for this shift.')
+        setActiveCell(null)
+        return
+      }
     }
 
     const existing = getAssignment(employeeId, date)
