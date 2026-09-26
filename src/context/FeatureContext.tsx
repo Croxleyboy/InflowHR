@@ -22,22 +22,20 @@ export interface Features {
   sage_integration: boolean
 }
 
-const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management']
+const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management', 'benefits', 'email_notifications', 'xero_integration', 'sage_integration', 'payslips']
 const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   timesheets: 'timesheets',
   performance: 'performance',
   shifts: 'shifts',
   payroll: 'payslips',
   elearning: 'elearning',
-  benefits: 'benefits',
   legal_timesheets: 'legal_timesheets',
   space_booking: 'space_booking',
   skills_passport: 'skills_passport',
-  email_notifications: 'email_notifications',
   teams_integration: 'teams_integration',
-  xero_integration: 'xero_integration',
-  sage_integration: 'sage_integration',
 }
+const PACK_A_FEATURES: (keyof Features)[] = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
+const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport']
 
 const defaultFeatures: Features = {
   expenses: true,
@@ -116,6 +114,21 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
       const row = dbRows.get(dbKey)
       subscribed[featureKey] = row?.is_enabled ?? false
       visible[featureKey] = subscribed[featureKey] && (row?.is_visible ?? true)
+    }
+
+    const packAEnabled = dbRows.get('pack_a')?.is_enabled ?? false
+    if (packAEnabled) {
+      for (const key of PACK_A_FEATURES) {
+        subscribed[key] = true
+        visible[key] = dbRows.get(key)?.is_visible ?? true
+      }
+    }
+    const packBEnabled = dbRows.get('pack_b')?.is_enabled ?? false
+    if (packBEnabled) {
+      for (const key of PACK_B_FEATURES) {
+        subscribed[key] = true
+        visible[key] = dbRows.get(key)?.is_visible ?? true
+      }
     }
 
     setCompanyFeatures(subscribed)

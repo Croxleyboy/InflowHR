@@ -86,37 +86,37 @@ export default function Availability() {
     if (!employeeId || !companyUser?.company_id) return
     setSaving(true)
 
-    for (const d of days) {
-      const row = {
-        employee_id: employeeId,
-        company_id: companyUser.company_id,
-        day_of_week: d.day_of_week,
-        is_available: d.is_available,
-        start_time: d.available_from,
-        end_time: d.available_to,
-        recurring: d.recurring,
-      }
+    const { error: delError } = await supabase
+      .from('employee_availability')
+      .delete()
+      .eq('employee_id', employeeId)
+      .eq('company_id', companyUser.company_id)
 
-      const { data: existing } = await supabase
-        .from('employee_availability')
-        .select('id')
-        .eq('employee_id', employeeId)
-        .eq('company_id', companyUser.company_id)
-        .eq('day_of_week', d.day_of_week)
-        .maybeSingle()
-
-      if (existing) {
-        await supabase
-          .from('employee_availability')
-          .update({ is_available: row.is_available, start_time: row.start_time, end_time: row.end_time, recurring: row.recurring })
-          .eq('id', existing.id)
-      } else {
-        await supabase
-          .from('employee_availability')
-          .insert(row)
-      }
+    if (delError) {
+      setSaving(false)
+      return
     }
 
+    const rows = days.map(d => ({
+      employee_id: employeeId,
+      company_id: companyUser.company_id,
+      day_of_week: d.day_of_week,
+      is_available: d.is_available,
+      start_time: d.available_from,
+      end_time: d.available_to,
+      recurring: d.recurring,
+    }))
+
+    const { error: insError } = await supabase
+      .from('employee_availability')
+      .insert(rows)
+
+    if (insError) {
+      setSaving(false)
+      return
+    }
+
+    await fetchAvailability()
     setSaving(false)
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
