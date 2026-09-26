@@ -28,6 +28,7 @@ interface CompanyOption {
   billing_type_locked_until: string | null
   fy_start_month: number
   dashboard_style: string
+  monthly_platform_fee: number
 }
 
 interface CompanyFeature {
@@ -84,6 +85,8 @@ export default function AdminSubscriptions() {
   const [fyStartMonth, setFyStartMonth] = useState(4)
   const [dashboardStyle, setDashboardStyleState] = useState<'default' | 'slim'>('default')
   const [savedDashboardStyle, setSavedDashboardStyle] = useState<'default' | 'slim'>('default')
+  const [monthlyPlatformFee, setMonthlyPlatformFee] = useState('30.00')
+  const [savedMonthlyPlatformFee, setSavedMonthlyPlatformFee] = useState('30.00')
 
   async function loadPricing() {
     setPricingLoading(true)
@@ -107,7 +110,7 @@ export default function AdminSubscriptions() {
   async function loadCompanies() {
     const { data } = await supabase
       .from('companies')
-      .select('id, name, billing_type, fixed_annual_price, billing_type_locked_until, fy_start_month, dashboard_style')
+      .select('id, name, billing_type, fixed_annual_price, billing_type_locked_until, fy_start_month, dashboard_style, monthly_platform_fee')
       .order('name')
     setCompanies((data as CompanyOption[]) || [])
   }
@@ -128,6 +131,9 @@ export default function AdminSubscriptions() {
     const ds = (company?.dashboard_style === 'slim' ? 'slim' : 'default') as 'default' | 'slim'
     setDashboardStyleState(ds)
     setSavedDashboardStyle(ds)
+    const mpf = company?.monthly_platform_fee != null ? String(company.monthly_platform_fee) : '30.00'
+    setMonthlyPlatformFee(mpf)
+    setSavedMonthlyPlatformFee(mpf)
 
     const { data: metrics } = await callRpcDirect('get_company_metrics', { p_company_id: companyId })
     const m = metrics as Record<string, number> | null
@@ -260,6 +266,7 @@ export default function AdminSubscriptions() {
       billing_type: billingType,
       fixed_annual_price: billingType === 'fixed' && fixedAnnualPrice ? parseFloat(fixedAnnualPrice) : null,
       dashboard_style: dashboardStyle,
+      monthly_platform_fee: parseFloat(monthlyPlatformFee) || 30,
     }
 
     if (billingType === 'fixed' && savedBillingType === 'monthly') {
@@ -293,7 +300,8 @@ export default function AdminSubscriptions() {
   )
   const hasBillingChanges = billingType !== savedBillingType || fixedAnnualPrice !== savedFixedPrice
   const hasDashboardStyleChanges = dashboardStyle !== savedDashboardStyle
-  const hasUnsavedChanges = hasPriceChanges || hasBillingChanges || hasDashboardStyleChanges
+  const hasPlatformFeeChanges = monthlyPlatformFee !== savedMonthlyPlatformFee
+  const hasUnsavedChanges = hasPriceChanges || hasBillingChanges || hasDashboardStyleChanges || hasPlatformFeeChanges
 
   const isLockedToFixed = billingType === 'fixed' && billingTypeLocked && new Date(billingTypeLocked) > new Date()
 
@@ -339,7 +347,8 @@ export default function AdminSubscriptions() {
     if (!isFeatureEnabled(sp.feature_key)) return sum
     return sum + (sp.flat_price ?? 0)
   }, 0)
-  const totalCost = coreCost + packACost + packBCost + supportCost
+  const platformFee = parseFloat(monthlyPlatformFee) || 30
+  const totalCost = coreCost + packACost + packBCost + supportCost + platformFee
 
   const tabStyle = (t: string) => ({
     padding: '10px 24px',
@@ -856,6 +865,27 @@ export default function AdminSubscriptions() {
                     </div>
                   )}
 
+                  {/* Monthly Platform Fee */}
+                  <div style={{ background: '#e3f2fd', border: '2px solid #1565c0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#1565c0' }}>Monthly Platform Fee</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontWeight: 600 }}>&pound;</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="admin-input"
+                          style={{ width: 120, fontWeight: 700, fontSize: 16, textAlign: 'center' }}
+                          value={monthlyPlatformFee}
+                          onChange={e => setMonthlyPlatformFee(e.target.value)}
+                        />
+                        <span style={{ fontSize: 12, color: '#666' }}>/month</span>
+                      </div>
+                      <span style={{ fontSize: 12, color: '#666' }}>Flat charge per company (not per user)</span>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0' }}>
                     <button
                       className="admin-btn admin-btn-primary"
@@ -913,6 +943,12 @@ export default function AdminSubscriptions() {
                             <td>&pound;{(sp.flat_price ?? 0).toFixed(2)}</td>
                           </tr>
                         ))}
+                        <tr>
+                          <td>Platform Fee</td>
+                          <td>&pound;{platformFee.toFixed(2)} flat</td>
+                          <td>—</td>
+                          <td>&pound;{platformFee.toFixed(2)}</td>
+                        </tr>
                         <tr className="sub-cost-total">
                           <td>Total</td>
                           <td></td>
