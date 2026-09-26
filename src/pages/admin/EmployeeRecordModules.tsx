@@ -2,8 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useFeatures } from '../../context/FeatureContext'
 import { useAuth } from '../../context/AuthContext'
+import { useToast } from '../../context/ToastContext'
 
-type Module = 'overview' | 'timeoff' | 'assets' | 'benefits' | 'dependents' | 'education' | 'grievances' | 'performance' | 'elearning' | 'onboarding' | 'expenses' | 'timesheets' | 'documents'
+type Module = 'overview' | 'timeoff' | 'assets' | 'benefits' | 'dependents' | 'education' | 'grievances' | 'performance' | 'elearning' | 'onboarding' | 'expenses' | 'timesheets' | 'documents' | 'shift_skills'
 
 interface Employee {
   id: string
@@ -51,11 +52,13 @@ interface Employee {
   salary_group: string | null
   qualifications: string | null
   religion: string | null
+  work_pattern_id: string | null
 }
 
 interface Props {
   employee: Employee
   companyId: string
+  workPatternName?: string
   lieuDays: number
   maskValue: (v: string | null, empId: string, field: string) => string
   toggleReveal: (empId: string, field: string) => void
@@ -76,6 +79,7 @@ const MODULES: { key: Module; label: string; icon: string }[] = [
   { key: 'expenses', label: 'Expenses', icon: 'M12 1v22|M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
   { key: 'timesheets', label: 'Timesheets', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z|M12 6v6l4 2' },
   { key: 'documents', label: 'Documents', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z|M14 2v6h6|M12 18v-6|M9 15h6' },
+  { key: 'shift_skills', label: 'Shift Skills', icon: 'M22 11.08V12a10 10 0 1 1-5.93-9.14|M9 11l3 3L22 4' },
 ]
 
 const DOC_CATEGORIES: { key: string; label: string; expiryTracking?: boolean }[] = [
@@ -130,9 +134,10 @@ function StatusBadge({ status }: { status: string }) {
   return <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, fontWeight: 600, background: s.bg, color: s.color }}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>
 }
 
-export default function EmployeeRecordModules({ employee, companyId, lieuDays, maskValue, toggleReveal, formatDate }: Props) {
+export default function EmployeeRecordModules({ employee, companyId, lieuDays, maskValue, toggleReveal, formatDate, workPatternName }: Props) {
   const { features } = useFeatures()
   const { employeeName } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [activeModule, setActiveModule] = useState<Module>('overview')
   const [moduleData, setModuleData] = useState<Record<string, any>>({})
   const [loadingModule, setLoadingModule] = useState(false)
@@ -145,6 +150,8 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
   const [expandedDocCat, setExpandedDocCat] = useState<string | null>(null)
   const [docVisibleToEmp, setDocVisibleToEmp] = useState(false)
   const docFileRef = useRef<HTMLInputElement>(null)
+  const [shiftSkillEdits, setShiftSkillEdits] = useState<string[] | null>(null)
+  const [shiftSkillSaving, setShiftSkillSaving] = useState(false)
 
   useEffect(() => { setActiveModule('overview'); setModuleData({}) }, [employee.id])
 
@@ -227,6 +234,14 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         data = { documents: docs || [] }
         break
       }
+      case 'shift_skills': {
+        const [{ data: allSkills }, { data: empSkills }] = await Promise.all([
+          supabase.from('shift_skills').select('id, name, is_active').eq('company_id', companyId).eq('is_active', true).order('name'),
+          supabase.from('employee_shift_skills').select('shift_skill_id').eq('employee_id', employee.id).eq('company_id', companyId),
+        ])
+        data = { allSkills: allSkills || [], empSkillIds: (empSkills || []).map((r: any) => r.shift_skill_id) }
+        break
+      }
     }
 
     if (data) setModuleData(prev => ({ ...prev, [cacheKey]: data }))
@@ -260,6 +275,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
       case 'expenses': return renderExpenses()
       case 'timesheets': return renderTimesheets()
       case 'documents': return renderDocuments()
+      case 'shift_skills': return renderShiftSkills()
       default: return null
     }
   }
@@ -307,7 +323,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         <div style={cardStyle}>
           <h4 style={headingStyle}>Employment</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
-            <div><span style={labelStyle}>Working Pattern</span>{employee.working_pattern || '—'}</div>
+            <div><span style={labelStyle}>Work Pattern</span>{workPatternName || employee.working_pattern || '—'}</div>
             <div><span style={labelStyle}>Weekly Hours</span>{employee.weekly_hours ?? '—'}</div>
             <div><span style={labelStyle}>Contract Type</span>{employee.contract_type || '—'}</div>
             <div><span style={labelStyle}>Notice Period</span>{employee.notice_period || '—'}</div>
@@ -1211,6 +1227,70 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
     )
   }
 
+  function renderShiftSkills() {
+    const allSkills: { id: string; name: string }[] = currentData?.allSkills || []
+    const savedIds: string[] = currentData?.empSkillIds || []
+    const editIds = shiftSkillEdits ?? savedIds
+    const hasChanges = shiftSkillEdits !== null && (shiftSkillEdits.length !== savedIds.length || shiftSkillEdits.some(id => !savedIds.includes(id)))
+
+    function toggleSkill(skillId: string) {
+      const current = shiftSkillEdits ?? [...savedIds]
+      if (current.includes(skillId)) {
+        setShiftSkillEdits(current.filter(id => id !== skillId))
+      } else {
+        setShiftSkillEdits([...current, skillId])
+      }
+    }
+
+    async function saveShiftSkills() {
+      if (!confirm('Save shift skill changes for this employee?')) return
+      setShiftSkillSaving(true)
+      await supabase.from('employee_shift_skills').delete().eq('employee_id', employee.id).eq('company_id', companyId)
+      if (editIds.length > 0) {
+        const { error } = await supabase.from('employee_shift_skills').insert(
+          editIds.map(sid => ({ company_id: companyId, employee_id: employee.id, shift_skill_id: sid }))
+        )
+        if (error) { showError('Failed to save shift skills: ' + error.message); setShiftSkillSaving(false); return }
+      }
+      const cacheKey = `${employee.id}:shift_skills`
+      setModuleData(prev => ({ ...prev, [cacheKey]: { ...currentData, empSkillIds: editIds } }))
+      setShiftSkillEdits(null)
+      setShiftSkillSaving(false)
+      showSuccess('Shift skills saved')
+    }
+
+    return (
+      <div style={cardStyle}>
+        <h4 style={headingStyle}>Shift Skills</h4>
+        <p style={{ fontSize: 12, color: '#777', margin: '0 0 16px' }}>
+          Select the shift skills this employee holds. Skills determine eligibility for shift assignments that require them.
+        </p>
+        {allSkills.length === 0 ? (
+          <div style={emptyStyle}>No shift skills have been created. Go to Shifts &amp; Rotas &gt; Shift Skills to add them.</div>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {allSkills.map((sk: { id: string; name: string }) => (
+                <label key={sk.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 6, border: '1px solid #e8e8e8', cursor: 'pointer', fontSize: 13, background: editIds.includes(sk.id) ? '#e3f2fd' : '#fff' }}>
+                  <input type="checkbox" checked={editIds.includes(sk.id)} onChange={() => toggleSkill(sk.id)} />
+                  {sk.name}
+                </label>
+              ))}
+            </div>
+            {hasChanges && (
+              <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+                <button className="admin-btn-sm admin-btn-save" onClick={saveShiftSkills} disabled={shiftSkillSaving}>
+                  {shiftSkillSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button className="admin-btn-sm admin-btn-cancel" onClick={() => setShiftSkillEdits(null)}>Cancel</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
       {/* Module sidebar */}
@@ -1222,7 +1302,8 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
               (m.key === 'benefits' && !features.benefits) ||
               (m.key === 'elearning' && !features.elearning) ||
               (m.key === 'expenses' && !features.expenses) ||
-              (m.key === 'timesheets' && !features.timesheets)
+              (m.key === 'timesheets' && !features.timesheets) ||
+              (m.key === 'shift_skills' && !features.shifts)
             return (
               <button
                 key={m.key}

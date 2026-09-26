@@ -6,9 +6,10 @@ import AdminLabourDemand from './AdminLabourDemand'
 import AdminAvailabilityOverview from './AdminAvailabilityOverview'
 import CheckInSettingsPanel from './CheckInSettings'
 import CheckInDashboardPanel from './CheckInDashboard'
+import AdminShiftSkills from './AdminShiftSkills'
 
 export default function AdminShiftsRotas() {
-  const [tab, setTab] = useState<'rotas' | 'templates' | 'demand' | 'availability' | 'reports' | 'checkin'>('rotas')
+  const [tab, setTab] = useState<'rotas' | 'templates' | 'skills' | 'demand' | 'availability' | 'reports' | 'checkin'>('rotas')
 
   return (
     <div className="admin-section">
@@ -20,6 +21,7 @@ export default function AdminShiftsRotas() {
       <div className="admin-tabs">
         <button className={`admin-tab ${tab === 'rotas' ? 'admin-tab-active' : ''}`} onClick={() => setTab('rotas')}>Rotas &amp; Scheduling</button>
         <button className={`admin-tab ${tab === 'templates' ? 'admin-tab-active' : ''}`} onClick={() => setTab('templates')}>Shift Templates</button>
+        <button className={`admin-tab ${tab === 'skills' ? 'admin-tab-active' : ''}`} onClick={() => setTab('skills')}>Shift Skills</button>
         <button className={`admin-tab ${tab === 'demand' ? 'admin-tab-active' : ''}`} onClick={() => setTab('demand')}>Labour Demand</button>
         <button className={`admin-tab ${tab === 'availability' ? 'admin-tab-active' : ''}`} onClick={() => setTab('availability')}>Availability</button>
         <button className={`admin-tab ${tab === 'reports' ? 'admin-tab-active' : ''}`} onClick={() => setTab('reports')}>Reports &amp; Analytics</button>
@@ -28,6 +30,7 @@ export default function AdminShiftsRotas() {
 
       {tab === 'rotas' && <AdminRotaManager />}
       {tab === 'templates' && <AdminShiftTemplates />}
+      {tab === 'skills' && <AdminShiftSkills />}
       {tab === 'demand' && <AdminLabourDemand />}
       {tab === 'availability' && <AdminAvailabilityOverview />}
       {tab === 'reports' && <AdminShiftReports />}

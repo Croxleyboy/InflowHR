@@ -133,6 +133,8 @@ export default function Dashboard() {
   const [tsHoursThisWeek, setTsHoursThisWeek] = useState<number | null>(null)
   const [tsExpectedHours] = useState(37.5)
   const [lastTimesheet, setLastTimesheet] = useState<{ date: string; hours: number } | null>(null)
+  const [workPatternDays, setWorkPatternDays] = useState<boolean[] | null>(null)
+  const [workPatternType, setWorkPatternType] = useState<string | null>(null)
   const [lastShiftWorked, setLastShiftWorked] = useState<{ date: string; hours: number } | null>(null)
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
   useEffect(() => {
@@ -220,6 +222,15 @@ export default function Dashboard() {
         .then(({ count }) => { if (count && count > 0) setKudosUnread(count) })
 
       const today = toLocalDateStr()
+
+      ;(async () => {
+        const { data: empRow } = await supabase.from('employees').select('work_pattern_id').eq('id', employeeId).maybeSingle()
+        if (empRow?.work_pattern_id) {
+          const { data: wp } = await supabase.from('work_patterns').select('days, pattern_type').eq('id', empRow.work_pattern_id).maybeSingle()
+          if (wp) { setWorkPatternDays(wp.days); setWorkPatternType(wp.pattern_type) }
+        }
+      })()
+
       supabase.from('one_to_one_meetings')
         .select('id', { count: 'exact', head: true })
         .eq('company_id', companyUser.company_id)
@@ -691,9 +702,11 @@ export default function Dashboard() {
         const mins = isActive ? Math.floor((Date.now() - new Date(activeCheckin!.check_in_at).getTime()) / 60000) : 0
         const elapsed = isActive ? `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}` : ''
         const todayShift = nextShift && nextShift.date === toLocalDateStr() ? nextShift : null
-        const statusLabel = isActive ? 'Checked In' : onLeaveToday ? 'On Leave' : todayShift ? 'On Shift' : 'At Work'
-        const statusColor = onLeaveToday ? '#e53935' : todayShift ? '#e65100' : '#43a047'
-        const iconBg = onLeaveToday ? '#ffebee' : todayShift ? '#fff3e0' : '#e8f5e9'
+        const todayDow = (new Date().getDay() + 6) % 7
+        const isContractedDay = !workPatternDays || workPatternType === 'variable' || workPatternDays[todayDow]
+        const statusLabel = isActive ? 'Checked In' : onLeaveToday ? 'On Leave' : !isContractedDay ? 'Off Work' : todayShift ? 'On Shift' : 'At Work'
+        const statusColor = onLeaveToday ? '#e53935' : !isContractedDay ? '#7e57c2' : todayShift ? '#e65100' : '#43a047'
+        const iconBg = onLeaveToday ? '#ffebee' : !isContractedDay ? '#ede7f6' : todayShift ? '#fff3e0' : '#e8f5e9'
         return (
           <button key={key} className="info-card" onClick={() => onLeaveToday ? navigate('/leave') : navigate(activeCheckin?.source === 'shifts' ? '/shifts/checkin' : todayShift ? '/shifts' : '/timesheets/checkin')}>
             <div className="info-card-head">
@@ -718,6 +731,8 @@ export default function Dashboard() {
                 <span className="info-card-sub" style={{ color: '#e65100' }}>{todayShift.start_time?.slice(0, 5)}–{todayShift.end_time?.slice(0, 5)}</span>
               ) : onLeaveToday ? (
                 <span className="info-card-sub" style={{ color: '#e53935' }}>Approved leave today</span>
+              ) : !isContractedDay ? (
+                <span className="info-card-sub" style={{ color: '#7e57c2' }}>Not a contracted working day</span>
               ) : checkinEnabled ? (
                 <span className="info-card-sub">Tap to clock in</span>
               ) : (

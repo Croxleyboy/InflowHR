@@ -17,6 +17,12 @@ interface ShiftTemplate {
   created_at: string
 }
 
+interface ShiftSkill {
+  id: string
+  name: string
+  is_active: boolean
+}
+
 const EMPTY_TEMPLATE = { name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, colour: '#4CAF50', role_required: '', department: '', is_active: true }
 
 export default function AdminShifts() {
@@ -30,23 +36,34 @@ export default function AdminShifts() {
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [search, setSearch] = useState('')
   const [filterDept, setFilterDept] = useState('')
+  const [shiftSkills, setShiftSkills] = useState<ShiftSkill[]>([])
+  const [templateSkills, setTemplateSkills] = useState<Record<string, string[]>>({})
+  const [addSkillIds, setAddSkillIds] = useState<string[]>([])
+  const [editSkillIds, setEditSkillIds] = useState<string[]>([])
 
   useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('shift_templates')
-      .select('*')
-      .eq('company_id', selectedCompanyId)
-      .order('name')
+    const [{ data }, { data: skills }, { data: tSkills }] = await Promise.all([
+      supabase.from('shift_templates').select('*').eq('company_id', selectedCompanyId).order('name'),
+      supabase.from('shift_skills').select('id, name, is_active').eq('company_id', selectedCompanyId).eq('is_active', true).order('name'),
+      supabase.from('shift_template_skills').select('shift_template_id, shift_skill_id').eq('company_id', selectedCompanyId),
+    ])
     setTemplates((data as ShiftTemplate[]) || [])
+    setShiftSkills((skills as ShiftSkill[]) || [])
+    const map: Record<string, string[]> = {}
+    ;(tSkills || []).forEach((r: any) => {
+      if (!map[r.shift_template_id]) map[r.shift_template_id] = []
+      map[r.shift_template_id].push(r.shift_skill_id)
+    })
+    setTemplateSkills(map)
     setLoading(false)
   }
 
   async function addTemplate() {
     if (!addForm.name.trim()) return
-    const { error } = await supabase.from('shift_templates').insert({
+    const { data: inserted, error } = await supabase.from('shift_templates').insert({
       company_id: selectedCompanyId,
       name: addForm.name.trim(),
       start_time: addForm.start_time,
@@ -56,9 +73,15 @@ export default function AdminShifts() {
       role_required: addForm.role_required || null,
       department: addForm.department || null,
       is_active: addForm.is_active,
-    })
+    }).select('id').single()
     if (error) { showError('Failed to add shift template: ' + error.message); return }
+    if (inserted && addSkillIds.length > 0) {
+      await supabase.from('shift_template_skills').insert(
+        addSkillIds.map(sid => ({ company_id: selectedCompanyId, shift_template_id: inserted.id, shift_skill_id: sid }))
+      )
+    }
     setAddForm({ ...EMPTY_TEMPLATE })
+    setAddSkillIds([])
     setShowAdd(false)
     load()
   }
@@ -75,6 +98,7 @@ export default function AdminShifts() {
       department: t.department || '',
       is_active: t.is_active,
     })
+    setEditSkillIds(templateSkills[t.id] || [])
   }
 
   async function saveEdit(id: string) {
@@ -89,6 +113,12 @@ export default function AdminShifts() {
       is_active: editForm.is_active,
     }).eq('id', id)
     if (error) { showError('Failed to update shift template: ' + error.message); return }
+    await supabase.from('shift_template_skills').delete().eq('shift_template_id', id)
+    if (editSkillIds.length > 0) {
+      await supabase.from('shift_template_skills').insert(
+        editSkillIds.map(sid => ({ company_id: selectedCompanyId, shift_template_id: id, shift_skill_id: sid }))
+      )
+    }
     setEditingId(null)
     load()
   }
@@ -154,6 +184,7 @@ export default function AdminShifts() {
                 <th>Name</th><th>Start</th><th>End</th><th>Break (mins)</th><th>Colour</th>
                 <th className="admin-shift-hide-mobile">Role Required</th>
                 <th className="admin-shift-hide-mobile">Department</th>
+                <th className="admin-shift-hide-mobile">Required Skills</th>
                 <th>Active</th><th>Actions</th>
               </tr>
             </thead>
@@ -166,6 +197,18 @@ export default function AdminShifts() {
                 <td><input type="color" value={addForm.colour} onChange={e => setAddForm(p => ({...p, colour: e.target.value}))} style={{ width: 32, height: 24, border: 'none', cursor: 'pointer' }} /></td>
                 <td className="admin-shift-hide-mobile"><input className="admin-inline-input" value={addForm.role_required} onChange={e => setAddForm(p => ({...p, role_required: e.target.value}))} placeholder="Optional" /></td>
                 <td className="admin-shift-hide-mobile"><input className="admin-inline-input" value={addForm.department} onChange={e => setAddForm(p => ({...p, department: e.target.value}))} placeholder="Optional" /></td>
+                <td className="admin-shift-hide-mobile">
+                  {shiftSkills.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+                      {shiftSkills.map(sk => (
+                        <label key={sk.id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={addSkillIds.includes(sk.id)} onChange={() => setAddSkillIds(prev => prev.includes(sk.id) ? prev.filter(x => x !== sk.id) : [...prev, sk.id])} />
+                          {sk.name}
+                        </label>
+                      ))}
+                    </div>
+                  ) : <span style={{ color: '#999', fontSize: 12 }}>No skills</span>}
+                </td>
                 <td>
                   <input type="checkbox" checked={addForm.is_active} onChange={e => setAddForm(p => ({...p, is_active: e.target.checked}))} />
                 </td>
@@ -186,6 +229,7 @@ export default function AdminShifts() {
                 <th>Name</th><th>Start</th><th>End</th><th>Break (mins)</th><th>Colour</th>
                 <th className="admin-shift-hide-mobile">Role Required</th>
                 <th className="admin-shift-hide-mobile">Department</th>
+                <th className="admin-shift-hide-mobile">Required Skills</th>
                 <th>Status</th><th>Actions</th>
               </tr>
             </thead>
@@ -199,6 +243,24 @@ export default function AdminShifts() {
                   <td>{editingId === t.id ? <input type="color" value={editForm.colour} onChange={e => setEditForm(p => ({...p, colour: e.target.value}))} style={{ width: 32, height: 24, border: 'none', cursor: 'pointer' }} /> : <span className="admin-colour-swatch" style={{ backgroundColor: t.colour }} />}</td>
                   <td className="admin-shift-hide-mobile">{editingId === t.id ? <input className="admin-inline-input" value={editForm.role_required} onChange={e => setEditForm(p => ({...p, role_required: e.target.value}))} /> : (t.role_required || '—')}</td>
                   <td className="admin-shift-hide-mobile">{editingId === t.id ? <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(p => ({...p, department: e.target.value}))} /> : (t.department || '—')}</td>
+                  <td className="admin-shift-hide-mobile">
+                    {editingId === t.id ? (
+                      shiftSkills.length > 0 ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+                          {shiftSkills.map(sk => (
+                            <label key={sk.id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                              <input type="checkbox" checked={editSkillIds.includes(sk.id)} onChange={() => setEditSkillIds(prev => prev.includes(sk.id) ? prev.filter(x => x !== sk.id) : [...prev, sk.id])} />
+                              {sk.name}
+                            </label>
+                          ))}
+                        </div>
+                      ) : <span style={{ color: '#999', fontSize: 12 }}>No skills</span>
+                    ) : (
+                      (templateSkills[t.id] || []).length > 0
+                        ? (templateSkills[t.id] || []).map(sid => shiftSkills.find(sk => sk.id === sid)?.name).filter(Boolean).join(', ') || 'None'
+                        : 'None'
+                    )}
+                  </td>
                   <td>{editingId === t.id ? (
                     <input type="checkbox" checked={editForm.is_active} onChange={e => setEditForm(p => ({...p, is_active: e.target.checked}))} />
                   ) : <span className={`admin-badge ${t.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>{t.is_active ? 'Active' : 'Inactive'}</span>}</td>
