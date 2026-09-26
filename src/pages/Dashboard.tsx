@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useFeatures } from '../context/FeatureContext'
@@ -103,7 +103,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features, dashboardStyle } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, company, companyUser } = useAuth()
   const navigate = useNavigate()
   const { activeCheckin, activeBreak, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
@@ -131,15 +131,14 @@ export default function Dashboard() {
   const [nextMeeting, setNextMeeting] = useState<{ scheduled_date: string; scheduled_time: string; label: string } | null>(null)
   const [latestBenefit, setLatestBenefit] = useState<{ name: string } | null>(null)
   const [onLeaveToday, setOnLeaveToday] = useState(false)
-  const [nextLeaveDate, setNextLeaveDate] = useState<{ date: string; status: string } | null>(null)
+  const [weatherIcon, setWeatherIcon] = useState<{ code: number; temp: number } | null>(null)
+  const [, setNextLeaveDate] = useState<{ date: string; status: string } | null>(null)
   const [lastPayslip, setLastPayslip] = useState<{ net_pay: number; month: string } | null>(null)
   const [lastKudos, setLastKudos] = useState<{ message: string; from_name: string } | null>(null)
   const [tsHoursThisWeek, setTsHoursThisWeek] = useState<number | null>(null)
   const [tsExpectedHours] = useState(37.5)
   const [lastTimesheet, setLastTimesheet] = useState<{ date: string; hours: number } | null>(null)
   const [lastShiftWorked, setLastShiftWorked] = useState<{ date: string; hours: number } | null>(null)
-  const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
-
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
   useEffect(() => {
     const handler = () => setDashMode(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
@@ -156,6 +155,38 @@ export default function Dashboard() {
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])
+
+  useEffect(() => {
+    if (!companyUser?.employee_id || !companyUser?.company_id) return
+    let cancelled = false
+    supabase.from('employee_consents')
+      .select('consent_type, granted')
+      .eq('employee_id', companyUser.employee_id)
+      .eq('company_id', companyUser.company_id)
+      .eq('consent_type', 'geolocation')
+      .eq('granted', true)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (cancelled) return
+            const { latitude, longitude } = pos.coords
+            fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=weather_code,temperature_2m&timezone=auto`)
+              .then(r => r.json())
+              .then(d => {
+                if (!cancelled && d.current) {
+                  setWeatherIcon({ code: d.current.weather_code, temp: Math.round(d.current.temperature_2m) })
+                }
+              })
+              .catch(() => {})
+          },
+          () => {},
+          { timeout: 5000 }
+        )
+      })
+    return () => { cancelled = true }
+  }, [companyUser?.employee_id, companyUser?.company_id])
 
   const [quickMenuOpen, setQuickMenuOpen] = useState(false)
 
@@ -637,6 +668,17 @@ export default function Dashboard() {
     }
   }, [employeeId, employeeEmail, companyUser?.company_id, features.elearning])
 
+  function getWeatherSvg(code: number): ReactNode {
+    if (code === 0 || code === 1) return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    if (code === 2) return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M20 12h2"/><path d="M19.07 4.93l-1.41 1.41"/><path d="M15.95 13.76a4 4 0 1 0-7.45-1.52"/><path d="M17.5 19H9a5 5 0 1 1 .9-9.93"/></svg>
+    if (code === 3) return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></svg>
+    if (code >= 51 && code <= 67 || code >= 80 && code <= 82) return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/><line x1="8" y1="19" x2="8" y2="22"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="16" y1="19" x2="16" y2="22"/></svg>
+    if (code >= 71 && code <= 77 || code >= 85 && code <= 86) return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/><path d="M8 15h.01"/><path d="M8 19h.01"/><path d="M12 17h.01"/><path d="M12 21h.01"/><path d="M16 15h.01"/><path d="M16 19h.01"/></svg>
+    if (code >= 95) return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/><path d="M13 11l-4 6h6l-4 6"/></svg>
+    if (code >= 45 && code <= 48) return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/><line x1="4" y1="14" x2="20" y2="14" opacity="0.4"/><line x1="6" y1="18" x2="18" y2="18" opacity="0.4"/></svg>
+    return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/></svg>
+  }
+
   const h = new Date().getHours()
   const greeting = h < 12 ? t('dashboard.greeting_morning') : h < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening')
 
@@ -666,7 +708,15 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value" style={{ color: statusColor }}>{statusLabel}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="info-card-value" style={{ color: statusColor }}>{statusLabel}</span>
+                {weatherIcon && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }} title={`${weatherIcon.temp}°C`}>
+                    {getWeatherSvg(weatherIcon.code)}
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>{weatherIcon.temp}°</span>
+                  </span>
+                )}
+              </div>
               {isActive ? (
                 <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />{elapsed} elapsed</div>
               ) : todayShift ? (
@@ -1081,8 +1131,8 @@ export default function Dashboard() {
     }
   }
 
-  const quickMenuItems: { label: string; path: string; icon: JSX.Element }[] = (() => {
-    const items: { label: string; path: string; icon: JSX.Element; featureKey: string | null }[] = [
+  const quickMenuItems: { label: string; path: string; icon: ReactNode }[] = (() => {
+    const items: { label: string; path: string; icon: ReactNode; featureKey: string | null }[] = [
       { label: 'My Profile', path: '/my-profile', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
       { label: 'Leave', path: '/leave', featureKey: 'leave', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> },
       { label: 'Expenses', path: '/expenses', featureKey: 'expenses', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
