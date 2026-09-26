@@ -8,7 +8,6 @@ import { useCheckIn } from '../context/CheckInContext'
 import { supabase } from '../lib/supabase'
 import { toLocalDateStr } from '../lib/formatters'
 import Chevron from '../components/Chevron'
-import { COURSES } from './ELearning'
 import DashboardDetailed from './DashboardDetailed'
 
 function getDateString(lang: string) {
@@ -132,10 +131,12 @@ export default function Dashboard() {
   const [nextMeeting, setNextMeeting] = useState<{ scheduled_date: string; scheduled_time: string; label: string } | null>(null)
   const [latestBenefit, setLatestBenefit] = useState<{ name: string } | null>(null)
   const [nextLeaveDate, setNextLeaveDate] = useState<{ date: string; status: string } | null>(null)
-  const [lastPayslipNet, setLastPayslipNet] = useState<number | null>(null)
+  const [lastPayslip, setLastPayslip] = useState<{ net_pay: number; month: string } | null>(null)
   const [lastKudos, setLastKudos] = useState<{ message: string; from_name: string } | null>(null)
   const [tsHoursThisWeek, setTsHoursThisWeek] = useState<number | null>(null)
   const [tsExpectedHours] = useState(37.5)
+  const [lastTimesheet, setLastTimesheet] = useState<{ date: string; hours: number } | null>(null)
+  const [lastShiftWorked, setLastShiftWorked] = useState<{ date: string; hours: number } | null>(null)
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
 
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
@@ -279,17 +280,12 @@ export default function Dashboard() {
         }
 
         if (features.elearning) {
-          try {
-            const raw = localStorage.getItem('inflowhr-elearning')
-            const progress = raw ? JSON.parse(raw) : { completed: [] }
-            const completedSet = new Set(progress.completed || [])
-            const thirtyDaysAhead = new Date(now); thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30)
-            COURSES.forEach(course => {
-              if (!course.deadline || completedSet.has(course.id)) return
-              const dl = new Date(course.deadline)
-              if (dl >= now && dl <= thirtyDaysAhead) count++
-            })
-          } catch {}
+          const { count: pendingCourses } = await supabase.from('course_enrolments')
+            .select('id', { count: 'exact', head: true })
+            .eq('employee_id', employeeId)
+            .eq('company_id', companyUser.company_id)
+            .in('status', ['not_started', 'in_progress'])
+          count += pendingCourses || 0
         }
 
         setReminderCount(count)
@@ -477,12 +473,10 @@ export default function Dashboard() {
         .limit(50)
         .then(({ data }) => {
           if (!data || data.length === 0) return
-          const now = new Date()
-          const withDeadline = data
-            .map((e: any) => ({ title: e.course?.title, deadline: e.course?.deadline }))
-            .filter((e: any) => e.deadline && new Date(e.deadline) >= now)
-            .sort((a: any, b: any) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-          if (withDeadline.length > 0) setNextElearning(withDeadline[0])
+          const mapped = data.map((e: any) => ({ title: e.course?.title, deadline: e.course?.deadline })).filter((e: any) => e.title)
+          const withDeadline = mapped.filter((e: any) => e.deadline).sort((a: any, b: any) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+          const next = withDeadline.length > 0 ? withDeadline[0] : mapped[0]
+          if (next) setNextElearning(next)
         })
 
       ;(async () => {
@@ -541,13 +535,18 @@ export default function Dashboard() {
         .then(({ data }) => { if (data) setNextLeaveDate({ date: data.start_date, status: data.status }) })
 
       supabase.from('payslips')
-        .select('net_pay')
+        .select('net_pay, pay_period_end')
         .eq('employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
-        .order('pay_date', { ascending: false })
+        .order('payment_date', { ascending: false })
         .limit(1)
         .maybeSingle()
-        .then(({ data }) => { if (data) setLastPayslipNet(data.net_pay) })
+        .then(({ data }) => {
+          if (data) setLastPayslip({
+            net_pay: data.net_pay,
+            month: new Date(data.pay_period_end + 'T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+          })
+        })
 
       supabase.from('kudos')
         .select('message, from_employee:employees!kudos_from_employee_id_fkey(first_name)')
@@ -578,7 +577,39 @@ export default function Dashboard() {
           const total = tsEntries.reduce((s: number, e: any) => s + Number(e.hours || 0), 0)
           setTsHoursThisWeek(total)
         }
+
+        const { data: lastTs } = await supabase.from('timesheets')
+          .select('date, hours')
+          .eq('employee_id', employeeId)
+          .eq('company_id', companyUser.company_id)
+          .in('status', ['pending', 'approved'])
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (lastTs) setLastTimesheet({ date: lastTs.date, hours: Number(lastTs.hours || 0) })
       })()
+
+      supabase.from('shift_assignments')
+        .select('date, shift_template:shift_templates(start_time, end_time)')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .lt('date', todayDate)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            const tpl = data.shift_template as any
+            const st = tpl?.start_time, et = tpl?.end_time
+            let hrs = 0
+            if (st && et) {
+              const [sh, sm] = st.split(':').map(Number)
+              const [eh, em] = et.split(':').map(Number)
+              hrs = Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60)
+            }
+            setLastShiftWorked({ date: data.date, hours: Math.round(hrs * 10) / 10 })
+          }
+        })
     }
   }, [employeeId, employeeEmail, companyUser?.company_id, features.elearning])
 
@@ -711,10 +742,10 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              {lastPayslipNet !== null ? (
+              {lastPayslip ? (
                 <>
-                  <span className="info-card-value" style={{ color: '#303f9f' }}>&pound;{lastPayslipNet.toFixed(2)}</span>
-                  <span className="info-card-sub">Last net pay</span>
+                  <span className="info-card-value" style={{ color: '#303f9f' }}>&pound;{Math.round(lastPayslip.net_pay)}</span>
+                  <span className="info-card-sub" style={{ color: '#303f9f' }}>{lastPayslip.month}</span>
                 </>
               ) : (
                 <>
@@ -791,7 +822,11 @@ export default function Dashboard() {
               {nextElearning ? (
                 <>
                   <span className="info-card-value" style={{ fontSize: 14 }}>{nextElearning.title}</span>
-                  <div className="info-card-status info-card-status-warn"><span className="info-card-dot" />Due {new Date(nextElearning.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
+                  {nextElearning.deadline ? (
+                    <div className="info-card-status info-card-status-warn"><span className="info-card-dot" />Due {new Date(nextElearning.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
+                  ) : (
+                    <span className="info-card-sub" style={{ color: '#f9a825' }}>Required</span>
+                  )}
                 </>
               ) : (
                 <>
@@ -839,7 +874,11 @@ export default function Dashboard() {
               {tsHoursThisWeek !== null ? (
                 <>
                   <span className="info-card-value" style={{ color: tsExpectedHours - tsHoursThisWeek > 0 ? '#e65100' : '#43a047' }}>{Math.max(0, tsExpectedHours - tsHoursThisWeek).toFixed(1)}h <span className="info-card-value-unit">to book</span></span>
-                  <span className="info-card-sub">{tsHoursThisWeek.toFixed(1)}h logged this week</span>
+                  {lastTimesheet ? (
+                    <span className="info-card-sub" style={{ color: '#1565c0' }}>Last: {new Date(lastTimesheet.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ({lastTimesheet.hours}h)</span>
+                  ) : (
+                    <span className="info-card-sub">{tsHoursThisWeek.toFixed(1)}h logged this week</span>
+                  )}
                 </>
               ) : (
                 <>
@@ -863,7 +902,11 @@ export default function Dashboard() {
               {nextShift ? (
                 <>
                   <span className="info-card-value" style={{ fontSize: 14, color: '#e65100' }}>{nextShift.shift_name}</span>
-                  <span className="info-card-sub">{new Date(nextShift.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {nextShift.start_time?.slice(0, 5)}–{nextShift.end_time?.slice(0, 5)}</span>
+                  {lastShiftWorked ? (
+                    <span className="info-card-sub" style={{ color: '#e65100' }}>Last: {new Date(lastShiftWorked.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ({lastShiftWorked.hours}h)</span>
+                  ) : (
+                    <span className="info-card-sub">{new Date(nextShift.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {nextShift.start_time?.slice(0, 5)}–{nextShift.end_time?.slice(0, 5)}</span>
+                  )}
                 </>
               ) : (
                 <>
