@@ -708,23 +708,17 @@ export default function Dashboard() {
         const statusColor = onLeaveToday ? '#e53935' : !isContractedDay ? '#7e57c2' : todayShift ? '#e65100' : '#43a047'
         const iconBg = onLeaveToday ? '#ffebee' : !isContractedDay ? '#ede7f6' : todayShift ? '#fff3e0' : '#e8f5e9'
         return (
-          <button key={key} className="info-card" onClick={() => onLeaveToday ? navigate('/leave') : navigate(activeCheckin?.source === 'shifts' ? '/shifts/checkin' : todayShift ? '/shifts' : '/timesheets/checkin')}>
+          <div key={key} className="info-card" style={{ cursor: 'default' }}>
             <div className="info-card-head">
               <span className="info-card-title">Today's Status</span>
-              <span className="info-card-icon" style={{ background: iconBg }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <span className="info-card-icon" style={{ background: weatherIcon ? '#f0f9ff' : iconBg }}>
+                {weatherIcon ? getWeatherSvg(weatherIcon.code) : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
               </span>
             </div>
             <div className="info-card-body">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className="info-card-value" style={{ color: statusColor }}>{statusLabel}</span>
-                {weatherIcon && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }} title={`${weatherIcon.temp}°C`}>
-                    {getWeatherSvg(weatherIcon.code)}
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>{weatherIcon.temp}°</span>
-                  </span>
-                )}
-              </div>
+              <span className="info-card-value" style={{ color: statusColor, whiteSpace: 'nowrap' }}>
+                {statusLabel}{weatherIcon ? ` · ${weatherIcon.temp}°C` : ''}
+              </span>
               {isActive ? (
                 <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />{elapsed} elapsed</div>
               ) : todayShift ? (
@@ -734,12 +728,12 @@ export default function Dashboard() {
               ) : !isContractedDay ? (
                 <span className="info-card-sub" style={{ color: '#7e57c2' }}>Not a contracted working day</span>
               ) : checkinEnabled ? (
-                <span className="info-card-sub">Tap to clock in</span>
+                <span className="info-card-sub">Check in via Timesheets</span>
               ) : (
                 <span className="info-card-sub">No leave booked</span>
               )}
             </div>
-          </button>
+          </div>
         )
       }
       case 'leave':
