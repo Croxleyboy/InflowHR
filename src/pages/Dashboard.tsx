@@ -713,7 +713,7 @@ export default function Dashboard() {
             <div className="info-card-body">
               {lastPayslipNet !== null ? (
                 <>
-                  <span className="info-card-value">&pound;{lastPayslipNet.toFixed(2)}</span>
+                  <span className="info-card-value" style={{ color: '#303f9f' }}>&pound;{lastPayslipNet.toFixed(2)}</span>
                   <span className="info-card-sub">Last net pay</span>
                 </>
               ) : (
@@ -742,7 +742,7 @@ export default function Dashboard() {
                 </>
               ) : lastKudos ? (
                 <>
-                  <span className="info-card-value" style={{ fontSize: 13 }}>{lastKudos.message.length > 35 ? lastKudos.message.slice(0, 35) + '…' : lastKudos.message || 'Recognition received'}</span>
+                  <span className="info-card-value" style={{ fontSize: 13, color: '#546e7a' }}>{lastKudos.message.length > 35 ? lastKudos.message.slice(0, 35) + '…' : lastKudos.message || 'Recognition received'}</span>
                   {lastKudos.from_name && <span className="info-card-sub">From {lastKudos.from_name}</span>}
                 </>
               ) : (
@@ -795,8 +795,8 @@ export default function Dashboard() {
                 </>
               ) : (
                 <>
-                  <span className="info-card-value">E-Learning</span>
-                  <span className="info-card-sub">Courses & training</span>
+                  <span className="info-card-value" style={{ fontSize: 14, color: '#43a047' }}>No courses outstanding</span>
+                  <span className="info-card-sub">All up to date</span>
                 </>
               )}
             </div>
@@ -838,7 +838,7 @@ export default function Dashboard() {
             <div className="info-card-body">
               {tsHoursThisWeek !== null ? (
                 <>
-                  <span className="info-card-value">{Math.max(0, tsExpectedHours - tsHoursThisWeek).toFixed(1)}h <span className="info-card-value-unit">to book</span></span>
+                  <span className="info-card-value" style={{ color: tsExpectedHours - tsHoursThisWeek > 0 ? '#e65100' : '#43a047' }}>{Math.max(0, tsExpectedHours - tsHoursThisWeek).toFixed(1)}h <span className="info-card-value-unit">to book</span></span>
                   <span className="info-card-sub">{tsHoursThisWeek.toFixed(1)}h logged this week</span>
                 </>
               ) : (
@@ -862,7 +862,7 @@ export default function Dashboard() {
             <div className="info-card-body">
               {nextShift ? (
                 <>
-                  <span className="info-card-value" style={{ fontSize: 14 }}>{nextShift.shift_name}</span>
+                  <span className="info-card-value" style={{ fontSize: 14, color: '#e65100' }}>{nextShift.shift_name}</span>
                   <span className="info-card-sub">{new Date(nextShift.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {nextShift.start_time?.slice(0, 5)}–{nextShift.end_time?.slice(0, 5)}</span>
                 </>
               ) : (
@@ -958,7 +958,7 @@ export default function Dashboard() {
             <div className="info-card-body">
               {latestSkill ? (
                 <>
-                  <span className="info-card-value" style={{ fontSize: 14 }}>{latestSkill.name}</span>
+                  <span className="info-card-value" style={{ fontSize: 14, color: '#ad1457' }}>{latestSkill.name}</span>
                   <span className="info-card-sub">Latest {latestSkill.kind}</span>
                 </>
               ) : (
@@ -982,7 +982,7 @@ export default function Dashboard() {
             <div className="info-card-body">
               {latestNotif ? (
                 <>
-                  <span className="info-card-value" style={{ fontSize: 13 }}>{latestNotif.title.length > 28 ? latestNotif.title.slice(0, 28) + '…' : latestNotif.title}</span>
+                  <span className="info-card-value" style={{ fontSize: 13, color: '#1565c0' }}>{latestNotif.title.length > 28 ? latestNotif.title.slice(0, 28) + '…' : latestNotif.title}</span>
                   <span className="info-card-sub">{new Date(latestNotif.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
                 </>
               ) : (
