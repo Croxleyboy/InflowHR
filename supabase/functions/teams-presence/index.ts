@@ -107,18 +107,37 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await sb.auth.getUser(jwt)
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
-    const { data: cu } = await sb
-      .from('company_users')
-      .select('company_id')
-      .eq('auth_user_id', user.id)
-      .limit(1)
-      .maybeSingle()
-    if (!cu) return json({ error: 'No company membership' }, 403)
+    const body = await req.json()
+    const { emails, company_id: requestedCompanyId } = body
+    if (!Array.isArray(emails) || emails.length === 0) {
+      return json({ error: 'emails array required' }, 400)
+    }
+
+    let companyId: string
+    if (requestedCompanyId) {
+      const { data: cu } = await sb
+        .from('company_users')
+        .select('company_id')
+        .eq('auth_user_id', user.id)
+        .eq('company_id', requestedCompanyId)
+        .maybeSingle()
+      if (!cu) return json({ error: 'No company membership' }, 403)
+      companyId = cu.company_id
+    } else {
+      const { data: cu } = await sb
+        .from('company_users')
+        .select('company_id')
+        .eq('auth_user_id', user.id)
+        .limit(1)
+        .maybeSingle()
+      if (!cu) return json({ error: 'No company membership' }, 403)
+      companyId = cu.company_id
+    }
 
     const { data: config } = await sb
       .from('company_teams_config')
       .select('azure_tenant_id, bot_app_id, bot_app_secret_encrypted, is_enabled, bot_configured')
-      .eq('company_id', cu.company_id)
+      .eq('company_id', companyId)
       .maybeSingle()
 
     if (!config?.is_enabled || !config?.bot_configured) {
@@ -131,12 +150,6 @@ Deno.serve(async (req) => {
       config.bot_app_secret_encrypted,
     )
     if (!token) return json({ error: 'Failed to authenticate with Microsoft' }, 500)
-
-    const body = await req.json()
-    const { emails } = body
-    if (!Array.isArray(emails) || emails.length === 0) {
-      return json({ error: 'emails array required' }, 400)
-    }
 
     const capped = emails.slice(0, 100)
     const idToEmail = await resolveUserIds(token, capped)

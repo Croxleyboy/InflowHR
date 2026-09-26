@@ -137,7 +137,7 @@ export default function Directory() {
 
     try {
       const { data, error } = await supabase.functions.invoke('teams-presence', {
-        body: { emails },
+        body: { emails, company_id: companyUser?.company_id },
       })
       if (error) throw error
       if (data?.presence) {
