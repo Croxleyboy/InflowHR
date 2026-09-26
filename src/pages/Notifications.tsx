@@ -476,31 +476,35 @@ export default function Notifications() {
 
     // E-learning — outstanding courses assigned to this employee
     if (features.elearning && HARDCODED_EMPLOYEE_ID && companyId) {
-      const { data: pendingCourses } = await supabase.from('course_enrolments')
-        .select('id, course:elearning_courses(title, deadline)')
-        .eq('employee_id', HARDCODED_EMPLOYEE_ID)
-        .eq('company_id', companyId)
-        .in('status', ['not_started', 'in_progress'])
-        .limit(10)
-      if (pendingCourses) {
-        pendingCourses.forEach((enrolment: any) => {
-          const title = enrolment.course?.title || 'Course'
-          const deadline = enrolment.course?.deadline
-          let subtitle = 'Required'
-          if (deadline) {
-            const deadlineDate = new Date(deadline)
-            const daysLeft = Math.max(0, Math.floor((deadlineDate.getTime() - todayDate.getTime()) / 86400000))
-            subtitle = `Due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`
-          }
-          personalReminders.push({
-            id: `elearn-${enrolment.id}`,
-            type: 'elearning',
-            title,
-            subtitle,
-            date: deadline || new Date().toISOString(),
-            navigateTo: '/elearning',
+      const [enabledRes, completedRes, empDeptRes] = await Promise.all([
+        supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', companyId).eq('is_enabled', true),
+        supabase.from('elearning_completions').select('course_id').eq('employee_id', HARDCODED_EMPLOYEE_ID).eq('company_id', companyId),
+        supabase.from('employees').select('department').eq('id', HARDCODED_EMPLOYEE_ID).maybeSingle(),
+      ])
+      const myDept = (empDeptRes.data as any)?.department || ''
+      const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
+      const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+      const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
+      if (outstandingIds.length > 0) {
+        const { data: courses } = await supabase.from('elearning_courses').select('id, title, deadline').in('id', outstandingIds)
+        if (courses) {
+          courses.forEach((course: any) => {
+            let subtitle = 'Required'
+            if (course.deadline) {
+              const deadlineDate = new Date(course.deadline)
+              const daysLeft = Math.max(0, Math.floor((deadlineDate.getTime() - todayDate.getTime()) / 86400000))
+              subtitle = `Due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`
+            }
+            personalReminders.push({
+              id: `elearn-${course.id}`,
+              type: 'elearning',
+              title: course.title,
+              subtitle,
+              date: course.deadline || new Date().toISOString(),
+              navigateTo: '/elearning',
+            })
           })
-        })
+        }
       }
     }
 

@@ -280,12 +280,16 @@ export default function Dashboard() {
         }
 
         if (features.elearning) {
-          const { count: pendingCourses } = await supabase.from('course_enrolments')
-            .select('id', { count: 'exact', head: true })
-            .eq('employee_id', employeeId)
-            .eq('company_id', companyUser.company_id)
-            .in('status', ['not_started', 'in_progress'])
-          count += pendingCourses || 0
+          const [enabledRes, completedRes, empDeptRes] = await Promise.all([
+            supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', companyUser.company_id).eq('is_enabled', true),
+            supabase.from('elearning_completions').select('course_id').eq('employee_id', employeeId).eq('company_id', companyUser.company_id),
+            supabase.from('employees').select('department').eq('id', employeeId).maybeSingle(),
+          ])
+          const myDept = (empDeptRes.data as any)?.department || ''
+          const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
+          const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+          const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
+          count += outstandingIds.length
         }
 
         setReminderCount(count)
@@ -465,19 +469,25 @@ export default function Dashboard() {
         .maybeSingle()
         .then(({ data }) => { if (data) setLatestNotif(data as any) })
 
-      supabase.from('course_enrolments')
-        .select('enrolled_at, course:elearning_courses(title, deadline)')
-        .eq('employee_id', employeeId)
-        .eq('company_id', companyUser.company_id)
-        .in('status', ['not_started', 'in_progress'])
-        .limit(50)
-        .then(({ data }) => {
-          if (!data || data.length === 0) return
-          const mapped = data.map((e: any) => ({ title: e.course?.title, deadline: e.course?.deadline })).filter((e: any) => e.title)
-          const withDeadline = mapped.filter((e: any) => e.deadline).sort((a: any, b: any) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-          const next = withDeadline.length > 0 ? withDeadline[0] : mapped[0]
-          if (next) setNextElearning(next)
-        })
+      ;(async () => {
+        const [enabledRes, completedRes, empDeptRes] = await Promise.all([
+          supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', companyUser.company_id).eq('is_enabled', true),
+          supabase.from('elearning_completions').select('course_id').eq('employee_id', employeeId).eq('company_id', companyUser.company_id),
+          supabase.from('employees').select('department').eq('id', employeeId).maybeSingle(),
+        ])
+        const myDept = (empDeptRes.data as any)?.department || ''
+        const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
+        const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+        const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
+        if (outstandingIds.length > 0) {
+          const { data: courses } = await supabase.from('elearning_courses').select('id, title, deadline').in('id', outstandingIds)
+          if (courses && courses.length > 0) {
+            const withDeadline = courses.filter((c: any) => c.deadline).sort((a: any, b: any) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+            const next = withDeadline.length > 0 ? withDeadline[0] : courses[0]
+            setNextElearning({ title: next.title, deadline: next.deadline })
+          }
+        }
+      })()
 
       ;(async () => {
         const { data: upcoming } = await supabase.from('one_to_one_meetings')
@@ -871,13 +881,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              {tsHoursThisWeek !== null ? (
+              {tsHoursThisWeek !== null || lastTimesheet ? (
                 <>
-                  <span className="info-card-value" style={{ color: tsExpectedHours - tsHoursThisWeek > 0 ? '#e65100' : '#43a047' }}>{Math.max(0, tsExpectedHours - tsHoursThisWeek).toFixed(1)}h <span className="info-card-value-unit">to book</span></span>
+                  {tsHoursThisWeek !== null ? (
+                    <span className="info-card-value" style={{ color: tsExpectedHours - tsHoursThisWeek > 0 ? '#e65100' : '#43a047' }}>{Math.max(0, tsExpectedHours - tsHoursThisWeek).toFixed(1)}h <span className="info-card-value-unit">to book</span></span>
+                  ) : lastTimesheet ? (
+                    <span className="info-card-value" style={{ color: '#1565c0' }}>{lastTimesheet.hours}h</span>
+                  ) : null}
                   {lastTimesheet ? (
                     <span className="info-card-sub" style={{ color: '#1565c0' }}>Last: {new Date(lastTimesheet.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ({lastTimesheet.hours}h)</span>
                   ) : (
-                    <span className="info-card-sub">{tsHoursThisWeek.toFixed(1)}h logged this week</span>
+                    <span className="info-card-sub">{tsHoursThisWeek!.toFixed(1)}h logged this week</span>
                   )}
                 </>
               ) : (
