@@ -12,19 +12,14 @@ import DashboardDetailed from './DashboardDetailed'
 
 function getDateString(lang: string) {
   const d = new Date()
-  const enDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const deDays = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
-  const enMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-  const deMonths = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+  const enDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+  const deDays = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
+  const enMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const deMonths = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez']
   const days = lang === 'de' ? deDays : enDays
   const months = lang === 'de' ? deMonths : enMonths
   const day = d.getDate()
-  if (lang === 'de') {
-    return `${days[d.getDay()]}, ${day}. ${months[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`
-  }
-  const suffix = day === 1 || day === 21 || day === 31 ? 'st' : day === 2 || day === 22 ? 'nd' : day === 3 || day === 23 ? 'rd' : 'th'
-  const year = String(d.getFullYear()).slice(-2)
-  return `${days[d.getDay()]}, ${day}${suffix} ${months[d.getMonth()]} ${year}`
+  return `${days[d.getDay()]} ${day} ${months[d.getMonth()]}`
 }
 
 interface LatestAnnouncement {
@@ -103,7 +98,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features, dashboardStyle } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, company, companyUser } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser } = useAuth()
   const navigate = useNavigate()
   const { activeCheckin, activeBreak, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
@@ -160,11 +155,11 @@ export default function Dashboard() {
     if (!companyUser?.employee_id || !companyUser?.company_id) return
     let cancelled = false
     supabase.from('employee_consents')
-      .select('consent_type, granted')
+      .select('consent_type, withdrawn_at')
       .eq('employee_id', companyUser.employee_id)
       .eq('company_id', companyUser.company_id)
       .eq('consent_type', 'geolocation')
-      .eq('granted', true)
+      .is('withdrawn_at', null)
       .maybeSingle()
       .then(({ data }) => {
         if (cancelled || !data) return
@@ -1160,6 +1155,21 @@ export default function Dashboard() {
   return (
     <div className="dashboard" onClick={() => quickMenuOpen && setQuickMenuOpen(false)}>
       <header className="dash-header">
+        <div className="header-avatar" onClick={() => navigate('/my-profile')}>
+          {avatarUrl ? (
+            <img className="header-avatar-img" src={avatarUrl} alt={employeeName || ''} />
+          ) : (
+            <span className="header-avatar-initials">{(employeeName || '').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}</span>
+          )}
+        </div>
+        <div className="header-center">
+          {company?.logo_url ? (
+            <img className="company-logo-img" src={company.logo_url} alt={company.name} />
+          ) : (
+            <span className="logo-text">InflowHR</span>
+          )}
+          <p className="header-date">{getDateString(lang)}</p>
+        </div>
         <div style={{ position: 'relative' }}>
           <button
             className="dash-quick-menu-btn"
@@ -1173,7 +1183,7 @@ export default function Dashboard() {
             </svg>
           </button>
           {quickMenuOpen && (
-            <div className="dash-quick-menu" onClick={(e) => e.stopPropagation()}>
+            <div className="dash-quick-menu dash-quick-menu-right" onClick={(e) => e.stopPropagation()}>
               {quickMenuItems.map(item => (
                 <button
                   key={item.path}
@@ -1185,17 +1195,6 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
-          )}
-        </div>
-        <div className="header-center">
-          <p className="header-tagline">{t('dashboard.tagline')}</p>
-          <p className="header-date">{getDateString(lang)}</p>
-        </div>
-        <div className="header-logo">
-          {company?.logo_url ? (
-            <img className="company-logo-img" src={company.logo_url} alt={company.name} />
-          ) : (
-            <span className="logo-text">InflowHR</span>
           )}
         </div>
       </header>
