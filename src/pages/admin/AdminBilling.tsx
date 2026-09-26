@@ -391,6 +391,10 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   const [billingType, setBillingType] = useState<'monthly' | 'fixed'>('monthly')
   const [fixedAnnualPrice, setFixedAnnualPrice] = useState(0)
   const [fyStartMonth, setFyStartMonth] = useState(4)
+  const [monthlyPlatformFee, setMonthlyPlatformFee] = useState(30)
+  const [viewEndYear, setViewEndYear] = useState(new Date().getFullYear())
+  const [viewEndMonth, setViewEndMonth] = useState(new Date().getMonth() + 1)
+  const [companyCreatedAt, setCompanyCreatedAt] = useState<Date | null>(null)
 
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
@@ -459,7 +463,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   async function load() {
     setLoading(true)
     const now = new Date()
-    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
     const [pricingRes, featuresRes, metricsRes, snapshotsRes, companyRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
@@ -468,11 +471,10 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       supabase.from('billing_snapshots')
         .select('*')
         .eq('company_id', companyId)
-        .gte('year', sixMonthsAgo.getFullYear())
         .order('year')
         .order('month'),
       supabase.from('companies')
-        .select('billing_type, fixed_annual_price, fy_start_month')
+        .select('billing_type, fixed_annual_price, fy_start_month, monthly_platform_fee, created_at')
         .eq('id', companyId)
         .single(),
     ])
@@ -481,11 +483,15 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     const empCount = metricsRes.data?.employee_count ?? 0
     const snapshotData = (snapshotsRes.data as BillingSnapshot[]) || []
 
-    const co = companyRes.data as { billing_type: string; fixed_annual_price: number | null; fy_start_month: number } | null
+    const co = companyRes.data as { billing_type: string; fixed_annual_price: number | null; fy_start_month: number; monthly_platform_fee: number | null; created_at: string | null } | null
     const bt = co?.billing_type === 'fixed' ? 'fixed' : 'monthly'
     setBillingType(bt as 'monthly' | 'fixed')
     setFixedAnnualPrice(co?.fixed_annual_price ?? 0)
     setFyStartMonth(co?.fy_start_month ?? 4)
+    setMonthlyPlatformFee(co?.monthly_platform_fee ?? 30)
+    if (co?.created_at) setCompanyCreatedAt(new Date(co.created_at))
+    setViewEndYear(now.getFullYear())
+    setViewEndMonth(now.getMonth() + 1)
 
     setPricing(pricingData)
     setFeatures(featuresData)
@@ -530,6 +536,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         core_per_user: corePerUser,
         addon_per_user: addonPerUser,
         feature_details: featureDetails,
+        monthly_platform_fee: monthlyPlatformFee,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'company_id,year,month' },
@@ -558,7 +565,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   const isFixed = billingType === 'fixed' && fixedAnnualPrice > 0
   const fixedMonthly = isFixed ? fixedAnnualPrice / 12 : 0
   const perUserTotal = baselinePrice + addonTotal
-  const subtotal = isFixed ? fixedMonthly : perUserTotal * employeeCount
+  const subtotal = (isFixed ? fixedMonthly : perUserTotal * employeeCount) + monthlyPlatformFee
   const vat = subtotal * VAT_RATE
   const monthlyTotal = subtotal + vat
 
@@ -568,7 +575,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     const curMonth = now.getMonth() + 1
 
     return Array.from({ length: 6 }, (_, i) => {
-      const d = new Date(curYear, curMonth - 1 - (5 - i), 1)
+      const d = new Date(viewEndYear, viewEndMonth - 1 - (5 - i), 1)
       const yr = d.getFullYear()
       const mo = d.getMonth() + 1
       const isCurrent = yr === curYear && mo === curMonth
@@ -616,9 +623,28 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         isCurrent: false,
       }
     })
-  }, [baselinePrice, addonTotal, employeeCount, snapshots, isFixed, fixedMonthly])
+  }, [baselinePrice, addonTotal, employeeCount, snapshots, isFixed, fixedMonthly, viewEndYear, viewEndMonth])
 
   const maxAmount = Math.max(...chartData.map(m => m.core + m.addons), 1)
+
+  const nowDate = new Date()
+  const isAtLatest = viewEndYear === nowDate.getFullYear() && viewEndMonth === nowDate.getMonth() + 1
+  const startDate = companyCreatedAt || new Date(2024, 0, 1)
+  const earliestViewEnd = new Date(startDate.getFullYear(), startDate.getMonth() + 5, 1)
+  const isAtEarliest = viewEndYear < earliestViewEnd.getFullYear() ||
+    (viewEndYear === earliestViewEnd.getFullYear() && viewEndMonth <= earliestViewEnd.getMonth() + 1)
+
+  function navigateBack() {
+    const d = new Date(viewEndYear, viewEndMonth - 2, 1)
+    setViewEndYear(d.getFullYear())
+    setViewEndMonth(d.getMonth() + 1)
+  }
+
+  function navigateForward() {
+    const d = new Date(viewEndYear, viewEndMonth, 1)
+    setViewEndYear(d.getFullYear())
+    setViewEndMonth(d.getMonth() + 1)
+  }
 
   function handleInvoice(month: string, year: number) {
     if (!baseline) return
@@ -747,9 +773,23 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
 
       <div className="billing-modern-chart">
         <div className="billing-modern-chart-header">
-          <div>
-            <h3>Monthly Costs</h3>
-            <p>Last 6 months {isFixed ? '· Fixed annual billing' : '· Core + Add-ons breakdown'}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={navigateBack}
+              disabled={isAtEarliest}
+              style={{ background: 'none', border: '1px solid #e0e0e0', borderRadius: 6, width: 32, height: 32, cursor: isAtEarliest ? 'not-allowed' : 'pointer', opacity: isAtEarliest ? 0.3 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}
+              title="Previous month"
+            >&#8592;</button>
+            <div>
+              <h3 style={{ margin: 0 }}>Monthly Costs</h3>
+              <p style={{ margin: 0 }}>{chartData.length > 0 && `${chartData[0].label} ${chartData[0].year} – ${chartData[chartData.length - 1].label} ${chartData[chartData.length - 1].year}`} {isFixed ? '· Fixed' : ''}</p>
+            </div>
+            <button
+              onClick={navigateForward}
+              disabled={isAtLatest}
+              style={{ background: 'none', border: '1px solid #e0e0e0', borderRadius: 6, width: 32, height: 32, cursor: isAtLatest ? 'not-allowed' : 'pointer', opacity: isAtLatest ? 0.3 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}
+              title="Next month"
+            >&#8594;</button>
           </div>
           <div className="billing-chart-legend">
             {isFixed ? (
@@ -832,22 +872,28 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                 <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(effectivePrice(a) * employeeCount).toFixed(2)}</>}</td>
               </tr>
             ))}
+            <tr>
+              <td>Platform Fee</td>
+              <td><span className="admin-badge" style={{ background: '#e3f2fd', color: '#1565c0' }}>Flat</span></td>
+              {!isFixed && <td>&pound;{monthlyPlatformFee.toFixed(2)} flat</td>}
+              <td>&pound;{monthlyPlatformFee.toFixed(2)}</td>
+            </tr>
             {isFixed ? (
               <>
                 <tr style={{ fontWeight: 700 }}>
                   <td>Annual Fixed Price</td>
                   <td></td>
-                  <td>&pound;{fixedAnnualPrice.toFixed(2)}</td>
+                  <td>&pound;{(fixedAnnualPrice + monthlyPlatformFee * 12).toFixed(2)}</td>
                 </tr>
                 <tr style={{ fontWeight: 600 }}>
                   <td>VAT (20%)</td>
                   <td></td>
-                  <td>&pound;{(fixedAnnualPrice * VAT_RATE).toFixed(2)}</td>
+                  <td>&pound;{((fixedAnnualPrice + monthlyPlatformFee * 12) * VAT_RATE).toFixed(2)}</td>
                 </tr>
                 <tr style={{ fontWeight: 700 }}>
                   <td>Annual Total</td>
                   <td></td>
-                  <td>&pound;{(fixedAnnualPrice + fixedAnnualPrice * VAT_RATE).toFixed(2)}</td>
+                  <td>&pound;{((fixedAnnualPrice + monthlyPlatformFee * 12) * (1 + VAT_RATE)).toFixed(2)}</td>
                 </tr>
               </>
             ) : (
@@ -1003,6 +1049,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [allFeatures, setAllFeatures] = useState<CompanyFeature[]>([])
   const [employeeCounts, setEmployeeCounts] = useState<Record<string, number>>({})
+  const [platformFees, setPlatformFees] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { load() }, [companies])
@@ -1010,12 +1057,20 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
   async function load() {
     if (companies.length === 0) return
     setLoading(true)
-    const [pricingRes, featuresRes] = await Promise.all([
+    const [pricingRes, featuresRes, companiesRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
       supabase.from('company_features').select('*'),
+      supabase.from('companies').select('id, monthly_platform_fee'),
     ])
     setPricing((pricingRes.data as PricingRow[]) || [])
     setAllFeatures((featuresRes.data as CompanyFeature[]) || [])
+    const fees: Record<string, number> = {}
+    if (companiesRes.data) {
+      for (const c of companiesRes.data as { id: string; monthly_platform_fee: number | null }[]) {
+        fees[c.id] = c.monthly_platform_fee ?? 30
+      }
+    }
+    setPlatformFees(fees)
 
     const counts: Record<string, number> = {}
     const { data: metrics } = await supabase.rpc('get_all_company_metrics')
@@ -1050,7 +1105,8 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         return cf?.custom_price != null && cf.custom_price !== a.default_price
       })
       const addonTotal = enabledAddons.reduce((s, a) => s + effectivePrice(a), 0)
-      const subtotal = (basePrice + addonTotal) * empCount
+      const companyPlatformFee = platformFees[c.id] ?? 30
+      const subtotal = (basePrice + addonTotal) * empCount + companyPlatformFee
       const vat = subtotal * VAT_RATE
       const monthly = subtotal + vat
 
@@ -1063,6 +1119,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         hasCustomCore,
         hasCustomAddons,
         addonsTotal: addonTotal * empCount,
+        platformFee: companyPlatformFee,
         subtotal,
         vat,
         monthly,
@@ -1074,13 +1131,14 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         trialEndDate: c.trial_end_date || null,
       }
     }).sort((a, b) => b.monthly - a.monthly)
-  }, [companies, pricing, allFeatures, employeeCounts])
+  }, [companies, pricing, allFeatures, employeeCounts, platformFees])
 
   const platformSubtotal = companyData.reduce((s, c) => s + c.subtotal, 0)
   const platformVat = companyData.reduce((s, c) => s + c.vat, 0)
   const platformTotal = companyData.reduce((s, c) => s + c.monthly, 0)
   const platformCore = companyData.reduce((s, c) => s + c.core, 0)
   const platformAddons = companyData.reduce((s, c) => s + c.addonsTotal, 0)
+  const platformFeeTotal = companyData.reduce((s, c) => s + c.platformFee, 0)
   const totalEmployees = companyData.reduce((s, c) => s + c.employees, 0)
 
   function handleInvoice(c: typeof companyData[0]) {
@@ -1126,6 +1184,11 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
           <span className="billing-card-value">&pound;{platformAddons.toFixed(2)}</span>
           <span className="billing-card-sub">excl. VAT</span>
         </div>
+        <div className="billing-card">
+          <span className="billing-card-label">Platform Fees</span>
+          <span className="billing-card-value">&pound;{platformFeeTotal.toFixed(2)}</span>
+          <span className="billing-card-sub">excl. VAT</span>
+        </div>
         <div className="billing-card billing-card-highlight">
           <span className="billing-card-label">Platform Total (inc. VAT)</span>
           <span className="billing-card-value">&pound;{platformTotal.toFixed(2)}</span>
@@ -1147,6 +1210,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
               <th>Core/User</th>
               <th>Core Total</th>
               <th>Add-ons</th>
+              <th>Platform Fee</th>
               <th>VAT</th>
               <th>Monthly Total</th>
               <th>Active Add-ons</th>
@@ -1173,6 +1237,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
                 </td>
                 <td>&pound;{c.core.toFixed(2)}</td>
                 <td>&pound;{c.addonsTotal.toFixed(2)}</td>
+                <td>&pound;{c.platformFee.toFixed(2)}</td>
                 <td>&pound;{c.vat.toFixed(2)}</td>
                 <td><strong>&pound;{c.monthly.toFixed(2)}</strong></td>
                 <td>
@@ -1198,6 +1263,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
               <td></td>
               <td>&pound;{platformCore.toFixed(2)}</td>
               <td>&pound;{platformAddons.toFixed(2)}</td>
+              <td>&pound;{platformFeeTotal.toFixed(2)}</td>
               <td>&pound;{platformVat.toFixed(2)}</td>
               <td>&pound;{platformTotal.toFixed(2)}</td>
               <td></td>
