@@ -60,7 +60,7 @@ function isConsentError(err: any): boolean {
 }
 
 export default function AdminTeamsTest() {
-  const { session, companyUser } = useAuth()
+  const { session } = useAuth()
   const { selectedCompany } = useAdminCompany()
 
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -87,7 +87,7 @@ export default function AdminTeamsTest() {
   const companyDomain = selectedCompany?.domain || ''
 
   useEffect(() => {
-    const cid = selectedCompany?.id || companyUser?.company_id
+    const cid = selectedCompany?.id
     if (!cid) return
     supabase.from('employees')
       .select('id, first_name, last_name, email, avatar_url')
@@ -95,7 +95,7 @@ export default function AdminTeamsTest() {
       .eq('is_active', true)
       .order('first_name')
       .then(({ data }) => { if (data) setEmployees(data as Employee[]) })
-  }, [selectedCompany?.id, companyUser?.company_id])
+  }, [selectedCompany?.id])
 
   useEffect(() => {
     return () => { pollingActiveRef.current = false; if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current) }

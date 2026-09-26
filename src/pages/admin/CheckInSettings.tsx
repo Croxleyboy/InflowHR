@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../context/AuthContext'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import type { CheckinSettings } from '../../context/CheckInContext'
 
@@ -20,8 +20,8 @@ interface Props {
 }
 
 export default function CheckInSettingsPanel({ source }: Props) {
-  const { companyUser } = useAuth()
-  const companyId = companyUser?.company_id || ''
+  const { selectedCompanyId } = useAdminCompany()
+  const companyId = selectedCompanyId || ''
   const { showSuccess, showError } = useToast()
 
   const [settings, setSettings] = useState<CheckinSettings | null>(null)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../context/AuthContext'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { toLocalDateStr } from '../../lib/formatters'
 
 interface CheckinRow {
@@ -51,8 +51,8 @@ function getFYRange(fyStartMonth: number): { start: string; end: string } {
 }
 
 export default function CheckInDashboardPanel({ source }: Props) {
-  const { companyUser } = useAuth()
-  const companyId = companyUser?.company_id || ''
+  const { selectedCompanyId } = useAdminCompany()
+  const companyId = selectedCompanyId || ''
 
   const [liveRecords, setLiveRecords] = useState<CheckinRow[]>([])
   const [history, setHistory] = useState<CheckinRow[]>([])
