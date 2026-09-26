@@ -958,6 +958,7 @@ export default function AdminEmployees() {
           )}
         </div>
       )}
+      </>}
       {activeTab === 'patterns' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ background: '#f0f4ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: 16, fontSize: 13, color: '#3730a3' }}>
@@ -1092,7 +1093,6 @@ export default function AdminEmployees() {
           })()}
         </div>
       )}
-      </>}
     </div>
   )
 }
