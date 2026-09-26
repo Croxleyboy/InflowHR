@@ -130,6 +130,7 @@ export default function Dashboard() {
   const [nextElearning, setNextElearning] = useState<{ title: string; deadline: string } | null>(null)
   const [nextMeeting, setNextMeeting] = useState<{ scheduled_date: string; scheduled_time: string; label: string } | null>(null)
   const [latestBenefit, setLatestBenefit] = useState<{ name: string } | null>(null)
+  const [onLeaveToday, setOnLeaveToday] = useState(false)
   const [nextLeaveDate, setNextLeaveDate] = useState<{ date: string; status: string } | null>(null)
   const [lastPayslip, setLastPayslip] = useState<{ net_pay: number; month: string } | null>(null)
   const [lastKudos, setLastKudos] = useState<{ message: string; from_name: string } | null>(null)
@@ -155,6 +156,8 @@ export default function Dashboard() {
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
   }, [])
+
+  const [quickMenuOpen, setQuickMenuOpen] = useState(false)
 
   const [dashPref, setDashPref] = useState(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
   useEffect(() => {
@@ -544,6 +547,17 @@ export default function Dashboard() {
         .maybeSingle()
         .then(({ data }) => { if (data) setNextLeaveDate({ date: data.start_date, status: data.status }) })
 
+      supabase.from('leave_requests')
+        .select('id')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'approved')
+        .lte('start_date', todayDate)
+        .gte('end_date', todayDate)
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => { setOnLeaveToday(!!data) })
+
       supabase.from('payslips')
         .select('net_pay, pay_period_end')
         .eq('employee_id', employeeId)
@@ -639,20 +653,30 @@ export default function Dashboard() {
         const isActive = !!activeCheckin
         const mins = isActive ? Math.floor((Date.now() - new Date(activeCheckin!.check_in_at).getTime()) / 60000) : 0
         const elapsed = isActive ? `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}` : ''
+        const todayShift = nextShift && nextShift.date === toLocalDateStr() ? nextShift : null
+        const statusLabel = isActive ? 'Checked In' : onLeaveToday ? 'On Leave' : todayShift ? 'On Shift' : 'At Work'
+        const statusColor = onLeaveToday ? '#e53935' : todayShift ? '#e65100' : '#43a047'
+        const iconBg = onLeaveToday ? '#ffebee' : todayShift ? '#fff3e0' : '#e8f5e9'
         return (
-          <button key={key} className="info-card" onClick={() => navigate(activeCheckin?.source === 'shifts' ? '/shifts/checkin' : '/timesheets/checkin')}>
+          <button key={key} className="info-card" onClick={() => onLeaveToday ? navigate('/leave') : navigate(activeCheckin?.source === 'shifts' ? '/shifts/checkin' : todayShift ? '/shifts' : '/timesheets/checkin')}>
             <div className="info-card-head">
               <span className="info-card-title">Today's Status</span>
-              <span className="info-card-icon" style={{ background: '#e8f5e9' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <span className="info-card-icon" style={{ background: iconBg }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={statusColor} strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">{isActive ? `Checked In` : 'Not Clocked In'}</span>
+              <span className="info-card-value" style={{ color: statusColor }}>{statusLabel}</span>
               {isActive ? (
-                <div className={`info-card-status info-card-status-ok`}><span className="info-card-dot" />{elapsed} elapsed</div>
-              ) : (
+                <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />{elapsed} elapsed</div>
+              ) : todayShift ? (
+                <span className="info-card-sub" style={{ color: '#e65100' }}>{todayShift.start_time?.slice(0, 5)}–{todayShift.end_time?.slice(0, 5)}</span>
+              ) : onLeaveToday ? (
+                <span className="info-card-sub" style={{ color: '#e53935' }}>Approved leave today</span>
+              ) : checkinEnabled ? (
                 <span className="info-card-sub">Tap to clock in</span>
+              ) : (
+                <span className="info-card-sub">No leave booked</span>
               )}
             </div>
           </button>
@@ -662,18 +686,19 @@ export default function Dashboard() {
         return (
           <button key={key} className="info-card" onClick={() => navigate('/leave')}>
             <div className="info-card-head">
-              <span className="info-card-title">Leave Balance</span>
+              <span className="info-card-title">Leave & Balance</span>
               <span className="info-card-icon" style={{ background: '#e8f5e9' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value">{leaveRemaining !== null ? leaveRemaining : '--'} <span className="info-card-value-unit">days remaining</span></span>
-              {nextLeaveDate ? (
-                <div className={`info-card-status ${nextLeaveDate.status === 'approved' ? 'info-card-status-ok' : 'info-card-status-pending'}`}><span className="info-card-dot" />{nextLeaveDate.status === 'approved' ? 'Next' : 'Pending'}: {new Date(nextLeaveDate.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
-              ) : leavePending !== null && leavePending > 0 ? (
-                <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />{leavePending} request{leavePending !== 1 ? 's' : ''} pending</div>
-              ) : null}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                <span style={{ fontSize: 28, fontWeight: 800, color: '#1565c0', lineHeight: 1 }}>{leaveRemaining !== null ? leaveRemaining : '--'}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#546e7a' }}>days remaining</span>
+              </div>
+              {leavePending !== null && leavePending > 0 && (
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#e65100', marginTop: 4, display: 'block' }}>{leavePending} pending request{leavePending !== 1 ? 's' : ''}</span>
+              )}
             </div>
           </button>
         )
@@ -1056,18 +1081,62 @@ export default function Dashboard() {
     }
   }
 
+  const quickMenuItems: { label: string; path: string; icon: JSX.Element }[] = (() => {
+    const items: { label: string; path: string; icon: JSX.Element; featureKey: string | null }[] = [
+      { label: 'My Profile', path: '/my-profile', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
+      { label: 'Leave', path: '/leave', featureKey: 'leave', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> },
+      { label: 'Expenses', path: '/expenses', featureKey: 'expenses', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
+      { label: 'Payslips', path: '/payslips', featureKey: 'payslips', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> },
+      { label: 'Timesheets', path: '/timesheets', featureKey: 'timesheets', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> },
+      { label: 'Shifts & Rotas', path: '/shifts', featureKey: 'shifts', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg> },
+      { label: 'Performance', path: '/one-to-ones', featureKey: 'performance', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> },
+      { label: 'E-Learning', path: '/elearning', featureKey: 'elearning', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> },
+      { label: 'Kudos', path: '/kudos', featureKey: 'kudos', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> },
+      { label: 'Benefits', path: '/benefits', featureKey: 'benefits', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg> },
+      { label: 'Space Booking', path: '/space-booking', featureKey: 'space_booking', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg> },
+      { label: 'Legal Timesheets', path: '/legal-timesheets', featureKey: 'legal_timesheets', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+      { label: 'Skills Passport', path: '/skills-passport', featureKey: 'skills_passport', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg> },
+      { label: 'Notifications', path: '/notifications', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
+      { label: 'Directory', path: '/directory', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
+      { label: 'Settings', path: '/settings', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
+    ]
+    return items.filter(i => !i.featureKey || (features as any)[i.featureKey])
+  })()
+
   if (isDesktop && dashPref === 'detailed') {
     return <DashboardDetailed />
   }
 
   return (
-    <div className="dashboard">
+    <div className="dashboard" onClick={() => quickMenuOpen && setQuickMenuOpen(false)}>
       <header className="dash-header">
-        {avatarUrl ? (
-          <img className="profile-avatar-img" src={avatarUrl} alt={initials} />
-        ) : (
-          <div className="profile-avatar">{initials}</div>
-        )}
+        <div style={{ position: 'relative' }}>
+          <button
+            className="dash-quick-menu-btn"
+            onClick={(e) => { e.stopPropagation(); setQuickMenuOpen(v => !v) }}
+            aria-label="Quick navigation"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          {quickMenuOpen && (
+            <div className="dash-quick-menu" onClick={(e) => e.stopPropagation()}>
+              {quickMenuItems.map(item => (
+                <button
+                  key={item.path}
+                  className="dash-quick-menu-item"
+                  onClick={() => { setQuickMenuOpen(false); navigate(item.path) }}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="header-center">
           <p className="header-tagline">{t('dashboard.tagline')}</p>
           <p className="header-date">{getDateString(lang)}</p>

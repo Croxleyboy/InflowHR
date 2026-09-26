@@ -60,7 +60,9 @@ export default function Directory() {
   const [teamCheckinsLoading, setTeamCheckinsLoading] = useState(false)
   const [presenceMap, setPresenceMap] = useState<Record<string, string>>({})
   const [teamsEnabled, setTeamsEnabled] = useState(false)
+  const [presenceStale, setPresenceStale] = useState(false)
   const presenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const presenceFailCount = useRef(0)
 
   const fetchData = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -134,24 +136,27 @@ export default function Directory() {
     if (emails.length === 0) return
 
     try {
-      const { data } = await supabase.functions.invoke('teams-presence', {
+      const { data, error } = await supabase.functions.invoke('teams-presence', {
         body: { emails },
       })
+      if (error) throw error
       if (data?.presence) {
         setPresenceMap(data.presence)
+        setPresenceStale(false)
+        presenceFailCount.current = 0
       }
     } catch {
-      // presence fetch failed — not blocking
+      presenceFailCount.current += 1
+      if (presenceFailCount.current >= 2) setPresenceStale(true)
     }
   }, [teamsEnabled, entries])
 
   useEffect(() => {
     if (!teamsEnabled) return
     fetchPresence()
-    presenceTimerRef.current = setInterval(fetchPresence, 60000)
-    return () => {
-      if (presenceTimerRef.current) clearInterval(presenceTimerRef.current)
-    }
+    const id = setInterval(fetchPresence, 60000)
+    presenceTimerRef.current = id
+    return () => clearInterval(id)
   }, [teamsEnabled, fetchPresence])
 
   function getPresenceColor(availability: string): string {
@@ -370,8 +375,8 @@ export default function Directory() {
                 )}
                 {teamsEnabled && presenceMap[entry.user_email] && presenceMap[entry.user_email] !== 'PresenceUnknown' && (
                   <span
-                    className="directory-presence-dot"
-                    title={presenceMap[entry.user_email]}
+                    className={`directory-presence-dot${presenceStale ? ' directory-presence-stale' : ''}`}
+                    title={presenceMap[entry.user_email] + (presenceStale ? ' (updating…)' : '')}
                     style={{ background: getPresenceColor(presenceMap[entry.user_email]) }}
                   />
                 )}

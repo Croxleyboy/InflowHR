@@ -76,6 +76,60 @@ body {
 }
 [data-theme="dark"] .dash-header { background: #2a2a40; color: #e0e0e0; }
 
+.dash-quick-menu-btn {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(0,0,0,0.06);
+  color: inherit;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.dash-quick-menu-btn:hover { background: rgba(0,0,0,0.12); }
+[data-theme="dark"] .dash-quick-menu-btn { background: rgba(255,255,255,0.08); }
+[data-theme="dark"] .dash-quick-menu-btn:hover { background: rgba(255,255,255,0.15); }
+
+.dash-quick-menu {
+  position: absolute;
+  top: 52px; left: 0;
+  width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  z-index: 100;
+  padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  animation: dash-menu-in 0.15s ease-out;
+}
+[data-theme="dark"] .dash-quick-menu {
+  background: #2a2a40;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+@keyframes dash-menu-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dash-quick-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  color: #333;
+  font-size: 14px; font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left; width: 100%;
+  transition: background 0.12s;
+}
+.dash-quick-menu-item:hover { background: rgba(0,0,0,0.06); }
+[data-theme="dark"] .dash-quick-menu-item { color: #e0e0e0; }
+[data-theme="dark"] .dash-quick-menu-item:hover { background: rgba(255,255,255,0.08); }
+.dash-quick-menu-item svg { flex-shrink: 0; opacity: 0.7; }
+
 .profile-avatar {
   width: 48px; height: 48px;
   border-radius: 50%;
@@ -3556,6 +3610,10 @@ body {
   border-radius: 50%;
   border: 2px solid #fff;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: opacity 0.3s;
+}
+.directory-presence-stale {
+  opacity: 0.45;
 }
 .directory-leave-badge-modal {
   display: inline-block;

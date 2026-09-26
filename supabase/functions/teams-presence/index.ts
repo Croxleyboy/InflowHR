@@ -33,6 +33,64 @@ async function getGraphToken(tenantId: string, clientId: string, clientSecret: s
   return data.access_token || null
 }
 
+// Resolve emails to Azure AD user IDs in batches using $filter
+async function resolveUserIds(
+  token: string,
+  emails: string[],
+): Promise<Record<string, string>> {
+  const idToEmail: Record<string, string> = {}
+  const BATCH_SIZE = 15 // Graph $filter 'in' supports ~15 values reliably
+
+  for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+    const batch = emails.slice(i, i + BATCH_SIZE)
+    const quoted = batch.map(e => `'${e.replace(/'/g, "''")}'`).join(',')
+    const filter = `mail in (${quoted})`
+
+    const res = await fetch(
+      `${GRAPH_BASE}/users?$filter=${encodeURIComponent(filter)}&$select=id,mail`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+
+    if (res.ok) {
+      const data = await res.json()
+      for (const u of data.value || []) {
+        if (u.id && u.mail) {
+          idToEmail[u.id] = u.mail.toLowerCase()
+        }
+      }
+    }
+  }
+
+  // Fallback: try userPrincipalName for emails not matched by mail field
+  const resolvedEmails = new Set(Object.values(idToEmail))
+  const unresolved = emails.filter(e => !resolvedEmails.has(e.toLowerCase()))
+
+  if (unresolved.length > 0) {
+    for (let i = 0; i < unresolved.length; i += BATCH_SIZE) {
+      const batch = unresolved.slice(i, i + BATCH_SIZE)
+      const quoted = batch.map(e => `'${e.replace(/'/g, "''")}'`).join(',')
+      const filter = `userPrincipalName in (${quoted})`
+
+      const res = await fetch(
+        `${GRAPH_BASE}/users?$filter=${encodeURIComponent(filter)}&$select=id,mail,userPrincipalName`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+
+      if (res.ok) {
+        const data = await res.json()
+        for (const u of data.value || []) {
+          if (u.id) {
+            const email = (u.mail || u.userPrincipalName || '').toLowerCase()
+            if (email) idToEmail[u.id] = email
+          }
+        }
+      }
+    }
+  }
+
+  return idToEmail
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -81,17 +139,7 @@ Deno.serve(async (req) => {
     }
 
     const capped = emails.slice(0, 100)
-
-    const idToEmail: Record<string, string> = {}
-    for (const email of capped) {
-      const res = await fetch(`${GRAPH_BASE}/users/${encodeURIComponent(email)}?$select=id,mail`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.ok) {
-        const u = await res.json()
-        if (u.id) idToEmail[u.id] = email
-      }
-    }
+    const idToEmail = await resolveUserIds(token, capped)
 
     const userIds = Object.keys(idToEmail)
     if (userIds.length === 0) return json({ presence: {} })
@@ -113,7 +161,10 @@ Deno.serve(async (req) => {
     const presence: Record<string, string> = {}
     for (const p of presData.value || []) {
       const email = idToEmail[p.id]
-      if (email) presence[email] = p.availability || 'PresenceUnknown'
+      if (email) {
+        const original = capped.find(e => e.toLowerCase() === email)
+        presence[original || email] = p.availability || 'PresenceUnknown'
+      }
     }
 
     return json({ presence })
