@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { useFeatures } from '../../context/FeatureContext'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 
 interface TeamsConfig {
@@ -84,8 +84,8 @@ function SageLogo() {
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function AdminIntegrations() {
-  const { companyUser, session } = useAuth()
-  const { companyFeatures } = useFeatures()
+  const { session } = useAuth()
+  const { selectedCompanyId } = useAdminCompany()
   const { showSuccess, showError } = useToast()
 
   // Teams state
@@ -109,12 +109,9 @@ export default function AdminIntegrations() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [teamsSubscribed, setTeamsSubscribed] = useState(false)
 
-  const companyId = companyUser?.company_id
-
-  const teamsSubscribed = companyFeatures.teams_integration
-  const xeroSubscribed = companyFeatures.xero_integration
-  const sageSubscribed = companyFeatures.sage_integration
+  const companyId = selectedCompanyId
 
   const otherPayrollActive = (provider: 'xero' | 'sage') => {
     if (provider === 'xero') return sageIntegration?.sync_status === 'connected'
@@ -127,12 +124,20 @@ export default function AdminIntegrations() {
     if (!companyId) return
     setLoading(true)
 
-    const [teamsRes, teamsBotRes, xeroRes, sageRes] = await Promise.all([
+    const [teamsRes, teamsBotRes, xeroRes, sageRes, featuresRes] = await Promise.all([
       supabase.from('company_teams_config').select('*').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_teams_bot_conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
+      supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
     ])
+
+    if (featuresRes.data) {
+      const fm = new Map(featuresRes.data.map(f => [f.feature_key, f.is_enabled]))
+      setTeamsSubscribed(fm.get('teams_integration') === true)
+    } else {
+      setTeamsSubscribed(false)
+    }
 
     if (teamsRes.data) {
       const t = teamsRes.data as TeamsConfig
@@ -152,7 +157,12 @@ export default function AdminIntegrations() {
     setLoading(false)
   }
 
-  useEffect(() => { loadAll() }, [companyId])
+  useEffect(() => {
+    setTeamsExpanded(false)
+    setXeroExpanded(false)
+    setSageExpanded(false)
+    loadAll()
+  }, [companyId])
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -345,8 +355,8 @@ export default function AdminIntegrations() {
         {/* ── Microsoft Teams Card ── */}
         <div style={cardStyle(teamsSubscribed)}>
           {!teamsSubscribed && (
-            <div style={{ position: 'absolute', top: 12, right: 16, background: '#f59e0b', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, pointerEvents: 'auto' }}>
-              Premium Add-on
+            <div style={{ position: 'absolute', top: 12, right: 16, background: '#6366f1', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, pointerEvents: 'auto' }}>
+              Pack B subscription required
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: teamsSubscribed ? 'pointer' : 'default' }}
@@ -458,14 +468,9 @@ export default function AdminIntegrations() {
         </div>
 
         {/* ── Xero Card ── */}
-        <div style={cardStyle(xeroSubscribed)}>
-          {!xeroSubscribed && (
-            <div style={{ position: 'absolute', top: 12, right: 16, background: '#f59e0b', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, pointerEvents: 'auto' }}>
-              Premium Add-on
-            </div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: xeroSubscribed ? 'pointer' : 'default' }}
-            onClick={() => xeroSubscribed && setXeroExpanded(!xeroExpanded)}>
+        <div style={cardStyle(true)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}
+            onClick={() => setXeroExpanded(!xeroExpanded)}>
             <XeroLogo />
             <div style={{ flex: 1 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Xero Payroll</h3>
@@ -473,12 +478,10 @@ export default function AdminIntegrations() {
                 Sync payslip data from Xero Payroll UK
               </p>
             </div>
-            {xeroSubscribed && statusBadge(xeroIntegration?.sync_status || 'not_connected')}
-            {xeroSubscribed && (
-              <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(xeroExpanded)}>
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            )}
+            {statusBadge(xeroIntegration?.sync_status || 'not_connected')}
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(xeroExpanded)}>
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </div>
 
           {xeroExpanded && (
@@ -543,14 +546,9 @@ export default function AdminIntegrations() {
         </div>
 
         {/* ── Sage Card ── */}
-        <div style={cardStyle(sageSubscribed)}>
-          {!sageSubscribed && (
-            <div style={{ position: 'absolute', top: 12, right: 16, background: '#f59e0b', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, pointerEvents: 'auto' }}>
-              Premium Add-on
-            </div>
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: sageSubscribed ? 'pointer' : 'default' }}
-            onClick={() => sageSubscribed && setSageExpanded(!sageExpanded)}>
+        <div style={cardStyle(true)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}
+            onClick={() => setSageExpanded(!sageExpanded)}>
             <SageLogo />
             <div style={{ flex: 1 }}>
               <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Sage Payroll</h3>
@@ -558,12 +556,10 @@ export default function AdminIntegrations() {
                 Import payslip PDFs exported from Sage Payroll
               </p>
             </div>
-            {sageSubscribed && statusBadge(sageIntegration?.sync_status || 'not_connected')}
-            {sageSubscribed && (
-              <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(sageExpanded)}>
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            )}
+            {statusBadge(sageIntegration?.sync_status || 'not_connected')}
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(sageExpanded)}>
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </div>
 
           {sageExpanded && (
