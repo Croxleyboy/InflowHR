@@ -397,9 +397,9 @@ export default function Directory() {
                 </button>
               )}
               <a className="directory-card-phone" href={`tel:${entry.telephone || ''}`}>
-                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                  <circle cx="20" cy="20" r="19" fill="#1a1a2e" stroke="#1a1a2e" strokeWidth="2" />
-                  <path d="M15.05 12.5c.17-.83.94-1.5 1.78-1.5h1.34c.84 0 1.61.67 1.78 1.5l.55 2.78c.14.7-.17 1.44-.78 1.83l-.92.58a11.04 11.04 0 0 0 5.79 5.79l.58-.92c.39-.61 1.13-.92 1.83-.78l2.78.55c.83.17 1.5.94 1.5 1.78v1.34c0 .84-.67 1.61-1.5 1.78-7.63 1.53-14.23-5.07-12.7-12.7z" fill="#fff" stroke="#fff" strokeWidth="0.5" strokeLinecap="round" strokeLinejoin="round" />
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="20" cy="20" r="19" fill="#1a1a2e" />
+                  <path d="M12 13.5C12 12.67 12.67 12 13.5 12h2.47a.8.8 0 0 1 .78.63l.74 3.32a.8.8 0 0 1-.22.74l-1.6 1.6a11.82 11.82 0 0 0 6.04 6.04l1.6-1.6a.8.8 0 0 1 .74-.22l3.32.74a.8.8 0 0 1 .63.78v2.47c0 .83-.67 1.5-1.5 1.5C19.06 28 12 20.94 12 13.5z" fill="#fff" />
                 </svg>
               </a>
             </div>
