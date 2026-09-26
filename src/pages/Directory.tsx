@@ -399,7 +399,7 @@ export default function Directory() {
               <a className="directory-card-phone" href={`tel:${entry.telephone || ''}`}>
                 <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
                   <circle cx="20" cy="20" r="19" fill="#1a1a2e" stroke="#1a1a2e" strokeWidth="2" />
-                  <path d="M16.5 13.5c.3 1.5.8 3 1.5 4.3l-1.5 1.5a1 1 0 0 0-.1 1.2 14.5 14.5 0 0 0 3.6 3.6 1 1 0 0 0 1.2-.1l1.5-1.5c1.3.7 2.8 1.2 4.3 1.5a1 1 0 0 0 1-.8v-2.5a1 1 0 0 0-.8-1l-2.5-.5a1 1 0 0 0-1 .3l-.8.8a10.5 10.5 0 0 1-4-4l.8-.8a1 1 0 0 0 .3-1l-.5-2.5a1 1 0 0 0-1-.8h-2.5a1 1 0 0 0-.8 1z" fill="#fff" />
+                  <path d="M15.05 12.5c.17-.83.94-1.5 1.78-1.5h1.34c.84 0 1.61.67 1.78 1.5l.55 2.78c.14.7-.17 1.44-.78 1.83l-.92.58a11.04 11.04 0 0 0 5.79 5.79l.58-.92c.39-.61 1.13-.92 1.83-.78l2.78.55c.83.17 1.5.94 1.5 1.78v1.34c0 .84-.67 1.61-1.5 1.78-7.63 1.53-14.23-5.07-12.7-12.7z" fill="#fff" stroke="#fff" strokeWidth="0.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </a>
             </div>
