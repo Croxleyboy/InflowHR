@@ -24,6 +24,8 @@ const SOURCE_LABELS: Record<string, string> = {
   legal_timesheet: 'Legal Timesheet',
 }
 
+const MAX_DAILY_HRS = 10
+
 export async function checkTimeOverlap(
   employeeId: string,
   companyId: string,
@@ -35,6 +37,7 @@ export async function checkTimeOverlap(
 ): Promise<OverlapResult> {
   const newStart = timeToMins(startTime)
   const newEnd = timeToMins(endTime)
+  const newHrs = (newEnd - newStart) / 60
   const existing: TimeBlock[] = []
 
   const queries: Promise<void>[] = []
@@ -143,6 +146,31 @@ export async function checkTimeOverlap(
           message: `Overlaps with ${SOURCE_LABELS[block.source]}: ${block.label} on ${new Date(d + 'T00:00:00').toLocaleDateString('en-GB')}`,
         })
       }
+    }
+  }
+
+  for (const d of dates) {
+    const dayBlocks = existing.filter(b => b.date === d)
+    let dayHrs = 0
+    for (const b of dayBlocks) {
+      if (b.source === 'legal_timesheet') {
+        dayHrs += b.endMins / 60
+      } else {
+        dayHrs += (b.endMins - b.startMins) / 60
+      }
+    }
+    if (dayHrs + newHrs > MAX_DAILY_HRS) {
+      const parts: string[] = []
+      const legalHrs = dayBlocks.filter(b => b.source === 'legal_timesheet').reduce((s, b) => s + b.endMins / 60, 0)
+      const tsHrs = dayBlocks.filter(b => b.source === 'timesheet').reduce((s, b) => s + (b.endMins - b.startMins) / 60, 0)
+      const shiftHrs = dayBlocks.filter(b => b.source === 'shift').reduce((s, b) => s + (b.endMins - b.startMins) / 60, 0)
+      if (tsHrs > 0) parts.push(`Timesheets: ${tsHrs.toFixed(1)}h`)
+      if (shiftHrs > 0) parts.push(`Shifts: ${shiftHrs.toFixed(1)}h`)
+      if (legalHrs > 0) parts.push(`Legal: ${legalHrs.toFixed(1)}h`)
+      conflicts.push({
+        existing: dayBlocks[0],
+        message: `Adding ${newHrs.toFixed(1)}h on ${new Date(d + 'T00:00:00').toLocaleDateString('en-GB')} would exceed ${MAX_DAILY_HRS}h daily limit. Current: ${dayHrs.toFixed(1)}h (${parts.join(', ')})`,
+      })
     }
   }
 
