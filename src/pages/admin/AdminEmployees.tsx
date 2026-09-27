@@ -237,6 +237,45 @@ export default function AdminEmployees() {
   }
 
   async function permanentlyDeleteEmployee(emp: Employee) {
+    const { data: managedGoals } = await supabase
+      .from('performance_goals')
+      .select('id, employee_id, title, status, employee:employees!performance_goals_employee_id_fkey(first_name, last_name)')
+      .eq('manager_id', emp.id)
+      .eq('company_id', selectedCompanyId)
+      .in('status', ['active', 'on_hold'])
+
+    if (managedGoals && managedGoals.length > 0) {
+      const names = [...new Set(managedGoals.map((g: any) => g.employee ? `${g.employee.first_name} ${g.employee.last_name}` : 'Unknown'))]
+      const proceed = confirm(
+        `${emp.first_name} ${emp.last_name} has ${managedGoals.length} active goal(s) assigned to:\n\n` +
+        names.join(', ') +
+        `\n\nThese goals will be unassigned from their manager. An HR ticket will be created to reassign them.\n\nContinue with deletion?`
+      )
+      if (!proceed) return
+
+      await supabase.from('performance_goals')
+        .update({ manager_id: null, updated_at: new Date().toISOString() })
+        .eq('manager_id', emp.id)
+        .eq('company_id', selectedCompanyId)
+
+      const { data: maxRef } = await supabase.from('hr_tickets')
+        .select('ref').eq('company_id', selectedCompanyId)
+        .order('ref', { ascending: false }).limit(1).maybeSingle()
+      const nextNum = maxRef?.ref ? parseInt(maxRef.ref.replace('HR-', ''), 10) + 1 : 1
+      const nextRef = `HR-${String(nextNum).padStart(3, '0')}`
+
+      await supabase.from('hr_tickets').insert({
+        ref: nextRef,
+        title: `Reassign goals — ${emp.first_name} ${emp.last_name} deleted`,
+        description: `${emp.first_name} ${emp.last_name} has been deleted and had ${managedGoals.length} active performance goal(s) assigned to: ${names.join(', ')}.\n\nThese goals now have no manager. Please reassign them to a new manager in Performance > Goals.`,
+        category: 'general',
+        priority: 'high',
+        status: 'open',
+        submitted_by: 'system',
+        company_id: selectedCompanyId,
+      })
+    }
+
     if (!confirm(`Permanently delete ${emp.first_name} ${emp.last_name} and all their related records? This cannot be undone.`)) return
 
     const deletes: { table: string; column: string; value: string }[] = [
