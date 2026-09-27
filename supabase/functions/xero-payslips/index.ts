@@ -137,14 +137,7 @@ Deno.serve(async (req) => {
       const totalDeductions = ps.deductions.reduce((s: number, d: { amount: number }) => s + d.amount, 0)
       const ref = `XERO-${ps.payslip_id}`
 
-      const { data: existing } = await sb
-        .from('payslips')
-        .select('id')
-        .eq('reference_number', ref)
-        .eq('company_id', company_id)
-        .maybeSingle()
-
-      const row = {
+      await sb.from('payslips').upsert({
         employee_id: ps.inflow_employee_id,
         company_id: company_id,
         reference_number: ref,
@@ -161,13 +154,7 @@ Deno.serve(async (req) => {
         status: 'paid',
         source: 'xero',
         xero_payslip_id: ps.payslip_id,
-      }
-
-      if (existing) {
-        await sb.from('payslips').update(row).eq('id', existing.id)
-      } else {
-        await sb.from('payslips').insert(row)
-      }
+      }, { onConflict: 'reference_number,company_id' })
     }
 
     const payRunData = {
