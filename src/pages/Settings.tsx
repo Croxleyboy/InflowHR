@@ -226,7 +226,29 @@ export default function Settings() {
         if (error) { showError('Failed to record consent'); setConsentSaving(null); return }
       }
       setConsents(prev => ({ ...prev, [consentType]: true }))
-      showSuccess('Consent granted')
+      if (consentType === 'geolocation') {
+        navigator.geolocation.getCurrentPosition(
+          () => {
+            showSuccess('Geolocation enabled — weather will appear on your dashboard')
+          },
+          (err) => {
+            if (err.code === err.PERMISSION_DENIED) {
+              showError('Browser location permission denied. Please allow location access in your browser settings, then try again.')
+              supabase.from('employee_consents')
+                .update({ withdrawn_at: new Date().toISOString() })
+                .eq('employee_id', companyUser.employee_id)
+                .eq('company_id', companyUser.company_id)
+                .eq('consent_type', 'geolocation')
+                .then(() => setConsents(prev => ({ ...prev, geolocation: false })))
+            } else {
+              showSuccess('Geolocation consent saved')
+            }
+          },
+          { timeout: 10000 }
+        )
+      } else {
+        showSuccess('Consent granted')
+      }
     }
     setConsentSaving(null)
   }, [companyUser?.employee_id, companyUser?.company_id, consents, showError, showSuccess])

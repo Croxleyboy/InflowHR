@@ -164,7 +164,8 @@ export default function Dashboard() {
       .is('withdrawn_at', null)
       .maybeSingle()
       .then(({ data }) => {
-        if (cancelled || !data) return
+        if (cancelled) return
+        if (!data) { setWeatherIcon(null); return }
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             if (cancelled) return
@@ -178,7 +179,7 @@ export default function Dashboard() {
               })
               .catch(() => {})
           },
-          () => {},
+          () => { if (!cancelled) setWeatherIcon(null) },
           { timeout: 5000 }
         )
       })
