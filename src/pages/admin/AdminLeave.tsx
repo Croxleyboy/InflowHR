@@ -142,6 +142,29 @@ export default function AdminLeave() {
     const oldStatus = req?.status
     const newStatus = editForm.status
 
+    if (req && newStatus === 'approved') {
+      const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
+      if (!typeSetting || typeSetting.deducts_from_allowance) {
+        const wasApproved = oldStatus === 'approved'
+        const oldDays = Number(req.days_requested)
+        const newDays = Number(editForm.days_requested)
+        const effectiveDelta = !wasApproved ? newDays : (newDays - oldDays)
+        if (effectiveDelta > 0) {
+          const year = new Date(req.start_date).getFullYear()
+          const { data: balance } = await supabase.from('leave_balances')
+            .select('used, total_days').eq('employee_id', req.employee_id).eq('year', year).limit(1).single()
+          if (balance) {
+            const remaining = balance.total_days - balance.used
+            if (effectiveDelta > remaining) {
+              const empName = req.employee ? `${req.employee.first_name} ${req.employee.last_name}` : 'This employee'
+              const over = (effectiveDelta - remaining).toFixed(1)
+              if (!confirm(`${empName} only has ${remaining.toFixed(1)} days remaining but this approval adds ${effectiveDelta.toFixed(1)} days.\n\nThis will exceed their allowance by ${over} days.\n\nProceed anyway?`)) return
+            }
+          }
+        }
+      }
+    }
+
     const { error } = await supabase.from('leave_requests').update({
       status: newStatus,
       days_requested: editForm.days_requested,
@@ -166,19 +189,11 @@ export default function AdminLeave() {
 
         if (delta !== 0) {
           const year = new Date(req.start_date).getFullYear()
-          const { data: balance } = await supabase
-            .from('leave_balances')
-            .select('id, used')
-            .eq('employee_id', req.employee_id)
-            .eq('year', year)
-            .limit(1)
-            .single()
-          if (balance) {
-            const newUsed = Math.max(0, balance.used + delta)
-            await supabase.from('leave_balances')
-              .update({ used: newUsed })
-              .eq('id', balance.id)
-          }
+          await supabase.rpc('adjust_leave_balance', {
+            p_employee_id: req.employee_id,
+            p_year: year,
+            p_delta: delta,
+          })
         }
       }
     }
@@ -257,6 +272,24 @@ export default function AdminLeave() {
     const req = requests.find(r => r.id === id)
     if (!req || req.status !== 'pending') return
 
+    if (action === 'approved') {
+      const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
+      if (!typeSetting || typeSetting.deducts_from_allowance) {
+        const year = new Date(req.start_date).getFullYear()
+        const { data: balance } = await supabase.from('leave_balances')
+          .select('used, total_days').eq('employee_id', req.employee_id).eq('year', year).limit(1).single()
+        if (balance) {
+          const remaining = balance.total_days - balance.used
+          const daysReq = Number(req.days_requested)
+          if (daysReq > remaining) {
+            const empName = req.employee ? `${req.employee.first_name} ${req.employee.last_name}` : 'This employee'
+            const over = (daysReq - remaining).toFixed(1)
+            if (!confirm(`${empName} only has ${remaining.toFixed(1)} days remaining but is requesting ${daysReq.toFixed(1)} days.\n\nApproving will exceed their allowance by ${over} days.\n\nProceed anyway?`)) return
+          }
+        }
+      }
+    }
+
     const { error } = await supabase.from('leave_requests').update({
       status: action,
       approved_at: action === 'approved' ? new Date().toISOString() : null,
@@ -267,11 +300,11 @@ export default function AdminLeave() {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
       if (!typeSetting || typeSetting.deducts_from_allowance) {
         const year = new Date(req.start_date).getFullYear()
-        const { data: balance } = await supabase.from('leave_balances')
-          .select('id, used').eq('employee_id', req.employee_id).eq('year', year).limit(1).single()
-        if (balance) {
-          await supabase.from('leave_balances').update({ used: balance.used + Number(req.days_requested) }).eq('id', balance.id)
-        }
+        await supabase.rpc('adjust_leave_balance', {
+          p_employee_id: req.employee_id,
+          p_year: year,
+          p_delta: Number(req.days_requested),
+        })
       }
     }
 
@@ -325,17 +358,11 @@ export default function AdminLeave() {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
       if (!typeSetting || typeSetting.deducts_from_allowance) {
         const year = new Date(req.start_date).getFullYear()
-        const { data: balance } = await supabase
-          .from('leave_balances')
-          .select('id, used')
-          .eq('employee_id', req.employee_id)
-          .eq('year', year)
-          .limit(1)
-          .single()
-        if (balance) {
-          const newUsed = Math.max(0, balance.used - Number(req.days_requested))
-          await supabase.from('leave_balances').update({ used: newUsed }).eq('id', balance.id)
-        }
+        await supabase.rpc('adjust_leave_balance', {
+          p_employee_id: req.employee_id,
+          p_year: year,
+          p_delta: -Number(req.days_requested),
+        })
       }
     }
 

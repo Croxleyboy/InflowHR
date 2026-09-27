@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
@@ -23,6 +23,9 @@ interface Company {
   trial_end_date: string | null
   auth_mode: 'sso' | 'non_sso'
   nonsso_username: string | null
+  timezone: string
+  date_format: string
+  currency: string
 }
 
 interface Employee {
@@ -82,7 +85,7 @@ export default function AdminCompanies() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' as 'sso' | 'non_sso' })
+  const [form, setForm] = useState({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' as 'sso' | 'non_sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' })
   const [logoFile, setLogoFile] = useState<File | null>(null)
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -97,7 +100,7 @@ export default function AdminCompanies() {
   const [importingFor, setImportingFor] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<{ success: boolean; message: string } | null>(null)
   const [editingCompany, setEditingCompany] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', domain: '' })
+  const [editForm, setEditForm] = useState({ name: '', domain: '', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' })
   const [savingEdit, setSavingEdit] = useState(false)
   const [createdCredentials, setCreatedCredentials] = useState<{ username: string; password: string; companyName: string } | null>(null)
   const [editingTrialEnd, setEditingTrialEnd] = useState<string | null>(null)
@@ -202,6 +205,9 @@ export default function AdminCompanies() {
       is_active: true,
       is_trial: form.isTrial,
       auth_mode: form.authMode,
+      timezone: form.timezone,
+      date_format: form.date_format,
+      currency: form.currency,
     }
     if (isNonSso && username) {
       insertPayload.nonsso_username = username
@@ -518,7 +524,7 @@ export default function AdminCompanies() {
 
   function startEditCompany(c: Company) {
     setEditingCompany(c.id)
-    setEditForm({ name: c.name, domain: c.domain })
+    setEditForm({ name: c.name, domain: c.domain, timezone: c.timezone || 'Europe/London', date_format: c.date_format || 'DD/MM/YYYY', currency: c.currency || 'GBP' })
   }
 
   async function saveEditCompany(id: string) {
@@ -530,6 +536,9 @@ export default function AdminCompanies() {
       if (!editForm.domain.trim()) { showError('Email domain is required for SSO companies'); setSavingEdit(false); return }
       updates.domain = editForm.domain.trim().toLowerCase().replace(/^@/, '')
     }
+    updates.timezone = editForm.timezone
+    updates.date_format = editForm.date_format
+    updates.currency = editForm.currency
     const { error } = await supabase.from('companies').update(updates).eq('id', id)
     if (error) { showError('Failed to update company: ' + error.message); setSavingEdit(false); return }
     setEditingCompany(null)
@@ -942,12 +951,66 @@ export default function AdminCompanies() {
             </div>
 
             {editingCompany === c.id && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditCompany(c.id)} disabled={savingEdit}>
-                  {savingEdit ? 'Saving...' : 'Save'}
-                </button>
-                <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingCompany(null)}>Cancel</button>
-              </div>
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 11 }}>Timezone</label>
+                    <select className="admin-input" style={{ fontSize: 12 }} value={editForm.timezone} onChange={e => setEditForm(f => ({ ...f, timezone: e.target.value }))}>
+                      <option value="Europe/London">Europe/London</option>
+                      <option value="Europe/Dublin">Europe/Dublin</option>
+                      <option value="Europe/Paris">Europe/Paris</option>
+                      <option value="Europe/Berlin">Europe/Berlin</option>
+                      <option value="Europe/Madrid">Europe/Madrid</option>
+                      <option value="Europe/Rome">Europe/Rome</option>
+                      <option value="Europe/Amsterdam">Europe/Amsterdam</option>
+                      <option value="Europe/Brussels">Europe/Brussels</option>
+                      <option value="Europe/Lisbon">Europe/Lisbon</option>
+                      <option value="Europe/Athens">Europe/Athens</option>
+                      <option value="Europe/Warsaw">Europe/Warsaw</option>
+                      <option value="Europe/Stockholm">Europe/Stockholm</option>
+                      <option value="Europe/Zurich">Europe/Zurich</option>
+                      <option value="America/New_York">America/New York</option>
+                      <option value="America/Chicago">America/Chicago</option>
+                      <option value="America/Los_Angeles">America/Los Angeles</option>
+                      <option value="Asia/Dubai">Asia/Dubai</option>
+                      <option value="Asia/Singapore">Asia/Singapore</option>
+                      <option value="Asia/Tokyo">Asia/Tokyo</option>
+                      <option value="Australia/Sydney">Australia/Sydney</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 11 }}>Date Format</label>
+                    <select className="admin-input" style={{ fontSize: 12 }} value={editForm.date_format} onChange={e => setEditForm(f => ({ ...f, date_format: e.target.value }))}>
+                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 11 }}>Currency</label>
+                    <select className="admin-input" style={{ fontSize: 12 }} value={editForm.currency} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))}>
+                      <option value="GBP">GBP (£)</option>
+                      <option value="EUR">EUR (€)</option>
+                      <option value="USD">USD ($)</option>
+                      <option value="CHF">CHF (Fr)</option>
+                      <option value="SEK">SEK (kr)</option>
+                      <option value="NOK">NOK (kr)</option>
+                      <option value="DKK">DKK (kr)</option>
+                      <option value="PLN">PLN (zł)</option>
+                      <option value="AED">AED (د.إ)</option>
+                      <option value="SGD">SGD ($)</option>
+                      <option value="JPY">JPY (¥)</option>
+                      <option value="AUD">AUD ($)</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditCompany(c.id)} disabled={savingEdit}>
+                    {savingEdit ? 'Saving...' : 'Save'}
+                  </button>
+                  <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingCompany(null)}>Cancel</button>
+                </div>
+              </>
             )}
 
             <div className="admin-co-card-grid">
@@ -1009,7 +1072,8 @@ export default function AdminCompanies() {
           </thead>
           <tbody>
             {paginatedCompanies.map(c => (
-              <tr key={c.id} className="admin-co-row">
+              <Fragment key={c.id}>
+              <tr className="admin-co-row">
                 <td data-label="Logo">{renderLogoCell(c)}</td>
                 <td data-label="Company">
                   {editingCompany === c.id ? (
@@ -1062,6 +1126,57 @@ export default function AdminCompanies() {
                   {renderActionButtons(c)}
                 </td>
               </tr>
+              {editingCompany === c.id && (
+                <tr key={`${c.id}-regional`}>
+                  <td colSpan={10} style={{ background: '#f5f7fa', padding: '8px 16px' }}>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Regional:</span>
+                      <select className="admin-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={editForm.timezone} onChange={e => setEditForm(f => ({ ...f, timezone: e.target.value }))}>
+                        <option value="Europe/London">Europe/London</option>
+                        <option value="Europe/Dublin">Europe/Dublin</option>
+                        <option value="Europe/Paris">Europe/Paris</option>
+                        <option value="Europe/Berlin">Europe/Berlin</option>
+                        <option value="Europe/Madrid">Europe/Madrid</option>
+                        <option value="Europe/Rome">Europe/Rome</option>
+                        <option value="Europe/Amsterdam">Europe/Amsterdam</option>
+                        <option value="Europe/Brussels">Europe/Brussels</option>
+                        <option value="Europe/Lisbon">Europe/Lisbon</option>
+                        <option value="Europe/Athens">Europe/Athens</option>
+                        <option value="Europe/Warsaw">Europe/Warsaw</option>
+                        <option value="Europe/Stockholm">Europe/Stockholm</option>
+                        <option value="Europe/Zurich">Europe/Zurich</option>
+                        <option value="America/New_York">America/New York</option>
+                        <option value="America/Chicago">America/Chicago</option>
+                        <option value="America/Los_Angeles">America/Los Angeles</option>
+                        <option value="Asia/Dubai">Asia/Dubai</option>
+                        <option value="Asia/Singapore">Asia/Singapore</option>
+                        <option value="Asia/Tokyo">Asia/Tokyo</option>
+                        <option value="Australia/Sydney">Australia/Sydney</option>
+                      </select>
+                      <select className="admin-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={editForm.date_format} onChange={e => setEditForm(f => ({ ...f, date_format: e.target.value }))}>
+                        <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                        <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                        <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                      </select>
+                      <select className="admin-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={editForm.currency} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))}>
+                        <option value="GBP">GBP (£)</option>
+                        <option value="EUR">EUR (€)</option>
+                        <option value="USD">USD ($)</option>
+                        <option value="CHF">CHF (Fr)</option>
+                        <option value="SEK">SEK (kr)</option>
+                        <option value="NOK">NOK (kr)</option>
+                        <option value="DKK">DKK (kr)</option>
+                        <option value="PLN">PLN (zł)</option>
+                        <option value="AED">AED (د.إ)</option>
+                        <option value="SGD">SGD ($)</option>
+                        <option value="JPY">JPY (¥)</option>
+                        <option value="AUD">AUD ($)</option>
+                      </select>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -1205,11 +1320,71 @@ export default function AdminCompanies() {
                 Trial companies receive all features (including add-ons) enabled at £0 for the trial period.
               </div>
             )}
+            <div style={{ marginTop: 16, marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#333' }}>Regional Settings</div>
+              <div className="admin-form-grid">
+                <div className="admin-form-field">
+                  <label>Timezone</label>
+                  <select className="admin-input" value={form.timezone} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))}>
+                    <option value="Europe/London">Europe/London (GMT/BST)</option>
+                    <option value="Europe/Dublin">Europe/Dublin (GMT/IST)</option>
+                    <option value="Europe/Paris">Europe/Paris (CET)</option>
+                    <option value="Europe/Berlin">Europe/Berlin (CET)</option>
+                    <option value="Europe/Madrid">Europe/Madrid (CET)</option>
+                    <option value="Europe/Rome">Europe/Rome (CET)</option>
+                    <option value="Europe/Amsterdam">Europe/Amsterdam (CET)</option>
+                    <option value="Europe/Brussels">Europe/Brussels (CET)</option>
+                    <option value="Europe/Lisbon">Europe/Lisbon (WET)</option>
+                    <option value="Europe/Athens">Europe/Athens (EET)</option>
+                    <option value="Europe/Bucharest">Europe/Bucharest (EET)</option>
+                    <option value="Europe/Helsinki">Europe/Helsinki (EET)</option>
+                    <option value="Europe/Warsaw">Europe/Warsaw (CET)</option>
+                    <option value="Europe/Stockholm">Europe/Stockholm (CET)</option>
+                    <option value="Europe/Oslo">Europe/Oslo (CET)</option>
+                    <option value="Europe/Copenhagen">Europe/Copenhagen (CET)</option>
+                    <option value="Europe/Zurich">Europe/Zurich (CET)</option>
+                    <option value="Europe/Vienna">Europe/Vienna (CET)</option>
+                    <option value="America/New_York">America/New York (EST)</option>
+                    <option value="America/Chicago">America/Chicago (CST)</option>
+                    <option value="America/Los_Angeles">America/Los Angeles (PST)</option>
+                    <option value="Asia/Dubai">Asia/Dubai (GST)</option>
+                    <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                    <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
+                  </select>
+                </div>
+                <div className="admin-form-field">
+                  <label>Date Format</label>
+                  <select className="admin-input" value={form.date_format} onChange={e => setForm(f => ({ ...f, date_format: e.target.value }))}>
+                    <option value="DD/MM/YYYY">DD/MM/YYYY (UK)</option>
+                    <option value="MM/DD/YYYY">MM/DD/YYYY (US)</option>
+                    <option value="YYYY-MM-DD">YYYY-MM-DD (ISO)</option>
+                  </select>
+                </div>
+                <div className="admin-form-field">
+                  <label>Currency</label>
+                  <select className="admin-input" value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
+                    <option value="GBP">GBP (£)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="CHF">CHF (Fr)</option>
+                    <option value="SEK">SEK (kr)</option>
+                    <option value="NOK">NOK (kr)</option>
+                    <option value="DKK">DKK (kr)</option>
+                    <option value="PLN">PLN (zł)</option>
+                    <option value="AED">AED (د.إ)</option>
+                    <option value="SGD">SGD ($)</option>
+                    <option value="JPY">JPY (¥)</option>
+                    <option value="AUD">AUD ($)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button className="admin-btn admin-btn-primary" onClick={addCompany} disabled={saving}>
                 {saving ? 'Saving...' : 'Register Company'}
               </button>
-              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null); setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' }) }}>Cancel</button>
+              <button className="admin-btn" onClick={() => { setShowForm(false); setLogoFile(null); setLogoPreview(null); setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' }) }}>Cancel</button>
             </div>
           </div>
         )}

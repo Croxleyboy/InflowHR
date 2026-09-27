@@ -411,9 +411,13 @@ export default function Settings() {
             <span className="settings-label">Card style</span>
             <div className="language-selector">
               <button
+                className={`lang-btn ${dashMode === 'plain' ? 'lang-active' : ''}`}
+                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'plain'); setDashMode('plain') }}
+              >Plain Simple</button>
+              <button
                 className={`lang-btn ${dashMode === 'simple' ? 'lang-active' : ''}`}
                 onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'simple'); setDashMode('simple') }}
-              >Simple</button>
+              >Coloured Simple</button>
               <button
                 className={`lang-btn ${dashMode === 'info' ? 'lang-active' : ''}`}
                 onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'info'); setDashMode('info') }}

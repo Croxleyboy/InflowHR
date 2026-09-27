@@ -93,6 +93,22 @@ export default function LeaveApproval() {
 
   async function handleDecision(approved: boolean) {
     if (!request || !employee) return
+
+    if (approved && leaveType?.deducts_from_allowance !== false) {
+      const year = new Date(request.start_date).getFullYear()
+      const { data: balance } = await supabase.from('leave_balances')
+        .select('used, total_days').eq('employee_id', request.employee_id)
+        .eq('company_id', companyUser?.company_id).eq('year', year).limit(1).single()
+      if (balance) {
+        const remaining = balance.total_days - balance.used
+        const daysReq = Number(request.days_requested)
+        if (daysReq > remaining) {
+          const over = (daysReq - remaining).toFixed(1)
+          if (!confirm(`${empName} only has ${remaining.toFixed(1)} days remaining but is requesting ${daysReq.toFixed(1)} days.\n\nApproving will exceed their allowance by ${over} days.\n\nProceed anyway?`)) return
+        }
+      }
+    }
+
     setProcessing(true)
     const now = new Date().toISOString()
 
@@ -104,21 +120,12 @@ export default function LeaveApproval() {
 
     if (approved && leaveType?.deducts_from_allowance !== false) {
       const year = new Date(request.start_date).getFullYear()
-      const { data: balance } = await supabase
-        .from('leave_balances')
-        .select('id, used')
-        .eq('employee_id', request.employee_id)
-        .eq('company_id', companyUser?.company_id)
-        .eq('year', year)
-        .limit(1)
-        .single()
-      if (balance) {
-        const { error: errBal } = await supabase.from('leave_balances')
-          .update({ used: balance.used + request.days_requested })
-          .eq('id', balance.id)
-          .eq('company_id', companyUser?.company_id)
-        if (errBal) { showError('Failed to update leave balance: ' + errBal.message) }
-      }
+      const { error: errBal } = await supabase.rpc('adjust_leave_balance', {
+        p_employee_id: request.employee_id,
+        p_year: year,
+        p_delta: request.days_requested,
+      })
+      if (errBal) { showError('Failed to update leave balance: ' + errBal.message) }
     }
 
     const deductNote = leaveType?.deducts_from_allowance === false

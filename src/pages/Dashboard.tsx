@@ -1451,7 +1451,7 @@ export default function Dashboard() {
           </>
         )
       })() : (
-        <div className={`card-grid${dashboardStyle === 'slim' ? ' card-grid-slim' : ''}`}>
+        <div className={`card-grid${dashboardStyle === 'slim' ? ' card-grid-slim' : ''}${dashMode === 'plain' ? ' plain-simple' : ''}`}>
           {features.expenses && (
             <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>
               <div className="card-content">

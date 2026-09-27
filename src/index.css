@@ -331,6 +331,31 @@ body {
 .card-legal-ts { background: linear-gradient(135deg, #00897b, #00695c); }
 .card-legal-ts::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
+/* ── Plain Simple dashboard mode ── */
+.plain-simple .dash-card {
+  background: #e8f5e9 !important;
+  color: #1b5e20 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
+}
+.plain-simple .dash-card::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='%232e7d32' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='%232e7d32' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='%232e7d32' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='%232e7d32' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='%232e7d32' stroke-width='0.8' fill='none'/%3E%3C/svg%3E") !important;
+  opacity: 0.10 !important;
+}
+.plain-simple .card-chevron {
+  background: rgba(46,125,50,0.15) !important;
+}
+.plain-simple .card-chevron path {
+  stroke: #2e7d32 !important;
+}
+.plain-simple .card-value,
+.plain-simple .card-value-large {
+  color: #1b5e20 !important;
+}
+.plain-simple .card-sub {
+  color: #2e7d32 !important;
+  opacity: 0.8;
+}
+
 /* ── Info-card dashboard mode ── */
 .info-card-grid {
   display: grid;

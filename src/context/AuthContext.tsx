@@ -20,6 +20,9 @@ interface Company {
   trial_expired?: boolean
   cancellation_status?: string | null
   is_cancelled?: boolean
+  timezone: string
+  date_format: string
+  currency: string
 }
 
 interface AuthState {
@@ -154,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: co } = await supabase
         .from('companies')
-        .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status')
+        .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
         .eq('id', cu.company_id)
         .single()
       if (co) {
@@ -224,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (inactiveRows && inactiveRows.length > 0) {
         const { data: co } = await supabase
           .from('companies')
-          .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status')
+          .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
           .eq('id', inactiveRows[0].company_id)
           .single()
         if (co && co.cancellation_status && ['frozen', 'exported', 'completed', 'purged'].includes(co.cancellation_status)) {
