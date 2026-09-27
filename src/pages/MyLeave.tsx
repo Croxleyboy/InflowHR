@@ -97,7 +97,8 @@ export default function MyLeave() {
   const primary = balances.find(b => b.leave_type_name === 'Annual Leave')
   const basAllowance = primary ? primary.total_allowance : 0
   const primaryLieu = primary ? (primary.lieu_days || 0) : 0
-  const totalEntitlement = basAllowance + primaryLieu
+  const primaryCarried = primary ? (primary.carried_over || 0) : 0
+  const totalEntitlement = basAllowance + primaryLieu + primaryCarried
   const totalUsed = primary ? primary.used : 0
   const remaining = totalEntitlement - totalUsed
   const usedPct = totalEntitlement > 0 ? (totalUsed / totalEntitlement) * 100 : 0
@@ -266,6 +267,12 @@ export default function MyLeave() {
             <span className="my-leave-stat-value my-leave-stat-pending">{pendingCount}</span>
             <span className="my-leave-stat-label">{t('my_leave.pending_days')}</span>
           </div>
+          {primaryCarried > 0 && (
+            <div className="my-leave-stat">
+              <span className="my-leave-stat-value" style={{ color: '#0891b2' }}>{primaryCarried}</span>
+              <span className="my-leave-stat-label">Carried Over</span>
+            </div>
+          )}
           {primaryLieu > 0 && (
             <div className="my-leave-stat">
               <span className="my-leave-stat-value" style={{ color: '#7c3aed' }}>{primaryLieu}</span>
@@ -278,7 +285,7 @@ export default function MyLeave() {
       {balances.filter(b => b.used > 0).length > 0 && (
         <div className="my-leave-balances">
           {balances.filter(b => b.used > 0).map(b => {
-            const effectiveTotal = b.total_allowance + (b.lieu_days || 0)
+            const effectiveTotal = b.total_allowance + (b.carried_over || 0) + (b.lieu_days || 0)
             const rem = effectiveTotal - b.used
             const pct = effectiveTotal > 0 ? (b.used / effectiveTotal) * 100 : 0
             return (

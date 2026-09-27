@@ -152,7 +152,7 @@ export default function NewLeaveRequest() {
           if (!annualType) return
           const [balRes, pendRes, approvedRes] = await Promise.all([
             supabase.from('leave_balances')
-              .select('total_allowance, lieu_days')
+              .select('total_allowance, lieu_days, carried_over')
               .eq('employee_id', EMPLOYEE_ID)
               .eq('company_id', companyUser.company_id)
               .eq('leave_type_id', annualType.id)
@@ -178,7 +178,8 @@ export default function NewLeaveRequest() {
           ])
           const lieuVal = Number(balRes.data?.lieu_days) || 0
           setEmployeeLieuDays(lieuVal)
-          const total = (balRes.data?.total_allowance || 0) + lieuVal
+          const carriedVal = Number(balRes.data?.carried_over) || 0
+          const total = (balRes.data?.total_allowance || 0) + carriedVal + lieuVal
           const used = (approvedRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
           const pending = (pendRes.data || []).reduce((s: number, r: { days_requested: number }) => s + Number(r.days_requested), 0)
           setLeaveBalance({ total, used, pending })
