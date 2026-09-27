@@ -62,6 +62,7 @@ export default function LeaveApproval() {
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [shiftConflicts, setShiftConflicts] = useState<{ date: string; shiftName: string; startTime: string; endTime: string }[]>([])
 
   const fetchData = useCallback(async () => {
     if (!id) return
@@ -81,6 +82,24 @@ export default function LeaveApproval() {
       ])
       if (empRes.data) setEmployee(empRes.data as Employee)
       if (typeRes.data) setLeaveType(typeRes.data as LeaveType)
+
+      const { data: shifts } = await supabase
+        .from('shift_assignments')
+        .select('date, shift_templates(name, start_time, end_time), rotas(status)')
+        .eq('employee_id', r.employee_id)
+        .eq('company_id', companyUser?.company_id)
+        .gte('date', r.start_date)
+        .lte('date', r.end_date)
+      if (shifts) {
+        setShiftConflicts((shifts as any[])
+          .filter(s => s.rotas?.status === 'published')
+          .map(s => ({
+            date: s.date,
+            shiftName: s.shift_templates?.name || 'Shift',
+            startTime: s.shift_templates?.start_time?.slice(0, 5) || '',
+            endTime: s.shift_templates?.end_time?.slice(0, 5) || '',
+          })))
+      }
     }
     setLoading(false)
   }, [id, companyUser?.company_id])
@@ -183,6 +202,24 @@ export default function LeaveApproval() {
     })
     if (errWf3) { showError('Failed to create manager notification: ' + errWf3.message) }
 
+    if (approved && shiftConflicts.length > 0 && companyUser?.company_id) {
+      const conflictDates = shiftConflicts.map(c => `${new Date(c.date + 'T00:00:00').toLocaleDateString('en-GB')} (${c.shiftName} ${c.startTime}–${c.endTime})`).join(', ')
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: empName,
+        step: 1,
+        status: 'Pending',
+        record_type: 'Conflict',
+        action: 'Leave/shift conflict requires resolution',
+        employee_email: employee.email,
+        assigned_to: APPROVER_EMAIL,
+        approval_id: request.id,
+        reminder_count: 0,
+        task_description: `${empName} has approved ${typeName} (${formatDate(request.start_date)}–${formatDate(request.end_date)}) but is assigned shifts on: ${conflictDates}`,
+        extra_info: JSON.stringify({ leave_id: request.id, employee_id: request.employee_id, conflicts: shiftConflicts }),
+        company_id: companyUser.company_id,
+      })
+    }
+
     if (companyUser?.company_id) {
       sendFeatureEmail({
         companyId: companyUser.company_id,
@@ -280,6 +317,27 @@ export default function LeaveApproval() {
             <span className="leave-detail-value">{formatDateTime(request.created_at)}</span>
           </div>
         </div>
+
+        {shiftConflicts.length > 0 && (
+          <div className="leave-shift-conflict-warning" style={{ margin: '12px 0' }}>
+            <div className="leave-shift-conflict-header">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>Shift Conflict</span>
+            </div>
+            <p className="leave-shift-conflict-text">{empName} has shifts assigned during these dates. Approving will create a conflict task for you to resolve.</p>
+            <div className="leave-shift-conflict-list">
+              {shiftConflicts.map((c, i) => (
+                <div key={i} className="leave-shift-conflict-item">
+                  <span className="leave-shift-conflict-date">{new Date(c.date + 'T00:00:00').toLocaleDateString('en-GB')}</span>
+                  <span className="leave-shift-conflict-shift">{c.shiftName} ({c.startTime}–{c.endTime})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {isActionable && (
           <div className="leave-approval-actions">

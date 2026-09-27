@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import Chevron from '../components/Chevron'
 import { formatDate } from '../lib/formatters'
 
-type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected'
+type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected' | 'cancelled'
 
 interface LeaveRequest {
   id: number
@@ -137,6 +137,7 @@ export default function MyLeaveHistory() {
     if (status === 'approved') return '#43a047'
     if (status === 'pending') return '#e65100'
     if (status === 'rejected') return '#c62828'
+    if (status === 'cancelled') return '#757575'
     return '#999'
   }
 
@@ -181,6 +182,7 @@ export default function MyLeaveHistory() {
               <option value="approved">{t('leave_history.filter_approved')}</option>
               <option value="pending">{t('leave_history.filter_pending')}</option>
               <option value="rejected">{t('leave_history.filter_declined')}</option>
+              <option value="cancelled">{t('leave_history.filter_cancelled') || 'Cancelled'}</option>
             </select>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2.5" className="select-arrow">
               <polyline points="6 9 12 15 18 9" />

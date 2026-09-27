@@ -1400,9 +1400,13 @@ export default function Dashboard() {
                     const label = t.record_type === 'Leave' ? (t.task_description?.split(' - ')[0] || 'Leave') + ' Request'
                       : t.record_type === 'Expense' ? 'Expense Claim'
                       : t.record_type === 'Timesheet' ? 'Timesheet Review'
+                      : t.record_type === 'Conflict' ? 'Leave/Shift Conflict'
+                      : t.record_type === 'Missed Check-In' ? 'Missed Check-In'
                       : t.action
                     const detail = t.record_type === 'Leave' ? t.task_description?.split(' - ').slice(1).join(' - ')
                       : t.record_type === 'Expense' ? t.task_description
+                      : t.record_type === 'Conflict' ? t.task_description
+                      : t.record_type === 'Missed Check-In' ? t.task_description
                       : null
                     return (
                       <button key={t.id} className="info-card-task-line" onClick={() => navigate(nav)}>

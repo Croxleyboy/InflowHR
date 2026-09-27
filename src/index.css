@@ -1868,6 +1868,8 @@ body {
 .notif-icon-meeting { background: #ec407a; }
 .notif-icon-default { background: #d4a017; }
 .notif-icon-swap { background: #e65100; }
+.notif-icon-conflict { background: #e65100; }
+.notif-icon-missed-checkin { background: #e53935; }
 
 .notif-upcoming-leave {
   display: flex; align-items: center; gap: 12px;
@@ -2530,6 +2532,31 @@ body {
   color: #ffb74d !important; font-weight: 600; opacity: 1 !important;
 }
 
+.leave-shift-conflict-warning {
+  background: #fff3e0; border: 1px solid #ffcc80; border-radius: 12px; padding: 14px 16px; margin-top: 12px;
+}
+.leave-shift-conflict-header {
+  display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: #e65100; margin-bottom: 6px;
+}
+.leave-shift-conflict-text { font-size: 12px; color: #bf360c; margin: 0 0 10px; line-height: 1.4; }
+.leave-shift-conflict-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.leave-shift-conflict-item {
+  display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: rgba(255,152,0,0.08); border-radius: 8px; font-size: 12px;
+}
+.leave-shift-conflict-date { font-weight: 600; color: #e65100; }
+.leave-shift-conflict-shift { color: #bf360c; }
+.leave-shift-conflict-dismiss {
+  width: 100%; padding: 8px; border: none; border-radius: 8px; background: #e65100; color: #fff; font-weight: 700; font-size: 13px; cursor: pointer;
+}
+.leave-shift-conflict-dismiss:hover { background: #bf360c; }
+[data-theme="dark"] .leave-shift-conflict-warning { background: #3e2723; border-color: #6d4c41; }
+[data-theme="dark"] .leave-shift-conflict-header { color: #ffb74d; }
+[data-theme="dark"] .leave-shift-conflict-text { color: #ffcc80; }
+[data-theme="dark"] .leave-shift-conflict-date { color: #ffb74d; }
+[data-theme="dark"] .leave-shift-conflict-shift { color: #ffcc80; }
+[data-theme="dark"] .leave-shift-conflict-dismiss { background: #e65100; }
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .leave-shift-conflict-warning{background:#3e2723;border-color:#6d4c41}:root:not([data-theme="light"]) .leave-shift-conflict-header{color:#ffb74d}:root:not([data-theme="light"]) .leave-shift-conflict-text{color:#ffcc80}:root:not([data-theme="light"]) .leave-shift-conflict-date{color:#ffb74d}:root:not([data-theme="light"]) .leave-shift-conflict-shift{color:#ffcc80}:root:not([data-theme="light"]) .leave-shift-conflict-dismiss{background:#e65100}}
+
 .new-leave-submit-btn {
   display: block;
   width: 100%;
@@ -2798,6 +2825,14 @@ body {
   font-size: 14px; color: var(--text);
   border-bottom: 1px solid var(--border);
 }
+
+.leave-cancel-btn {
+  display: block; width: 100%; margin-top: 16px; padding: 12px;
+  background: #c62828; color: #fff; border: none; border-radius: 8px;
+  font-size: 15px; font-weight: 600; cursor: pointer;
+}
+.leave-cancel-btn:hover { background: #b71c1c; }
+.leave-cancel-btn:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ── Leave Calendar Page ── */
 .leave-calendar-page { padding: 0 0 100px; }

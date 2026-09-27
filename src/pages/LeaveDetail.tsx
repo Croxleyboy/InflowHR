@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { formatDate, formatDateTime } from '../lib/formatters'
 
 interface LeaveRequest {
@@ -25,6 +26,7 @@ interface Employee {
 
 interface LeaveType {
   name: string
+  deducts_from_allowance: boolean | null
 }
 
 const LEAVE_TYPE_KEY_MAP: Record<string, string> = {
@@ -44,11 +46,13 @@ export default function LeaveDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { companyUser } = useAuth()
+  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [request, setRequest] = useState<LeaveRequest | null>(null)
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [leaveType, setLeaveType] = useState<LeaveType | null>(null)
   const [loading, setLoading] = useState(true)
+  const [cancelling, setCancelling] = useState(false)
 
   function translateLeaveType(name: string): string {
     return LEAVE_TYPE_KEY_MAP[name] ? t(LEAVE_TYPE_KEY_MAP[name]) : name
@@ -69,7 +73,7 @@ export default function LeaveDetail() {
       setRequest(r)
       const [empRes, typeRes] = await Promise.all([
         supabase.from('employees').select('first_name, last_name, avatar_url').eq('id', r.employee_id).eq('company_id', companyUser?.company_id).single(),
-        supabase.from('leave_types').select('name').eq('id', r.leave_type_id).eq('company_id', companyUser?.company_id).single(),
+        supabase.from('leave_types').select('name, deducts_from_allowance').eq('id', r.leave_type_id).eq('company_id', companyUser?.company_id).single(),
       ])
       if (empRes.data) setEmployee(empRes.data as Employee)
       if (typeRes.data) setLeaveType(typeRes.data as LeaveType)
@@ -78,6 +82,66 @@ export default function LeaveDetail() {
   }, [id, companyUser?.company_id])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  const todayStr = (() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+
+  async function handleCancel() {
+    if (!request || !leaveType) return
+    const label = request.status === 'approved' ? 'Cancel this approved leave? Your balance will be recredited.' : 'Cancel this leave request?'
+    if (!confirm(label)) return
+
+    setCancelling(true)
+
+    const { error } = await supabase.from('leave_requests')
+      .update({ status: 'cancelled' })
+      .eq('id', request.id)
+      .eq('company_id', companyUser?.company_id)
+    if (error) { showError('Failed to cancel: ' + error.message); setCancelling(false); return }
+
+    if (request.status === 'approved' && leaveType.deducts_from_allowance !== false) {
+      const year = new Date(request.start_date).getFullYear()
+      await supabase.rpc('adjust_leave_balance', {
+        p_employee_id: request.employee_id,
+        p_year: year,
+        p_delta: -request.days_requested,
+      })
+    }
+
+    await supabase.from('workflow_tracker').update({
+      status: 'Complete',
+      approval_status: 'Cancelled',
+    }).eq('record_type', 'Leave').eq('approval_id', request.id).eq('status', 'Pending').eq('company_id', companyUser?.company_id)
+
+    await supabase.from('workflow_tracker').insert({
+      emp_display_name: EMPLOYEE_NAME,
+      step: 2,
+      status: 'Complete',
+      record_type: 'Leave',
+      action: 'Leave cancelled by employee',
+      employee_email: EMPLOYEE_EMAIL,
+      assigned_to: EMPLOYEE_EMAIL,
+      approval_id: request.id,
+      reminder_count: 1,
+      task_description: `You cancelled your ${leaveType.name} from ${formatDate(request.start_date)} to ${formatDate(request.end_date)}${request.status === 'approved' && leaveType.deducts_from_allowance !== false ? '. Your leave balance has been recredited.' : ''}`,
+      approval_status: 'Cancelled',
+      company_id: companyUser?.company_id,
+    })
+
+    await supabase.from('workflow_tracker').update({
+      status: 'Complete',
+      approval_status: 'Cancelled',
+    }).eq('record_type', 'Conflict').eq('approval_id', request.id).eq('status', 'Pending').eq('company_id', companyUser?.company_id)
+
+    showSuccess('Leave request cancelled')
+    window.dispatchEvent(new Event('notifications-updated'))
+    setCancelling(false)
+    navigate('/leave/history')
+  }
+
+  const canCancel = request && (request.status === 'pending' || (request.status === 'approved' && request.start_date > todayStr))
 
   if (loading) return <div className="feature-page"><p className="claims-empty">{t('common.loading')}</p></div>
   if (!request) return <div className="feature-page"><p className="claims-empty">{t('leave_detail.not_found')}</p></div>
@@ -147,6 +211,12 @@ export default function LeaveDetail() {
             <span className="leave-detail-value">{formatDateTime(request.created_at)}</span>
           </div>
         </div>
+
+        {canCancel && (
+          <button className="leave-cancel-btn" onClick={handleCancel} disabled={cancelling}>
+            {cancelling ? 'Cancelling...' : request.status === 'approved' ? 'Cancel Leave & Recredit Balance' : 'Cancel Request'}
+          </button>
+        )}
       </div>
     </div>
   )
