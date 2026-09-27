@@ -440,6 +440,37 @@ export default function AdminOnboarding() {
         .eq('assigned_to', record.employee_email).eq('status', 'Pending').eq('company_id', record.company_id)
     }
 
+    if (subIds.length > 0) {
+      const { data: goalsToReassign } = await supabase.from('performance_goals')
+        .select('id, employee_id')
+        .eq('manager_id', record.employee_id)
+        .in('status', ['active', 'pending', 'in_progress'])
+        .eq('company_id', record.company_id)
+
+      if (goalsToReassign && goalsToReassign.length > 0) {
+        await supabase.from('performance_goals')
+          .update({ manager_id: reassignTargetId, updated_at: new Date().toISOString() })
+          .in('id', goalsToReassign.map(g => g.id))
+          .eq('company_id', record.company_id)
+
+        const targetName = `${target.first_name} ${target.last_name}`
+        await supabase.from('workflow_tracker').insert({
+          emp_display_name: targetName,
+          step: 1,
+          status: 'Complete',
+          record_type: 'Performance',
+          action: 'Goals reassigned during offboarding',
+          employee_email: target.email,
+          assigned_to: target.email,
+          task_description: `${goalsToReassign.length} goal(s) reassigned to you from ${record.employee_name}'s direct reports`,
+          approval_status: 'Reassigned',
+          reminder_count: 1,
+          company_id: record.company_id,
+        })
+        window.dispatchEvent(new Event('notifications-updated'))
+      }
+    }
+
     setReassignSaving(false)
     showSuccess(`${reassignData.directReports.length} employee(s) and ${reassignData.pendingActions} pending action(s) reassigned to ${target.first_name} ${target.last_name}`)
     completeOffboardStep('reassign_reports')
