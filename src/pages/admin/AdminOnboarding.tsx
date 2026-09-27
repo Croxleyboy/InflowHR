@@ -47,6 +47,7 @@ const OFFBOARD_STEPS = [
   { key: 'recover_equipment', label: 'Recover Equipment', icon: '💻', description: 'Collect all company equipment — laptop, monitor, phone, building pass, keys, parking permit. Complete the asset return checklist and update the inventory register.', role: 'HR' },
   { key: 'leaving_meeting', label: 'Organise Leaving Meeting', icon: '🤝', description: 'Schedule an exit interview and farewell meeting with the line manager. Cover handover tasks, knowledge transfer, and gather feedback on their experience.', role: 'Manager' },
   { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable Active Directory / Entra account, revoke Microsoft 365 licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
+  { key: 'reassign_reports', label: 'Reassign Direct Reports', icon: '👥', description: 'Reassign any employees who report to this person to a new manager. This also transfers all pending approval actions (leave, expenses, timesheets) to the new manager.', role: 'HR' },
   { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR' },
 ]
 
@@ -151,6 +152,10 @@ export default function AdminOnboarding() {
   const [offboardChecks, setOffboardChecks] = useState<Record<string, boolean>>({})
   const [offboardSkips, setOffboardSkips] = useState<Record<string, boolean>>({})
   const [showFreezeModal, setShowFreezeModal] = useState<OffboardRecord | null>(null)
+  const [reassignData, setReassignData] = useState<{ directReports: { id: string; first_name: string; last_name: string; email: string }[]; pendingActions: number } | null>(null)
+  const [reassignTargetId, setReassignTargetId] = useState('')
+  const [reassignCandidates, setReassignCandidates] = useState<{ id: string; first_name: string; last_name: string; email: string }[]>([])
+  const [reassignSaving, setReassignSaving] = useState(false)
   const [offboardEmployeeSearch, setOffboardEmployeeSearch] = useState('')
   const [offboardEmployeeResults, setOffboardEmployeeResults] = useState<{ id: string; first_name: string; last_name: string; email: string; job_title: string; department: string }[]>([])
   const [offboardForm, setOffboardForm] = useState({ end_date: '', reason: '' })
@@ -352,7 +357,11 @@ export default function AdminOnboarding() {
     setOffboardChecks(record.workflow_steps || {})
     setOffboardSkips(record.skipped_steps || {})
     const doneCount = OFFBOARD_STEPS.filter(s => record.workflow_steps?.[s.key] || record.skipped_steps?.[s.key]).length
-    setOffboardStep(record.is_complete ? OFFBOARD_STEPS.length - 1 : Math.min(doneCount, OFFBOARD_STEPS.length - 1))
+    const nextStep = record.is_complete ? OFFBOARD_STEPS.length - 1 : Math.min(doneCount, OFFBOARD_STEPS.length - 1)
+    setOffboardStep(nextStep)
+    if (OFFBOARD_STEPS[nextStep]?.key === 'reassign_reports' && !record.workflow_steps?.reassign_reports && !record.skipped_steps?.reassign_reports) {
+      loadReassignData(record)
+    }
     setTab('offboard-workflow')
   }
 
@@ -395,6 +404,45 @@ export default function AdminOnboarding() {
   function uncompleteOffboardStep(stepKey: string) {
     setOffboardChecks(prev => ({ ...prev, [stepKey]: false }))
     setOffboardSkips(prev => ({ ...prev, [stepKey]: false }))
+  }
+
+  async function loadReassignData(record: OffboardRecord) {
+    const [reportsRes, pendingRes, candidatesRes] = await Promise.all([
+      supabase.from('employees').select('id, first_name, last_name, email')
+        .eq('company_id', record.company_id).eq('manager_id', record.employee_id).eq('is_active', true),
+      supabase.from('workflow_tracker').select('id', { count: 'exact', head: true })
+        .eq('assigned_to', record.employee_email).eq('status', 'Pending').eq('company_id', record.company_id),
+      supabase.from('employees').select('id, first_name, last_name, email')
+        .eq('company_id', record.company_id).eq('is_active', true).neq('id', record.employee_id).order('first_name'),
+    ])
+    setReassignData({
+      directReports: (reportsRes.data || []) as { id: string; first_name: string; last_name: string; email: string }[],
+      pendingActions: pendingRes.count || 0,
+    })
+    setReassignCandidates((candidatesRes.data || []) as { id: string; first_name: string; last_name: string; email: string }[])
+    setReassignTargetId('')
+  }
+
+  async function executeReassignment(record: OffboardRecord) {
+    if (!reassignTargetId || !reassignData) return
+    setReassignSaving(true)
+    const target = reassignCandidates.find(c => c.id === reassignTargetId)
+    if (!target) { setReassignSaving(false); return }
+
+    const subIds = reassignData.directReports.map(r => r.id)
+    if (subIds.length > 0) {
+      await supabase.from('employees').update({ manager_id: reassignTargetId, manager_email: target.email })
+        .in('id', subIds).eq('company_id', record.company_id)
+    }
+
+    if (reassignData.pendingActions > 0) {
+      await supabase.from('workflow_tracker').update({ assigned_to: target.email })
+        .eq('assigned_to', record.employee_email).eq('status', 'Pending').eq('company_id', record.company_id)
+    }
+
+    setReassignSaving(false)
+    showSuccess(`${reassignData.directReports.length} employee(s) and ${reassignData.pendingActions} pending action(s) reassigned to ${target.first_name} ${target.last_name}`)
+    completeOffboardStep('reassign_reports')
   }
 
   async function freezeEmployee(record: OffboardRecord, approve: boolean) {
@@ -1405,7 +1453,7 @@ export default function AdminOnboarding() {
                 const skipped = offboardSkips[step.key]
                 const isCurrent = i === offboardStep
                 return (
-                  <div key={step.key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => setOffboardStep(i)}>
+                  <div key={step.key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => { setOffboardStep(i); if (step.key === 'reassign_reports' && !done && !skipped && record) loadReassignData(record) }}>
                     <div className="admin-wf-connector" />
                     <div className="admin-wf-dot">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
                     <div className="admin-wf-content">
@@ -1413,6 +1461,39 @@ export default function AdminOnboarding() {
                       {isCurrent && (
                         <div className="admin-wf-detail">
                           <p>{step.description}</p>
+                          {step.key === 'reassign_reports' && !done && !skipped && reassignData && (
+                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                              <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
+                                <div style={{ background: '#e3f2fd', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                                  {reassignData.directReports.length} direct report{reassignData.directReports.length !== 1 ? 's' : ''}
+                                </div>
+                                <div style={{ background: '#fff3e0', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                                  {reassignData.pendingActions} pending action{reassignData.pendingActions !== 1 ? 's' : ''}
+                                </div>
+                              </div>
+                              {reassignData.directReports.length === 0 && reassignData.pendingActions === 0 ? (
+                                <p style={{ margin: '8px 0 0', fontSize: 13, color: '#666' }}>No direct reports or pending actions to reassign. You can mark this step complete.</p>
+                              ) : (
+                                <>
+                                  {reassignData.directReports.length > 0 && (
+                                    <div style={{ marginBottom: 10, fontSize: 13 }}>
+                                      <strong>Reports:</strong> {reassignData.directReports.map(r => `${r.first_name} ${r.last_name}`).join(', ')}
+                                    </div>
+                                  )}
+                                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Reassign to</label>
+                                  <select value={reassignTargetId} onChange={e => setReassignTargetId(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', fontSize: 14, marginBottom: 10 }}>
+                                    <option value="">Select new manager...</option>
+                                    {reassignCandidates.map(c => (
+                                      <option key={c.id} value={c.id}>{c.first_name} {c.last_name} ({c.email})</option>
+                                    ))}
+                                  </select>
+                                  <button className="admin-btn-sm admin-btn-save" disabled={!reassignTargetId || reassignSaving} onClick={e => { e.stopPropagation(); executeReassignment(record) }}>
+                                    {reassignSaving ? 'Reassigning...' : 'Reassign & Complete'}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
                           <div className="admin-wf-actions">
                             {done ? (
                               <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteOffboardStep(step.key) }}>Undo</button>
@@ -1424,6 +1505,11 @@ export default function AdminOnboarding() {
                                 </button>
                                 <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteOffboardStep(step.key) }}>Undo Skip</button>
                               </>
+                            ) : step.key === 'reassign_reports' && reassignData && (reassignData.directReports.length > 0 || reassignData.pendingActions > 0) ? (
+                              <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipOffboardStep(step.key) }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+                                Skip
+                              </button>
                             ) : (
                               <>
                                 <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeOffboardStep(step.key) }}>

@@ -12,14 +12,14 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
   // Priority 1: manager_email text field (explicitly set by admin)
   if (emp.manager_email) return emp.manager_email
 
-  // Priority 2: manager_id FK — look up that employee's email
+  // Priority 2: manager_id FK — look up that employee's email (skip inactive/frozen)
   if (emp.manager_id) {
     const { data: mgr } = await supabase
       .from('employees')
-      .select('email')
+      .select('email, is_active')
       .eq('id', emp.manager_id)
       .single()
-    if (mgr?.email) return mgr.email
+    if (mgr?.email && mgr.is_active !== false) return mgr.email
   }
 
   // Priority 3: find a company admin to assign to
