@@ -291,6 +291,56 @@ export default function AdminPerformance() {
           .eq('company_id', selectedCompanyId)
       }
     }
+
+    if (resolvedId && oldManagerId && resolvedId !== oldManagerId) {
+      const { data: goalsToReassign } = await supabase.from('performance_goals')
+        .select('id')
+        .eq('employee_id', reassignModal.employee.id)
+        .eq('manager_id', oldManagerId)
+        .in('status', ['active', 'pending', 'in_progress'])
+        .eq('company_id', selectedCompanyId)
+
+      if (goalsToReassign && goalsToReassign.length > 0) {
+        const goalIds = goalsToReassign.map(g => g.id)
+        await supabase.from('performance_goals')
+          .update({ manager_id: resolvedId, updated_at: new Date().toISOString() })
+          .in('id', goalIds)
+          .eq('company_id', selectedCompanyId)
+
+        const empName = nameMap[reassignModal.employee.id] || `${reassignModal.employee.first_name} ${reassignModal.employee.last_name}`
+        const newMgrName = newManagerName || 'their new manager'
+        await supabase.from('workflow_tracker').insert([
+          {
+            emp_display_name: empName,
+            step: 1,
+            status: 'Complete',
+            record_type: 'Performance',
+            action: 'Goals reassigned to new manager',
+            employee_email: newManagerEmail,
+            assigned_to: newManagerEmail,
+            task_description: `You have inherited ${goalsToReassign.length} goal(s) for ${empName}`,
+            approval_status: 'Reassigned',
+            reminder_count: 1,
+            company_id: selectedCompanyId,
+          },
+          {
+            emp_display_name: empName,
+            step: 1,
+            status: 'Complete',
+            record_type: 'Performance',
+            action: 'Goals reassigned to new manager',
+            employee_email: reassignModal.employee.email,
+            assigned_to: reassignModal.employee.email,
+            task_description: `Your ${goalsToReassign.length} goal(s) have been reassigned to ${newMgrName}`,
+            approval_status: 'Reassigned',
+            reminder_count: 1,
+            company_id: selectedCompanyId,
+          },
+        ])
+        window.dispatchEvent(new Event('notifications-updated'))
+      }
+    }
+
     setSaving(false)
     setReassignModal(null)
     setNewManagerId('')
