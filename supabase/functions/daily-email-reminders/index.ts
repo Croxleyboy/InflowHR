@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     .from('one_to_one_meetings')
     .select('id, employee_id, manager_id, scheduled_date, scheduled_time, company_id')
     .eq('scheduled_date', tomorrowStr)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'accepted'])
 
   if (meetings) {
     for (const meeting of meetings) {
@@ -127,6 +127,48 @@ Deno.serve(async (req) => {
           '/one-to-ones',
         )
         remindersSent++
+      }
+
+      // In-app notification for employee — dedup by key
+      const empKey = `meeting-reminder-${meeting.id}-emp`
+      const { data: existEmp } = await supabase.from('workflow_tracker')
+        .select('id').eq('company_id', meeting.company_id)
+        .eq('record_type', 'Meeting Reminder').filter('extra_info', 'cs', `"key":"${empKey}"`)
+        .limit(1)
+      if (!existEmp?.length && emp) {
+        await supabase.from('workflow_tracker').insert({
+          emp_display_name: `${emp.first_name} ${emp.last_name}`,
+          step: 1, status: 'Pending', record_type: 'Meeting Reminder',
+          action: 'Meeting reminder',
+          employee_email: emp.email,
+          assigned_to: emp.email,
+          approval_id: meeting.id, reminder_count: 1,
+          task_description: `Your 1:1 meeting is tomorrow, ${dateStr} at ${meeting.scheduled_time}. Please prepare any items you'd like to discuss.`,
+          approval_status: 'Pending',
+          extra_info: JSON.stringify({ key: empKey }),
+          company_id: meeting.company_id,
+        })
+      }
+
+      // In-app notification for manager — dedup by key
+      const mgrKey = `meeting-reminder-${meeting.id}-mgr`
+      const { data: existMgr } = await supabase.from('workflow_tracker')
+        .select('id').eq('company_id', meeting.company_id)
+        .eq('record_type', 'Meeting Reminder').filter('extra_info', 'cs', `"key":"${mgrKey}"`)
+        .limit(1)
+      if (!existMgr?.length && mgr) {
+        await supabase.from('workflow_tracker').insert({
+          emp_display_name: `${mgr.first_name}`,
+          step: 1, status: 'Pending', record_type: 'Meeting Reminder',
+          action: 'Meeting reminder',
+          employee_email: mgr.email,
+          assigned_to: mgr.email,
+          approval_id: meeting.id, reminder_count: 1,
+          task_description: `Your 1:1 meeting with ${emp?.first_name || ''} ${emp?.last_name || ''} is tomorrow, ${dateStr} at ${meeting.scheduled_time}.`,
+          approval_status: 'Pending',
+          extra_info: JSON.stringify({ key: mgrKey }),
+          company_id: meeting.company_id,
+        })
       }
     }
   }

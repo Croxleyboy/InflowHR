@@ -1870,6 +1870,7 @@ body {
 .notif-icon-swap { background: #e65100; }
 .notif-icon-conflict { background: #e65100; }
 .notif-icon-missed-checkin { background: #e53935; }
+.notif-icon-meeting-reminder { background: #7c3aed; }
 
 .notif-upcoming-leave {
   display: flex; align-items: center; gap: 12px;

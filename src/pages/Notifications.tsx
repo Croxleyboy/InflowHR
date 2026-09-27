@@ -250,6 +250,17 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'Meeting Reminder') {
+    return (
+      <div className="notif-icon notif-icon-meeting-reminder">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          <circle cx="18" cy="5" r="4" fill="#fff" stroke="none" /><polyline points="18 3 18 5.5 19.5 6" stroke="#7c3aed" strokeWidth="1.5" />
+        </svg>
+      </div>
+    )
+  }
   return (
     <div className="notif-icon notif-icon-default">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
@@ -738,6 +749,18 @@ export default function Notifications() {
       }
       return
     }
+    if (item.record_type === 'Meeting Reminder') {
+      supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: 'Acknowledged' }).eq('id', item.id).then(() => {
+        window.dispatchEvent(new Event('notifications-updated'))
+      })
+      setActions(prev => prev.filter(a => a.id !== item.id))
+      if (item.approval_id) {
+        navigate(`/one-to-ones/${item.approval_id}`)
+      } else {
+        navigate('/one-to-ones')
+      }
+      return
+    }
     if (item.record_type === 'Conflict') {
       setConflictActionItem(item)
       return
@@ -797,6 +820,7 @@ export default function Notifications() {
     if (item.record_type === 'Skills Mapping') return 'Complete Skills Passport'
     if (item.record_type === 'Conflict') return 'Leave/Shift Conflict'
     if (item.record_type === 'Missed Check-In') return 'Missed Check-In'
+    if (item.record_type === 'Meeting Reminder') return '1:1 Meeting — Tomorrow'
     return item.action
   }
 
@@ -964,7 +988,7 @@ export default function Notifications() {
           ))}
           {actions.map(item => (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
-              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : 'bar-grey'}`} />
+              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : 'bar-grey'}`} />
               <NotifIcon type={item.record_type} />
               <div className="notif-action-content">
                 <span className="notif-action-title">{getActionTitle(item)}</span>
@@ -973,7 +997,7 @@ export default function Notifications() {
                   <span className="notif-action-date">{t('notifications.created')} {formatNotifDate(item.created_at)}</span>
                 </div>
                 <div className="notif-action-detail">
-                  <span className="notif-action-type">{item.record_type === 'Expense' ? t('dashboard.expenses') : item.record_type === 'Meeting' ? t('one_to_one.page_subtitle') : item.record_type}</span>
+                  <span className="notif-action-type">{item.record_type === 'Expense' ? t('dashboard.expenses') : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? t('one_to_one.page_subtitle') : item.record_type}</span>
                   {item.task_description && <span className="notif-action-amount">{item.task_description.split(' - ').pop()}</span>}
                   {item.record_type === 'Expense' && item.approval_id && expenseReceipts.has(item.approval_id) && (
                     <span className="notif-receipt-indicator" title={t('common.has_receipts')}>
@@ -985,7 +1009,7 @@ export default function Notifications() {
                 </div>
               </div>
               <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
-                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' || item.record_type === 'Skill Validation' ? '#7c3aed' : item.record_type === 'Skills Mapping' ? '#0891b2' : item.record_type === 'Conflict' ? '#e65100' : item.record_type === 'Missed Check-In' ? '#e53935' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' || item.record_type === 'Skill Validation' ? '#7c3aed' : item.record_type === 'Skills Mapping' ? '#0891b2' : item.record_type === 'Conflict' ? '#e65100' : item.record_type === 'Missed Check-In' ? '#e53935' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           ))}
