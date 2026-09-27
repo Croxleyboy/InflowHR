@@ -345,7 +345,7 @@ export default function AdminCompanies() {
       }
     }
 
-    setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso' })
+    setForm({ name: '', domain: '', isTrial: false, trialStart: '', trialEnd: '', authMode: 'sso', timezone: 'Europe/London', date_format: 'DD/MM/YYYY', currency: 'GBP' })
     setLogoFile(null)
     setLogoPreview(null)
     setShowForm(false)
