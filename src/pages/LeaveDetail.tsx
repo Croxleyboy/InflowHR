@@ -46,7 +46,7 @@ export default function LeaveDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { employeeId: EMPLOYEE_ID, employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
+  const { employeeName: EMPLOYEE_NAME, employeeEmail: EMPLOYEE_EMAIL, companyUser } = useAuth()
   const { showError, showSuccess } = useToast()
   const [request, setRequest] = useState<LeaveRequest | null>(null)
   const [employee, setEmployee] = useState<Employee | null>(null)

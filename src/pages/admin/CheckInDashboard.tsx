@@ -53,7 +53,7 @@ function getFYRange(fyStartMonth: number): { start: string; end: string } {
 
 export default function CheckInDashboardPanel({ source }: Props) {
   const { selectedCompanyId } = useAdminCompany()
-  const { employeeEmail: adminEmail, employeeName: adminName } = useAuth()
+  const { employeeEmail: adminEmail } = useAuth()
   const companyId = selectedCompanyId || ''
 
   const [liveRecords, setLiveRecords] = useState<CheckinRow[]>([])

@@ -87,7 +87,7 @@ function addDays(d: Date, n: number): Date {
   return dt
 }
 
-function formatDate(d: Date): string {
+function fmtDateISO(d: Date): string {
   return toLocalDateStr(d)
 }
 
@@ -115,7 +115,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function AdminRotas() {
   const { selectedCompanyId } = useAdminCompany()
-  const { employeeEmail: adminEmail, employeeName: adminName } = useAuth()
+  const { employeeEmail: adminEmail } = useAuth()
   const { showError, showSuccess } = useToast()
   const [rotas, setRotas] = useState<Rota[]>([])
   const [loading, setLoading] = useState(true)
@@ -339,8 +339,8 @@ export default function AdminRotas() {
     if (shiftsCheckinEnabled) {
       const { data: ciData } = await supabase.from('checkin_records').select('employee_id, check_in_at, check_out_at, status')
         .eq('company_id', selectedCompanyId).eq('source', 'shifts')
-        .gte('check_in_at', formatDate(weekS) + 'T00:00:00')
-        .lte('check_in_at', formatDate(weekEnd) + 'T23:59:59')
+        .gte('check_in_at', fmtDateISO(weekS) + 'T00:00:00')
+        .lte('check_in_at', fmtDateISO(weekEnd) + 'T23:59:59')
       setCheckinRecords(ciData || [])
     }
   }, [selectedCompanyId, shiftsCheckinEnabled, weekStart])
@@ -362,7 +362,7 @@ export default function AdminRotas() {
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = addDays(weekStart, i)
-      return { date: formatDate(d), label: DAY_LABELS[i], dayNum: d.getDate(), month: d.toLocaleDateString('en-GB', { month: 'short' }), dayOfWeek: d.getDay() }
+      return { date: fmtDateISO(d), label: DAY_LABELS[i], dayNum: d.getDate(), month: d.toLocaleDateString('en-GB', { month: 'short' }), dayOfWeek: d.getDay() }
     })
   }, [weekStart])
 
@@ -545,7 +545,7 @@ export default function AdminRotas() {
   const gridStats = useMemo(() => {
     if (!selectedRota) return { totalHours: 0, employeeCount: 0, coverage: 0, unassigned: 0 }
     // Only count assignments in the current week
-    const weekDates = Array.from({ length: 7 }, (_, i) => formatDate(addDays(weekStart, i)))
+    const weekDates = Array.from({ length: 7 }, (_, i) => fmtDateISO(addDays(weekStart, i)))
     const weekAssignments = assignments.filter(a => weekDates.includes(a.date))
     let totalHours = 0
     const employeesWithShifts = new Set<string>()
@@ -587,7 +587,7 @@ export default function AdminRotas() {
     return weekDays.map(d => assignments.filter(a => a.date === d.date).length)
   }, [assignments, weekDays])
 
-  const todayStr = formatDate(new Date())
+  const todayStr = fmtDateISO(new Date())
 
   // Close dropdown when clicking outside
   useEffect(() => {
