@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 
 export interface TimeBlock {
-  source: 'timesheet' | 'shift' | 'legal_timesheet'
+  source: 'timesheet' | 'shift' | 'legal_timesheet' | 'leave'
   label: string
   date: string
   startMins: number
@@ -22,6 +22,7 @@ const SOURCE_LABELS: Record<string, string> = {
   timesheet: 'Timesheet',
   shift: 'Shift',
   legal_timesheet: 'Legal Timesheet',
+  leave: 'Approved Leave',
 }
 
 const MAX_DAILY_HRS = 10
@@ -131,11 +132,46 @@ export async function checkTimeOverlap(
     })())
   }
 
+  queries.push((async () => {
+    const { data } = await supabase
+      .from('leave_requests')
+      .select('id, start_date, end_date, days_requested, leave_type_id, leave_types(name)')
+      .eq('employee_id', employeeId)
+      .eq('company_id', companyId)
+      .eq('status', 'approved')
+      .lte('start_date', dates[dates.length - 1])
+      .gte('end_date', dates[0])
+    if (data) {
+      for (const row of data as any[]) {
+        const leaveName = row.leave_types?.name || 'Leave'
+        for (const d of dates) {
+          if (d >= row.start_date && d <= row.end_date) {
+            existing.push({
+              source: 'leave',
+              label: `${leaveName} (${new Date(row.start_date + 'T00:00:00').toLocaleDateString('en-GB')} – ${new Date(row.end_date + 'T00:00:00').toLocaleDateString('en-GB')})`,
+              date: d,
+              startMins: 0,
+              endMins: 1440,
+            })
+          }
+        }
+      }
+    }
+  })())
+
   await Promise.all(queries)
 
   const conflicts: { existing: TimeBlock; message: string }[] = []
 
   for (const block of existing) {
+    if (block.source === 'leave') {
+      conflicts.push({
+        existing: block,
+        message: `You have approved ${block.label} on ${new Date(block.date + 'T00:00:00').toLocaleDateString('en-GB')}. Cancel the leave or change your timesheet dates to continue.`,
+      })
+      continue
+    }
+
     if (block.source === 'legal_timesheet') continue
 
     for (const d of dates) {
