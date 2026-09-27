@@ -152,21 +152,33 @@ export default function AdminLeave() {
     }).eq('id', id)
     if (error) { showError('Failed to update leave request: ' + error.message); return }
 
-    if (newStatus === 'approved' && req) {
+    if (req) {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
       if (!typeSetting || typeSetting.deducts_from_allowance) {
-        const year = new Date(req.start_date).getFullYear()
-        const { data: balance } = await supabase
-          .from('leave_balances')
-          .select('id, used')
-          .eq('employee_id', req.employee_id)
-          .eq('year', year)
-          .limit(1)
-          .single()
-        if (balance) {
-          await supabase.from('leave_balances')
-            .update({ used: balance.used + Number(editForm.days_requested) })
-            .eq('id', balance.id)
+        const wasApproved = oldStatus === 'approved'
+        const nowApproved = newStatus === 'approved'
+        const oldDays = Number(req.days_requested)
+        const newDays = Number(editForm.days_requested)
+        let delta = 0
+        if (!wasApproved && nowApproved) delta = newDays
+        else if (wasApproved && !nowApproved) delta = -oldDays
+        else if (wasApproved && nowApproved && oldDays !== newDays) delta = newDays - oldDays
+
+        if (delta !== 0) {
+          const year = new Date(req.start_date).getFullYear()
+          const { data: balance } = await supabase
+            .from('leave_balances')
+            .select('id, used')
+            .eq('employee_id', req.employee_id)
+            .eq('year', year)
+            .limit(1)
+            .single()
+          if (balance) {
+            const newUsed = Math.max(0, balance.used + delta)
+            await supabase.from('leave_balances')
+              .update({ used: newUsed })
+              .eq('id', balance.id)
+          }
         }
       }
     }
