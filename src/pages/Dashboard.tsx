@@ -704,7 +704,7 @@ export default function Dashboard() {
         const todayShift = nextShift && nextShift.date === toLocalDateStr() ? nextShift : null
         const todayDow = (new Date().getDay() + 6) % 7
         const isContractedDay = !workPatternDays || workPatternType === 'variable' || workPatternDays[todayDow]
-        const statusLabel = isActive ? 'Checked In' : onLeaveToday ? 'On Leave' : !isContractedDay ? 'Off Work' : todayShift ? 'On Shift' : 'At Work'
+        const statusLabel = isActive ? 'Checked In' : onLeaveToday ? 'On Leave' : !isContractedDay ? 'Not Working' : todayShift ? 'On Shift' : 'At Work'
         const statusColor = onLeaveToday ? '#e53935' : !isContractedDay ? '#7e57c2' : todayShift ? '#e65100' : '#43a047'
         const iconBg = onLeaveToday ? '#ffebee' : !isContractedDay ? '#ede7f6' : todayShift ? '#fff3e0' : '#e8f5e9'
         return (
@@ -716,8 +716,8 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value" style={{ color: statusColor, whiteSpace: 'nowrap' }}>
-                {statusLabel}{weatherIcon ? ` · ${weatherIcon.temp}°C` : ''}
+              <span className="info-card-value info-card-status-value" style={{ color: statusColor }}>
+                {statusLabel}{weatherIcon ? <span className="info-card-temp"> · {weatherIcon.temp}°C</span> : ''}
               </span>
               {isActive ? (
                 <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />{elapsed} elapsed</div>
@@ -726,7 +726,7 @@ export default function Dashboard() {
               ) : onLeaveToday ? (
                 <span className="info-card-sub" style={{ color: '#e53935' }}>Approved leave today</span>
               ) : !isContractedDay ? (
-                <span className="info-card-sub" style={{ color: '#7e57c2' }}>Not a contracted working day</span>
+                <span className="info-card-sub" style={{ color: '#7e57c2' }}>Not a working day</span>
               ) : checkinEnabled ? (
                 <span className="info-card-sub">Check in via Timesheets</span>
               ) : (
