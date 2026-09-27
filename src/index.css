@@ -1168,15 +1168,18 @@ body {
   display: flex; justify-content: space-between; align-items: center;
   padding: 12px 16px; font-size: 14px; font-weight: 500;
   border-bottom: 1px solid var(--border);
+  gap: 12px;
 }
+.toggle-row > div:first-child { flex: 1; min-width: 0; }
 .toggle-row:last-child { border-bottom: none; }
 
 .toggle-switch {
-  width: 48px; height: 28px;
+  width: 48px; min-width: 48px; height: 28px;
   border-radius: 14px; border: none;
   cursor: pointer; position: relative;
   transition: background 0.2s;
   padding: 0;
+  flex-shrink: 0;
 }
 .toggle-on { background: #4caf50; }
 .toggle-off { background: #ccc; }
@@ -1194,7 +1197,7 @@ body {
 .toggle-off .toggle-knob { left: 3px; }
 
 @media (max-width: 600px) {
-  .feature-toggles .toggle-switch { width: 56px; }
+  .feature-toggles .toggle-switch { width: 56px; min-width: 56px; }
   .feature-toggles .toggle-on .toggle-knob { left: 31px; }
 }
 
