@@ -222,6 +222,7 @@ export default function AdminLegalTimesheets() {
       .from('employees')
       .select('id, first_name, last_name, department, is_active')
       .eq('company_id', selectedCompanyId)
+      .eq('is_active', true)
       .order('first_name')
     setEmployees((data as Employee[]) || [])
   }, [selectedCompanyId])

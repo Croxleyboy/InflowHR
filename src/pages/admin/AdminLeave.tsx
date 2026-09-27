@@ -16,7 +16,7 @@ interface LeaveRequest {
   reason: string | null
   created_at: string
   leave_type: { name: string } | null
-  employee: { first_name: string; last_name: string; email: string; avatar_url: string | null; manager_id: string | null } | null
+  employee: { first_name: string; last_name: string; email: string; avatar_url: string | null; manager_id: string | null; is_active: boolean } | null
 }
 
 const STATUS_OPTIONS = ['pending', 'approved', 'rejected', 'cancelled']
@@ -110,10 +110,10 @@ export default function AdminLeave() {
     setLoading(true)
     const { data } = await supabase
       .from('leave_requests')
-      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, email, avatar_url, manager_id)')
+      .select('*, leave_type:leave_types(name), employee:employees!leave_requests_employee_id_fkey(first_name, last_name, email, avatar_url, manager_id, is_active)')
       .eq('company_id', selectedCompanyId)
       .order('created_at', { ascending: false })
-    const rows = (data as LeaveRequest[]) || []
+    const rows = ((data as LeaveRequest[]) || []).filter(r => r.employee?.is_active !== false)
     setRequests(rows)
 
     const mgrIds = [...new Set(rows.map(r => r.employee?.manager_id).filter(Boolean))] as string[]
