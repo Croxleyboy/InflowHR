@@ -5,7 +5,8 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useToast } from '../context/ToastContext'
-import { toLocalDateStr } from '../lib/formatters'
+import { toLocalDateStr, formatDate } from '../lib/formatters'
+import { sendFeatureEmail } from '../lib/emailNotifications'
 
 type Tab = 'company' | 'actions' | 'notifications'
 
@@ -157,6 +158,16 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'Conflict') {
+    return (
+      <div className="notif-icon notif-icon-conflict">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+      </div>
+    )
+  }
   if (type === 'BookingDesk') {
     return (
       <div className="notif-icon notif-icon-booking-desk">
@@ -226,6 +237,15 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       <div className="notif-icon notif-icon-skills-mapping">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+        </svg>
+      </div>
+    )
+  }
+  if (type === 'Missed Check-In') {
+    return (
+      <div className="notif-icon notif-icon-missed-checkin">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /><line x1="4" y1="4" x2="20" y2="20" />
         </svg>
       </div>
     )
@@ -636,7 +656,92 @@ export default function Notifications() {
 
   const pendingCount = actions.length + swapActions.length
 
+  const [conflictActionItem, setConflictActionItem] = useState<WorkflowItem | null>(null)
+  const [conflictResolving, setConflictResolving] = useState(false)
+
+  async function handleConflictResolve(item: WorkflowItem, action: 'cancel_leave' | 'acknowledge') {
+    setConflictResolving(true)
+    const info = item.extra_info ? JSON.parse(item.extra_info) : {}
+
+    if (action === 'cancel_leave' && info.leave_id) {
+      const { data: lr } = await supabase.from('leave_requests')
+        .select('employee_id, leave_type_id, days_requested, start_date, end_date, status, leave_types(name, deducts_from_allowance)')
+        .eq('id', info.leave_id)
+        .eq('company_id', companyUser?.company_id)
+        .single()
+
+      if (lr) {
+        await supabase.from('leave_requests').update({ status: 'cancelled' }).eq('id', info.leave_id).eq('company_id', companyUser?.company_id)
+
+        if (lr.status === 'approved' && (lr as any).leave_types?.deducts_from_allowance !== false) {
+          const year = new Date(lr.start_date).getFullYear()
+          await supabase.rpc('adjust_leave_balance', {
+            p_employee_id: lr.employee_id,
+            p_year: year,
+            p_delta: -lr.days_requested,
+          })
+        }
+
+        const leaveName = (lr as any).leave_types?.name || 'Leave'
+        await supabase.from('workflow_tracker').insert({
+          emp_display_name: item.emp_display_name,
+          step: 2,
+          status: 'Complete',
+          record_type: 'Leave',
+          action: 'Leave cancelled by manager',
+          employee_email: '',
+          assigned_to: '',
+          approval_id: info.leave_id,
+          reminder_count: 1,
+          task_description: `Your ${leaveName} from ${formatDate(lr.start_date)} to ${formatDate(lr.end_date)} has been cancelled due to a scheduling conflict. Please contact your manager.`,
+          approval_status: 'Cancelled',
+          company_id: companyUser?.company_id,
+        })
+
+        if (companyUser?.company_id) {
+          sendFeatureEmail({
+            companyId: companyUser.company_id,
+            employeeId: lr.employee_id,
+            featureKey: 'leave_enabled',
+            title: `${leaveName} Cancelled`,
+            message: `Your ${leaveName} from ${formatDate(lr.start_date)} to ${formatDate(lr.end_date)} has been cancelled due to a scheduling conflict. Please contact your manager.`,
+            type: 'alert',
+            link: '/leave',
+          })
+        }
+      }
+    }
+
+    await supabase.from('workflow_tracker').update({
+      status: 'Complete',
+      approval_status: action === 'cancel_leave' ? 'Leave Cancelled' : 'Acknowledged',
+    }).eq('id', item.id).eq('company_id', companyUser?.company_id)
+
+    showSuccess(action === 'cancel_leave' ? 'Leave cancelled and balance recredited' : 'Conflict acknowledged')
+    setConflictActionItem(null)
+    setConflictResolving(false)
+    setActions(prev => prev.filter(a => a.id !== item.id))
+    window.dispatchEvent(new Event('notifications-updated'))
+  }
+
+  async function handleAcknowledgeMissedCheckin(item: WorkflowItem) {
+    await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: 'Acknowledged' }).eq('id', item.id)
+    showSuccess('Missed check-in acknowledged')
+    setActions(prev => prev.filter(a => a.id !== item.id))
+    window.dispatchEvent(new Event('notifications-updated'))
+  }
+
   function handleActionClick(item: WorkflowItem) {
+    if (item.record_type === 'Missed Check-In') {
+      if (confirm('Acknowledge this missed check-in?')) {
+        handleAcknowledgeMissedCheckin(item)
+      }
+      return
+    }
+    if (item.record_type === 'Conflict') {
+      setConflictActionItem(item)
+      return
+    }
     if (item.record_type === 'Meeting') {
       if (item.approval_id) {
         navigate(`/one-to-ones/${item.approval_id}`)
@@ -690,6 +795,8 @@ export default function Notifications() {
     if (item.record_type === 'Meeting') return t('notifications.meeting_scheduled')
     if (item.record_type === 'Skill Validation') return 'Skill Validation Request'
     if (item.record_type === 'Skills Mapping') return 'Complete Skills Passport'
+    if (item.record_type === 'Conflict') return 'Leave/Shift Conflict'
+    if (item.record_type === 'Missed Check-In') return 'Missed Check-In'
     return item.action
   }
 
@@ -857,7 +964,7 @@ export default function Notifications() {
           ))}
           {actions.map(item => (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
-              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : 'bar-grey'}`} />
+              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : 'bar-grey'}`} />
               <NotifIcon type={item.record_type} />
               <div className="notif-action-content">
                 <span className="notif-action-title">{getActionTitle(item)}</span>
@@ -878,7 +985,7 @@ export default function Notifications() {
                 </div>
               </div>
               <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
-                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' || item.record_type === 'Skill Validation' ? '#7c3aed' : item.record_type === 'Skills Mapping' ? '#0891b2' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' || item.record_type === 'Skill Validation' ? '#7c3aed' : item.record_type === 'Skills Mapping' ? '#0891b2' : item.record_type === 'Conflict' ? '#e65100' : item.record_type === 'Missed Check-In' ? '#e53935' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           ))}
@@ -900,6 +1007,59 @@ export default function Notifications() {
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => handleSkillValidation(skillActionItem, true)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>Approve</button>
                 <button onClick={() => handleSkillValidation(skillActionItem, false)} style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>Reject</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {conflictActionItem && (
+        <div className="my-profile-modal-overlay" onClick={() => setConflictActionItem(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: '#e65100', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Leave/Shift Conflict</span>
+              <button onClick={() => setConflictActionItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{conflictActionItem.emp_display_name}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>{conflictActionItem.task_description}</div>
+              {(() => {
+                const info = conflictActionItem.extra_info ? JSON.parse(conflictActionItem.extra_info) : {}
+                const conflicts = info.conflicts || []
+                return conflicts.length > 0 ? (
+                  <div className="leave-shift-conflict-list" style={{ marginBottom: 16 }}>
+                    {conflicts.map((c: any, i: number) => (
+                      <div key={i} className="leave-shift-conflict-item">
+                        <span className="leave-shift-conflict-date">{new Date(c.date + 'T00:00:00').toLocaleDateString('en-GB')}</span>
+                        <span className="leave-shift-conflict-shift">{c.shiftName} ({c.startTime}–{c.endTime})</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null
+              })()}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button
+                  onClick={() => handleConflictResolve(conflictActionItem, 'cancel_leave')}
+                  disabled={conflictResolving}
+                  style={{ padding: '10px 0', borderRadius: 10, border: 'none', background: '#e53935', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                >
+                  {conflictResolving ? 'Processing...' : 'Cancel Leave & Recredit Balance'}
+                </button>
+                <button
+                  onClick={() => navigate('/admin/shifts')}
+                  style={{ padding: '10px 0', borderRadius: 10, border: '1.5px solid #e65100', background: 'transparent', color: '#e65100', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                >
+                  Go to Rota (Reassign Shift)
+                </button>
+                <button
+                  onClick={() => handleConflictResolve(conflictActionItem, 'acknowledge')}
+                  disabled={conflictResolving}
+                  style={{ padding: '10px 0', borderRadius: 10, border: '1.5px solid #999', background: 'transparent', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                >
+                  {conflictResolving ? 'Processing...' : 'Acknowledge (No Change Needed)'}
+                </button>
               </div>
             </div>
           </div>

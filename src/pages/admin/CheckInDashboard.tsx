@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
-import { toLocalDateStr } from '../../lib/formatters'
+import { useAuth } from '../../context/AuthContext'
+import { toLocalDateStr, formatDate } from '../../lib/formatters'
 
 interface CheckinRow {
   id: string
@@ -52,6 +53,7 @@ function getFYRange(fyStartMonth: number): { start: string; end: string } {
 
 export default function CheckInDashboardPanel({ source }: Props) {
   const { selectedCompanyId } = useAdminCompany()
+  const { employeeEmail: adminEmail, employeeName: adminName } = useAuth()
   const companyId = selectedCompanyId || ''
 
   const [liveRecords, setLiveRecords] = useState<CheckinRow[]>([])
@@ -70,6 +72,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
   const [rotaAssignments, setRotaAssignments] = useState<ShiftAssignmentRow[]>([])
   const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplateRow[]>([])
   const [exporting, setExporting] = useState(false)
+  const [flagging, setFlagging] = useState(false)
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -268,6 +271,55 @@ export default function CheckInDashboardPanel({ source }: Props) {
     setExporting(false)
   }
 
+  async function flagMissedCheckIns() {
+    const missed = rotaEmployeeRows.filter(r => r.missed)
+    if (missed.length === 0) return
+    setFlagging(true)
+
+    const { data: existing } = await supabase.from('workflow_tracker')
+      .select('extra_info')
+      .eq('record_type', 'Missed Check-In')
+      .eq('status', 'Pending')
+      .eq('company_id', companyId)
+
+    const alreadyFlagged = new Set<string>()
+    if (existing) existing.forEach((row: { extra_info: string | null }) => {
+      if (row.extra_info) {
+        try { const info = JSON.parse(row.extra_info); if (info.key) alreadyFlagged.add(info.key) } catch {}
+      }
+    })
+
+    const inserts: any[] = []
+    for (const row of missed) {
+      const emp = employees[row.empId]
+      const empName = emp?.name || 'Unknown'
+      const key = `${row.empId}-${todayStr}-${row.shiftName}`
+      if (alreadyFlagged.has(key)) continue
+
+      inserts.push({
+        emp_display_name: empName,
+        step: 1,
+        status: 'Pending',
+        record_type: 'Missed Check-In',
+        action: 'Missed shift check-in',
+        employee_email: '',
+        assigned_to: adminEmail,
+        task_description: `${empName} did not check in for ${row.shiftName} (${row.shiftTime}) on ${formatDate(todayStr)}`,
+        extra_info: JSON.stringify({ employee_id: row.empId, shift_name: row.shiftName, shift_time: row.shiftTime, date: todayStr, key }),
+        company_id: companyId,
+      })
+    }
+
+    if (inserts.length > 0) {
+      await supabase.from('workflow_tracker').insert(inserts)
+      window.dispatchEvent(new Event('notifications-updated'))
+      alert(`${inserts.length} missed check-in${inserts.length > 1 ? 's' : ''} flagged.`)
+    } else {
+      alert('All missed check-ins have already been flagged.')
+    }
+    setFlagging(false)
+  }
+
   if (loading) return <div className="admin-loading">Loading...</div>
 
   const liveEnriched = enriched(liveRecords)
@@ -317,9 +369,19 @@ export default function CheckInDashboardPanel({ source }: Props) {
             </svg>
             Today's Rota ({rotaEmployeeRows.length} employees)
             {rotaEmployeeRows.filter(r => r.missed).length > 0 && (
-              <span style={{ background: '#e53935', color: '#fff', fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 10, marginLeft: 6 }}>
-                {rotaEmployeeRows.filter(r => r.missed).length} not checked in
-              </span>
+              <>
+                <span style={{ background: '#e53935', color: '#fff', fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 10, marginLeft: 6 }}>
+                  {rotaEmployeeRows.filter(r => r.missed).length} not checked in
+                </span>
+                <button
+                  className="admin-btn-sm"
+                  style={{ marginLeft: 8, fontSize: 11, padding: '2px 10px', background: '#e53935', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                  onClick={e => { e.stopPropagation(); flagMissedCheckIns() }}
+                  disabled={flagging}
+                >
+                  {flagging ? 'Flagging...' : 'Flag Missed'}
+                </button>
+              </>
             )}
           </button>
           {rotaExpanded && (

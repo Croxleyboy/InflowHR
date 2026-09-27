@@ -112,6 +112,8 @@ export default function NewLeaveRequest() {
   const [leaveBalance, setLeaveBalance] = useState<{ total: number; used: number; pending: number } | null>(null)
   const [employeeLieuDays, setEmployeeLieuDays] = useState(0)
   const [showLieuPopup, setShowLieuPopup] = useState(false)
+  const [shiftConflicts, setShiftConflicts] = useState<{ date: string; shiftName: string; startTime: string; endTime: string }[]>([])
+  const [shiftConflictDismissed, setShiftConflictDismissed] = useState(false)
 
   useEffect(() => {
     if (!companyUser?.company_id) return
@@ -242,6 +244,32 @@ export default function NewLeaveRequest() {
     if (val < todayStr()) return
     setEndDate(val)
   }
+
+  useEffect(() => {
+    if (!EMPLOYEE_ID || !companyUser?.company_id) return
+    setShiftConflictDismissed(false)
+    const sd = startDate
+    const ed = halfDay ? startDate : endDate
+    supabase
+      .from('shift_assignments')
+      .select('date, shift_templates(name, start_time, end_time), rotas(status)')
+      .eq('employee_id', EMPLOYEE_ID)
+      .eq('company_id', companyUser.company_id)
+      .gte('date', sd)
+      .lte('date', ed)
+      .then(({ data }) => {
+        if (!data) { setShiftConflicts([]); return }
+        const conflicts = (data as any[])
+          .filter(r => r.rotas?.status === 'published')
+          .map(r => ({
+            date: r.date,
+            shiftName: r.shift_templates?.name || 'Shift',
+            startTime: r.shift_templates?.start_time?.slice(0, 5) || '',
+            endTime: r.shift_templates?.end_time?.slice(0, 5) || '',
+          }))
+        setShiftConflicts(conflicts)
+      })
+  }, [startDate, endDate, halfDay, EMPLOYEE_ID, companyUser?.company_id])
 
   function translateLeaveType(name: string): string {
     const entry = allLeaveTypes.find(k => k.name === name)
@@ -552,6 +580,28 @@ export default function NewLeaveRequest() {
             rows={4}
           />
         </div>
+
+        {shiftConflicts.length > 0 && !shiftConflictDismissed && (
+          <div className="leave-shift-conflict-warning">
+            <div className="leave-shift-conflict-header">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>Shift Conflict</span>
+            </div>
+            <p className="leave-shift-conflict-text">You have shifts assigned on the following dates. If approved, your manager will need to resolve the scheduling conflict.</p>
+            <div className="leave-shift-conflict-list">
+              {shiftConflicts.map((c, i) => (
+                <div key={i} className="leave-shift-conflict-item">
+                  <span className="leave-shift-conflict-date">{new Date(c.date + 'T00:00:00').toLocaleDateString('en-GB')}</span>
+                  <span className="leave-shift-conflict-shift">{c.shiftName} ({c.startTime}–{c.endTime})</span>
+                </div>
+              ))}
+            </div>
+            <button className="leave-shift-conflict-dismiss" onClick={() => setShiftConflictDismissed(true)}>I understand, continue</button>
+          </div>
+        )}
 
         {error && <p className="form-error">{error}</p>}
 

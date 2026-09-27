@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { checkTimeOverlap } from '../../lib/overlapCheck'
-import { toLocalDateStr } from '../../lib/formatters'
+import { toLocalDateStr, formatDate } from '../../lib/formatters'
 
 interface Rota {
   id: string
@@ -114,6 +115,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function AdminRotas() {
   const { selectedCompanyId } = useAdminCompany()
+  const { employeeEmail: adminEmail, employeeName: adminName } = useAuth()
   const { showError, showSuccess } = useToast()
   const [rotas, setRotas] = useState<Rota[]>([])
   const [loading, setLoading] = useState(true)
@@ -244,6 +246,48 @@ export default function AdminRotas() {
     if (!confirm('Publish this rota? Employees will be notified.')) return
     const { error } = await supabase.from('rotas').update({ status: 'published' }).eq('id', id)
     if (error) { showError('Failed to publish rota: ' + error.message); return }
+
+    const { data: rotaAssigns } = await supabase
+      .from('shift_assignments')
+      .select('employee_id, date, shift_templates(name, start_time, end_time)')
+      .eq('rota_id', id)
+      .eq('company_id', selectedCompanyId)
+    if (rotaAssigns && selectedCompanyId) {
+      const { data: approvedLeave } = await supabase
+        .from('leave_requests')
+        .select('id, employee_id, start_date, end_date, leave_types(name)')
+        .eq('company_id', selectedCompanyId)
+        .eq('status', 'approved')
+      if (approvedLeave) {
+        for (const assign of rotaAssigns as any[]) {
+          const conflicts = approvedLeave.filter((lr: any) =>
+            lr.employee_id === assign.employee_id && assign.date >= lr.start_date && assign.date <= lr.end_date
+          )
+          if (conflicts.length > 0) {
+            const emp = employees.find(e => e.id === assign.employee_id)
+            const empName = emp ? `${emp.first_name} ${emp.last_name}` : 'Employee'
+            const tmpl = assign.shift_templates
+            const shiftDesc = tmpl ? `${tmpl.name} (${tmpl.start_time?.slice(0, 5)}–${tmpl.end_time?.slice(0, 5)})` : 'Shift'
+            const leaveDesc = (conflicts[0] as any).leave_types?.name || 'Leave'
+            await supabase.from('workflow_tracker').insert({
+              emp_display_name: empName,
+              step: 1,
+              status: 'Pending',
+              record_type: 'Conflict',
+              action: 'Leave/shift conflict requires resolution',
+              employee_email: '',
+              assigned_to: adminEmail,
+              approval_id: conflicts[0].id,
+              reminder_count: 0,
+              task_description: `${empName} has ${shiftDesc} on ${formatDate(assign.date)} but is on approved ${leaveDesc} (${formatDate(conflicts[0].start_date)}–${formatDate(conflicts[0].end_date)})`,
+              extra_info: JSON.stringify({ leave_id: conflicts[0].id, employee_id: assign.employee_id, conflicts: [{ date: assign.date, shiftName: tmpl?.name || 'Shift', startTime: tmpl?.start_time?.slice(0, 5) || '', endTime: tmpl?.end_time?.slice(0, 5) || '' }] }),
+              company_id: selectedCompanyId,
+            })
+          }
+        }
+      }
+    }
+
     loadRotas()
     if (selectedRota && selectedRota.id === id) {
       setSelectedRota(prev => prev ? { ...prev, status: 'published' } : null)
@@ -400,6 +444,15 @@ export default function AdminRotas() {
       const hasMatch = requiredSkills.some(sid => empSkills.includes(sid))
       if (!hasMatch) {
         alert('Cannot assign shift: this employee does not have any of the required skills for this shift.')
+        setActiveCell(null)
+        return
+      }
+    }
+
+    if (hasLeave(employeeId, date)) {
+      const empObj = employees.find(e => e.id === employeeId)
+      const empName = empObj ? `${empObj.first_name} ${empObj.last_name}` : 'This employee'
+      if (!window.confirm(`${empName} has approved/pending leave on ${new Date(date + 'T00:00:00').toLocaleDateString('en-GB')}.\n\nAssign shift anyway? A conflict task will be created when the rota is published.`)) {
         setActiveCell(null)
         return
       }
