@@ -332,6 +332,9 @@ body {
 .card-legal-ts::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 160'%3E%3Ccircle cx='0' cy='0' r='40' stroke='white' stroke-width='2.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='65' stroke='white' stroke-width='2' fill='none'/%3E%3Ccircle cx='0' cy='0' r='90' stroke='white' stroke-width='1.5' fill='none'/%3E%3Ccircle cx='0' cy='0' r='115' stroke='white' stroke-width='1' fill='none'/%3E%3Ccircle cx='0' cy='0' r='140' stroke='white' stroke-width='0.8' fill='none'/%3E%3C/svg%3E"); }
 
 /* ── Plain Simple dashboard mode ── */
+.dashboard.plain-simple { background: #fff; }
+[data-theme="dark"] .dashboard.plain-simple { background: #1a1a2e; }
+
 .plain-simple .dash-card {
   background: #e8f5e9 !important;
   color: #1b5e20 !important;
@@ -349,11 +352,11 @@ body {
 }
 .plain-simple .card-value,
 .plain-simple .card-value-large {
-  color: #1b5e20 !important;
+  color: #111 !important;
 }
 .plain-simple .card-sub {
-  color: #2e7d32 !important;
-  opacity: 0.8;
+  color: #111 !important;
+  opacity: 0.85;
 }
 
 /* ── Info-card dashboard mode ── */

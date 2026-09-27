@@ -1163,7 +1163,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="dashboard" onClick={() => quickMenuOpen && setQuickMenuOpen(false)}>
+    <div className={`dashboard${dashMode === 'plain' ? ' plain-simple' : ''}`} onClick={() => quickMenuOpen && setQuickMenuOpen(false)}>
       <header className="dash-header">
         <div className="header-avatar" onClick={() => navigate('/my-profile')}>
           {avatarUrl ? (
@@ -1451,7 +1451,7 @@ export default function Dashboard() {
           </>
         )
       })() : (
-        <div className={`card-grid${dashboardStyle === 'slim' ? ' card-grid-slim' : ''}${dashMode === 'plain' ? ' plain-simple' : ''}`}>
+        <div className={`card-grid${dashboardStyle === 'slim' ? ' card-grid-slim' : ''}`}>
           {features.expenses && (
             <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>
               <div className="card-content">
