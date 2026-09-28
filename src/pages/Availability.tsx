@@ -41,6 +41,7 @@ export default function Availability() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
 
   const fetchAvailability = useCallback(async () => {
@@ -48,7 +49,7 @@ export default function Availability() {
     setLoading(true)
     const { data } = await supabase
       .from('employee_availability')
-      .select('day_of_week, is_available, start_time, end_time, recurring')
+      .select('day_of_week, is_available, start_time, end_time')
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
       .order('day_of_week', { ascending: true })
@@ -62,7 +63,7 @@ export default function Availability() {
               is_available: existing.is_available,
               available_from: (existing.start_time || '09:00').slice(0, 5),
               available_to: (existing.end_time || '17:00').slice(0, 5),
-              recurring: existing.recurring ?? true,
+              recurring: true,
             }
           : d
       })
@@ -85,6 +86,7 @@ export default function Availability() {
   async function handleSave() {
     if (!employeeId || !companyUser?.company_id) return
     setSaving(true)
+    setSaveError(null)
 
     const { error: delError } = await supabase
       .from('employee_availability')
@@ -93,6 +95,7 @@ export default function Availability() {
       .eq('company_id', companyUser.company_id)
 
     if (delError) {
+      setSaveError('Failed to update availability: ' + delError.message)
       setSaving(false)
       return
     }
@@ -104,7 +107,6 @@ export default function Availability() {
       is_available: d.is_available,
       start_time: d.available_from,
       end_time: d.available_to,
-      recurring: d.recurring,
     }))
 
     const { error: insError } = await supabase
@@ -112,6 +114,7 @@ export default function Availability() {
       .insert(rows)
 
     if (insError) {
+      setSaveError('Failed to save availability: ' + insError.message)
       setSaving(false)
       return
     }
@@ -268,6 +271,11 @@ export default function Availability() {
       </div>
 
       {/* Save Button */}
+      {saveError && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#991b1b', padding: '10px 14px', borderRadius: 8, margin: '0 16px 12px', fontSize: 13 }}>
+          {saveError}
+        </div>
+      )}
       <button
         className={`avail-save ${saved ? 'avail-save-done' : ''}`}
         onClick={handleSave}
