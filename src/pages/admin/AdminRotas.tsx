@@ -365,7 +365,7 @@ export default function AdminRotas() {
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
       const d = addDays(weekStart, i)
-      return { date: fmtDateISO(d), label: DAY_LABELS[i], dayNum: d.getDate(), month: d.toLocaleDateString('en-GB', { month: 'short' }), dayOfWeek: d.getDay() }
+      return { date: fmtDateISO(d), label: DAY_LABELS[i], dayNum: d.getDate(), month: d.toLocaleDateString('en-GB', { month: 'short' }), dayOfWeek: (d.getDay() + 6) % 7 }
     })
   }, [weekStart])
 

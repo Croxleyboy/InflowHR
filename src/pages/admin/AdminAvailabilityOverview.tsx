@@ -149,7 +149,7 @@ export default function AdminAvailabilityOverview() {
         label: DAY_LABELS[i],
         dayNum: d.getDate(),
         month: d.toLocaleDateString('en-GB', { month: 'short' }),
-        dayOfWeek: d.getDay(),
+        dayOfWeek: (d.getDay() + 6) % 7,
       }
     })
   }, [currentWeekStart])

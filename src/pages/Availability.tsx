@@ -12,7 +12,6 @@ interface DayAvailability {
   is_available: boolean
   available_from: string
   available_to: string
-  recurring: boolean
 }
 
 function defaultDays(): DayAvailability[] {
@@ -21,7 +20,6 @@ function defaultDays(): DayAvailability[] {
     is_available: i < 5,
     available_from: '09:00',
     available_to: '17:00',
-    recurring: true,
   }))
 }
 
@@ -63,7 +61,6 @@ export default function Availability() {
               is_available: existing.is_available,
               available_from: (existing.start_time || '09:00').slice(0, 5),
               available_to: (existing.end_time || '17:00').slice(0, 5),
-              recurring: true,
             }
           : d
       })
@@ -255,14 +252,6 @@ export default function Availability() {
                       />
                     </div>
                   </div>
-                  <label className="avail-recurring">
-                    <input
-                      type="checkbox"
-                      checked={d.recurring}
-                      onChange={e => updateDay(i, { recurring: e.target.checked })}
-                    />
-                    <span>{t('shifts.recurring')}</span>
-                  </label>
                 </div>
               )}
             </div>
