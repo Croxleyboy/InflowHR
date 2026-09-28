@@ -411,7 +411,7 @@ export default function AdminPerformance() {
             <div className="admin-stat-card">
               <div className="admin-stat-icon" style={{ background: '#d97706' }}>📅</div>
               <div className="admin-stat-info">
-                <span className="admin-stat-value">{meetings.filter(m => ['pending', 'accepted'].includes(m.status)).length}</span>
+                <span className="admin-stat-value">{meetings.filter(m => ['pending', 'accepted'].includes(m.status) && m.scheduled_date >= new Date().toISOString().slice(0, 10)).length}</span>
                 <span className="admin-stat-label">Upcoming 1:1s</span>
               </div>
             </div>
@@ -580,7 +580,7 @@ export default function AdminPerformance() {
                 : 'No current manager'}
             </p>
             <p style={{ margin: '0 0 8px', fontSize: '0.85em', opacity: 0.6 }}>
-              The new manager will see all previous 1:1 meeting history for this employee.
+              The new manager will be able to set goals and schedule 1:1 meetings. They will not see meetings conducted by the previous manager.
             </p>
             <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>New Manager</label>
             <select className="ts-input" value={newManagerId} onChange={e => setNewManagerId(e.target.value)} style={{ marginBottom: 16 }}>
@@ -973,6 +973,9 @@ function GoalsReport({ employees, goals, comments, nameMap, companyId, onRefresh
                                   <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 4, ...goalStatusStyle(goal.status) }}>
                                     {GOAL_STATUS_OPTIONS.find(o => o.value === goal.status)?.label || goal.status}
                                   </span>
+                                  {goal.due_date && goal.status !== 'completed' && goal.status !== 'cancelled' && new Date(goal.due_date + 'T23:59:59') < new Date() && (
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', background: '#fee2e2', padding: '2px 8px', borderRadius: 4 }}>Overdue</span>
+                                  )}
                                   <button onClick={() => startEdit(goal)} style={{
                                     background: 'none', border: '1px solid var(--border, #d1d5db)',
                                     borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer',
