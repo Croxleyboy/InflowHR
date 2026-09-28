@@ -4,9 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { useFeatures } from '../context/FeatureContext'
 import { formatDate, formatDateDisplay, toLocalDateStr } from '../lib/formatters'
-import { checkTimeOverlap } from '../lib/overlapCheck'
 import { getManagerEmail } from '../lib/workflow'
 
 const LOCATIONS = ['Head Office', 'Home', 'Customer Site', 'Event', 'Unassigned']
@@ -47,7 +45,6 @@ export default function NewTimesheet() {
   const { t } = useLanguage()
   const { employeeId, employeeName, employeeEmail, companyUser } = useAuth()
   const { showError } = useToast()
-  const { features } = useFeatures()
   const [location, setLocation] = useState(LOCATIONS[0])
   const [customLocation, setCustomLocation] = useState('')
   const [customer, setCustomer] = useState('')
@@ -61,7 +58,6 @@ export default function NewTimesheet() {
   const [endTime, setEndTime] = useState('17:00')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [overlapWarning, setOverlapWarning] = useState<string | null>(null)
 
   useEffect(() => {
     if (companyUser?.company_id) {
@@ -101,7 +97,6 @@ export default function NewTimesheet() {
 
     setSubmitting(true)
     setError(null)
-    setOverlapWarning(null)
 
     const dates: string[] = []
     let d = new Date(startDate + 'T00:00:00')
@@ -109,32 +104,6 @@ export default function NewTimesheet() {
     while (d <= end) {
       dates.push(toLocalDateStr(d))
       d.setDate(d.getDate() + 1)
-    }
-
-    if (features.legal_timesheets) {
-      const { data: legalEntries } = await supabase
-        .from('legal_timesheet_entries')
-        .select('date, duration_hrs, status')
-        .eq('employee_id', employeeId!)
-        .eq('company_id', companyUser!.company_id)
-        .in('date', dates)
-        .neq('status', 'void')
-      if (legalEntries && legalEntries.length > 0) {
-        const legalDates = [...new Set(legalEntries.map((e: any) => new Date(e.date + 'T00:00:00').toLocaleDateString('en-GB')))].join(', ')
-        setOverlapWarning(`You have legal timesheet entries on ${legalDates}. Please adjust or remove those legal time records before submitting a project timesheet for the same date(s).`)
-        setSubmitting(false)
-        return
-      }
-    }
-
-    const overlap = await checkTimeOverlap(
-      employeeId!, companyUser!.company_id, dates, startTime, endTime,
-      { timesheets: true, shifts: true, legal_timesheets: true },
-    )
-    if (overlap.hasOverlap) {
-      setOverlapWarning(overlap.conflicts.map(c => c.message).join('\n'))
-      setSubmitting(false)
-      return
     }
 
     const status = asDraft ? 'draft' : 'pending'
@@ -330,12 +299,6 @@ export default function NewTimesheet() {
           </div>
         </div>
 
-        {overlapWarning && (
-          <div className="ts-overlap-warning">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-            <div>{overlapWarning.split('\n').map((line, i) => <p key={i}>{line}</p>)}</div>
-          </div>
-        )}
         {error && <p className="form-error">{error}</p>}
 
         <div className="ts-form-actions">

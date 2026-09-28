@@ -2,9 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
-import { useFeatures } from '../context/FeatureContext'
 import { supabase } from '../lib/supabase'
-import { getDailyTimeTotal } from '../lib/overlapCheck'
 
 // ── Types ──
 interface LegalClient {
@@ -140,7 +138,6 @@ export default function LegalTimesheets() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { employeeId, companyUser } = useAuth()
-  const { features } = useFeatures()
   const companyId = companyUser?.company_id
 
   // ── Rounding setting (from company config) ──
@@ -180,7 +177,6 @@ export default function LegalTimesheets() {
   const [clientSearch, setClientSearch] = useState('')
   const [matterSearch, setMatterSearch] = useState('')
   const [showTemplates, setShowTemplates] = useState(false)
-  const [overlapWarning, setOverlapWarning] = useState<string | null>(null)
 
   // ── Load clients, matters, entries from Supabase ──
   const loadData = useCallback(async () => {
@@ -469,35 +465,6 @@ export default function LegalTimesheets() {
 
     const dur = getFormDuration()
     if (dur <= 0) return
-    setOverlapWarning(null)
-
-    const today = todayStr()
-
-    const { data: tsEntries } = await supabase
-      .from('timesheets')
-      .select('date, start_time, end_time, status')
-      .eq('employee_id', employeeId!)
-      .eq('company_id', companyId!)
-      .eq('date', today)
-      .in('status', ['pending', 'approved', 'submitted'])
-    if (tsEntries && tsEntries.length > 0) {
-      const times = tsEntries.map((e: any) => `${e.start_time}–${e.end_time}`).join(', ')
-      setOverlapWarning(`You have timesheet submissions today (${times}). Please adjust or remove those timesheet entries before logging legal time for the same day.`)
-      return
-    }
-
-    const dailyTotal = await getDailyTimeTotal(
-      employeeId!, companyId!, today,
-      { timesheets: true, shifts: true, legal_timesheets: true },
-    )
-    if (dailyTotal.totalHrs + dur > MAX_DAILY_HRS) {
-      const existing: string[] = []
-      if (dailyTotal.shiftHrs > 0) existing.push(`Shifts: ${dailyTotal.shiftHrs.toFixed(1)}h`)
-      if (dailyTotal.timesheetHrs > 0) existing.push(`Timesheets: ${dailyTotal.timesheetHrs.toFixed(1)}h`)
-      if (dailyTotal.legalHrs > 0) existing.push(`Legal: ${dailyTotal.legalHrs.toFixed(1)}h`)
-      setOverlapWarning(`Adding ${dur.toFixed(1)}h would exceed ${MAX_DAILY_HRS}h daily limit. Current: ${dailyTotal.totalHrs.toFixed(1)}h (${existing.join(', ')})`)
-      return
-    }
 
     const task = TASK_CODES.find(tc => tc.code === formTaskCode)
 
@@ -936,12 +903,6 @@ export default function LegalTimesheets() {
                 <div className="lt-warning">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e53935" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
                   <span>{t('legal_ts.overtime_warning')}</span>
-                </div>
-              )}
-              {overlapWarning && (
-                <div className="lt-warning">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e53935" strokeWidth="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                  <span>{overlapWarning}</span>
                 </div>
               )}
             </div>

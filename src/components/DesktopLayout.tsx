@@ -7,7 +7,7 @@ import { useNotificationBadge } from '../hooks/useNotificationBadge'
 
 export default function DesktopLayout() {
   const { t } = useLanguage()
-  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl, portalRole } = useAuth()
+  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl, portalRole, workPatternType, isSuperAdmin } = useAuth()
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const navigate = useNavigate()
@@ -16,17 +16,18 @@ export default function DesktopLayout() {
   const isAdmin = companyUser && ['admin', 'hr'].includes(companyUser.role)
   const hasPortalAccess = isAdmin || !!portalRole
 
-  const allNavItems: { to: string; icon: string; label: string; end?: boolean; badge?: number; feature?: keyof Features }[] = [
+  const isShiftWorker = workPatternType === 'variable'
+  const allNavItems: { to: string; icon: string; label: string; end?: boolean; badge?: number; feature?: keyof Features; pattern?: 'fixed' | 'variable' }[] = [
     { to: '/', icon: 'home', label: t('footer.dashboard'), end: true },
     { to: '/expenses', icon: 'expenses', label: t('dashboard.expenses'), feature: 'expenses' },
     { to: '/leave', icon: 'leave', label: t('footer.time_off'), feature: 'leave' },
-    { to: '/timesheets', icon: 'timesheets', label: t('dashboard.timesheets'), feature: 'timesheets' },
+    { to: '/timesheets', icon: 'timesheets', label: t('dashboard.timesheets'), feature: 'timesheets', pattern: 'fixed' },
     { to: '/payslips', icon: 'payslips', label: t('dashboard.payslips'), feature: 'payslips' },
     { to: '/kudos', icon: 'kudos', label: t('dashboard.kudos'), feature: 'kudos' },
     { to: '/benefits', icon: 'benefits', label: t('dashboard.benefits'), feature: 'benefits' },
     { to: '/elearning', icon: 'elearning', label: t('dashboard.elearning'), feature: 'elearning' },
-    { to: '/shifts', icon: 'shifts', label: t('dashboard.shifts'), feature: 'shifts' },
-    { to: '/legal-timesheets', icon: 'timesheets', label: t('dashboard.legal_timesheets'), feature: 'legal_timesheets' },
+    { to: '/shifts', icon: 'shifts', label: t('dashboard.shifts'), feature: 'shifts', pattern: 'variable' },
+    { to: '/legal-timesheets', icon: 'timesheets', label: t('dashboard.legal_timesheets'), feature: 'legal_timesheets', pattern: 'fixed' },
     { to: '/space-booking', icon: 'space_booking', label: t('dashboard.space_booking'), feature: 'space_booking' },
     { to: '/my-profile', icon: 'profile', label: t('dashboard.my_profile'), feature: 'profile' },
     { to: '/directory', icon: 'directory', label: `${t('directory.title')} ${t('directory.title_accent')}` },
@@ -34,7 +35,12 @@ export default function DesktopLayout() {
     { to: '/notifications', icon: 'notifications', label: t('footer.notifications'), badge: badgeCount },
     { to: '/settings', icon: 'settings', label: t('footer.settings') },
   ]
-  const navItems = allNavItems.filter(item => !item.feature || features[item.feature])
+  const navItems = allNavItems.filter(item => {
+    if (item.feature && !features[item.feature]) return false
+    if (!isSuperAdmin && item.pattern === 'variable' && !isShiftWorker) return false
+    if (!isSuperAdmin && item.pattern === 'fixed' && isShiftWorker) return false
+    return true
+  })
 
   function renderIcon(icon: string) {
     switch (icon) {

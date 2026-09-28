@@ -98,7 +98,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features, dashboardStyle } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser, workPatternType, isSuperAdmin } = useAuth()
   const navigate = useNavigate()
   const { activeCheckin, activeBreak, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
@@ -134,7 +134,6 @@ export default function Dashboard() {
   const [tsExpectedHours] = useState(37.5)
   const [lastTimesheet, setLastTimesheet] = useState<{ date: string; hours: number } | null>(null)
   const [workPatternDays, setWorkPatternDays] = useState<boolean[] | null>(null)
-  const [workPatternType, setWorkPatternType] = useState<string | null>(null)
   const [lastShiftWorked, setLastShiftWorked] = useState<{ date: string; hours: number } | null>(null)
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
   useEffect(() => {
@@ -228,7 +227,7 @@ export default function Dashboard() {
         const { data: empRow } = await supabase.from('employees').select('work_pattern_id').eq('id', employeeId).maybeSingle()
         if (empRow?.work_pattern_id) {
           const { data: wp } = await supabase.from('work_patterns').select('days, pattern_type').eq('id', empRow.work_pattern_id).maybeSingle()
-          if (wp) { setWorkPatternDays(wp.days); setWorkPatternType(wp.pattern_type) }
+          if (wp) { setWorkPatternDays(wp.days) }
         }
       })()
 
@@ -1136,26 +1135,32 @@ export default function Dashboard() {
     }
   }
 
+  const isShiftWorker = workPatternType === 'variable'
   const quickMenuItems: { label: string; path: string; icon: ReactNode }[] = (() => {
-    const items: { label: string; path: string; icon: ReactNode; featureKey: string | null }[] = [
+    const items: { label: string; path: string; icon: ReactNode; featureKey: string | null; pattern?: 'fixed' | 'variable' }[] = [
       { label: 'My Profile', path: '/my-profile', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
       { label: 'Leave', path: '/leave', featureKey: 'leave', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> },
       { label: 'Expenses', path: '/expenses', featureKey: 'expenses', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
       { label: 'Payslips', path: '/payslips', featureKey: 'payslips', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> },
-      { label: 'Timesheets', path: '/timesheets', featureKey: 'timesheets', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> },
-      { label: 'Shifts & Rotas', path: '/shifts', featureKey: 'shifts', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg> },
+      { label: 'Timesheets', path: '/timesheets', featureKey: 'timesheets', pattern: 'fixed', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> },
+      { label: 'Shifts & Rotas', path: '/shifts', featureKey: 'shifts', pattern: 'variable', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg> },
       { label: 'Performance', path: '/one-to-ones', featureKey: 'performance', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> },
       { label: 'E-Learning', path: '/elearning', featureKey: 'elearning', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg> },
       { label: 'Kudos', path: '/kudos', featureKey: 'kudos', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> },
       { label: 'Benefits', path: '/benefits', featureKey: 'benefits', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg> },
       { label: 'Space Booking', path: '/space-booking', featureKey: 'space_booking', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg> },
-      { label: 'Legal Timesheets', path: '/legal-timesheets', featureKey: 'legal_timesheets', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+      { label: 'Legal Timesheets', path: '/legal-timesheets', featureKey: 'legal_timesheets', pattern: 'fixed', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
       { label: 'Skills Passport', path: '/skills-passport', featureKey: 'skills_passport', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg> },
       { label: 'Notifications', path: '/notifications', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
       { label: 'Directory', path: '/directory', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
       { label: 'Settings', path: '/settings', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
     ]
-    return items.filter(i => !i.featureKey || (features as any)[i.featureKey])
+    return items.filter(i => {
+      if (i.featureKey && !(features as any)[i.featureKey]) return false
+      if (!isSuperAdmin && i.pattern === 'variable' && !isShiftWorker) return false
+      if (!isSuperAdmin && i.pattern === 'fixed' && isShiftWorker) return false
+      return true
+    })
   })()
 
   if (isDesktop && dashPref === 'detailed') {
