@@ -111,7 +111,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION notify_missed_shift_checkins() FROM anon;
-GRANT EXECUTE ON FUNCTION notify_missed_shift_checkins() TO authenticated;
+REVOKE ALL ON FUNCTION notify_missed_shift_checkins() FROM authenticated;
 
 -- Schedule every 30 minutes
 DO $$

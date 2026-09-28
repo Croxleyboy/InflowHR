@@ -139,6 +139,17 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
 
     if (error) return { ok: false, error: error.message }
     setActiveCheckin(data)
+
+    if (coords) {
+      try {
+        await supabase.rpc('log_gdpr_action' as never, {
+          p_company_id: companyId,
+          p_action: 'geolocation_capture',
+          p_details: { employee_id: employeeId, checkin_id: data.id, source, wfh: false },
+        } as never)
+      } catch { /* audit log failure should not block check-in */ }
+    }
+
     return { ok: true, wfh }
   }, [companyId, employeeId, activeCheckin, getLocation])
 

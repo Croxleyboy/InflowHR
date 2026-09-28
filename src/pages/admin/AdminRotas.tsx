@@ -38,6 +38,7 @@ interface Employee {
 
 interface WorkPattern {
   id: string
+  name: string
   days: boolean[]
   pattern_type: string
 }
@@ -314,7 +315,7 @@ export default function AdminRotas() {
       supabase.from('shift_assignments').select('*').eq('rota_id', rota.id),
       supabase.from('leave_requests').select('employee_id, start_date, end_date').eq('company_id', selectedCompanyId).in('status', ['pending', 'approved']),
       supabase.from('employee_availability').select('employee_id, day_of_week, start_time, end_time, is_available').eq('company_id', selectedCompanyId),
-      supabase.from('work_patterns').select('id, days, pattern_type').eq('company_id', selectedCompanyId).eq('is_active', true),
+      supabase.from('work_patterns').select('id, name, days, pattern_type').eq('company_id', selectedCompanyId).eq('is_active', true),
       supabase.from('shift_template_skills').select('shift_template_id, shift_skill_id').eq('company_id', selectedCompanyId),
       supabase.from('employee_shift_skills').select('employee_id, shift_skill_id').eq('company_id', selectedCompanyId),
     ])
@@ -431,9 +432,10 @@ export default function AdminRotas() {
         const dow = (new Date(date + 'T00:00:00').getDay() + 6) % 7
         if (!wp.days[dow]) {
           const dayName = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][dow]
-          alert(`Cannot assign shift: this employee is not contracted to work on ${dayName}.`)
-          setActiveCell(null)
-          return
+          if (!window.confirm(`${emp.first_name} ${emp.last_name} is on a fixed work pattern (${wp.name}) and is not contracted to work on ${dayName}.\n\nAssign shift anyway (e.g. emergency cover)?`)) {
+            setActiveCell(null)
+            return
+          }
         }
       }
     }
@@ -472,10 +474,9 @@ export default function AdminRotas() {
       if (otherRotaShifts && otherRotaShifts.length > 0) {
         const joined = otherRotaShifts[0] as { rotas?: { name: string }[] }
         const otherName = joined.rotas?.[0]?.name || 'another rota'
-        if (!window.confirm(`This employee already has a shift on ${date} in "${otherName}". Assign anyway?`)) {
-          setActiveCell(null)
-          return
-        }
+        alert(`Cannot assign shift: ${emp?.first_name || 'This employee'} already has a shift on ${new Date(date + 'T00:00:00').toLocaleDateString('en-GB')} in "${otherName}". Remove the existing shift first to reassign.`)
+        setActiveCell(null)
+        return
       }
 
       const template = shiftTemplates.find(t => t.id === templateId)
@@ -486,10 +487,9 @@ export default function AdminRotas() {
           { type: 'shift' },
         )
         if (overlap.hasOverlap) {
-          if (!window.confirm(`Time overlap detected:\n${overlap.conflicts.map(c => c.message).join('\n')}\n\nAssign anyway?`)) {
-            setActiveCell(null)
-            return
-          }
+          alert(`Cannot assign shift — time overlap detected:\n\n${overlap.conflicts.map(c => c.message).join('\n')}\n\nRemove the conflicting entry first.`)
+          setActiveCell(null)
+          return
         }
       }
     }
@@ -940,13 +940,18 @@ export default function AdminRotas() {
             {employees.map(emp => {
               const initials = `${emp.first_name.charAt(0)}${emp.last_name.charAt(0)}`.toUpperCase()
               const wh = empWeekHours(emp.id)
+              const empWp = emp.work_pattern_id ? workPatterns.find(p => p.id === emp.work_pattern_id) : null
+              const isFixedPattern = empWp && empWp.pattern_type === 'fixed'
               return (
-                <tr key={emp.id}>
+                <tr key={emp.id} style={isFixedPattern ? { opacity: 0.65 } : undefined}>
                   <td className="rg-td-emp">
                     <div className="rg-emp-row">
                       <div className="rg-emp-avatar">{initials}</div>
                       <div>
-                        <div className="rg-emp-name">{emp.first_name} {emp.last_name}</div>
+                        <div className="rg-emp-name">
+                          {emp.first_name} {emp.last_name}
+                          {isFixedPattern && <span style={{ fontSize: 9, fontWeight: 600, color: '#8b5cf6', background: '#f5f3ff', padding: '1px 5px', borderRadius: 3, marginLeft: 6 }}>{empWp.name}</span>}
+                        </div>
                         <div className="rg-emp-avail">
                           {weekDays.map(d => {
                             const avail = getAvailability(emp.id, d.dayOfWeek)
