@@ -163,7 +163,7 @@ export default function ShiftSwap() {
         .eq('is_active', true),
       supabase
         .from('shift_swap_requests')
-        .select('*, shift_assignment:shift_assignments(id, date, shift_template_id, rota_id, shift_template:shift_templates(name, colour, start_time, end_time), rota:rotas(name))')
+        .select('*')
         .eq('company_id', companyUser.company_id)
         .or(`requesting_employee_id.eq.${employeeId},target_employee_id.eq.${employeeId}`)
         .order('created_at', { ascending: false }),
@@ -191,21 +191,46 @@ export default function ShiftSwap() {
     setEmployees(allEmps.filter(e => !e.work_pattern_id || variablePatternIds.has(e.work_pattern_id)))
 
     const swapRows = (swapRes.data || []) as any[]
-    const targetShiftIds = swapRows.map(r => r.target_shift_assignment_id).filter(Boolean)
-    let targetShiftMap: Record<string, any> = {}
-    if (targetShiftIds.length > 0) {
-      const { data: tsData } = await supabase
+    const allShiftIds = [
+      ...swapRows.map(r => r.shift_assignment_id).filter(Boolean),
+      ...swapRows.map(r => r.target_shift_assignment_id).filter(Boolean),
+    ]
+    const uniqueShiftIds = [...new Set(allShiftIds)]
+    let shiftMap: Record<string, any> = {}
+    if (uniqueShiftIds.length > 0) {
+      const { data: saData } = await supabase
         .from('shift_assignments')
-        .select('id, date, shift_template:shift_templates(name, colour, start_time, end_time), rota:rotas(name)')
-        .in('id', targetShiftIds)
-      if (tsData) {
-        tsData.forEach((ts: any) => { targetShiftMap[ts.id] = ts })
+        .select('id, date, shift_template_id, rota_id')
+        .in('id', uniqueShiftIds)
+      if (saData) {
+        const templateIds = [...new Set(saData.map((s: any) => s.shift_template_id).filter(Boolean))]
+        const rotaIds = [...new Set(saData.map((s: any) => s.rota_id).filter(Boolean))]
+        const [tmplRes, rotaLookup] = await Promise.all([
+          templateIds.length > 0
+            ? supabase.from('shift_templates').select('id, name, colour, start_time, end_time').in('id', templateIds)
+            : Promise.resolve({ data: [] }),
+          rotaIds.length > 0
+            ? supabase.from('rotas').select('id, name').in('id', rotaIds)
+            : Promise.resolve({ data: [] }),
+        ])
+        const tmplMap: Record<string, any> = {}
+        ;(tmplRes.data || []).forEach((t: any) => { tmplMap[t.id] = t })
+        const rMap: Record<string, any> = {}
+        ;(rotaLookup.data || []).forEach((r: any) => { rMap[r.id] = r })
+        saData.forEach((sa: any) => {
+          shiftMap[sa.id] = {
+            ...sa,
+            shift_template: tmplMap[sa.shift_template_id] || null,
+            rota: rMap[sa.rota_id] || null,
+          }
+        })
       }
     }
 
     setSwapRequests(swapRows.map((r: any) => ({
       ...r,
-      target_shift: r.target_shift_assignment_id ? targetShiftMap[r.target_shift_assignment_id] || null : null,
+      shift_assignment: r.shift_assignment_id ? shiftMap[r.shift_assignment_id] || null : null,
+      target_shift: r.target_shift_assignment_id ? shiftMap[r.target_shift_assignment_id] || null : null,
     })))
 
     setLoading(false)
