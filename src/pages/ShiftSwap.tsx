@@ -658,9 +658,15 @@ export default function ShiftSwap() {
                 const otherName = otherEmp ? `${otherEmp.first_name} ${otherEmp.last_name}` : '—'
                 const isActioning = actioningId === req.id
 
+                const requesterShiftIds = new Set(
+                  allShiftAssignments
+                    .filter(sa => sa.employee_id === req.requesting_employee_id)
+                    .map(sa => sa.shift_template_id + '|' + sa.date)
+                )
                 const myUpcomingShifts = allShiftAssignments.filter(sa =>
                   sa.employee_id === employeeId &&
-                  sa.id !== req.shift_assignment_id
+                  sa.id !== req.shift_assignment_id &&
+                  !requesterShiftIds.has(sa.shift_template_id + '|' + sa.date)
                 )
 
                 return (
