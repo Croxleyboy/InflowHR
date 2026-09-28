@@ -283,10 +283,26 @@ export default function LegalTimesheets() {
     return timer.elapsed + Math.floor((Date.now() - timer.startedAt) / 1000)
   }
 
-  function startTimer(clientId: string, matterId: string) {
+  async function startTimer(clientId: string, matterId: string) {
     const client = clients.find(c => c.id === clientId)
     const matter = matters.find(m => m.id === matterId)
     if (!client || !matter) return
+
+    if (employeeId && companyId) {
+      const today = todayStr()
+      const { data: tsEntries } = await supabase
+        .from('timesheets')
+        .select('date, start_time, end_time, status')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyId)
+        .eq('date', today)
+        .in('status', ['pending', 'approved', 'submitted'])
+      if (tsEntries && tsEntries.length > 0) {
+        const times = tsEntries.map((e: any) => `${e.start_time}–${e.end_time}`).join(', ')
+        setOverlapWarning(`You have timesheet submissions today (${times}). Please adjust or remove those timesheet entries before starting a legal time recording for the same day.`)
+        return
+      }
+    }
 
     setTimers(prev => {
       // Check for duplicate client+matter timer
@@ -456,6 +472,20 @@ export default function LegalTimesheets() {
     setOverlapWarning(null)
 
     const today = todayStr()
+
+    const { data: tsEntries } = await supabase
+      .from('timesheets')
+      .select('date, start_time, end_time, status')
+      .eq('employee_id', employeeId!)
+      .eq('company_id', companyId!)
+      .eq('date', today)
+      .in('status', ['pending', 'approved', 'submitted'])
+    if (tsEntries && tsEntries.length > 0) {
+      const times = tsEntries.map((e: any) => `${e.start_time}–${e.end_time}`).join(', ')
+      setOverlapWarning(`You have timesheet submissions today (${times}). Please adjust or remove those timesheet entries before logging legal time for the same day.`)
+      return
+    }
+
     const dailyTotal = await getDailyTimeTotal(
       employeeId!, companyId!, today,
       { timesheets: features.timesheets, shifts: features.shifts, legal_timesheets: features.legal_timesheets },

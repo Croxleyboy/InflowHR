@@ -319,7 +319,11 @@ export default function AdminRotas() {
       supabase.from('shift_template_skills').select('shift_template_id, shift_skill_id').eq('company_id', selectedCompanyId),
       supabase.from('employee_shift_skills').select('employee_id, shift_skill_id').eq('company_id', selectedCompanyId),
     ])
-    setEmployees((empRes.data as Employee[]) || [])
+    const allEmps = (empRes.data as Employee[]) || []
+    const wpData = (wpRes.data as WorkPattern[]) || []
+    const variablePatternIds = new Set(wpData.filter(p => p.pattern_type === 'variable').map(p => p.id))
+    const shiftEligible = allEmps.filter(e => !e.work_pattern_id || variablePatternIds.has(e.work_pattern_id))
+    setEmployees(shiftEligible)
     setShiftTemplates((tmplRes.data as ShiftTemplate[]) || [])
     setAssignments((assignRes.data as ShiftAssignment[]) || [])
     setLeaveConflicts((leaveRes.data as LeaveConflict[]) || [])
@@ -423,21 +427,6 @@ export default function AdminRotas() {
       alert(`Cannot assign shifts outside rota dates (${selectedRota!.start_date} to ${selectedRota!.end_date})`)
       setActiveCell(null)
       return
-    }
-
-    const emp = employees.find(e => e.id === employeeId)
-    if (emp?.work_pattern_id) {
-      const wp = workPatterns.find(p => p.id === emp.work_pattern_id)
-      if (wp && wp.pattern_type === 'fixed') {
-        const dow = (new Date(date + 'T00:00:00').getDay() + 6) % 7
-        if (!wp.days[dow]) {
-          const dayName = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][dow]
-          if (!window.confirm(`${emp.first_name} ${emp.last_name} is on a fixed work pattern (${wp.name}) and is not contracted to work on ${dayName}.\n\nAssign shift anyway (e.g. emergency cover)?`)) {
-            setActiveCell(null)
-            return
-          }
-        }
-      }
     }
 
     const requiredSkills = templateSkillMap[templateId] || []
@@ -940,17 +929,14 @@ export default function AdminRotas() {
             {employees.map(emp => {
               const initials = `${emp.first_name.charAt(0)}${emp.last_name.charAt(0)}`.toUpperCase()
               const wh = empWeekHours(emp.id)
-              const empWp = emp.work_pattern_id ? workPatterns.find(p => p.id === emp.work_pattern_id) : null
-              const isFixedPattern = empWp && empWp.pattern_type === 'fixed'
               return (
-                <tr key={emp.id} style={isFixedPattern ? { opacity: 0.65 } : undefined}>
+                <tr key={emp.id}>
                   <td className="rg-td-emp">
                     <div className="rg-emp-row">
                       <div className="rg-emp-avatar">{initials}</div>
                       <div>
                         <div className="rg-emp-name">
                           {emp.first_name} {emp.last_name}
-                          {isFixedPattern && <span style={{ fontSize: 9, fontWeight: 600, color: '#8b5cf6', background: '#f5f3ff', padding: '1px 5px', borderRadius: 3, marginLeft: 6 }}>{empWp.name}</span>}
                         </div>
                         <div className="rg-emp-avail">
                           {weekDays.map(d => {

@@ -111,6 +111,22 @@ export default function NewTimesheet() {
       d.setDate(d.getDate() + 1)
     }
 
+    if (features.legal_timesheets) {
+      const { data: legalEntries } = await supabase
+        .from('legal_timesheet_entries')
+        .select('date, duration_hrs, status')
+        .eq('employee_id', employeeId!)
+        .eq('company_id', companyUser!.company_id)
+        .in('date', dates)
+        .neq('status', 'void')
+      if (legalEntries && legalEntries.length > 0) {
+        const legalDates = [...new Set(legalEntries.map((e: any) => new Date(e.date + 'T00:00:00').toLocaleDateString('en-GB')))].join(', ')
+        setOverlapWarning(`You have legal timesheet entries on ${legalDates}. Please adjust or remove those legal time records before submitting a project timesheet for the same date(s).`)
+        setSubmitting(false)
+        return
+      }
+    }
+
     const overlap = await checkTimeOverlap(
       employeeId!, companyUser!.company_id, dates, startTime, endTime,
       { timesheets: features.timesheets, shifts: features.shifts, legal_timesheets: features.legal_timesheets },
