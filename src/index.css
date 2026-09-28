@@ -943,6 +943,8 @@ body {
 .swap-cancel-btn { display: flex; align-items: center; justify-content: center; width: 100%; padding: 8px; border: 1.5px solid var(--border); border-radius: 8px; background: none; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; margin-top: 4px; }
 .swap-cancel-btn:hover { border-color: #e53935; color: #e53935; background: #ffebee; }
 .swap-cancel-btn:disabled { opacity: 0.5; }
+.swap-history-summary { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 14px; border: none; background: none; cursor: pointer; text-align: left; font-family: inherit; color: var(--text); transition: background 0.12s; }
+.swap-history-summary:hover { background: rgba(0,0,0,0.03); }
 .swap-timeline { display: flex; flex-direction: column; gap: 0; position: relative; }
 .swap-timeline-step { display: flex; gap: 10px; padding: 6px 0; position: relative; }
 .swap-timeline-step::before { content: ''; position: absolute; left: 5px; top: 18px; bottom: -6px; width: 2px; background: var(--border); }
