@@ -53,6 +53,7 @@ interface SwapAction {
   shift_date: string
   shift_name: string
   created_at: string
+  swap_type: 'incoming' | 'counter_offer'
 }
 
 
@@ -321,16 +322,26 @@ export default function Notifications() {
     if (announcementsRes.data) setAnnouncements(announcementsRes.data as Announcement[])
 
     if (HARDCODED_EMPLOYEE_ID && companyUser?.company_id) {
-      const { data: swapData } = await supabase
-        .from('shift_swap_requests')
-        .select('id, requesting_employee_id, created_at, shift_assignment:shift_assignments(date, shift_template:shift_templates(name))')
-        .eq('target_employee_id', HARDCODED_EMPLOYEE_ID)
-        .eq('company_id', companyUser.company_id)
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false })
+      const [pendingRes, counterRes] = await Promise.all([
+        supabase
+          .from('shift_swap_requests')
+          .select('id, requesting_employee_id, target_employee_id, status, created_at, shift_assignment:shift_assignments(date, shift_template:shift_templates(name))')
+          .eq('target_employee_id', HARDCODED_EMPLOYEE_ID)
+          .eq('company_id', companyUser.company_id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('shift_swap_requests')
+          .select('id, requesting_employee_id, target_employee_id, status, created_at, shift_assignment:shift_assignments(date, shift_template:shift_templates(name))')
+          .eq('requesting_employee_id', HARDCODED_EMPLOYEE_ID)
+          .eq('company_id', companyUser.company_id)
+          .eq('status', 'counter_offered')
+          .order('created_at', { ascending: false }),
+      ])
 
-      if (swapData) {
-        const empIds = [...new Set(swapData.map((s: any) => s.requesting_employee_id))]
+      const allSwaps = [...(pendingRes.data || []), ...(counterRes.data || [])]
+      if (allSwaps.length > 0) {
+        const empIds = [...new Set(allSwaps.flatMap((s: any) => [s.requesting_employee_id, s.target_employee_id]))]
         const { data: empNames } = await supabase
           .from('employees')
           .select('id, first_name, last_name')
@@ -339,14 +350,19 @@ export default function Notifications() {
         const nameMap: Record<string, string> = {}
         ;(empNames || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
 
-        setSwapActions(swapData.map((s: any) => ({
-          id: s.id,
-          requesting_employee_id: s.requesting_employee_id,
-          requester_name: nameMap[s.requesting_employee_id] || '—',
-          shift_date: s.shift_assignment?.date || '',
-          shift_name: s.shift_assignment?.shift_template?.name || 'Shift',
-          created_at: s.created_at,
-        })))
+        setSwapActions(allSwaps.map((s: any) => {
+          const isCounterOffer = s.status === 'counter_offered'
+          const otherEmpId = isCounterOffer ? s.target_employee_id : s.requesting_employee_id
+          return {
+            id: s.id,
+            requesting_employee_id: s.requesting_employee_id,
+            requester_name: nameMap[otherEmpId] || '—',
+            shift_date: s.shift_assignment?.date || '',
+            shift_name: s.shift_assignment?.shift_template?.name || 'Shift',
+            created_at: s.created_at,
+            swap_type: isCounterOffer ? 'counter_offer' as const : 'incoming' as const,
+          }
+        }))
       }
     }
 
@@ -963,7 +979,7 @@ export default function Notifications() {
           {actions.length === 0 && swapActions.length === 0 && <p className="claims-empty">{t('notifications.no_actions')}</p>}
           {swapActions.map(swap => (
             <button key={`swap-${swap.id}`} className="notif-action-card" onClick={() => navigate('/shifts/swap', { state: { tab: 'incoming' } })}>
-              <div className="notif-action-bar bar-orange" />
+              <div className={`notif-action-bar ${swap.swap_type === 'counter_offer' ? 'bar-blue' : 'bar-orange'}`} />
               <div className="notif-icon notif-icon-swap">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
                   <path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
@@ -971,18 +987,22 @@ export default function Notifications() {
                 </svg>
               </div>
               <div className="notif-action-content">
-                <span className="notif-action-title">{t('shifts.swap_request_received')}</span>
+                <span className="notif-action-title">
+                  {swap.swap_type === 'counter_offer' ? 'Shift Swap Counter-Offer' : t('shifts.swap_request_received')}
+                </span>
                 <div className="notif-action-meta">
-                  <span className="notif-action-label" style={{ color: '#e65100' }}>{t('common.action')}</span>
+                  <span className="notif-action-label" style={{ color: swap.swap_type === 'counter_offer' ? '#1565c0' : '#e65100' }}>{t('common.action')}</span>
                   <span className="notif-action-date">{t('notifications.created')} {formatNotifDate(swap.created_at)}</span>
                 </div>
                 <div className="notif-action-detail">
                   <span className="notif-action-type">{swap.shift_name} — {swap.shift_date}</span>
-                  <span className="notif-action-for">{t('notifications.swap_action')} {swap.requester_name}</span>
+                  <span className="notif-action-for">
+                    {swap.swap_type === 'counter_offer' ? 'Counter-offer from' : t('notifications.swap_action')} {swap.requester_name}
+                  </span>
                 </div>
               </div>
               <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
-                <path d="M12 6l10 10-10 10" stroke="#e65100" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 6l10 10-10 10" stroke={swap.swap_type === 'counter_offer' ? '#1565c0' : '#e65100'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           ))}

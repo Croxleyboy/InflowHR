@@ -36,13 +36,13 @@ interface Employee {
 interface SwapRequest {
   id: string
   shift_assignment_id: string
+  target_shift_assignment_id: string | null
   requesting_employee_id: string
   target_employee_id: string
   status: string
   reason: string | null
+  response_message: string | null
   created_at: string
-  requester?: Employee | null
-  target?: Employee | null
   shift_assignment?: {
     id: string
     date: string
@@ -51,9 +51,15 @@ interface SwapRequest {
     shift_template: { name: string; colour: string; start_time: string; end_time: string } | null
     rota: { name: string } | null
   } | null
+  target_shift?: {
+    id: string
+    date: string
+    shift_template: { name: string; colour: string; start_time: string; end_time: string } | null
+    rota: { name: string } | null
+  } | null
 }
 
-type SwapTab = 'request' | 'incoming' | 'sent'
+type SwapTab = 'request' | 'incoming' | 'history'
 
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
@@ -90,31 +96,18 @@ export default function ShiftSwap() {
   const { showError } = useToast()
   const initialTab = (location.state as { tab?: SwapTab } | null)?.tab || 'request'
   const [tab, setTab] = useState<SwapTab>(initialTab)
-  const [shifts, setShifts] = useState<ShiftAssignment[]>([])
+  const [myShifts, setMyShifts] = useState<ShiftAssignment[]>([])
+  const [allShiftAssignments, setAllShiftAssignments] = useState<ShiftAssignment[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
-  const [sentRequests, setSentRequests] = useState<SwapRequest[]>([])
-  const [incomingRequests, setIncomingRequests] = useState<SwapRequest[]>([])
+  const [swapRequests, setSwapRequests] = useState<SwapRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
   const [targetEmployeeId, setTargetEmployeeId] = useState('')
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [actioningId, setActioningId] = useState<string | null>(null)
-  const [sameShiftEmployees, setSameShiftEmployees] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    if (!selectedShiftId || !companyUser?.company_id) { setSameShiftEmployees(new Set()); return }
-    const shift = shifts.find(s => s.id === selectedShiftId) as any
-    if (!shift) return
-    supabase.from('shift_assignments')
-      .select('employee_id')
-      .eq('company_id', companyUser.company_id)
-      .eq('date', shift.date)
-      .eq('shift_template_id', shift.shift_template?.id || shift.shift_template_id)
-      .then(({ data }) => {
-        setSameShiftEmployees(new Set((data || []).map((r: any) => r.employee_id)))
-      })
-  }, [selectedShiftId, companyUser?.company_id, shifts])
+  const [counterShiftId, setCounterShiftId] = useState<string | null>(null)
+  const [responseMessage, setResponseMessage] = useState('')
 
   const employeeMap = useMemo(() => {
     const map: Record<string, Employee> = {}
@@ -122,17 +115,45 @@ export default function ShiftSwap() {
     return map
   }, [employees])
 
+  const employeesWithShifts = useMemo(() => {
+    const idsWithShifts = new Set(allShiftAssignments.map(sa => sa.employee_id))
+    return employees.filter(e => e.id !== employeeId && idsWithShifts.has(e.id))
+  }, [employees, allShiftAssignments, employeeId])
+
+  const targetShifts = useMemo(() => {
+    if (!targetEmployeeId) return []
+    return allShiftAssignments.filter(sa => sa.employee_id === targetEmployeeId)
+  }, [allShiftAssignments, targetEmployeeId])
+
+  const incomingRequests = useMemo(() => {
+    return swapRequests.filter(r =>
+      (r.target_employee_id === employeeId && r.status === 'pending') ||
+      (r.requesting_employee_id === employeeId && r.status === 'counter_offered')
+    )
+  }, [swapRequests, employeeId])
+
+  const historyRequests = useMemo(() => {
+    return swapRequests.filter(r =>
+      r.requesting_employee_id === employeeId || r.target_employee_id === employeeId
+    ).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  }, [swapRequests, employeeId])
+
   const fetchData = useCallback(async () => {
     if (!employeeId || !companyUser?.company_id) return
     setLoading(true)
 
     const today = toLocalDateStr()
 
-    const [shiftsRes, employeesRes, sentRes, incomingRes, wpRes] = await Promise.all([
+    const [myShiftsRes, allAssignRes, employeesRes, swapRes, wpRes, rotaRes] = await Promise.all([
       supabase
         .from('shift_assignments')
         .select('*, shift_template:shift_templates(id, name, start_time, end_time, colour), rota:rotas(name, status)')
         .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id)
+        .gte('date', today),
+      supabase
+        .from('shift_assignments')
+        .select('*, shift_template:shift_templates(id, name, start_time, end_time, colour), rota:rotas(name, status)')
         .eq('company_id', companyUser.company_id)
         .gte('date', today),
       supabase
@@ -143,30 +164,50 @@ export default function ShiftSwap() {
       supabase
         .from('shift_swap_requests')
         .select('*, shift_assignment:shift_assignments(id, date, shift_template_id, rota_id, shift_template:shift_templates(name, colour, start_time, end_time), rota:rotas(name))')
-        .eq('requesting_employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('shift_swap_requests')
-        .select('*, shift_assignment:shift_assignments(id, date, shift_template_id, rota_id, shift_template:shift_templates(name, colour, start_time, end_time), rota:rotas(name))')
-        .eq('target_employee_id', employeeId)
-        .eq('company_id', companyUser.company_id)
-        .eq('status', 'pending')
+        .or(`requesting_employee_id.eq.${employeeId},target_employee_id.eq.${employeeId}`)
         .order('created_at', { ascending: false }),
       supabase
         .from('work_patterns')
         .select('id, pattern_type')
         .eq('company_id', companyUser.company_id)
         .eq('is_active', true),
+      supabase
+        .from('rotas')
+        .select('id, name, status')
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'published'),
     ])
 
-    const published = (shiftsRes.data || []).filter((s: any) => s.rota?.status === 'published' || s.rota?.status === 'draft')
-    setShifts(published as ShiftAssignment[])
+    const publishedRotaIds = new Set((rotaRes.data || []).map((r: any) => r.id))
+    const publishedMyShifts = (myShiftsRes.data || []).filter((s: any) => publishedRotaIds.has(s.rota_id))
+    const publishedAllAssign = (allAssignRes.data || []).filter((s: any) => publishedRotaIds.has(s.rota_id))
+
+    setMyShifts(publishedMyShifts as ShiftAssignment[])
+    setAllShiftAssignments(publishedAllAssign as ShiftAssignment[])
+
     const variablePatternIds = new Set((wpRes.data || []).filter((p: any) => p.pattern_type === 'variable').map((p: any) => p.id))
     const allEmps = (employeesRes.data || []) as Employee[]
     setEmployees(allEmps.filter(e => !e.work_pattern_id || variablePatternIds.has(e.work_pattern_id)))
-    setSentRequests((sentRes.data || []) as SwapRequest[])
-    setIncomingRequests((incomingRes.data || []) as SwapRequest[])
+
+    const swapRows = (swapRes.data || []) as any[]
+    const targetShiftIds = swapRows.map(r => r.target_shift_assignment_id).filter(Boolean)
+    let targetShiftMap: Record<string, any> = {}
+    if (targetShiftIds.length > 0) {
+      const { data: tsData } = await supabase
+        .from('shift_assignments')
+        .select('id, date, shift_template:shift_templates(name, colour, start_time, end_time), rota:rotas(name)')
+        .in('id', targetShiftIds)
+      if (tsData) {
+        tsData.forEach((ts: any) => { targetShiftMap[ts.id] = ts })
+      }
+    }
+
+    setSwapRequests(swapRows.map((r: any) => ({
+      ...r,
+      target_shift: r.target_shift_assignment_id ? targetShiftMap[r.target_shift_assignment_id] || null : null,
+    })))
+
     setLoading(false)
   }, [employeeId, companyUser?.company_id])
 
@@ -174,7 +215,7 @@ export default function ShiftSwap() {
 
   async function handleSubmitSwap() {
     if (!selectedShiftId || !targetEmployeeId || !companyUser?.company_id) return
-    const selectedShift = shifts.find(s => s.id === selectedShiftId)
+    const selectedShift = myShifts.find(s => s.id === selectedShiftId)
     if (selectedShift && selectedShift.date < toLocalDateStr()) {
       showError('Cannot request a swap for a shift that has already passed')
       return
@@ -193,60 +234,196 @@ export default function ShiftSwap() {
     if (error) {
       showError(t('shifts.swap_failed'))
     } else {
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: employeeMap[targetEmployeeId] ? `${employeeMap[targetEmployeeId].first_name} ${employeeMap[targetEmployeeId].last_name}` : '',
+        step: 1,
+        status: 'Pending',
+        record_type: 'Shift Swap',
+        action: 'Shift swap request received',
+        employee_email: '',
+        assigned_to: '',
+        reminder_count: 1,
+        task_description: `Shift swap request from ${employeeMap[employeeId!]?.first_name || ''} ${employeeMap[employeeId!]?.last_name || ''} — ${selectedShift?.shift_template?.name || 'Shift'} on ${selectedShift ? formatDate(selectedShift.date) : ''}`,
+        company_id: companyUser.company_id,
+      })
+
       setSelectedShiftId(null)
       setTargetEmployeeId('')
       setReason('')
-      setTab('sent')
+      setTab('history')
     }
     setSubmitting(false)
     fetchData()
   }
 
-  async function handleAcceptSwap(request: SwapRequest) {
-    if (!request.shift_assignment || !companyUser?.company_id) return
-    const shiftDate = request.shift_assignment.date
-    if (shiftDate < toLocalDateStr()) {
-      showError('Cannot accept a swap for a shift that has already passed')
-      return
-    }
+  async function handleCounterOffer(request: SwapRequest) {
+    if (!counterShiftId || !companyUser?.company_id) return
     setActioningId(request.id)
 
-    const origAssignment = request.shift_assignment
-    const targetShiftOnDate = shifts.find(s => s.date === origAssignment.date)
+    const { error } = await supabase.from('shift_swap_requests')
+      .update({
+        target_shift_assignment_id: counterShiftId,
+        response_message: responseMessage || null,
+        status: 'counter_offered',
+      })
+      .eq('id', request.id)
+      .eq('company_id', companyUser.company_id)
 
-    const { error: approveErr } = await supabase.from('shift_swap_requests').update({ status: 'approved' }).eq('id', request.id).eq('company_id', companyUser?.company_id)
-    if (approveErr) { showError('Failed to approve swap: ' + approveErr.message); setActioningId(null); return }
-
-    await supabase.from('shift_assignments')
-      .update({ employee_id: employeeId })
-      .eq('id', origAssignment.id)
-      .eq('company_id', companyUser?.company_id)
-
-    if (targetShiftOnDate) {
-      await supabase.from('shift_assignments')
-        .update({ employee_id: request.requesting_employee_id })
-        .eq('id', targetShiftOnDate.id)
-        .eq('company_id', companyUser?.company_id)
+    if (error) {
+      showError('Failed to send counter-offer: ' + error.message)
+    } else {
+      const requester = employeeMap[request.requesting_employee_id]
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: requester ? `${requester.first_name} ${requester.last_name}` : '',
+        step: 2,
+        status: 'Pending',
+        record_type: 'Shift Swap',
+        action: 'Counter-offer received — review and approve or decline',
+        employee_email: '',
+        assigned_to: '',
+        reminder_count: 1,
+        task_description: `Shift swap counter-offer received`,
+        company_id: companyUser.company_id,
+      })
     }
 
+    setCounterShiftId(null)
+    setResponseMessage('')
     setActioningId(null)
     fetchData()
   }
 
-  async function handleDeclineSwap(requestId: string) {
-    setActioningId(requestId)
-    const { error: declineErr } = await supabase.from('shift_swap_requests').update({ status: 'rejected' }).eq('id', requestId).eq('company_id', companyUser?.company_id)
-    if (declineErr) { showError('Failed to decline swap: ' + declineErr.message); setActioningId(null); return }
+  async function handleApproveSwap(request: SwapRequest) {
+    if (!companyUser?.company_id || !request.target_shift_assignment_id) return
+    setActioningId(request.id)
+
+    const { error: approveErr } = await supabase.from('shift_swap_requests')
+      .update({ status: 'approved' })
+      .eq('id', request.id)
+      .eq('company_id', companyUser.company_id)
+
+    if (approveErr) {
+      showError('Failed to approve swap: ' + approveErr.message)
+      setActioningId(null)
+      return
+    }
+
+    await supabase.from('shift_assignments')
+      .update({ employee_id: request.target_employee_id })
+      .eq('id', request.shift_assignment_id)
+      .eq('company_id', companyUser.company_id)
+
+    await supabase.from('shift_assignments')
+      .update({ employee_id: request.requesting_employee_id })
+      .eq('id', request.target_shift_assignment_id)
+      .eq('company_id', companyUser.company_id)
+
+    const target = employeeMap[request.target_employee_id]
+    const requester = employeeMap[request.requesting_employee_id]
+
+    await Promise.all([
+      supabase.from('workflow_tracker').insert({
+        emp_display_name: requester ? `${requester.first_name} ${requester.last_name}` : '',
+        step: 3,
+        status: 'Complete',
+        record_type: 'Shift Swap',
+        action: 'Shift swap approved — shifts have been swapped',
+        employee_email: '',
+        assigned_to: '',
+        reminder_count: 1,
+        task_description: `Shift swap with ${target?.first_name || ''} ${target?.last_name || ''} approved`,
+        company_id: companyUser.company_id,
+      }),
+      supabase.from('workflow_tracker').insert({
+        emp_display_name: target ? `${target.first_name} ${target.last_name}` : '',
+        step: 3,
+        status: 'Complete',
+        record_type: 'Shift Swap',
+        action: 'Shift swap approved — shifts have been swapped',
+        employee_email: '',
+        assigned_to: '',
+        reminder_count: 1,
+        task_description: `Shift swap with ${requester?.first_name || ''} ${requester?.last_name || ''} approved`,
+        company_id: companyUser.company_id,
+      }),
+    ])
+
+    window.dispatchEvent(new Event('notifications-updated'))
+    setActioningId(null)
+    fetchData()
+  }
+
+  async function handleDeclineSwap(request: SwapRequest) {
+    setActioningId(request.id)
+    const { error } = await supabase.from('shift_swap_requests')
+      .update({ status: 'rejected', response_message: responseMessage || null })
+      .eq('id', request.id)
+      .eq('company_id', companyUser?.company_id)
+
+    if (error) {
+      showError('Failed to decline: ' + error.message)
+    }
+    setResponseMessage('')
     setActioningId(null)
     fetchData()
   }
 
   async function handleCancelSwap(requestId: string) {
     setActioningId(requestId)
-    const { error: cancelErr } = await supabase.from('shift_swap_requests').delete().eq('id', requestId).eq('company_id', companyUser?.company_id)
-    if (cancelErr) { showError('Failed to withdraw swap request: ' + cancelErr.message); setActioningId(null); return }
+    const { error } = await supabase.from('shift_swap_requests')
+      .update({ status: 'cancelled' })
+      .eq('id', requestId)
+      .eq('company_id', companyUser?.company_id)
+    if (error) showError('Failed to cancel: ' + error.message)
     setActioningId(null)
     fetchData()
+  }
+
+  function renderShiftCard(sa: { date: string; shift_template?: { name: string; colour: string; start_time: string; end_time: string } | null; rota?: { name: string } | null } | null, label?: string) {
+    if (!sa) return null
+    const colour = sa.shift_template?.colour || '#999'
+    return (
+      <div className="swap-incoming-detail" style={{ borderLeftColor: colour }}>
+        {label && <span style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100%' }}>{label}</span>}
+        <div className="swap-incoming-shift">
+          <span className="swap-shift-name" style={{ color: colour }}>{sa.shift_template?.name || 'Shift'}</span>
+          <span className="swap-shift-date">{formatDate(sa.date)}</span>
+        </div>
+        <div className="swap-shift-time">
+          {formatTime(sa.shift_template?.start_time || '')} – {formatTime(sa.shift_template?.end_time || '')}
+        </div>
+        {sa.rota?.name && <span className="swap-shift-rota">{sa.rota.name}</span>}
+      </div>
+    )
+  }
+
+  function renderAvatar(emp: Employee | undefined, size?: 'sm') {
+    const name = emp ? `${emp.first_name} ${emp.last_name}` : '?'
+    return (
+      <div className={`swap-incoming-avatar ${size === 'sm' ? 'swap-avatar-sm' : ''}`} style={{ backgroundColor: avatarColor(name) }}>
+        {emp?.avatar_url
+          ? <img src={emp.avatar_url} alt="" className="swap-avatar-img" />
+          : emp ? getInitials(emp.first_name, emp.last_name) : '?'
+        }
+      </div>
+    )
+  }
+
+  function statusLabel(status: string) {
+    switch (status) {
+      case 'pending': return t('shifts.swap_pending')
+      case 'counter_offered': return 'Counter Offered'
+      case 'approved': return t('shifts.swap_approved')
+      case 'rejected': return t('shifts.swap_rejected')
+      case 'cancelled': return 'Cancelled'
+      default: return status
+    }
+  }
+
+  function statusClass(status: string) {
+    if (status === 'approved') return 'swap-status-approved'
+    if (status === 'rejected' || status === 'cancelled') return 'swap-status-rejected'
+    return 'swap-status-pending'
   }
 
   const pendingIncomingCount = incomingRequests.length
@@ -261,7 +438,6 @@ export default function ShiftSwap() {
 
   return (
     <div className="shifts-page">
-      {/* Header */}
       <header className="shifts-header">
         <button className="shifts-header-back" onClick={() => navigate('/shifts')}>
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -278,7 +454,6 @@ export default function ShiftSwap() {
         </button>
       </header>
 
-      {/* Tabs */}
       <div className="swap-tabs">
         <button className={`swap-tab ${tab === 'request' ? 'swap-tab-active' : ''}`} onClick={() => setTab('request')}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
@@ -289,24 +464,24 @@ export default function ShiftSwap() {
           {t('shifts.incoming')}
           {pendingIncomingCount > 0 && <span className="swap-badge">{pendingIncomingCount}</span>}
         </button>
-        <button className={`swap-tab ${tab === 'sent' ? 'swap-tab-active' : ''}`} onClick={() => setTab('sent')}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-          {t('shifts.my_swap_requests')}
+        <button className={`swap-tab ${tab === 'history' ? 'swap-tab-active' : ''}`} onClick={() => setTab('history')}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          History
         </button>
       </div>
 
       {/* REQUEST TAB */}
       {tab === 'request' && (
         <div className="swap-content">
-          {shifts.length === 0 ? (
+          {myShifts.length === 0 ? (
             <div className="swap-empty">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
               <p>{t('shifts.no_upcoming')}</p>
             </div>
           ) : (
             <div className="swap-shifts">
-              <p className="swap-hint">{t('shifts.select_shift_hint')}</p>
-              {shifts
+              <p className="swap-hint">Select one of your shifts to swap, then choose a colleague who has shifts assigned.</p>
+              {myShifts
                 .sort((a, b) => a.date.localeCompare(b.date))
                 .map(s => {
                   const colour = s.shift_template?.colour || '#999'
@@ -335,15 +510,44 @@ export default function ShiftSwap() {
                         <div className="swap-form">
                           <div className="swap-form-field">
                             <label>{t('shifts.swap_with')}</label>
-                            <select value={targetEmployeeId} onChange={e => setTargetEmployeeId(e.target.value)}>
-                              <option value="">{t('shifts.select_colleague')}</option>
-                              {employees.filter(e => e.id !== employeeId && !sameShiftEmployees.has(e.id)).map(emp => (
-                                <option key={emp.id} value={emp.id}>
-                                  {emp.first_name} {emp.last_name}
-                                </option>
-                              ))}
-                            </select>
+                            {employeesWithShifts.length === 0 ? (
+                              <p style={{ fontSize: 13, color: '#999', margin: '4px 0 0' }}>No colleagues with shift assignments available</p>
+                            ) : (
+                              <select value={targetEmployeeId} onChange={e => setTargetEmployeeId(e.target.value)}>
+                                <option value="">{t('shifts.select_colleague')}</option>
+                                {employeesWithShifts.map(emp => (
+                                  <option key={emp.id} value={emp.id}>
+                                    {emp.first_name} {emp.last_name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                           </div>
+
+                          {targetEmployeeId && targetShifts.length > 0 && (
+                            <div style={{ marginBottom: 10 }}>
+                              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4 }}>
+                                Their upcoming shifts
+                              </label>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                {targetShifts.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 5).map(ts => {
+                                  const c = ts.shift_template?.colour || '#999'
+                                  return (
+                                    <div key={ts.id} className="swap-incoming-detail" style={{ borderLeftColor: c, margin: 0 }}>
+                                      <div className="swap-incoming-shift">
+                                        <span className="swap-shift-name" style={{ color: c }}>{ts.shift_template?.name || 'Shift'}</span>
+                                        <span className="swap-shift-date">{formatDate(ts.date)}</span>
+                                      </div>
+                                      <div className="swap-shift-time">
+                                        {formatTime(ts.shift_template?.start_time || '')} – {formatTime(ts.shift_template?.end_time || '')}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )}
+
                           <div className="swap-form-field">
                             <label>{t('shifts.swap_reason')}</label>
                             <textarea
@@ -361,7 +565,7 @@ export default function ShiftSwap() {
                             {submitting ? t('shifts.swap_submitting') : (
                               <>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-                                {t('shifts.swap_submit')}
+                                Send Swap Request
                               </>
                             )}
                           </button>
@@ -386,37 +590,36 @@ export default function ShiftSwap() {
           ) : (
             <div className="swap-incoming-list">
               {incomingRequests.map(req => {
-                const sa = req.shift_assignment
-                const requester = employeeMap[req.requesting_employee_id]
-                const colour = sa?.shift_template?.colour || '#999'
+                const isCounterOffer = req.status === 'counter_offered' && req.requesting_employee_id === employeeId
+                const isPendingForTarget = req.status === 'pending' && req.target_employee_id === employeeId
+                const otherEmpId = isCounterOffer ? req.target_employee_id : req.requesting_employee_id
+                const otherEmp = employeeMap[otherEmpId]
+                const otherName = otherEmp ? `${otherEmp.first_name} ${otherEmp.last_name}` : '—'
                 const isActioning = actioningId === req.id
-                const requesterName = requester ? `${requester.first_name} ${requester.last_name}` : '—'
+
+                const myUpcomingShifts = allShiftAssignments.filter(sa =>
+                  sa.employee_id === employeeId &&
+                  sa.id !== req.shift_assignment_id
+                )
 
                 return (
                   <div key={req.id} className="swap-incoming-card">
                     <div className="swap-incoming-header">
-                      <div className="swap-incoming-avatar" style={{ backgroundColor: avatarColor(requesterName) }}>
-                        {requester?.avatar_url
-                          ? <img src={requester.avatar_url} alt="" className="swap-avatar-img" />
-                          : requester ? getInitials(requester.first_name, requester.last_name) : '?'
-                        }
-                      </div>
+                      {renderAvatar(otherEmp)}
                       <div className="swap-incoming-who">
-                        <span className="swap-incoming-name">{requesterName}</span>
+                        <span className="swap-incoming-name">{otherName}</span>
                         <span className="swap-incoming-ago">{timeAgo(req.created_at)}</span>
                       </div>
+                      <span className={`swap-status ${statusClass(req.status)}`} style={{ marginLeft: 'auto' }}>
+                        {isCounterOffer ? 'Counter Offer' : statusLabel(req.status)}
+                      </span>
                     </div>
 
-                    <div className="swap-incoming-detail" style={{ borderLeftColor: colour }}>
-                      <div className="swap-incoming-shift">
-                        <span className="swap-shift-name" style={{ color: colour }}>{sa?.shift_template?.name || 'Shift'}</span>
-                        <span className="swap-shift-date">{sa?.date ? formatDate(sa.date) : ''}</span>
-                      </div>
-                      <div className="swap-shift-time">
-                        {formatTime(sa?.shift_template?.start_time || '')} – {formatTime(sa?.shift_template?.end_time || '')}
-                      </div>
-                      {sa?.rota?.name && <span className="swap-shift-rota">{sa.rota.name}</span>}
-                    </div>
+                    {renderShiftCard(req.shift_assignment, isCounterOffer ? 'Your shift' : 'Their shift')}
+
+                    {isCounterOffer && req.target_shift && (
+                      renderShiftCard(req.target_shift, 'Their offered shift')
+                    )}
 
                     {req.reason && (
                       <div className="swap-incoming-reason">
@@ -425,24 +628,99 @@ export default function ShiftSwap() {
                       </div>
                     )}
 
-                    <div className="swap-incoming-actions">
-                      <button
-                        className="swap-action-accept"
-                        onClick={() => handleAcceptSwap(req)}
-                        disabled={isActioning}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
-                        {isActioning ? '...' : t('shifts.swap_accept')}
-                      </button>
-                      <button
-                        className="swap-action-decline"
-                        onClick={() => handleDeclineSwap(req.id)}
-                        disabled={isActioning}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        {isActioning ? '...' : t('shifts.swap_decline')}
-                      </button>
-                    </div>
+                    {req.response_message && (
+                      <div className="swap-incoming-reason">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        "{req.response_message}"
+                      </div>
+                    )}
+
+                    {/* Target responds to initial request: pick a counter-shift */}
+                    {isPendingForTarget && (
+                      <div style={{ marginTop: 8 }}>
+                        <div className="swap-form-field">
+                          <label>Choose one of your shifts to offer in return</label>
+                          {myUpcomingShifts.length === 0 ? (
+                            <p style={{ fontSize: 13, color: '#999', margin: '4px 0 0' }}>You have no upcoming shifts to offer</p>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                              {myUpcomingShifts.sort((a, b) => a.date.localeCompare(b.date)).map(ms => {
+                                const c = ms.shift_template?.colour || '#999'
+                                const isChosen = counterShiftId === ms.id
+                                return (
+                                  <button
+                                    key={ms.id}
+                                    className={`swap-shift-card ${isChosen ? 'swap-shift-selected' : ''}`}
+                                    style={{ borderLeftColor: c, marginBottom: 0 }}
+                                    onClick={() => setCounterShiftId(isChosen ? null : ms.id)}
+                                  >
+                                    <div className="swap-shift-info">
+                                      <span className="swap-shift-name" style={{ color: c }}>{ms.shift_template?.name || 'Shift'}</span>
+                                      <span className="swap-shift-date">{formatDate(ms.date)}</span>
+                                    </div>
+                                    <div className="swap-shift-time">
+                                      {formatTime(ms.shift_template?.start_time || '')} – {formatTime(ms.shift_template?.end_time || '')}
+                                    </div>
+                                    {isChosen && (
+                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="3"><path d="M20 6L9 17l-5-5"/></svg>
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div className="swap-form-field">
+                          <label>Message (optional)</label>
+                          <textarea
+                            value={responseMessage}
+                            onChange={e => setResponseMessage(e.target.value)}
+                            rows={2}
+                            placeholder="Add a message..."
+                          />
+                        </div>
+                        <div className="swap-incoming-actions">
+                          <button
+                            className="swap-action-accept"
+                            onClick={() => handleCounterOffer(req)}
+                            disabled={!counterShiftId || isActioning}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/></svg>
+                            {isActioning ? '...' : 'Offer Shift'}
+                          </button>
+                          <button
+                            className="swap-action-decline"
+                            onClick={() => handleDeclineSwap(req)}
+                            disabled={isActioning}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            {isActioning ? '...' : t('shifts.swap_decline')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Requester approves/declines the counter-offer */}
+                    {isCounterOffer && (
+                      <div className="swap-incoming-actions" style={{ marginTop: 8 }}>
+                        <button
+                          className="swap-action-accept"
+                          onClick={() => handleApproveSwap(req)}
+                          disabled={isActioning}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                          {isActioning ? '...' : 'Approve Swap'}
+                        </button>
+                        <button
+                          className="swap-action-decline"
+                          onClick={() => handleDeclineSwap(req)}
+                          disabled={isActioning}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          {isActioning ? '...' : t('shifts.swap_decline')}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )
               })}
@@ -451,51 +729,54 @@ export default function ShiftSwap() {
         </div>
       )}
 
-      {/* SENT TAB */}
-      {tab === 'sent' && (
+      {/* HISTORY TAB */}
+      {tab === 'history' && (
         <div className="swap-content">
-          {sentRequests.length === 0 ? (
+          {historyRequests.length === 0 ? (
             <div className="swap-empty">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-              <p>{t('shifts.no_swaps')}</p>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <p>No swap requests yet</p>
             </div>
           ) : (
             <div className="swap-sent-list">
-              {sentRequests.map(req => {
-                const sa = req.shift_assignment
-                const target = employeeMap[req.target_employee_id]
-                const colour = sa?.shift_template?.colour || '#999'
-                const isPending = req.status === 'pending'
-                const isApproved = req.status === 'approved'
-                const isRejected = req.status === 'rejected'
+              {historyRequests.map(req => {
+                const isRequester = req.requesting_employee_id === employeeId
+                const otherEmpId = isRequester ? req.target_employee_id : req.requesting_employee_id
+                const otherEmp = employeeMap[otherEmpId]
+                const colour = req.shift_assignment?.shift_template?.colour || '#999'
                 const isActioning = actioningId === req.id
-                const targetName = target ? `${target.first_name} ${target.last_name}` : '—'
+                const otherName = otherEmp ? `${otherEmp.first_name} ${otherEmp.last_name}` : '—'
+                const canCancel = isRequester && (req.status === 'pending' || req.status === 'counter_offered')
 
                 return (
                   <div key={req.id} className="swap-sent-card">
                     <div className="swap-sent-top">
                       <div className="swap-sent-shift" style={{ borderLeftColor: colour }}>
-                        <span className="swap-shift-name" style={{ color: colour }}>{sa?.shift_template?.name || 'Shift'}</span>
-                        <span className="swap-shift-date">{sa?.date ? formatDate(sa.date) : ''}</span>
+                        <span className="swap-shift-name" style={{ color: colour }}>{req.shift_assignment?.shift_template?.name || 'Shift'}</span>
+                        <span className="swap-shift-date">{req.shift_assignment?.date ? formatDate(req.shift_assignment.date) : ''}</span>
                         <span className="swap-shift-time">
-                          {formatTime(sa?.shift_template?.start_time || '')} – {formatTime(sa?.shift_template?.end_time || '')}
+                          {formatTime(req.shift_assignment?.shift_template?.start_time || '')} – {formatTime(req.shift_assignment?.shift_template?.end_time || '')}
                         </span>
                       </div>
-                      <span className={`swap-status swap-status-${req.status}`}>
-                        {isPending && t('shifts.swap_pending')}
-                        {isApproved && t('shifts.swap_approved')}
-                        {isRejected && t('shifts.swap_rejected')}
+                      <span className={`swap-status ${statusClass(req.status)}`}>
+                        {statusLabel(req.status)}
                       </span>
                     </div>
 
-                    <div className="swap-sent-target">
-                      <div className="swap-incoming-avatar swap-avatar-sm" style={{ backgroundColor: avatarColor(targetName) }}>
-                        {target?.avatar_url
-                          ? <img src={target.avatar_url} alt="" className="swap-avatar-img" />
-                          : target ? getInitials(target.first_name, target.last_name) : '?'
-                        }
+                    {req.target_shift && (
+                      <div className="swap-sent-shift" style={{ borderLeftColor: req.target_shift.shift_template?.colour || '#999', margin: '0 0 8px', padding: '6px 10px', borderRadius: 6, background: 'rgba(0,0,0,0.02)' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100%' }}>Counter offer</span>
+                        <span className="swap-shift-name" style={{ color: req.target_shift.shift_template?.colour || '#999' }}>{req.target_shift.shift_template?.name || 'Shift'}</span>
+                        <span className="swap-shift-date">{formatDate(req.target_shift.date)}</span>
+                        <span className="swap-shift-time">
+                          {formatTime(req.target_shift.shift_template?.start_time || '')} – {formatTime(req.target_shift.shift_template?.end_time || '')}
+                        </span>
                       </div>
-                      <span>{t('shifts.swap_sent_to')} <strong>{targetName}</strong></span>
+                    )}
+
+                    <div className="swap-sent-target">
+                      {renderAvatar(otherEmp, 'sm')}
+                      <span>{isRequester ? 'Sent to' : 'From'} <strong>{otherName}</strong></span>
                       <span className="swap-sent-ago">{timeAgo(req.created_at)}</span>
                     </div>
 
@@ -505,14 +786,20 @@ export default function ShiftSwap() {
                         "{req.reason}"
                       </div>
                     )}
+                    {req.response_message && (
+                      <div className="swap-incoming-reason">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                        "{req.response_message}"
+                      </div>
+                    )}
 
-                    {isPending && (
+                    {canCancel && (
                       <button
                         className="swap-cancel-btn"
                         onClick={() => handleCancelSwap(req.id)}
                         disabled={isActioning}
                       >
-                        {isActioning ? '...' : t('shifts.swap_cancel')}
+                        {isActioning ? '...' : 'Withdraw Request'}
                       </button>
                     )}
                   </div>

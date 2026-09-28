@@ -935,6 +935,8 @@ body {
 .swap-status-pending { background: #fff3e0; color: #e65100; }
 .swap-status-approved { background: #e8f5e9; color: #2e7d32; }
 .swap-status-rejected { background: #ffebee; color: #c62828; }
+.swap-status-counter_offered { background: #e3f2fd; color: #1565c0; }
+.swap-status-cancelled { background: #fafafa; color: #999; }
 .swap-sent-target { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--text); margin-bottom: 6px; min-width: 0; }
 .swap-sent-target strong { font-weight: 700; }
 .swap-sent-ago { font-size: 11px; color: var(--text-muted); margin-left: auto; }

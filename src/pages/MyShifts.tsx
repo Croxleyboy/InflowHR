@@ -170,32 +170,52 @@ export default function MyShifts() {
   const fetchMyShifts = useCallback(async () => {
     if (!employeeId || !companyUser?.company_id) return
     setLoading(true)
-    const { data } = await supabase
-      .from('shift_assignments')
-      .select('*, shift_template:shift_templates(id, name, start_time, end_time, break_minutes, colour), rota:rotas(id, name, status)')
-      .eq('employee_id', employeeId)
-      .eq('company_id', companyUser.company_id)
-
-    const published = (data || []).filter((s: any) => s.rota?.status === 'published')
+    const [assignRes, rotaRes] = await Promise.all([
+      supabase
+        .from('shift_assignments')
+        .select('*, shift_template:shift_templates(id, name, start_time, end_time, break_minutes, colour)')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyUser.company_id),
+      supabase
+        .from('rotas')
+        .select('id, name, status')
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'published'),
+    ])
+    const publishedRotaIds = new Set((rotaRes.data || []).map((r: any) => r.id))
+    const rotaMap: Record<string, { id: string; name: string; status: string }> = {}
+    ;(rotaRes.data || []).forEach((r: any) => { rotaMap[r.id] = r })
+    const published = (assignRes.data || [])
+      .filter((s: any) => publishedRotaIds.has(s.rota_id))
+      .map((s: any) => ({ ...s, rota: rotaMap[s.rota_id] || null }))
     setShifts(published as ShiftAssignment[])
     setLoading(false)
   }, [employeeId, companyUser?.company_id])
 
   const fetchAllShifts = useCallback(async () => {
     if (!companyUser?.company_id) return
-    const [shiftRes, empRes] = await Promise.all([
+    const [shiftRes, empRes, rotaRes] = await Promise.all([
       supabase
         .from('shift_assignments')
-        .select('*, shift_template:shift_templates(id, name, start_time, end_time, break_minutes, colour), rota:rotas(id, name, status)')
+        .select('*, shift_template:shift_templates(id, name, start_time, end_time, break_minutes, colour)')
         .eq('company_id', companyUser.company_id),
       supabase
         .from('employees')
         .select('id, first_name, last_name, avatar_url')
         .eq('company_id', companyUser.company_id)
         .eq('is_active', true),
+      supabase
+        .from('rotas')
+        .select('id, name, status')
+        .eq('company_id', companyUser.company_id)
+        .eq('status', 'published'),
     ])
-
-    const published = (shiftRes.data || []).filter((s: any) => s.rota?.status === 'published')
+    const publishedRotaIds = new Set((rotaRes.data || []).map((r: any) => r.id))
+    const rotaMap: Record<string, { id: string; name: string; status: string }> = {}
+    ;(rotaRes.data || []).forEach((r: any) => { rotaMap[r.id] = r })
+    const published = (shiftRes.data || [])
+      .filter((s: any) => publishedRotaIds.has(s.rota_id))
+      .map((s: any) => ({ ...s, rota: rotaMap[s.rota_id] || null }))
     setAllShifts(published as ShiftAssignment[])
 
     const map: Record<string, EmployeeInfo> = {}
