@@ -4,7 +4,6 @@ import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
-import { checkTimeOverlap } from '../../lib/overlapCheck'
 import { toLocalDateStr, formatDate } from '../../lib/formatters'
 
 interface Rota {
@@ -457,21 +456,6 @@ export default function AdminRotas() {
         const otherName = joined.rotas?.[0]?.name || 'another rota'
         const empObj = employees.find(e => e.id === employeeId)
         alert(`Cannot assign shift: ${empObj?.first_name || 'This employee'} already has a shift on ${new Date(date + 'T00:00:00').toLocaleDateString('en-GB')} in "${otherName}". Remove the existing shift first to reassign.`)
-        setActiveCell(null)
-        return
-      }
-    }
-
-    const template = shiftTemplates.find(t => t.id === templateId)
-    if (template) {
-      const overlapFeatures = { timesheets: true, shifts: true, legal_timesheets: true }
-      const overlap = await checkTimeOverlap(
-        employeeId, selectedCompanyId!, [date], template.start_time, template.end_time,
-        overlapFeatures,
-        { type: 'shift' },
-      )
-      if (overlap.hasOverlap) {
-        alert(`Cannot assign shift — time overlap detected:\n\n${overlap.conflicts.map(c => c.message).join('\n')}\n\nRemove the conflicting entry first.`)
         setActiveCell(null)
         return
       }
