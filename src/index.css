@@ -1751,6 +1751,8 @@ body {
 .date-mileage-row {
   display: flex; gap: 10px; align-items: flex-end;
 }
+.date-mileage-row .date-field { flex: 1.4 !important; }
+.date-mileage-row > div:last-child { flex: 1 !important; }
 
 .receipt-mileage-row {
   display: flex; gap: 12px; align-items: stretch;
@@ -1784,28 +1786,30 @@ body {
 }
 
 .submit-cost-row {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 6px;
   padding-top: 8px;
+  flex-wrap: wrap;
 }
 .submit-expenses-btn {
-  display: flex; align-items: center; gap: 6px;
-  padding: 10px 14px;
-  border-radius: 10px; border: none;
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px; border: none;
   background: linear-gradient(135deg, #e53935, #c62828);
   color: #fff;
-  font-size: 13px; font-weight: 700;
+  font-size: 12px; font-weight: 700;
   cursor: pointer;
   font-family: var(--sans);
   white-space: nowrap;
   flex-shrink: 0;
 }
+.submit-expenses-btn svg { width: 16px; height: 16px; }
 .submit-expenses-btn:disabled { opacity: 0.5; }
 .total-cost-label { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
 .total-cost-currency { font-size: 14px; font-weight: 700; color: var(--text); }
 .total-cost-input {
-  width: 120px !important; padding: 10px 8px !important;
+  width: 90px !important; padding: 8px 6px !important;
   text-align: right; font-weight: 700 !important;
-  font-size: 16px !important;
+  font-size: 15px !important;
 }
 
 /* ── Notifications Page ── */
@@ -4658,7 +4662,6 @@ body {
   .card-value { font-size: 18px; }
   .card-value-large { font-size: 28px; }
   .greeting { font-size: 14px; }
-  .submit-cost-row { flex-wrap: wrap; }
 }
 
 /* ── Initial Setup ── */
@@ -4746,10 +4749,11 @@ body {
 
 /* ── Login Page ── */
 .login-page {
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100%;
   display: flex;
   position: relative;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .login-build {
   position: absolute;
@@ -4841,12 +4845,12 @@ body {
 }
 .login-form-side {
   width: 480px;
-  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #fff;
   padding: 40px;
+  overflow-y: auto;
 }
 .login-card {
   max-width: 360px;
@@ -5102,10 +5106,6 @@ body {
 @media (max-width: 900px) {
   .login-page {
     flex-direction: column;
-    min-height: 100vh;
-    min-height: 100dvh;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
   }
   .login-hero {
     flex: 0 0 auto;
