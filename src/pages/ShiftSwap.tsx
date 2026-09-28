@@ -640,7 +640,7 @@ export default function ShiftSwap() {
                       </span>
                     </div>
 
-                    {renderShiftCard(req.shift_assignment, isCounterOffer ? 'Your shift' : 'Their shift')}
+                    {renderShiftCard(req.shift_assignment || null, isCounterOffer ? 'Your shift' : 'Their shift')}
 
                     {isCounterOffer && req.target_shift && (
                       renderShiftCard(req.target_shift, 'Their offered shift')
