@@ -8,6 +8,11 @@ import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 
+function sanitiseCsvCell(val: string): string {
+  if (val.startsWith('=') || val.startsWith('+') || val.startsWith('-') || val.startsWith('@')) return "'" + val
+  return val
+}
+
 interface Claim {
   id: number
   employee_id: string
@@ -214,7 +219,7 @@ export default function AdminExpenses() {
         const lines = linesByClaimId[claim.id] || []
 
         if (lines.length === 0) {
-          csvRows += `"${claim.reference_number}","${empName}","${empEmail}","${claim.title}","${claim.cost_center || ''}","${claim.status}","${submitted}","${Number(claim.amount).toFixed(2)}","","","","",""\n`
+          csvRows += `"${sanitiseCsvCell(claim.reference_number)}","${sanitiseCsvCell(empName)}","${sanitiseCsvCell(empEmail)}","${sanitiseCsvCell(claim.title)}","${sanitiseCsvCell(claim.cost_center || '')}","${claim.status}","${submitted}","${Number(claim.amount).toFixed(2)}","","","","",""\n`
           continue
         }
 
@@ -233,7 +238,7 @@ export default function AdminExpenses() {
             } catch {}
           }
           const purchaseDate = li.date_of_purchase ? new Date(li.date_of_purchase).toLocaleDateString('en-GB') : ''
-          csvRows += `"${claim.reference_number}","${empName}","${empEmail}","${claim.title}","${claim.cost_center || ''}","${claim.status}","${submitted}","${Number(claim.amount).toFixed(2)}","${li.title}","${li.expense_type}","${purchaseDate}","${Number(li.amount).toFixed(2)}","${receiptFilename}"\n`
+          csvRows += `"${sanitiseCsvCell(claim.reference_number)}","${sanitiseCsvCell(empName)}","${sanitiseCsvCell(empEmail)}","${sanitiseCsvCell(claim.title)}","${sanitiseCsvCell(claim.cost_center || '')}","${claim.status}","${submitted}","${Number(claim.amount).toFixed(2)}","${sanitiseCsvCell(li.title)}","${sanitiseCsvCell(li.expense_type)}","${purchaseDate}","${Number(li.amount).toFixed(2)}","${receiptFilename}"\n`
         }
       }
 
@@ -339,14 +344,14 @@ export default function AdminExpenses() {
         const lines = linesByClaimId[claim.id] || []
 
         if (lines.length === 0) {
-          xeroRows += `"${contactName}","${claim.reference_number}","${claim.title}","${invoiceDate}","${dueDate}","${claim.title}","1","${Number(claim.amount).toFixed(2)}","429","20% (VAT on Expenses)","",""\n`
+          xeroRows += `"${sanitiseCsvCell(contactName)}","${claim.reference_number}","${sanitiseCsvCell(claim.title)}","${invoiceDate}","${dueDate}","${sanitiseCsvCell(claim.title)}","1","${Number(claim.amount).toFixed(2)}","429","20% (VAT on Expenses)","",""\n`
           continue
         }
 
         for (const li of lines) {
           const desc = `${li.title} (${li.expense_type})`
           const accountCode = XERO_ACCOUNT_MAP[li.expense_type] || '429'
-          xeroRows += `"${contactName}","${claim.reference_number}","${claim.title}","${invoiceDate}","${dueDate}","${desc}","1","${Number(li.amount).toFixed(2)}","${accountCode}","20% (VAT on Expenses)","${claim.cost_center ? 'Cost Centre' : ''}","${claim.cost_center || ''}"\n`
+          xeroRows += `"${sanitiseCsvCell(contactName)}","${claim.reference_number}","${sanitiseCsvCell(claim.title)}","${invoiceDate}","${dueDate}","${sanitiseCsvCell(desc)}","1","${Number(li.amount).toFixed(2)}","${accountCode}","20% (VAT on Expenses)","${claim.cost_center ? 'Cost Centre' : ''}","${sanitiseCsvCell(claim.cost_center || '')}"\n`
         }
       }
 
@@ -439,7 +444,7 @@ export default function AdminExpenses() {
         if (lines.length === 0) {
           const netAmount = Number(claim.amount).toFixed(2)
           const taxAmount = (Number(claim.amount) * 0.2).toFixed(2)
-          sageRows += `"PI","${accountRef}","7006","${claimDate}","${claim.reference_number}","${claim.title}","${netAmount}","T1","${taxAmount}"\n`
+          sageRows += `"PI","${sanitiseCsvCell(accountRef)}","7006","${claimDate}","${claim.reference_number}","${sanitiseCsvCell(claim.title)}","${netAmount}","T1","${taxAmount}"\n`
           continue
         }
 
@@ -448,7 +453,7 @@ export default function AdminExpenses() {
           const nominalCode = SAGE_NOMINAL_MAP[li.expense_type] || '7006'
           const netAmount = Number(li.amount).toFixed(2)
           const taxAmount = (Number(li.amount) * 0.2).toFixed(2)
-          sageRows += `"PI","${accountRef}","${nominalCode}","${claimDate}","${claim.reference_number}","${desc}","${netAmount}","T1","${taxAmount}"\n`
+          sageRows += `"PI","${sanitiseCsvCell(accountRef)}","${nominalCode}","${claimDate}","${claim.reference_number}","${sanitiseCsvCell(desc)}","${netAmount}","T1","${taxAmount}"\n`
         }
       }
 

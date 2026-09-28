@@ -764,7 +764,7 @@ export default function Notifications() {
   }
 
   async function handleAcknowledgeMissedCheckin(item: WorkflowItem) {
-    await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: 'Acknowledged' }).eq('id', item.id)
+    await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: 'Acknowledged' }).eq('id', item.id).eq('company_id', companyUser?.company_id)
     showSuccess('Missed check-in acknowledged')
     setActions(prev => prev.filter(a => a.id !== item.id))
     window.dispatchEvent(new Event('notifications-updated'))
@@ -778,7 +778,7 @@ export default function Notifications() {
       return
     }
     if (item.record_type === 'Meeting Reminder') {
-      supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: 'Acknowledged' }).eq('id', item.id).then(() => {
+      supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: 'Acknowledged' }).eq('id', item.id).eq('company_id', companyUser?.company_id).then(() => {
         window.dispatchEvent(new Event('notifications-updated'))
       })
       setActions(prev => prev.filter(a => a.id !== item.id))
@@ -825,10 +825,10 @@ export default function Notifications() {
   async function handleSkillValidation(item: WorkflowItem, approve: boolean) {
     const esId = item.extra_info || ''
     if (esId) {
-      await supabase.from('employee_skills').update({ status: approve ? 'validated' : 'rejected', validated_at: approve ? new Date().toISOString() : null }).eq('id', esId)
+      await supabase.from('employee_skills').update({ status: approve ? 'validated' : 'rejected', validated_at: approve ? new Date().toISOString() : null }).eq('id', esId).eq('company_id', companyUser?.company_id)
       await supabase.from('skill_validations').update({ status: approve ? 'approved' : 'rejected', responded_at: new Date().toISOString() }).eq('employee_skill_id', esId)
     }
-    await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: approve ? 'Approved' : 'Declined' }).eq('id', item.id)
+    await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: approve ? 'Approved' : 'Declined' }).eq('id', item.id).eq('company_id', companyUser?.company_id)
     showSuccess(approve ? 'Skill validated' : 'Skill validation rejected')
     setSkillActionItem(null)
     setActions(prev => prev.filter(a => a.id !== item.id))

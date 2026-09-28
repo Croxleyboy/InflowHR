@@ -28,7 +28,7 @@ const SECTIONS: GuideSection[] = [
   {
     icon: '💰', title: 'Expenses',
     features: [
-      { title: 'Submit an Expense Claim', purpose: 'Claim back money you have spent on company business.', steps: ['Navigate to Home > Expenses and tap + New Claim.', 'Enter a title, amount, expense type, and an optional description.', 'Upload a receipt photo or PDF, then tap Submit. If your company has Teams Integration enabled, your manager also receives a Microsoft Teams message.'], callout: { type: 'tip', text: 'Save claims as Draft if you need to add receipts later. Drafts are only visible to you.' } },
+      { title: 'Submit an Expense Claim', purpose: 'Claim back money you have spent on company business.', steps: ['Navigate to Home > Expenses and tap + New Claim.', 'Give the claim a title and tap to add line items.', 'For each item: enter a title, expense type, description, date, and cost. Snap a receipt photo or upload a PDF.', 'For mileage claims: enter the from and to postcodes or addresses, total miles, and tick "Include return journey" if applicable.', 'When all items are added, tap Submit to send for approval. If your company has Teams Integration enabled, your manager also receives a Microsoft Teams message.'], callout: { type: 'tip', text: 'Save claims as Draft if you need to add receipts later. Drafts are only visible to you.' } },
       { title: 'Track Claim Status', purpose: 'Follow your claim through the approval workflow.', steps: ['Your Expenses page lists all claims with a colour-coded status badge: Draft, Pending, Approved, or Rejected.', 'Tap any claim to view full details and the approval timeline.'] },
       { title: 'Expense Graph', purpose: 'See your spending trend over time.', steps: ['A visual graph at the top of the Expenses page summarises your claim amounts by month.'] },
     ],
@@ -58,7 +58,7 @@ const SECTIONS: GuideSection[] = [
     icon: '🔄', title: 'Shifts & Rotas',
     features: [
       { title: 'View Your Schedule', purpose: 'See your upcoming shifts from published rotas.', steps: ['Navigate to Home > Shifts.', 'Your shifts are listed with the date, time, break, and shift name colour-coded.'] },
-      { title: 'Shift Swaps', purpose: 'Request to swap a shift with a colleague.', steps: ['Tap Swap on the Shifts page.', 'Select the shift you want to swap and the colleague you want to swap with.', 'Your colleague receives a notification and can accept or decline. Both outcomes are tracked.'] },
+      { title: 'Shift Swaps', purpose: 'Request to swap a shift with a colleague through a two-step negotiation.', steps: ['Tap Swap on the Shifts page.', 'Select the shift you want to swap and the colleague you want to swap with. Add an optional message explaining why.', 'Your colleague receives a notification and can respond with a counter-offer — selecting one of their own shifts to swap with yours.', 'You then review the counter-offer and approve or decline it. Both parties are notified of every status change.', 'The Swap History tab shows each swap as a condensed timeline card — tap to expand and see the full conversation, including all messages and status changes.'], callout: { type: 'note', text: 'Your colleague cannot offer a shift on a date you are already assigned to work, preventing scheduling conflicts.' } },
       { title: 'Set Your Availability', purpose: 'Tell your manager which days and times you are available to work.', steps: ['Tap Availability on the Shifts page.', 'Toggle each day on or off and set preferred start/end times.', 'Tap Save. Managers see this when building rotas.'] },
     ],
   },
@@ -186,7 +186,7 @@ export default function UserGuide() {
 
       <div className="user-guide-intro">
         <h3>Getting Started</h3>
-        <p>Sign in with your company Microsoft account. Your dashboard shows quick-access cards for every feature your company has enabled. Use the bottom navigation bar to jump between pages:</p>
+        <p>Sign in with your company Microsoft or Google account, or with the account credentials provided by your administrator. Your dashboard shows quick-access cards for every feature your company has enabled. Use the bottom navigation bar to jump between pages:</p>
         <ul>
           <li><strong>Home</strong> — your personalised dashboard</li>
           <li><strong>Time Off</strong> — leave balances and requests</li>
