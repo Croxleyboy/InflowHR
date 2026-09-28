@@ -488,7 +488,7 @@ export default function LegalTimesheets() {
 
     const dailyTotal = await getDailyTimeTotal(
       employeeId!, companyId!, today,
-      { timesheets: features.timesheets, shifts: features.shifts, legal_timesheets: features.legal_timesheets },
+      { timesheets: true, shifts: true, legal_timesheets: true },
     )
     if (dailyTotal.totalHrs + dur > MAX_DAILY_HRS) {
       const existing: string[] = []

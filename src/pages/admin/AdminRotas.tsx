@@ -135,7 +135,6 @@ export default function AdminRotas() {
   const [weekStart, setWeekStart] = useState<Date>(getMonday(new Date()))
   const [activeCell, setActiveCell] = useState<{ employeeId: string; date: string } | null>(null)
   const [editFormRota, setEditFormRota] = useState<Record<string, any>>({})
-  const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: true, legal_timesheets: false })
   const [checkinRecords, setCheckinRecords] = useState<{ employee_id: string; check_in_at: string; check_out_at: string | null; status: string }[]>([])
   const [shiftsCheckinEnabled, setShiftsCheckinEnabled] = useState(false)
   const [templateSkillMap, setTemplateSkillMap] = useState<Record<string, string[]>>({})
@@ -144,11 +143,6 @@ export default function AdminRotas() {
   useEffect(() => {
     if (selectedCompanyId) {
       loadRotas()
-      supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', selectedCompanyId).in('feature_key', ['timesheets', 'legal_timesheets', 'shifts']).then(({ data }) => {
-        const map: Record<string, boolean> = { timesheets: false, shifts: true, legal_timesheets: false }
-        data?.forEach(r => { if (r.feature_key in map) map[r.feature_key] = r.is_enabled })
-        setEnabledFeatures({ timesheets: map.timesheets, shifts: map.shifts, legal_timesheets: map.legal_timesheets })
-      })
       supabase.from('checkin_settings').select('shifts_checkin_enabled').eq('company_id', selectedCompanyId).single().then(({ data }) => {
         setShiftsCheckinEnabled(data?.shifts_checkin_enabled || false)
       })
@@ -466,19 +460,20 @@ export default function AdminRotas() {
         setActiveCell(null)
         return
       }
+    }
 
-      const template = shiftTemplates.find(t => t.id === templateId)
-      if (template && (enabledFeatures.timesheets || enabledFeatures.legal_timesheets)) {
-        const overlap = await checkTimeOverlap(
-          employeeId, selectedCompanyId!, [date], template.start_time, template.end_time,
-          enabledFeatures,
-          { type: 'shift' },
-        )
-        if (overlap.hasOverlap) {
-          alert(`Cannot assign shift — time overlap detected:\n\n${overlap.conflicts.map(c => c.message).join('\n')}\n\nRemove the conflicting entry first.`)
-          setActiveCell(null)
-          return
-        }
+    const template = shiftTemplates.find(t => t.id === templateId)
+    if (template) {
+      const overlapFeatures = { timesheets: true, shifts: true, legal_timesheets: true }
+      const overlap = await checkTimeOverlap(
+        employeeId, selectedCompanyId!, [date], template.start_time, template.end_time,
+        overlapFeatures,
+        { type: 'shift' },
+      )
+      if (overlap.hasOverlap) {
+        alert(`Cannot assign shift — time overlap detected:\n\n${overlap.conflicts.map(c => c.message).join('\n')}\n\nRemove the conflicting entry first.`)
+        setActiveCell(null)
+        return
       }
     }
 
