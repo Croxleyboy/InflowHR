@@ -129,7 +129,7 @@ export default function NewTimesheet() {
 
     const overlap = await checkTimeOverlap(
       employeeId!, companyUser!.company_id, dates, startTime, endTime,
-      { timesheets: features.timesheets, shifts: features.shifts, legal_timesheets: features.legal_timesheets },
+      { timesheets: true, shifts: true, legal_timesheets: true },
     )
     if (overlap.hasOverlap) {
       setOverlapWarning(overlap.conflicts.map(c => c.message).join('\n'))
