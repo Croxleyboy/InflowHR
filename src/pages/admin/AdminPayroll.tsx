@@ -952,6 +952,12 @@ export default function AdminPayroll() {
       return
     }
 
+    const now = new Date()
+    const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const { count } = await supabase.from('payslips').select('id', { count: 'exact', head: true })
+      .eq('company_id', selectedCompanyId).like('pay_period', `${monthStr}%`)
+    if ((count ?? 0) > 0 && !confirm(`Payslips already exist for this month. Switching provider mid-period may cause duplicate or inconsistent data. Continue?`)) return
+
     if (source === 'xero' && xeroIntegration) {
       const { error } = await supabase.from('xero_integrations').update({ payslip_source: source, updated_at: new Date().toISOString() }).eq('company_id', selectedCompanyId)
       if (error) { showError('Failed to update: ' + error.message); return }
@@ -1135,7 +1141,7 @@ export default function AdminPayroll() {
           }}>
             <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: '#dc2626' }}>Switch to InflowHR Payslips?</h3>
             <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--text, #1a1a2e)', lineHeight: 1.5 }}>
-              This will switch employees to see InflowHR payslips only. The {activeSource === 'xero' ? 'Xero' : 'Sage'} integration remains connected — you can switch back at any time.
+              This will switch the admin payslip view to InflowHR. Employees will still see all existing payslips from every source. The {activeSource === 'xero' ? 'Xero' : 'Sage'} integration remains connected — you can switch back at any time.
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
               <button className="admin-btn" onClick={() => setShowXeroDisconnectModal(false)}>Cancel</button>

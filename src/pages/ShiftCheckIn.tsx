@@ -51,10 +51,7 @@ export default function ShiftCheckIn() {
 
     const allShifts = shiftRes.data || []
     const validShift = allShifts.length > 0
-      ? allShifts.find((s: any) => {
-          const rotaStatus = s.rota?.status
-          return !rotaStatus || rotaStatus === 'published' || rotaStatus === 'draft'
-        }) || allShifts[0]
+      ? allShifts.find((s: any) => s.rota?.status === 'published') || null
       : null
     if (validShift) {
       const s = validShift as any
@@ -120,7 +117,10 @@ export default function ShiftCheckIn() {
     const [sh, sm] = todayShift.start_time.split(':').map(Number)
     const shiftStart = new Date(); shiftStart.setHours(sh, sm, 0, 0)
     const windowStart = new Date(shiftStart.getTime() - promptMins * 60000)
-    return now >= windowStart
+    const [eh, em] = todayShift.end_time.split(':').map(Number)
+    const shiftEnd = new Date(); shiftEnd.setHours(eh, em, 0, 0)
+    const windowEnd = new Date(shiftEnd.getTime() + 30 * 60000)
+    return now >= windowStart && now <= windowEnd
   })()
 
   async function handleCheckIn() {

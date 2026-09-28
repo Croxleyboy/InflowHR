@@ -176,7 +176,7 @@ export default function MyShifts() {
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
 
-    const published = (data || []).filter((s: any) => s.rota?.status === 'published' || s.rota?.status === 'draft')
+    const published = (data || []).filter((s: any) => s.rota?.status === 'published')
     setShifts(published as ShiftAssignment[])
     setLoading(false)
   }, [employeeId, companyUser?.company_id])
@@ -195,7 +195,7 @@ export default function MyShifts() {
         .eq('is_active', true),
     ])
 
-    const published = (shiftRes.data || []).filter((s: any) => s.rota?.status === 'published' || s.rota?.status === 'draft')
+    const published = (shiftRes.data || []).filter((s: any) => s.rota?.status === 'published')
     setAllShifts(published as ShiftAssignment[])
 
     const map: Record<string, EmployeeInfo> = {}

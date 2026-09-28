@@ -430,6 +430,9 @@ export default function PerformanceGoals() {
                         <span className="pg-goal-status" style={statusStyle(g.status)}>
                           {STATUS_OPTIONS.find(o => o.value === g.status)?.label || g.status}
                         </span>
+                        {g.due_date && g.status !== 'completed' && g.status !== 'cancelled' && new Date(g.due_date + 'T23:59:59') < new Date() && (
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#dc2626', background: '#fee2e2', padding: '1px 6px', borderRadius: 4 }}>Overdue</span>
+                        )}
                         <span className="pg-goal-dates">
                           {fmtDate(g.start_date)}{g.due_date ? ` — ${fmtDate(g.due_date)}` : ''}
                         </span>

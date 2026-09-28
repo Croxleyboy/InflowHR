@@ -98,7 +98,7 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { reload() }, [reload])
 
-  const getLocation = useCallback(async (): Promise<{ coords: Coords; location: WorkLocation | null; wfh: boolean } | { error: string }> => {
+  const getLocation = useCallback(async (): Promise<{ coords: Coords | null; location: WorkLocation | null; wfh: boolean } | { error: string }> => {
     try {
       const pos = await getCurrentPosition()
       const coords: Coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
@@ -108,7 +108,7 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
       if (workLocations.length === 0) return { coords, location: null, wfh: false }
       return { error: 'You are not at a registered work location. Please check in on-site.' }
     } catch (err: unknown) {
-      if (settings?.allow_work_from_home) return { coords: { lat: 0, lng: 0 }, location: null, wfh: true }
+      if (settings?.allow_work_from_home) return { coords: null, location: null, wfh: true }
       const msg = err instanceof GeolocationPositionError
         ? err.code === 1 ? 'Location permission denied. Please enable location services or contact your admin about work-from-home check-in.'
           : 'Unable to determine your location. Please try again.'
@@ -128,8 +128,8 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.from('checkin_records').insert({
       company_id: companyId,
       employee_id: employeeId,
-      check_in_lat: coords.lat,
-      check_in_lng: coords.lng,
+      check_in_lat: coords?.lat ?? null,
+      check_in_lng: coords?.lng ?? null,
       check_in_location_id: location?.id || null,
       source,
       shift_assignment_id: shiftAssignmentId || null,
