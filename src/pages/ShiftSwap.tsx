@@ -801,64 +801,105 @@ export default function ShiftSwap() {
           ) : (
             <div className="swap-sent-list">
               {historyRequests.map(req => {
+                const requesterEmp = employeeMap[req.requesting_employee_id]
+                const receiverEmp = employeeMap[req.target_employee_id]
+                const requesterName = requesterEmp ? `${requesterEmp.first_name} ${requesterEmp.last_name}` : '—'
+                const receiverName = receiverEmp ? `${receiverEmp.first_name} ${receiverEmp.last_name}` : '—'
                 const isRequester = req.requesting_employee_id === employeeId
-                const otherEmpId = isRequester ? req.target_employee_id : req.requesting_employee_id
-                const otherEmp = employeeMap[otherEmpId]
-                const colour = req.shift_assignment?.shift_template?.colour || '#999'
                 const isActioning = actioningId === req.id
-                const otherName = otherEmp ? `${otherEmp.first_name} ${otherEmp.last_name}` : '—'
                 const canCancel = isRequester && (req.status === 'pending' || req.status === 'counter_offered')
 
                 return (
                   <div key={req.id} className="swap-sent-card">
-                    <div className="swap-sent-top">
-                      <div className="swap-sent-shift" style={{ borderLeftColor: colour }}>
-                        <span className="swap-shift-name" style={{ color: colour }}>{req.shift_assignment?.shift_template?.name || 'Shift'}</span>
-                        <span className="swap-shift-date">{req.shift_assignment?.date ? formatDate(req.shift_assignment.date) : ''}</span>
-                        <span className="swap-shift-time">
-                          {formatTime(req.shift_assignment?.shift_template?.start_time || '')} – {formatTime(req.shift_assignment?.shift_template?.end_time || '')}
-                        </span>
+                    {/* Header: requester → receiver + status */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                        {renderAvatar(requesterEmp, 'sm')}
+                        <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{requesterName}</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" style={{ flexShrink: 0 }}><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+                        {renderAvatar(receiverEmp, 'sm')}
+                        <span style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{receiverName}</span>
                       </div>
                       <span className={`swap-status ${statusClass(req.status)}`}>
                         {statusLabel(req.status)}
                       </span>
                     </div>
 
-                    {req.target_shift && (
-                      <div className="swap-sent-shift" style={{ borderLeftColor: req.target_shift.shift_template?.colour || '#999', margin: '0 0 8px', padding: '6px 10px', borderRadius: 6, background: 'rgba(0,0,0,0.02)' }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', width: '100%' }}>Counter offer</span>
-                        <span className="swap-shift-name" style={{ color: req.target_shift.shift_template?.colour || '#999' }}>{req.target_shift.shift_template?.name || 'Shift'}</span>
-                        <span className="swap-shift-date">{formatDate(req.target_shift.date)}</span>
-                        <span className="swap-shift-time">
-                          {formatTime(req.target_shift.shift_template?.start_time || '')} – {formatTime(req.target_shift.shift_template?.end_time || '')}
-                        </span>
+                    {/* Timeline */}
+                    <div className="swap-timeline">
+                      {/* Step 1: Initial request */}
+                      <div className="swap-timeline-step">
+                        <div className="swap-timeline-dot" style={{ background: '#e65100' }} />
+                        <div className="swap-timeline-body">
+                          <div className="swap-timeline-label">
+                            <strong>{isRequester ? 'You' : requesterName}</strong> requested a swap
+                            <span className="swap-timeline-time">{timeAgo(req.created_at)}</span>
+                          </div>
+                          {renderShiftCard(req.shift_assignment || null, `${isRequester ? 'Your' : requesterName + "'s"} shift`)}
+                          {req.reason && (
+                            <div className="swap-incoming-reason" style={{ marginTop: 4, marginBottom: 0 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                              "{req.reason}"
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    )}
 
-                    <div className="swap-sent-target">
-                      {renderAvatar(otherEmp, 'sm')}
-                      <span>{isRequester ? 'Sent to' : 'From'} <strong>{otherName}</strong></span>
-                      <span className="swap-sent-ago">{timeAgo(req.created_at)}</span>
+                      {/* Step 2: Counter-offer (if exists) */}
+                      {req.target_shift && (
+                        <div className="swap-timeline-step">
+                          <div className="swap-timeline-dot" style={{ background: '#1565c0' }} />
+                          <div className="swap-timeline-body">
+                            <div className="swap-timeline-label">
+                              <strong>{isRequester ? receiverName : 'You'}</strong> offered a counter-shift
+                            </div>
+                            {renderShiftCard(req.target_shift, `${isRequester ? receiverName + "'s" : 'Your'} offered shift`)}
+                            {req.response_message && (
+                              <div className="swap-incoming-reason" style={{ marginTop: 4, marginBottom: 0 }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                "{req.response_message}"
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Step 2 alt: Response message without counter-shift (decline/cancel) */}
+                      {!req.target_shift && req.response_message && (
+                        <div className="swap-timeline-step">
+                          <div className="swap-timeline-dot" style={{ background: req.status === 'rejected' ? '#c62828' : '#999' }} />
+                          <div className="swap-timeline-body">
+                            <div className="swap-incoming-reason" style={{ marginBottom: 0 }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                              "{req.response_message}"
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Step 3: Outcome (only for terminal statuses) */}
+                      {(req.status === 'approved' || req.status === 'rejected' || req.status === 'cancelled') && (
+                        <div className="swap-timeline-step">
+                          <div className="swap-timeline-dot" style={{
+                            background: req.status === 'approved' ? '#2e7d32' : req.status === 'rejected' ? '#c62828' : '#999'
+                          }} />
+                          <div className="swap-timeline-body">
+                            <div className="swap-timeline-label">
+                              {req.status === 'approved' && <><strong>Swap approved</strong> — shifts exchanged</>}
+                              {req.status === 'rejected' && <><strong>Swap declined</strong></>}
+                              {req.status === 'cancelled' && <><strong>Request withdrawn</strong></>}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-
-                    {req.reason && (
-                      <div className="swap-incoming-reason">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                        "{req.reason}"
-                      </div>
-                    )}
-                    {req.response_message && (
-                      <div className="swap-incoming-reason">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                        "{req.response_message}"
-                      </div>
-                    )}
 
                     {canCancel && (
                       <button
                         className="swap-cancel-btn"
                         onClick={() => handleCancelSwap(req.id)}
                         disabled={isActioning}
+                        style={{ marginTop: 8 }}
                       >
                         {isActioning ? '...' : 'Withdraw Request'}
                       </button>
