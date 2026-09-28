@@ -71,6 +71,7 @@ export default function AdminExpenses() {
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [exportingXero, setExportingXero] = useState(false)
+  const [exportingSage, setExportingSage] = useState(false)
   const [exportLogs, setExportLogs] = useState<ExportLog[]>([])
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -365,6 +366,108 @@ export default function AdminExpenses() {
       showError('Xero export failed: ' + (err.message || 'Unknown error'))
     }
     setExportingXero(false)
+  }
+
+  const SAGE_NOMINAL_MAP: Record<string, string> = {
+    'Flights': '7104', 'Trains': '7104', 'Taxis': '7104', 'Car rental': '7104',
+    'Mileage': '7103', 'Parking and tolls': '7104', 'Hotel stays for business': '7105',
+    'Meals while travelling': '7400', 'Client entertainment': '7401',
+    'Stationery': '7502', 'Equipment or tools': '7003', 'Software or subscriptions': '7006',
+    'Mobile phone usage': '7502', 'Internet/data charges': '7502',
+    'Course fees/certifications or conferences': '7603',
+  }
+
+  async function exportSage() {
+    if (!selectedCompanyId) return
+    setExportingSage(true)
+    try {
+      let rangeStart: Date
+      let rangeEnd: Date
+      let rangeLabel: string
+
+      if (exportMonth === 'all') {
+        const now = new Date()
+        const currentMonth = now.getMonth() + 1
+        const fyStartYear = currentMonth >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+        rangeStart = new Date(fyStartYear, fyStartMonth - 1, 1)
+        rangeEnd = new Date(fyStartYear + 1, fyStartMonth - 1, 1)
+        rangeLabel = `FY ${fyStartYear}-${fyStartYear + 1}`
+      } else {
+        const selected = fyMonthOptions.find(o => o.value === exportMonth)
+        if (!selected) { setExportingSage(false); return }
+        rangeStart = selected.start
+        rangeEnd = selected.end
+        rangeLabel = selected.label
+      }
+
+      const { data: expClaims } = await supabase
+        .from('expense_claims')
+        .select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, email)')
+        .eq('company_id', selectedCompanyId)
+        .in('status', ['pending', 'approved'])
+        .gte('submitted_at', rangeStart.toISOString())
+        .lt('submitted_at', rangeEnd.toISOString())
+        .order('submitted_at', { ascending: false })
+
+      if (!expClaims || expClaims.length === 0) {
+        showError(`No submitted or approved expenses for ${rangeLabel}`)
+        setExportingSage(false)
+        return
+      }
+
+      const claimIds = expClaims.map(c => c.id)
+      const { data: lineItems } = await supabase
+        .from('expense_line_items')
+        .select('*')
+        .in('expense_claim_id', claimIds)
+        .order('date_of_purchase')
+
+      const linesByClaimId: Record<number, LineItem[]> = {}
+      lineItems?.forEach((li: any) => {
+        if (!linesByClaimId[li.expense_claim_id]) linesByClaimId[li.expense_claim_id] = []
+        linesByClaimId[li.expense_claim_id].push(li)
+      })
+
+      const sageHeader = 'Type,Account Reference,Nominal A/C Ref,Date,Reference,Details,Net Amount,Tax Code,Tax Amount\n'
+      let sageRows = ''
+
+      for (const claim of expClaims) {
+        const accountRef = claim.employee ? `${claim.employee.first_name} ${claim.employee.last_name}` : ''
+        const claimDate = claim.submitted_at ? new Date(claim.submitted_at).toLocaleDateString('en-GB') : ''
+        const lines = linesByClaimId[claim.id] || []
+
+        if (lines.length === 0) {
+          const netAmount = Number(claim.amount).toFixed(2)
+          const taxAmount = (Number(claim.amount) * 0.2).toFixed(2)
+          sageRows += `"PI","${accountRef}","7006","${claimDate}","${claim.reference_number}","${claim.title}","${netAmount}","T1","${taxAmount}"\n`
+          continue
+        }
+
+        for (const li of lines) {
+          const desc = `${li.title} (${li.expense_type})`
+          const nominalCode = SAGE_NOMINAL_MAP[li.expense_type] || '7006'
+          const netAmount = Number(li.amount).toFixed(2)
+          const taxAmount = (Number(li.amount) * 0.2).toFixed(2)
+          sageRows += `"PI","${accountRef}","${nominalCode}","${claimDate}","${claim.reference_number}","${desc}","${netAmount}","T1","${taxAmount}"\n`
+        }
+      }
+
+      const csvContent = sageHeader + sageRows
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const now = new Date()
+      const fileName = `Sage_Purchases_${rangeLabel.replace(/\s+/g, '_')}_${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}.csv`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      a.click()
+      URL.revokeObjectURL(url)
+
+      showSuccess(`Sage export: ${expClaims.length} claims ready for import`)
+    } catch (err: any) {
+      showError('Sage export failed: ' + (err.message || 'Unknown error'))
+    }
+    setExportingSage(false)
   }
 
   async function loadClaims() {
@@ -721,6 +824,12 @@ export default function AdminExpenses() {
                 </svg>
                 {exportingXero ? 'Exporting...' : 'Export for Xero'}
               </button>
+              <button className="admin-btn-sm" onClick={exportSage} disabled={exportingSage} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', background: '#00843D', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {exportingSage ? 'Exporting...' : 'Export for Sage'}
+              </button>
             </div>
           </div>
 
@@ -928,6 +1037,12 @@ export default function AdminExpenses() {
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
                 {exportingXero ? 'Exporting...' : 'Export for Xero'}
+              </button>
+              <button className="admin-btn-sm" onClick={exportSage} disabled={exportingSage} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', background: '#00843D', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                {exportingSage ? 'Exporting...' : 'Export for Sage'}
               </button>
             </div>
           </div>

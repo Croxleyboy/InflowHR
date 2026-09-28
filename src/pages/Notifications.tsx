@@ -325,14 +325,14 @@ export default function Notifications() {
       const [pendingRes, counterRes] = await Promise.all([
         supabase
           .from('shift_swap_requests')
-          .select('id, requesting_employee_id, target_employee_id, status, created_at, shift_assignment:shift_assignments(date, shift_template:shift_templates(name))')
+          .select('id, requesting_employee_id, target_employee_id, status, created_at, shift_assignment_id')
           .eq('target_employee_id', HARDCODED_EMPLOYEE_ID)
           .eq('company_id', companyUser.company_id)
           .eq('status', 'pending')
           .order('created_at', { ascending: false }),
         supabase
           .from('shift_swap_requests')
-          .select('id, requesting_employee_id, target_employee_id, status, created_at, shift_assignment:shift_assignments(date, shift_template:shift_templates(name))')
+          .select('id, requesting_employee_id, target_employee_id, status, created_at, shift_assignment_id')
           .eq('requesting_employee_id', HARDCODED_EMPLOYEE_ID)
           .eq('company_id', companyUser.company_id)
           .eq('status', 'counter_offered')
@@ -342,23 +342,35 @@ export default function Notifications() {
       const allSwaps = [...(pendingRes.data || []), ...(counterRes.data || [])]
       if (allSwaps.length > 0) {
         const empIds = [...new Set(allSwaps.flatMap((s: any) => [s.requesting_employee_id, s.target_employee_id]))]
-        const { data: empNames } = await supabase
-          .from('employees')
-          .select('id, first_name, last_name')
-          .in('id', empIds)
-          .eq('company_id', companyUser?.company_id)
+        const shiftAssignIds = [...new Set(allSwaps.map((s: any) => s.shift_assignment_id).filter(Boolean))]
+        const [empNamesRes, saRes] = await Promise.all([
+          supabase.from('employees').select('id, first_name, last_name').in('id', empIds).eq('company_id', companyUser?.company_id),
+          shiftAssignIds.length > 0
+            ? supabase.from('shift_assignments').select('id, date, shift_template_id').in('id', shiftAssignIds)
+            : Promise.resolve({ data: [] }),
+        ])
         const nameMap: Record<string, string> = {}
-        ;(empNames || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
+        ;(empNamesRes.data || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
+
+        const saMap: Record<string, any> = {}
+        ;(saRes.data || []).forEach((sa: any) => { saMap[sa.id] = sa })
+        const templateIds = [...new Set((saRes.data || []).map((sa: any) => sa.shift_template_id).filter(Boolean))]
+        const tmplMap: Record<string, any> = {}
+        if (templateIds.length > 0) {
+          const { data: tmplData } = await supabase.from('shift_templates').select('id, name').in('id', templateIds)
+          ;(tmplData || []).forEach((t: any) => { tmplMap[t.id] = t })
+        }
 
         setSwapActions(allSwaps.map((s: any) => {
           const isCounterOffer = s.status === 'counter_offered'
           const otherEmpId = isCounterOffer ? s.target_employee_id : s.requesting_employee_id
+          const sa = saMap[s.shift_assignment_id]
           return {
             id: s.id,
             requesting_employee_id: s.requesting_employee_id,
             requester_name: nameMap[otherEmpId] || '—',
-            shift_date: s.shift_assignment?.date || '',
-            shift_name: s.shift_assignment?.shift_template?.name || 'Shift',
+            shift_date: sa?.date || '',
+            shift_name: sa ? (tmplMap[sa.shift_template_id]?.name || 'Shift') : 'Shift',
             created_at: s.created_at,
             swap_type: isCounterOffer ? 'counter_offer' as const : 'incoming' as const,
           }
