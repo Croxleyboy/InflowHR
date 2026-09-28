@@ -387,6 +387,24 @@ export default function ShiftSwap() {
 
     if (error) {
       showError('Failed to decline: ' + error.message)
+    } else {
+      const otherEmpId = request.requesting_employee_id === employeeId
+        ? request.target_employee_id
+        : request.requesting_employee_id
+      const otherEmp = employeeMap[otherEmpId]
+      const currentEmp = employeeMap[employeeId!]
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: otherEmp ? `${otherEmp.first_name} ${otherEmp.last_name}` : '',
+        step: 3,
+        status: 'Completed',
+        record_type: 'Shift Swap',
+        action: 'Shift swap declined',
+        employee_email: '',
+        assigned_to: '',
+        reminder_count: 0,
+        task_description: `Shift swap declined by ${currentEmp?.first_name || ''} ${currentEmp?.last_name || ''}${responseMessage ? ` — "${responseMessage}"` : ''}`,
+        company_id: companyUser?.company_id,
+      })
     }
     setResponseMessage('')
     setActioningId(null)
@@ -395,11 +413,29 @@ export default function ShiftSwap() {
 
   async function handleCancelSwap(requestId: string) {
     setActioningId(requestId)
+    const swapReq = swapRequests.find(r => r.id === requestId)
     const { error } = await supabase.from('shift_swap_requests')
       .update({ status: 'cancelled' })
       .eq('id', requestId)
       .eq('company_id', companyUser?.company_id)
-    if (error) showError('Failed to cancel: ' + error.message)
+    if (error) {
+      showError('Failed to cancel: ' + error.message)
+    } else if (swapReq) {
+      const targetEmp = employeeMap[swapReq.target_employee_id]
+      const currentEmp = employeeMap[employeeId!]
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: targetEmp ? `${targetEmp.first_name} ${targetEmp.last_name}` : '',
+        step: 3,
+        status: 'Completed',
+        record_type: 'Shift Swap',
+        action: 'Shift swap cancelled',
+        employee_email: '',
+        assigned_to: '',
+        reminder_count: 0,
+        task_description: `Shift swap cancelled by ${currentEmp?.first_name || ''} ${currentEmp?.last_name || ''}`,
+        company_id: companyUser?.company_id,
+      })
+    }
     setActioningId(null)
     fetchData()
   }
