@@ -172,7 +172,13 @@ export async function checkTimeOverlap(
       continue
     }
 
-    if (block.source === 'legal_timesheet') continue
+    if (block.source === 'legal_timesheet') {
+      conflicts.push({
+        existing: block,
+        message: `Legal timesheet ${block.label} already logged on ${new Date(block.date + 'T00:00:00').toLocaleDateString('en-GB')}. Check the daily hours cap is not exceeded.`,
+      })
+      continue
+    }
 
     for (const d of dates) {
       if (block.date !== d) continue

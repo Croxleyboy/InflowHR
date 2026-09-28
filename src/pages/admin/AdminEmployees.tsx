@@ -229,9 +229,40 @@ export default function AdminEmployees() {
   }
 
   async function deactivateEmployee(id: string) {
-    if (!confirm('Deactivate this employee? This will mark them as inactive.')) return
+    if (!confirm('Deactivate this employee? This will mark them as inactive and reassign their pending approvals.')) return
     const { error } = await supabase.from('employees').update({ is_active: false }).eq('id', id)
     if (error) { showError('Failed to deactivate employee: ' + error.message); return }
+
+    const { data: pendingItems } = await supabase.from('workflow_tracker')
+      .select('id')
+      .eq('assigned_to', employees.find(e => e.id === id)?.email || '')
+      .eq('status', 'Pending')
+      .eq('company_id', selectedCompanyId)
+    if (pendingItems && pendingItems.length > 0) {
+      const { data: admins } = await supabase.from('company_users')
+        .select('auth_user_id')
+        .eq('company_id', selectedCompanyId)
+        .eq('role', 'admin')
+        .limit(5)
+      if (admins && admins.length > 0) {
+        const adminIds = admins.map(a => a.auth_user_id).filter(Boolean)
+        const { data: adminEmps } = await supabase.from('employees')
+          .select('email')
+          .in('auth_user_id', adminIds)
+          .neq('id', id)
+          .eq('is_active', true)
+          .limit(1)
+        const newAssignee = adminEmps?.[0]?.email
+        if (newAssignee) {
+          await supabase.from('workflow_tracker')
+            .update({ assigned_to: newAssignee })
+            .eq('assigned_to', employees.find(e => e.id === id)?.email || '')
+            .eq('status', 'Pending')
+            .eq('company_id', selectedCompanyId)
+        }
+      }
+    }
+
     showSuccess('Employee deactivated')
     load()
   }
