@@ -4,7 +4,7 @@ import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
-import { formatDate } from '../../lib/formatters'
+import { formatDate, getFYYear } from '../../lib/formatters'
 
 interface LeaveRequest {
   id: number
@@ -150,7 +150,7 @@ export default function AdminLeave() {
         const newDays = Number(editForm.days_requested)
         const effectiveDelta = !wasApproved ? newDays : (newDays - oldDays)
         if (effectiveDelta > 0) {
-          const year = new Date(req.start_date).getFullYear()
+          const year = getFYYear(new Date(req.start_date + 'T00:00:00'), fyStartMonth)
           const { data: balance } = await supabase.from('leave_balances')
             .select('used, total_days').eq('employee_id', req.employee_id).eq('year', year).limit(1).single()
           if (balance) {
@@ -188,7 +188,7 @@ export default function AdminLeave() {
         else if (wasApproved && nowApproved && oldDays !== newDays) delta = newDays - oldDays
 
         if (delta !== 0) {
-          const year = new Date(req.start_date).getFullYear()
+          const year = getFYYear(new Date(req.start_date + 'T00:00:00'), fyStartMonth)
           await supabase.rpc('adjust_leave_balance', {
             p_employee_id: req.employee_id,
             p_year: year,
@@ -275,7 +275,7 @@ export default function AdminLeave() {
     if (action === 'approved') {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
       if (!typeSetting || typeSetting.deducts_from_allowance) {
-        const year = new Date(req.start_date).getFullYear()
+        const year = getFYYear(new Date(req.start_date + 'T00:00:00'), fyStartMonth)
         const { data: balance } = await supabase.from('leave_balances')
           .select('used, total_days').eq('employee_id', req.employee_id).eq('year', year).limit(1).single()
         if (balance) {
@@ -299,7 +299,7 @@ export default function AdminLeave() {
     if (action === 'approved') {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
       if (!typeSetting || typeSetting.deducts_from_allowance) {
-        const year = new Date(req.start_date).getFullYear()
+        const year = getFYYear(new Date(req.start_date + 'T00:00:00'), fyStartMonth)
         await supabase.rpc('adjust_leave_balance', {
           p_employee_id: req.employee_id,
           p_year: year,
@@ -357,7 +357,7 @@ export default function AdminLeave() {
     if (req && req.status === 'approved') {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
       if (!typeSetting || typeSetting.deducts_from_allowance) {
-        const year = new Date(req.start_date).getFullYear()
+        const year = getFYYear(new Date(req.start_date + 'T00:00:00'), fyStartMonth)
         await supabase.rpc('adjust_leave_balance', {
           p_employee_id: req.employee_id,
           p_year: year,
@@ -479,7 +479,7 @@ export default function AdminLeave() {
     for (let i = 0; i < 12; i++) fyMonths.push((fyStartMonth - 1 + i) % 12)
 
     const now = new Date()
-    const fyYear = now.getMonth() + 1 >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+    const fyYear = getFYYear(now, fyStartMonth)
 
     const approved = requests.filter(r => r.status === 'approved')
     const monthData: { month: number; label: string; byType: Record<string, number>; total: number }[] = fyMonths.map(m => ({

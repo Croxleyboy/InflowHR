@@ -76,7 +76,9 @@ GRANT EXECUTE ON FUNCTION execute_leave_carry_over() TO authenticated;
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    PERFORM cron.unschedule('leave-carry-over-daily');
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'leave-carry-over-daily') THEN
+      PERFORM cron.unschedule('leave-carry-over-daily');
+    END IF;
     PERFORM cron.schedule(
       'leave-carry-over-daily',
       '30 0 1 * *',

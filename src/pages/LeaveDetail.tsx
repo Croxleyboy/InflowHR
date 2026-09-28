@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
-import { formatDate, formatDateTime } from '../lib/formatters'
+import { formatDate, formatDateTime, getFYYear } from '../lib/formatters'
 
 interface LeaveRequest {
   id: number
@@ -102,7 +102,8 @@ export default function LeaveDetail() {
     if (error) { showError('Failed to cancel: ' + error.message); setCancelling(false); return }
 
     if (request.status === 'approved' && leaveType.deducts_from_allowance !== false) {
-      const year = new Date(request.start_date).getFullYear()
+      const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyUser?.company_id).single()
+      const year = getFYYear(new Date(request.start_date + 'T00:00:00'), co?.fy_start_month || 4)
       await supabase.rpc('adjust_leave_balance', {
         p_employee_id: request.employee_id,
         p_year: year,

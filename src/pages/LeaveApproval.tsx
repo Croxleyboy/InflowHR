@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { sendFeatureEmail } from '../lib/emailNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
-import { formatDate, formatDateTime } from '../lib/formatters'
+import { formatDate, formatDateTime, getFYYear } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 
 interface LeaveRequest {
@@ -113,8 +113,11 @@ export default function LeaveApproval() {
   async function handleDecision(approved: boolean) {
     if (!request || !employee) return
 
+    const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyUser?.company_id).single()
+    const fyMonth = co?.fy_start_month || 4
+
     if (approved && leaveType?.deducts_from_allowance !== false) {
-      const year = new Date(request.start_date).getFullYear()
+      const year = getFYYear(new Date(request.start_date + 'T00:00:00'), fyMonth)
       const { data: balance } = await supabase.from('leave_balances')
         .select('used, total_days').eq('employee_id', request.employee_id)
         .eq('company_id', companyUser?.company_id).eq('year', year).limit(1).single()
@@ -138,7 +141,7 @@ export default function LeaveApproval() {
     if (error) { showError('Failed to update leave request: ' + error.message); setProcessing(false); return }
 
     if (approved && leaveType?.deducts_from_allowance !== false) {
-      const year = new Date(request.start_date).getFullYear()
+      const year = getFYYear(new Date(request.start_date + 'T00:00:00'), fyMonth)
       const { error: errBal } = await supabase.rpc('adjust_leave_balance', {
         p_employee_id: request.employee_id,
         p_year: year,

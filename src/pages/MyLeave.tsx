@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
+import { getFYRange } from '../lib/formatters'
 
 interface LeaveBalance {
   leave_type_id: number
@@ -29,31 +30,31 @@ export default function MyLeave() {
   const loadData = useCallback(async () => {
     if (!EMPLOYEE_ID) return
     setLoading(true)
-    const yearStart = `${new Date().getFullYear()}-01-01`
-    const yearEnd = `${new Date().getFullYear()}-12-31`
+    const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyUser?.company_id).single()
+    const { fyYear, fyStart, fyEnd } = getFYRange(co?.fy_start_month || 4)
     const [balRes, pendReqRes, approvedReqRes] = await Promise.all([
       supabase
         .from('leave_balances')
         .select('leave_type_id, total_allowance, used, carried_over, lieu_days')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
-        .eq('year', new Date().getFullYear()),
+        .eq('year', fyYear),
       supabase
         .from('leave_requests')
         .select('leave_type_id, days_requested')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
         .eq('status', 'pending')
-        .gte('start_date', yearStart)
-        .lte('start_date', yearEnd),
+        .gte('start_date', fyStart)
+        .lte('start_date', fyEnd),
       supabase
         .from('leave_requests')
         .select('leave_type_id, days_requested')
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser?.company_id)
         .eq('status', 'approved')
-        .gte('start_date', yearStart)
-        .lte('start_date', yearEnd),
+        .gte('start_date', fyStart)
+        .lte('start_date', fyEnd),
     ])
 
     const approvedByType = new Map<number, number>()

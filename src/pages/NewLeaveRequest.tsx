@@ -5,7 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { LEAVE_TYPE_KEYS } from '../lib/translations'
 import { countWorkingDays } from '../lib/workingDays'
-import { formatDate, formatDateDisplay } from '../lib/formatters'
+import { formatDate, formatDateDisplay, getFYRange } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
 import { sendTeamsNotification } from '../lib/teamsNotifications'
@@ -140,8 +140,6 @@ export default function NewLeaveRequest() {
         if (data?.weekends_as_workdays) setWeekendsAsWorkdays(true)
       })
     if (EMPLOYEE_ID) {
-      const yrStart = `${new Date().getFullYear()}-01-01`
-      const yrEnd = `${new Date().getFullYear()}-12-31`
       supabase.from('leave_types')
         .select('id')
         .eq('company_id', companyUser.company_id)
@@ -150,31 +148,33 @@ export default function NewLeaveRequest() {
         .single()
         .then(async ({ data: annualType }) => {
           if (!annualType) return
+          const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyUser!.company_id).single()
+          const { fyYear, fyStart, fyEnd } = getFYRange(co?.fy_start_month || 4)
           const [balRes, pendRes, approvedRes] = await Promise.all([
             supabase.from('leave_balances')
               .select('total_allowance, lieu_days, carried_over')
               .eq('employee_id', EMPLOYEE_ID)
-              .eq('company_id', companyUser.company_id)
+              .eq('company_id', companyUser!.company_id)
               .eq('leave_type_id', annualType.id)
-              .eq('year', new Date().getFullYear())
+              .eq('year', fyYear)
               .limit(1)
               .single(),
             supabase.from('leave_requests')
               .select('days_requested')
               .eq('employee_id', EMPLOYEE_ID)
-              .eq('company_id', companyUser.company_id)
+              .eq('company_id', companyUser!.company_id)
               .eq('leave_type_id', annualType.id)
               .eq('status', 'pending')
-              .gte('start_date', yrStart)
-              .lte('start_date', yrEnd),
+              .gte('start_date', fyStart)
+              .lte('start_date', fyEnd),
             supabase.from('leave_requests')
               .select('days_requested')
               .eq('employee_id', EMPLOYEE_ID)
-              .eq('company_id', companyUser.company_id)
+              .eq('company_id', companyUser!.company_id)
               .eq('leave_type_id', annualType.id)
               .eq('status', 'approved')
-              .gte('start_date', yrStart)
-              .lte('start_date', yrEnd),
+              .gte('start_date', fyStart)
+              .lte('start_date', fyEnd),
           ])
           const lieuVal = Number(balRes.data?.lieu_days) || 0
           setEmployeeLieuDays(lieuVal)

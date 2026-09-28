@@ -50,3 +50,18 @@ export function formatTime12(time: string): string {
 export function toLocalDateStr(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+export function getFYYear(date: Date, fyStartMonth: number): number {
+  return date.getMonth() + 1 >= fyStartMonth ? date.getFullYear() : date.getFullYear() - 1
+}
+
+export function getFYRange(fyStartMonth: number): { fyYear: number; fyStart: string; fyEnd: string } {
+  const now = new Date()
+  const fyYear = getFYYear(now, fyStartMonth)
+  const fyStart = `${fyYear}-${String(fyStartMonth).padStart(2, '0')}-01`
+  const endMonth = fyStartMonth === 1 ? 12 : fyStartMonth - 1
+  const endYear = fyStartMonth === 1 ? fyYear : fyYear + 1
+  const endDay = new Date(endYear, endMonth, 0).getDate()
+  const fyEnd = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`
+  return { fyYear, fyStart, fyEnd }
+}
