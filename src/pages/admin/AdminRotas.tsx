@@ -138,7 +138,6 @@ export default function AdminRotas() {
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: true, legal_timesheets: false })
   const [checkinRecords, setCheckinRecords] = useState<{ employee_id: string; check_in_at: string; check_out_at: string | null; status: string }[]>([])
   const [shiftsCheckinEnabled, setShiftsCheckinEnabled] = useState(false)
-  const [workPatterns, setWorkPatterns] = useState<WorkPattern[]>([])
   const [templateSkillMap, setTemplateSkillMap] = useState<Record<string, string[]>>({})
   const [employeeSkillMap, setEmployeeSkillMap] = useState<Record<string, string[]>>({})
 
@@ -328,7 +327,6 @@ export default function AdminRotas() {
     setAssignments((assignRes.data as ShiftAssignment[]) || [])
     setLeaveConflicts((leaveRes.data as LeaveConflict[]) || [])
     setAvailability((availRes.data as EmployeeAvailability[]) || [])
-    setWorkPatterns((wpRes.data as WorkPattern[]) || [])
     const tsMap: Record<string, string[]> = {}
     ;(tsRes.data || []).forEach((r: any) => {
       if (!tsMap[r.shift_template_id]) tsMap[r.shift_template_id] = []
@@ -463,7 +461,8 @@ export default function AdminRotas() {
       if (otherRotaShifts && otherRotaShifts.length > 0) {
         const joined = otherRotaShifts[0] as { rotas?: { name: string }[] }
         const otherName = joined.rotas?.[0]?.name || 'another rota'
-        alert(`Cannot assign shift: ${emp?.first_name || 'This employee'} already has a shift on ${new Date(date + 'T00:00:00').toLocaleDateString('en-GB')} in "${otherName}". Remove the existing shift first to reassign.`)
+        const empObj = employees.find(e => e.id === employeeId)
+        alert(`Cannot assign shift: ${empObj?.first_name || 'This employee'} already has a shift on ${new Date(date + 'T00:00:00').toLocaleDateString('en-GB')} in "${otherName}". Remove the existing shift first to reassign.`)
         setActiveCell(null)
         return
       }
