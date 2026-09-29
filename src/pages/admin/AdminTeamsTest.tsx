@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
-import { supabase } from '../../lib/supabase'
+import { supabase, sendNotificationEmail } from '../../lib/supabase'
 
 interface Employee {
   id: string
@@ -59,9 +59,31 @@ function isConsentError(err: any): boolean {
     || msg.includes('403')
 }
 
+interface EmailSettings {
+  leave_enabled: boolean
+  expenses_enabled: boolean
+  shifts_enabled: boolean
+  kudos_enabled: boolean
+  space_booking_enabled: boolean
+  performance_reminders_enabled: boolean
+  elearning_reminders_enabled: boolean
+}
+
+const EMAIL_TOGGLE_LABELS: Record<keyof EmailSettings, { label: string; description: string }> = {
+  leave_enabled: { label: 'Leave Confirmations', description: 'Email when leave is approved/declined' },
+  expenses_enabled: { label: 'Expense Confirmations', description: 'Email when expenses are approved/declined' },
+  shifts_enabled: { label: 'Shift Notifications', description: 'Email when assigned a new shift' },
+  kudos_enabled: { label: 'Kudos Received', description: 'Email when kudos is received' },
+  space_booking_enabled: { label: 'Booking Confirmations', description: 'Email when desk/room booking is confirmed' },
+  performance_reminders_enabled: { label: '1:1 Reminders', description: 'Email before scheduled 1:1 meetings' },
+  elearning_reminders_enabled: { label: 'E-Learning Expiry Reminders', description: 'Email before course deadlines' },
+}
+
 export default function AdminTeamsTest() {
   const { session } = useAuth()
   const { selectedCompany } = useAdminCompany()
+
+  const [activeTab, setActiveTab] = useState<'teams' | 'email'>('teams')
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -83,6 +105,12 @@ export default function AdminTeamsTest() {
   const [diagResult, setDiagResult] = useState('')
   const [diagLoading, setDiagLoading] = useState(false)
 
+  const [emailSettings, setEmailSettings] = useState<EmailSettings | null>(null)
+  const [emailLoading, setEmailLoading] = useState(false)
+  const [emailTestStatus, setEmailTestStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [emailTestError, setEmailTestError] = useState('')
+  const [emailTestEmployee, setEmailTestEmployee] = useState<Employee | null>(null)
+
   const providerToken = session?.provider_token || null
   const companyDomain = selectedCompany?.domain || ''
 
@@ -96,6 +124,51 @@ export default function AdminTeamsTest() {
       .order('first_name')
       .then(({ data }) => { if (data) setEmployees(data as Employee[]) })
   }, [selectedCompany?.id])
+
+  useEffect(() => {
+    const cid = selectedCompany?.id
+    if (!cid) return
+    setEmailLoading(true)
+    supabase.from('email_notification_settings')
+      .select('*')
+      .eq('company_id', cid)
+      .single()
+      .then(({ data }) => {
+        if (data) setEmailSettings(data as unknown as EmailSettings)
+        else setEmailSettings(null)
+        setEmailLoading(false)
+      })
+  }, [selectedCompany?.id])
+
+  async function sendTestEmail() {
+    if (!emailTestEmployee || !selectedCompany?.id) return
+    setEmailTestStatus('sending')
+    setEmailTestError('')
+    try {
+      const notifPayload = {
+        employee_id: emailTestEmployee.id,
+        title: 'InflowHR Email Test',
+        message: `This is a test email sent from the Integration Tests page to verify Brevo email delivery is working for ${selectedCompany.name || 'your company'}.`,
+        type: 'info',
+        link: '/admin/teams-test',
+        is_read: false,
+        company_id: selectedCompany.id,
+        send_email: true,
+      }
+      const { data: notifRow, error } = await supabase
+        .from('notifications')
+        .insert(notifPayload)
+        .select('id')
+        .single()
+      if (error) throw new Error(error.message)
+      await sendNotificationEmail({ ...notifPayload, id: notifRow?.id, email_sent: false })
+      setEmailTestStatus('sent')
+      setTimeout(() => setEmailTestStatus('idle'), 5000)
+    } catch (err: any) {
+      setEmailTestError(err.message)
+      setEmailTestStatus('error')
+    }
+  }
 
   useEffect(() => {
     return () => { pollingActiveRef.current = false; if (pollingTimerRef.current) clearTimeout(pollingTimerRef.current) }
@@ -355,9 +428,148 @@ export default function AdminTeamsTest() {
 
   return (
     <div className="admin-page" style={{ maxWidth: 900 }}>
-      <h2 className="admin-page-title">Teams Integration Test</h2>
-      <p className="admin-page-subtitle">Super admin only — test Microsoft Teams presence and messaging via Graph API</p>
+      <h2 className="admin-page-title">Integration Tests</h2>
+      <p className="admin-page-subtitle">Super admin only — test and diagnose third-party integrations</p>
 
+      <div className="admin-tabs" style={{ marginBottom: 24 }}>
+        <button className={`admin-tab ${activeTab === 'teams' ? 'active' : ''}`} onClick={() => setActiveTab('teams')}>Microsoft Teams</button>
+        <button className={`admin-tab ${activeTab === 'email' ? 'active' : ''}`} onClick={() => setActiveTab('email')}>Email Notifications</button>
+      </div>
+
+      {activeTab === 'email' && (
+        <>
+          {/* Email setup guide */}
+          <div className="teams-test-section">
+            <h3 className="teams-test-heading">Brevo Email Setup</h3>
+            <div className="teams-test-guidance">
+              <p>Email notifications are sent via <strong>Brevo</strong> (formerly Sendinblue) through the <code>send-notification-email</code> Supabase Edge Function.</p>
+
+              <h4 style={{ margin: '16px 0 8px' }}>Required Environment Variables</h4>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--border-color, #e0e0e0)' }}>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 600 }}>Variable</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 600 }}>Description</th>
+                    <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 600 }}>Where to set</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{ borderBottom: '1px solid var(--border-color, #e0e0e0)' }}>
+                    <td style={{ padding: '8px 12px' }}><code>BREVO_API_KEY</code></td>
+                    <td style={{ padding: '8px 12px' }}>Brevo SMTP API key from your Brevo dashboard</td>
+                    <td style={{ padding: '8px 12px' }}>Supabase &rarr; Edge Functions &rarr; Secrets</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-color, #e0e0e0)' }}>
+                    <td style={{ padding: '8px 12px' }}><code>TITAN_EMAIL</code></td>
+                    <td style={{ padding: '8px 12px' }}>Sender email address (defaults to notifications@inflowhr.com)</td>
+                    <td style={{ padding: '8px 12px' }}>Supabase &rarr; Edge Functions &rarr; Secrets</td>
+                  </tr>
+                  <tr style={{ borderBottom: '1px solid var(--border-color, #e0e0e0)' }}>
+                    <td style={{ padding: '8px 12px' }}><code>APP_URL</code></td>
+                    <td style={{ padding: '8px 12px' }}>App URL for email links (defaults to https://app.inflowhr.com)</td>
+                    <td style={{ padding: '8px 12px' }}>Supabase &rarr; Edge Functions &rarr; Secrets</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <h4 style={{ margin: '16px 0 8px' }}>How it works</h4>
+              <ol style={{ paddingLeft: 20, fontSize: 13, lineHeight: 1.8, margin: '0 0 12px' }}>
+                <li>Company admin enables email toggles on the <strong>Admin &rarr; Notifications &rarr; Email</strong> tab</li>
+                <li>When a relevant action occurs (e.g. leave approved), the app checks the company's <code>email_notification_settings</code></li>
+                <li>If the toggle is on, a notification is inserted with <code>send_email: true</code></li>
+                <li>The <code>send-notification-email</code> Edge Function is called, which sends via Brevo's SMTP API</li>
+                <li>The notification record is updated with <code>email_sent: true</code> and a timestamp</li>
+              </ol>
+
+              <h4 style={{ margin: '16px 0 8px' }}>Brevo setup checklist</h4>
+              <ul style={{ paddingLeft: 20, fontSize: 13, lineHeight: 1.8, margin: 0 }}>
+                <li>Create a Brevo account and generate an SMTP API key</li>
+                <li>Verify the sender email domain in Brevo (DKIM + SPF records)</li>
+                <li>Add the API key to Supabase Edge Function secrets as <code>BREVO_API_KEY</code></li>
+                <li>Deploy the <code>send-notification-email</code> Edge Function</li>
+                <li>Enable the <code>email_notifications</code> feature for the company in Subscriptions</li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Current company email settings */}
+          <div className="teams-test-section">
+            <h3 className="teams-test-heading">Company Email Settings — {selectedCompany?.name || 'Select a company'}</h3>
+            {emailLoading ? (
+              <div className="admin-loading">Loading...</div>
+            ) : !emailSettings ? (
+              <div className="teams-test-guidance">
+                <p style={{ color: '#c62828', fontWeight: 600 }}>No email notification settings found for this company. The admin needs to visit the Email Notifications tab first to create the settings row.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(Object.keys(EMAIL_TOGGLE_LABELS) as (keyof EmailSettings)[]).map(key => {
+                  const enabled = (emailSettings as Record<string, unknown>)[key] === true
+                  return (
+                    <div key={key} style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '10px 16px',
+                      background: enabled ? 'var(--card-bg-active, #f0fdf4)' : 'var(--card-bg, #fff)',
+                      border: `1px solid ${enabled ? '#43a047' : 'var(--border-color, #e0e0e0)'}`,
+                      borderRadius: 8, fontSize: 13,
+                    }}>
+                      <span style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: enabled ? '#43a047' : '#ccc', flexShrink: 0,
+                      }} />
+                      <span style={{ fontWeight: 600, minWidth: 180 }}>{EMAIL_TOGGLE_LABELS[key].label}</span>
+                      <span style={{ color: 'var(--text-muted, #888)', flex: 1 }}>{EMAIL_TOGGLE_LABELS[key].description}</span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                        background: enabled ? '#e8f5e9' : '#f5f5f5',
+                        color: enabled ? '#2e7d32' : '#999',
+                      }}>{enabled ? 'On' : 'Off'}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Test email send */}
+          <div className="teams-test-section">
+            <h3 className="teams-test-heading">Send Test Email</h3>
+            <div className="teams-test-guidance">
+              <p style={{ margin: '0 0 12px' }}>Send a test notification email to an employee to verify the Brevo pipeline is working end-to-end. This bypasses the feature toggle check.</p>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border-color, #e0e0e0)', fontSize: 13, minWidth: 240 }}
+                  value={emailTestEmployee?.id || ''}
+                  onChange={e => {
+                    const emp = employees.find(em => em.id === e.target.value)
+                    setEmailTestEmployee(emp || null)
+                  }}
+                >
+                  <option value="">Select employee...</option>
+                  {employees.map(emp => (
+                    <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name} ({emp.email})</option>
+                  ))}
+                </select>
+                <button
+                  className="admin-add-btn"
+                  onClick={sendTestEmail}
+                  disabled={!emailTestEmployee || emailTestStatus === 'sending'}
+                >
+                  {emailTestStatus === 'sending' ? 'Sending...' : 'Send Test Email'}
+                </button>
+                {emailTestStatus === 'sent' && (
+                  <span style={{ color: '#2e7d32', fontWeight: 600, fontSize: 13 }}>Test email sent — check inbox</span>
+                )}
+                {emailTestStatus === 'error' && (
+                  <span className="teams-test-error">{emailTestError}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'teams' && <>
       {/* Authorisation status */}
       <div className="teams-test-section">
         <h3 className="teams-test-heading">Authorisation</h3>
@@ -622,6 +834,7 @@ export default function AdminTeamsTest() {
           </p>
         </div>
       </div>
+      </>}
     </div>
   )
 }
