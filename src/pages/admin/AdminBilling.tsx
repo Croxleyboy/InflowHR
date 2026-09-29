@@ -847,7 +847,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
           const bars = chartData.map((m, idx) => {
             const cx = padL + colW / 2 + idx * colW
             const featureTotal = m.core + m.packA + m.packB
-            const grandTotal = featureTotal + monthlyPlatformFee + supportTotal
+            const grandTotal = featureTotal + monthlyPlatformFee + (m.isCurrent ? supportTotal : 0)
 
             const coreH = chartMaxFeatures > 0 ? (m.core / chartMaxFeatures) * maxBarH : 0
             const packAH = chartMaxFeatures > 0 ? (m.packA / chartMaxFeatures) * maxBarH : 0
