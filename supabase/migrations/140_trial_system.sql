@@ -408,25 +408,25 @@ BEGIN
   -- BENEFITS
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO benefit_types (name, description, category, provider, is_active, company_id) VALUES
-    ('Private Health Insurance', 'Comprehensive medical cover including dental and optical', 'Health',    'Bupa',        true, v_company_id),
-    ('Cycle to Work Scheme',     'Tax-free bike purchase up to £2,000',                     'Lifestyle', 'Cyclescheme', true, v_company_id),
-    ('Pension',                  'Employer matches up to 5% of salary',                     'Financial', 'Aviva',       true, v_company_id),
-    ('Gym Membership',           'Discounted corporate rate at PureGym',                    'Health',    'PureGym',     true, v_company_id);
+  INSERT INTO benefit_types (benefit_key, title, description, icon, color, intro, eligibility, cost_description, monthly_cost, lock_period, is_enabled, sort_order, company_id) VALUES
+    ('health',  'Private Health Insurance', 'Comprehensive medical cover including dental and optical', '🏥', '#e53935', 'Comprehensive private medical insurance.', 'All permanent employees from day one.', 'Employer-funded for individual cover.', 45, 'year', true, 0, v_company_id),
+    ('cycle',   'Cycle to Work Scheme',     'Tax-free bike purchase up to £2,000',                     '🚲', '#43a047', 'Save on a new bicycle through salary sacrifice.', 'Open to all employees on PAYE.', 'Tax-free salary sacrifice over 12 months.', 48, 'month', true, 1, v_company_id),
+    ('pension', 'Pension',                  'Employer matches up to 5% of salary',                     '💷', '#1565c0', 'Company pension scheme.', 'All employees after 3 months.', 'Employer matches up to 5%.', 0, 'none', true, 2, v_company_id),
+    ('gym',     'Gym Membership',           'Discounted corporate rate at PureGym',                    '🏋️', '#ff9800', 'Discounted gym membership.', 'All employees.', '£35/month via salary sacrifice.', 35, 'month', true, 3, v_company_id);
 
-  SELECT id INTO v_ben1 FROM benefit_types WHERE name='Private Health Insurance' AND company_id=v_company_id LIMIT 1;
-  SELECT id INTO v_ben2 FROM benefit_types WHERE name='Cycle to Work Scheme' AND company_id=v_company_id LIMIT 1;
-  SELECT id INTO v_ben3 FROM benefit_types WHERE name='Pension' AND company_id=v_company_id LIMIT 1;
-  SELECT id INTO v_ben4 FROM benefit_types WHERE name='Gym Membership' AND company_id=v_company_id LIMIT 1;
+  SELECT id INTO v_ben1 FROM benefit_types WHERE title='Private Health Insurance' AND company_id=v_company_id LIMIT 1;
+  SELECT id INTO v_ben2 FROM benefit_types WHERE title='Cycle to Work Scheme' AND company_id=v_company_id LIMIT 1;
+  SELECT id INTO v_ben3 FROM benefit_types WHERE title='Pension' AND company_id=v_company_id LIMIT 1;
+  SELECT id INTO v_ben4 FROM benefit_types WHERE title='Gym Membership' AND company_id=v_company_id LIMIT 1;
 
-  INSERT INTO benefit_enrollments (employee_id, benefit_type_id, status, company_id) VALUES
-    (v_emp1, v_ben1, 'active', v_company_id), (v_emp1, v_ben3, 'active', v_company_id),
-    (v_emp2, v_ben1, 'active', v_company_id), (v_emp2, v_ben2, 'active', v_company_id), (v_emp2, v_ben3, 'active', v_company_id),
-    (v_emp3, v_ben3, 'active', v_company_id), (v_emp3, v_ben4, 'active', v_company_id),
-    (v_emp4, v_ben1, 'active', v_company_id), (v_emp4, v_ben3, 'active', v_company_id),
-    (v_emp5, v_ben2, 'active', v_company_id), (v_emp5, v_ben4, 'pending', v_company_id),
-    (v_emp7, v_ben1, 'active', v_company_id), (v_emp7, v_ben3, 'active', v_company_id),
-    (v_emp9, v_ben3, 'active', v_company_id);
+  INSERT INTO benefit_enrollments (employee_id, benefit_type_id, company_id) VALUES
+    (v_emp1, v_ben1, v_company_id), (v_emp1, v_ben3, v_company_id),
+    (v_emp2, v_ben1, v_company_id), (v_emp2, v_ben2, v_company_id), (v_emp2, v_ben3, v_company_id),
+    (v_emp3, v_ben3, v_company_id), (v_emp3, v_ben4, v_company_id),
+    (v_emp4, v_ben1, v_company_id), (v_emp4, v_ben3, v_company_id),
+    (v_emp5, v_ben2, v_company_id), (v_emp5, v_ben4, v_company_id),
+    (v_emp7, v_ben1, v_company_id), (v_emp7, v_ben3, v_company_id),
+    (v_emp9, v_ben3, v_company_id);
 
   -- ═══════════════════════════════════════════════════════════
   -- E-LEARNING COURSES
@@ -446,7 +446,7 @@ BEGIN
   INSERT INTO company_elearning_courses (company_id, course_id, is_enabled) VALUES
     (v_company_id, v_c1, true), (v_company_id, v_c2, true), (v_company_id, v_c3, true), (v_company_id, v_c4, true);
 
-  INSERT INTO course_enrolments (employee_id, course_id, status, progress, enrolled_at, completed_at) VALUES
+  INSERT INTO course_enrolments (employee_id, course_id, status, progress_pct, started_at, completed_at) VALUES
     (v_emp1, v_c1, 'completed',   100, NOW() - interval '30 days', NOW() - interval '28 days'),
     (v_emp1, v_c2, 'completed',   100, NOW() - interval '25 days', NOW() - interval '24 days'),
     (v_emp1, v_c3, 'in_progress',  60, NOW() - interval '5 days',  NULL),
@@ -464,14 +464,14 @@ BEGIN
   -- PERFORMANCE REVIEWS
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO performance_reviews (employee_id, reviewer_id, review_type, review_period, overall_rating, strengths, areas_for_improvement, goals, status, review_date) VALUES
-    (v_emp1, v_admin_employee_id, 'annual',     '2025-2026', 4, 'Excellent people management and process improvement', 'Could delegate more to team members', 'Complete CIPD Level 7 by Q4', 'completed', CURRENT_DATE - 30),
-    (v_emp2, v_admin_employee_id, 'annual',     '2025-2026', 5, 'Outstanding technical skills and code quality',       'Could improve documentation practices', 'Lead the platform migration project', 'completed', CURRENT_DATE - 25),
-    (v_emp3, v_admin_employee_id, 'annual',     '2025-2026', 4, 'Strong financial analysis and reporting',              'Needs to develop presentation skills', 'Automate monthly reporting by Q3', 'completed', CURRENT_DATE - 20),
-    (v_emp4, v_admin_employee_id, 'mid_year',   '2026 H1',  3, 'Good operational oversight',                           'Time management could be improved',    'Reduce warehouse processing time by 15%', 'in_progress', NULL),
-    (v_emp5, v_emp1,              'probation',  '2025 Q1',  4, 'Creative marketing campaigns with measurable results', 'Needs more experience with analytics', 'Launch social media strategy', 'completed', CURRENT_DATE - 60),
-    (v_emp7, v_emp2,              'annual',     '2025-2026', 4, 'Solid engineering fundamentals',                       'Could contribute more in code reviews', 'Achieve AWS certification', 'completed', CURRENT_DATE - 15),
-    (v_emp9, v_emp4,              'mid_year',   '2026 H1',  3, 'Reliable and thorough in inventory checks',            'Communication could be more proactive', 'Cross-train on forklift operations', 'in_progress', NULL);
+  INSERT INTO performance_reviews (employee_id, reviewer_id, review_period, overall_rating, strengths, areas_for_improvement, goals, status, completed_at, company_id) VALUES
+    (v_emp1, v_admin_employee_id, '2025-2026', 4, 'Excellent people management and process improvement', 'Could delegate more to team members', 'Complete CIPD Level 7 by Q4', 'completed', NOW() - interval '30 days', v_company_id),
+    (v_emp2, v_admin_employee_id, '2025-2026', 5, 'Outstanding technical skills and code quality',       'Could improve documentation practices', 'Lead the platform migration project', 'completed', NOW() - interval '25 days', v_company_id),
+    (v_emp3, v_admin_employee_id, '2025-2026', 4, 'Strong financial analysis and reporting',              'Needs to develop presentation skills', 'Automate monthly reporting by Q3', 'completed', NOW() - interval '20 days', v_company_id),
+    (v_emp4, v_admin_employee_id, '2026 H1',  3, 'Good operational oversight',                           'Time management could be improved',    'Reduce warehouse processing time by 15%', 'in_progress', NULL, v_company_id),
+    (v_emp5, v_emp1,              '2025 Q1',  4, 'Creative marketing campaigns with measurable results', 'Needs more experience with analytics', 'Launch social media strategy', 'completed', NOW() - interval '60 days', v_company_id),
+    (v_emp7, v_emp2,              '2025-2026', 4, 'Solid engineering fundamentals',                       'Could contribute more in code reviews', 'Achieve AWS certification', 'completed', NOW() - interval '15 days', v_company_id),
+    (v_emp9, v_emp4,              '2026 H1',  3, 'Reliable and thorough in inventory checks',            'Communication could be more proactive', 'Cross-train on forklift operations', 'in_progress', NULL, v_company_id);
 
   -- ═══════════════════════════════════════════════════════════
   -- ONBOARDING
@@ -539,7 +539,7 @@ BEGIN
   -- 1:1 MEETINGS
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO one_to_one_meetings (employee_id, manager_id, scheduled_date, status, notes, company_id) VALUES
+  INSERT INTO one_to_one_meetings (employee_id, manager_id, scheduled_date, status, summary, company_id) VALUES
     (v_emp1, v_admin_employee_id, CURRENT_DATE - 7,  'completed',  'Discussed team expansion plans and Q3 targets.', v_company_id),
     (v_emp2, v_admin_employee_id, CURRENT_DATE - 3,  'completed',  'Reviewed sprint velocity and upcoming releases.', v_company_id),
     (v_emp5, v_admin_employee_id, CURRENT_DATE + 3,  'scheduled',  NULL, v_company_id),
@@ -550,7 +550,7 @@ BEGIN
   SELECT id INTO v_mtg2 FROM one_to_one_meetings WHERE employee_id=v_emp2 AND company_id=v_company_id LIMIT 1;
   SELECT id INTO v_mtg3 FROM one_to_one_meetings WHERE employee_id=v_emp6 AND company_id=v_company_id LIMIT 1;
 
-  INSERT INTO one_to_one_comments (meeting_id, author_id, comment, company_id) VALUES
+  INSERT INTO one_to_one_comments (meeting_id, author_id, body, company_id) VALUES
     (v_mtg1, v_admin_employee_id, 'Looking to hire two more engineers by end of Q3.', v_company_id),
     (v_mtg1, v_emp1, 'Agreed — I will draft the job descriptions this week.', v_company_id),
     (v_mtg2, v_emp2, 'Sprint velocity has increased 20% since we adopted the new workflow.', v_company_id),
@@ -585,7 +585,7 @@ BEGIN
   SELECT id INTO v_skill5 FROM skills WHERE name='Presentation' AND company_id=v_company_id LIMIT 1;
   SELECT id INTO v_skill6 FROM skills WHERE name='UK GDPR'     AND company_id=v_company_id LIMIT 1;
 
-  INSERT INTO employee_skills (employee_id, skill_id, proficiency_level, company_id) VALUES
+  INSERT INTO employee_skills (employee_id, skill_id, proficiency, company_id) VALUES
     (v_emp2, v_skill1, 5, v_company_id), (v_emp2, v_skill2, 4, v_company_id), (v_emp2, v_skill3, 5, v_company_id),
     (v_emp7, v_skill1, 4, v_company_id), (v_emp7, v_skill3, 3, v_company_id),
     (v_emp1, v_skill4, 4, v_company_id), (v_emp1, v_skill5, 3, v_company_id), (v_emp1, v_skill6, 5, v_company_id),
@@ -603,67 +603,66 @@ BEGIN
   VALUES ('Ground Floor', v_loc1, v_company_id)
   RETURNING id INTO v_floor1;
 
-  INSERT INTO spaces (name, floor_id, type, capacity, amenities, is_active, company_id) VALUES
-    ('Meeting Room A', v_floor1, 'meeting_room', 8,  '["Projector","Whiteboard","Video Conferencing"]', true, v_company_id),
-    ('Hot Desk Zone',  v_floor1, 'hot_desk',     20, '["Monitor","Keyboard","Mouse"]',                  true, v_company_id),
-    ('Quiet Room',     v_floor1, 'focus_room',   4,  '["Soundproofing","Standing Desk"]',               true, v_company_id);
+  INSERT INTO spaces (name, floor_id, space_type, capacity, equipment_tags, status, sort_order, company_id) VALUES
+    ('Meeting Room A', v_floor1, 'room', 8,  ARRAY['Projector','Whiteboard','Video Conferencing'], 'active', 0, v_company_id),
+    ('Hot Desk Zone',  v_floor1, 'desk', 20, ARRAY['Monitor','Keyboard','Mouse'],                  'active', 1, v_company_id),
+    ('Quiet Room',     v_floor1, 'room', 4,  ARRAY['Soundproofing','Standing Desk'],               'active', 2, v_company_id);
 
   SELECT id INTO v_space1 FROM spaces WHERE name='Meeting Room A' AND company_id=v_company_id LIMIT 1;
   SELECT id INTO v_space2 FROM spaces WHERE name='Hot Desk Zone'  AND company_id=v_company_id LIMIT 1;
   SELECT id INTO v_space3 FROM spaces WHERE name='Quiet Room'     AND company_id=v_company_id LIMIT 1;
 
-  INSERT INTO space_bookings (space_id, employee_id, date, start_time, end_time, status, company_id) VALUES
+  INSERT INTO space_bookings (space_id, employee_id, booking_date, start_time, end_time, status, company_id) VALUES
     (v_space1, v_emp1, CURRENT_DATE + 1, '10:00', '11:00', 'confirmed', v_company_id),
     (v_space1, v_emp2, CURRENT_DATE + 1, '14:00', '15:30', 'confirmed', v_company_id),
     (v_space2, v_emp5, CURRENT_DATE + 2, '09:00', '17:00', 'confirmed', v_company_id),
     (v_space3, v_emp7, CURRENT_DATE + 1, '09:00', '12:00', 'confirmed', v_company_id),
-    (v_space2, v_emp3, CURRENT_DATE + 3, '09:00', '17:00', 'pending',   v_company_id);
+    (v_space2, v_emp3, CURRENT_DATE + 3, '09:00', '17:00', 'confirmed', v_company_id);
 
   -- ═══════════════════════════════════════════════════════════
   -- SURVEYS
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO company_surveys (company_id, title, description, banner_colour, questions, status)
+  INSERT INTO company_surveys (company_id, title, description, banner_colour, questions)
   VALUES (v_company_id, 'Employee Satisfaction Survey', 'Help us understand how you feel about working here', '#4F46E5',
-    '[{"id":"q1","type":"rating","text":"How satisfied are you with your role?","required":true},{"id":"q2","type":"text","text":"What could we improve?","required":false},{"id":"q3","type":"rating","text":"How would you rate team collaboration?","required":true}]',
-    'active')
+    '[{"id":"q1","type":"rating","text":"How satisfied are you with your role?","required":true},{"id":"q2","type":"text","text":"What could we improve?","required":false},{"id":"q3","type":"rating","text":"How would you rate team collaboration?","required":true}]')
   RETURNING id INTO v_survey1;
 
-  INSERT INTO survey_deployments (company_id, survey_id, title, start_date, end_date, target_audience, status)
-  VALUES (v_company_id, v_survey1, 'Q3 Satisfaction Check', CURRENT_DATE - 7, CURRENT_DATE + 21, 'all', 'active')
+  INSERT INTO survey_deployments (company_id, survey_id, starts_at, ends_at, target_type, status)
+  VALUES (v_company_id, v_survey1, NOW() - interval '7 days', NOW() + interval '21 days', 'all', 'active')
   RETURNING id INTO v_deploy1;
 
-  INSERT INTO survey_responses (company_id, deployment_id, employee_id, answers, submitted_at) VALUES
-    (v_company_id, v_deploy1, v_emp1, '{"q1":4,"q2":"More flexible working options would be great","q3":5}', NOW() - interval '5 days'),
-    (v_company_id, v_deploy1, v_emp2, '{"q1":5,"q2":"Happy with everything!","q3":4}', NOW() - interval '4 days'),
-    (v_company_id, v_deploy1, v_emp3, '{"q1":3,"q2":"Would appreciate more team social events","q3":3}', NOW() - interval '3 days'),
-    (v_company_id, v_deploy1, v_emp7, '{"q1":4,"q2":"","q3":4}', NOW() - interval '2 days');
+  INSERT INTO survey_responses (company_id, deployment_id, employee_id, answers, status, completed_at) VALUES
+    (v_company_id, v_deploy1, v_emp1, '{"q1":4,"q2":"More flexible working options would be great","q3":5}', 'completed', NOW() - interval '5 days'),
+    (v_company_id, v_deploy1, v_emp2, '{"q1":5,"q2":"Happy with everything!","q3":4}', 'completed', NOW() - interval '4 days'),
+    (v_company_id, v_deploy1, v_emp3, '{"q1":3,"q2":"Would appreciate more team social events","q3":3}', 'completed', NOW() - interval '3 days'),
+    (v_company_id, v_deploy1, v_emp7, '{"q1":4,"q2":"","q3":4}', 'completed', NOW() - interval '2 days');
 
   -- ═══════════════════════════════════════════════════════════
   -- NOTIFICATIONS
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO notifications (employee_id, type, title, message, is_read, company_id) VALUES
-    (v_admin_employee_id, 'leave',    'Leave request pending',          'James Wilson has requested 5 days annual leave',        false, v_company_id),
-    (v_admin_employee_id, 'leave',    'Leave request pending',          'Tom Richards has requested 5 days annual leave',        false, v_company_id),
-    (v_admin_employee_id, 'leave',    'Leave request pending',          'Lucy Bennett has requested 5 days annual leave',        false, v_company_id),
-    (v_admin_employee_id, 'expense',  'Expense claim submitted',       'James Wilson submitted expense EXP-T-002 for £85.50',   false, v_company_id),
-    (v_emp1,              'kudos',    'You received kudos!',            'Emma Thompson recognised your leadership',              false, v_company_id),
-    (v_emp2,              'leave',    'Leave request approved',         'Your leave request for 14-16 has been approved',        true,  v_company_id),
-    (v_emp5,              'course',   'Course assigned',                'Data Protection & GDPR has been assigned to you',       false, v_company_id),
-    (v_emp7,              'kudos',    'You received kudos!',            'James Wilson recognised your code review feedback',     false, v_company_id),
-    (v_emp9,              'shift',    'Shift assigned',                 'You have been assigned to Night shift this week',       true,  v_company_id),
-    (v_emp10,             'onboard',  'Onboarding: Induction pending', 'Please complete your induction checklist',              false, v_company_id);
+  INSERT INTO notifications (employee_id, type, notification_type, title, message, is_read, company_id) VALUES
+    (v_admin_employee_id, 'action', 'leave',    'Leave request pending',          'James Wilson has requested 5 days annual leave',        false, v_company_id),
+    (v_admin_employee_id, 'action', 'leave',    'Leave request pending',          'Tom Richards has requested 5 days annual leave',        false, v_company_id),
+    (v_admin_employee_id, 'action', 'leave',    'Leave request pending',          'Lucy Bennett has requested 5 days annual leave',        false, v_company_id),
+    (v_admin_employee_id, 'action', 'expense',  'Expense claim submitted',       'James Wilson submitted expense EXP-T-002 for £85.50',   false, v_company_id),
+    (v_emp1,              'info',   'kudos',    'You received kudos!',            'Emma Thompson recognised your leadership',              false, v_company_id),
+    (v_emp2,              'info',   'leave',    'Leave request approved',         'Your leave request for 14-16 has been approved',        true,  v_company_id),
+    (v_emp5,              'info',   'course',   'Course assigned',                'Data Protection & GDPR has been assigned to you',       false, v_company_id),
+    (v_emp7,              'info',   'kudos',    'You received kudos!',            'James Wilson recognised your code review feedback',     false, v_company_id),
+    (v_emp9,              'info',   'shift',    'Shift assigned',                 'You have been assigned to Night shift this week',       true,  v_company_id),
+    (v_emp10,             'action', 'onboard',  'Onboarding: Induction pending', 'Please complete your induction checklist',              false, v_company_id);
 
   -- ═══════════════════════════════════════════════════════════
   -- WORKFLOW TRACKER
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO workflow_tracker (employee_id, action_type, approval_type, approval_id, status, company_id) VALUES
-    (v_emp2,  'leave_request',  'leave', v_lr1, 'pending',  v_company_id),
-    (v_emp4,  'leave_request',  'leave', v_lr2, 'pending',  v_company_id),
-    (v_emp6,  'leave_request',  'leave', v_lr3, 'pending',  v_company_id),
-    (v_emp2,  'expense_claim',  'expense', v_claim2, 'pending', v_company_id);
+  INSERT INTO workflow_tracker (emp_display_name, employee_email, action, record_type, status, approval_id, company_id) VALUES
+    ('James Wilson',   'demo2@' || v_slug || '-trial.example.com', 'Leave Request',  'Leave',   'Pending', v_lr1, v_company_id),
+    ('Tom Richards',   'demo4@' || v_slug || '-trial.example.com', 'Leave Request',  'Leave',   'Pending', v_lr2, v_company_id),
+    ('Lucy Bennett',   'demo6@' || v_slug || '-trial.example.com', 'Leave Request',  'Leave',   'Pending', v_lr3, v_company_id),
+    ('James Wilson',   'demo2@' || v_slug || '-trial.example.com', 'Expense Claim',  'Expense', 'Pending', v_claim2, v_company_id);
 
   -- ═══════════════════════════════════════════════════════════
   -- APP SETTINGS
