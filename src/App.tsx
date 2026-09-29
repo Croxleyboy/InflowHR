@@ -81,6 +81,8 @@ import AdminCancellations from './pages/admin/AdminCancellations'
 import AdminGettingSetup from './pages/admin/AdminGettingSetup'
 import AdminTeamsTest from './pages/admin/AdminTeamsTest'
 import AdminIntegrations from './pages/admin/AdminIntegrations'
+import AdminSurveys from './pages/admin/AdminSurveys'
+import MySurveys from './pages/MySurveys'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
 import TimesheetCheckIn from './pages/TimesheetCheckIn'
@@ -155,6 +157,7 @@ function EmployeeRoutes() {
       <Route path="/announcements" element={<Placeholder title="Company Announcements" />} />
       <Route path="/user-guide" element={<UserGuide />} />
       <Route path="/skills-passport" element={<SkillsPassport />} />
+      <Route path="/surveys" element={<MySurveys />} />
     </Routes>
   )
 }
@@ -218,6 +221,7 @@ function AuthGate() {
             <Route path="space-management" element={<AdminSpaceManagement />} />
             <Route path="assets" element={<AdminAssetManagement />} />
             <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
+            <Route path="surveys" element={<AdminSurveys />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
             <Route path="integrations" element={<AdminIntegrations />} />
             <Route path="access" element={<AdminAccess />} />
