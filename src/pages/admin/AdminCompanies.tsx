@@ -358,11 +358,6 @@ export default function AdminCompanies() {
     load()
   }
 
-  async function removeLogo(companyId: string) {
-    const { error } = await supabase.from('companies').update({ logo_url: null }).eq('id', companyId)
-    if (error) { showError('Failed to remove logo: ' + error.message); return }
-    load()
-  }
 
   async function toggleActive(id: string, currentlyActive: boolean) {
     if (id === myCompany?.id && currentlyActive) {
