@@ -501,16 +501,45 @@ export default function AdminSurveys() {
 
   return (
     <div className="admin-surveys-page">
-      <h2>Surveys & Feedback</h2>
+      <div className="survey-hero">
+        <div className="survey-hero-text">
+          <h2>Surveys & Feedback</h2>
+          <p>Create, deploy and analyse employee surveys across your organisation.</p>
+        </div>
+        <div className="survey-hero-stats">
+          <div className="survey-hero-stat">
+            <span className="survey-hero-stat-num">{templates.length}</span>
+            <span className="survey-hero-stat-label">Templates</span>
+          </div>
+          <div className="survey-hero-stat">
+            <span className="survey-hero-stat-num">{companySurveys.length}</span>
+            <span className="survey-hero-stat-label">My Surveys</span>
+          </div>
+          <div className="survey-hero-stat">
+            <span className="survey-hero-stat-num">{activeDeployments.length}<span className="survey-hero-stat-max">/3</span></span>
+            <span className="survey-hero-stat-label">Active</span>
+          </div>
+        </div>
+      </div>
 
       <div className="survey-tabs">
         {(['templates', 'surveys', 'active', 'analytics', 'builder'] as const).map(t => (
           <button key={t} className={`survey-tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'templates' && '📋 Templates'}
-            {t === 'surveys' && '📂 My Surveys'}
-            {t === 'active' && <>🟢 Active <span className="survey-tab-badge">{activeDeployments.length}/3</span></>}
-            {t === 'analytics' && '📊 Analytics'}
-            {t === 'builder' && '🛠 Create New'}
+            {t === 'templates' && (
+              <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> Templates</>
+            )}
+            {t === 'surveys' && (
+              <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> My Surveys</>
+            )}
+            {t === 'active' && (
+              <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Active {activeDeployments.length > 0 && <span className="survey-tab-badge">{activeDeployments.length}</span>}</>
+            )}
+            {t === 'analytics' && (
+              <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> Analytics</>
+            )}
+            {t === 'builder' && (
+              <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Create New</>
+            )}
           </button>
         ))}
       </div>
@@ -518,28 +547,38 @@ export default function AdminSurveys() {
       {/* ── Templates Tab ──────────────────────────────────────────────────── */}
       {tab === 'templates' && (
         <div className="survey-templates-tab">
-          <p className="survey-tab-desc">Browse our catalogue of ready-made survey templates. Add one to your surveys to customise and deploy.</p>
+          <div className="survey-section-header">
+            <div>
+              <h3>Survey Catalogue</h3>
+              <p>Browse {templates.length} ready-made UK HR survey templates. Add to your library to customise and deploy.</p>
+            </div>
+          </div>
           <div className="survey-category-filters">
             {TEMPLATE_CATEGORIES.map(c => (
               <button key={c.key} className={`survey-cat-btn ${templateFilter === c.key ? 'active' : ''}`} onClick={() => setTemplateFilter(c.key)}>
-                {c.key !== 'all' && CATEGORY_ICONS[c.key]} {c.label}
+                {c.key !== 'all' && <span className="survey-cat-icon">{CATEGORY_ICONS[c.key]}</span>} {c.label}
               </button>
             ))}
           </div>
           <div className="survey-template-grid">
             {filteredTemplates.map(tmpl => (
-              <div key={tmpl.id} className="survey-template-card" style={{ borderTop: `4px solid ${tmpl.banner_colour}` }}>
-                <div className="survey-template-icon" style={{ background: tmpl.banner_colour }}>{CATEGORY_ICONS[tmpl.category] || '📋'}</div>
-                <h4>{tmpl.title}</h4>
-                <p>{tmpl.description}</p>
-                <div className="survey-template-meta">
-                  <span>{tmpl.questions.length} questions</span>
-                  <span className="survey-template-category">{tmpl.category}</span>
+              <div key={tmpl.id} className="survey-template-card">
+                <div className="survey-template-accent" style={{ background: tmpl.banner_colour }} />
+                <div className="survey-template-content">
+                  <div className="survey-template-top">
+                    <div className="survey-template-icon" style={{ background: `${tmpl.banner_colour}18` }}><span style={{ fontSize: '1.1rem' }}>{CATEGORY_ICONS[tmpl.category] || '📋'}</span></div>
+                    <span className="survey-template-category">{tmpl.category}</span>
+                  </div>
+                  <h4>{tmpl.title}</h4>
+                  <p>{tmpl.description}</p>
+                  <div className="survey-template-footer">
+                    <span className="survey-template-qs">{tmpl.questions.length} questions</span>
+                    <button className="survey-use-btn" onClick={() => copyTemplateToCompany(tmpl)}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add
+                    </button>
+                  </div>
                 </div>
-                <button className="survey-use-btn" onClick={() => copyTemplateToCompany(tmpl)}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  Add to My Surveys
-                </button>
               </div>
             ))}
           </div>
