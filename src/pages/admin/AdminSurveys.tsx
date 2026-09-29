@@ -946,7 +946,7 @@ export default function AdminSurveys() {
       {/* ── Edit Modal ─────────────────────────────────────────────────────── */}
       {editingSurvey && (
         <div className="survey-modal-overlay" onClick={() => setEditingSurvey(null)}>
-          <div className="survey-modal" onClick={e => e.stopPropagation()}>
+          <div className="survey-modal survey-modal-wide" onClick={e => e.stopPropagation()}>
             <div className="survey-modal-header">
               <h3>Edit Survey</h3>
               <button className="survey-modal-close" onClick={() => setEditingSurvey(null)}>×</button>
