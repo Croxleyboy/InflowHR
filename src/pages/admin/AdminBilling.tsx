@@ -583,7 +583,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   const packAPrice = packAPricing && packAEnabled ? effectivePrice(packAPricing) : 0
   const packBPrice = packBPricing && packBEnabled ? effectivePrice(packBPricing) : 0
   const supportTotal = enabledSupport.reduce((sum, sp) => sum + (sp.flat_price ?? 0), 0)
-  const addonTotal = enabledAddons.reduce((sum, a) => sum + effectivePrice(a), 0)
   const isFixed = billingType === 'fixed' && fixedAnnualPrice > 0
   const fixedMonthly = isFixed ? fixedAnnualPrice / 12 : 0
   const perUserTotal = baselinePrice + packAPrice + packBPrice
