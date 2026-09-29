@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export default function TrialSignup() {
   const [fullName, setFullName] = useState('')
@@ -22,17 +23,28 @@ export default function TrialSignup() {
     setLoading(true)
     setError('')
 
-    const { error: insertError } = await supabase.from('trial_requests').insert({
-      full_name: fullName.trim(),
-      work_email: workEmail.trim().toLowerCase(),
-      phone: phone.trim(),
+    const res = await fetch(`${supabaseUrl}/rest/v1/trial_requests`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseAnonKey,
+        'Authorization': `Bearer ${supabaseAnonKey}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({
+        full_name: fullName.trim(),
+        work_email: workEmail.trim().toLowerCase(),
+        phone: phone.trim(),
+      }),
     })
 
-    if (insertError) {
-      if (insertError.message.includes('trial_requests_email_unique')) {
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      const msg = body?.message || body?.error || `HTTP ${res.status}`
+      if (msg.includes('trial_requests_email_unique')) {
         setError('This email address has already been submitted for a trial.')
       } else {
-        setError(insertError.message)
+        setError(msg)
       }
       setLoading(false)
       return
