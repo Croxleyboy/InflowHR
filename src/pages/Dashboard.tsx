@@ -123,6 +123,8 @@ export default function Dashboard() {
   const [latestAsset, setLatestAsset] = useState<{ asset_name: string; asset_type: string } | null>(null)
   const [latestSkill, setLatestSkill] = useState<{ name: string; kind: string } | null>(null)
   const [latestNotif, setLatestNotif] = useState<{ title: string; created_at: string } | null>(null)
+  const [surveyOutstanding, setSurveyOutstanding] = useState(0)
+  const [surveyCompleted, setSurveyCompleted] = useState(0)
   const [nextElearning, setNextElearning] = useState<{ title: string; deadline: string } | null>(null)
   const [nextMeeting, setNextMeeting] = useState<{ scheduled_date: string; scheduled_time: string; label: string } | null>(null)
   const [latestBenefit, setLatestBenefit] = useState<{ name: string } | null>(null)
@@ -509,6 +511,16 @@ export default function Dashboard() {
         .limit(1)
         .maybeSingle()
         .then(({ data }) => { if (data) setLatestNotif(data as any) })
+
+      supabase.from('survey_responses')
+        .select('id, status', { count: 'exact' })
+        .eq('company_id', companyUser.company_id)
+        .eq('employee_id', employeeId)
+        .then(({ data }) => {
+          const rows = data || []
+          setSurveyOutstanding(rows.filter((r: any) => r.status === 'pending').length)
+          setSurveyCompleted(rows.filter((r: any) => r.status === 'completed').length)
+        })
 
       ;(async () => {
         const [enabledRes, completedRes, empDeptRes] = await Promise.all([
@@ -1117,8 +1129,17 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              <span className="info-card-value" style={{ color: '#6d28d9' }}>Surveys</span>
-              <span className="info-card-sub">View outstanding surveys</span>
+              {surveyOutstanding > 0 ? (
+                <>
+                  <span className="info-card-value" style={{ color: '#6d28d9' }}>{surveyOutstanding} outstanding</span>
+                  <span className="info-card-sub">{surveyCompleted} completed</span>
+                </>
+              ) : (
+                <>
+                  <span className="info-card-value" style={{ color: '#6d28d9' }}>{surveyCompleted > 0 ? `${surveyCompleted} completed` : 'Surveys'}</span>
+                  <span className="info-card-sub">{surveyCompleted > 0 ? 'All caught up!' : 'No surveys assigned'}</span>
+                </>
+              )}
             </div>
           </button>
         )
@@ -1383,6 +1404,20 @@ export default function Dashboard() {
                 <span>{cardsExpanded ? 'Show less' : `Show all (${visibleCards.length})`}</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: cardsExpanded ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }}><path d="M6 9l6 6 6-6"/></svg>
               </button>
+            )}
+
+            {features.surveys && surveyOutstanding > 0 && (
+              <div className="dash-survey-reminder" onClick={() => navigate('/surveys')}>
+                <div className="dash-survey-reminder-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                </div>
+                <div className="dash-survey-reminder-text">
+                  <strong>You have {surveyOutstanding} outstanding survey{surveyOutstanding !== 1 ? 's' : ''}</strong>
+                  <span>Please complete your assigned surveys</span>
+                </div>
+                <span className="dash-survey-reminder-badge">{surveyOutstanding}</span>
+                <svg className="dash-survey-reminder-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+              </div>
             )}
 
             {announcements.length > 0 && (

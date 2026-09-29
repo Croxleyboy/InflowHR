@@ -588,29 +588,55 @@ export default function AdminSurveys() {
       {/* ── My Surveys Tab ─────────────────────────────────────────────────── */}
       {tab === 'surveys' && (
         <div className="survey-my-tab">
-          <p className="survey-tab-desc">Your company's survey library. Edit, preview, or deploy surveys from here.</p>
+          <div className="survey-section-header">
+            <div>
+              <h3>Survey Library</h3>
+              <p>Your company's surveys. Edit, customise, or deploy to employees.</p>
+            </div>
+          </div>
           {companySurveys.length === 0 ? (
-            <div className="survey-empty">
-              <p>No surveys yet. Browse the <button className="survey-link-btn" onClick={() => setTab('templates')}>Templates</button> catalogue or <button className="survey-link-btn" onClick={() => setTab('builder')}>create your own</button>.</p>
+            <div className="survey-empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <h3>No surveys yet</h3>
+              <p>Browse the <button className="survey-link-btn" onClick={() => setTab('templates')}>Templates</button> catalogue or <button className="survey-link-btn" onClick={() => setTab('builder')}>create your own</button>.</p>
             </div>
           ) : (
-            <div className="survey-list">
+            <div className="survey-library-list">
               {companySurveys.map(s => (
-                <div key={s.id} className="survey-list-card">
-                  <div className="survey-list-colour" style={{ background: s.banner_colour }} />
-                  <div className="survey-list-body">
+                <div key={s.id} className="survey-library-card">
+                  <div className="survey-library-accent" style={{ background: s.banner_colour }} />
+                  <div className="survey-library-content">
+                    <div className="survey-library-top">
+                      <div className="survey-library-icon" style={{ background: `${s.banner_colour}18`, color: s.banner_colour }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      </div>
+                      <div className="survey-library-badges">
+                        <span className="survey-library-badge">{s.is_custom ? 'Custom' : 'Template'}</span>
+                        <span className="survey-library-badge">{s.questions.length} Qs</span>
+                      </div>
+                    </div>
                     <h4>{s.title}</h4>
                     <p>{s.description}</p>
-                    <div className="survey-list-meta">
-                      <span>{s.questions.length} questions</span>
-                      <span>{s.is_custom ? 'Custom' : 'From template'}</span>
-                      <span>Channels: {s.delivery_channels.join(', ')}</span>
+                    <div className="survey-library-footer">
+                      <span className="survey-library-channels">
+                        {s.delivery_channels.map(ch => (
+                          <span key={ch} className="survey-channel-pill">{ch === 'pc' ? '🖥' : ch === 'mobile' ? '📱' : '💬'} {ch}</span>
+                        ))}
+                      </span>
+                      <div className="survey-library-actions">
+                        <button className="survey-action-btn survey-action-edit" onClick={() => setEditingSurvey({ ...s })} title="Edit">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          Edit
+                        </button>
+                        <button className="survey-action-btn survey-action-deploy" onClick={() => { setDeployModal(s); setDeployEndDate('') }} disabled={activeDeployments.length >= 3} title="Deploy">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                          Deploy
+                        </button>
+                        <button className="survey-action-btn survey-action-delete" onClick={() => deleteSurvey(s.id)} title="Delete">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="survey-list-actions">
-                    <button className="survey-action-btn survey-action-edit" onClick={() => setEditingSurvey({ ...s })}>Edit</button>
-                    <button className="survey-action-btn survey-action-deploy" onClick={() => { setDeployModal(s); setDeployEndDate('') }} disabled={activeDeployments.length >= 3}>Deploy</button>
-                    <button className="survey-action-btn survey-action-delete" onClick={() => deleteSurvey(s.id)}>Delete</button>
                   </div>
                 </div>
               ))}
@@ -622,37 +648,60 @@ export default function AdminSurveys() {
       {/* ── Active Tab ─────────────────────────────────────────────────────── */}
       {tab === 'active' && (
         <div className="survey-active-tab">
-          <p className="survey-tab-desc">Currently running surveys. Maximum 3 can be active at once.</p>
+          <div className="survey-section-header">
+            <div>
+              <h3>Active Deployments</h3>
+              <p>Currently running surveys ({activeDeployments.length}/3 slots used). Employees receive these in their Surveys page.</p>
+            </div>
+          </div>
           <div className="survey-active-slots">
             {[0, 1, 2].map(i => {
               const dep = activeDeployments[i]
               if (!dep) return (
-                <div key={i} className="survey-slot survey-slot-empty">
-                  <div className="survey-slot-num">Slot {i + 1}</div>
-                  <p>Available</p>
+                <div key={i} className="survey-slot-card survey-slot-empty">
+                  <div className="survey-slot-empty-inner">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    <span>Slot {i + 1} — Available</span>
+                    <button className="survey-slot-deploy-btn" onClick={() => setTab('surveys')}>Deploy a survey</button>
+                  </div>
                 </div>
               )
               const progress = dep.total_recipients > 0 ? Math.round((dep.total_responses / dep.total_recipients) * 100) : 0
               const days = daysRemaining(dep.ends_at)
               return (
-                <div key={i} className="survey-slot survey-slot-active" style={{ borderTop: `4px solid ${dep.survey?.banner_colour || '#4F46E5'}` }}>
-                  <div className="survey-slot-num">Slot {i + 1}</div>
-                  <h4>{dep.survey?.title || 'Survey'}</h4>
-                  <div className="survey-progress-bar">
-                    <div className="survey-progress-fill" style={{ width: `${progress}%` }} />
-                  </div>
-                  <div className="survey-slot-stats">
-                    <span>{dep.total_responses}/{dep.total_recipients} responses ({progress}%)</span>
-                    <span>{days} days remaining</span>
-                  </div>
-                  <div className="survey-slot-info">
-                    <span>Target: {dep.target_type === 'all' ? 'All employees' : `${dep.target_type}: ${dep.target_values.join(', ')}`}</span>
-                    <span>Ends: {formatDateUK(dep.ends_at)}</span>
-                  </div>
-                  <div className="survey-slot-actions">
-                    <button className="survey-action-btn" onClick={() => { loadResponses(dep.id); setTab('analytics') }}>View Results</button>
-                    <button className="survey-action-btn survey-action-complete" onClick={() => completeDeployment(dep.id)}>Complete</button>
-                    <button className="survey-action-btn survey-action-delete" onClick={() => cancelDeployment(dep.id)}>Cancel</button>
+                <div key={i} className="survey-slot-card survey-slot-filled">
+                  <div className="survey-slot-accent" style={{ background: dep.survey?.banner_colour || '#4F46E5' }} />
+                  <div className="survey-slot-content">
+                    <div className="survey-slot-top">
+                      <span className="survey-slot-label">Slot {i + 1}</span>
+                      <span className="survey-slot-badge-active">
+                        <span className="survey-slot-pulse" />
+                        Live
+                      </span>
+                    </div>
+                    <h4>{dep.survey?.title || 'Survey'}</h4>
+                    <div className="survey-progress-bar">
+                      <div className="survey-progress-fill" style={{ width: `${progress}%` }} />
+                    </div>
+                    <div className="survey-slot-stats">
+                      <span><strong>{dep.total_responses}</strong>/{dep.total_recipients} responses ({progress}%)</span>
+                      <span className={days <= 3 ? 'survey-slot-urgent' : ''}>{days} days left</span>
+                    </div>
+                    <div className="survey-slot-meta">
+                      <span>Target: {dep.target_type === 'all' ? 'All employees' : `${dep.target_type}: ${dep.target_values.join(', ')}`}</span>
+                      <span>{formatDateUK(dep.starts_at)} – {formatDateUK(dep.ends_at)}</span>
+                    </div>
+                    <div className="survey-slot-actions">
+                      <button className="survey-action-btn" onClick={() => { loadResponses(dep.id); setTab('analytics') }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                        Results
+                      </button>
+                      <button className="survey-action-btn survey-action-complete" onClick={() => completeDeployment(dep.id)}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                        Complete
+                      </button>
+                      <button className="survey-action-btn survey-action-delete" onClick={() => cancelDeployment(dep.id)}>Cancel</button>
+                    </div>
                   </div>
                 </div>
               )
@@ -660,33 +709,36 @@ export default function AdminSurveys() {
           </div>
 
           {completedDeployments.length > 0 && (
-            <>
-              <h3 style={{ marginTop: 24 }}>Past Deployments</h3>
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Survey</th>
-                    <th>Status</th>
-                    <th>Target</th>
-                    <th>Responses</th>
-                    <th>Period</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {completedDeployments.map(dep => (
-                    <tr key={dep.id}>
-                      <td>{dep.survey?.title || '—'}</td>
-                      <td><span className={`survey-status-badge ${dep.status}`}>{dep.status}</span></td>
-                      <td>{dep.target_type === 'all' ? 'All' : `${dep.target_type}: ${dep.target_values.join(', ')}`}</td>
-                      <td>{dep.total_responses}/{dep.total_recipients}</td>
-                      <td>{formatDateUK(dep.starts_at)} – {formatDateUK(dep.ends_at)}</td>
-                      <td><button className="survey-action-btn" onClick={() => { loadResponses(dep.id); setTab('analytics') }}>Analytics</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </>
+            <div className="survey-past-section">
+              <div className="survey-section-header" style={{ marginTop: 28 }}>
+                <div>
+                  <h3>Past Deployments</h3>
+                  <p>{completedDeployments.length} completed or cancelled surveys</p>
+                </div>
+              </div>
+              <div className="survey-past-list">
+                {completedDeployments.map(dep => (
+                  <div key={dep.id} className="survey-past-card">
+                    <div className="survey-past-accent" style={{ background: dep.survey?.banner_colour || '#94a3b8' }} />
+                    <div className="survey-past-content">
+                      <div className="survey-past-top">
+                        <h4>{dep.survey?.title || '—'}</h4>
+                        <span className={`survey-status-pill ${dep.status}`}>{dep.status}</span>
+                      </div>
+                      <div className="survey-past-meta">
+                        <span>{dep.target_type === 'all' ? 'All employees' : `${dep.target_type}: ${dep.target_values.join(', ')}`}</span>
+                        <span>{dep.total_responses}/{dep.total_recipients} responses</span>
+                        <span>{formatDateUK(dep.starts_at)} – {formatDateUK(dep.ends_at)}</span>
+                      </div>
+                    </div>
+                    <button className="survey-action-btn" onClick={() => { loadResponses(dep.id); setTab('analytics') }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                      Analytics
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -694,8 +746,14 @@ export default function AdminSurveys() {
       {/* ── Analytics Tab ──────────────────────────────────────────────────── */}
       {tab === 'analytics' && (
         <div className="survey-analytics-tab">
-          <div className="survey-analytics-selector">
-            <label>Select deployment:</label>
+          <div className="survey-section-header">
+            <div>
+              <h3>Response Analytics</h3>
+              <p>View detailed breakdowns of survey responses and feedback.</p>
+            </div>
+          </div>
+          <div className="survey-analytics-picker">
+            <label>Select deployment</label>
             <select value={analyticsDeployment} onChange={e => loadResponses(e.target.value)}>
               <option value="">— Choose a survey deployment —</option>
               {deployments.map(d => (
@@ -706,25 +764,37 @@ export default function AdminSurveys() {
 
           {analyticsData && (
             <div className="survey-analytics-content">
-              <div className="survey-analytics-summary">
-                <div className="survey-stat-card">
-                  <div className="survey-stat-num">{analyticsData.completed}</div>
-                  <div className="survey-stat-label">Completed</div>
+              <div className="survey-analytics-kpis">
+                <div className="survey-kpi-card survey-kpi-completed">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+                  <div className="survey-kpi-data">
+                    <span className="survey-kpi-num">{analyticsData.completed}</span>
+                    <span className="survey-kpi-label">Completed</span>
+                  </div>
                 </div>
-                <div className="survey-stat-card">
-                  <div className="survey-stat-num">{analyticsData.pending}</div>
-                  <div className="survey-stat-label">Pending</div>
+                <div className="survey-kpi-card survey-kpi-pending">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <div className="survey-kpi-data">
+                    <span className="survey-kpi-num">{analyticsData.pending}</span>
+                    <span className="survey-kpi-label">Pending</span>
+                  </div>
                 </div>
-                <div className="survey-stat-card">
-                  <div className="survey-stat-num">{analyticsData.completed + analyticsData.pending > 0 ? Math.round((analyticsData.completed / (analyticsData.completed + analyticsData.pending)) * 100) : 0}%</div>
-                  <div className="survey-stat-label">Response Rate</div>
+                <div className="survey-kpi-card survey-kpi-rate">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                  <div className="survey-kpi-data">
+                    <span className="survey-kpi-num">{analyticsData.completed + analyticsData.pending > 0 ? Math.round((analyticsData.completed / (analyticsData.completed + analyticsData.pending)) * 100) : 0}%</span>
+                    <span className="survey-kpi-label">Response Rate</span>
+                  </div>
                 </div>
               </div>
 
               <div className="survey-question-results">
                 {analyticsData.questionStats.map((qs: any, idx: number) => (
                   <div key={idx} className="survey-result-card">
-                    <h4>Q{idx + 1}: {qs.question.text}</h4>
+                    <div className="survey-result-header">
+                      <span className="survey-result-qnum">Q{idx + 1}</span>
+                      <h4>{qs.question.text}</h4>
+                    </div>
                     <span className="survey-result-count">{qs.total} responses</span>
                     {qs.type === 'bar' && renderBarChart(qs.data, qs.total)}
                     {qs.type === 'multi_bar' && renderBarChart(qs.data, qs.total)}
@@ -742,8 +812,14 @@ export default function AdminSurveys() {
             </div>
           )}
 
-          {!analyticsData && analyticsDeployment && <p>Loading analytics...</p>}
-          {!analyticsDeployment && <p className="survey-no-data">Select a deployment above to view response analytics.</p>}
+          {!analyticsData && analyticsDeployment && <p style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 40 }}>Loading analytics...</p>}
+          {!analyticsDeployment && (
+            <div className="survey-empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <h3>Select a deployment</h3>
+              <p>Choose a survey deployment above to view detailed response analytics.</p>
+            </div>
+          )}
         </div>
       )}
 
