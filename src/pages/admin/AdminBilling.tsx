@@ -628,7 +628,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     })
   }, [baselinePrice, packAPrice, packBPrice, employeeCount, snapshots, isFixed, fixedMonthly, viewEndYear, viewEndMonth])
 
-  const maxAmount = Math.max(...chartData.map(m => m.core + m.packA + m.packB), 1)
+  const chartMaxFeatures = Math.max(...chartData.map(m => m.core + m.packA + m.packB), 0.01)
 
   const nowDate = new Date()
   const isAtLatest = viewEndYear === nowDate.getFullYear() && viewEndMonth === nowDate.getMonth() + 1
@@ -812,7 +812,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
             >&#8592;</button>
             <div>
               <h3 style={{ margin: 0 }}>Monthly Costs</h3>
-              <p style={{ margin: 0 }}>{chartData.length > 0 && `${chartData[0].label} ${chartData[0].year} – ${chartData[chartData.length - 1].label} ${chartData[chartData.length - 1].year}`} {isFixed ? '· Fixed' : ''}</p>
+              <p style={{ margin: 0, fontSize: 12, color: '#888' }}>{chartData.length > 0 && `${chartData[0].label} ${chartData[0].year} – ${chartData[chartData.length - 1].label} ${chartData[chartData.length - 1].year}`} {isFixed ? '· Fixed' : ''}</p>
             </div>
             <button
               onClick={navigateForward}
@@ -823,48 +823,178 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
           </div>
           <div className="billing-chart-legend">
             {isFixed ? (
-              <span><span className="billing-legend-dot" style={{ background: 'var(--billing-core, #1565c0)' }} />Fixed</span>
+              <span><span className="billing-legend-dot" style={{ background: '#1565c0' }} />Fixed</span>
             ) : (
               <>
-                <span><span className="billing-legend-dot" style={{ background: 'var(--billing-core, #1565c0)' }} />Core</span>
+                <span><span className="billing-legend-dot" style={{ background: '#1565c0' }} />Core</span>
                 {packAEnabled && <span><span className="billing-legend-dot" style={{ background: '#43a047' }} />Pack A</span>}
                 {packBEnabled && <span><span className="billing-legend-dot" style={{ background: '#7b1fa2' }} />Pack B</span>}
               </>
             )}
+            <span><span className="billing-legend-dot" style={{ background: '#3949ab' }} />Platform Fee</span>
           </div>
         </div>
-        <div className="billing-modern-bars">
-          {chartData.map((m, i) => {
-            const total = m.core + m.packA + m.packB
-            const corePct = maxAmount > 0 ? (m.core / maxAmount) * 100 : 0
-            const packAPct = maxAmount > 0 ? (m.packA / maxAmount) * 100 : 0
-            const packBPct = maxAmount > 0 ? (m.packB / maxAmount) * 100 : 0
-            return (
-              <div key={i} className={`billing-modern-bar-col${m.isCurrent ? ' billing-bar-current' : ''}`}>
-                <span className="billing-modern-amount">&pound;{total.toFixed(0)}</span>
-                <div className="billing-modern-bar-stack">
-                  {packBPct > 0 && (
-                    <div style={{ height: `${packBPct}%`, background: '#7b1fa2', borderRadius: packAPct > 0 || corePct > 0 ? '0' : '0 0 8px 8px' }} />
-                  )}
-                  {packAPct > 0 && (
-                    <div style={{ height: `${packAPct}%`, background: '#43a047', borderRadius: corePct > 0 ? '0' : '0 0 8px 8px' }} />
-                  )}
-                  <div className="billing-bar-core" style={{ height: `${corePct}%` }} />
+        {(() => {
+          const svgW = 680
+          const padL = 55
+          const cols = chartData.length
+          const colW = (svgW - padL * 2) / cols
+          const barW = Math.min(54, colW * 0.58)
+          const barBase = 200
+          const maxBarH = 140
+          const svgH = 290
+
+          const bars = chartData.map((m, idx) => {
+            const cx = padL + colW / 2 + idx * colW
+            const featureTotal = m.core + m.packA + m.packB
+            const grandTotal = featureTotal + monthlyPlatformFee + supportTotal
+
+            const coreH = chartMaxFeatures > 0 ? (m.core / chartMaxFeatures) * maxBarH : 0
+            const packAH = chartMaxFeatures > 0 ? (m.packA / chartMaxFeatures) * maxBarH : 0
+            const packBH = chartMaxFeatures > 0 ? (m.packB / chartMaxFeatures) * maxBarH : 0
+
+            const coreBot = barBase
+            const coreTop = barBase - coreH
+            const packABot = coreTop
+            const packATop = coreTop - packAH
+            const packBBot = packATop
+            const packBTop = packATop - packBH
+            const barTop = packBTop
+
+            return { cx, m, featureTotal, grandTotal, coreH, packAH, packBH, coreBot, coreTop, packABot, packATop, packBBot, packBTop, barTop }
+          })
+
+          return (
+            <>
+              <svg viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+                <defs>
+                  <linearGradient id="bc-grad-core" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#64b5f6" />
+                    <stop offset="100%" stopColor="#1565c0" />
+                  </linearGradient>
+                  <linearGradient id="bc-grad-packA" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#81c784" />
+                    <stop offset="100%" stopColor="#388e3c" />
+                  </linearGradient>
+                  <linearGradient id="bc-grad-packB" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ce93d8" />
+                    <stop offset="100%" stopColor="#7b1fa2" />
+                  </linearGradient>
+                  <filter id="bc-shadow" x="-10%" y="-10%" width="120%" height="130%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.08" />
+                  </filter>
+                </defs>
+
+                <line x1={padL} y1={barBase} x2={svgW - padL} y2={barBase} stroke="#eee" strokeWidth={1} />
+
+                {bars.slice(0, -1).map((b, i) => {
+                  const next = bars[i + 1]
+                  const lx = b.cx + barW / 2
+                  const rx = next.cx - barW / 2
+                  const mx = (lx + rx) / 2
+                  const ribbons: React.ReactNode[] = []
+
+                  if (b.coreH > 0.5 || next.coreH > 0.5) {
+                    ribbons.push(
+                      <path key={`rc${i}`}
+                        d={`M${lx} ${b.coreBot} C${mx} ${b.coreBot} ${mx} ${next.coreBot} ${rx} ${next.coreBot} L${rx} ${next.coreTop} C${mx} ${next.coreTop} ${mx} ${b.coreTop} ${lx} ${b.coreTop} Z`}
+                        fill="#1565c0" opacity={0.07}
+                      />
+                    )
+                  }
+                  if (b.packAH > 0.5 || next.packAH > 0.5) {
+                    ribbons.push(
+                      <path key={`ra${i}`}
+                        d={`M${lx} ${b.packABot} C${mx} ${b.packABot} ${mx} ${next.packABot} ${rx} ${next.packABot} L${rx} ${next.packATop} C${mx} ${next.packATop} ${mx} ${b.packATop} ${lx} ${b.packATop} Z`}
+                        fill="#388e3c" opacity={0.07}
+                      />
+                    )
+                  }
+                  if (b.packBH > 0.5 || next.packBH > 0.5) {
+                    ribbons.push(
+                      <path key={`rb${i}`}
+                        d={`M${lx} ${b.packBBot} C${mx} ${b.packBBot} ${mx} ${next.packBBot} ${rx} ${next.packBBot} L${rx} ${next.packBTop} C${mx} ${next.packBTop} ${mx} ${b.packBTop} ${lx} ${b.packBTop} Z`}
+                        fill="#7b1fa2" opacity={0.07}
+                      />
+                    )
+                  }
+
+                  return <g key={`rib${i}`}>{ribbons}</g>
+                })}
+
+                {bars.map((b, i) => {
+                  const halfW = barW / 2
+                  const r = Math.min(6, barW / 4)
+                  const bubbleY = b.featureTotal > 0 ? Math.max(b.barTop - 30, 4) : barBase - 30
+                  return (
+                    <g key={`bar${i}`} opacity={b.m.isCurrent ? 1 : 0.85}>
+                      {b.coreH > 0.5 && (
+                        <rect x={b.cx - halfW} y={b.coreTop} width={barW} height={b.coreH}
+                          rx={b.packAH < 0.5 && b.packBH < 0.5 ? r : 0} ry={b.packAH < 0.5 && b.packBH < 0.5 ? r : 0}
+                          fill="url(#bc-grad-core)" filter={b.m.isCurrent ? 'url(#bc-shadow)' : undefined} />
+                      )}
+                      {b.packAH > 0.5 && (
+                        <rect x={b.cx - halfW} y={b.packATop} width={barW} height={b.packAH}
+                          rx={b.packBH < 0.5 ? r : 0} ry={b.packBH < 0.5 ? r : 0}
+                          fill="url(#bc-grad-packA)" filter={b.m.isCurrent ? 'url(#bc-shadow)' : undefined} />
+                      )}
+                      {b.packBH > 0.5 && (
+                        <rect x={b.cx - halfW} y={b.packBTop} width={barW} height={b.packBH}
+                          rx={r} ry={r}
+                          fill="url(#bc-grad-packB)" filter={b.m.isCurrent ? 'url(#bc-shadow)' : undefined} />
+                      )}
+                      {b.coreH > 0.5 && (
+                        <rect x={b.cx - halfW} y={b.coreBot - r} width={barW} height={r}
+                          rx={r} ry={r} fill="url(#bc-grad-core)" />
+                      )}
+
+                      <rect x={b.cx - 34} y={bubbleY} width={68} height={22} rx={11}
+                        fill={b.m.isCurrent ? '#1a237e' : '#fafafa'} stroke={b.m.isCurrent ? 'none' : '#e0e0e0'} strokeWidth={0.5}
+                        filter={b.m.isCurrent ? 'url(#bc-shadow)' : undefined} />
+                      <text x={b.cx} y={bubbleY + 15} textAnchor="middle"
+                        fontSize={11} fontWeight={700} fontFamily="system-ui, -apple-system, sans-serif"
+                        fill={b.m.isCurrent ? '#fff' : '#333'}>
+                        &pound;{b.grandTotal.toFixed(0)}
+                      </text>
+
+                      <text x={b.cx} y={barBase + 18} textAnchor="middle"
+                        fontSize={12} fontFamily="system-ui, -apple-system, sans-serif"
+                        fill={b.m.isCurrent ? '#333' : '#999'} fontWeight={b.m.isCurrent ? 600 : 400}>
+                        {b.m.label}
+                      </text>
+
+                      <rect x={b.cx - 28} y={barBase + 28} width={56} height={20} rx={10}
+                        fill="#e8eaf6" stroke="#c5cae9" strokeWidth={0.5} />
+                      <text x={b.cx} y={barBase + 41} textAnchor="middle"
+                        fontSize={9} fontWeight={600} fontFamily="system-ui, -apple-system, sans-serif" fill="#3949ab">
+                        &pound;{monthlyPlatformFee.toFixed(0)} fee
+                      </text>
+
+                      {b.m.isCurrent && (
+                        <circle cx={b.cx} cy={barBase + 57} r={3} fill="#1565c0" />
+                      )}
+                    </g>
+                  )
+                })}
+              </svg>
+              {!isFixed && (
+                <div style={{ display: 'flex', justifyContent: 'space-around', padding: '0 55px', marginTop: -8 }}>
+                  {chartData.map((m, i) => (
+                    <button
+                      key={i}
+                      className="billing-invoice-btn"
+                      title={`Download invoice for ${m.month} ${m.year}`}
+                      onClick={() => handleInvoice(m.month, m.year)}
+                      style={{ flex: '0 0 auto', width: `${100 / cols}%`, display: 'flex', justifyContent: 'center' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+                    </button>
+                  ))}
                 </div>
-                <span className="billing-modern-label">{m.label}</span>
-                {!isFixed && (
-                  <button
-                    className="billing-invoice-btn"
-                    title={`Download invoice for ${m.month} ${m.year}`}
-                    onClick={() => handleInvoice(m.month, m.year)}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
-                  </button>
-                )}
-              </div>
-            )
-          })}
-        </div>
+              )}
+            </>
+          )
+        })()}
       </div>
 
       {isFixed && (
