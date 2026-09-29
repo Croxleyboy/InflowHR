@@ -246,12 +246,12 @@ BEGIN
   -- WORK PATTERNS
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO work_patterns (name, type, company_id, mon_start, mon_end, tue_start, tue_end, wed_start, wed_end, thu_start, thu_end, fri_start, fri_end)
-  VALUES ('Standard Office Hours', 'fixed', v_company_id, '09:00', '17:30', '09:00', '17:30', '09:00', '17:30', '09:00', '17:30', '09:00', '17:30')
+  INSERT INTO work_patterns (name, pattern_type, days, company_id)
+  VALUES ('Standard Office Hours', 'fixed', '{true,true,true,true,true,false,false}', v_company_id)
   RETURNING id INTO v_wp_fixed;
 
-  INSERT INTO work_patterns (name, type, company_id)
-  VALUES ('Variable Shifts', 'variable', v_company_id)
+  INSERT INTO work_patterns (name, pattern_type, days, company_id)
+  VALUES ('Variable Shifts', 'variable', '{true,true,true,true,true,true,true}', v_company_id)
   RETURNING id INTO v_wp_variable;
 
   -- Fixed pattern: emp1(Sarah), emp2(James), emp3(Emma), emp5(Priya), emp7(Daniel)
