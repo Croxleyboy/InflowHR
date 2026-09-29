@@ -54,7 +54,6 @@ export default function SurveyInsights() {
   const [deployments, setDeployments] = useState<InsightDeployment[]>([])
   const [responses, setResponses] = useState<InsightResponse[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedCategory, setSelectedCategory] = useState('all')
   const [timeRange, setTimeRange] = useState<'30' | '90' | '365' | 'all'>('all')
 
   const loadData = useCallback(async () => {
@@ -134,7 +133,7 @@ export default function SurveyInsights() {
   }, [filteredResponses])
 
   const sentimentScores = useMemo(() => {
-    const scores: { surveyTitle: string; questionText: string; avg: number; count: number; colour: string }[] = []
+    const scores: { surveyTitle: string; questionText: string; avg: number; maxScale: number; count: number; colour: string }[] = []
     filteredDeps.forEach(dep => {
       if (!dep.survey) return
       dep.survey.questions.forEach(q => {
@@ -146,11 +145,12 @@ export default function SurveyInsights() {
         }).filter(n => !isNaN(n))
         if (vals.length === 0) return
         const avg = vals.reduce((a, b) => a + b, 0) / vals.length
-        const max = q.max || 10
+        const maxScale = q.max || 10
         scores.push({
           surveyTitle: dep.survey.title,
           questionText: q.text,
           avg: Number(avg.toFixed(1)),
+          maxScale,
           count: vals.length,
           colour: dep.survey.banner_colour,
         })
@@ -435,7 +435,7 @@ export default function SurveyInsights() {
                 </div>
                 <div className="si-sentiment-grid">
                   {sentimentScores.slice(0, 12).map((s, i) => {
-                    const pct = (s.avg / 10) * 100
+                    const pct = (s.avg / s.maxScale) * 100
                     const color = pct >= 70 ? '#16a34a' : pct >= 50 ? '#f59e0b' : '#ef4444'
                     return (
                       <div key={i} className="si-sentiment-card">
