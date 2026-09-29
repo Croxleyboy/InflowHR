@@ -48,7 +48,7 @@ const INFO_CARD_KEYS = [
   'checkin', 'leave', 'expenses', 'documents', 'profile',
   'payslips', 'kudos', 'performance', 'elearning', 'benefits',
   'timesheets', 'shifts', 'space_booking', 'legal_timesheets',
-  'asset_management', 'skills_passport', 'notifications',
+  'asset_management', 'skills_passport', 'surveys', 'notifications',
 ] as const
 
 type InfoCardKey = typeof INFO_CARD_KEYS[number]
@@ -70,6 +70,7 @@ const INFO_CARD_FEATURE_MAP: Record<string, string | null> = {
   legal_timesheets: 'legal_timesheets',
   asset_management: 'asset_management',
   skills_passport: 'skills_passport',
+  surveys: 'surveys',
   notifications: null,
 }
 
@@ -1106,6 +1107,21 @@ export default function Dashboard() {
             </div>
           </button>
         )
+      case 'surveys':
+        return (
+          <button key={key} className="info-card" onClick={() => navigate('/surveys')}>
+            <div className="info-card-head">
+              <span className="info-card-title">Surveys</span>
+              <span className="info-card-icon" style={{ background: '#ede9fe' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              </span>
+            </div>
+            <div className="info-card-body">
+              <span className="info-card-value" style={{ color: '#6d28d9' }}>Surveys</span>
+              <span className="info-card-sub">View outstanding surveys</span>
+            </div>
+          </button>
+        )
       case 'notifications':
         return (
           <button key={key} className="info-card" onClick={() => navigate('/notifications')}>
@@ -1151,6 +1167,7 @@ export default function Dashboard() {
       { label: 'Space Booking', path: '/space-booking', featureKey: 'space_booking', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg> },
       { label: 'Legal Timesheets', path: '/legal-timesheets', featureKey: 'legal_timesheets', pattern: 'fixed', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
       { label: 'Skills Passport', path: '/skills-passport', featureKey: 'skills_passport', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg> },
+      { label: 'Surveys', path: '/surveys', featureKey: 'surveys', icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> },
       { label: 'Notifications', path: '/notifications', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> },
       { label: 'Directory', path: '/directory', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> },
       { label: 'Settings', path: '/settings', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
@@ -1568,6 +1585,14 @@ export default function Dashboard() {
                 <span className="card-label">{t('dashboard.legal_timesheets')}</span>
               </div>
               <Chevron color="#00695c" />
+            </button>
+          )}
+          {features.surveys && (
+            <button className="dash-card card-surveys" onClick={() => navigate('/surveys')}>
+              <div className="card-content">
+                <span className="card-label">Surveys</span>
+              </div>
+              <Chevron color="#6d28d9" />
             </button>
           )}
         </div>

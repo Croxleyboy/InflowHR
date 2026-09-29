@@ -44,6 +44,7 @@ const CORE_FEATURES = [
   'Leave', 'Performance', 'E-Learning', 'Expenses', 'Onboarding/Offboarding',
   'Payroll / Xero / Sage', 'Kudos', 'Announcements & Notifications',
   'Benefits', 'GDPR Document Storage', 'Timesheets', 'HR Tickets', 'Email Notifications',
+  'Surveys & Feedback',
 ]
 
 const PACK_A_FEATURE_KEYS = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
