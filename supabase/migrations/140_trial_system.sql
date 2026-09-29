@@ -477,14 +477,9 @@ BEGIN
   -- ONBOARDING
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO onboarding (employee_id, step, status, completed_at, company_id) VALUES
-    (v_emp5,  'contract_signed',   'completed',   NOW() - interval '90 days', v_company_id),
-    (v_emp5,  'it_setup',          'completed',   NOW() - interval '88 days', v_company_id),
-    (v_emp5,  'induction',         'completed',   NOW() - interval '85 days', v_company_id),
-    (v_emp10, 'contract_signed',   'completed',   NOW() - interval '30 days', v_company_id),
-    (v_emp10, 'it_setup',          'completed',   NOW() - interval '28 days', v_company_id),
-    (v_emp10, 'induction',         'in_progress', NULL,                        v_company_id),
-    (v_emp10, 'probation_review',  'pending',     NULL,                        v_company_id);
+  INSERT INTO onboarding (employee_id, firstname, surname, user_email, user_action, status, start_date, first_day, first_week, first_month, elearning, is_complete, company_id) VALUES
+    (v_emp5,  'Priya',  'Sharma',   'demo5@' || v_slug || '-trial.example.com', 'Joiner', 'Onboarded', '2025-01-06', true, true, true, true, true, v_company_id),
+    (v_emp10, 'Sophie', 'Williams', 'demo10@' || v_slug || '-trial.example.com', 'Joiner', 'new', '2025-04-01', true, true, false, false, false, v_company_id);
 
   -- ═══════════════════════════════════════════════════════════
   -- TIMESHEETS (last 2 weeks for fixed-pattern employees)
