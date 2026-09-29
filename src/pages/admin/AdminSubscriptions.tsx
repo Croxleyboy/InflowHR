@@ -3,7 +3,7 @@ import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import AdminCompanies from './AdminCompanies'
-import AdminDemoSeed from './AdminDemoSeed'
+import AdminTrialRequests from './AdminTrialRequests'
 import AdminSupportAccess from './AdminSupportAccess'
 import AdminAuditLog from './AdminAuditLog'
 
@@ -56,7 +56,7 @@ const PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligenc
 export default function AdminSubscriptions() {
   const { isSuperAdmin } = useAuth()
   const { showSuccess, showError } = useToast()
-  const [tab, setTab] = useState<'pricing' | 'features' | 'companies' | 'demo-seed' | 'support-access' | 'audit-log'>('pricing')
+  const [tab, setTab] = useState<'pricing' | 'features' | 'companies' | 'trial-requests' | 'support-access' | 'audit-log'>('pricing')
 
   // Pricing state
   const [pricing, setPricing] = useState<PricingItem[]>([])
@@ -374,7 +374,7 @@ export default function AdminSubscriptions() {
         <button onClick={() => setTab('pricing')} style={tabStyle('pricing')}>Pricing</button>
         <button onClick={() => { setTab('features'); loadCompanies() }} style={tabStyle('features')}>Company Features</button>
         <button onClick={() => setTab('companies')} style={tabStyle('companies')}>Companies</button>
-        <button onClick={() => setTab('demo-seed')} style={tabStyle('demo-seed')}>Demo Seed</button>
+        <button onClick={() => setTab('trial-requests')} style={tabStyle('trial-requests')}>Trial Requests</button>
         <button onClick={() => setTab('support-access')} style={tabStyle('support-access')}>Support Access</button>
         <button onClick={() => setTab('audit-log')} style={tabStyle('audit-log')}>Audit Log</button>
       </div>
@@ -967,7 +967,7 @@ export default function AdminSubscriptions() {
       )}
 
       {tab === 'companies' && <AdminCompanies />}
-      {tab === 'demo-seed' && <AdminDemoSeed />}
+      {tab === 'trial-requests' && <AdminTrialRequests />}
       {tab === 'support-access' && <AdminSupportAccess />}
       {tab === 'audit-log' && <AdminAuditLog />}
     </div>
