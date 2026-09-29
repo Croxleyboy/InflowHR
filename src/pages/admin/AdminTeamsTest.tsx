@@ -504,7 +504,7 @@ export default function AdminTeamsTest() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(Object.keys(EMAIL_TOGGLE_LABELS) as (keyof EmailSettings)[]).map(key => {
-                  const enabled = (emailSettings as Record<string, unknown>)[key] === true
+                  const enabled = emailSettings[key] === true
                   return (
                     <div key={key} style={{
                       display: 'flex', alignItems: 'center', gap: 12,
