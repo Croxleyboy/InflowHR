@@ -26,7 +26,6 @@ BEGIN
   DELETE FROM survey_responses    WHERE company_id = p_company_id;
   DELETE FROM survey_deployments  WHERE company_id = p_company_id;
   DELETE FROM company_surveys     WHERE company_id = p_company_id;
-  DELETE FROM survey_templates    WHERE company_id = p_company_id;
 
   -- Check-in tables
   DELETE FROM break_records       WHERE company_id = p_company_id;
