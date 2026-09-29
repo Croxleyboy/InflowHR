@@ -485,12 +485,12 @@ BEGIN
   -- TIMESHEETS (last 2 weeks for fixed-pattern employees)
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO timesheets (employee_id, date, start_time, end_time, break_minutes, total_hours, status, company_id)
-  SELECT e.id, d.dt,
-    (d.dt || ' 09:00')::timestamptz,
-    (d.dt || ' 17:30')::timestamptz,
-    60, 7.5,
-    CASE WHEN d.dt < CURRENT_DATE - 7 THEN 'approved' ELSE 'submitted' END,
+  INSERT INTO timesheets (employee_id, date, start_time, end_time, location, role, status, company_id)
+  SELECT e.id, d.dt::date,
+    '09:00'::time,
+    '17:30'::time,
+    'Head Office', 'Standard',
+    CASE WHEN d.dt < CURRENT_DATE - 7 THEN 'approved' ELSE 'pending' END,
     v_company_id
   FROM unnest(ARRAY[v_emp1, v_emp2, v_emp3, v_emp5, v_emp7]) AS e(id)
   CROSS JOIN generate_series(CURRENT_DATE - 13, CURRENT_DATE - 1, '1 day'::interval) AS d(dt)
