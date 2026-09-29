@@ -82,6 +82,7 @@ import AdminGettingSetup from './pages/admin/AdminGettingSetup'
 import AdminTeamsTest from './pages/admin/AdminTeamsTest'
 import AdminIntegrations from './pages/admin/AdminIntegrations'
 import AdminSurveys from './pages/admin/AdminSurveys'
+import SurveyInsights from './pages/admin/SurveyInsights'
 import MySurveys from './pages/MySurveys'
 import UserGuide from './pages/UserGuide'
 import SkillsPassport from './pages/SkillsPassport'
@@ -222,6 +223,7 @@ function AuthGate() {
             <Route path="assets" element={<AdminAssetManagement />} />
             <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
             <Route path="surveys" element={<AdminSurveys />} />
+            <Route path="surveys/insights" element={<SurveyInsights />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
             <Route path="integrations" element={<AdminIntegrations />} />
             <Route path="access" element={<AdminAccess />} />
