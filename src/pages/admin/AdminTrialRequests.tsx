@@ -43,12 +43,12 @@ export default function AdminTrialRequests() {
       return
     }
     setCreating(request.id)
-    const { data, error } = await callRpcDirect('create_trial_data', {
+    const { error } = await callRpcDirect('create_trial_data', {
       p_request_id: request.id,
       p_company_name: name,
     })
     if (error) {
-      showError(error.message || 'Failed to create trial data')
+      showError(error || 'Failed to create trial data')
       setCreating(null)
       return
     }
