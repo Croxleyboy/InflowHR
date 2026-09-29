@@ -23,34 +23,38 @@ export default function TrialSignup() {
     setLoading(true)
     setError('')
 
-    const res = await fetch(`${supabaseUrl}/rest/v1/trial_requests`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseAnonKey,
-        'Authorization': `Bearer ${supabaseAnonKey}`,
-        'Prefer': 'return=minimal',
-      },
-      body: JSON.stringify({
-        full_name: fullName.trim(),
-        work_email: workEmail.trim().toLowerCase(),
-        phone: phone.trim(),
-      }),
-    })
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/trial_requests`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({
+          full_name: fullName.trim(),
+          work_email: workEmail.trim().toLowerCase(),
+          phone: phone.trim(),
+        }),
+      })
 
-    if (!res.ok) {
-      const body = await res.json().catch(() => null)
-      const msg = body?.message || body?.error || `HTTP ${res.status}`
-      if (msg.includes('trial_requests_email_unique')) {
-        setError('This email address has already been submitted for a trial.')
-      } else {
-        setError(msg)
+      if (!res.ok) {
+        const body = await res.json().catch(() => null)
+        const msg = body?.message || body?.error || `HTTP ${res.status}`
+        if (msg.includes('trial_requests_email_unique')) {
+          setError('This email address has already been submitted for a trial.')
+        } else {
+          setError(msg)
+        }
+        setLoading(false)
+        return
       }
-      setLoading(false)
-      return
-    }
 
-    setSubmitted(true)
+      setSubmitted(true)
+    } catch {
+      setError('Unable to submit your request. Please try again.')
+    }
     setLoading(false)
   }
 
