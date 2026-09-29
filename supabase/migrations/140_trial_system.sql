@@ -86,23 +86,23 @@ DECLARE
   v_mtg1 BIGINT; v_mtg2 BIGINT; v_mtg3 BIGINT;
 
   -- Rota/shift IDs
-  v_rota1 BIGINT;
-  v_st_morning BIGINT; v_st_afternoon BIGINT; v_st_night BIGINT;
+  v_rota1 UUID;
+  v_st_morning UUID; v_st_afternoon UUID; v_st_night UUID;
 
   -- Space booking IDs
-  v_loc1 BIGINT; v_floor1 BIGINT;
-  v_space1 BIGINT; v_space2 BIGINT; v_space3 BIGINT;
+  v_loc1 UUID; v_floor1 UUID;
+  v_space1 UUID; v_space2 UUID; v_space3 UUID;
 
   -- Skill IDs
-  v_scat1 BIGINT; v_scat2 BIGINT; v_scat3 BIGINT;
+  v_scat1 UUID; v_scat2 UUID; v_scat3 UUID;
   v_skill1 UUID; v_skill2 UUID; v_skill3 UUID; v_skill4 UUID; v_skill5 UUID; v_skill6 UUID;
 
   -- Work pattern IDs
   v_wp_fixed UUID; v_wp_variable UUID;
 
   -- Survey IDs
-  v_survey1 BIGINT;
-  v_deploy1 BIGINT;
+  v_survey1 UUID;
+  v_deploy1 UUID;
 
   -- Loop counters
   v_emp_ids UUID[];
@@ -179,18 +179,40 @@ BEGIN
   -- 10 DEMO EMPLOYEES
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO employees (employee_number, first_name, last_name, email, job_title, department, manager_id, start_date, phone, is_admin, is_active, can_post_notifications, company_id, contract_type, leave_allowance)
+  INSERT INTO employees (employee_number, first_name, last_name, email, job_title, department, manager_id, start_date, phone, is_admin, is_active, can_post_notifications, company_id, contract_type, leave_allowance,
+    date_of_birth, gender, nationality, ni_number, notice_period, marital_status, location, annual_salary, weekly_hours, working_pattern, tax_code, payroll_id, manager_name, manager_email,
+    address_line1, city, postcode, country, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship)
   VALUES
-    ('EMP-001', 'Sarah',  'Mitchell',  'demo1@' || v_slug || '-trial.example.com', 'HR Manager',            'HR',          v_admin_employee_id, '2024-03-15', '+44 7700 200001', false, true, true,  v_company_id, 'Full-time', 25),
-    ('EMP-002', 'James',  'Wilson',    'demo2@' || v_slug || '-trial.example.com', 'Lead Developer',        'Engineering', v_admin_employee_id, '2024-06-01', '+44 7700 200002', false, true, false, v_company_id, 'Full-time', 25),
-    ('EMP-003', 'Emma',   'Thompson',  'demo3@' || v_slug || '-trial.example.com', 'Financial Controller',  'Finance',     v_admin_employee_id, '2024-01-10', '+44 7700 200003', false, true, false, v_company_id, 'Full-time', 25),
-    ('EMP-004', 'Tom',    'Richards',  'demo4@' || v_slug || '-trial.example.com', 'Operations Manager',    'Operations',  v_admin_employee_id, '2024-09-01', '+44 7700 200004', false, true, false, v_company_id, 'Full-time', 25),
-    ('EMP-005', 'Priya',  'Sharma',    'demo5@' || v_slug || '-trial.example.com', 'Marketing Executive',   'Marketing',   v_admin_employee_id, '2025-01-06', '+44 7700 200005', false, true, false, v_company_id, 'Full-time', 25),
-    ('EMP-006', 'Lucy',   'Bennett',   'demo6@' || v_slug || '-trial.example.com', 'HR Assistant',          'HR',          NULL,                '2025-03-10', '+44 7700 200006', false, true, false, v_company_id, 'Full-time', 25),
-    ('EMP-007', 'Daniel', 'O''Brien',  'demo7@' || v_slug || '-trial.example.com', 'Software Engineer',     'Engineering', NULL,                '2024-11-01', '+44 7700 200007', false, true, false, v_company_id, 'Full-time', 25),
-    ('EMP-008', 'Aisha',  'Khan',      'demo8@' || v_slug || '-trial.example.com', 'Accounts Payable',      'Finance',     NULL,                '2025-02-17', '+44 7700 200008', false, true, false, v_company_id, 'Part-time', 25),
-    ('EMP-009', 'Marcus', 'Johnson',   'demo9@' || v_slug || '-trial.example.com', 'Warehouse Supervisor',  'Operations',  NULL,                '2024-07-15', '+44 7700 200009', false, true, false, v_company_id, 'Full-time', 25),
-    ('EMP-010', 'Sophie', 'Williams',  'demo10@' || v_slug || '-trial.example.com','Content Manager',       'Marketing',   NULL,                '2025-04-01', '+44 7700 200010', false, true, false, v_company_id, 'Full-time', 25);
+    ('EMP-001', 'Sarah',  'Mitchell',  'demo1@' || v_slug || '-trial.example.com', 'HR Manager',            'HR',          v_admin_employee_id, '2024-03-15', '+44 7700 200001', false, true, true,  v_company_id, 'Full-time', 25,
+      '1990-05-14', 'Female', 'British', 'AB123456C', '3 months', 'Married', 'Head Office', 45000, 37.5, 'Full-time', '1257L', 'PAY-001', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
+      '12 Maple Lane', 'London', 'SW1A 1AA', 'United Kingdom', 'David Mitchell', '+44 7700 300001', 'Spouse'),
+    ('EMP-002', 'James',  'Wilson',    'demo2@' || v_slug || '-trial.example.com', 'Lead Developer',        'Engineering', v_admin_employee_id, '2024-06-01', '+44 7700 200002', false, true, false, v_company_id, 'Full-time', 25,
+      '1988-11-22', 'Male', 'British', 'CD234567D', '3 months', 'Single', 'Head Office', 55000, 37.5, 'Full-time', '1257L', 'PAY-002', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
+      '8 Oak Avenue', 'Manchester', 'M1 2AB', 'United Kingdom', 'Helen Wilson', '+44 7700 300002', 'Mother'),
+    ('EMP-003', 'Emma',   'Thompson',  'demo3@' || v_slug || '-trial.example.com', 'Financial Controller',  'Finance',     v_admin_employee_id, '2024-01-10', '+44 7700 200003', false, true, false, v_company_id, 'Full-time', 25,
+      '1985-03-08', 'Female', 'British', 'EF345678E', '3 months', 'Married', 'Head Office', 52000, 37.5, 'Full-time', '1257L', 'PAY-003', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
+      '45 Birch Road', 'Birmingham', 'B1 3CD', 'United Kingdom', 'Mark Thompson', '+44 7700 300003', 'Spouse'),
+    ('EMP-004', 'Tom',    'Richards',  'demo4@' || v_slug || '-trial.example.com', 'Operations Manager',    'Operations',  v_admin_employee_id, '2024-09-01', '+44 7700 200004', false, true, false, v_company_id, 'Full-time', 25,
+      '1992-07-30', 'Male', 'British', 'GH456789F', '1 month', 'Single', 'Warehouse', 42000, 37.5, 'Full-time', '1257L', 'PAY-004', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
+      '3 Elm Street', 'Leeds', 'LS1 4EF', 'United Kingdom', 'Karen Richards', '+44 7700 300004', 'Mother'),
+    ('EMP-005', 'Priya',  'Sharma',    'demo5@' || v_slug || '-trial.example.com', 'Marketing Executive',   'Marketing',   v_admin_employee_id, '2025-01-06', '+44 7700 200005', false, true, false, v_company_id, 'Full-time', 25,
+      '1995-12-03', 'Female', 'British', 'JK567890G', '1 month', 'Single', 'Head Office', 38000, 37.5, 'Full-time', '1257L', 'PAY-005', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
+      '27 Pine Close', 'Bristol', 'BS1 5GH', 'United Kingdom', 'Raj Sharma', '+44 7700 300005', 'Father'),
+    ('EMP-006', 'Lucy',   'Bennett',   'demo6@' || v_slug || '-trial.example.com', 'HR Assistant',          'HR',          NULL,                '2025-03-10', '+44 7700 200006', false, true, false, v_company_id, 'Full-time', 25,
+      '1998-09-18', 'Female', 'British', 'LM678901H', '1 month', 'Single', 'Head Office', 32000, 37.5, 'Full-time', '1257L', 'PAY-006', 'Sarah Mitchell', 'demo1@' || v_slug || '-trial.example.com',
+      '14 Cedar Way', 'London', 'E1 6JK', 'United Kingdom', 'Jane Bennett', '+44 7700 300006', 'Mother'),
+    ('EMP-007', 'Daniel', 'O''Brien',  'demo7@' || v_slug || '-trial.example.com', 'Software Engineer',     'Engineering', NULL,                '2024-11-01', '+44 7700 200007', false, true, false, v_company_id, 'Full-time', 25,
+      '1993-01-25', 'Male', 'Irish', 'NP789012J', '1 month', 'Single', 'Head Office', 48000, 37.5, 'Full-time', '1257L', 'PAY-007', 'James Wilson', 'demo2@' || v_slug || '-trial.example.com',
+      '9 Willow Drive', 'London', 'N1 7LM', 'United Kingdom', 'Sean O''Brien', '+44 7700 300007', 'Father'),
+    ('EMP-008', 'Aisha',  'Khan',      'demo8@' || v_slug || '-trial.example.com', 'Accounts Payable',      'Finance',     NULL,                '2025-02-17', '+44 7700 200008', false, true, false, v_company_id, 'Part-time', 25,
+      '1996-06-11', 'Female', 'British', 'QR890123K', '1 month', 'Married', 'Head Office', 28000, 22.5, 'Part-time', '1257L', 'PAY-008', 'Emma Thompson', 'demo3@' || v_slug || '-trial.example.com',
+      '55 Hazel Grove', 'Leicester', 'LE1 8NP', 'United Kingdom', 'Yusuf Khan', '+44 7700 300008', 'Spouse'),
+    ('EMP-009', 'Marcus', 'Johnson',   'demo9@' || v_slug || '-trial.example.com', 'Warehouse Supervisor',  'Operations',  NULL,                '2024-07-15', '+44 7700 200009', false, true, false, v_company_id, 'Full-time', 25,
+      '1991-04-07', 'Male', 'British', 'ST901234L', '1 month', 'Married', 'Warehouse', 35000, 37.5, 'Full-time', '1257L', 'PAY-009', 'Tom Richards', 'demo4@' || v_slug || '-trial.example.com',
+      '22 Ash Lane', 'Nottingham', 'NG1 9QR', 'United Kingdom', 'Lisa Johnson', '+44 7700 300009', 'Spouse'),
+    ('EMP-010', 'Sophie', 'Williams',  'demo10@' || v_slug || '-trial.example.com','Content Manager',       'Marketing',   NULL,                '2025-04-01', '+44 7700 200010', false, true, false, v_company_id, 'Full-time', 25,
+      '1997-08-29', 'Female', 'Welsh', 'UV012345M', '1 month', 'Single', 'Head Office', 40000, 37.5, 'Full-time', '1257L', 'PAY-010', 'Priya Sharma', 'demo5@' || v_slug || '-trial.example.com',
+      '7 Rowan Terrace', 'Cardiff', 'CF1 1ST', 'United Kingdom', 'Gareth Williams', '+44 7700 300010', 'Father');
 
   SELECT id INTO v_emp1 FROM employees WHERE employee_number='EMP-001' AND company_id=v_company_id;
   SELECT id INTO v_emp2 FROM employees WHERE employee_number='EMP-002' AND company_id=v_company_id;
@@ -474,6 +496,20 @@ BEGIN
     (v_emp9, v_emp4,              '2026 H1',  3, 'Reliable and thorough in inventory checks',            'Communication could be more proactive', 'Cross-train on forklift operations', 'in_progress', NULL, v_company_id);
 
   -- ═══════════════════════════════════════════════════════════
+  -- PERFORMANCE GOALS
+  -- ═══════════════════════════════════════════════════════════
+
+  INSERT INTO performance_goals (company_id, employee_id, manager_id, title, description, status, grade, start_date, due_date, completed_at) VALUES
+    (v_company_id, v_emp1, v_admin_employee_id, 'Complete CIPD Level 7',           'Achieve CIPD Level 7 qualification to enhance strategic HR capabilities',          'active',    NULL, '2026-01-01', '2026-09-30', NULL),
+    (v_company_id, v_emp1, v_admin_employee_id, 'Reduce time-to-hire by 20%',     'Streamline recruitment process across all departments',                             'active',    NULL, '2026-04-01', '2026-12-31', NULL),
+    (v_company_id, v_emp2, v_admin_employee_id, 'Lead platform migration',         'Migrate legacy services to new cloud architecture',                                 'active',    NULL, '2026-01-01', '2026-06-30', NULL),
+    (v_company_id, v_emp2, v_admin_employee_id, 'Mentor two junior developers',    'Provide weekly mentoring sessions and code reviews',                                'completed', 8,    '2025-09-01', '2026-03-31', NOW() - interval '30 days'),
+    (v_company_id, v_emp3, v_admin_employee_id, 'Automate monthly reporting',      'Build automated financial reporting dashboard to replace manual spreadsheets',       'active',    NULL, '2026-01-01', '2026-09-30', NULL),
+    (v_company_id, v_emp5, v_admin_employee_id, 'Launch social media strategy',    'Develop and execute social media presence across LinkedIn and Instagram',           'active',    NULL, '2026-03-01', '2026-08-31', NULL),
+    (v_company_id, v_emp7, v_emp2,              'Achieve AWS Solutions Architect', 'Pass the AWS Solutions Architect Associate certification exam',                      'active',    NULL, '2026-01-01', '2026-06-30', NULL),
+    (v_company_id, v_emp9, v_emp4,              'Reduce processing time by 15%',  'Optimise warehouse pick-and-pack workflow to reduce order processing time',          'active',    NULL, '2026-04-01', '2026-12-31', NULL);
+
+  -- ═══════════════════════════════════════════════════════════
   -- ONBOARDING
   -- ═══════════════════════════════════════════════════════════
 
@@ -537,9 +573,9 @@ BEGIN
   INSERT INTO one_to_one_meetings (employee_id, manager_id, scheduled_date, status, summary, company_id) VALUES
     (v_emp1, v_admin_employee_id, CURRENT_DATE - 7,  'completed',  'Discussed team expansion plans and Q3 targets.', v_company_id),
     (v_emp2, v_admin_employee_id, CURRENT_DATE - 3,  'completed',  'Reviewed sprint velocity and upcoming releases.', v_company_id),
-    (v_emp5, v_admin_employee_id, CURRENT_DATE + 3,  'scheduled',  NULL, v_company_id),
+    (v_emp5, v_admin_employee_id, CURRENT_DATE + 3,  'accepted',   NULL, v_company_id),
     (v_emp6, v_emp1,              CURRENT_DATE - 5,  'completed',  'Onboarding progress review — settling in well.', v_company_id),
-    (v_emp7, v_emp2,              CURRENT_DATE + 7,  'scheduled',  NULL, v_company_id);
+    (v_emp7, v_emp2,              CURRENT_DATE + 7,  'accepted',   NULL, v_company_id);
 
   SELECT id INTO v_mtg1 FROM one_to_one_meetings WHERE employee_id=v_emp1 AND company_id=v_company_id LIMIT 1;
   SELECT id INTO v_mtg2 FROM one_to_one_meetings WHERE employee_id=v_emp2 AND company_id=v_company_id LIMIT 1;
@@ -570,8 +606,7 @@ BEGIN
     ('React',        v_scat1, 'React component development',                v_company_id),
     ('Leadership',   v_scat2, 'Team leadership and mentoring',              v_company_id),
     ('Presentation', v_scat2, 'Public speaking and presentation skills',    v_company_id),
-    ('UK GDPR',      v_scat3, 'UK data protection compliance',              v_company_id)
-  RETURNING id INTO v_skill1;
+    ('UK GDPR',      v_scat3, 'UK data protection compliance',              v_company_id);
 
   SELECT id INTO v_skill1 FROM skills WHERE name='JavaScript' AND company_id=v_company_id LIMIT 1;
   SELECT id INTO v_skill2 FROM skills WHERE name='SQL'         AND company_id=v_company_id LIMIT 1;
@@ -663,9 +698,9 @@ BEGIN
   -- APP SETTINGS
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO app_settings (company_id, dashboard_style, default_view)
-  VALUES (v_company_id, 'classic', 'dashboard')
-  ON CONFLICT (company_id) DO NOTHING;
+  INSERT INTO app_settings (language, financial_year_start_month, country_code, company_id)
+  VALUES ('en', 4, 'GB', v_company_id)
+  ON CONFLICT DO NOTHING;
 
   -- ═══════════════════════════════════════════════════════════
   -- COMPANY FEATURES (all enabled at zero cost for trial)
