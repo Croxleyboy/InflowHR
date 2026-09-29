@@ -239,7 +239,12 @@ export default function AdminSurveys() {
       showError('Maximum 3 surveys can be running at the same time. Complete or cancel an active survey first.')
       return
     }
-    const { error } = await supabase.from('survey_deployments').insert({
+    const alreadyActive = activeDeployments.some(d => d.survey_id === deployModal.id)
+    if (alreadyActive) {
+      showError('This survey is already deployed and active. Complete or cancel the existing deployment first.')
+      return
+    }
+    const { data: deployment, error } = await supabase.from('survey_deployments').insert({
       company_id: selectedCompanyId,
       survey_id: deployModal.id,
       starts_at: new Date().toISOString(),
@@ -247,9 +252,48 @@ export default function AdminSurveys() {
       target_type: deployTargetType,
       target_values: deployTargetValues,
       created_by: employeeName || employeeEmail,
-    })
-    if (error) { showError('Deploy failed: ' + error.message); return }
-    showSuccess(`"${deployModal.title}" is now live`)
+    }).select().single()
+    if (error || !deployment) { showError('Deploy failed: ' + (error?.message || 'Unknown error')); return }
+
+    let empQuery = supabase.from('employees').select('id').eq('company_id', selectedCompanyId).eq('is_active', true)
+    if (deployTargetType === 'department' && deployTargetValues.length > 0) {
+      empQuery = empQuery.in('department', deployTargetValues)
+    } else if (deployTargetType === 'tag' && deployTargetValues.length > 0) {
+      const tagFilters: string[] = []
+      if (deployTargetValues.includes('contractor')) tagFilters.push("contract_type.eq.Contractor")
+      if (deployTargetValues.includes('new_starter')) {
+        const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0]
+        empQuery = empQuery.gte('start_date', ninetyDaysAgo)
+      }
+      if (deployTargetValues.includes('probation')) {
+        empQuery = empQuery.not('probation_end_date', 'is', null).gte('probation_end_date', new Date().toISOString().split('T')[0])
+      }
+      if (tagFilters.length > 0) {
+        empQuery = empQuery.or(tagFilters.join(','))
+      }
+    }
+
+    const { data: employees } = await empQuery
+    const targetEmployees = employees || []
+    if (targetEmployees.length === 0) {
+      showError('No employees match the selected target criteria. Deployment created but no surveys assigned.')
+      loadDeployments()
+      setTab('active')
+      return
+    }
+
+    const responseRows = targetEmployees.map(emp => ({
+      company_id: selectedCompanyId,
+      deployment_id: deployment.id,
+      employee_id: emp.id,
+      status: 'pending',
+    }))
+    const { error: respError } = await supabase.from('survey_responses').insert(responseRows)
+    if (respError) { showError('Survey deployed but failed to assign employees: ' + respError.message); return }
+
+    await supabase.from('survey_deployments').update({ total_recipients: targetEmployees.length }).eq('id', deployment.id)
+
+    showSuccess(`"${deployModal.title}" deployed to ${targetEmployees.length} employee${targetEmployees.length !== 1 ? 's' : ''}`)
     setDeployModal(null)
     setDeployEndDate('')
     setDeployTargetType('all')
