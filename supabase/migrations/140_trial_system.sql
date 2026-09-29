@@ -170,7 +170,8 @@ BEGIN
   RETURNING id INTO v_admin_employee_id;
 
   INSERT INTO company_users (auth_user_id, company_id, employee_id, role, is_active)
-  VALUES (v_admin_user_id, v_company_id, v_admin_employee_id, 'admin', true);
+  VALUES (v_admin_user_id, v_company_id, v_admin_employee_id, 'admin', true)
+  ON CONFLICT (auth_user_id, company_id) DO UPDATE SET employee_id = EXCLUDED.employee_id, role = EXCLUDED.role, is_active = true;
 
   UPDATE companies SET nonsso_username = v_request.work_email WHERE id = v_company_id;
 
@@ -238,7 +239,8 @@ BEGIN
   UPDATE employees SET auth_user_id = v_emp_user_id WHERE id = v_emp1;
 
   INSERT INTO company_users (auth_user_id, company_id, employee_id, role, is_active)
-  VALUES (v_emp_user_id, v_company_id, v_emp1, 'employee', true);
+  VALUES (v_emp_user_id, v_company_id, v_emp1, 'employee', true)
+  ON CONFLICT (auth_user_id, company_id) DO UPDATE SET employee_id = EXCLUDED.employee_id, role = EXCLUDED.role, is_active = true;
 
   -- ═══════════════════════════════════════════════════════════
   -- WORK PATTERNS
