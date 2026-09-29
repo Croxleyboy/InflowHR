@@ -219,6 +219,7 @@ export default function Login() {
             </form>
           )}
 
+          <Link to="/trial" className="login-trial-link">Try for Free — 14 Day Trial</Link>
           <Link to="/privacy" className="login-privacy-link">Privacy Notice</Link>
         </div>
       </div>

@@ -8314,3 +8314,304 @@ body {
   .survey-list-table { font-size: 0.8rem; }
   .survey-list-table th, .survey-list-table td { padding: 8px 10px; }
 }
+
+/* ── Trial Signup ── */
+.trial-page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%);
+  padding: 24px;
+  overflow-y: auto;
+}
+.trial-card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 40px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.trial-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.trial-logo {
+  height: 36px;
+  margin-bottom: 16px;
+}
+.trial-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.trial-header p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.trial-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.trial-field label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.trial-field input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background: var(--bg);
+  color: var(--text);
+  transition: border-color 0.2s;
+}
+.trial-field input:focus {
+  outline: none;
+  border-color: #3949ab;
+}
+.trial-field-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: #e53935;
+  margin-top: 4px;
+}
+.trial-agreements {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.trial-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.trial-checkbox input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: #3949ab;
+}
+.trial-checkbox a {
+  color: #3949ab;
+  text-decoration: underline;
+}
+.trial-error {
+  color: #e53935;
+  font-size: 0.8rem;
+  background: #fce4ec;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+.trial-submit-btn {
+  width: 100%;
+  padding: 12px;
+  background: #3949ab;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.trial-submit-btn:hover:not(:disabled) {
+  background: #283593;
+}
+.trial-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.trial-footer {
+  text-align: center;
+  margin-top: 20px;
+}
+.trial-back-link {
+  color: #3949ab;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.trial-back-link:hover {
+  text-decoration: underline;
+}
+.trial-success {
+  text-align: center;
+  padding: 20px 0;
+}
+.trial-success h2 {
+  font-size: 1.25rem;
+  color: var(--text);
+  margin: 16px 0 12px;
+}
+.trial-success p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+/* Login trial link */
+.login-trial-link {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #3949ab, #5c6bc0);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+.login-trial-link:hover {
+  opacity: 0.9;
+}
+
+/* ── Admin Trial Requests ── */
+.trial-request-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+}
+.trial-request-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.trial-request-header strong {
+  font-size: 1rem;
+  color: var(--text);
+}
+.trial-request-status {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 12px;
+  margin-left: 10px;
+}
+.trial-request-status-pending {
+  background: #fff3e0;
+  color: #e65100;
+}
+.trial-request-status-approved {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+.trial-request-status-rejected {
+  background: #fce4ec;
+  color: #c62828;
+}
+.trial-request-date {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.trial-request-details {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.trial-request-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.trial-request-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.trial-request-field span:last-child {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.trial-request-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.trial-request-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: var(--bg);
+  color: var(--text);
+}
+.trial-request-input:focus {
+  outline: none;
+  border-color: #3949ab;
+}
+.trial-request-create-btn {
+  padding: 8px 18px;
+  background: #3949ab;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.trial-request-create-btn:hover:not(:disabled) {
+  background: #283593;
+}
+.trial-request-create-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.trial-request-credentials {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+.trial-request-cred-section {
+  margin-bottom: 14px;
+}
+.trial-request-cred-section h4 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.trial-request-cred-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.825rem;
+  color: var(--text);
+  padding: 4px 0;
+  font-family: monospace;
+}
+.trial-request-copy-btn {
+  padding: 3px 10px;
+  font-size: 0.7rem;
+  background: #e3f2fd;
+  color: #1565c0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.trial-request-copy-btn:hover {
+  background: #bbdefb;
+}

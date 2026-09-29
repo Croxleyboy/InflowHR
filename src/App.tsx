@@ -9,6 +9,7 @@ import { useMediaQuery } from './hooks/useMediaQuery'
 import { useFeatures } from './context/FeatureContext'
 import Login from './pages/Login'
 import PrivacyNotice from './pages/PrivacyNotice'
+import TrialSignup from './pages/TrialSignup'
 import AccessDenied from './pages/AccessDenied'
 import InitialSetup from './pages/InitialSetup'
 import Footer from './components/Footer'
@@ -65,7 +66,6 @@ import AdminBenefits from './pages/admin/AdminBenefits'
 import AdminCompanies from './pages/admin/AdminCompanies'
 import AdminTimesheets from './pages/admin/AdminTimesheets'
 import AdminPerformance from './pages/admin/AdminPerformance'
-import AdminDemoSeed from './pages/admin/AdminDemoSeed'
 import AdminNotifications from './pages/admin/AdminNotifications'
 import AdminShiftsRotas from './pages/admin/AdminShiftsRotas'
 import AdminSubscriptions from './pages/admin/AdminSubscriptions'
@@ -231,7 +231,6 @@ function AuthGate() {
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
               <Route path="cancellations" element={<AdminCancellations />} />
-              <Route path="demo-seed" element={<AdminDemoSeed />} />
               <Route path="teams-test" element={<AdminTeamsTest />} />
             </Route>
           </Route>
@@ -278,7 +277,6 @@ function AuthGate() {
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />
             <Route path="cancellations" element={<AdminCancellations />} />
-            <Route path="demo-seed" element={<AdminDemoSeed />} />
             <Route path="teams-test" element={<AdminTeamsTest />} />
           </Route>
         </Route>
@@ -309,6 +307,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/privacy" element={<PrivacyNotice />} />
+            <Route path="/trial" element={<TrialSignup />} />
             <Route path="*" element={<AuthProvider><AuthGate /></AuthProvider>} />
           </Routes>
         </BrowserRouter>
