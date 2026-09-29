@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
@@ -67,17 +67,6 @@ async function uploadCompanyLogo(companyId: string, file: File): Promise<string 
   return data.publicUrl + '?t=' + Date.now()
 }
 
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const mql = window.matchMedia(query)
-    const handler = (e: MediaQueryListEvent) => setMatches(e.matches)
-    mql.addEventListener('change', handler)
-    return () => mql.removeEventListener('change', handler)
-  }, [query])
-  return matches
-}
-
 export default function AdminCompanies() {
   const { company: myCompany } = useAuth()
   const { refreshCompanies } = useAdminCompany()
@@ -109,7 +98,6 @@ export default function AdminCompanies() {
   const editLogoRef = useRef<HTMLInputElement>(null)
   const importFileRef = useRef<HTMLInputElement>(null)
 
-  const isMobile = useMediaQuery('(max-width: 1024px)')
   const [currentPage, setCurrentPage] = useState(1)
   const PAGE_SIZE = 10
 
@@ -393,24 +381,6 @@ export default function AdminCompanies() {
     }
     const company = companies.find(c => c.id === id)
     if (!confirm(`Delete "${company?.name || 'this company'}" and ALL its data? This cannot be undone.`)) return
-    await supabase.from('gdpr_audit_logs').delete().eq('company_id', id)
-    await supabase.from('tenant_support_access').delete().eq('company_id', id)
-    await supabase.from('benefit_enrollments').delete().eq('company_id', id)
-    await supabase.from('benefit_options').delete().eq('company_id', id)
-    await supabase.from('benefit_types').delete().eq('company_id', id)
-    await supabase.from('shift_swap_requests').delete().eq('company_id', id)
-    await supabase.from('shift_assignments').delete().eq('company_id', id)
-    await supabase.from('shift_templates').delete().eq('company_id', id)
-    await supabase.from('rotas').delete().eq('company_id', id)
-    await supabase.from('employee_availability').delete().eq('company_id', id)
-    await supabase.from('legal_timesheet_entries').delete().eq('company_id', id)
-    await supabase.from('legal_matters').delete().eq('company_id', id)
-    await supabase.from('legal_clients').delete().eq('company_id', id)
-    await supabase.from('hr_tickets').delete().eq('company_id', id)
-    await supabase.from('company_features').delete().eq('company_id', id)
-    await supabase.from('company_elearning_courses').delete().eq('company_id', id)
-    await supabase.from('benefits').delete().eq('company_id', id)
-    await supabase.from('courses').delete().eq('company_id', id)
     const { error } = await callRpcDirect('delete_company_data', { p_company_id: id })
     if (error) {
       alert('Error deleting company: ' + error)
@@ -747,111 +717,34 @@ export default function AdminCompanies() {
 
   function renderActionButtons(c: Company) {
     return (
-      <>
-        <button
-          className="admin-btn-sm"
-          style={{ background: '#1565c0', color: '#fff', border: 'none' }}
-          title="Edit company details"
-          onClick={() => startEditCompany(c)}
-        >
-          Edit
-        </button>
-        <button
-          className="admin-btn-sm"
-          style={{ background: '#1565c0', color: '#fff', border: 'none' }}
-          title="Export company data as CSV"
-          onClick={() => handleExport(c.id, c.name)}
-          disabled={exporting === c.id}
-        >
-          {exporting === c.id ? 'Exporting...' : 'Export'}
-        </button>
-        <button
-          className="admin-btn-sm"
-          style={{ background: '#2e7d32', color: '#fff', border: 'none' }}
-          title="Import data from CSV"
-          onClick={() => {
-            setImportingFor(c.id)
-            importFileRef.current?.click()
-          }}
-        >
-          Import
-        </button>
-        <button
-          className="admin-btn-sm"
-          style={{ background: '#e65100', color: '#fff', border: 'none' }}
-          title="Archive company FY data"
-          onClick={() => setShowArchiveConfirm(c.id)}
-          disabled={archiving === c.id}
-        >
-          {archiving === c.id ? 'Archiving...' : 'Archive'}
-        </button>
-        <button
-          className={`admin-btn-sm ${c.is_active ? 'admin-btn-cancel' : 'admin-btn-save'}`}
-          onClick={() => toggleActive(c.id, c.is_active)}
-        >
-          {c.is_active ? 'Disable' : 'Enable'}
-        </button>
-        <button
-          className="admin-btn-icon admin-btn-danger"
-          onClick={() => deleteCompany(c.id)}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>
-        </button>
-      </>
-    )
-  }
-
-  function renderLogoCell(c: Company) {
-    return (
-      <div className="admin-logo-cell">
-        {c.logo_url ? (
-          <div className="admin-logo-cell-wrap">
-            <img src={c.logo_url} alt={c.name} className="admin-logo-thumb" />
-            <div className="admin-logo-cell-actions">
-              <button
-                className="admin-btn-icon"
-                title="Change logo"
-                onClick={() => {
-                  const input = editLogoRef.current
-                  if (input) {
-                    input.setAttribute('data-company-id', c.id)
-                    input.click()
-                  }
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                </svg>
-              </button>
-              <button
-                className="admin-btn-icon admin-btn-danger"
-                title="Remove logo"
-                onClick={() => removeLogo(c.id)}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            className="admin-logo-upload-sm"
-            onClick={() => {
-              const input = editLogoRef.current
-              if (input) {
-                input.setAttribute('data-company-id', c.id)
-                input.click()
-              }
-            }}
-          >
-            {uploadingLogo === c.id ? '...' : '+'}
+      <div className="co-action-group">
+        <div className="co-action-row">
+          <button className="co-action-btn co-action-edit" title="Edit company details" onClick={() => startEditCompany(c)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Edit
           </button>
-        )}
+          <button className="co-action-btn co-action-export" title="Export company data as CSV" onClick={() => handleExport(c.id, c.name)} disabled={exporting === c.id}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            {exporting === c.id ? '...' : 'Export'}
+          </button>
+          <button className="co-action-btn co-action-import" title="Import data from CSV" onClick={() => { setImportingFor(c.id); importFileRef.current?.click() }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import
+          </button>
+          <button className="co-action-btn co-action-archive" title="Archive company FY data" onClick={() => setShowArchiveConfirm(c.id)} disabled={archiving === c.id}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+            {archiving === c.id ? '...' : 'Archive'}
+          </button>
+        </div>
+        <div className="co-action-row">
+          <button className={`co-action-btn ${c.is_active ? 'co-action-disable' : 'co-action-enable'}`} onClick={() => toggleActive(c.id, c.is_active)}>
+            {c.is_active ? 'Disable' : 'Enable'}
+          </button>
+          <button className="co-action-btn co-action-delete" onClick={() => deleteCompany(c.id)} title="Permanently delete company and all data">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Delete
+          </button>
+        </div>
       </div>
     )
   }
@@ -904,282 +797,137 @@ export default function AdminCompanies() {
     )
   }
 
-  function renderCardView() {
+  function renderEditPanel(c: Company) {
+    if (editingCompany !== c.id) return null
     return (
-      <div className="admin-co-cards">
+      <div className="co-edit-panel">
+        <div className="co-edit-row">
+          <div className="admin-form-field">
+            <label>Company Name</label>
+            <input className="admin-input" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+          </div>
+          {c.auth_mode === 'sso' && (
+            <div className="admin-form-field">
+              <label>Email Domain</label>
+              <input className="admin-input" value={editForm.domain} onChange={e => setEditForm(f => ({ ...f, domain: e.target.value }))} />
+            </div>
+          )}
+        </div>
+        <div className="co-edit-row">
+          <div className="admin-form-field">
+            <label>Timezone</label>
+            <select className="admin-input" value={editForm.timezone} onChange={e => setEditForm(f => ({ ...f, timezone: e.target.value }))}>
+              <option value="Europe/London">Europe/London</option>
+              <option value="Europe/Dublin">Europe/Dublin</option>
+              <option value="Europe/Paris">Europe/Paris</option>
+              <option value="Europe/Berlin">Europe/Berlin</option>
+              <option value="Europe/Madrid">Europe/Madrid</option>
+              <option value="Europe/Rome">Europe/Rome</option>
+              <option value="Europe/Amsterdam">Europe/Amsterdam</option>
+              <option value="Europe/Brussels">Europe/Brussels</option>
+              <option value="Europe/Lisbon">Europe/Lisbon</option>
+              <option value="Europe/Athens">Europe/Athens</option>
+              <option value="Europe/Warsaw">Europe/Warsaw</option>
+              <option value="Europe/Stockholm">Europe/Stockholm</option>
+              <option value="Europe/Zurich">Europe/Zurich</option>
+              <option value="America/New_York">America/New York</option>
+              <option value="America/Chicago">America/Chicago</option>
+              <option value="America/Los_Angeles">America/Los Angeles</option>
+              <option value="Asia/Dubai">Asia/Dubai</option>
+              <option value="Asia/Singapore">Asia/Singapore</option>
+              <option value="Asia/Tokyo">Asia/Tokyo</option>
+              <option value="Australia/Sydney">Australia/Sydney</option>
+            </select>
+          </div>
+          <div className="admin-form-field">
+            <label>Date Format</label>
+            <select className="admin-input" value={editForm.date_format} onChange={e => setEditForm(f => ({ ...f, date_format: e.target.value }))}>
+              <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+              <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+              <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+            </select>
+          </div>
+          <div className="admin-form-field">
+            <label>Currency</label>
+            <select className="admin-input" value={editForm.currency} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))}>
+              <option value="GBP">GBP (£)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="USD">USD ($)</option>
+              <option value="CHF">CHF (Fr)</option>
+              <option value="SEK">SEK (kr)</option>
+              <option value="NOK">NOK (kr)</option>
+              <option value="DKK">DKK (kr)</option>
+              <option value="PLN">PLN (zł)</option>
+              <option value="AED">AED (د.إ)</option>
+              <option value="SGD">SGD ($)</option>
+              <option value="JPY">JPY (¥)</option>
+              <option value="AUD">AUD ($)</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditCompany(c.id)} disabled={savingEdit}>
+            {savingEdit ? 'Saving...' : 'Save Changes'}
+          </button>
+          <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingCompany(null)}>Cancel</button>
+        </div>
+      </div>
+    )
+  }
+
+  function renderCompanyList() {
+    return (
+      <div className="co-list">
         {paginatedCompanies.map(c => (
-          <div key={c.id} className="admin-co-card">
-            <div className="admin-co-card-header">
-              {c.logo_url ? (
-                <img src={c.logo_url} alt={c.name} style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'contain' }} />
-              ) : (
-                <div className="admin-co-card-logo-placeholder" onClick={() => {
-                  const input = editLogoRef.current
-                  if (input) { input.setAttribute('data-company-id', c.id); input.click() }
-                }} style={{ cursor: 'pointer' }}>
-                  {uploadingLogo === c.id ? '...' : '+'}
+          <div key={c.id} className={`co-card ${!c.is_active ? 'co-card-disabled' : ''}`}>
+            <div className="co-card-top">
+              <div className="co-card-identity">
+                {c.logo_url ? (
+                  <img src={c.logo_url} alt={c.name} className="co-card-logo" onClick={() => { const input = editLogoRef.current; if (input) { input.setAttribute('data-company-id', c.id); input.click() } }} />
+                ) : (
+                  <div className="co-card-logo-placeholder" onClick={() => { const input = editLogoRef.current; if (input) { input.setAttribute('data-company-id', c.id); input.click() } }}>
+                    {uploadingLogo === c.id ? '...' : c.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="co-card-name-block">
+                  <div className="co-card-name">{c.name}</div>
+                  <div className="co-card-domain">{c.auth_mode === 'non_sso' ? c.nonsso_username || 'Non-SSO' : c.domain}</div>
                 </div>
-              )}
-              <div className="admin-co-card-info">
-                {editingCompany === c.id ? (
-                  <input
-                    className="admin-input"
-                    value={editForm.name}
-                    onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                    style={{ fontSize: 14, fontWeight: 700, padding: '4px 8px' }}
-                  />
-                ) : (
-                  <div className="admin-co-card-name">{c.name}</div>
-                )}
-                {editingCompany === c.id && c.auth_mode === 'sso' ? (
-                  <input
-                    className="admin-input"
-                    value={editForm.domain}
-                    onChange={e => setEditForm(f => ({ ...f, domain: e.target.value }))}
-                    style={{ fontSize: 12, padding: '3px 8px', marginTop: 4 }}
-                  />
-                ) : (
-                  <div className="admin-co-card-domain">{c.auth_mode === 'non_sso' ? 'Non-SSO' : c.domain}</div>
-                )}
               </div>
-              <div className="admin-co-card-badges">
+              <div className="co-card-badges">
                 <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
                   {c.is_active ? 'Active' : 'Disabled'}
                 </span>
                 {renderAuthBadge(c)}
+                {renderTrialBadge(c)}
               </div>
             </div>
 
-            {editingCompany === c.id && (
-              <>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 12 }}>
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 11 }}>Timezone</label>
-                    <select className="admin-input" style={{ fontSize: 12 }} value={editForm.timezone} onChange={e => setEditForm(f => ({ ...f, timezone: e.target.value }))}>
-                      <option value="Europe/London">Europe/London</option>
-                      <option value="Europe/Dublin">Europe/Dublin</option>
-                      <option value="Europe/Paris">Europe/Paris</option>
-                      <option value="Europe/Berlin">Europe/Berlin</option>
-                      <option value="Europe/Madrid">Europe/Madrid</option>
-                      <option value="Europe/Rome">Europe/Rome</option>
-                      <option value="Europe/Amsterdam">Europe/Amsterdam</option>
-                      <option value="Europe/Brussels">Europe/Brussels</option>
-                      <option value="Europe/Lisbon">Europe/Lisbon</option>
-                      <option value="Europe/Athens">Europe/Athens</option>
-                      <option value="Europe/Warsaw">Europe/Warsaw</option>
-                      <option value="Europe/Stockholm">Europe/Stockholm</option>
-                      <option value="Europe/Zurich">Europe/Zurich</option>
-                      <option value="America/New_York">America/New York</option>
-                      <option value="America/Chicago">America/Chicago</option>
-                      <option value="America/Los_Angeles">America/Los Angeles</option>
-                      <option value="Asia/Dubai">Asia/Dubai</option>
-                      <option value="Asia/Singapore">Asia/Singapore</option>
-                      <option value="Asia/Tokyo">Asia/Tokyo</option>
-                      <option value="Australia/Sydney">Australia/Sydney</option>
-                    </select>
-                  </div>
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 11 }}>Date Format</label>
-                    <select className="admin-input" style={{ fontSize: 12 }} value={editForm.date_format} onChange={e => setEditForm(f => ({ ...f, date_format: e.target.value }))}>
-                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                    </select>
-                  </div>
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 11 }}>Currency</label>
-                    <select className="admin-input" style={{ fontSize: 12 }} value={editForm.currency} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))}>
-                      <option value="GBP">GBP (£)</option>
-                      <option value="EUR">EUR (€)</option>
-                      <option value="USD">USD ($)</option>
-                      <option value="CHF">CHF (Fr)</option>
-                      <option value="SEK">SEK (kr)</option>
-                      <option value="NOK">NOK (kr)</option>
-                      <option value="DKK">DKK (kr)</option>
-                      <option value="PLN">PLN (zł)</option>
-                      <option value="AED">AED (د.إ)</option>
-                      <option value="SGD">SGD ($)</option>
-                      <option value="JPY">JPY (¥)</option>
-                      <option value="AUD">AUD ($)</option>
-                    </select>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                  <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditCompany(c.id)} disabled={savingEdit}>
-                    {savingEdit ? 'Saving...' : 'Save'}
-                  </button>
-                  <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingCompany(null)}>Cancel</button>
-                </div>
-              </>
-            )}
-
-            <div className="admin-co-card-grid">
-              <div className="admin-co-card-field">
-                <label>Trial</label>
-                {renderTrialBadge(c)}
+            <div className="co-card-details">
+              <div className="co-card-detail">
+                <span className="co-detail-label">Registered</span>
+                <span className="co-detail-value">{new Date(c.created_at).toLocaleDateString('en-GB')}</span>
               </div>
-              <div className="admin-co-card-field">
-                <label>Login</label>
+              <div className="co-card-detail">
+                <span className="co-detail-label">Login Enabled</span>
                 <label className="admin-toggle-switch">
                   <input type="checkbox" checked={!c.login_disabled} onChange={() => toggleLoginDisabled(c.id, c.login_disabled)} />
                   <span className="admin-toggle-slider" />
                 </label>
               </div>
-              <div className="admin-co-card-field">
-                <label>Registered</label>
-                <span>{new Date(c.created_at).toLocaleDateString('en-GB')}</span>
-              </div>
-              {c.auth_mode === 'non_sso' && c.nonsso_username && (
-                <div className="admin-co-card-field">
-                  <label>Login Account</label>
-                  <span style={{ fontSize: 12, fontFamily: 'monospace', wordBreak: 'break-all' }}>{c.nonsso_username}</span>
-                </div>
-              )}
-              <div className="admin-co-card-admins admin-co-card-field">
-                <label>Company Admins</label>
+              <div className="co-card-detail co-card-detail-admins">
+                <span className="co-detail-label">Company Admins</span>
                 {renderAdminsCell(c)}
               </div>
             </div>
 
-            <div className="admin-co-card-actions">
+            {renderEditPanel(c)}
+
+            <div className="co-card-footer">
               {renderActionButtons(c)}
             </div>
           </div>
         ))}
-        {companies.length === 0 && <div className="admin-empty">No companies registered</div>}
-        {renderPagination()}
-      </div>
-    )
-  }
-
-  function renderTableView() {
-    return (
-      <div className="admin-table-wrap admin-co-table-wrap">
-        <table className="admin-table admin-co-table">
-          <thead>
-            <tr>
-              <th>Logo</th>
-              <th>Company</th>
-              <th>Domain</th>
-              <th>Auth</th>
-              <th>Company Admins</th>
-              <th>Status</th>
-              <th>Trial</th>
-              <th>Login</th>
-              <th>Registered</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paginatedCompanies.map(c => (
-              <Fragment key={c.id}>
-              <tr className="admin-co-row">
-                <td data-label="Logo">{renderLogoCell(c)}</td>
-                <td data-label="Company">
-                  {editingCompany === c.id ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <input
-                        className="admin-input"
-                        value={editForm.name}
-                        onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                        style={{ fontSize: 13, padding: '4px 8px', fontWeight: 700 }}
-                      />
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button className="admin-btn-sm admin-btn-save" onClick={() => saveEditCompany(c.id)} disabled={savingEdit}>
-                          {savingEdit ? '...' : 'Save'}
-                        </button>
-                        <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingCompany(null)}>Cancel</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <strong>{c.name}</strong>
-                  )}
-                </td>
-                <td data-label="Domain">
-                  {editingCompany === c.id && c.auth_mode === 'sso' ? (
-                    <input
-                      className="admin-input"
-                      value={editForm.domain}
-                      onChange={e => setEditForm(f => ({ ...f, domain: e.target.value }))}
-                      style={{ fontSize: 13, padding: '4px 8px' }}
-                    />
-                  ) : (
-                    c.auth_mode === 'non_sso' ? <span style={{ color: '#999', fontSize: 12 }}>—</span> : c.domain
-                  )}
-                </td>
-                <td data-label="Auth">{renderAuthBadge(c)}</td>
-                <td data-label="Company Admins">{renderAdminsCell(c)}</td>
-                <td data-label="Status">
-                  <span className={`admin-badge ${c.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>
-                    {c.is_active ? 'Active' : 'Disabled'}
-                  </span>
-                </td>
-                <td data-label="Trial">{renderTrialBadge(c)}</td>
-                <td data-label="Login">
-                  <label className="admin-toggle-switch">
-                    <input type="checkbox" checked={!c.login_disabled} onChange={() => toggleLoginDisabled(c.id, c.login_disabled)} />
-                    <span className="admin-toggle-slider" />
-                  </label>
-                </td>
-                <td data-label="Registered">{new Date(c.created_at).toLocaleDateString('en-GB')}</td>
-                <td data-label="Actions" className="admin-actions">
-                  {renderActionButtons(c)}
-                </td>
-              </tr>
-              {editingCompany === c.id && (
-                <tr key={`${c.id}-regional`}>
-                  <td colSpan={10} style={{ background: '#f5f7fa', padding: '8px 16px' }}>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Regional:</span>
-                      <select className="admin-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={editForm.timezone} onChange={e => setEditForm(f => ({ ...f, timezone: e.target.value }))}>
-                        <option value="Europe/London">Europe/London</option>
-                        <option value="Europe/Dublin">Europe/Dublin</option>
-                        <option value="Europe/Paris">Europe/Paris</option>
-                        <option value="Europe/Berlin">Europe/Berlin</option>
-                        <option value="Europe/Madrid">Europe/Madrid</option>
-                        <option value="Europe/Rome">Europe/Rome</option>
-                        <option value="Europe/Amsterdam">Europe/Amsterdam</option>
-                        <option value="Europe/Brussels">Europe/Brussels</option>
-                        <option value="Europe/Lisbon">Europe/Lisbon</option>
-                        <option value="Europe/Athens">Europe/Athens</option>
-                        <option value="Europe/Warsaw">Europe/Warsaw</option>
-                        <option value="Europe/Stockholm">Europe/Stockholm</option>
-                        <option value="Europe/Zurich">Europe/Zurich</option>
-                        <option value="America/New_York">America/New York</option>
-                        <option value="America/Chicago">America/Chicago</option>
-                        <option value="America/Los_Angeles">America/Los Angeles</option>
-                        <option value="Asia/Dubai">Asia/Dubai</option>
-                        <option value="Asia/Singapore">Asia/Singapore</option>
-                        <option value="Asia/Tokyo">Asia/Tokyo</option>
-                        <option value="Australia/Sydney">Australia/Sydney</option>
-                      </select>
-                      <select className="admin-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={editForm.date_format} onChange={e => setEditForm(f => ({ ...f, date_format: e.target.value }))}>
-                        <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                        <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                        <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                      </select>
-                      <select className="admin-input" style={{ fontSize: 12, padding: '4px 8px', width: 'auto' }} value={editForm.currency} onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))}>
-                        <option value="GBP">GBP (£)</option>
-                        <option value="EUR">EUR (€)</option>
-                        <option value="USD">USD ($)</option>
-                        <option value="CHF">CHF (Fr)</option>
-                        <option value="SEK">SEK (kr)</option>
-                        <option value="NOK">NOK (kr)</option>
-                        <option value="DKK">DKK (kr)</option>
-                        <option value="PLN">PLN (zł)</option>
-                        <option value="AED">AED (د.إ)</option>
-                        <option value="SGD">SGD ($)</option>
-                        <option value="JPY">JPY (¥)</option>
-                        <option value="AUD">AUD ($)</option>
-                      </select>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
         {companies.length === 0 && <div className="admin-empty">No companies registered</div>}
         {renderPagination()}
       </div>
@@ -1390,9 +1138,7 @@ export default function AdminCompanies() {
         )}
       </div>
 
-      {loading ? <div className="admin-loading">Loading...</div> : (
-        isMobile ? renderCardView() : renderTableView()
-      )}
+      {loading ? <div className="admin-loading">Loading...</div> : renderCompanyList()}
 
       <input
         ref={editLogoRef}
