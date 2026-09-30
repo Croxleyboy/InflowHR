@@ -21,11 +21,13 @@ interface ShiftAssignment {
   date: string
   employee_id: string
   shift_template_id: string
+  rota_id?: string
   shift_template: ShiftTemplate | null
   rota: {
     id: string
     name: string
     status: string
+    shift_contract_type?: string | null
   } | null
 }
 
@@ -50,6 +52,7 @@ interface GroupedShift {
   date: string
   assignments: ShiftAssignment[]
   employees: EmployeeInfo[]
+  shiftContractType?: string | null
 }
 
 type FilterTab = 'only_me' | 'everyone' | 'availability' | 'replacements'
@@ -206,12 +209,12 @@ export default function MyShifts() {
         .eq('is_active', true),
       supabase
         .from('rotas')
-        .select('id, name, status')
+        .select('id, name, status, shift_contract_type')
         .eq('company_id', companyUser.company_id)
         .eq('status', 'published'),
     ])
     const publishedRotaIds = new Set((rotaRes.data || []).map((r: any) => r.id))
-    const rotaMap: Record<string, { id: string; name: string; status: string }> = {}
+    const rotaMap: Record<string, { id: string; name: string; status: string; shift_contract_type?: string | null }> = {}
     ;(rotaRes.data || []).forEach((r: any) => { rotaMap[r.id] = r })
     const published = (shiftRes.data || [])
       .filter((s: any) => publishedRotaIds.has(s.rota_id))
@@ -254,12 +257,12 @@ export default function MyShifts() {
     const map: Record<string, GroupedShift[]> = {}
     for (const day of weekDays) map[toDateStr(day)] = []
 
-    const byDateTemplate: Record<string, { assignments: ShiftAssignment[]; template: ShiftTemplate }> = {}
+    const byDateTemplate: Record<string, { assignments: ShiftAssignment[]; template: ShiftTemplate; shiftContractType?: string | null }> = {}
     for (const s of activeShifts) {
       if (!s.shift_template) continue
       const key = `${s.date}|${s.shift_template.id}`
       if (!byDateTemplate[key]) {
-        byDateTemplate[key] = { assignments: [], template: s.shift_template }
+        byDateTemplate[key] = { assignments: [], template: s.shift_template, shiftContractType: s.rota?.shift_contract_type }
       }
       byDateTemplate[key].assignments.push(s)
     }
@@ -277,6 +280,7 @@ export default function MyShifts() {
         date,
         assignments: group.assignments,
         employees,
+        shiftContractType: group.shiftContractType,
       })
     }
 
@@ -498,7 +502,24 @@ export default function MyShifts() {
                       >
                         <div className="sc-block-top">
                           <div className="sc-block-info">
-                            <div className="sc-block-name" style={{ color: cardColor.text }}>{g.template.name}</div>
+                            <div className="sc-block-name" style={{ color: cardColor.text }}>
+                              {g.template.name}
+                              {g.shiftContractType && (
+                                <span style={{
+                                  marginLeft: 8,
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  padding: '2px 7px',
+                                  borderRadius: 6,
+                                  background: g.shiftContractType === 'Zero hours shift worker' ? '#fff3e0' : '#e3f2fd',
+                                  color: g.shiftContractType === 'Zero hours shift worker' ? '#e65100' : '#1565c0',
+                                  verticalAlign: 'middle',
+                                  whiteSpace: 'nowrap',
+                                }}>
+                                  {g.shiftContractType === 'Zero hours shift worker' ? 'Zero Hours' : 'Employed'}
+                                </span>
+                              )}
+                            </div>
                             <div className="sc-block-time">{formatTimeShort(g.template.start_time)} - {formatTimeShort(g.template.end_time)}</div>
                           </div>
                           <div className="sc-avatars" onClick={() => setPopupShift(g)}>
@@ -595,7 +616,23 @@ export default function MyShifts() {
           <div className="sc-popup" onClick={e => e.stopPropagation()}>
             <div className="sc-popup-header">
               <div>
-                <div className="sc-popup-title">{popupShift.template.name}</div>
+                <div className="sc-popup-title">
+                  {popupShift.template.name}
+                  {popupShift.shiftContractType && (
+                    <span style={{
+                      marginLeft: 8,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: '2px 8px',
+                      borderRadius: 6,
+                      background: popupShift.shiftContractType === 'Zero hours shift worker' ? '#fff3e0' : '#e3f2fd',
+                      color: popupShift.shiftContractType === 'Zero hours shift worker' ? '#e65100' : '#1565c0',
+                      verticalAlign: 'middle',
+                    }}>
+                      {popupShift.shiftContractType === 'Zero hours shift worker' ? 'Zero Hours' : 'Employed'}
+                    </span>
+                  )}
+                </div>
                 <div className="sc-popup-time">
                   {formatTimeShort(popupShift.template.start_time)} - {formatTimeShort(popupShift.template.end_time)}
                 </div>
