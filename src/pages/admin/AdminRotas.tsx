@@ -361,7 +361,7 @@ export default function AdminRotas() {
 
   function openRota(rota: Rota) {
     setSelectedRota(rota)
-    const ws = getMonday(new Date(rota.start_date))
+    const ws = getMonday(new Date(rota.start_date + 'T00:00:00'))
     setWeekStart(ws)
     loadGridData(rota, ws)
   }
