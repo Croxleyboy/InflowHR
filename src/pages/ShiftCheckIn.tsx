@@ -109,7 +109,7 @@ export default function ShiftCheckIn() {
   function fmtTime(iso: string) { return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) }
   function fmtDate(iso: string) { return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) }
 
-  const promptMins = settings?.prompt_before_shift_mins || 20
+  const promptMins = settings?.prompt_before_shift_mins || 30
   const canCheckInShift = (() => {
     if (!todayShift) return false
     if (activeCheckin) return false

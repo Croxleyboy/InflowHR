@@ -33,7 +33,7 @@ export default function CheckInPrompt() {
     }
     const todayStr = toLocalDateStr()
     const { data } = await supabase.from('shift_assignments')
-      .select('id, shift_template:shift_templates(start_time), rota:rotas(status)')
+      .select('id, shift_template:shift_templates(start_time, end_time), rota:rotas(status)')
       .eq('employee_id', employeeId)
       .eq('company_id', companyUser.company_id)
       .eq('date', todayStr)
@@ -41,12 +41,26 @@ export default function CheckInPrompt() {
     const row = (data || []).find((r: any) => !r.rota?.status || r.rota?.status === 'published' || r.rota?.status === 'draft') as any
 
     if (row) {
+      const startTime = row.shift_template?.start_time
+      const endTime = row.shift_template?.end_time
+      const now = new Date()
+
+      if (endTime) {
+        const [eh, em] = endTime.split(':').map(Number)
+        const shiftEnd = new Date()
+        shiftEnd.setHours(eh, em, 0, 0)
+        if (now > shiftEnd) {
+          setShiftRostered(false)
+          setShiftAvailable(false)
+          setShiftAssignmentId(null)
+          return
+        }
+      }
+
       setShiftRostered(true)
       setShiftAssignmentId(row.id)
-      const startTime = row.shift_template?.start_time
       if (startTime) {
-        const promptMins = settings?.prompt_before_shift_mins || 20
-        const now = new Date()
+        const promptMins = settings?.prompt_before_shift_mins || 30
         const [sh, sm] = startTime.split(':').map(Number)
         const shiftStart = new Date()
         shiftStart.setHours(sh, sm, 0, 0)
@@ -74,6 +88,12 @@ export default function CheckInPrompt() {
     })
     return () => { if (timer) clearTimeout(timer) }
   }, [loading, employeeId, companyUser, dismissed, activeCheckin, enabled, location.pathname, checkShiftAvailability])
+
+  useEffect(() => {
+    if (!shiftEnabled || !visible) return
+    const iv = setInterval(() => { checkShiftAvailability() }, 60000)
+    return () => clearInterval(iv)
+  }, [shiftEnabled, visible, checkShiftAvailability])
 
   if (!visible || !enabled || activeCheckin) return null
   if (!tsEnabled && !shiftRostered) return null
@@ -145,7 +165,7 @@ export default function CheckInPrompt() {
                 {!shiftRostered ? 'Shift Check-In (no shift today)' : !shiftAvailable ? 'Shift Check-In (not yet open)' : acting ? 'Checking in...' : 'Shift Check-In'}
               </button>
               {!shiftAvailable && shiftRostered && (
-                <div className="cip-shift-note">Check-in opens {settings?.prompt_before_shift_mins || 20} minutes before your shift</div>
+                <div className="cip-shift-note">Check-in opens {settings?.prompt_before_shift_mins || 30} minutes before your shift</div>
               )}
             </>
           ) : (
