@@ -208,6 +208,15 @@ export default function AdminPayroll() {
   const [shiftCustomPayDay, setShiftCustomPayDay] = useState(28)
   const [shiftSubmitLeadDays, setShiftSubmitLeadDays] = useState(5)
   const [zeroHrsFrequency, setZeroHrsFrequency] = useState<'weekly' | 'fortnightly' | 'monthly'>('monthly')
+  const [zeroHrsPayDayMode, setZeroHrsPayDayMode] = useState<'end' | 'start' | 'custom'>('end')
+  const [zeroHrsCustomPayDay, setZeroHrsCustomPayDay] = useState(28)
+  const [zeroHrsSubmitLeadDays, setZeroHrsSubmitLeadDays] = useState(5)
+
+  // Schedule sub-tabs and pagination
+  const [schedSubTab, setSchedSubTab] = useState<'employed' | 'shift' | 'zero_hours' | 'settings'>('employed')
+  const [schedEmpPage, setSchedEmpPage] = useState(1)
+  const [schedShiftPage, setSchedShiftPage] = useState(1)
+  const [schedZeroPage, setSchedZeroPage] = useState(1)
 
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
@@ -360,6 +369,9 @@ export default function AdminPayroll() {
         if (cpr.shift_custom_pay_day) setShiftCustomPayDay(cpr.shift_custom_pay_day)
         if (cpr.shift_submit_lead_days !== undefined) setShiftSubmitLeadDays(cpr.shift_submit_lead_days)
         if (cpr.zero_hrs_frequency) setZeroHrsFrequency(cpr.zero_hrs_frequency)
+        if (cpr.zero_hrs_pay_day_mode) setZeroHrsPayDayMode(cpr.zero_hrs_pay_day_mode)
+        if (cpr.zero_hrs_custom_pay_day) setZeroHrsCustomPayDay(cpr.zero_hrs_custom_pay_day)
+        if (cpr.zero_hrs_submit_lead_days !== undefined) setZeroHrsSubmitLeadDays(cpr.zero_hrs_submit_lead_days)
       })
   }, [selectedCompanyId])
 
@@ -388,7 +400,7 @@ export default function AdminPayroll() {
     await savePayRunData({
       pay_day_mode: payDayMode, custom_pay_day: customPayDay, submit_lead_days: submitLeadDays,
       shift_pay_day_mode: shiftPayDayMode, shift_custom_pay_day: shiftCustomPayDay, shift_submit_lead_days: shiftSubmitLeadDays,
-      zero_hrs_frequency: zeroHrsFrequency,
+      zero_hrs_frequency: zeroHrsFrequency, zero_hrs_pay_day_mode: zeroHrsPayDayMode, zero_hrs_custom_pay_day: zeroHrsCustomPayDay, zero_hrs_submit_lead_days: zeroHrsSubmitLeadDays,
     })
     setPaySettingsSaving(false)
     showSuccess('Payroll settings saved')
@@ -1646,7 +1658,90 @@ export default function AdminPayroll() {
         )
       })()}
 
-      {tab === 'schedule' && (
+      {tab === 'schedule' && (() => {
+        const SCHED_PAGE_SIZE = PAGE_SIZE
+        const schedEmployedRows = fyMonths.map(({ year, month }) => {
+          const start = new Date(year, month, 1)
+          const end = new Date(year, month + 1, 0)
+          const payDate = getPayDay(year, month, payDayMode, customPayDay)
+          const submitOpens = new Date(payDate)
+          submitOpens.setDate(submitOpens.getDate() - submitLeadDays)
+          const today = new Date(); today.setHours(0, 0, 0, 0)
+          const withinSubmitWindow = today >= submitOpens
+          const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
+          const employedIds = new Set(employedEmployees.map(e => e.id))
+          const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && employedIds.has(p.employee.id))
+          const isPast = end < new Date()
+          const schedStatus = payrollScheduleStatuses[monthKey]
+          const hasPayslips = monthPayslips.length > 0
+          const allPaid = hasPayslips && monthPayslips.every(p => p.status === 'paid')
+          let statusLabel: string; let statusClass: string; let isClickable = false
+          if (schedStatus === 'completed' && allPaid) { statusLabel = 'Completed'; statusClass = 'admin-badge-paid' }
+          else if (schedStatus === 'edited') { statusLabel = 'Edited — Download'; statusClass = 'admin-badge-rejected'; isClickable = withinSubmitWindow }
+          else if (hasPayslips && !allPaid && withinSubmitWindow) { statusLabel = 'Submit Payroll'; statusClass = 'admin-badge-pending'; isClickable = true }
+          else if (hasPayslips && !allPaid && !withinSubmitWindow) { statusLabel = `Opens ${submitOpens.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`; statusClass = 'admin-badge-draft' }
+          else if (!hasPayslips && isPast) { statusLabel = 'No Payslips'; statusClass = 'admin-badge-pending' }
+          else if (!hasPayslips) { statusLabel = 'Upcoming'; statusClass = 'admin-badge-pending' }
+          else { statusLabel = 'Completed'; statusClass = 'admin-badge-paid' }
+          return { year, month, start, end, payDate, submitOpens, monthKey, monthPayslips, isPast, statusLabel, statusClass, isClickable }
+        })
+        const schedShiftRows = fyMonths.map(({ year, month }) => {
+          const start = new Date(year, month, 1)
+          const end = new Date(year, month + 1, 0)
+          const payDate = getPayDay(year, month, shiftPayDayMode, shiftCustomPayDay)
+          const submitOpens = new Date(payDate)
+          submitOpens.setDate(submitOpens.getDate() - shiftSubmitLeadDays)
+          const today = new Date(); today.setHours(0, 0, 0, 0)
+          const withinSubmitWindow = today >= submitOpens
+          const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
+          const shiftIds = new Set(shiftEmployees.map(e => e.id))
+          const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && shiftIds.has(p.employee.id))
+          const isPast = end < new Date()
+          const hasPayslips = monthPayslips.length > 0
+          const allPaid = hasPayslips && monthPayslips.every(p => p.status === 'paid')
+          const schedStatus = payrollScheduleStatuses[`shift-${monthKey}`]
+          let statusLabel: string; let statusClass: string; let isClickable = false
+          if (schedStatus === 'completed' && allPaid) { statusLabel = 'Completed'; statusClass = 'admin-badge-paid' }
+          else if (hasPayslips && !allPaid && withinSubmitWindow) { statusLabel = 'Submit Payroll'; statusClass = 'admin-badge-pending'; isClickable = true }
+          else if (hasPayslips && !allPaid && !withinSubmitWindow) { statusLabel = `Opens ${submitOpens.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`; statusClass = 'admin-badge-draft' }
+          else if (!hasPayslips && isPast) { statusLabel = 'No Payslips'; statusClass = 'admin-badge-pending' }
+          else if (!hasPayslips) { statusLabel = 'Upcoming'; statusClass = 'admin-badge-pending' }
+          else { statusLabel = 'Completed'; statusClass = 'admin-badge-paid' }
+          return { year, month, start, end, payDate, submitOpens, monthKey, monthPayslips, isPast, statusLabel, statusClass, isClickable }
+        })
+        const schedZeroRows = fyMonths.map(({ year, month }) => {
+          const start = new Date(year, month, 1)
+          const end = new Date(year, month + 1, 0)
+          const payDate = getPayDay(year, month, zeroHrsPayDayMode, zeroHrsCustomPayDay)
+          const zeroPayDates: Date[] = []
+          if (zeroHrsFrequency === 'monthly') { zeroPayDates.push(end) } else {
+            const fri = new Date(year, month, 1)
+            while (fri.getDay() !== 5) fri.setDate(fri.getDate() + 1)
+            const step = zeroHrsFrequency === 'fortnightly' ? 14 : 7
+            while (fri.getMonth() === month) { zeroPayDates.push(new Date(fri)); fri.setDate(fri.getDate() + step) }
+          }
+          const zeroFreqLabel = zeroPayDates.map(d => d.toLocaleDateString('en-GB')).join(', ')
+          const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
+          const zeroIds = new Set(zeroHoursEmployees.map(e => e.id))
+          const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && zeroIds.has(p.employee.id))
+          const isPast = end < new Date()
+          const hasPayslips = monthPayslips.length > 0
+          const allPaid = hasPayslips && monthPayslips.every(p => p.status === 'paid')
+          let statusLabel: string; let statusClass: string
+          if (allPaid && hasPayslips) { statusLabel = 'Completed'; statusClass = 'admin-badge-paid' }
+          else if (hasPayslips && !allPaid) { statusLabel = 'In Progress'; statusClass = 'admin-badge-pending' }
+          else if (!hasPayslips && isPast) { statusLabel = 'No Payslips'; statusClass = 'admin-badge-pending' }
+          else { statusLabel = 'Upcoming'; statusClass = 'admin-badge-pending' }
+          return { year, month, start, end, payDate, zeroFreqLabel, monthKey, monthPayslips, isPast, statusLabel, statusClass }
+        })
+        const empTotalPages = Math.ceil(schedEmployedRows.length / SCHED_PAGE_SIZE)
+        const shiftTotalPages = Math.ceil(schedShiftRows.length / SCHED_PAGE_SIZE)
+        const zeroTotalPages = Math.ceil(schedZeroRows.length / SCHED_PAGE_SIZE)
+        const pagedEmpRows = schedEmployedRows.slice((schedEmpPage - 1) * SCHED_PAGE_SIZE, schedEmpPage * SCHED_PAGE_SIZE)
+        const pagedShiftRows = schedShiftRows.slice((schedShiftPage - 1) * SCHED_PAGE_SIZE, schedShiftPage * SCHED_PAGE_SIZE)
+        const pagedZeroRows = schedZeroRows.slice((schedZeroPage - 1) * SCHED_PAGE_SIZE, schedZeroPage * SCHED_PAGE_SIZE)
+
+        return (
         <div className="admin-schedule">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <h3 style={{ margin: 0 }}>Payroll Calendar — {fyLabel}</h3>
@@ -1656,7 +1751,7 @@ export default function AdminPayroll() {
               </svg>
               <span className="admin-info-tooltip-text">
                 <strong>Payroll Process</strong><br/>
-                1. Set your pay day and submission window below<br/>
+                1. Configure pay day and submission windows in Settings<br/>
                 2. Generate payslips from the Payslips tab<br/>
                 3. Review and resolve any flagged payslips<br/>
                 4. Once within the submission window, click &ldquo;Submit Payroll&rdquo; to download the CSV and mark payslips as paid<br/>
@@ -1665,221 +1760,255 @@ export default function AdminPayroll() {
             </span>
           </div>
 
-          {/* Employed Payroll Settings */}
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Employed Staff Payroll</h4>
-          <div style={{ background: 'var(--bg-secondary, #f8f9fa)', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
-              <select className="admin-select" value={payDayMode} onChange={e => setPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
-                <option value="end">End of Month</option>
-                <option value="start">Beginning of Month</option>
-                <option value="custom">Custom Day</option>
-              </select>
-            </div>
-            {payDayMode === 'custom' && (
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
-                <select className="admin-select" value={customPayDay} onChange={e => setCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
-                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
-                    <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
-              <select className="admin-select" value={submitLeadDays} onChange={e => setSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
-                {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
-                  <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Shift Payroll Settings — Full-time / Part-time */}
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Payroll — Full-time / Part-time</h4>
-          <div style={{ background: '#f5f0ff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', borderLeft: '4px solid #7e57c2' }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
-              <select className="admin-select" value={shiftPayDayMode} onChange={e => setShiftPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
-                <option value="end">End of Month</option>
-                <option value="start">Beginning of Month</option>
-                <option value="custom">Custom Day</option>
-              </select>
-            </div>
-            {shiftPayDayMode === 'custom' && (
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
-                <select className="admin-select" value={shiftCustomPayDay} onChange={e => setShiftCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
-                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
-                    <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
-              <select className="admin-select" value={shiftSubmitLeadDays} onChange={e => setShiftSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
-                {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
-                  <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Shift Payroll Settings — Zero Hours */}
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Payroll — Zero Hours</h4>
-          <div style={{ background: '#f5f0ff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', borderLeft: '4px solid #ab47bc' }}>
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Frequency</label>
-              <select className="admin-select" value={zeroHrsFrequency} onChange={e => setZeroHrsFrequency(e.target.value as any)} style={{ minWidth: 180 }}>
-                <option value="weekly">Every 1 Week</option>
-                <option value="fortnightly">Every 2 Weeks</option>
-                <option value="monthly">End of Month</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-            <button className="admin-btn admin-btn-primary" onClick={savePaySettings} disabled={paySettingsSaving} style={{ height: 36 }}>
-              {paySettingsSaving ? 'Saving...' : 'Save All Settings'}
+          {/* Sub-tabs */}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 16 }}>
+            <button onClick={() => { setSchedSubTab('employed'); setSchedEmpPage(1) }} style={{
+              padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+              borderRadius: '8px 0 0 8px', cursor: 'pointer',
+              background: schedSubTab === 'employed' ? 'var(--primary, #5c6bc0)' : 'var(--bg-card, #fff)',
+              color: schedSubTab === 'employed' ? '#fff' : 'var(--text, #1a1a2e)',
+            }}>Employed Staff ({employedEmployees.length})</button>
+            <button onClick={() => { setSchedSubTab('shift'); setSchedShiftPage(1) }} style={{
+              padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+              borderLeft: 'none', cursor: 'pointer',
+              background: schedSubTab === 'shift' ? '#7e57c2' : 'var(--bg-card, #fff)',
+              color: schedSubTab === 'shift' ? '#fff' : 'var(--text, #1a1a2e)',
+            }}>Shift Workers ({shiftEmployees.length})</button>
+            <button onClick={() => { setSchedSubTab('zero_hours'); setSchedZeroPage(1) }} style={{
+              padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+              borderLeft: 'none', cursor: 'pointer',
+              background: schedSubTab === 'zero_hours' ? '#ef6c00' : 'var(--bg-card, #fff)',
+              color: schedSubTab === 'zero_hours' ? '#fff' : 'var(--text, #1a1a2e)',
+            }}>Zero Hours ({zeroHoursEmployees.length})</button>
+            <button onClick={() => setSchedSubTab('settings')} style={{
+              padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+              borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+              background: schedSubTab === 'settings' ? '#455a64' : 'var(--bg-card, #fff)',
+              color: schedSubTab === 'settings' ? '#fff' : 'var(--text, #1a1a2e)',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: -2, marginRight: 4 }}>
+                <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+              Settings
             </button>
           </div>
 
           {/* Employed Staff Schedule */}
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Employed Staff Schedule</h4>
-          <div className="admin-table-wrap" style={{ marginBottom: 24 }}>
-            <table className="admin-table">
-              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th></tr></thead>
-              <tbody>
-                {fyMonths.map(({ year, month }) => {
-                  const start = new Date(year, month, 1)
-                  const end = new Date(year, month + 1, 0)
-                  const payDate = getPayDay(year, month, payDayMode, customPayDay)
-                  const submitOpens = new Date(payDate)
-                  submitOpens.setDate(submitOpens.getDate() - submitLeadDays)
-                  const today = new Date()
-                  today.setHours(0, 0, 0, 0)
-                  const withinSubmitWindow = today >= submitOpens
-                  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
-                  const employedIds = new Set(employedEmployees.map(e => e.id))
-                  const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && employedIds.has(p.employee.id))
-                  const isPast = end < new Date()
-                  const schedStatus = payrollScheduleStatuses[monthKey]
-                  const hasPayslips = monthPayslips.length > 0
-                  const allPaid = hasPayslips && monthPayslips.every(p => p.status === 'paid')
-
-                  let statusLabel: string
-                  let statusClass: string
-                  let isClickable = false
-
-                  if (schedStatus === 'completed' && allPaid) {
-                    statusLabel = 'Completed'
-                    statusClass = 'admin-badge-paid'
-                  } else if (schedStatus === 'edited') {
-                    statusLabel = 'Edited — Download'
-                    statusClass = 'admin-badge-rejected'
-                    isClickable = withinSubmitWindow
-                  } else if (hasPayslips && !allPaid && withinSubmitWindow) {
-                    statusLabel = 'Submit Payroll'
-                    statusClass = 'admin-badge-pending'
-                    isClickable = true
-                  } else if (hasPayslips && !allPaid && !withinSubmitWindow) {
-                    statusLabel = `Opens ${submitOpens.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-                    statusClass = 'admin-badge-draft'
-                  } else if (!hasPayslips && isPast) {
-                    statusLabel = 'No Payslips'
-                    statusClass = 'admin-badge-pending'
-                  } else if (!hasPayslips) {
-                    statusLabel = 'Upcoming'
-                    statusClass = 'admin-badge-pending'
-                  } else {
-                    statusLabel = 'Completed'
-                    statusClass = 'admin-badge-paid'
-                  }
-
-                  return (
-                    <tr key={monthKey} className={isPast && !isClickable ? 'admin-row-muted' : ''}>
-                      <td><strong>{MONTH_NAMES[month]}</strong></td>
-                      <td>{start.toLocaleDateString('en-GB')}</td>
-                      <td>{end.toLocaleDateString('en-GB')}</td>
-                      <td>{payDate.toLocaleDateString('en-GB')}</td>
-                      <td>{submitOpens.toLocaleDateString('en-GB')}</td>
-                      <td>{monthPayslips.length}</td>
-                      <td>
-                        {isClickable ? (
-                          <button
-                            className={`admin-badge ${statusClass}`}
-                            style={{ cursor: 'pointer', border: 'none', fontWeight: 600 }}
-                            onClick={() => submitPayroll(monthKey)}
-                          >
-                            {statusLabel}
-                          </button>
-                        ) : (
-                          <span className={`admin-badge ${statusClass}`}>{statusLabel}</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          {schedSubTab === 'employed' && (
+            <>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {pagedEmpRows.map(r => (
+                      <tr key={r.monthKey} className={r.isPast && !r.isClickable ? 'admin-row-muted' : ''}>
+                        <td><strong>{MONTH_NAMES[r.month]}</strong></td>
+                        <td>{r.start.toLocaleDateString('en-GB')}</td>
+                        <td>{r.end.toLocaleDateString('en-GB')}</td>
+                        <td>{r.payDate.toLocaleDateString('en-GB')}</td>
+                        <td>{r.submitOpens.toLocaleDateString('en-GB')}</td>
+                        <td>{r.monthPayslips.length}</td>
+                        <td>
+                          {r.isClickable ? (
+                            <button className={`admin-badge ${r.statusClass}`} style={{ cursor: 'pointer', border: 'none', fontWeight: 600 }} onClick={() => submitPayroll(r.monthKey)}>{r.statusLabel}</button>
+                          ) : (
+                            <span className={`admin-badge ${r.statusClass}`}>{r.statusLabel}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {empTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+                  <button className="admin-btn-sm" disabled={schedEmpPage <= 1} onClick={() => setSchedEmpPage(p => p - 1)}>Previous</button>
+                  <span style={{ fontSize: 13, lineHeight: '32px' }}>Page {schedEmpPage} of {empTotalPages}</span>
+                  <button className="admin-btn-sm" disabled={schedEmpPage >= empTotalPages} onClick={() => setSchedEmpPage(p => p + 1)}>Next</button>
+                </div>
+              )}
+            </>
+          )}
 
           {/* Shift Workers Schedule */}
-          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Workers Schedule</h4>
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>FT/PT Pay Day</th><th>Zero Hrs Pay Dates</th><th>Payslips</th><th>Status</th></tr></thead>
-              <tbody>
-                {fyMonths.map(({ year, month }) => {
-                  const start = new Date(year, month, 1)
-                  const end = new Date(year, month + 1, 0)
-                  const shiftPayDate = getPayDay(year, month, shiftPayDayMode, shiftCustomPayDay)
-                  const zeroPayDates: Date[] = []
-                  if (zeroHrsFrequency === 'monthly') {
-                    zeroPayDates.push(end)
-                  } else {
-                    const fri = new Date(year, month, 1)
-                    while (fri.getDay() !== 5) fri.setDate(fri.getDate() + 1)
-                    const step = zeroHrsFrequency === 'fortnightly' ? 14 : 7
-                    while (fri.getMonth() === month) {
-                      zeroPayDates.push(new Date(fri))
-                      fri.setDate(fri.getDate() + step)
-                    }
-                  }
-                  const zeroFreqLabel = zeroPayDates.map(d => d.toLocaleDateString('en-GB')).join(', ')
-                  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
-                  const allShiftIds = new Set([...shiftEmployees.map(e => e.id), ...zeroHoursEmployees.map(e => e.id)])
-                  const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && allShiftIds.has(p.employee.id))
-                  const isPast = end < new Date()
-                  const hasPayslips = monthPayslips.length > 0
-                  const allPaid = hasPayslips && monthPayslips.every(p => p.status === 'paid')
+          {schedSubTab === 'shift' && (
+            <>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {pagedShiftRows.map(r => (
+                      <tr key={r.monthKey} className={r.isPast && !r.isClickable ? 'admin-row-muted' : ''}>
+                        <td><strong>{MONTH_NAMES[r.month]}</strong></td>
+                        <td>{r.start.toLocaleDateString('en-GB')}</td>
+                        <td>{r.end.toLocaleDateString('en-GB')}</td>
+                        <td>{r.payDate.toLocaleDateString('en-GB')}</td>
+                        <td>{r.submitOpens.toLocaleDateString('en-GB')}</td>
+                        <td>{r.monthPayslips.length}</td>
+                        <td>
+                          {r.isClickable ? (
+                            <button className={`admin-badge ${r.statusClass}`} style={{ cursor: 'pointer', border: 'none', fontWeight: 600 }} onClick={() => submitPayroll(r.monthKey)}>{r.statusLabel}</button>
+                          ) : (
+                            <span className={`admin-badge ${r.statusClass}`}>{r.statusLabel}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {shiftTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+                  <button className="admin-btn-sm" disabled={schedShiftPage <= 1} onClick={() => setSchedShiftPage(p => p - 1)}>Previous</button>
+                  <span style={{ fontSize: 13, lineHeight: '32px' }}>Page {schedShiftPage} of {shiftTotalPages}</span>
+                  <button className="admin-btn-sm" disabled={schedShiftPage >= shiftTotalPages} onClick={() => setSchedShiftPage(p => p + 1)}>Next</button>
+                </div>
+              )}
+            </>
+          )}
 
-                  let statusLabel: string
-                  let statusClass: string
-                  if (allPaid && hasPayslips) { statusLabel = 'Completed'; statusClass = 'admin-badge-paid' }
-                  else if (hasPayslips && !allPaid) { statusLabel = 'In Progress'; statusClass = 'admin-badge-pending' }
-                  else if (!hasPayslips && isPast) { statusLabel = 'No Payslips'; statusClass = 'admin-badge-pending' }
-                  else { statusLabel = 'Upcoming'; statusClass = 'admin-badge-pending' }
+          {/* Zero Hours Schedule */}
+          {schedSubTab === 'zero_hours' && (
+            <>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Pay Dates</th><th>Payslips</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {pagedZeroRows.map(r => (
+                      <tr key={r.monthKey} className={r.isPast ? 'admin-row-muted' : ''}>
+                        <td><strong>{MONTH_NAMES[r.month]}</strong></td>
+                        <td>{r.start.toLocaleDateString('en-GB')}</td>
+                        <td>{r.end.toLocaleDateString('en-GB')}</td>
+                        <td>{r.payDate.toLocaleDateString('en-GB')}</td>
+                        <td>{r.zeroFreqLabel}</td>
+                        <td>{r.monthPayslips.length}</td>
+                        <td><span className={`admin-badge ${r.statusClass}`}>{r.statusLabel}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {zeroTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+                  <button className="admin-btn-sm" disabled={schedZeroPage <= 1} onClick={() => setSchedZeroPage(p => p - 1)}>Previous</button>
+                  <span style={{ fontSize: 13, lineHeight: '32px' }}>Page {schedZeroPage} of {zeroTotalPages}</span>
+                  <button className="admin-btn-sm" disabled={schedZeroPage >= zeroTotalPages} onClick={() => setSchedZeroPage(p => p + 1)}>Next</button>
+                </div>
+              )}
+            </>
+          )}
 
-                  return (
-                    <tr key={monthKey} className={isPast ? 'admin-row-muted' : ''}>
-                      <td><strong>{MONTH_NAMES[month]}</strong></td>
-                      <td>{start.toLocaleDateString('en-GB')}</td>
-                      <td>{end.toLocaleDateString('en-GB')}</td>
-                      <td>{shiftPayDate.toLocaleDateString('en-GB')}</td>
-                      <td>{zeroFreqLabel}</td>
-                      <td>{monthPayslips.length}</td>
-                      <td><span className={`admin-badge ${statusClass}`}>{statusLabel}</span></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          {/* Settings Tab */}
+          {schedSubTab === 'settings' && (
+            <>
+              <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Employed Staff Payroll</h4>
+              <div style={{ background: 'var(--bg-secondary, #f8f9fa)', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
+                  <select className="admin-select" value={payDayMode} onChange={e => setPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
+                    <option value="end">End of Month</option>
+                    <option value="start">Beginning of Month</option>
+                    <option value="custom">Custom Day</option>
+                  </select>
+                </div>
+                {payDayMode === 'custom' && (
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
+                    <select className="admin-select" value={customPayDay} onChange={e => setCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                        <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
+                  <select className="admin-select" value={submitLeadDays} onChange={e => setSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
+                    {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
+                      <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Workers Payroll</h4>
+              <div style={{ background: '#f5f0ff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', borderLeft: '4px solid #7e57c2' }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
+                  <select className="admin-select" value={shiftPayDayMode} onChange={e => setShiftPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
+                    <option value="end">End of Month</option>
+                    <option value="start">Beginning of Month</option>
+                    <option value="custom">Custom Day</option>
+                  </select>
+                </div>
+                {shiftPayDayMode === 'custom' && (
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
+                    <select className="admin-select" value={shiftCustomPayDay} onChange={e => setShiftCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                        <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
+                  <select className="admin-select" value={shiftSubmitLeadDays} onChange={e => setShiftSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
+                    {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
+                      <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#ef6c00' }}>Zero Hours Payroll</h4>
+              <div style={{ background: '#fff3e0', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', borderLeft: '4px solid #ef6c00' }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Frequency</label>
+                  <select className="admin-select" value={zeroHrsFrequency} onChange={e => setZeroHrsFrequency(e.target.value as any)} style={{ minWidth: 180 }}>
+                    <option value="weekly">Every 1 Week</option>
+                    <option value="fortnightly">Every 2 Weeks</option>
+                    <option value="monthly">End of Month</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
+                  <select className="admin-select" value={zeroHrsPayDayMode} onChange={e => setZeroHrsPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
+                    <option value="end">End of Month</option>
+                    <option value="start">Beginning of Month</option>
+                    <option value="custom">Custom Day</option>
+                  </select>
+                </div>
+                {zeroHrsPayDayMode === 'custom' && (
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
+                    <select className="admin-select" value={zeroHrsCustomPayDay} onChange={e => setZeroHrsCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                        <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
+                  <select className="admin-select" value={zeroHrsSubmitLeadDays} onChange={e => setZeroHrsSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
+                    {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
+                      <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button className="admin-btn admin-btn-primary" onClick={savePaySettings} disabled={paySettingsSaving} style={{ height: 36 }}>
+                  {paySettingsSaving ? 'Saving...' : 'Save All Settings'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
-      )}
+        )
+      })()}
 
       {tab === 'time_breakdown' && (
         <>
