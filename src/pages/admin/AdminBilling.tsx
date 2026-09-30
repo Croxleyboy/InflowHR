@@ -53,7 +53,7 @@ function generateInvoicePDF(
   year: number,
   baselineName: string,
   baselinePrice: number,
-  addons: { name: string; price: number }[],
+  packs: { name: string; price: number }[],
   employeeCount: number,
 ) {
   const doc = new jsPDF()
@@ -145,8 +145,8 @@ function generateInvoicePDF(
 
   const rows: { name: string; type: string; price: number; users: number; amount: number }[] = []
   rows.push({ name: baselineName, type: 'Core', price: baselinePrice, users: employeeCount, amount: baselinePrice * employeeCount })
-  addons.forEach(a => {
-    rows.push({ name: a.name, type: 'Add-on', price: a.price, users: employeeCount, amount: a.price * employeeCount })
+  packs.forEach(a => {
+    rows.push({ name: a.name, type: 'Pack', price: a.price, users: employeeCount, amount: a.price * employeeCount })
   })
 
   rows.forEach((r, i) => {
@@ -1385,7 +1385,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
           <span className="billing-card-sub">excl. VAT</span>
         </div>
         <div className="billing-card">
-          <span className="billing-card-label">Add-on Revenue</span>
+          <span className="billing-card-label">Pack Revenue</span>
           <span className="billing-card-value">&pound;{platformAddons.toFixed(2)}</span>
           <span className="billing-card-sub">excl. VAT</span>
         </div>
@@ -1414,11 +1414,11 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
               <th>Users</th>
               <th>Core/User</th>
               <th>Core Total</th>
-              <th>Add-ons</th>
+              <th>Packs</th>
               <th>Platform Fee</th>
               <th>VAT</th>
               <th>Monthly Total</th>
-              <th>Active Add-ons</th>
+              <th>Active Packs</th>
               <th>Invoice</th>
             </tr>
           </thead>
