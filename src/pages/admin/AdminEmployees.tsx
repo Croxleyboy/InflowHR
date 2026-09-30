@@ -56,6 +56,7 @@ interface Employee {
   religion: string | null
   manager_id: string | null
   work_pattern_id: string | null
+  employment_category: string
 }
 
 interface WorkPattern {
@@ -178,8 +179,9 @@ export default function AdminEmployees() {
       bank_sort_code: emp.bank_sort_code || '', bank_account_number: emp.bank_account_number || '',
       bank_account_name: emp.bank_account_name || '',
       probation_end_date: emp.probation_end_date || '', notice_period: emp.notice_period || '',
-      working_pattern: emp.working_pattern || 'Full-time', weekly_hours: emp.weekly_hours ?? 37.5, work_pattern_id: emp.work_pattern_id || '',
-      location: emp.location || '', contract_type: emp.contract_type || 'Permanent',
+      employment_category: emp.employment_category || 'not_assigned',
+      working_pattern: emp.working_pattern || '', weekly_hours: emp.weekly_hours ?? '', work_pattern_id: emp.work_pattern_id || '',
+      location: emp.location || '', contract_type: emp.contract_type || '',
       annual_salary: emp.annual_salary ?? '', tax_code: emp.tax_code || '',
       payroll_id: emp.payroll_id || '', personal_email: emp.personal_email || '',
       manager_name: emp.manager_name || '', manager_email: emp.manager_email || '',
@@ -834,44 +836,144 @@ export default function AdminEmployees() {
                                 </fieldset>
                                 <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
                                   <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Employment</legend>
-                                  <div className="admin-detail-grid admin-detail-grid-3">
-                                    {[
-                                      { k: 'location', l: 'Work Location' },
-                                      { k: 'contract_type', l: 'Contract Type', t: 'select', opts: ['Permanent', 'Fixed-term', 'Full-time', 'Part-time', 'Contract', 'Apprentice', 'Intern', 'Guest'] },
-                                      { k: 'working_pattern', l: 'Working Pattern (Legacy)', t: 'select', opts: ['Full-time', 'Part-time', 'Compressed', 'Flexible', 'Shift', 'Term-time'] },
-                                      { k: 'weekly_hours', l: 'Weekly Hours', t: 'number' },
-                                      { k: 'probation_end_date', l: 'Probation End Date', t: 'date' },
-                                      { k: 'notice_period', l: 'Notice Period' },
-                                      { k: 'manager_name', l: 'Manager Name' },
-                                      { k: 'manager_email', l: 'Manager Email' },
-                                      { k: 'leave_allowance', l: 'Leave Allowance (Days)', t: 'number' },
-                                      { k: 'salary_group', l: 'Salary Group' },
-                                    ].map(f => (
-                                      <div key={f.k} className="admin-form-field">
-                                        <label style={{ fontSize: 12 }}>{f.l}</label>
-                                        {f.t === 'select' ? (
-                                          <select className="admin-select" value={editForm[f.k] || ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))}>
-                                            {f.opts!.map(o => <option key={o} value={o}>{o}</option>)}
+                                  {(() => {
+                                    const cat = editForm.employment_category || 'not_assigned'
+                                    const ct = editForm.contract_type || ''
+                                    const isContractor = cat === 'contractor'
+                                    const isZeroHours = cat === 'shift_worker' && ct === 'Zero hours shift worker'
+                                    const isShiftNonZero = cat === 'shift_worker' && !isZeroHours
+
+                                    const contractOpts = cat === 'employed'
+                                      ? ['', 'Full-time', 'Part-time', 'Student', 'Temporary']
+                                      : cat === 'shift_worker'
+                                      ? ['', 'Full-time shift worker', 'Part-time shift worker', 'Weekends shift worker', 'Zero hours shift worker']
+                                      : ['']
+
+                                    const showField = (field: string) => {
+                                      if (isZeroHours) return ['location', 'contract_type', 'manager_name', 'manager_email'].includes(field)
+                                      if (isContractor) return !['contract_type', 'working_pattern', 'probation_end_date', 'notice_period', 'leave_allowance', 'salary_group', 'lieu_days', 'work_pattern_id'].includes(field)
+                                      if (isShiftNonZero) return field !== 'working_pattern'
+                                      return true
+                                    }
+
+                                    function handleCategoryChange(newCat: string) {
+                                      const u: Record<string, any> = { employment_category: newCat, contract_type: '' }
+                                      if (newCat === 'not_assigned') {
+                                        Object.assign(u, { working_pattern: '', weekly_hours: '', probation_end_date: '', notice_period: '', manager_name: '', manager_email: '', leave_allowance: '', salary_group: '', location: '', work_pattern_id: '' })
+                                        setEditLieuDays(0)
+                                      } else if (newCat === 'contractor') {
+                                        Object.assign(u, { working_pattern: '', probation_end_date: '', notice_period: '', leave_allowance: '', salary_group: '', work_pattern_id: '' })
+                                        setEditLieuDays(0)
+                                      } else if (newCat === 'shift_worker') {
+                                        u.working_pattern = ''
+                                      }
+                                      setEditForm(p => ({ ...p, ...u }))
+                                    }
+
+                                    function handleContractChange(newCt: string) {
+                                      const u: Record<string, any> = { contract_type: newCt }
+                                      if (cat === 'shift_worker' && newCt === 'Zero hours shift worker') {
+                                        Object.assign(u, { weekly_hours: '', probation_end_date: '', notice_period: '', leave_allowance: '', salary_group: '', working_pattern: '', work_pattern_id: '' })
+                                        setEditLieuDays(0)
+                                      }
+                                      setEditForm(p => ({ ...p, ...u }))
+                                    }
+
+                                    return (
+                                      <div className="admin-detail-grid admin-detail-grid-3">
+                                        <div className="admin-form-field">
+                                          <label style={{ fontSize: 12 }}>Work Pattern</label>
+                                          <select className="admin-select" value={cat} onChange={e => handleCategoryChange(e.target.value)}>
+                                            <option value="not_assigned">Not Assigned</option>
+                                            <option value="employed">Employed</option>
+                                            <option value="shift_worker">Shift Worker</option>
+                                            <option value="contractor">Contractor</option>
                                           </select>
-                                        ) : (
-                                          <input className="admin-inline-input" type={f.t || 'text'} value={editForm[f.k] ?? ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
+                                        </div>
+                                        {showField('location') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Work Location</label>
+                                            <input className="admin-inline-input" value={editForm.location || ''} onChange={e => setEditForm(p => ({...p, location: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {showField('contract_type') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Contract Type</label>
+                                            <select className="admin-select" value={editForm.contract_type || ''} onChange={e => handleContractChange(e.target.value)} disabled={isZeroHours}>
+                                              {contractOpts.map(o => <option key={o} value={o}>{o || '—'}</option>)}
+                                            </select>
+                                          </div>
+                                        )}
+                                        {showField('working_pattern') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Working Pattern (Legacy)</label>
+                                            <select className="admin-select" value={editForm.working_pattern || ''} onChange={e => setEditForm(p => ({...p, working_pattern: e.target.value}))}>
+                                              {['', 'Full-time', 'Part-time', 'Compressed', 'Flexible', 'Shift', 'Term-time'].map(o => <option key={o} value={o}>{o || '—'}</option>)}
+                                            </select>
+                                          </div>
+                                        )}
+                                        {showField('weekly_hours') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Weekly Hours</label>
+                                            <input className="admin-inline-input" type="number" value={editForm.weekly_hours ?? ''} onChange={e => setEditForm(p => ({...p, weekly_hours: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {showField('probation_end_date') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Probation End Date</label>
+                                            <input className="admin-inline-input" type="date" value={editForm.probation_end_date || ''} onChange={e => setEditForm(p => ({...p, probation_end_date: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {showField('notice_period') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Notice Period</label>
+                                            <input className="admin-inline-input" value={editForm.notice_period || ''} onChange={e => setEditForm(p => ({...p, notice_period: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {showField('manager_name') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Manager Name</label>
+                                            <input className="admin-inline-input" value={editForm.manager_name || ''} onChange={e => setEditForm(p => ({...p, manager_name: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {showField('manager_email') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Manager Email</label>
+                                            <input className="admin-inline-input" value={editForm.manager_email || ''} onChange={e => setEditForm(p => ({...p, manager_email: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {showField('leave_allowance') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Leave Allowance (Days)</label>
+                                            <input className="admin-inline-input" type="number" value={editForm.leave_allowance ?? ''} onChange={e => setEditForm(p => ({...p, leave_allowance: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {showField('salary_group') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Salary Group</label>
+                                            <input className="admin-inline-input" value={editForm.salary_group || ''} onChange={e => setEditForm(p => ({...p, salary_group: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {showField('lieu_days') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Lieu Days</label>
+                                            <input className="admin-inline-input" type="number" min="0" step="0.5" value={editLieuDays} onChange={e => setEditLieuDays(parseFloat(e.target.value) || 0)} />
+                                          </div>
+                                        )}
+                                        {showField('work_pattern_id') && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Shift Pattern</label>
+                                            <select className="admin-select" value={editForm.work_pattern_id || ''} onChange={e => setEditForm(p => ({...p, work_pattern_id: e.target.value || null}))}>
+                                              <option value="">Not Assigned</option>
+                                              {workPatterns.filter(wp => wp.is_active).map(wp => (
+                                                <option key={wp.id} value={wp.id}>{wp.name} ({wp.pattern_type === 'variable' ? 'Any day' : wp.days.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ')})</option>
+                                              ))}
+                                            </select>
+                                          </div>
                                         )}
                                       </div>
-                                    ))}
-                                    <div className="admin-form-field">
-                                      <label style={{ fontSize: 12 }}>Lieu Days</label>
-                                      <input className="admin-inline-input" type="number" min="0" step="0.5" value={editLieuDays} onChange={e => setEditLieuDays(parseFloat(e.target.value) || 0)} />
-                                    </div>
-                                    <div className="admin-form-field">
-                                      <label style={{ fontSize: 12 }}>Work Pattern</label>
-                                      <select className="admin-select" value={editForm.work_pattern_id || ''} onChange={e => setEditForm(p => ({...p, work_pattern_id: e.target.value || null}))}>
-                                        <option value="">Not Assigned</option>
-                                        {workPatterns.filter(wp => wp.is_active).map(wp => (
-                                          <option key={wp.id} value={wp.id}>{wp.name} ({wp.pattern_type === 'variable' ? 'Any day' : wp.days.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ')})</option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                  </div>
+                                    )
+                                  })()}
                                 </fieldset>
                                 <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
                                   <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Qualifications</legend>
@@ -949,15 +1051,18 @@ export default function AdminEmployees() {
                                   </div>
                                 )}
                                 <div className="admin-detail-grid admin-detail-grid-3">
-                                  <div><strong>Work Pattern:</strong> {(() => { const wp = workPatterns.find(p => p.id === emp.work_pattern_id); return wp ? `${wp.name} (${wp.pattern_type === 'variable' ? 'Any day' : wp.days.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ')})` : emp.working_pattern || '—' })()}</div>
-                                  <div><strong>Weekly Hours:</strong> {emp.weekly_hours ?? '—'}</div>
-                                  <div><strong>Notice Period:</strong> {emp.notice_period || '—'}</div>
-                                  <div><strong>Probation End:</strong> {emp.probation_end_date ? new Date(emp.probation_end_date).toLocaleDateString('en-GB') : '—'}</div>
+                                  <div><strong>Work Pattern:</strong> {({ not_assigned: 'Not Assigned', employed: 'Employed', shift_worker: 'Shift Worker', contractor: 'Contractor' } as Record<string, string>)[emp.employment_category] || 'Not Assigned'}</div>
+                                  <div><strong>Contract:</strong> {emp.contract_type || '—'}</div>
+                                  <div><strong>Location:</strong> {emp.location || '—'}</div>
+                                  {emp.employment_category !== 'contractor' && <div><strong>Weekly Hours:</strong> {emp.weekly_hours ?? '—'}</div>}
+                                  {emp.employment_category !== 'contractor' && <div><strong>Notice Period:</strong> {emp.notice_period || '—'}</div>}
+                                  {emp.employment_category !== 'contractor' && <div><strong>Probation End:</strong> {emp.probation_end_date ? new Date(emp.probation_end_date).toLocaleDateString('en-GB') : '—'}</div>}
                                   <div><strong>Manager:</strong> {emp.manager_name || '—'}</div>
                                   <div><strong>Manager Email:</strong> {emp.manager_email || '—'}</div>
-                                  <div><strong>Leave Allowance:</strong> {emp.leave_allowance ?? 15} days</div>
-                                  <div><strong>Lieu Days:</strong> {lieuDays[emp.id]?.lieu_days ?? 0} days</div>
-                                  <div><strong>Salary Group:</strong> {emp.salary_group || 'N/A'}</div>
+                                  {emp.employment_category !== 'contractor' && <div><strong>Leave Allowance:</strong> {emp.leave_allowance ?? 15} days</div>}
+                                  {emp.employment_category !== 'contractor' && <div><strong>Lieu Days:</strong> {lieuDays[emp.id]?.lieu_days ?? 0} days</div>}
+                                  {emp.employment_category !== 'contractor' && <div><strong>Salary Group:</strong> {emp.salary_group || 'N/A'}</div>}
+                                  {emp.work_pattern_id && <div><strong>Shift Pattern:</strong> {(() => { const wp = workPatterns.find(p => p.id === emp.work_pattern_id); return wp ? `${wp.name} (${wp.pattern_type === 'variable' ? 'Any day' : wp.days.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ')})` : '—' })()}</div>}
                                 </div>
                                 {emp.qualifications && (
                                   <div>

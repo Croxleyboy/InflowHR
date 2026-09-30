@@ -53,6 +53,7 @@ interface Employee {
   qualifications: string | null
   religion: string | null
   work_pattern_id: string | null
+  employment_category: string
 }
 
 interface Props {
