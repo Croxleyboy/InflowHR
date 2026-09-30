@@ -99,7 +99,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features, dashboardStyle } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser, workPatternType, isSuperAdmin } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser, workPatternType, employmentCategory, isSuperAdmin } = useAuth()
   const navigate = useNavigate()
   const { activeCheckin, activeBreak, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
@@ -751,6 +751,8 @@ export default function Dashboard() {
     if (featureKey && !(features as any)[featureKey]) return null
     if (key === 'checkin' && !checkinEnabled) return null
     if (infoCardHidden.has(key)) return null
+    if (!isSuperAdmin && key === 'shifts' && employmentCategory !== 'shift_worker') return null
+    if (!isSuperAdmin && (key === 'timesheets' || key === 'legal_timesheets') && employmentCategory === 'shift_worker') return null
 
     switch (key) {
       case 'checkin': {
