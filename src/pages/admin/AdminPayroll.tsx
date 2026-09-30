@@ -116,6 +116,7 @@ interface Employee {
   tax_code: string | null
   payroll_id: string | null
   employment_category: string | null
+  contract_type: string | null
 }
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -195,10 +196,12 @@ export default function AdminPayroll() {
   const [empPayMonthIdx, setEmpPayMonthIdx] = useState(0)
   const [empPayPage, setEmpPayPage] = useState(1)
   const [empPayShiftPage, setEmpPayShiftPage] = useState(1)
+  const [empPayZeroPage, setEmpPayZeroPage] = useState(1)
+  const [empPaySubTab, setEmpPaySubTab] = useState<'employed' | 'shift' | 'zero_hours'>('employed')
 
   // Sub-tabs for employment type split
   const [payslipSubTab, setPayslipSubTab] = useState<'employed' | 'shift'>('employed')
-  const [tbSubTab, setTbSubTab] = useState<'employed' | 'shift'>('employed')
+  const [tbSubTab, setTbSubTab] = useState<'employed' | 'shift' | 'zero_hours'>('employed')
 
   // Shift payroll schedule settings
   const [shiftPayDayMode, setShiftPayDayMode] = useState<'end' | 'start' | 'custom'>('end')
@@ -217,6 +220,7 @@ export default function AdminPayroll() {
   const [tbLoading, setTbLoading] = useState(false)
   const [tbExpandedEmp, setTbExpandedEmp] = useState<string | null>(null)
   const [tbFilterEmp, setTbFilterEmp] = useState('')
+  const [tbPage, setTbPage] = useState(1)
 
   const [anPeriodStart, setAnPeriodStart] = useState(() => {
     const d = new Date(); d.setDate(1); return localDateStr(d)
@@ -261,7 +265,7 @@ export default function AdminPayroll() {
     const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes, sRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id, employment_category').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id, employment_category, contract_type').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, last_sync_at, payslip_source, last_upload_at, last_upload_filename').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
@@ -631,7 +635,8 @@ export default function AdminPayroll() {
   const sourcePayslips = useMemo(() => payslips, [payslips])
 
   const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
-  const shiftEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker'), [employees])
+  const shiftEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker'), [employees])
+  const zeroHoursEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker'), [employees])
 
   const empCategoryById = useMemo(() => {
     const map: Record<string, string> = {}
@@ -1524,14 +1529,21 @@ export default function AdminPayroll() {
       )}
 
       {tab === 'employees' && (() => {
-        const empPayEmployed = employedEmployees
-        const empPayShift = shiftEmployees
-        const employedSlips = empPayPayslips.filter(p => p.employee?.id && empCategoryById[p.employee.id] !== 'shift_worker')
-        const shiftSlips = empPayPayslips.filter(p => p.employee?.id && empCategoryById[p.employee.id] === 'shift_worker')
-        const empTotalPages = Math.max(1, Math.ceil(empPayEmployed.length / PAGE_SIZE))
-        const shiftTotalPages = Math.max(1, Math.ceil(empPayShift.length / PAGE_SIZE))
-        const paginatedEmployed = empPayEmployed.slice((empPayPage - 1) * PAGE_SIZE, empPayPage * PAGE_SIZE)
-        const paginatedShift = empPayShift.slice((empPayShiftPage - 1) * PAGE_SIZE, empPayShiftPage * PAGE_SIZE)
+        const zeroHrsIds = new Set(zeroHoursEmployees.map(e => e.id))
+        const shiftIds = new Set(shiftEmployees.map(e => e.id))
+        const employedIds = new Set(employedEmployees.map(e => e.id))
+        const activeList = empPaySubTab === 'employed' ? employedEmployees : empPaySubTab === 'shift' ? shiftEmployees : zeroHoursEmployees
+        const activeSlips = empPayPayslips.filter(p => {
+          if (!p.employee?.id) return false
+          if (empPaySubTab === 'employed') return employedIds.has(p.employee.id)
+          if (empPaySubTab === 'shift') return shiftIds.has(p.employee.id)
+          return zeroHrsIds.has(p.employee.id)
+        })
+        const activePage = empPaySubTab === 'employed' ? empPayPage : empPaySubTab === 'shift' ? empPayShiftPage : empPayZeroPage
+        const setActivePage = empPaySubTab === 'employed' ? setEmpPayPage : empPaySubTab === 'shift' ? setEmpPayShiftPage : setEmpPayZeroPage
+        const activeTotalPages = Math.max(1, Math.ceil(activeList.length / PAGE_SIZE))
+        const paginatedList = activeList.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE)
+        const emptyLabel = empPaySubTab === 'employed' ? 'No employed staff found' : empPaySubTab === 'shift' ? 'No shift workers found' : 'No zero hours workers found'
         return (
         <>
           {/* Month navigation */}
@@ -1549,60 +1561,48 @@ export default function AdminPayroll() {
             </button>
           </div>
 
-          {/* Employed Staff */}
-          <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600 }}>Employed Staff ({empPayEmployed.length})</h3>
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <thead><tr><th>Employee</th><th>Department</th><th>Gross Pay</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net Pay</th><th>Status</th></tr></thead>
-              <tbody>
-                {paginatedEmployed.map(emp => {
-                  const ps = empPayPayslips.find(p => p.employee?.id === emp.id)
-                  return (
-                    <tr key={emp.id}>
-                      <td><strong>{emp.first_name} {emp.last_name}</strong><br /><span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>{emp.job_title || ''}</span></td>
-                      <td>{emp.department || '—'}</td>
-                      <td>{ps ? `£${Number(ps.gross_pay).toFixed(2)}` : '—'}</td>
-                      <td>{ps ? `£${Number(ps.tax).toFixed(2)}` : '—'}</td>
-                      <td>{ps ? `£${Number(ps.national_insurance).toFixed(2)}` : '—'}</td>
-                      <td>{ps ? `£${Number(ps.pension).toFixed(2)}` : '—'}</td>
-                      <td>{ps ? <strong>£{Number(ps.net_pay).toFixed(2)}</strong> : '—'}</td>
-                      <td>{ps ? <span className={`admin-badge admin-badge-${ps.status}`}>{ps.status}</span> : <span className="admin-badge admin-badge-pending">No payslip</span>}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-              {employedSlips.length > 0 && (
-                <tfoot>
-                  <tr style={{ fontWeight: 700 }}>
-                    <td>Totals ({employedSlips.length})</td>
-                    <td></td>
-                    <td>£{employedSlips.reduce((s, p) => s + Number(p.gross_pay), 0).toFixed(2)}</td>
-                    <td>£{employedSlips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
-                    <td>£{employedSlips.reduce((s, p) => s + Number(p.national_insurance), 0).toFixed(2)}</td>
-                    <td>£{employedSlips.reduce((s, p) => s + Number(p.pension), 0).toFixed(2)}</td>
-                    <td>£{employedSlips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-            {paginatedEmployed.length === 0 && <div className="admin-empty">No employed staff found</div>}
-            {empTotalPages > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
-                <button className="admin-action-btn" disabled={empPayPage <= 1} onClick={() => setEmpPayPage(p => p - 1)}>Prev</button>
-                <span style={{ fontSize: 13 }}>Page {empPayPage} of {empTotalPages}</span>
-                <button className="admin-action-btn" disabled={empPayPage >= empTotalPages} onClick={() => setEmpPayPage(p => p + 1)}>Next</button>
-              </div>
-            )}
+          {/* Sub-tabs */}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 12 }}>
+            <button
+              onClick={() => { setEmpPaySubTab('employed'); setEmpPayPage(1) }}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderRadius: '8px 0 0 8px', cursor: 'pointer',
+                background: empPaySubTab === 'employed' ? 'var(--primary, #5c6bc0)' : 'var(--bg-card, #fff)',
+                color: empPaySubTab === 'employed' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Employed ({employedEmployees.length})
+            </button>
+            <button
+              onClick={() => { setEmpPaySubTab('shift'); setEmpPayShiftPage(1) }}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderLeft: 'none', cursor: 'pointer',
+                background: empPaySubTab === 'shift' ? '#7e57c2' : 'var(--bg-card, #fff)',
+                color: empPaySubTab === 'shift' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Shift Workers ({shiftEmployees.length})
+            </button>
+            <button
+              onClick={() => { setEmpPaySubTab('zero_hours'); setEmpPayZeroPage(1) }}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+                background: empPaySubTab === 'zero_hours' ? '#ef6c00' : 'var(--bg-card, #fff)',
+                color: empPaySubTab === 'zero_hours' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Zero Hours ({zeroHoursEmployees.length})
+            </button>
           </div>
 
-          {/* Shift Workers */}
-          <h3 style={{ margin: '24px 0 8px', fontSize: 15, fontWeight: 600, color: '#7e57c2' }}>Shift Workers ({empPayShift.length})</h3>
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead><tr><th>Employee</th><th>Department</th><th>Gross Pay</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net Pay</th><th>Status</th></tr></thead>
               <tbody>
-                {paginatedShift.map(emp => {
+                {paginatedList.map(emp => {
                   const ps = empPayPayslips.find(p => p.employee?.id === emp.id)
                   return (
                     <tr key={emp.id}>
@@ -1618,27 +1618,27 @@ export default function AdminPayroll() {
                   )
                 })}
               </tbody>
-              {shiftSlips.length > 0 && (
+              {activeSlips.length > 0 && (
                 <tfoot>
                   <tr style={{ fontWeight: 700 }}>
-                    <td>Totals ({shiftSlips.length})</td>
+                    <td>Totals ({activeSlips.length})</td>
                     <td></td>
-                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.gross_pay), 0).toFixed(2)}</td>
-                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
-                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.national_insurance), 0).toFixed(2)}</td>
-                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.pension), 0).toFixed(2)}</td>
-                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
+                    <td>£{activeSlips.reduce((s, p) => s + Number(p.gross_pay), 0).toFixed(2)}</td>
+                    <td>£{activeSlips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
+                    <td>£{activeSlips.reduce((s, p) => s + Number(p.national_insurance), 0).toFixed(2)}</td>
+                    <td>£{activeSlips.reduce((s, p) => s + Number(p.pension), 0).toFixed(2)}</td>
+                    <td>£{activeSlips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
                     <td></td>
                   </tr>
                 </tfoot>
               )}
             </table>
-            {paginatedShift.length === 0 && <div className="admin-empty">No shift workers found</div>}
-            {shiftTotalPages > 1 && (
+            {paginatedList.length === 0 && <div className="admin-empty">{emptyLabel}</div>}
+            {activeTotalPages > 1 && (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
-                <button className="admin-action-btn" disabled={empPayShiftPage <= 1} onClick={() => setEmpPayShiftPage(p => p - 1)}>Prev</button>
-                <span style={{ fontSize: 13 }}>Page {empPayShiftPage} of {shiftTotalPages}</span>
-                <button className="admin-action-btn" disabled={empPayShiftPage >= shiftTotalPages} onClick={() => setEmpPayShiftPage(p => p + 1)}>Next</button>
+                <button className="admin-action-btn" disabled={activePage <= 1} onClick={() => setActivePage(p => p - 1)}>Prev</button>
+                <span style={{ fontSize: 13 }}>Page {activePage} of {activeTotalPages}</span>
+                <button className="admin-action-btn" disabled={activePage >= activeTotalPages} onClick={() => setActivePage(p => p + 1)}>Next</button>
               </div>
             )}
           </div>
@@ -1830,16 +1830,28 @@ export default function AdminPayroll() {
           <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Workers Schedule</h4>
           <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>FT/PT Pay Day</th><th>Zero Hrs Frequency</th><th>Payslips</th><th>Status</th></tr></thead>
+              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>FT/PT Pay Day</th><th>Zero Hrs Pay Dates</th><th>Payslips</th><th>Status</th></tr></thead>
               <tbody>
                 {fyMonths.map(({ year, month }) => {
                   const start = new Date(year, month, 1)
                   const end = new Date(year, month + 1, 0)
                   const shiftPayDate = getPayDay(year, month, shiftPayDayMode, shiftCustomPayDay)
-                  const zeroFreqLabel = zeroHrsFrequency === 'weekly' ? 'Every Friday' : zeroHrsFrequency === 'fortnightly' ? 'Every 2nd Friday' : end.toLocaleDateString('en-GB')
+                  const zeroPayDates: Date[] = []
+                  if (zeroHrsFrequency === 'monthly') {
+                    zeroPayDates.push(end)
+                  } else {
+                    const fri = new Date(year, month, 1)
+                    while (fri.getDay() !== 5) fri.setDate(fri.getDate() + 1)
+                    const step = zeroHrsFrequency === 'fortnightly' ? 14 : 7
+                    while (fri.getMonth() === month) {
+                      zeroPayDates.push(new Date(fri))
+                      fri.setDate(fri.getDate() + step)
+                    }
+                  }
+                  const zeroFreqLabel = zeroPayDates.map(d => d.toLocaleDateString('en-GB')).join(', ')
                   const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
-                  const shiftIds = new Set(shiftEmployees.map(e => e.id))
-                  const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && shiftIds.has(p.employee.id))
+                  const allShiftIds = new Set([...shiftEmployees.map(e => e.id), ...zeroHoursEmployees.map(e => e.id)])
+                  const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && allShiftIds.has(p.employee.id))
                   const isPast = end < new Date()
                   const hasPayslips = monthPayslips.length > 0
                   const allPaid = hasPayslips && monthPayslips.every(p => p.status === 'paid')
@@ -1871,10 +1883,10 @@ export default function AdminPayroll() {
 
       {tab === 'time_breakdown' && (
         <>
-          {/* Employed / Shift sub-tabs */}
+          {/* Employed / Shift / Zero Hours sub-tabs */}
           <div style={{ display: 'flex', gap: 0, marginBottom: 12 }}>
             <button
-              onClick={() => setTbSubTab('employed')}
+              onClick={() => { setTbSubTab('employed'); setTbPage(1); setTbFilterEmp('') }}
               style={{
                 padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
                 borderRadius: '8px 0 0 8px', cursor: 'pointer',
@@ -1885,15 +1897,26 @@ export default function AdminPayroll() {
               Employed
             </button>
             <button
-              onClick={() => setTbSubTab('shift')}
+              onClick={() => { setTbSubTab('shift'); setTbPage(1); setTbFilterEmp('') }}
               style={{
                 padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
-                borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+                borderLeft: 'none', cursor: 'pointer',
                 background: tbSubTab === 'shift' ? '#7e57c2' : 'var(--bg-card, #fff)',
                 color: tbSubTab === 'shift' ? '#fff' : 'var(--text, #1a1a2e)',
               }}
             >
               Shift Workers
+            </button>
+            <button
+              onClick={() => { setTbSubTab('zero_hours'); setTbPage(1); setTbFilterEmp('') }}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+                background: tbSubTab === 'zero_hours' ? '#ef6c00' : 'var(--bg-card, #fff)',
+                color: tbSubTab === 'zero_hours' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Zero Hours
             </button>
           </div>
 
@@ -1906,7 +1929,7 @@ export default function AdminPayroll() {
             </div>
             <select className="admin-select" value={tbFilterEmp} onChange={e => setTbFilterEmp(e.target.value)}>
               <option value="">All Employees</option>
-              {(tbSubTab === 'employed' ? employedEmployees : shiftEmployees).map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+              {(tbSubTab === 'employed' ? employedEmployees : tbSubTab === 'shift' ? shiftEmployees : zeroHoursEmployees).map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
             </select>
             <button className="admin-btn admin-btn-primary" onClick={loadTimeBreakdown} disabled={tbLoading}>
               {tbLoading ? 'Loading...' : 'Refresh'}
@@ -1919,7 +1942,7 @@ export default function AdminPayroll() {
                 <thead>
                   <tr>
                     <th>Employee</th>
-                    {(tbSubTab === 'shift' || enabledFeatures.shifts) && <th>Shift Hours</th>}
+                    {(tbSubTab === 'shift' || tbSubTab === 'zero_hours' || enabledFeatures.shifts) && <th>Shift Hours</th>}
                     {(tbSubTab === 'employed' || enabledFeatures.timesheets) && <th>Timesheet Hours</th>}
                     {enabledFeatures.legal_timesheets && <th>Legal Hours</th>}
                     <th>Total Hours</th>
@@ -1927,7 +1950,7 @@ export default function AdminPayroll() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(tbSubTab === 'employed' ? employedEmployees : shiftEmployees).filter(e => !tbFilterEmp || e.id === tbFilterEmp).map(emp => {
+                  {(tbSubTab === 'employed' ? employedEmployees : tbSubTab === 'shift' ? shiftEmployees : zeroHoursEmployees).filter(e => !tbFilterEmp || e.id === tbFilterEmp).slice((tbPage - 1) * PAGE_SIZE, tbPage * PAGE_SIZE).map(emp => {
                     const data = tbData[emp.id]
                     if (!data) return null
                     const total = data.shiftHrs + data.tsHrs + data.legalHrs
@@ -1937,7 +1960,7 @@ export default function AdminPayroll() {
                       <>
                         <tr key={emp.id} className={isExpanded ? 'admin-row-active' : ''}>
                           <td><strong>{emp.first_name} {emp.last_name}</strong><br /><span style={{ fontSize: 12, color: '#888' }}>{emp.department} · {emp.job_title}</span></td>
-                          {(tbSubTab === 'shift' || enabledFeatures.shifts) && <td>{data.shiftHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.shiftEntries.length} shifts)</span></td>}
+                          {(tbSubTab === 'shift' || tbSubTab === 'zero_hours' || enabledFeatures.shifts) && <td>{data.shiftHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.shiftEntries.length} shifts)</span></td>}
                           {(tbSubTab === 'employed' || enabledFeatures.timesheets) && <td>{data.tsHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.tsEntries.length} entries)</span></td>}
                           {enabledFeatures.legal_timesheets && <td>{data.legalHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.legalEntries.length} entries)</span></td>}
                           <td><strong>{total.toFixed(1)}h</strong></td>
@@ -2031,12 +2054,25 @@ export default function AdminPayroll() {
                   })}
                 </tbody>
               </table>
-              {(tbSubTab === 'employed' ? employedEmployees : shiftEmployees).every(e => {
-                const d = tbData[e.id]
-                return !d || (d.shiftHrs + d.tsHrs + d.legalHrs === 0)
-              }) && !tbFilterEmp && (
-                <div className="admin-empty">No time entries found for {tbSubTab === 'employed' ? 'employed staff' : 'shift workers'} in this period</div>
-              )}
+              {(() => {
+                const tbEmployeeList = tbSubTab === 'employed' ? employedEmployees : tbSubTab === 'shift' ? shiftEmployees : zeroHoursEmployees
+                const tbFiltered = tbEmployeeList.filter(e => !tbFilterEmp || e.id === tbFilterEmp)
+                const tbTotalPages = Math.max(1, Math.ceil(tbFiltered.length / PAGE_SIZE))
+                const allEmpty = tbFiltered.every(e => { const d = tbData[e.id]; return !d || (d.shiftHrs + d.tsHrs + d.legalHrs === 0) })
+                const label = tbSubTab === 'employed' ? 'employed staff' : tbSubTab === 'shift' ? 'shift workers' : 'zero hours workers'
+                return (
+                  <>
+                    {allEmpty && !tbFilterEmp && <div className="admin-empty">No time entries found for {label} in this period</div>}
+                    {tbTotalPages > 1 && (
+                      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                        <button className="admin-action-btn" disabled={tbPage <= 1} onClick={() => setTbPage(p => p - 1)}>Prev</button>
+                        <span style={{ fontSize: 13 }}>Page {tbPage} of {tbTotalPages}</span>
+                        <button className="admin-action-btn" disabled={tbPage >= tbTotalPages} onClick={() => setTbPage(p => p + 1)}>Next</button>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           )}
         </>

@@ -51,6 +51,7 @@ interface ShiftTemplate {
   start_time: string
   end_time: string
   break_minutes: number
+  shift_contract_type: string | null
 }
 
 interface LeaveConflict {
@@ -316,7 +317,7 @@ export default function AdminRotas() {
     const weekEnd = addDays(weekS, 6)
     const [empRes, tmplRes, assignRes, leaveRes, availRes, wpRes, tsRes, esRes] = await Promise.all([
       supabase.from('employees').select('id, first_name, last_name, work_pattern_id, contract_type').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
-      supabase.from('shift_templates').select('id, name, colour, start_time, end_time, break_minutes').eq('company_id', selectedCompanyId).eq('is_active', true),
+      supabase.from('shift_templates').select('id, name, colour, start_time, end_time, break_minutes, shift_contract_type').eq('company_id', selectedCompanyId).eq('is_active', true),
       supabase.from('shift_assignments').select('*').eq('rota_id', rota.id),
       supabase.from('leave_requests').select('employee_id, start_date, end_date').eq('company_id', selectedCompanyId).in('status', ['pending', 'approved']),
       supabase.from('employee_availability').select('employee_id, day_of_week, start_time, end_time, is_available').eq('company_id', selectedCompanyId),
@@ -1016,7 +1017,12 @@ export default function AdminRotas() {
                         {isActive && (
                           <div className="rota-cell-dropdown">
                             <div style={{ padding: '8px 12px 4px', fontSize: 10, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }}>Assign Shift</div>
-                            {shiftTemplates.map(t => (
+                            {shiftTemplates.filter(t => {
+                              const rotaCt = selectedRota.shift_contract_type
+                              if (!rotaCt) return true
+                              if (rotaCt === 'Zero hours shift worker') return t.shift_contract_type === 'Zero hours shift worker' || !t.shift_contract_type
+                              return t.shift_contract_type !== 'Zero hours shift worker'
+                            }).map(t => (
                               <button key={t.id} onClick={() => assignShift(emp.id, d.date, t.id)}>
                                 <span className="rg-dd-swatch" style={{ backgroundColor: t.colour }} />
                                 <span style={{ flex: 1 }}>{t.name}</span>
