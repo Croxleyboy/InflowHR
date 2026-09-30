@@ -634,6 +634,15 @@ export default function AdminPayroll() {
   const sageConnected = sageIntegration?.sync_status === 'connected'
   const sourcePayslips = useMemo(() => payslips, [payslips])
 
+  const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
+  const shiftEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker'), [employees])
+
+  const empCategoryById = useMemo(() => {
+    const map: Record<string, string> = {}
+    employees.forEach(e => { map[e.id] = e.employment_category || 'not_assigned' })
+    return map
+  }, [employees])
+
   const filtered = useMemo(() => {
     const base = sourcePayslips.filter(p => {
       if (filterStatus && p.status !== filterStatus) return false
@@ -701,15 +710,6 @@ export default function AdminPayroll() {
     const key = `${empPayMonth.year}-${String(empPayMonth.month + 1).padStart(2, '0')}`
     return sourcePayslips.filter(p => p.pay_period_start.startsWith(key))
   }, [sourcePayslips, empPayMonth])
-
-  const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
-  const shiftEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker'), [employees])
-
-  const empCategoryById = useMemo(() => {
-    const map: Record<string, string> = {}
-    employees.forEach(e => { map[e.id] = e.employment_category || 'not_assigned' })
-    return map
-  }, [employees])
 
   const loadTimeBreakdown = useCallback(async () => {
     if (!selectedCompanyId) return
