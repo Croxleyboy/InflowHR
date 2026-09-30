@@ -70,12 +70,14 @@ export default function CheckInDashboardPanel({ source }: Props) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [filterDept, setFilterDept] = useState('')
-  const [rotaExpanded, setRotaExpanded] = useState(false)
+  const [rotaExpanded, setRotaExpanded] = useState(true)
   const [rotaAssignments, setRotaAssignments] = useState<ShiftAssignmentRow[]>([])
+  const [historyAssignments, setHistoryAssignments] = useState<ShiftAssignmentRow[]>([])
   const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplateRow[]>([])
   const [exporting, setExporting] = useState(false)
   const [flagging, setFlagging] = useState(false)
   const [expandedShiftRow, setExpandedShiftRow] = useState<string | null>(null)
+  const [expandedHistoryRow, setExpandedHistoryRow] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -105,13 +107,16 @@ export default function CheckInDashboardPanel({ source }: Props) {
 
     if (source === 'shifts') {
       const todayStr = toLocalDateStr()
-      const [assignRes, tmplRes] = await Promise.all([
+      const [assignRes, rangeAssignRes, tmplRes] = await Promise.all([
         supabase.from('shift_assignments').select('id, employee_id, date, shift_template_id')
           .eq('company_id', companyId).eq('date', todayStr),
+        supabase.from('shift_assignments').select('id, employee_id, date, shift_template_id')
+          .eq('company_id', companyId).gte('date', dateFrom).lte('date', dateTo),
         supabase.from('shift_templates').select('id, name, start_time, end_time, break_minutes')
           .eq('company_id', companyId),
       ])
       if (assignRes.data) setRotaAssignments(assignRes.data as ShiftAssignmentRow[])
+      if (rangeAssignRes.data) setHistoryAssignments(rangeAssignRes.data as ShiftAssignmentRow[])
       if (tmplRes.data) setShiftTemplates(tmplRes.data as ShiftTemplateRow[])
     }
 
@@ -166,7 +171,11 @@ export default function CheckInDashboardPanel({ source }: Props) {
     return rotaAssignments.map(a => {
       const emp = employees[a.employee_id]
       const tmpl = tmplMap[a.shift_template_id]
-      const shiftCheckins = todayRecords.filter(r => r.employee_id === a.employee_id && r.shift_assignment_id === a.id)
+      const directMatch = todayRecords.filter(r => r.employee_id === a.employee_id && r.shift_assignment_id === a.id)
+      const fallbackMatch = directMatch.length === 0
+        ? todayRecords.filter(r => r.employee_id === a.employee_id && !r.shift_assignment_id)
+        : []
+      const shiftCheckins = directMatch.length > 0 ? directMatch : fallbackMatch
       const allEmpCheckins = todayRecords.filter(r => r.employee_id === a.employee_id)
       const isCheckedIn = liveRecords.some(r => r.employee_id === a.employee_id)
       const shiftStarted = tmpl ? now >= new Date(todayStr + 'T' + tmpl.start_time) : false
@@ -213,6 +222,80 @@ export default function CheckInDashboardPanel({ source }: Props) {
       return a.name.localeCompare(b.name)
     })
   }, [source, rotaAssignments, employees, todayRecords, liveRecords, tmplMap, todayStr])
+
+  const historyShiftRows = useMemo(() => {
+    if (source !== 'shifts' || historyAssignments.length === 0) return []
+    const enrichedHist = filteredHistory
+    const grouped = new Map<string, { assignment: ShiftAssignmentRow | null; checkins: (CheckinRow & { emp_name: string; dept: string; loc_name: string })[]; empId: string; date: string }>()
+    const usedRecordIds = new Set<string>()
+
+    enrichedHist.forEach(r => {
+      if (r.shift_assignment_id) {
+        const key = r.shift_assignment_id
+        if (!grouped.has(key)) {
+          const assignment = historyAssignments.find(a => a.id === r.shift_assignment_id) || null
+          grouped.set(key, { assignment, checkins: [], empId: r.employee_id, date: r.check_in_at.substring(0, 10) })
+        }
+        grouped.get(key)!.checkins.push(r)
+        usedRecordIds.add(r.id)
+      }
+    })
+
+    enrichedHist.forEach(r => {
+      if (usedRecordIds.has(r.id)) return
+      const recordDate = r.check_in_at.substring(0, 10)
+      const matchingAssignment = historyAssignments.find(a => a.employee_id === r.employee_id && a.date === recordDate)
+      if (matchingAssignment && !grouped.has(matchingAssignment.id)) {
+        grouped.set(matchingAssignment.id, { assignment: matchingAssignment, checkins: [], empId: r.employee_id, date: recordDate })
+      }
+      if (matchingAssignment) {
+        grouped.get(matchingAssignment.id)!.checkins.push(r)
+        usedRecordIds.add(r.id)
+      } else {
+        const key = `no-shift-${r.id}`
+        grouped.set(key, { assignment: null, checkins: [r], empId: r.employee_id, date: recordDate })
+        usedRecordIds.add(r.id)
+      }
+    })
+
+    return Array.from(grouped.entries()).map(([key, group]) => {
+      const emp = employees[group.empId]
+      const tmpl = group.assignment ? tmplMap[group.assignment.shift_template_id] : null
+      const checkins = group.checkins.sort((a, b) => a.check_in_at.localeCompare(b.check_in_at))
+      const firstIn = checkins.length > 0 ? checkins[0].check_in_at : null
+      const coWithOut = checkins.filter(c => c.check_out_at)
+      const lastOut = coWithOut.length > 0 ? coWithOut.reduce((l, c) => c.check_out_at! > l.check_out_at! ? c : l).check_out_at : null
+      const totalMins = checkins.reduce((sum, c) => {
+        const end = c.check_out_at ? new Date(c.check_out_at) : new Date()
+        return sum + (end.getTime() - new Date(c.check_in_at).getTime()) / 60000
+      }, 0)
+      const forgotCheckout = checkins.some(c => c.status === 'auto_closed')
+      const allOut = checkins.length > 0 && checkins.every(c => c.check_out_at)
+      const expectedMins = tmpl ? ((() => {
+        const s = parseInt(tmpl.start_time.split(':')[0]) * 60 + parseInt(tmpl.start_time.split(':')[1] || '0')
+        const e = parseInt(tmpl.end_time.split(':')[0]) * 60 + parseInt(tmpl.end_time.split(':')[1] || '0')
+        return Math.max(0, e - s - (tmpl.break_minutes || 0))
+      })()) : 0
+      const belowExpected = allOut && expectedMins > 0 && totalMins < expectedMins - 5
+      const metExpected = allOut && expectedMins > 0 && totalMins >= expectedMins - 5
+      return {
+        key,
+        empId: group.empId,
+        name: emp?.name || 'Unknown',
+        dept: emp?.dept || '',
+        date: group.date,
+        shiftName: tmpl?.name || '—',
+        shiftTime: tmpl ? `${tmpl.start_time.substring(0, 5)}–${tmpl.end_time.substring(0, 5)}` : '',
+        firstIn,
+        lastOut,
+        totalMins: Math.round(totalMins),
+        forgotCheckout,
+        belowExpected,
+        metExpected,
+        checkins,
+      }
+    }).sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name))
+  }, [source, filteredHistory, historyAssignments, employees, tmplMap])
 
   function fmtTime(iso: string) {
     return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -519,38 +602,122 @@ export default function CheckInDashboardPanel({ source }: Props) {
           <input className="admin-input" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 200 }} />
         </div>
 
-        <div className="admin-table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr><th>Employee</th><th>Department</th><th>Date</th><th>In</th><th>Out</th><th>Duration</th><th>Location</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {paginated.map(r => (
-                <tr key={r.id}>
-                  <td>{r.emp_name}</td>
-                  <td>{r.dept || '—'}</td>
-                  <td>{fmtDate(r.check_in_at)}</td>
-                  <td>{fmtTime(r.check_in_at)}</td>
-                  <td>{r.check_out_at ? fmtTime(r.check_out_at) : '—'}</td>
-                  <td>{duration(r.check_in_at, r.check_out_at)}</td>
-                  <td>{r.work_from_home ? 'Remote' : r.loc_name || '—'}</td>
-                  <td>
-                    <span className={`admin-badge admin-badge-${r.status === 'checked_in' ? 'active' : r.status === 'cancelled' ? 'cancelled' : 'complete'}`}>
-                      {r.status === 'checked_in' ? 'In' : r.status === 'checked_out' ? 'Out' : r.status === 'auto_closed' ? 'Auto' : 'Cancelled'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {paginated.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        {totalPages > 1 && (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
-            <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
-            <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
-            <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
-          </div>
+        {source === 'shifts' && historyShiftRows.length > 0 ? (() => {
+          const shiftTotalPages = Math.max(1, Math.ceil(historyShiftRows.length / PAGE_SIZE))
+          const shiftPaginated = historyShiftRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+          return (
+            <>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr><th>Employee</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Status</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {shiftPaginated.map(r => (
+                      <>
+                        <tr key={r.key} style={r.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
+                          <td><strong>{r.name}</strong><br /><span style={{ fontSize: 11, color: '#888' }}>{r.shiftName} ({r.shiftTime})</span></td>
+                          <td>{r.dept || '—'}</td>
+                          <td>{fmtDate(r.date + 'T00:00:00')}</td>
+                          <td>{r.firstIn ? fmtTime(r.firstIn) : '—'}</td>
+                          <td>{r.lastOut ? fmtTime(r.lastOut) : r.checkins.some(c => c.status === 'checked_in') ? 'In progress' : '—'}</td>
+                          <td style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {r.checkins.length > 0 ? fmtMins(r.totalMins) : '—'}
+                            {r.belowExpected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>}
+                            {r.metExpected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                          </td>
+                          <td>
+                            {r.forgotCheckout
+                              ? <span className="admin-badge" style={{ background: '#fef3c7', color: '#92400e' }}>Forgot Checkout</span>
+                              : r.checkins.some(c => c.status === 'checked_in')
+                                ? <span className="admin-badge admin-badge-active">Checked In</span>
+                                : r.checkins.length > 0
+                                  ? <span className="admin-badge admin-badge-complete">Checked Out</span>
+                                  : <span className="admin-badge" style={{ background: '#f5f5f5', color: '#999' }}>No Check-In</span>}
+                          </td>
+                          <td>
+                            {r.checkins.length > 0 && (
+                              <button className="admin-btn-icon" onClick={() => setExpandedHistoryRow(expandedHistoryRow === r.key ? null : r.key)}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={expandedHistoryRow === r.key ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {expandedHistoryRow === r.key && r.checkins.length > 0 && (
+                          <tr key={`exp-${r.key}`} className="admin-expanded-row">
+                            <td colSpan={8}>
+                              <table className="admin-table admin-table-nested" style={{ margin: '4px 0' }}>
+                                <thead><tr><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Location</th><th>Status</th></tr></thead>
+                                <tbody>
+                                  {r.checkins.map(ci => (
+                                    <tr key={ci.id}>
+                                      <td>{fmtTime(ci.check_in_at)}</td>
+                                      <td>{ci.check_out_at ? fmtTime(ci.check_out_at) : '—'}</td>
+                                      <td>{duration(ci.check_in_at, ci.check_out_at)}</td>
+                                      <td>{ci.work_from_home ? 'Remote' : ci.loc_name || (ci.check_in_location_id ? locationNames[ci.check_in_location_id] || 'On-site' : 'On-site')}</td>
+                                      <td>
+                                        <span className={`admin-badge admin-badge-${ci.status === 'checked_in' ? 'active' : ci.status === 'auto_closed' ? 'cancelled' : 'complete'}`}>
+                                          {ci.status === 'checked_in' ? 'In' : ci.status === 'checked_out' ? 'Out' : ci.status === 'auto_closed' ? 'Auto-Closed' : ci.status}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    ))}
+                    {shiftPaginated.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+              {shiftTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                  <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+                  <span style={{ fontSize: 13 }}>Page {page} of {shiftTotalPages}</span>
+                  <button className="admin-action-btn" disabled={page >= shiftTotalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+                </div>
+              )}
+            </>
+          )
+        })() : (
+          <>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr><th>Employee</th><th>Department</th><th>Date</th><th>In</th><th>Out</th><th>Duration</th><th>Location</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {paginated.map(r => (
+                    <tr key={r.id}>
+                      <td>{r.emp_name}</td>
+                      <td>{r.dept || '—'}</td>
+                      <td>{fmtDate(r.check_in_at)}</td>
+                      <td>{fmtTime(r.check_in_at)}</td>
+                      <td>{r.check_out_at ? fmtTime(r.check_out_at) : '—'}</td>
+                      <td>{duration(r.check_in_at, r.check_out_at)}</td>
+                      <td>{r.work_from_home ? 'Remote' : r.loc_name || '—'}</td>
+                      <td>
+                        <span className={`admin-badge admin-badge-${r.status === 'checked_in' ? 'active' : r.status === 'cancelled' ? 'cancelled' : 'complete'}`}>
+                          {r.status === 'checked_in' ? 'In' : r.status === 'checked_out' ? 'Out' : r.status === 'auto_closed' ? 'Auto' : 'Cancelled'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {paginated.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
+                </tbody>
+              </table>
+            </div>
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
+                <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+                <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
