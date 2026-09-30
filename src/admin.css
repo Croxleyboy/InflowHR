@@ -941,7 +941,7 @@
 .rg-today-btn { background: #e3f2fd !important; border-color: #90caf9 !important; color: #1565c0 !important; font-size: 12px !important; font-weight: 600 !important; padding: 0 12px !important; width: auto !important; height: 34px !important; border-radius: 8px !important; }
 .rg-today-btn:hover { background: #bbdefb !important; }
 
-.rg-grid-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; }
+.rg-grid-wrap { overflow: visible; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; }
 .rg-table { min-width: 1000px; border-collapse: collapse; width: 100%; }
 .rg-th-emp { text-align: left; min-width: 190px; position: sticky; left: 0; background: #f8f9fc; z-index: 2; padding: 10px 14px; font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 2px solid #e5e7eb; }
 .rg-th-day { background: #f8f9fc; padding: 8px 6px 6px; text-align: center; border-bottom: 2px solid #e5e7eb; min-width: 110px; }
@@ -1025,7 +1025,7 @@
 
 /* (old rota-grid classes removed — rg-* classes above replace them) */
 
-.rota-cell-dropdown { position: absolute; z-index: 10; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 6px 0; min-width: 180px; left: 50%; transform: translateX(-50%); top: 100%; }
+.rota-cell-dropdown { position: absolute; z-index: 100; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 6px 0; min-width: 220px; left: 50%; transform: translateX(-50%); top: 100%; max-height: 320px; overflow-y: auto; }
 .rota-cell-dropdown button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 14px; border: none; background: none; font-size: 12px; font-weight: 500; cursor: pointer; transition: background 0.1s; }
 .rota-cell-dropdown button:hover { background: #f5f6fa; }
 
