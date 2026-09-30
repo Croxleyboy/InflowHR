@@ -13,6 +13,7 @@ interface CheckinRow {
   status: string
   work_from_home: boolean
   check_in_location_id: string | null
+  shift_assignment_id: string | null
   emp_name?: string
   dept?: string
   loc_name?: string
@@ -30,6 +31,7 @@ interface ShiftTemplateRow {
   name: string
   start_time: string
   end_time: string
+  break_minutes: number
 }
 
 interface Props {
@@ -73,6 +75,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
   const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplateRow[]>([])
   const [exporting, setExporting] = useState(false)
   const [flagging, setFlagging] = useState(false)
+  const [expandedShiftRow, setExpandedShiftRow] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (!companyId) return
@@ -105,7 +108,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
       const [assignRes, tmplRes] = await Promise.all([
         supabase.from('shift_assignments').select('id, employee_id, date, shift_template_id')
           .eq('company_id', companyId).eq('date', todayStr),
-        supabase.from('shift_templates').select('id, name, start_time, end_time')
+        supabase.from('shift_templates').select('id, name, start_time, end_time, break_minutes')
           .eq('company_id', companyId),
       ])
       if (assignRes.data) setRotaAssignments(assignRes.data as ShiftAssignmentRow[])
@@ -160,40 +163,49 @@ export default function CheckInDashboardPanel({ source }: Props) {
   const rotaEmployeeRows = useMemo(() => {
     if (source !== 'shifts' || rotaAssignments.length === 0) return []
     const now = new Date()
-    const empAssignments: Record<string, ShiftAssignmentRow[]> = {}
-    rotaAssignments.forEach(a => {
-      if (!empAssignments[a.employee_id]) empAssignments[a.employee_id] = []
-      empAssignments[a.employee_id].push(a)
-    })
-    return Object.entries(empAssignments).map(([empId, assigns]) => {
-      const emp = employees[empId]
-      const checkins = todayRecords.filter(r => r.employee_id === empId)
-      const totalMins = checkins.reduce((sum, r) => {
-        const end = r.check_out_at ? new Date(r.check_out_at) : now
-        return sum + (end.getTime() - new Date(r.check_in_at).getTime()) / 60000
-      }, 0)
-      const isCheckedIn = liveRecords.some(r => r.employee_id === empId)
-      const firstShift = assigns.sort((a, b) => {
-        const ta = tmplMap[a.shift_template_id]?.start_time || ''
-        const tb = tmplMap[b.shift_template_id]?.start_time || ''
-        return ta.localeCompare(tb)
-      })[0]
-      const tmpl = firstShift ? tmplMap[firstShift.shift_template_id] : null
+    return rotaAssignments.map(a => {
+      const emp = employees[a.employee_id]
+      const tmpl = tmplMap[a.shift_template_id]
+      const shiftCheckins = todayRecords.filter(r => r.employee_id === a.employee_id && r.shift_assignment_id === a.id)
+      const allEmpCheckins = todayRecords.filter(r => r.employee_id === a.employee_id)
+      const isCheckedIn = liveRecords.some(r => r.employee_id === a.employee_id)
       const shiftStarted = tmpl ? now >= new Date(todayStr + 'T' + tmpl.start_time) : false
       const shiftEnded = tmpl ? now >= new Date(todayStr + 'T' + tmpl.end_time) : false
-      const missed = shiftStarted && !isCheckedIn && checkins.length === 0
+      const missed = shiftStarted && !isCheckedIn && shiftCheckins.length === 0 && allEmpCheckins.length === 0
+      const firstIn = shiftCheckins.length > 0 ? shiftCheckins.reduce((e, c) => c.check_in_at < e.check_in_at ? c : e).check_in_at : null
+      const lastOut = shiftCheckins.filter(c => c.check_out_at).length > 0 ? shiftCheckins.filter(c => c.check_out_at).reduce((l, c) => c.check_out_at! > l.check_out_at! ? c : l).check_out_at : null
+      const totalMins = shiftCheckins.reduce((sum, c) => {
+        const end = c.check_out_at ? new Date(c.check_out_at) : now
+        return sum + (end.getTime() - new Date(c.check_in_at).getTime()) / 60000
+      }, 0)
+      const forgotCheckout = shiftCheckins.some(c => c.status === 'auto_closed')
+      const expectedMins = tmpl ? ((() => {
+        const s = parseInt(tmpl.start_time.split(':')[0]) * 60 + parseInt(tmpl.start_time.split(':')[1] || '0')
+        const e = parseInt(tmpl.end_time.split(':')[0]) * 60 + parseInt(tmpl.end_time.split(':')[1] || '0')
+        return Math.max(0, e - s - (tmpl.break_minutes || 0))
+      })()) : 0
+      const belowExpected = shiftCheckins.length > 0 && shiftCheckins.every(c => c.check_out_at) && totalMins < expectedMins - 5
+      const metExpected = shiftCheckins.length > 0 && shiftCheckins.every(c => c.check_out_at) && totalMins >= expectedMins - 5
       return {
-        empId,
+        key: a.id,
+        empId: a.employee_id,
+        assignmentId: a.id,
         name: emp?.name || 'Unknown',
         dept: emp?.dept || '',
         shiftName: tmpl?.name || '—',
         shiftTime: tmpl ? `${tmpl.start_time.substring(0, 5)}–${tmpl.end_time.substring(0, 5)}` : '',
         totalMins: Math.round(totalMins),
         isCheckedIn,
-        hasCheckedIn: checkins.length > 0,
+        hasCheckedIn: shiftCheckins.length > 0,
         missed,
         shiftStarted,
         shiftEnded,
+        firstIn,
+        lastOut,
+        forgotCheckout,
+        belowExpected,
+        metExpected,
+        checkins: shiftCheckins,
       }
     }).sort((a, b) => {
       if (a.missed && !b.missed) return -1
@@ -388,27 +400,66 @@ export default function CheckInDashboardPanel({ source }: Props) {
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
-                  <tr><th>Employee</th><th>Department</th><th>Shift</th><th>Time</th><th>Check-in Hours</th><th>Status</th></tr>
+                  <tr><th>Employee</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Status</th><th></th></tr>
                 </thead>
                 <tbody>
                   {rotaEmployeeRows.map(r => (
-                    <tr key={r.empId} style={r.missed ? { background: 'rgba(229,57,53,0.08)' } : undefined}>
-                      <td>{r.name}</td>
-                      <td>{r.dept || '—'}</td>
-                      <td>{r.shiftName}</td>
-                      <td>{r.shiftTime}</td>
-                      <td>{r.hasCheckedIn || r.isCheckedIn ? fmtMins(r.totalMins) : '—'}</td>
-                      <td>
-                        {r.isCheckedIn
-                          ? <span className="admin-badge admin-badge-active">Checked In</span>
-                          : r.hasCheckedIn
-                            ? <span className="admin-badge admin-badge-complete">Checked Out</span>
-                            : r.missed
-                              ? <span className="admin-badge admin-badge-cancelled">Not Checked In</span>
-                              : <span className="admin-badge" style={{ background: '#f5f5f5', color: '#999' }}>Upcoming</span>
-                        }
-                      </td>
-                    </tr>
+                    <>
+                      <tr key={r.key} style={r.missed ? { background: 'rgba(229,57,53,0.08)' } : r.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
+                        <td><strong>{r.name}</strong><br /><span style={{ fontSize: 11, color: '#888' }}>{r.shiftName} ({r.shiftTime})</span></td>
+                        <td>{r.dept || '—'}</td>
+                        <td>{formatDate(todayStr)}</td>
+                        <td>{r.firstIn ? fmtTime(r.firstIn) : '—'}</td>
+                        <td>{r.lastOut ? fmtTime(r.lastOut) : r.isCheckedIn ? 'In progress' : '—'}</td>
+                        <td style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {r.hasCheckedIn || r.isCheckedIn ? fmtMins(r.totalMins) : '—'}
+                          {r.belowExpected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>}
+                          {r.metExpected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </td>
+                        <td>
+                          {r.missed
+                            ? <span className="admin-badge admin-badge-cancelled">No Check-In</span>
+                            : r.forgotCheckout
+                              ? <span className="admin-badge" style={{ background: '#fef3c7', color: '#92400e' }}>Forgot Checkout</span>
+                              : r.isCheckedIn
+                                ? <span className="admin-badge admin-badge-active">Checked In</span>
+                                : r.hasCheckedIn
+                                  ? <span className="admin-badge admin-badge-complete">Checked Out</span>
+                                  : <span className="admin-badge" style={{ background: '#f5f5f5', color: '#999' }}>Upcoming</span>}
+                        </td>
+                        <td>
+                          {r.checkins.length > 0 && (
+                            <button className="admin-btn-icon" onClick={() => setExpandedShiftRow(expandedShiftRow === r.key ? null : r.key)}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={expandedShiftRow === r.key ? '18 15 12 9 6 15' : '6 9 12 15 18 9'} /></svg>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {expandedShiftRow === r.key && r.checkins.length > 0 && (
+                        <tr key={`exp-${r.key}`} className="admin-expanded-row">
+                          <td colSpan={8}>
+                            <table className="admin-table admin-table-nested" style={{ margin: '4px 0' }}>
+                              <thead><tr><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Location</th><th>Status</th></tr></thead>
+                              <tbody>
+                                {r.checkins.sort((a, b) => a.check_in_at.localeCompare(b.check_in_at)).map(ci => (
+                                  <tr key={ci.id}>
+                                    <td>{fmtTime(ci.check_in_at)}</td>
+                                    <td>{ci.check_out_at ? fmtTime(ci.check_out_at) : '—'}</td>
+                                    <td>{duration(ci.check_in_at, ci.check_out_at)}</td>
+                                    <td>{ci.work_from_home ? 'Remote' : ci.loc_name || (ci.check_in_location_id ? locationNames[ci.check_in_location_id] || 'On-site' : 'On-site')}</td>
+                                    <td>
+                                      <span className={`admin-badge admin-badge-${ci.status === 'checked_in' ? 'active' : ci.status === 'auto_closed' ? 'cancelled' : 'complete'}`}>
+                                        {ci.status === 'checked_in' ? 'In' : ci.status === 'checked_out' ? 'Out' : ci.status === 'auto_closed' ? 'Auto-Closed' : ci.status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   ))}
                 </tbody>
               </table>

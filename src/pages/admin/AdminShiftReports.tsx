@@ -70,6 +70,7 @@ interface CheckinRow {
   check_out_at: string | null
   status: string
   work_from_home: boolean
+  shift_assignment_id: string | null
 }
 
 export default function AdminShiftReports() {
@@ -118,7 +119,7 @@ export default function AdminShiftReports() {
     if (ciEnabled) {
       const fyRange = getFYRange(compRes.data?.fy_start_month || 4)
       const { data: ciData } = await supabase.from('checkin_records')
-        .select('employee_id, check_in_at, check_out_at, status, work_from_home')
+        .select('employee_id, check_in_at, check_out_at, status, work_from_home, shift_assignment_id')
         .eq('company_id', selectedCompanyId).eq('source', 'shifts')
         .gte('check_in_at', fyRange.start + 'T00:00:00').lte('check_in_at', fyRange.end + 'T23:59:59')
       setCheckinRecords((ciData as CheckinRow[]) || [])
@@ -260,7 +261,7 @@ export default function AdminShiftReports() {
   const maxDow = useMemo(() => Math.max(...metrics.dayOfWeekCount, 1), [metrics.dayOfWeekCount])
 
   const ciMetrics = useMemo(() => {
-    if (!checkinEnabled || checkinRecords.length === 0) return null
+    if (!checkinEnabled) return null
     const totalCheckins = checkinRecords.length
     const completedRecords = checkinRecords.filter(r => r.check_out_at)
     const totalHours = completedRecords.reduce((sum, r) => {
@@ -278,8 +279,40 @@ export default function AdminShiftReports() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([empId, hrs]) => ({ employee: empMap[empId], hours: hrs }))
-    return { totalCheckins, totalHours, avgDuration, wfhCount, uniqueCheckinEmps, topCheckinWorkers }
-  }, [checkinEnabled, checkinRecords, empMap])
+
+    const assignmentIds = new Set(fyAssignments.map(a => a.id))
+    const checkedInAssignments = new Set(checkinRecords.filter(r => r.shift_assignment_id && assignmentIds.has(r.shift_assignment_id)).map(r => r.shift_assignment_id!))
+    const noCheckinCount = fyAssignments.length - checkedInAssignments.size
+    const noCheckinRate = fyAssignments.length > 0 ? (noCheckinCount / fyAssignments.length) * 100 : 0
+
+    const autoClosedCount = checkinRecords.filter(r => r.status === 'auto_closed').length
+    const forgotCheckoutRate = totalCheckins > 0 ? (autoClosedCount / totalCheckins) * 100 : 0
+
+    const expectedCheckouts = fyAssignments.length
+    const actualCheckouts = completedRecords.length
+    const checkoutRate = expectedCheckouts > 0 ? (actualCheckouts / expectedCheckouts) * 100 : 0
+
+    const monthlyScheduledActual: { month: string; scheduled: number; actual: number }[] = []
+    const schedByMonth: Record<string, number> = {}
+    const actualByMonth: Record<string, number> = {}
+    for (const a of fyAssignments) {
+      const tmpl = tmplMap[a.shift_template_id]
+      if (!tmpl) continue
+      const monthKey = a.date.slice(0, 7)
+      schedByMonth[monthKey] = (schedByMonth[monthKey] || 0) + shiftHours(tmpl)
+    }
+    for (const r of completedRecords) {
+      const monthKey = r.check_in_at.slice(0, 7)
+      const hrs = (new Date(r.check_out_at!).getTime() - new Date(r.check_in_at).getTime()) / 3600000
+      actualByMonth[monthKey] = (actualByMonth[monthKey] || 0) + hrs
+    }
+    const allMonthKeys = [...new Set([...Object.keys(schedByMonth), ...Object.keys(actualByMonth)])].sort()
+    for (const mk of allMonthKeys) {
+      monthlyScheduledActual.push({ month: mk, scheduled: schedByMonth[mk] || 0, actual: actualByMonth[mk] || 0 })
+    }
+
+    return { totalCheckins, totalHours, avgDuration, wfhCount, uniqueCheckinEmps, topCheckinWorkers, noCheckinRate, forgotCheckoutRate, checkoutRate, monthlyScheduledActual }
+  }, [checkinEnabled, checkinRecords, empMap, fyAssignments, tmplMap])
 
   if (loading) return <div className="admin-loading">Loading reports...</div>
 
@@ -496,18 +529,88 @@ export default function AdminShiftReports() {
               <span className="asr-kpi-value">{ciMetrics.avgDuration.toFixed(1)}</span>
               <span className="asr-kpi-label">Avg Duration (hrs)</span>
             </div>
+            <div className="asr-kpi" style={{ borderLeft: '3px solid #dc2626' }}>
+              <span className="asr-kpi-value" style={{ color: '#dc2626' }}>{ciMetrics.noCheckinRate.toFixed(0)}%</span>
+              <span className="asr-kpi-label">No Check-In Rate</span>
+            </div>
+            <div className="asr-kpi" style={{ borderLeft: '3px solid #f59e0b' }}>
+              <span className="asr-kpi-value" style={{ color: '#92400e' }}>{ciMetrics.forgotCheckoutRate.toFixed(0)}%</span>
+              <span className="asr-kpi-label">Forgot Checkout</span>
+            </div>
+            <div className="asr-kpi">
+              <span className="asr-kpi-value">{ciMetrics.checkoutRate.toFixed(0)}%</span>
+              <span className="asr-kpi-label">Checkout Rate</span>
+            </div>
             <div className="asr-kpi">
               <span className="asr-kpi-value">{ciMetrics.wfhCount}</span>
               <span className="asr-kpi-label">Remote Check-Ins</span>
             </div>
-            <div className="asr-kpi">
-              <span className="asr-kpi-value">{ciMetrics.totalCheckins > 0 ? ((ciMetrics.wfhCount / ciMetrics.totalCheckins) * 100).toFixed(0) : 0}%</span>
-              <span className="asr-kpi-label">Remote Rate</span>
-            </div>
           </div>
 
-          {ciMetrics.topCheckinWorkers.length > 0 && (
-            <div className="asr-grid" style={{ marginTop: 16 }}>
+          <div className="asr-grid" style={{ marginTop: 16 }}>
+            {/* Scheduled vs Actual Hours Chart */}
+            {ciMetrics.monthlyScheduledActual.length > 0 && (
+              <div className="asr-card" style={{ gridColumn: '1 / -1' }}>
+                <h3 className="asr-card-title">Scheduled vs Actual Hours</h3>
+                <div style={{ display: 'flex', gap: 16, fontSize: 12, marginBottom: 12, color: 'var(--text-muted, #888)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: '#6366f1', display: 'inline-block' }} /> Scheduled</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 12, height: 12, borderRadius: 3, background: '#22c55e', display: 'inline-block' }} /> Actual</span>
+                </div>
+                {(() => {
+                  const data = ciMetrics.monthlyScheduledActual
+                  const maxVal = Math.max(...data.map(d => Math.max(d.scheduled, d.actual)), 1)
+                  const chartW = 700
+                  const chartH = 220
+                  const pad = { top: 20, right: 20, bottom: 40, left: 50 }
+                  const plotW = chartW - pad.left - pad.right
+                  const plotH = chartH - pad.top - pad.bottom
+                  const barGroupW = data.length > 0 ? plotW / data.length : plotW
+                  const barW = Math.min(24, barGroupW * 0.35)
+                  const gap = 3
+                  return (
+                    <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: '100%', height: 'auto', maxHeight: 260, display: 'block' }}>
+                      <defs>
+                        <linearGradient id="grad-sched" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#818cf8" />
+                          <stop offset="100%" stopColor="#6366f1" />
+                        </linearGradient>
+                        <linearGradient id="grad-actual" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#4ade80" />
+                          <stop offset="100%" stopColor="#22c55e" />
+                        </linearGradient>
+                      </defs>
+                      {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+                        const y = pad.top + plotH * (1 - frac)
+                        return (
+                          <g key={frac}>
+                            <line x1={pad.left} y1={y} x2={chartW - pad.right} y2={y} stroke="var(--border, #e5e7eb)" strokeDasharray="3,3" />
+                            <text x={pad.left - 6} y={y + 4} textAnchor="end" fill="var(--text-muted, #888)" fontSize="10">{Math.round(maxVal * frac)}</text>
+                          </g>
+                        )
+                      })}
+                      {data.map((d, i) => {
+                        const cx = pad.left + barGroupW * i + barGroupW / 2
+                        const schedH = (d.scheduled / maxVal) * plotH
+                        const actH = (d.actual / maxVal) * plotH
+                        const [, m] = d.month.split('-')
+                        const label = MONTH_NAMES[Number(m) - 1]?.slice(0, 3) || d.month
+                        return (
+                          <g key={d.month}>
+                            <rect x={cx - barW - gap / 2} y={pad.top + plotH - schedH} width={barW} height={schedH} rx={3} fill="url(#grad-sched)" />
+                            <rect x={cx + gap / 2} y={pad.top + plotH - actH} width={barW} height={actH} rx={3} fill="url(#grad-actual)" />
+                            <text x={cx} y={chartH - pad.bottom + 16} textAnchor="middle" fill="var(--text-muted, #888)" fontSize="10">{label}</text>
+                            {d.scheduled > 0 && <text x={cx - barW / 2 - gap / 2} y={pad.top + plotH - schedH - 4} textAnchor="middle" fill="#6366f1" fontSize="9" fontWeight="600">{d.scheduled.toFixed(0)}</text>}
+                            {d.actual > 0 && <text x={cx + barW / 2 + gap / 2} y={pad.top + plotH - actH - 4} textAnchor="middle" fill="#16a34a" fontSize="9" fontWeight="600">{d.actual.toFixed(0)}</text>}
+                          </g>
+                        )
+                      })}
+                    </svg>
+                  )
+                })()}
+              </div>
+            )}
+
+            {ciMetrics.topCheckinWorkers.length > 0 && (
               <div className="asr-card">
                 <h3 className="asr-card-title">Top 5 — Check-In Hours</h3>
                 <div className="asr-rank-list">
@@ -525,8 +628,8 @@ export default function AdminShiftReports() {
                   ))}
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </>
       )}
     </div>
