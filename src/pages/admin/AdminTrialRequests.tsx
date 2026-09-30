@@ -23,6 +23,7 @@ export default function AdminTrialRequests() {
   const [loading, setLoading] = useState(true)
   const [companyNames, setCompanyNames] = useState<Record<string, string>>({})
   const [creating, setCreating] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
   useEffect(() => { loadRequests() }, [])
 
@@ -57,6 +58,31 @@ export default function AdminTrialRequests() {
     loadRequests()
   }
 
+  async function handleDelete(request: TrialRequest) {
+    const label = request.status === 'approved'
+      ? `Delete trial request for "${request.full_name}" and their trial company "${request.company_name}"? This cannot be undone.`
+      : `Delete trial request from "${request.full_name}"? This cannot be undone.`
+    if (!confirm(label)) return
+    setDeleting(request.id)
+    if (request.status === 'approved' && request.company_id) {
+      const { error: companyError } = await callRpcDirect('delete_company_data', { target_company_id: request.company_id })
+      if (companyError) {
+        showError('Failed to delete trial company: ' + companyError)
+        setDeleting(null)
+        return
+      }
+    }
+    const { error } = await supabase.from('trial_requests').delete().eq('id', request.id)
+    if (error) {
+      showError('Failed to delete trial request: ' + error.message)
+      setDeleting(null)
+      return
+    }
+    showSuccess('Trial request deleted')
+    setDeleting(null)
+    loadRequests()
+  }
+
   function formatDate(d: string) {
     return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
   }
@@ -88,7 +114,17 @@ export default function AdminTrialRequests() {
               <strong>{r.full_name}</strong>
               <span className={`trial-request-status trial-request-status-${r.status}`}>{r.status}</span>
             </div>
-            <span className="trial-request-date">{formatDate(r.created_at)}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span className="trial-request-date">{formatDate(r.created_at)}</span>
+              <button
+                onClick={() => handleDelete(r)}
+                disabled={deleting === r.id}
+                className="admin-btn-sm"
+                style={{ background: '#e53935', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', opacity: deleting === r.id ? 0.5 : 1 }}
+              >
+                {deleting === r.id ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
 
           <div className="trial-request-details">

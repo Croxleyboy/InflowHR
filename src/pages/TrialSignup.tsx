@@ -2,6 +2,22 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { createClient } from '@supabase/supabase-js'
 
+const BLOCKED_EMAIL_DOMAINS = new Set([
+  'gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.uk', 'hotmail.com',
+  'hotmail.co.uk', 'outlook.com', 'live.com', 'live.co.uk', 'msn.com',
+  'aol.com', 'icloud.com', 'me.com', 'mac.com', 'mail.com', 'protonmail.com',
+  'proton.me', 'zoho.com', 'yandex.com', 'gmx.com', 'gmx.co.uk',
+  'fastmail.com', 'tutanota.com', 'tuta.com', 'hey.com', 'pm.me',
+  'inbox.com', 'rediffmail.com', 'qq.com', '163.com', 'web.de',
+  'btinternet.com', 'sky.com', 'virginmedia.com', 'talktalk.net',
+  'ntlworld.com', 'blueyonder.co.uk', 'rocketmail.com',
+])
+
+function isPersonalEmail(email: string): boolean {
+  const domain = email.trim().toLowerCase().split('@')[1]
+  return !domain || BLOCKED_EMAIL_DOMAINS.has(domain)
+}
+
 const anonClient = createClient(
   (import.meta.env.VITE_SUPABASE_URL || '').trim(),
   (import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim(),
@@ -20,11 +36,16 @@ export default function TrialSignup() {
   const [error, setError] = useState('')
   const [submitted, setSubmitted] = useState(false)
 
-  const canSubmit = fullName.trim() && workEmail.trim() && phone.trim() && password.length >= 8 && agreeTerms && agreePrivacy && agreeCookies && !loading
+  const personalEmailBlocked = workEmail.includes('@') && isPersonalEmail(workEmail)
+  const canSubmit = fullName.trim() && workEmail.trim() && !personalEmailBlocked && phone.trim() && password.length >= 8 && agreeTerms && agreePrivacy && agreeCookies && !loading
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!canSubmit) return
+    if (isPersonalEmail(workEmail)) {
+      setError('Please use your work email address. Personal email addresses are not accepted.')
+      return
+    }
     setLoading(true)
     setError('')
 
@@ -105,6 +126,9 @@ export default function TrialSignup() {
               placeholder="e.g. jane@company.co.uk"
               required
             />
+            {personalEmailBlocked && (
+              <span className="trial-field-hint" style={{ color: '#e53935' }}>Please use your work email address. Personal email domains are not accepted.</span>
+            )}
           </div>
 
           <div className="trial-field">
