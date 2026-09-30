@@ -119,6 +119,8 @@ export default function Dashboard() {
   const [announcements, setAnnouncements] = useState<LatestAnnouncement[]>([])
   const [nextBooking, setNextBooking] = useState<{ space_name: string; booking_date: string; start_time: string | null } | null>(null)
   const [nextShift, setNextShift] = useState<{ date: string; shift_name: string; start_time: string; end_time: string } | null>(null)
+  const [followingShift, setFollowingShift] = useState<{ date: string; shift_name: string; start_time: string; end_time: string } | null>(null)
+  const [nowTick, setNowTick] = useState(() => Date.now())
   const [latestLegalTs, setLatestLegalTs] = useState<{ date: string; duration_hrs: number; status: string } | null>(null)
   const [latestAsset, setLatestAsset] = useState<{ asset_name: string; asset_type: string } | null>(null)
   const [latestSkill, setLatestSkill] = useState<{ name: string; kind: string } | null>(null)
@@ -143,6 +145,10 @@ export default function Dashboard() {
     const handler = () => setDashMode(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
     window.addEventListener('storage', handler)
     return () => window.removeEventListener('storage', handler)
+  }, [])
+  useEffect(() => {
+    const iv = setInterval(() => setNowTick(Date.now()), 60000)
+    return () => clearInterval(iv)
   }, [])
   const infoCardOrder = getInfoCardOrder()
   const infoCardHidden = getInfoCardHidden()
@@ -457,12 +463,15 @@ export default function Dashboard() {
         .eq('company_id', companyUser.company_id)
         .gte('date', todayDate)
         .order('date', { ascending: true })
-        .limit(1)
-        .maybeSingle()
+        .limit(2)
         .then(({ data }) => {
-          if (data) {
-            const tpl = data.shift_template as any
-            setNextShift({ date: data.date, shift_name: tpl?.name || 'Shift', start_time: tpl?.start_time || '', end_time: tpl?.end_time || '' })
+          if (data && data.length > 0) {
+            const tpl0 = (data[0] as any).shift_template
+            setNextShift({ date: data[0].date, shift_name: tpl0?.name || 'Shift', start_time: tpl0?.start_time || '', end_time: tpl0?.end_time || '' })
+            if (data.length > 1) {
+              const tpl1 = (data[1] as any).shift_template
+              setFollowingShift({ date: data[1].date, shift_name: tpl1?.name || 'Shift', start_time: tpl1?.start_time || '', end_time: tpl1?.end_time || '' })
+            }
           }
         })
 
@@ -703,6 +712,40 @@ export default function Dashboard() {
 
   const checkinEnabled = ciSettings?.timesheets_checkin_enabled || ciSettings?.shifts_checkin_enabled
 
+  const shiftWindowInfo = (() => {
+    void nowTick
+    const now = new Date()
+    const todayStr = toLocalDateStr()
+
+    const parseShiftTime = (dateStr: string, timeStr: string) => {
+      const d = new Date(dateStr + 'T00:00:00')
+      if (timeStr) {
+        const [hh, mm] = timeStr.split(':').map(Number)
+        d.setHours(hh, mm, 0, 0)
+      }
+      return d
+    }
+
+    let todayShiftEnded = false
+    if (nextShift && nextShift.date === todayStr && nextShift.end_time) {
+      const shiftEnd = parseShiftTime(nextShift.date, nextShift.end_time)
+      todayShiftEnded = now > shiftEnd
+    }
+
+    const displayShift = todayShiftEnded ? (followingShift || null) : nextShift
+    const activeShift = displayShift
+
+    let bannerVisible = false
+    if (activeShift) {
+      const shiftStart = parseShiftTime(activeShift.date, activeShift.start_time)
+      const shiftEnd = parseShiftTime(activeShift.date, activeShift.end_time)
+      const sixHoursBefore = new Date(shiftStart.getTime() - 6 * 3600000)
+      bannerVisible = now >= sixHoursBefore && now <= shiftEnd
+    }
+
+    return { displayShift, todayShiftEnded, bannerVisible }
+  })()
+
   function renderInfoCard(key: InfoCardKey) {
     const featureKey = INFO_CARD_FEATURE_MAP[key]
     if (featureKey && !(features as any)[featureKey]) return null
@@ -714,7 +757,7 @@ export default function Dashboard() {
         const isActive = !!activeCheckin
         const mins = isActive ? Math.floor((Date.now() - new Date(activeCheckin!.check_in_at).getTime()) / 60000) : 0
         const elapsed = isActive ? `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}` : ''
-        const todayShift = nextShift && nextShift.date === toLocalDateStr() ? nextShift : null
+        const todayShift = shiftWindowInfo.displayShift && shiftWindowInfo.displayShift.date === toLocalDateStr() ? shiftWindowInfo.displayShift : null
         const todayDow = (new Date().getDay() + 6) % 7
         const isContractedDay = !workPatternDays || workPatternType === 'variable' || workPatternDays[todayDow]
         const statusLabel = isActive ? 'Checked In' : onLeaveToday ? 'On Leave' : !isContractedDay ? 'Not Working' : todayShift ? 'On Shift' : 'At Work'
@@ -1005,13 +1048,13 @@ export default function Dashboard() {
               </span>
             </div>
             <div className="info-card-body">
-              {nextShift ? (
+              {shiftWindowInfo.displayShift ? (
                 <>
-                  <span className="info-card-value" style={{ fontSize: 14, color: '#e65100' }}>{nextShift.shift_name}</span>
+                  <span className="info-card-value" style={{ fontSize: 14, color: '#e65100' }}>{shiftWindowInfo.displayShift.shift_name}</span>
                   {lastShiftWorked ? (
                     <span className="info-card-sub" style={{ color: '#e65100' }}>Last: {new Date(lastShiftWorked.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ({lastShiftWorked.hours}h)</span>
                   ) : (
-                    <span className="info-card-sub">{new Date(nextShift.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {nextShift.start_time?.slice(0, 5)}–{nextShift.end_time?.slice(0, 5)}</span>
+                    <span className="info-card-sub">{new Date(shiftWindowInfo.displayShift.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} {shiftWindowInfo.displayShift.start_time?.slice(0, 5)}–{shiftWindowInfo.displayShift.end_time?.slice(0, 5)}</span>
                   )}
                 </>
               ) : (
@@ -1291,6 +1334,8 @@ export default function Dashboard() {
       {!activeCheckin && (ciSettings?.timesheets_checkin_enabled || ciSettings?.shifts_checkin_enabled) && (() => {
         const tsOn = ciSettings?.timesheets_checkin_enabled
         const shiftOn = ciSettings?.shifts_checkin_enabled
+        const shiftBannerOk = shiftWindowInfo.bannerVisible
+        if (!tsOn && shiftOn && !shiftBannerOk) return null
         const clockIcon = <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" strokeLinecap="round" strokeLinejoin="round"/></svg>
         if (tsOn && shiftOn) {
           return (
@@ -1300,7 +1345,9 @@ export default function Dashboard() {
               </div>
               <div className="dash-checkin-banner-actions">
                 <button className="dash-checkout-btn" onClick={() => navigate('/timesheets/checkin')}>Timesheet</button>
-                <button className="dash-checkout-btn" style={{ background: 'rgba(230,81,0,0.6)' }} onClick={() => navigate('/shifts/checkin')}>Shift</button>
+                {shiftBannerOk && (
+                  <button className="dash-checkout-btn" style={{ background: 'rgba(230,81,0,0.6)' }} onClick={() => navigate('/shifts/checkin')}>Shift</button>
+                )}
                 {reminderCount > 0 && (
                   <button className="dash-reminder-pill" onClick={() => navigate('/notifications', { state: { tab: 'notifications', expandReminders: true } })}>
                     {reminderCount} reminder{reminderCount !== 1 ? 's' : ''}
