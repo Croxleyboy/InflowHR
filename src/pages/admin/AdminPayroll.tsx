@@ -204,9 +204,7 @@ export default function AdminPayroll() {
   const [shiftPayDayMode, setShiftPayDayMode] = useState<'end' | 'start' | 'custom'>('end')
   const [shiftCustomPayDay, setShiftCustomPayDay] = useState(28)
   const [shiftSubmitLeadDays, setShiftSubmitLeadDays] = useState(5)
-  const [zeroHrsPayDayMode, setZeroHrsPayDayMode] = useState<'end' | 'start' | 'custom'>('end')
-  const [zeroHrsCustomPayDay, setZeroHrsCustomPayDay] = useState(28)
-  const [zeroHrsSubmitLeadDays, setZeroHrsSubmitLeadDays] = useState(5)
+  const [zeroHrsFrequency, setZeroHrsFrequency] = useState<'weekly' | 'fortnightly' | 'monthly'>('monthly')
 
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
@@ -357,9 +355,7 @@ export default function AdminPayroll() {
         if (cpr.shift_pay_day_mode) setShiftPayDayMode(cpr.shift_pay_day_mode)
         if (cpr.shift_custom_pay_day) setShiftCustomPayDay(cpr.shift_custom_pay_day)
         if (cpr.shift_submit_lead_days !== undefined) setShiftSubmitLeadDays(cpr.shift_submit_lead_days)
-        if (cpr.zero_hrs_pay_day_mode) setZeroHrsPayDayMode(cpr.zero_hrs_pay_day_mode)
-        if (cpr.zero_hrs_custom_pay_day) setZeroHrsCustomPayDay(cpr.zero_hrs_custom_pay_day)
-        if (cpr.zero_hrs_submit_lead_days !== undefined) setZeroHrsSubmitLeadDays(cpr.zero_hrs_submit_lead_days)
+        if (cpr.zero_hrs_frequency) setZeroHrsFrequency(cpr.zero_hrs_frequency)
       })
   }, [selectedCompanyId])
 
@@ -388,7 +384,7 @@ export default function AdminPayroll() {
     await savePayRunData({
       pay_day_mode: payDayMode, custom_pay_day: customPayDay, submit_lead_days: submitLeadDays,
       shift_pay_day_mode: shiftPayDayMode, shift_custom_pay_day: shiftCustomPayDay, shift_submit_lead_days: shiftSubmitLeadDays,
-      zero_hrs_pay_day_mode: zeroHrsPayDayMode, zero_hrs_custom_pay_day: zeroHrsCustomPayDay, zero_hrs_submit_lead_days: zeroHrsSubmitLeadDays,
+      zero_hrs_frequency: zeroHrsFrequency,
     })
     setPaySettingsSaving(false)
     showSuccess('Payroll settings saved')
@@ -1735,29 +1731,11 @@ export default function AdminPayroll() {
           <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Payroll — Zero Hours</h4>
           <div style={{ background: '#f5f0ff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', borderLeft: '4px solid #ab47bc' }}>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
-              <select className="admin-select" value={zeroHrsPayDayMode} onChange={e => setZeroHrsPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
-                <option value="end">End of Month</option>
-                <option value="start">Beginning of Month</option>
-                <option value="custom">Custom Day</option>
-              </select>
-            </div>
-            {zeroHrsPayDayMode === 'custom' && (
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
-                <select className="admin-select" value={zeroHrsCustomPayDay} onChange={e => setZeroHrsCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
-                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
-                    <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <div>
-              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
-              <select className="admin-select" value={zeroHrsSubmitLeadDays} onChange={e => setZeroHrsSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
-                {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
-                  <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
-                ))}
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Frequency</label>
+              <select className="admin-select" value={zeroHrsFrequency} onChange={e => setZeroHrsFrequency(e.target.value as any)} style={{ minWidth: 180 }}>
+                <option value="weekly">Every 1 Week</option>
+                <option value="fortnightly">Every 2 Weeks</option>
+                <option value="monthly">End of Month</option>
               </select>
             </div>
           </div>
@@ -1852,13 +1830,13 @@ export default function AdminPayroll() {
           <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Workers Schedule</h4>
           <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>FT/PT Pay Day</th><th>Zero Hrs Pay Day</th><th>Payslips</th><th>Status</th></tr></thead>
+              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>FT/PT Pay Day</th><th>Zero Hrs Frequency</th><th>Payslips</th><th>Status</th></tr></thead>
               <tbody>
                 {fyMonths.map(({ year, month }) => {
                   const start = new Date(year, month, 1)
                   const end = new Date(year, month + 1, 0)
                   const shiftPayDate = getPayDay(year, month, shiftPayDayMode, shiftCustomPayDay)
-                  const zeroPayDate = getPayDay(year, month, zeroHrsPayDayMode, zeroHrsCustomPayDay)
+                  const zeroFreqLabel = zeroHrsFrequency === 'weekly' ? 'Every Friday' : zeroHrsFrequency === 'fortnightly' ? 'Every 2nd Friday' : end.toLocaleDateString('en-GB')
                   const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
                   const shiftIds = new Set(shiftEmployees.map(e => e.id))
                   const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && shiftIds.has(p.employee.id))
@@ -1879,7 +1857,7 @@ export default function AdminPayroll() {
                       <td>{start.toLocaleDateString('en-GB')}</td>
                       <td>{end.toLocaleDateString('en-GB')}</td>
                       <td>{shiftPayDate.toLocaleDateString('en-GB')}</td>
-                      <td>{zeroPayDate.toLocaleDateString('en-GB')}</td>
+                      <td>{zeroFreqLabel}</td>
                       <td>{monthPayslips.length}</td>
                       <td><span className={`admin-badge ${statusClass}`}>{statusLabel}</span></td>
                     </tr>

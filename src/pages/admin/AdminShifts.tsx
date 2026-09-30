@@ -44,6 +44,7 @@ export default function AdminShifts() {
   const [editForm, setEditForm] = useState<Record<string, any>>({})
   const [search, setSearch] = useState('')
   const [filterDept, setFilterDept] = useState('')
+  const [filterContractType, setFilterContractType] = useState('')
   const [shiftSkills, setShiftSkills] = useState<ShiftSkill[]>([])
   const [templateSkills, setTemplateSkills] = useState<Record<string, string[]>>({})
   const [addSkillIds, setAddSkillIds] = useState<string[]>([])
@@ -150,10 +151,11 @@ export default function AdminShifts() {
   const filtered = useMemo(() => {
     return templates.filter(t => {
       if (filterDept && t.department !== filterDept) return false
+      if (filterContractType && t.shift_contract_type !== filterContractType) return false
       if (search && !t.name.toLowerCase().includes(search.toLowerCase())) return false
       return true
     })
-  }, [templates, filterDept, search])
+  }, [templates, filterDept, filterContractType, search])
 
   const stats = useMemo(() => ({
     total: templates.length,
@@ -178,6 +180,10 @@ export default function AdminShifts() {
           className="admin-select"
           style={{ minWidth: 180 }}
         />
+        <select value={filterContractType} onChange={e => setFilterContractType(e.target.value)} className="admin-select">
+          <option value="">All Contract Types</option>
+          {SHIFT_CONTRACT_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
+        </select>
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)} className="admin-select">
           <option value="">All Departments</option>
           {departments.map(d => <option key={d} value={d}>{d}</option>)}

@@ -31,6 +31,7 @@ interface Employee {
   last_name: string
   avatar_url?: string | null
   work_pattern_id?: string | null
+  contract_type?: string | null
 }
 
 interface SwapRequest {
@@ -116,10 +117,22 @@ export default function ShiftSwap() {
     return map
   }, [employees])
 
+  const myContractType = useMemo(() => {
+    const me = employees.find(e => e.id === employeeId)
+    return me?.contract_type || null
+  }, [employees, employeeId])
+
+  const isZeroHours = myContractType === 'Zero hours shift worker'
+
   const employeesWithShifts = useMemo(() => {
     const idsWithShifts = new Set(allShiftAssignments.map(sa => sa.employee_id))
-    return employees.filter(e => e.id !== employeeId && idsWithShifts.has(e.id))
-  }, [employees, allShiftAssignments, employeeId])
+    return employees.filter(e => {
+      if (e.id === employeeId) return false
+      if (!idsWithShifts.has(e.id)) return false
+      if (isZeroHours) return e.contract_type === 'Zero hours shift worker'
+      return e.contract_type !== 'Zero hours shift worker'
+    })
+  }, [employees, allShiftAssignments, employeeId, isZeroHours])
 
   const targetShifts = useMemo(() => {
     if (!targetEmployeeId) return []
@@ -159,7 +172,7 @@ export default function ShiftSwap() {
         .gte('date', today),
       supabase
         .from('employees')
-        .select('id, first_name, last_name, avatar_url, work_pattern_id')
+        .select('id, first_name, last_name, avatar_url, work_pattern_id, contract_type')
         .eq('company_id', companyUser.company_id)
         .eq('is_active', true),
       supabase

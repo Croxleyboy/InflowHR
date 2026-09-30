@@ -147,6 +147,7 @@ export default function AdminRotas() {
   const [shiftsCheckinEnabled, setShiftsCheckinEnabled] = useState(false)
   const [templateSkillMap, setTemplateSkillMap] = useState<Record<string, string[]>>({})
   const [employeeSkillMap, setEmployeeSkillMap] = useState<Record<string, string[]>>({})
+  const [filterContractType, setFilterContractType] = useState('')
 
   useEffect(() => {
     if (selectedCompanyId) {
@@ -518,11 +519,16 @@ export default function AdminRotas() {
     setActiveCell(null)
   }
 
+  const filteredRotas = useMemo(() => {
+    if (!filterContractType) return rotas
+    return rotas.filter(r => r.shift_contract_type === filterContractType)
+  }, [rotas, filterContractType])
+
   const stats = useMemo(() => ({
-    total: rotas.length,
-    draft: rotas.filter(r => r.status === 'draft').length,
-    published: rotas.filter(r => r.status === 'published').length,
-  }), [rotas])
+    total: filteredRotas.length,
+    draft: filteredRotas.filter(r => r.status === 'draft').length,
+    published: filteredRotas.filter(r => r.status === 'published').length,
+  }), [filteredRotas])
 
   // Grid summary stats
   const gridStats = useMemo(() => {
@@ -663,6 +669,10 @@ export default function AdminRotas() {
         </div>
 
         <div className="admin-filters">
+          <select value={filterContractType} onChange={e => setFilterContractType(e.target.value)} className="admin-select">
+            <option value="">All Contract Types</option>
+            {SHIFT_CONTRACT_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
+          </select>
           <button className="admin-btn-sm admin-btn-save" onClick={() => { setEditingRotaId(null); setAddForm({ ...EMPTY_ROTA }); setShowModal(true) }}>
             + Create Rota
           </button>
@@ -671,8 +681,8 @@ export default function AdminRotas() {
         {renderModal()}
 
         {/* Timeline Chart */}
-        {rotas.length > 0 && (() => {
-          const allDates = rotas.flatMap(r => [r.start_date, r.end_date])
+        {filteredRotas.length > 0 && (() => {
+          const allDates = filteredRotas.flatMap(r => [r.start_date, r.end_date])
           const minDate = new Date(allDates.reduce((a, b) => a < b ? a : b) + 'T00:00:00')
           const maxDate = new Date(allDates.reduce((a, b) => a > b ? a : b) + 'T00:00:00')
           const pad = 7
@@ -718,7 +728,7 @@ export default function AdminRotas() {
                 )}
                 {/* Rota bars */}
                 <div className="rt-bars">
-                  {rotas.map((r, idx) => {
+                  {filteredRotas.map((r, idx) => {
                     const startOff = Math.round((new Date(r.start_date + 'T00:00:00').getTime() - chartStart.getTime()) / 86400000)
                     const endOff = Math.round((new Date(r.end_date + 'T00:00:00').getTime() - chartStart.getTime()) / 86400000)
                     const leftPct = (startOff / totalDays) * 100
@@ -751,7 +761,7 @@ export default function AdminRotas() {
 
         {loading ? <div className="admin-loading">Loading...</div> : (
           <div className="rc-list">
-            {rotas.map(r => {
+            {filteredRotas.map(r => {
               const isPublished = r.status === 'published'
               const counts = rotaCounts[r.id] || { employee_count: 0, assignment_count: 0 }
               return (

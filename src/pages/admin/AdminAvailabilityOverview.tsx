@@ -71,6 +71,7 @@ export default function AdminAvailabilityOverview() {
   const [loading, setLoading] = useState(true)
   const [weekOffset, setWeekOffset] = useState(0)
   const [filterDept, setFilterDept] = useState('')
+  const [filterContractType, setFilterContractType] = useState('')
   const [search, setSearch] = useState('')
 
   const baseMonday = useMemo(() => getMonday(new Date()), [])
@@ -136,16 +137,23 @@ export default function AdminAvailabilityOverview() {
     return Array.from(depts).sort()
   }, [employees])
 
+  const contractTypes = useMemo(() => {
+    const types = new Set<string>()
+    employees.forEach(e => { if (e.contract_type) types.add(e.contract_type) })
+    return Array.from(types).sort()
+  }, [employees])
+
   const filteredEmployees = useMemo(() => {
     return employees.filter(e => {
       if (filterDept && e.department !== filterDept) return false
+      if (filterContractType && e.contract_type !== filterContractType) return false
       if (search) {
         const name = `${e.first_name} ${e.last_name}`.toLowerCase()
         if (!name.includes(search.toLowerCase())) return false
       }
       return true
     })
-  }, [employees, filterDept, search])
+  }, [employees, filterDept, filterContractType, search])
 
   const currentWeekStart = useMemo(() => addDays(baseMonday, weekOffset * 7), [baseMonday, weekOffset])
 
@@ -252,6 +260,10 @@ export default function AdminAvailabilityOverview() {
           className="admin-select"
           style={{ minWidth: 180 }}
         />
+        <select value={filterContractType} onChange={e => setFilterContractType(e.target.value)} className="admin-select">
+          <option value="">All Contract Types</option>
+          {contractTypes.map(ct => <option key={ct} value={ct}>{CONTRACT_TYPE_LABELS[ct] || ct}</option>)}
+        </select>
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)} className="admin-select">
           <option value="">All Departments</option>
           {departments.map(d => <option key={d} value={d}>{d}</option>)}
