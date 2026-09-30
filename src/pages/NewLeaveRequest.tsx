@@ -114,6 +114,7 @@ export default function NewLeaveRequest() {
   const [showLieuPopup, setShowLieuPopup] = useState(false)
   const [shiftConflicts, setShiftConflicts] = useState<{ date: string; shiftName: string; startTime: string; endTime: string }[]>([])
   const [shiftConflictDismissed, setShiftConflictDismissed] = useState(false)
+  const [showLeaveInfoPopup, setShowLeaveInfoPopup] = useState(false)
 
   useEffect(() => {
     if (!companyUser?.company_id) return
@@ -452,7 +453,19 @@ export default function NewLeaveRequest() {
       </header>
 
       <div className="new-leave-type-selector">
-        <label className="field-label">{t('new_leave.leave_type')}</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label className="field-label" style={{ margin: 0 }}>{t('new_leave.leave_type')}</label>
+          <button
+            type="button"
+            className="leave-info-icon-btn"
+            onClick={() => setShowLeaveInfoPopup(true)}
+            title="Leave type information"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </button>
+        </div>
         <div className="new-leave-type-grid">
           {allLeaveTypes.map(lt => {
             const color = LEAVE_TYPE_COLORS[lt.name] || '#00acc1'
@@ -615,6 +628,41 @@ export default function NewLeaveRequest() {
           {submitting ? t('new_leave.submitting') : t('new_leave.submit')}
         </button>
       </div>
+
+      {showLeaveInfoPopup && (
+        <div className="modal-overlay" onClick={() => setShowLeaveInfoPopup(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Leave Type Information</h3>
+              <button style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }} onClick={() => setShowLeaveInfoPopup(false)}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#c62828', margin: '0 0 6px' }}>Reduces contracted hours (deducted from allowance):</p>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8 }}>
+                {allLeaveTypes.filter(lt => leaveTypeDeducts[lt.name] !== false).map(lt => (
+                  <li key={lt.name}>{translateLeaveType(lt.name)}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: '#2e7d32', margin: '0 0 6px' }}>Does not reduce contracted hours:</p>
+              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8 }}>
+                {allLeaveTypes.filter(lt => leaveTypeDeducts[lt.name] === false).map(lt => (
+                  <li key={lt.name}>{translateLeaveType(lt.name)}</li>
+                ))}
+                {allLeaveTypes.filter(lt => leaveTypeDeducts[lt.name] === false).length === 0 && (
+                  <li style={{ color: '#999' }}>None configured</li>
+                )}
+              </ul>
+            </div>
+            <button className="new-leave-submit-btn" style={{ background: selectedColor, width: '100%', marginTop: 16 }} onClick={() => setShowLeaveInfoPopup(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {showLieuPopup && (
         <div className="modal-overlay" onClick={() => setShowLieuPopup(false)}>

@@ -1640,18 +1640,24 @@ body {
 }
 
 .detail-meta {
-  display: flex; align-items: flex-start;
+  display: flex; align-items: flex-start; flex-wrap: wrap;
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
   gap: 8px;
 }
-.detail-meta-left, .detail-meta-right { display: flex; flex-direction: column; gap: 4px; }
-.detail-meta-left { flex: 1; }
-.detail-meta-right { flex: 1; }
+.detail-meta-left, .detail-meta-right { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.detail-meta-left { flex: 1; min-width: 140px; }
+.detail-meta-right { flex: 1; min-width: 140px; }
 .detail-meta-row { display: flex; gap: 8px; align-items: baseline; }
-.detail-meta-label { font-size: 12px; color: var(--text-muted); }
+.detail-meta-label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
 .detail-meta-value { font-size: 13px; font-weight: 700; color: var(--text); }
-.detail-status { font-size: 15px; }
+.detail-meta-reference { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; display: inline-block; vertical-align: baseline; }
+.detail-status { font-size: 13px; font-weight: 700; padding: 2px 10px; border-radius: 12px; display: inline-block; }
+.detail-status-draft { background: #f5f5f5; color: #666; }
+.detail-status-submitted { background: #fff3e0; color: #e65100; }
+.detail-status-approved { background: #e8f5e9; color: #2e7d32; }
+.detail-status-rejected { background: #ffebee; color: #c62828; }
+.detail-status-paid { background: #e3f2fd; color: #1565c0; }
 .detail-delete {
   background: none; border: none; cursor: pointer; padding: 4px;
   flex-shrink: 0;
@@ -2481,6 +2487,14 @@ body {
   padding: 16px;
 }
 
+.leave-info-icon-btn {
+  background: none; border: 1px solid #43a047; border-radius: 50%;
+  width: 22px; height: 22px; padding: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: #43a047; flex-shrink: 0;
+}
+.leave-info-icon-btn:hover { background: rgba(67, 160, 71, 0.1); }
+
 .new-leave-type-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2870,21 +2884,24 @@ body {
 }
 .leave-calendar-title-accent { color: #43a047; font-style: italic; }
 
+.leave-calendar-people-badges {
+  display: flex; gap: 8px; margin: 12px 16px; overflow-x: auto;
+}
 .leave-calendar-people-badge {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 8px;
   background: linear-gradient(135deg, #43a047, #2e7d32);
-  margin: 12px 16px;
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   color: #fff;
+  flex: 1; min-width: 0;
 }
 .leave-calendar-people-text {
-  display: flex; flex-direction: column; gap: 1px; flex: 1;
+  display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0;
 }
-.leave-calendar-people-label { font-size: 14px; font-weight: 700; }
-.leave-calendar-people-sub { font-size: 12px; opacity: 0.85; }
+.leave-calendar-people-label { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.leave-calendar-people-sub { font-size: 10px; opacity: 0.85; white-space: nowrap; }
 .leave-calendar-people-count {
-  font-size: 32px; font-weight: 800; line-height: 1;
+  font-size: 26px; font-weight: 800; line-height: 1; flex-shrink: 0;
 }
 
 .leave-calendar-week {
@@ -2990,6 +3007,14 @@ body {
 [data-theme="dark"] .leave-calendar-dot-half {
   background: linear-gradient(to right, var(--dot-colour) 50%, #3a3a55 50%);
 }
+.leave-calendar-expand-btn {
+  display: flex; align-items: center; gap: 6px; justify-content: center;
+  width: 100%; padding: 8px 0; margin-top: 4px;
+  background: none; border: 1px solid var(--border); border-radius: 8px;
+  cursor: pointer; font-family: var(--sans); font-size: 12px; font-weight: 600;
+  color: #43a047; transition: background 0.15s;
+}
+.leave-calendar-expand-btn:hover { background: rgba(67, 160, 71, 0.06); }
 
 /* ── My Profile Page ── */
 .my-profile-page { padding: 0 0 100px; }

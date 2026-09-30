@@ -183,11 +183,11 @@ export default function ExpenseDetail() {
         <div className="detail-meta-left">
           <div className="detail-meta-row">
             <span className="detail-meta-label">{t('expense_detail.status')}</span>
-            <span className="detail-meta-value detail-status">{tStatus(claim.status)}</span>
+            <span className={`detail-meta-value detail-status detail-status-${claim.status}`}>{tStatus(claim.status)}</span>
           </div>
           <div className="detail-meta-row">
             <span className="detail-meta-label">{t('expense_detail.reference')}</span>
-            <span className="detail-meta-value">{claim.reference_number}</span>
+            <span className="detail-meta-value detail-meta-reference">{claim.reference_number}</span>
           </div>
         </div>
         <div className="detail-meta-right">

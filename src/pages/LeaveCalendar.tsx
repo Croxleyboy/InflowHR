@@ -53,6 +53,7 @@ export default function LeaveCalendar() {
   const { companyUser } = useAuth()
   const [leaves, setLeaves] = useState<CalendarLeave[]>([])
   const [loading, setLoading] = useState(true)
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<number>>(new Set())
 
   const today = new Date()
   const thisMonday = getMonday(today)
@@ -107,10 +108,17 @@ export default function LeaveCalendar() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  const thisSunday = addDays(thisMonday, 6)
   const nextMonday = addDays(thisMonday, 7)
   const nextSunday = addDays(nextMonday, 6)
+  const week2Monday = addDays(thisMonday, 14)
+  const week2Sunday = addDays(week2Monday, 6)
+  const thisWeekLeaves = leaves.filter(l => l.start_date <= dateStr(thisSunday) && l.end_date >= dateStr(thisMonday))
+  const thisWeekPeople = new Set(thisWeekLeaves.map(l => l.employee_id)).size
   const nextWeekLeaves = leaves.filter(l => l.start_date <= dateStr(nextSunday) && l.end_date >= dateStr(nextMonday))
   const nextWeekPeople = new Set(nextWeekLeaves.map(l => l.employee_id)).size
+  const week2Leaves = leaves.filter(l => l.start_date <= dateStr(week2Sunday) && l.end_date >= dateStr(week2Monday))
+  const week2People = new Set(week2Leaves.map(l => l.employee_id)).size
 
   function getDayInfo(empLeaves: CalendarLeave[], day: Date): DayInfo | null {
     const ds = dateStr(day)
@@ -150,12 +158,28 @@ export default function LeaveCalendar() {
         </button>
       </header>
 
-      <div className="leave-calendar-people-badge">
-        <div className="leave-calendar-people-text">
-          <span className="leave-calendar-people-label">{t('leave_calendar.people_on_leave')}</span>
-          <span className="leave-calendar-people-sub">{t('leave_history.next_week')}</span>
+      <div className="leave-calendar-people-badges">
+        <div className="leave-calendar-people-badge">
+          <div className="leave-calendar-people-text">
+            <span className="leave-calendar-people-label">{t('leave_calendar.people_on_leave')}</span>
+            <span className="leave-calendar-people-sub">This week</span>
+          </div>
+          <span className="leave-calendar-people-count">{thisWeekPeople}</span>
         </div>
-        <span className="leave-calendar-people-count">{nextWeekPeople}</span>
+        <div className="leave-calendar-people-badge">
+          <div className="leave-calendar-people-text">
+            <span className="leave-calendar-people-label">{t('leave_calendar.people_on_leave')}</span>
+            <span className="leave-calendar-people-sub">{t('leave_history.next_week')}</span>
+          </div>
+          <span className="leave-calendar-people-count">{nextWeekPeople}</span>
+        </div>
+        <div className="leave-calendar-people-badge">
+          <div className="leave-calendar-people-text">
+            <span className="leave-calendar-people-label">{t('leave_calendar.people_on_leave')}</span>
+            <span className="leave-calendar-people-sub">In 2 weeks</span>
+          </div>
+          <span className="leave-calendar-people-count">{week2People}</span>
+        </div>
       </div>
 
       {loading && <p className="claims-empty">{t('common.loading')}</p>}
@@ -213,33 +237,59 @@ export default function LeaveCalendar() {
               <p className="leave-calendar-no-leave">{t('leave_calendar.no_leave')}</p>
             )}
 
-            {groupedEmployees.map(([empId, emp]) => (
-              <div key={empId} className="leave-calendar-person-row">
-                <div className="leave-calendar-row-label">
-                  {emp.avatar ? <img className="leave-calendar-person-avatar-img" src={emp.avatar} alt={emp.name} /> : <div className="leave-calendar-person-avatar">
-                    {emp.name.split(' ').map(n => n[0]).join('')}
-                  </div>}
-                  <span className="leave-calendar-person-name">{emp.name}</span>
-                </div>
-                <div className="leave-calendar-row-days">
-                  {days.map(day => {
-                    const info = getDayInfo(emp.leaves, day)
-                    if (info && info.halfDay) {
-                      return (
-                        <div key={dateStr(day)} className="leave-calendar-person-dot leave-calendar-dot-half" style={{ '--dot-colour': info.colour } as React.CSSProperties} />
-                      )
-                    }
-                    return (
-                      <div
-                        key={dateStr(day)}
-                        className={`leave-calendar-person-dot ${info ? 'leave-calendar-dot-off' : ''}`}
-                        style={info ? { background: info.colour } : undefined}
-                      />
-                    )
-                  })}
-                </div>
-              </div>
-            ))}
+            {(() => {
+              const MAX_VISIBLE = 5
+              const isExpanded = expandedWeeks.has(wi)
+              const visibleEmployees = isExpanded ? groupedEmployees : groupedEmployees.slice(0, MAX_VISIBLE)
+              const hiddenCount = groupedEmployees.length - MAX_VISIBLE
+              return (
+                <>
+                  {visibleEmployees.map(([empId, emp]) => (
+                    <div key={empId} className="leave-calendar-person-row">
+                      <div className="leave-calendar-row-label">
+                        {emp.avatar ? <img className="leave-calendar-person-avatar-img" src={emp.avatar} alt={emp.name} /> : <div className="leave-calendar-person-avatar">
+                          {emp.name.split(' ').map(n => n[0]).join('')}
+                        </div>}
+                        <span className="leave-calendar-person-name">{emp.name}</span>
+                      </div>
+                      <div className="leave-calendar-row-days">
+                        {days.map(day => {
+                          const info = getDayInfo(emp.leaves, day)
+                          if (info && info.halfDay) {
+                            return (
+                              <div key={dateStr(day)} className="leave-calendar-person-dot leave-calendar-dot-half" style={{ '--dot-colour': info.colour } as React.CSSProperties} />
+                            )
+                          }
+                          return (
+                            <div
+                              key={dateStr(day)}
+                              className={`leave-calendar-person-dot ${info ? 'leave-calendar-dot-off' : ''}`}
+                              style={info ? { background: info.colour } : undefined}
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  {hiddenCount > 0 && (
+                    <button
+                      className="leave-calendar-expand-btn"
+                      onClick={() => setExpandedWeeks(prev => {
+                        const next = new Set(prev)
+                        if (next.has(wi)) next.delete(wi); else next.add(wi)
+                        return next
+                      })}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                        style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                      {isExpanded ? 'Show less' : `+${hiddenCount} more`}
+                    </button>
+                  )}
+                </>
+              )
+            })()}
           </div>
         )
       })}
