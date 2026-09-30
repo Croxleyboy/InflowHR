@@ -701,12 +701,27 @@ export default function AdminPayroll() {
 
     if (enabledFeatures.shifts) {
       queries.push((async () => {
-        const { data } = await supabase.from('shift_assignments')
-          .select('employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(status)')
-          .eq('company_id', selectedCompanyId)
-          .gte('date', tbPeriodStart).lte('date', tbPeriodEnd)
-        if (data) {
-          for (const row of data as any[]) {
+        const [assignRes, ciRes] = await Promise.all([
+          supabase.from('shift_assignments')
+            .select('id, employee_id, date, shift_templates(name, start_time, end_time, break_minutes), rotas(status)')
+            .eq('company_id', selectedCompanyId)
+            .gte('date', tbPeriodStart).lte('date', tbPeriodEnd),
+          supabase.from('checkin_records')
+            .select('id, employee_id, shift_assignment_id, check_in_at, check_out_at, status')
+            .eq('company_id', selectedCompanyId).eq('source', 'shifts')
+            .gte('check_in_at', tbPeriodStart + 'T00:00:00').lte('check_in_at', tbPeriodEnd + 'T23:59:59'),
+        ])
+        const ciByAssignment: Record<string, any[]> = {}
+        if (ciRes.data) {
+          for (const ci of ciRes.data as any[]) {
+            if (ci.shift_assignment_id) {
+              if (!ciByAssignment[ci.shift_assignment_id]) ciByAssignment[ci.shift_assignment_id] = []
+              ciByAssignment[ci.shift_assignment_id].push(ci)
+            }
+          }
+        }
+        if (assignRes.data) {
+          for (const row of assignRes.data as any[]) {
             if (!result[row.employee_id]) continue
             const rota = row.rotas as any
             if (rota?.status === 'draft') continue
@@ -714,9 +729,22 @@ export default function AdminPayroll() {
             if (!tmpl) continue
             const startMins = parseInt(tmpl.start_time?.split(':')[0]) * 60 + parseInt(tmpl.start_time?.split(':')[1] || '0')
             const endMins = parseInt(tmpl.end_time?.split(':')[0]) * 60 + parseInt(tmpl.end_time?.split(':')[1] || '0')
-            const hrs = Math.max(0, (endMins - startMins - (tmpl.break_minutes || 0)) / 60)
-            result[row.employee_id].shiftHrs += hrs
-            result[row.employee_id].shiftEntries.push({ ...row, shiftName: tmpl.name, start_time: tmpl.start_time, end_time: tmpl.end_time, breakMins: tmpl.break_minutes, hrs })
+            const scheduledHrs = Math.max(0, (endMins - startMins - (tmpl.break_minutes || 0)) / 60)
+            const checkins = ciByAssignment[row.id] || []
+            const firstIn = checkins.length > 0 ? checkins.reduce((earliest: any, c: any) => c.check_in_at < earliest.check_in_at ? c : earliest).check_in_at : null
+            const lastOut = checkins.filter((c: any) => c.check_out_at).length > 0 ? checkins.filter((c: any) => c.check_out_at).reduce((latest: any, c: any) => c.check_out_at > latest.check_out_at ? c : latest).check_out_at : null
+            const actualMins = checkins.reduce((sum: number, c: any) => {
+              if (!c.check_out_at) return sum
+              return sum + (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 60000
+            }, 0)
+            const actualHrs = actualMins / 60
+            const noCheckin = checkins.length === 0
+            const forgotCheckout = checkins.some((c: any) => c.status === 'auto_closed')
+            result[row.employee_id].shiftHrs += scheduledHrs
+            result[row.employee_id].shiftEntries.push({
+              ...row, shiftName: tmpl.name, start_time: tmpl.start_time, end_time: tmpl.end_time,
+              breakMins: tmpl.break_minutes, hrs: scheduledHrs, firstIn, lastOut, actualHrs, noCheckin, forgotCheckout,
+            })
           }
         }
       })())
@@ -1679,17 +1707,25 @@ export default function AdminPayroll() {
                               <div className="admin-tb-detail">
                                 {enabledFeatures.shifts && data.shiftEntries.length > 0 && (
                                   <div className="admin-tb-section">
-                                    <h4 className="admin-tb-section-title">Shifts ({data.shiftHrs.toFixed(1)}h)</h4>
+                                    <h4 className="admin-tb-section-title">Shifts ({data.shiftHrs.toFixed(1)}h scheduled)</h4>
                                     <table className="admin-table admin-table-nested">
-                                      <thead><tr><th>Date</th><th>Shift</th><th>Time</th><th>Break</th><th>Hours</th></tr></thead>
+                                      <thead><tr><th>Date</th><th>Shift</th><th>Scheduled</th><th>Check-In</th><th>Check-Out</th><th>Actual</th><th>Status</th></tr></thead>
                                       <tbody>
                                         {data.shiftEntries.sort((a: any, b: any) => a.date.localeCompare(b.date)).map((s: any, i: number) => (
-                                          <tr key={i}>
+                                          <tr key={i} style={s.noCheckin ? { background: 'rgba(229,57,53,0.06)' } : s.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
                                             <td>{formatDate(s.date)}</td>
                                             <td>{s.shiftName}</td>
-                                            <td>{s.start_time?.slice(0, 5)} - {s.end_time?.slice(0, 5)}</td>
-                                            <td>{s.breakMins || 0} mins</td>
-                                            <td>{s.hrs.toFixed(1)}h</td>
+                                            <td>{s.start_time?.slice(0, 5)} – {s.end_time?.slice(0, 5)} <span style={{ fontSize: 11, color: '#888' }}>({s.hrs.toFixed(1)}h)</span></td>
+                                            <td>{s.firstIn ? new Date(s.firstIn).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                                            <td>{s.lastOut ? new Date(s.lastOut).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                                            <td>{s.noCheckin ? '—' : `${s.actualHrs.toFixed(1)}h`}</td>
+                                            <td>
+                                              {s.noCheckin
+                                                ? <span className="admin-badge admin-badge-cancelled">No Check-In</span>
+                                                : s.forgotCheckout
+                                                  ? <span className="admin-badge" style={{ background: '#fef3c7', color: '#92400e' }}>Forgot Checkout</span>
+                                                  : <span className="admin-badge admin-badge-complete">OK</span>}
+                                            </td>
                                           </tr>
                                         ))}
                                       </tbody>

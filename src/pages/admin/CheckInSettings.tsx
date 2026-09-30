@@ -199,7 +199,7 @@ export default function CheckInSettingsPanel({ source }: Props) {
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#888', display: 'block', marginBottom: 4 }}>Auto-Checkout (hours)</label>
                 <input className="admin-input" type="number" min={1} max={24} value={settings.auto_checkout_hours}
-                  onChange={e => updateSetting('auto_checkout_hours', parseInt(e.target.value, 10) || 10)}
+                  onChange={e => updateSetting('auto_checkout_hours', parseInt(e.target.value, 10) || 2)}
                   style={{ maxWidth: 100 }} />
               </div>
               {source === 'shifts' && (
