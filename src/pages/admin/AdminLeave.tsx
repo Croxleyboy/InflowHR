@@ -41,6 +41,7 @@ export default function AdminLeave() {
   const [page, setPage] = useState(1)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})
+  const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set())
   const [weekendsAsWorkdays, setWeekendsAsWorkdays] = useState(false)
   const [savingWeekend, setSavingWeekend] = useState(false)
   const [leaveTypeSettings, setLeaveTypeSettings] = useState<{ id: number; name: string; deducts_from_allowance: boolean; max_carry_over_days: number }[]>([])
@@ -432,12 +433,13 @@ export default function AdminLeave() {
     })
   }
 
-  function toggleSelectAll() {
-    if (selectedIds.size === paginated.length) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(paginated.map(r => r.id)))
-    }
+  function toggleExpandEmployee(employeeId: string) {
+    setExpandedEmployees(prev => {
+      const next = new Set(prev)
+      if (next.has(employeeId)) next.delete(employeeId)
+      else next.add(employeeId)
+      return next
+    })
   }
 
   const employees = useMemo(() => {
@@ -463,8 +465,46 @@ export default function AdminLeave() {
     })
   }, [requests, filterStatus, filterEmployee, search])
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  interface EmployeeGroup {
+    employeeId: string
+    name: string
+    avatar_url: string | null
+    managerId: string | null
+    requests: LeaveRequest[]
+    latestCreatedAt: string
+    pendingCount: number
+    approvedCount: number
+  }
+
+  const grouped = useMemo<EmployeeGroup[]>(() => {
+    const map = new Map<string, EmployeeGroup>()
+    for (const r of filtered) {
+      if (!r.employee) continue
+      const key = r.employee_id
+      let g = map.get(key)
+      if (!g) {
+        g = {
+          employeeId: key,
+          name: `${r.employee.first_name} ${r.employee.last_name}`,
+          avatar_url: r.employee.avatar_url,
+          managerId: r.employee.manager_id,
+          requests: [],
+          latestCreatedAt: r.created_at,
+          pendingCount: 0,
+          approvedCount: 0,
+        }
+        map.set(key, g)
+      }
+      g.requests.push(r)
+      if (r.created_at > g.latestCreatedAt) g.latestCreatedAt = r.created_at
+      if (r.status === 'pending') g.pendingCount++
+      if (r.status === 'approved') g.approvedCount++
+    }
+    return Array.from(map.values()).sort((a, b) => b.latestCreatedAt.localeCompare(a.latestCreatedAt))
+  }, [filtered])
+
+  const totalPages = Math.max(1, Math.ceil(grouped.length / PAGE_SIZE))
+  const paginatedGroups = grouped.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const stats = useMemo(() => ({
     total: requests.length,
@@ -681,70 +721,141 @@ export default function AdminLeave() {
           )}
 
           {loading ? <div className="admin-loading">Loading...</div> : (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead><tr><th style={{ width: 36 }}><input type="checkbox" checked={paginated.length > 0 && selectedIds.size === paginated.length} onChange={toggleSelectAll} /></th><th>Employee</th><th>Manager</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {paginated.map(r => (
-                    <tr key={r.id}>
-                      <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
-                      <td>{r.employee ? <span className="admin-inline-avatar">{r.employee.avatar_url ? <img src={r.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{r.employee.first_name[0]}{r.employee.last_name[0]}</span>}{r.employee.first_name} {r.employee.last_name}</span> : '—'}</td>
-                      <td className="admin-hide-mobile" style={{ fontSize: 13, color: '#64748b' }}>{r.employee?.manager_id ? managerNames[r.employee.manager_id] || '—' : '—'}</td>
-                      <td>{r.leave_type?.name || '—'}</td>
-                      <td>{editingId === r.id ? (
-                        <div className="admin-date-inputs">
-                          <input type="date" className="admin-inline-input" value={editForm.start_date} onChange={e => setEditForm(p => ({...p, start_date: e.target.value}))} />
-                          <input type="date" className="admin-inline-input" value={editForm.end_date} onChange={e => setEditForm(p => ({...p, end_date: e.target.value}))} />
-                        </div>
-                      ) : `${new Date(r.start_date).toLocaleDateString('en-GB')} – ${new Date(r.end_date).toLocaleDateString('en-GB')}`}</td>
-                      <td>{editingId === r.id ? <input type="number" step="0.5" className="admin-inline-input admin-inline-sm" value={editForm.days_requested} onChange={e => setEditForm(p => ({...p, days_requested: +e.target.value}))} /> : r.days_requested}</td>
-                      <td>{editingId === r.id ? (
-                        <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(p => ({...p, status: e.target.value}))}>
-                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      ) : (
-                        <span className={`admin-badge admin-badge-${r.status}`}>
-                          {r.status === 'approved' && <span style={{ color: '#43a047', fontWeight: 700, marginRight: 4 }}>✓</span>}
-                          {r.status === 'rejected' && <span style={{ color: '#e53935', fontWeight: 700, marginRight: 4 }}>✗</span>}
-                          {r.status}
+            <div>
+              {paginatedGroups.map(g => {
+                const isExpanded = expandedEmployees.has(g.employeeId)
+                const groupSelected = g.requests.every(r => selectedIds.has(r.id))
+                const groupIndeterminate = !groupSelected && g.requests.some(r => selectedIds.has(r.id))
+                return (
+                  <div key={g.employeeId} style={{ border: '1px solid var(--border-color, #e0e0e0)', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: 'var(--card-bg, #fff)' }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', background: isExpanded ? 'var(--hover-bg, #f5f7fa)' : 'transparent', transition: 'background 0.15s' }}
+                      onClick={() => toggleExpandEmployee(g.employeeId)}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={groupSelected}
+                        ref={el => { if (el) el.indeterminate = groupIndeterminate }}
+                        onChange={e => {
+                          e.stopPropagation()
+                          setSelectedIds(prev => {
+                            const next = new Set(prev)
+                            if (groupSelected) { g.requests.forEach(r => next.delete(r.id)) }
+                            else { g.requests.forEach(r => next.add(r.id)) }
+                            return next
+                          })
+                        }}
+                        onClick={e => e.stopPropagation()}
+                      />
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0, color: '#888' }}>
+                        <polyline points="9 18 15 12 9 6" />
+                      </svg>
+                      <span className="admin-inline-avatar" style={{ gap: 8, fontWeight: 600, fontSize: 14 }}>
+                        {g.avatar_url
+                          ? <img src={g.avatar_url} alt="" />
+                          : <span className="admin-avatar-initials">{g.name.split(' ').map(n => n[0]).join('')}</span>
+                        }
+                        {g.name}
+                      </span>
+                      <span className="admin-hide-mobile" style={{ fontSize: 12, color: '#64748b', marginLeft: 4 }}>
+                        {g.managerId && managerNames[g.managerId] ? `Manager: ${managerNames[g.managerId]}` : ''}
+                      </span>
+                      <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                        <span style={{ fontSize: 12, color: '#666', background: 'var(--hover-bg, #f0f0f0)', padding: '2px 8px', borderRadius: 10 }}>
+                          {g.requests.length} request{g.requests.length !== 1 ? 's' : ''}
                         </span>
-                      )}</td>
-                      <td className="admin-actions">
-                        {editingId === r.id ? (
-                          <>
-                            <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(r.id)}>Save</button>
-                            <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
-                          </>
-                        ) : (
-                          <>
-                            {r.status === 'pending' && (
-                              <>
-                                <button className="admin-btn-icon" title="Approve" onClick={() => quickApproveDecline(r.id, 'approved')} style={{ color: '#43a047' }}>
-                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                                </button>
-                                <button className="admin-btn-icon" title="Decline" onClick={() => quickApproveDecline(r.id, 'rejected')} style={{ color: '#e53935' }}>
-                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                </button>
-                              </>
-                            )}
-                            <button className="admin-btn-icon" title="Edit" onClick={() => startEdit(r)}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            </button>
-                            <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteRequest(r.id)}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                            </button>
-                          </>
+                        {g.pendingCount > 0 && (
+                          <span style={{ fontSize: 11, fontWeight: 600, background: '#fff3e0', color: '#e65100', padding: '2px 7px', borderRadius: 10 }}>
+                            {g.pendingCount} pending
+                          </span>
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        {g.approvedCount > 0 && (
+                          <span style={{ fontSize: 11, fontWeight: 600, background: '#e8f5e9', color: '#2e7d32', padding: '2px 7px', borderRadius: 10 }}>
+                            {g.approvedCount} approved
+                          </span>
+                        )}
+                      </span>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="admin-table-wrap" style={{ margin: 0, borderTop: '1px solid var(--border-color, #e0e0e0)' }}>
+                        <table className="admin-table" style={{ marginBottom: 0 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ width: 36 }}></th>
+                              <th>Type</th>
+                              <th>Dates</th>
+                              <th>Days</th>
+                              <th>Status</th>
+                              <th>Reason</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {g.requests.map(r => (
+                              <tr key={r.id}>
+                                <td><input type="checkbox" checked={selectedIds.has(r.id)} onChange={() => toggleSelect(r.id)} /></td>
+                                <td>{r.leave_type?.name || '—'}</td>
+                                <td>{editingId === r.id ? (
+                                  <div className="admin-date-inputs">
+                                    <input type="date" className="admin-inline-input" value={editForm.start_date} onChange={e => setEditForm(p => ({...p, start_date: e.target.value}))} />
+                                    <input type="date" className="admin-inline-input" value={editForm.end_date} onChange={e => setEditForm(p => ({...p, end_date: e.target.value}))} />
+                                  </div>
+                                ) : `${new Date(r.start_date).toLocaleDateString('en-GB')} – ${new Date(r.end_date).toLocaleDateString('en-GB')}`}</td>
+                                <td>{editingId === r.id ? <input type="number" step="0.5" className="admin-inline-input admin-inline-sm" value={editForm.days_requested} onChange={e => setEditForm(p => ({...p, days_requested: +e.target.value}))} /> : r.days_requested}</td>
+                                <td>{editingId === r.id ? (
+                                  <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(p => ({...p, status: e.target.value}))}>
+                                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                ) : (
+                                  <span className={`admin-badge admin-badge-${r.status}`}>
+                                    {r.status === 'approved' && <span style={{ color: '#43a047', fontWeight: 700, marginRight: 4 }}>✓</span>}
+                                    {r.status === 'rejected' && <span style={{ color: '#e53935', fontWeight: 700, marginRight: 4 }}>✗</span>}
+                                    {r.status}
+                                  </span>
+                                )}</td>
+                                <td style={{ fontSize: 12, color: '#666', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.reason || '—'}</td>
+                                <td className="admin-actions">
+                                  {editingId === r.id ? (
+                                    <>
+                                      <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(r.id)}>Save</button>
+                                      <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {r.status === 'pending' && (
+                                        <>
+                                          <button className="admin-btn-icon" title="Approve" onClick={() => quickApproveDecline(r.id, 'approved')} style={{ color: '#43a047' }}>
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                                          </button>
+                                          <button className="admin-btn-icon" title="Decline" onClick={() => quickApproveDecline(r.id, 'rejected')} style={{ color: '#e53935' }}>
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                          </button>
+                                        </>
+                                      )}
+                                      <button className="admin-btn-icon" title="Edit" onClick={() => startEdit(r)}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                      </button>
+                                      <button className="admin-btn-icon admin-btn-danger" title="Delete" onClick={() => deleteRequest(r.id)}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                      </button>
+                                    </>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
               {filtered.length === 0 && <div className="admin-empty">No leave requests found</div>}
               {totalPages > 1 && (
                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16, fontSize: 13 }}>
                   <button className="admin-btn-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>Prev</button>
-                  <span>Page {page} of {totalPages}</span>
+                  <span>Page {page} of {totalPages} ({grouped.length} employee{grouped.length !== 1 ? 's' : ''})</span>
                   <button className="admin-btn-sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
                 </div>
               )}
