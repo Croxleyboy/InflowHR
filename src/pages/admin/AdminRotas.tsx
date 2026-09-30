@@ -15,6 +15,7 @@ interface Rota {
   department: string | null
   status: string
   allow_employee_edit: boolean
+  shift_contract_type: string | null
   created_at: string
 }
 
@@ -33,6 +34,7 @@ interface Employee {
   first_name: string
   last_name: string
   work_pattern_id: string | null
+  contract_type: string | null
 }
 
 interface WorkPattern {
@@ -70,7 +72,14 @@ interface RotaCounts {
   assignment_count: number
 }
 
-const EMPTY_ROTA = { name: '', start_date: '', end_date: '', department: '', status: 'draft', allow_employee_edit: false }
+const SHIFT_CONTRACT_TYPES = [
+  { value: 'Full-time shift worker', label: 'Full-time Shift Worker' },
+  { value: 'Part-time shift worker', label: 'Part-time Shift Worker' },
+  { value: 'Weekends shift worker', label: 'Weekends Shift Worker' },
+  { value: 'Zero hours shift worker', label: 'Zero Hours Shift Worker' },
+]
+
+const EMPTY_ROTA = { name: '', start_date: '', end_date: '', department: '', status: 'draft', allow_employee_edit: false, shift_contract_type: '' }
 
 function getMonday(d: Date): Date {
   const dt = new Date(d)
@@ -181,7 +190,7 @@ export default function AdminRotas() {
   }
 
   async function createRota() {
-    if (!addForm.name.trim() || !addForm.start_date || !addForm.end_date) return
+    if (!addForm.name.trim() || !addForm.start_date || !addForm.end_date || !addForm.shift_contract_type) return
     const { error } = await supabase.from('rotas').insert({
       company_id: selectedCompanyId,
       name: addForm.name.trim(),
@@ -190,6 +199,7 @@ export default function AdminRotas() {
       department: addForm.department || null,
       status: addForm.status,
       allow_employee_edit: addForm.allow_employee_edit,
+      shift_contract_type: addForm.shift_contract_type,
     })
     if (error) { showError('Failed to create rota: ' + error.message); return }
     showSuccess('Rota created')
@@ -207,6 +217,7 @@ export default function AdminRotas() {
       department: r.department || '',
       status: r.status,
       allow_employee_edit: r.allow_employee_edit ?? false,
+      shift_contract_type: r.shift_contract_type || '',
     })
     setShowModal(true)
   }
@@ -219,6 +230,7 @@ export default function AdminRotas() {
       department: editFormRota.department || null,
       status: editFormRota.status,
       allow_employee_edit: editFormRota.allow_employee_edit ?? false,
+      shift_contract_type: editFormRota.shift_contract_type || null,
     }).eq('id', id)
     if (error) { showError('Failed to update rota: ' + error.message); return }
     setEditingRotaId(null)
@@ -302,7 +314,7 @@ export default function AdminRotas() {
     const weekS = ws || weekStart
     const weekEnd = addDays(weekS, 6)
     const [empRes, tmplRes, assignRes, leaveRes, availRes, wpRes, tsRes, esRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name, work_pattern_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
+      supabase.from('employees').select('id, first_name, last_name, work_pattern_id, contract_type').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
       supabase.from('shift_templates').select('id, name, colour, start_time, end_time, break_minutes').eq('company_id', selectedCompanyId).eq('is_active', true),
       supabase.from('shift_assignments').select('*').eq('rota_id', rota.id),
       supabase.from('leave_requests').select('employee_id, start_date, end_date').eq('company_id', selectedCompanyId).in('status', ['pending', 'approved']),
@@ -315,7 +327,11 @@ export default function AdminRotas() {
     const wpData = (wpRes.data as WorkPattern[]) || []
     const variablePatternIds = new Set(wpData.filter(p => p.pattern_type === 'variable').map(p => p.id))
     const shiftEligible = allEmps.filter(e => !e.work_pattern_id || variablePatternIds.has(e.work_pattern_id))
-    setEmployees(shiftEligible)
+    const rotaContractType = rota.shift_contract_type
+    const filtered = rotaContractType
+      ? shiftEligible.filter(e => e.contract_type === rotaContractType)
+      : shiftEligible
+    setEmployees(filtered)
     setShiftTemplates((tmplRes.data as ShiftTemplate[]) || [])
     setAssignments((assignRes.data as ShiftAssignment[]) || [])
     setLeaveConflicts((leaveRes.data as LeaveConflict[]) || [])
@@ -600,6 +616,13 @@ export default function AdminRotas() {
             <input value={form.department} onChange={e => setForm((p: any) => ({ ...p, department: e.target.value }))} placeholder="Optional" />
           </div>
           <div className="rota-modal-field">
+            <label>Shift Contract Type <span style={{ color: '#e53935' }}>*</span></label>
+            <select value={form.shift_contract_type || ''} onChange={e => setForm((p: any) => ({ ...p, shift_contract_type: e.target.value }))}>
+              <option value="">Select contract type...</option>
+              {SHIFT_CONTRACT_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
+            </select>
+          </div>
+          <div className="rota-modal-field">
             <label>Status</label>
             <select value={form.status} onChange={e => setForm((p: any) => ({ ...p, status: e.target.value }))}>
               <option value="draft">Draft</option>
@@ -738,6 +761,7 @@ export default function AdminRotas() {
                     <div className="rc-row1">
                       <div className="rc-name">{r.name}</div>
                       <div className="rc-badges">
+                        {r.shift_contract_type && <span className="rg-badge rg-badge-purple">{SHIFT_CONTRACT_TYPES.find(ct => ct.value === r.shift_contract_type)?.label || r.shift_contract_type}</span>}
                         {r.department && <span className="rg-badge rg-badge-blue">{r.department}</span>}
                         <span className={`rg-badge ${isPublished ? 'rg-badge-green' : 'rg-badge-orange'}`}>
                           {isPublished ? 'Published' : 'Draft'}
@@ -822,6 +846,7 @@ export default function AdminRotas() {
             <span className={`rg-badge ${selectedRota.status === 'published' ? 'rg-badge-green' : 'rg-badge-orange'}`}>
               {selectedRota.status === 'published' ? 'Published' : 'Draft'}
             </span>
+            {selectedRota.shift_contract_type && <span className="rg-badge rg-badge-purple">{SHIFT_CONTRACT_TYPES.find(ct => ct.value === selectedRota.shift_contract_type)?.label || selectedRota.shift_contract_type}</span>}
             {selectedRota.department && <span className="rg-badge rg-badge-blue">{selectedRota.department}</span>}
             <span className={`rg-badge ${selectedRota.allow_employee_edit ? 'rg-badge-green' : 'rg-badge-grey'}`}>
               Self-edit: {selectedRota.allow_employee_edit ? 'ON' : 'OFF'}

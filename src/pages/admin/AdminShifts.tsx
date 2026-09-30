@@ -13,9 +13,17 @@ interface ShiftTemplate {
   colour: string
   role_required: string | null
   department: string | null
+  shift_contract_type: string | null
   is_active: boolean
   created_at: string
 }
+
+const SHIFT_CONTRACT_TYPES = [
+  { value: 'Full-time shift worker', label: 'Full-time Shift Worker' },
+  { value: 'Part-time shift worker', label: 'Part-time Shift Worker' },
+  { value: 'Weekends shift worker', label: 'Weekends Shift Worker' },
+  { value: 'Zero hours shift worker', label: 'Zero Hours Shift Worker' },
+]
 
 interface ShiftSkill {
   id: string
@@ -23,7 +31,7 @@ interface ShiftSkill {
   is_active: boolean
 }
 
-const EMPTY_TEMPLATE = { name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, colour: '#4CAF50', role_required: '', department: '', is_active: true }
+const EMPTY_TEMPLATE = { name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, colour: '#4CAF50', role_required: '', department: '', shift_contract_type: '', is_active: true }
 
 export default function AdminShifts() {
   const { selectedCompanyId } = useAdminCompany()
@@ -62,7 +70,7 @@ export default function AdminShifts() {
   }
 
   async function addTemplate() {
-    if (!addForm.name.trim()) return
+    if (!addForm.name.trim() || !addForm.shift_contract_type) return
     const { data: inserted, error } = await supabase.from('shift_templates').insert({
       company_id: selectedCompanyId,
       name: addForm.name.trim(),
@@ -72,6 +80,7 @@ export default function AdminShifts() {
       colour: addForm.colour,
       role_required: addForm.role_required || null,
       department: addForm.department || null,
+      shift_contract_type: addForm.shift_contract_type,
       is_active: addForm.is_active,
     }).select('id').single()
     if (error) { showError('Failed to add shift template: ' + error.message); return }
@@ -96,6 +105,7 @@ export default function AdminShifts() {
       colour: t.colour,
       role_required: t.role_required || '',
       department: t.department || '',
+      shift_contract_type: t.shift_contract_type || '',
       is_active: t.is_active,
     })
     setEditSkillIds(templateSkills[t.id] || [])
@@ -110,6 +120,7 @@ export default function AdminShifts() {
       colour: editForm.colour,
       role_required: editForm.role_required || null,
       department: editForm.department || null,
+      shift_contract_type: editForm.shift_contract_type || null,
       is_active: editForm.is_active,
     }).eq('id', id)
     if (error) { showError('Failed to update shift template: ' + error.message); return }
@@ -182,6 +193,7 @@ export default function AdminShifts() {
             <thead>
               <tr>
                 <th>Name</th><th>Start</th><th>End</th><th>Break (mins)</th><th>Colour</th>
+                <th className="admin-shift-hide-mobile">Contract Type</th>
                 <th className="admin-shift-hide-mobile">Role Required</th>
                 <th className="admin-shift-hide-mobile">Department</th>
                 <th className="admin-shift-hide-mobile">Required Skills</th>
@@ -195,6 +207,12 @@ export default function AdminShifts() {
                 <td><input type="time" className="admin-inline-input" value={addForm.end_time} onChange={e => setAddForm(p => ({...p, end_time: e.target.value}))} /></td>
                 <td><input type="number" className="admin-inline-input admin-inline-sm" value={addForm.break_minutes} onChange={e => setAddForm(p => ({...p, break_minutes: +e.target.value}))} /></td>
                 <td><input type="color" value={addForm.colour} onChange={e => setAddForm(p => ({...p, colour: e.target.value}))} style={{ width: 32, height: 24, border: 'none', cursor: 'pointer' }} /></td>
+                <td className="admin-shift-hide-mobile">
+                  <select className="admin-inline-input" value={addForm.shift_contract_type} onChange={e => setAddForm(p => ({...p, shift_contract_type: e.target.value}))}>
+                    <option value="">Select...</option>
+                    {SHIFT_CONTRACT_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
+                  </select>
+                </td>
                 <td className="admin-shift-hide-mobile"><input className="admin-inline-input" value={addForm.role_required} onChange={e => setAddForm(p => ({...p, role_required: e.target.value}))} placeholder="Optional" /></td>
                 <td className="admin-shift-hide-mobile"><input className="admin-inline-input" value={addForm.department} onChange={e => setAddForm(p => ({...p, department: e.target.value}))} placeholder="Optional" /></td>
                 <td className="admin-shift-hide-mobile">
@@ -227,6 +245,7 @@ export default function AdminShifts() {
             <thead>
               <tr>
                 <th>Name</th><th>Start</th><th>End</th><th>Break (mins)</th><th>Colour</th>
+                <th className="admin-shift-hide-mobile">Contract Type</th>
                 <th className="admin-shift-hide-mobile">Role Required</th>
                 <th className="admin-shift-hide-mobile">Department</th>
                 <th className="admin-shift-hide-mobile">Required Skills</th>
@@ -241,6 +260,12 @@ export default function AdminShifts() {
                   <td>{editingId === t.id ? <input type="time" className="admin-inline-input" value={editForm.end_time} onChange={e => setEditForm(p => ({...p, end_time: e.target.value}))} /> : t.end_time}</td>
                   <td>{editingId === t.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={editForm.break_minutes} onChange={e => setEditForm(p => ({...p, break_minutes: +e.target.value}))} /> : t.break_minutes}</td>
                   <td>{editingId === t.id ? <input type="color" value={editForm.colour} onChange={e => setEditForm(p => ({...p, colour: e.target.value}))} style={{ width: 32, height: 24, border: 'none', cursor: 'pointer' }} /> : <span className="admin-colour-swatch" style={{ backgroundColor: t.colour }} />}</td>
+                  <td className="admin-shift-hide-mobile">{editingId === t.id ? (
+                    <select className="admin-inline-input" value={editForm.shift_contract_type} onChange={e => setEditForm(p => ({...p, shift_contract_type: e.target.value}))}>
+                      <option value="">Select...</option>
+                      {SHIFT_CONTRACT_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
+                    </select>
+                  ) : (SHIFT_CONTRACT_TYPES.find(ct => ct.value === t.shift_contract_type)?.label || '—')}</td>
                   <td className="admin-shift-hide-mobile">{editingId === t.id ? <input className="admin-inline-input" value={editForm.role_required} onChange={e => setEditForm(p => ({...p, role_required: e.target.value}))} /> : (t.role_required || '—')}</td>
                   <td className="admin-shift-hide-mobile">{editingId === t.id ? <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(p => ({...p, department: e.target.value}))} /> : (t.department || '—')}</td>
                   <td className="admin-shift-hide-mobile">

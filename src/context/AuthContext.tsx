@@ -39,6 +39,7 @@ interface AuthState {
   canPostNotifications: boolean
   portalRole: string | null
   workPatternType: 'fixed' | 'variable' | null
+  employmentCategory: string | null
   avatarUrl: string | null
   updateAvatarUrl: (url: string) => void
   setupComplete: boolean | null
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [canPostNotifications, setCanPostNotifications] = useState(false)
   const [portalRole, setPortalRole] = useState<string | null>(null)
   const [workPatternType, setWorkPatternType] = useState<'fixed' | 'variable' | null>(null)
+  const [employmentCategory, setEmploymentCategory] = useState<string | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
     // Check super admin status server-side
@@ -139,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (empId) {
         const { data: empRow } = await supabase
           .from('employees')
-          .select('is_admin, work_pattern_id')
+          .select('is_admin, work_pattern_id, employment_category')
           .eq('id', empId)
           .single()
         if (empRow) {
@@ -151,6 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               .update({ role: expectedRole })
               .eq('id', cu.id)
           }
+          setEmploymentCategory(empRow.employment_category || 'not_assigned')
           if (empRow.work_pattern_id) {
             const { data: wp } = await supabase
               .from('work_patterns')
@@ -385,7 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const employeeEmail = user?.email || ''
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, workPatternType, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, workPatternType, employmentCategory, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
       {children}
     </AuthContext.Provider>
   )

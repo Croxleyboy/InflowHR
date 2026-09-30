@@ -31,6 +31,7 @@ interface Employee {
   first_name: string
   last_name: string
   department: string
+  contract_type: string | null
 }
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -100,7 +101,7 @@ export default function AdminShiftReports() {
         .eq('company_id', selectedCompanyId),
       supabase.from('rotas').select('id, name, status')
         .eq('company_id', selectedCompanyId),
-      supabase.from('employees').select('id, first_name, last_name, department')
+      supabase.from('employees').select('id, first_name, last_name, department, contract_type')
         .eq('company_id', selectedCompanyId).eq('is_active', true),
     ])
 
@@ -227,6 +228,23 @@ export default function AdminShiftReports() {
         count,
       }))
 
+    const contractTypeHours: Record<string, number> = {}
+    const contractTypeShifts: Record<string, number> = {}
+    const contractTypeEmps: Record<string, Set<string>> = {}
+    for (const a of fyAssignments) {
+      const tmpl = tmplMap[a.shift_template_id]
+      if (!tmpl) continue
+      const emp = empMap[a.employee_id]
+      const ct = emp?.contract_type || 'Unassigned'
+      contractTypeHours[ct] = (contractTypeHours[ct] || 0) + shiftHours(tmpl)
+      contractTypeShifts[ct] = (contractTypeShifts[ct] || 0) + 1
+      if (!contractTypeEmps[ct]) contractTypeEmps[ct] = new Set()
+      contractTypeEmps[ct].add(a.employee_id)
+    }
+    const contractTypeBreakdown = Object.entries(contractTypeHours)
+      .sort((a, b) => b[1] - a[1])
+      .map(([ct, hrs]) => ({ contractType: ct, hours: hrs, shifts: contractTypeShifts[ct] || 0, employees: contractTypeEmps[ct]?.size || 0 }))
+
     const deptBreakdown = Object.entries(deptHours)
       .sort((a, b) => b[1] - a[1])
 
@@ -254,6 +272,7 @@ export default function AdminShiftReports() {
       dayOfWeekCount,
       weekendShifts,
       weekdayShifts,
+      contractTypeBreakdown,
     }
   }, [fyAssignments, tmplMap, empMap, rotaMap])
 
@@ -367,6 +386,27 @@ export default function AdminShiftReports() {
           <span className="asr-kpi-label">Total Break Time</span>
         </div>
       </div>
+
+      {/* Contract Type Breakdown */}
+      {metrics.contractTypeBreakdown.length > 0 && (
+        <div className="asr-card" style={{ marginBottom: 16 }}>
+          <h3 className="asr-card-title">Hours by Contract Type</h3>
+          <div className="asr-rank-list">
+            {metrics.contractTypeBreakdown.map((ct, i) => (
+              <div key={ct.contractType} className="asr-rank-row">
+                <span className="asr-rank-num">{i + 1}</span>
+                <div className="asr-rank-bar-wrap">
+                  <div className="asr-rank-name">{ct.contractType}</div>
+                  <div className="asr-rank-bar-track">
+                    <div className="asr-rank-bar" style={{ width: `${(ct.hours / (metrics.contractTypeBreakdown[0]?.hours || 1)) * 100}%`, background: '#7e57c2' }} />
+                  </div>
+                </div>
+                <span className="asr-rank-stat">{ct.hours.toFixed(0)}h<br /><small>{ct.employees} staff &middot; {ct.shifts} shifts</small></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Main content grid */}
       <div className="asr-grid">

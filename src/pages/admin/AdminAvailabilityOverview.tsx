@@ -9,6 +9,14 @@ interface Employee {
   last_name: string
   department: string | null
   work_pattern_id: string | null
+  contract_type: string | null
+}
+
+const CONTRACT_TYPE_LABELS: Record<string, string> = {
+  'Full-time shift worker': 'Full-time',
+  'Part-time shift worker': 'Part-time',
+  'Weekends shift worker': 'Weekends',
+  'Zero hours shift worker': 'Zero Hours',
 }
 
 interface AvailabilityRecord {
@@ -84,7 +92,7 @@ export default function AdminAvailabilityOverview() {
     setLoading(true)
     const threeWeeksEnd = toLocalDateStr(addDays(getMonday(new Date()), 27))
     const [empRes, availRes, leaveRes, demandRes, wpRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name, department, work_pattern_id')
+      supabase.from('employees').select('id, first_name, last_name, department, work_pattern_id, contract_type')
         .eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
       supabase.from('employee_availability').select('employee_id, day_of_week, is_available, start_time, end_time')
         .eq('company_id', selectedCompanyId),
@@ -213,6 +221,27 @@ export default function AdminAvailabilityOverview() {
           <span>On Leave</span>
         </div>
       </div>
+
+      {/* Contract type breakdown */}
+      {(() => {
+        const ctCounts: Record<string, number> = {}
+        employees.forEach(e => {
+          const ct = e.contract_type || 'Unassigned'
+          ctCounts[ct] = (ctCounts[ct] || 0) + 1
+        })
+        const entries = Object.entries(ctCounts).sort((a, b) => b[1] - a[1])
+        if (entries.length <= 1 && entries[0]?.[0] === 'Unassigned') return null
+        return (
+          <div className="admin-mini-stats" style={{ marginTop: 0 }}>
+            {entries.map(([ct, count]) => (
+              <div key={ct} className="admin-mini-stat" style={{ borderLeft: '4px solid #7e57c2' }}>
+                <span className="admin-mini-value" style={{ color: '#7e57c2' }}>{count}</span>
+                <span>{CONTRACT_TYPE_LABELS[ct] || ct}</span>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       <div className="admin-filters">
         <input

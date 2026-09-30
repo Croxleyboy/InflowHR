@@ -7,7 +7,7 @@ import { useNotificationBadge } from '../hooks/useNotificationBadge'
 
 export default function DesktopLayout() {
   const { t } = useLanguage()
-  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl, portalRole, workPatternType, isSuperAdmin } = useAuth()
+  const { signOut, employeeName, employeeEmail, company, companyUser, avatarUrl, portalRole, employmentCategory, isSuperAdmin } = useAuth()
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const navigate = useNavigate()
@@ -16,7 +16,7 @@ export default function DesktopLayout() {
   const isAdmin = companyUser && ['admin', 'hr'].includes(companyUser.role)
   const hasPortalAccess = isAdmin || !!portalRole
 
-  const isShiftWorker = workPatternType === 'variable'
+  const isShiftWorker = employmentCategory === 'shift_worker'
   const allNavItems: { to: string; icon: string; label: string; end?: boolean; badge?: number; feature?: keyof Features; pattern?: 'fixed' | 'variable' }[] = [
     { to: '/', icon: 'home', label: t('footer.dashboard'), end: true },
     { to: '/expenses', icon: 'expenses', label: t('dashboard.expenses'), feature: 'expenses' },
