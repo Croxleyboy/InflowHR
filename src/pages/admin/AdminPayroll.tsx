@@ -115,6 +115,7 @@ interface Employee {
   annual_salary: number | null
   tax_code: string | null
   payroll_id: string | null
+  employment_category: string | null
 }
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -192,6 +193,20 @@ export default function AdminPayroll() {
 
   // Employee Pay tab month navigation
   const [empPayMonthIdx, setEmpPayMonthIdx] = useState(0)
+  const [empPayPage, setEmpPayPage] = useState(1)
+  const [empPayShiftPage, setEmpPayShiftPage] = useState(1)
+
+  // Sub-tabs for employment type split
+  const [payslipSubTab, setPayslipSubTab] = useState<'employed' | 'shift'>('employed')
+  const [tbSubTab, setTbSubTab] = useState<'employed' | 'shift'>('employed')
+
+  // Shift payroll schedule settings
+  const [shiftPayDayMode, setShiftPayDayMode] = useState<'end' | 'start' | 'custom'>('end')
+  const [shiftCustomPayDay, setShiftCustomPayDay] = useState(28)
+  const [shiftSubmitLeadDays, setShiftSubmitLeadDays] = useState(5)
+  const [zeroHrsPayDayMode, setZeroHrsPayDayMode] = useState<'end' | 'start' | 'custom'>('end')
+  const [zeroHrsCustomPayDay, setZeroHrsCustomPayDay] = useState(28)
+  const [zeroHrsSubmitLeadDays, setZeroHrsSubmitLeadDays] = useState(5)
 
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
@@ -248,7 +263,7 @@ export default function AdminPayroll() {
     const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes, sRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id, employment_category').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, last_sync_at, payslip_source, last_upload_at, last_upload_filename').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
@@ -339,6 +354,12 @@ export default function AdminPayroll() {
         if (cpr.pay_day_mode) setPayDayMode(cpr.pay_day_mode)
         if (cpr.custom_pay_day) setCustomPayDay(cpr.custom_pay_day)
         if (cpr.submit_lead_days !== undefined) setSubmitLeadDays(cpr.submit_lead_days)
+        if (cpr.shift_pay_day_mode) setShiftPayDayMode(cpr.shift_pay_day_mode)
+        if (cpr.shift_custom_pay_day) setShiftCustomPayDay(cpr.shift_custom_pay_day)
+        if (cpr.shift_submit_lead_days !== undefined) setShiftSubmitLeadDays(cpr.shift_submit_lead_days)
+        if (cpr.zero_hrs_pay_day_mode) setZeroHrsPayDayMode(cpr.zero_hrs_pay_day_mode)
+        if (cpr.zero_hrs_custom_pay_day) setZeroHrsCustomPayDay(cpr.zero_hrs_custom_pay_day)
+        if (cpr.zero_hrs_submit_lead_days !== undefined) setZeroHrsSubmitLeadDays(cpr.zero_hrs_submit_lead_days)
       })
   }, [selectedCompanyId])
 
@@ -364,7 +385,11 @@ export default function AdminPayroll() {
 
   async function savePaySettings() {
     setPaySettingsSaving(true)
-    await savePayRunData({ pay_day_mode: payDayMode, custom_pay_day: customPayDay, submit_lead_days: submitLeadDays })
+    await savePayRunData({
+      pay_day_mode: payDayMode, custom_pay_day: customPayDay, submit_lead_days: submitLeadDays,
+      shift_pay_day_mode: shiftPayDayMode, shift_custom_pay_day: shiftCustomPayDay, shift_submit_lead_days: shiftSubmitLeadDays,
+      zero_hrs_pay_day_mode: zeroHrsPayDayMode, zero_hrs_custom_pay_day: zeroHrsCustomPayDay, zero_hrs_submit_lead_days: zeroHrsSubmitLeadDays,
+    })
     setPaySettingsSaving(false)
     showSuccess('Payroll settings saved')
   }
@@ -613,6 +638,11 @@ export default function AdminPayroll() {
     const base = sourcePayslips.filter(p => {
       if (filterStatus && p.status !== filterStatus) return false
       if (filterEmployee && p.employee && `${p.employee.first_name} ${p.employee.last_name}` !== filterEmployee) return false
+      if (p.employee?.id) {
+        const cat = empCategoryById[p.employee.id] || 'not_assigned'
+        if (payslipSubTab === 'shift' && cat !== 'shift_worker') return false
+        if (payslipSubTab === 'employed' && cat === 'shift_worker') return false
+      }
       return true
     })
     return search.trim()
@@ -628,7 +658,7 @@ export default function AdminPayroll() {
           )
         })
       : base
-  }, [filterStatus, filterEmployee, sourcePayslips, search])
+  }, [filterStatus, filterEmployee, sourcePayslips, search, payslipSubTab, empCategoryById])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -671,6 +701,15 @@ export default function AdminPayroll() {
     const key = `${empPayMonth.year}-${String(empPayMonth.month + 1).padStart(2, '0')}`
     return sourcePayslips.filter(p => p.pay_period_start.startsWith(key))
   }, [sourcePayslips, empPayMonth])
+
+  const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
+  const shiftEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker'), [employees])
+
+  const empCategoryById = useMemo(() => {
+    const map: Record<string, string> = {}
+    employees.forEach(e => { map[e.id] = e.employment_category || 'not_assigned' })
+    return map
+  }, [employees])
 
   const loadTimeBreakdown = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -1218,6 +1257,32 @@ export default function AdminPayroll() {
 
       {tab === 'payslips' && (
         <>
+          {/* Employed / Shift sub-tabs */}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 12 }}>
+            <button
+              onClick={() => { setPayslipSubTab('employed'); setPage(1) }}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderRadius: '8px 0 0 8px', cursor: 'pointer',
+                background: payslipSubTab === 'employed' ? 'var(--primary, #5c6bc0)' : 'var(--bg-card, #fff)',
+                color: payslipSubTab === 'employed' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Employed Payslips
+            </button>
+            <button
+              onClick={() => { setPayslipSubTab('shift'); setPage(1) }}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+                background: payslipSubTab === 'shift' ? '#7e57c2' : 'var(--bg-card, #fff)',
+                color: payslipSubTab === 'shift' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Shift Payslips
+            </button>
+          </div>
+
           {(xeroConnected || sageConnected) && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', marginBottom: 12,
@@ -1462,7 +1527,16 @@ export default function AdminPayroll() {
         </>
       )}
 
-      {tab === 'employees' && (
+      {tab === 'employees' && (() => {
+        const empPayEmployed = employedEmployees
+        const empPayShift = shiftEmployees
+        const employedSlips = empPayPayslips.filter(p => p.employee?.id && empCategoryById[p.employee.id] !== 'shift_worker')
+        const shiftSlips = empPayPayslips.filter(p => p.employee?.id && empCategoryById[p.employee.id] === 'shift_worker')
+        const empTotalPages = Math.max(1, Math.ceil(empPayEmployed.length / PAGE_SIZE))
+        const shiftTotalPages = Math.max(1, Math.ceil(empPayShift.length / PAGE_SIZE))
+        const paginatedEmployed = empPayEmployed.slice((empPayPage - 1) * PAGE_SIZE, empPayPage * PAGE_SIZE)
+        const paginatedShift = empPayShift.slice((empPayShiftPage - 1) * PAGE_SIZE, empPayShiftPage * PAGE_SIZE)
+        return (
         <>
           {/* Month navigation */}
           <div style={{
@@ -1479,11 +1553,13 @@ export default function AdminPayroll() {
             </button>
           </div>
 
+          {/* Employed Staff */}
+          <h3 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600 }}>Employed Staff ({empPayEmployed.length})</h3>
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead><tr><th>Employee</th><th>Department</th><th>Gross Pay</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net Pay</th><th>Status</th></tr></thead>
               <tbody>
-                {employees.map(emp => {
+                {paginatedEmployed.map(emp => {
                   const ps = empPayPayslips.find(p => p.employee?.id === emp.id)
                   return (
                     <tr key={emp.id}>
@@ -1499,25 +1575,80 @@ export default function AdminPayroll() {
                   )
                 })}
               </tbody>
-              {empPayPayslips.length > 0 && (
+              {employedSlips.length > 0 && (
                 <tfoot>
                   <tr style={{ fontWeight: 700 }}>
-                    <td>Totals ({empPayPayslips.length})</td>
+                    <td>Totals ({employedSlips.length})</td>
                     <td></td>
-                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.gross_pay), 0).toFixed(2)}</td>
-                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
-                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.national_insurance), 0).toFixed(2)}</td>
-                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.pension), 0).toFixed(2)}</td>
-                    <td>£{empPayPayslips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
+                    <td>£{employedSlips.reduce((s, p) => s + Number(p.gross_pay), 0).toFixed(2)}</td>
+                    <td>£{employedSlips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
+                    <td>£{employedSlips.reduce((s, p) => s + Number(p.national_insurance), 0).toFixed(2)}</td>
+                    <td>£{employedSlips.reduce((s, p) => s + Number(p.pension), 0).toFixed(2)}</td>
+                    <td>£{employedSlips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
                     <td></td>
                   </tr>
                 </tfoot>
               )}
             </table>
-            {empPayPayslips.length === 0 && <div className="admin-empty">No payslips for {empPayMonth?.label}</div>}
+            {paginatedEmployed.length === 0 && <div className="admin-empty">No employed staff found</div>}
+            {empTotalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                <button className="admin-action-btn" disabled={empPayPage <= 1} onClick={() => setEmpPayPage(p => p - 1)}>Prev</button>
+                <span style={{ fontSize: 13 }}>Page {empPayPage} of {empTotalPages}</span>
+                <button className="admin-action-btn" disabled={empPayPage >= empTotalPages} onClick={() => setEmpPayPage(p => p + 1)}>Next</button>
+              </div>
+            )}
+          </div>
+
+          {/* Shift Workers */}
+          <h3 style={{ margin: '24px 0 8px', fontSize: 15, fontWeight: 600, color: '#7e57c2' }}>Shift Workers ({empPayShift.length})</h3>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Employee</th><th>Department</th><th>Gross Pay</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net Pay</th><th>Status</th></tr></thead>
+              <tbody>
+                {paginatedShift.map(emp => {
+                  const ps = empPayPayslips.find(p => p.employee?.id === emp.id)
+                  return (
+                    <tr key={emp.id}>
+                      <td><strong>{emp.first_name} {emp.last_name}</strong><br /><span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>{emp.job_title || ''}</span></td>
+                      <td>{emp.department || '—'}</td>
+                      <td>{ps ? `£${Number(ps.gross_pay).toFixed(2)}` : '—'}</td>
+                      <td>{ps ? `£${Number(ps.tax).toFixed(2)}` : '—'}</td>
+                      <td>{ps ? `£${Number(ps.national_insurance).toFixed(2)}` : '—'}</td>
+                      <td>{ps ? `£${Number(ps.pension).toFixed(2)}` : '—'}</td>
+                      <td>{ps ? <strong>£{Number(ps.net_pay).toFixed(2)}</strong> : '—'}</td>
+                      <td>{ps ? <span className={`admin-badge admin-badge-${ps.status}`}>{ps.status}</span> : <span className="admin-badge admin-badge-pending">No payslip</span>}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              {shiftSlips.length > 0 && (
+                <tfoot>
+                  <tr style={{ fontWeight: 700 }}>
+                    <td>Totals ({shiftSlips.length})</td>
+                    <td></td>
+                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.gross_pay), 0).toFixed(2)}</td>
+                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
+                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.national_insurance), 0).toFixed(2)}</td>
+                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.pension), 0).toFixed(2)}</td>
+                    <td>£{shiftSlips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+            {paginatedShift.length === 0 && <div className="admin-empty">No shift workers found</div>}
+            {shiftTotalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
+                <button className="admin-action-btn" disabled={empPayShiftPage <= 1} onClick={() => setEmpPayShiftPage(p => p - 1)}>Prev</button>
+                <span style={{ fontSize: 13 }}>Page {empPayShiftPage} of {shiftTotalPages}</span>
+                <button className="admin-action-btn" disabled={empPayShiftPage >= shiftTotalPages} onClick={() => setEmpPayShiftPage(p => p + 1)}>Next</button>
+              </div>
+            )}
           </div>
         </>
-      )}
+        )
+      })()}
 
       {tab === 'schedule' && (
         <div className="admin-schedule">
@@ -1532,12 +1663,14 @@ export default function AdminPayroll() {
                 1. Set your pay day and submission window below<br/>
                 2. Generate payslips from the Payslips tab<br/>
                 3. Review and resolve any flagged payslips<br/>
-                4. Once within the submission window, click "Submit Payroll" to download the CSV and mark payslips as paid<br/>
+                4. Once within the submission window, click &ldquo;Submit Payroll&rdquo; to download the CSV and mark payslips as paid<br/>
                 5. Payslips become visible to employees on the chosen pay day
               </span>
             </span>
           </div>
 
+          {/* Employed Payroll Settings */}
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Employed Staff Payroll</h4>
           <div style={{ background: 'var(--bg-secondary, #f8f9fa)', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
@@ -1565,12 +1698,79 @@ export default function AdminPayroll() {
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Shift Payroll Settings — Full-time / Part-time */}
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Payroll — Full-time / Part-time</h4>
+          <div style={{ background: '#f5f0ff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', borderLeft: '4px solid #7e57c2' }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
+              <select className="admin-select" value={shiftPayDayMode} onChange={e => setShiftPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
+                <option value="end">End of Month</option>
+                <option value="start">Beginning of Month</option>
+                <option value="custom">Custom Day</option>
+              </select>
+            </div>
+            {shiftPayDayMode === 'custom' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
+                <select className="admin-select" value={shiftCustomPayDay} onChange={e => setShiftCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                    <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
+              <select className="admin-select" value={shiftSubmitLeadDays} onChange={e => setShiftSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
+                {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
+                  <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Shift Payroll Settings — Zero Hours */}
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Payroll — Zero Hours</h4>
+          <div style={{ background: '#f5f0ff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', borderLeft: '4px solid #ab47bc' }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Pay Day</label>
+              <select className="admin-select" value={zeroHrsPayDayMode} onChange={e => setZeroHrsPayDayMode(e.target.value as any)} style={{ minWidth: 160 }}>
+                <option value="end">End of Month</option>
+                <option value="start">Beginning of Month</option>
+                <option value="custom">Custom Day</option>
+              </select>
+            </div>
+            {zeroHrsPayDayMode === 'custom' && (
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Day of Month</label>
+                <select className="admin-select" value={zeroHrsCustomPayDay} onChange={e => setZeroHrsCustomPayDay(Number(e.target.value))} style={{ minWidth: 80 }}>
+                  {Array.from({ length: 28 }, (_, i) => i + 1).map(d => (
+                    <option key={d} value={d}>{d}{d === 1 ? 'st' : d === 2 ? 'nd' : d === 3 ? 'rd' : 'th'}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Submit Window (days before pay day)</label>
+              <select className="admin-select" value={zeroHrsSubmitLeadDays} onChange={e => setZeroHrsSubmitLeadDays(Number(e.target.value))} style={{ minWidth: 80 }}>
+                {[1, 2, 3, 4, 5, 7, 10, 14].map(d => (
+                  <option key={d} value={d}>{d} day{d > 1 ? 's' : ''}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
             <button className="admin-btn admin-btn-primary" onClick={savePaySettings} disabled={paySettingsSaving} style={{ height: 36 }}>
-              {paySettingsSaving ? 'Saving...' : 'Save Settings'}
+              {paySettingsSaving ? 'Saving...' : 'Save All Settings'}
             </button>
           </div>
 
-          <div className="admin-table-wrap">
+          {/* Employed Staff Schedule */}
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600 }}>Employed Staff Schedule</h4>
+          <div className="admin-table-wrap" style={{ marginBottom: 24 }}>
             <table className="admin-table">
               <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th></tr></thead>
               <tbody>
@@ -1584,7 +1784,8 @@ export default function AdminPayroll() {
                   today.setHours(0, 0, 0, 0)
                   const withinSubmitWindow = today >= submitOpens
                   const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
-                  const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey))
+                  const employedIds = new Set(employedEmployees.map(e => e.id))
+                  const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && employedIds.has(p.employee.id))
                   const isPast = end < new Date()
                   const schedStatus = payrollScheduleStatuses[monthKey]
                   const hasPayslips = monthPayslips.length > 0
@@ -1646,11 +1847,78 @@ export default function AdminPayroll() {
               </tbody>
             </table>
           </div>
+
+          {/* Shift Workers Schedule */}
+          <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#7e57c2' }}>Shift Workers Schedule</h4>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>FT/PT Pay Day</th><th>Zero Hrs Pay Day</th><th>Payslips</th><th>Status</th></tr></thead>
+              <tbody>
+                {fyMonths.map(({ year, month }) => {
+                  const start = new Date(year, month, 1)
+                  const end = new Date(year, month + 1, 0)
+                  const shiftPayDate = getPayDay(year, month, shiftPayDayMode, shiftCustomPayDay)
+                  const zeroPayDate = getPayDay(year, month, zeroHrsPayDayMode, zeroHrsCustomPayDay)
+                  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`
+                  const shiftIds = new Set(shiftEmployees.map(e => e.id))
+                  const monthPayslips = sourcePayslips.filter(p => p.pay_period_start.startsWith(monthKey) && p.employee?.id && shiftIds.has(p.employee.id))
+                  const isPast = end < new Date()
+                  const hasPayslips = monthPayslips.length > 0
+                  const allPaid = hasPayslips && monthPayslips.every(p => p.status === 'paid')
+
+                  let statusLabel: string
+                  let statusClass: string
+                  if (allPaid && hasPayslips) { statusLabel = 'Completed'; statusClass = 'admin-badge-paid' }
+                  else if (hasPayslips && !allPaid) { statusLabel = 'In Progress'; statusClass = 'admin-badge-pending' }
+                  else if (!hasPayslips && isPast) { statusLabel = 'No Payslips'; statusClass = 'admin-badge-pending' }
+                  else { statusLabel = 'Upcoming'; statusClass = 'admin-badge-pending' }
+
+                  return (
+                    <tr key={monthKey} className={isPast ? 'admin-row-muted' : ''}>
+                      <td><strong>{MONTH_NAMES[month]}</strong></td>
+                      <td>{start.toLocaleDateString('en-GB')}</td>
+                      <td>{end.toLocaleDateString('en-GB')}</td>
+                      <td>{shiftPayDate.toLocaleDateString('en-GB')}</td>
+                      <td>{zeroPayDate.toLocaleDateString('en-GB')}</td>
+                      <td>{monthPayslips.length}</td>
+                      <td><span className={`admin-badge ${statusClass}`}>{statusLabel}</span></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       {tab === 'time_breakdown' && (
         <>
+          {/* Employed / Shift sub-tabs */}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 12 }}>
+            <button
+              onClick={() => setTbSubTab('employed')}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderRadius: '8px 0 0 8px', cursor: 'pointer',
+                background: tbSubTab === 'employed' ? 'var(--primary, #5c6bc0)' : 'var(--bg-card, #fff)',
+                color: tbSubTab === 'employed' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Employed
+            </button>
+            <button
+              onClick={() => setTbSubTab('shift')}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+                background: tbSubTab === 'shift' ? '#7e57c2' : 'var(--bg-card, #fff)',
+                color: tbSubTab === 'shift' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Shift Workers
+            </button>
+          </div>
+
           <div className="admin-filters">
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <label style={{ fontSize: 13, fontWeight: 600 }}>Period:</label>
@@ -1660,7 +1928,7 @@ export default function AdminPayroll() {
             </div>
             <select className="admin-select" value={tbFilterEmp} onChange={e => setTbFilterEmp(e.target.value)}>
               <option value="">All Employees</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+              {(tbSubTab === 'employed' ? employedEmployees : shiftEmployees).map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
             </select>
             <button className="admin-btn admin-btn-primary" onClick={loadTimeBreakdown} disabled={tbLoading}>
               {tbLoading ? 'Loading...' : 'Refresh'}
@@ -1673,15 +1941,15 @@ export default function AdminPayroll() {
                 <thead>
                   <tr>
                     <th>Employee</th>
-                    {enabledFeatures.shifts && <th>Shift Hours</th>}
-                    {enabledFeatures.timesheets && <th>Timesheet Hours</th>}
+                    {(tbSubTab === 'shift' || enabledFeatures.shifts) && <th>Shift Hours</th>}
+                    {(tbSubTab === 'employed' || enabledFeatures.timesheets) && <th>Timesheet Hours</th>}
                     {enabledFeatures.legal_timesheets && <th>Legal Hours</th>}
                     <th>Total Hours</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {employees.filter(e => !tbFilterEmp || e.id === tbFilterEmp).map(emp => {
+                  {(tbSubTab === 'employed' ? employedEmployees : shiftEmployees).filter(e => !tbFilterEmp || e.id === tbFilterEmp).map(emp => {
                     const data = tbData[emp.id]
                     if (!data) return null
                     const total = data.shiftHrs + data.tsHrs + data.legalHrs
@@ -1691,8 +1959,8 @@ export default function AdminPayroll() {
                       <>
                         <tr key={emp.id} className={isExpanded ? 'admin-row-active' : ''}>
                           <td><strong>{emp.first_name} {emp.last_name}</strong><br /><span style={{ fontSize: 12, color: '#888' }}>{emp.department} · {emp.job_title}</span></td>
-                          {enabledFeatures.shifts && <td>{data.shiftHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.shiftEntries.length} shifts)</span></td>}
-                          {enabledFeatures.timesheets && <td>{data.tsHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.tsEntries.length} entries)</span></td>}
+                          {(tbSubTab === 'shift' || enabledFeatures.shifts) && <td>{data.shiftHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.shiftEntries.length} shifts)</span></td>}
+                          {(tbSubTab === 'employed' || enabledFeatures.timesheets) && <td>{data.tsHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.tsEntries.length} entries)</span></td>}
                           {enabledFeatures.legal_timesheets && <td>{data.legalHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.legalEntries.length} entries)</span></td>}
                           <td><strong>{total.toFixed(1)}h</strong></td>
                           <td>
@@ -1785,8 +2053,11 @@ export default function AdminPayroll() {
                   })}
                 </tbody>
               </table>
-              {Object.values(tbData).every(d => d.shiftHrs + d.tsHrs + d.legalHrs === 0) && !tbFilterEmp && (
-                <div className="admin-empty">No time entries found for this period</div>
+              {(tbSubTab === 'employed' ? employedEmployees : shiftEmployees).every(e => {
+                const d = tbData[e.id]
+                return !d || (d.shiftHrs + d.tsHrs + d.legalHrs === 0)
+              }) && !tbFilterEmp && (
+                <div className="admin-empty">No time entries found for {tbSubTab === 'employed' ? 'employed staff' : 'shift workers'} in this period</div>
               )}
             </div>
           )}
@@ -1813,73 +2084,87 @@ export default function AdminPayroll() {
             </div>
           </div>
 
-          {anLoading ? <div className="admin-loading">Loading analytics...</div> : (
-            <>
-              <div className="admin-mini-stats">
-                <div className="admin-mini-stat">
-                  <span className="admin-mini-value">{anData.empMetrics.length}</span><span>Active Employees</span>
-                </div>
-                <div className="admin-mini-stat">
-                  <span className="admin-mini-value">{anData.empMetrics.reduce((s, e) => s + e.totalHrs, 0).toFixed(0)}h</span><span>Total Hours</span>
-                </div>
-                <div className="admin-mini-stat">
-                  <span className="admin-mini-value" style={{ color: (() => {
-                    const total = anData.empMetrics.reduce((s, e) => s + e.totalHrs, 0)
-                    const contracted = anData.empMetrics.reduce((s, e) => s + e.contractedPeriodHrs, 0)
-                    const pct = contracted > 0 ? (total / contracted * 100) : 0
-                    return pct >= 80 ? '#43a047' : pct >= 50 ? '#ff9800' : '#e53935'
-                  })() }}>
-                    {(() => {
-                      const total = anData.empMetrics.reduce((s, e) => s + e.totalHrs, 0)
-                      const contracted = anData.empMetrics.reduce((s, e) => s + e.contractedPeriodHrs, 0)
-                      return contracted > 0 ? (total / contracted * 100).toFixed(0) + '%' : '—'
-                    })()}
-                  </span><span>Avg Utilisation</span>
-                </div>
-                <div className="admin-mini-stat">
-                  <span className="admin-mini-value">{anData.projectBreakdown.length}</span><span>Projects</span>
-                </div>
-              </div>
+          {anLoading ? <div className="admin-loading">Loading analytics...</div> : (() => {
+            const employedIds = new Set(employedEmployees.map(e => e.id))
+            const shiftIds = new Set(shiftEmployees.map(e => e.id))
+            const employedMetrics = anData.empMetrics.filter(e => employedIds.has(e.id))
+            const shiftMetrics = anData.empMetrics.filter(e => shiftIds.has(e.id))
 
-              <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Employee Utilisation</h3>
-              <div className="admin-table-wrap">
-                <table className="admin-table">
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th>Department</th>
-                      {enabledFeatures.timesheets && <th>Timesheet Hrs</th>}
-                      {enabledFeatures.shifts && <th>Shift Hrs</th>}
-                      {enabledFeatures.legal_timesheets && <th>Legal Hrs</th>}
-                      <th>Total Hrs</th>
-                      <th>Contracted</th>
-                      <th>Utilisation</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {anData.empMetrics.map(e => {
-                      const pct = e.contractedPeriodHrs > 0 ? (e.totalHrs / e.contractedPeriodHrs * 100) : 0
-                      return (
-                        <tr key={e.id}>
-                          <td><strong>{e.name}</strong></td>
-                          <td>{e.dept}</td>
-                          {enabledFeatures.timesheets && <td>{e.tsHrs.toFixed(1)}h</td>}
-                          {enabledFeatures.shifts && <td>{e.shiftHrs.toFixed(1)}h</td>}
-                          {enabledFeatures.legal_timesheets && <td>{e.legalHrs.toFixed(1)}h</td>}
-                          <td><strong>{e.totalHrs.toFixed(1)}h</strong></td>
-                          <td>{e.contractedPeriodHrs.toFixed(0)}h</td>
-                          <td>
-                            <span className={`admin-badge ${pct >= 80 ? 'admin-badge-approved' : pct >= 50 ? 'admin-badge-pending' : 'admin-badge-rejected'}`}>
-                              {pct.toFixed(0)}%
-                            </span>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-                {anData.empMetrics.length === 0 && <div className="admin-empty">No utilisation data for this period</div>}
-              </div>
+            function renderUtilStats(metrics: typeof anData.empMetrics, label: string) {
+              const totalHrs = metrics.reduce((s, e) => s + e.totalHrs, 0)
+              const contracted = metrics.reduce((s, e) => s + e.contractedPeriodHrs, 0)
+              const pct = contracted > 0 ? (totalHrs / contracted * 100) : 0
+              return (
+                <div className="admin-mini-stats">
+                  <div className="admin-mini-stat">
+                    <span className="admin-mini-value">{metrics.length}</span><span>{label}</span>
+                  </div>
+                  <div className="admin-mini-stat">
+                    <span className="admin-mini-value">{totalHrs.toFixed(0)}h</span><span>Total Hours</span>
+                  </div>
+                  <div className="admin-mini-stat">
+                    <span className="admin-mini-value" style={{ color: pct >= 80 ? '#43a047' : pct >= 50 ? '#ff9800' : '#e53935' }}>
+                      {contracted > 0 ? pct.toFixed(0) + '%' : '—'}
+                    </span><span>Avg Utilisation</span>
+                  </div>
+                </div>
+              )
+            }
+
+            function renderUtilTable(metrics: typeof anData.empMetrics) {
+              return (
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th>Department</th>
+                        {enabledFeatures.timesheets && <th>Timesheet Hrs</th>}
+                        {enabledFeatures.shifts && <th>Shift Hrs</th>}
+                        {enabledFeatures.legal_timesheets && <th>Legal Hrs</th>}
+                        <th>Total Hrs</th>
+                        <th>Contracted</th>
+                        <th>Utilisation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metrics.map(e => {
+                        const pct = e.contractedPeriodHrs > 0 ? (e.totalHrs / e.contractedPeriodHrs * 100) : 0
+                        return (
+                          <tr key={e.id}>
+                            <td><strong>{e.name}</strong></td>
+                            <td>{e.dept}</td>
+                            {enabledFeatures.timesheets && <td>{e.tsHrs.toFixed(1)}h</td>}
+                            {enabledFeatures.shifts && <td>{e.shiftHrs.toFixed(1)}h</td>}
+                            {enabledFeatures.legal_timesheets && <td>{e.legalHrs.toFixed(1)}h</td>}
+                            <td><strong>{e.totalHrs.toFixed(1)}h</strong></td>
+                            <td>{e.contractedPeriodHrs.toFixed(0)}h</td>
+                            <td>
+                              <span className={`admin-badge ${pct >= 80 ? 'admin-badge-approved' : pct >= 50 ? 'admin-badge-pending' : 'admin-badge-rejected'}`}>
+                                {pct.toFixed(0)}%
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                  {metrics.length === 0 && <div className="admin-empty">No utilisation data for this period</div>}
+                </div>
+              )
+            }
+
+            return (
+            <>
+              {/* Employed Staff Utilisation */}
+              <h3 style={{ margin: '20px 0 8px', fontSize: 15, fontWeight: 600 }}>Employed Staff Utilisation</h3>
+              {renderUtilStats(employedMetrics, 'Employed Staff')}
+              {renderUtilTable(employedMetrics)}
+
+              {/* Shift Workers Utilisation */}
+              <h3 style={{ margin: '24px 0 8px', fontSize: 15, fontWeight: 600, color: '#7e57c2' }}>Shift Workers Utilisation</h3>
+              {renderUtilStats(shiftMetrics, 'Shift Workers')}
+              {renderUtilTable(shiftMetrics)}
 
               {enabledFeatures.timesheets && anData.projectBreakdown.length > 0 && (
                 <>
@@ -1949,7 +2234,8 @@ export default function AdminPayroll() {
                 </>
               )}
             </>
-          )}
+            )
+          })()}
         </>
       )}
 
