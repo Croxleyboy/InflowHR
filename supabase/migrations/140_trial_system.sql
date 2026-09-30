@@ -86,8 +86,9 @@ DECLARE
   v_mtg1 BIGINT; v_mtg2 BIGINT; v_mtg3 BIGINT;
 
   -- Rota/shift IDs
-  v_rota1 UUID;
+  v_rota1 UUID; v_rota_zh UUID;
   v_st_morning UUID; v_st_afternoon UUID; v_st_night UUID;
+  v_st_zh_morning UUID; v_st_zh_afternoon UUID;
 
   -- Space booking IDs
   v_loc1 UUID; v_floor1 UUID;
@@ -165,8 +166,8 @@ BEGIN
   VALUES (gen_random_uuid(), v_admin_user_id, jsonb_build_object('sub', v_admin_user_id::text, 'email', v_request.work_email, 'email_verified', true), 'email', v_admin_user_id::text, NOW(), NOW(), NOW());
 
   -- Admin employee record
-  INSERT INTO employees (employee_number, first_name, last_name, email, job_title, department, is_admin, is_active, can_post_notifications, company_id, start_date, contract_type, leave_allowance)
-  VALUES ('ADMIN-001', split_part(v_request.full_name, ' ', 1), COALESCE(NULLIF(split_part(v_request.full_name, ' ', 2), ''), 'Admin'), v_request.work_email, 'Company Administrator', 'Administration', true, true, true, v_company_id, CURRENT_DATE, 'Full-time', 25)
+  INSERT INTO employees (employee_number, first_name, last_name, email, job_title, department, is_admin, is_active, can_post_notifications, company_id, start_date, contract_type, employment_category, leave_allowance)
+  VALUES ('ADMIN-001', split_part(v_request.full_name, ' ', 1), COALESCE(NULLIF(split_part(v_request.full_name, ' ', 2), ''), 'Admin'), v_request.work_email, 'Company Administrator', 'Administration', true, true, true, v_company_id, CURRENT_DATE, 'Full-time', 'employed', 25)
   RETURNING id INTO v_admin_employee_id;
 
   INSERT INTO company_users (auth_user_id, company_id, employee_id, role, is_active)
@@ -179,39 +180,42 @@ BEGIN
   -- 10 DEMO EMPLOYEES
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO employees (employee_number, first_name, last_name, email, job_title, department, manager_id, start_date, phone, is_admin, is_active, can_post_notifications, company_id, contract_type, leave_allowance,
+  INSERT INTO employees (employee_number, first_name, last_name, email, job_title, department, manager_id, start_date, phone, is_admin, is_active, can_post_notifications, company_id, contract_type, employment_category, leave_allowance,
     date_of_birth, gender, nationality, ni_number, notice_period, marital_status, location, annual_salary, weekly_hours, working_pattern, tax_code, payroll_id, manager_name, manager_email,
     address_line1, city, postcode, country, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship)
   VALUES
-    ('EMP-001', 'Sarah',  'Mitchell',  'demo1@' || v_slug || '-trial.example.com', 'HR Manager',            'HR',          v_admin_employee_id, '2024-03-15', '+44 7700 200001', false, true, true,  v_company_id, 'Full-time', 25,
+    -- EMPLOYED STAFF (fixed pattern, timesheets)
+    ('EMP-001', 'Sarah',  'Mitchell',  'demo1@' || v_slug || '-trial.example.com', 'HR Manager',            'HR',          v_admin_employee_id, '2024-03-15', '+44 7700 200001', false, true, true,  v_company_id, 'Full-time', 'employed', 25,
       '1990-05-14', 'Female', 'British', 'AB123456C', '3 months', 'Married', 'Head Office', 45000, 37.5, 'Full-time', '1257L', 'PAY-001', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
       '12 Maple Lane', 'London', 'SW1A 1AA', 'United Kingdom', 'David Mitchell', '+44 7700 300001', 'Spouse'),
-    ('EMP-002', 'James',  'Wilson',    'demo2@' || v_slug || '-trial.example.com', 'Lead Developer',        'Engineering', v_admin_employee_id, '2024-06-01', '+44 7700 200002', false, true, false, v_company_id, 'Full-time', 25,
+    ('EMP-002', 'James',  'Wilson',    'demo2@' || v_slug || '-trial.example.com', 'Lead Developer',        'Engineering', v_admin_employee_id, '2024-06-01', '+44 7700 200002', false, true, false, v_company_id, 'Full-time', 'employed', 25,
       '1988-11-22', 'Male', 'British', 'CD234567D', '3 months', 'Single', 'Head Office', 55000, 37.5, 'Full-time', '1257L', 'PAY-002', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
       '8 Oak Avenue', 'Manchester', 'M1 2AB', 'United Kingdom', 'Helen Wilson', '+44 7700 300002', 'Mother'),
-    ('EMP-003', 'Emma',   'Thompson',  'demo3@' || v_slug || '-trial.example.com', 'Financial Controller',  'Finance',     v_admin_employee_id, '2024-01-10', '+44 7700 200003', false, true, false, v_company_id, 'Full-time', 25,
+    ('EMP-003', 'Emma',   'Thompson',  'demo3@' || v_slug || '-trial.example.com', 'Financial Controller',  'Finance',     v_admin_employee_id, '2024-01-10', '+44 7700 200003', false, true, false, v_company_id, 'Full-time', 'employed', 25,
       '1985-03-08', 'Female', 'British', 'EF345678E', '3 months', 'Married', 'Head Office', 52000, 37.5, 'Full-time', '1257L', 'PAY-003', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
       '45 Birch Road', 'Birmingham', 'B1 3CD', 'United Kingdom', 'Mark Thompson', '+44 7700 300003', 'Spouse'),
-    ('EMP-004', 'Tom',    'Richards',  'demo4@' || v_slug || '-trial.example.com', 'Operations Manager',    'Operations',  v_admin_employee_id, '2024-09-01', '+44 7700 200004', false, true, false, v_company_id, 'Full-time', 25,
-      '1992-07-30', 'Male', 'British', 'GH456789F', '1 month', 'Single', 'Warehouse', 42000, 37.5, 'Full-time', '1257L', 'PAY-004', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
-      '3 Elm Street', 'Leeds', 'LS1 4EF', 'United Kingdom', 'Karen Richards', '+44 7700 300004', 'Mother'),
-    ('EMP-005', 'Priya',  'Sharma',    'demo5@' || v_slug || '-trial.example.com', 'Marketing Executive',   'Marketing',   v_admin_employee_id, '2025-01-06', '+44 7700 200005', false, true, false, v_company_id, 'Full-time', 25,
+    ('EMP-005', 'Priya',  'Sharma',    'demo5@' || v_slug || '-trial.example.com', 'Marketing Executive',   'Marketing',   v_admin_employee_id, '2025-01-06', '+44 7700 200005', false, true, false, v_company_id, 'Full-time', 'employed', 25,
       '1995-12-03', 'Female', 'British', 'JK567890G', '1 month', 'Single', 'Head Office', 38000, 37.5, 'Full-time', '1257L', 'PAY-005', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
       '27 Pine Close', 'Bristol', 'BS1 5GH', 'United Kingdom', 'Raj Sharma', '+44 7700 300005', 'Father'),
-    ('EMP-006', 'Lucy',   'Bennett',   'demo6@' || v_slug || '-trial.example.com', 'HR Assistant',          'HR',          NULL,                '2025-03-10', '+44 7700 200006', false, true, false, v_company_id, 'Full-time', 25,
-      '1998-09-18', 'Female', 'British', 'LM678901H', '1 month', 'Single', 'Head Office', 32000, 37.5, 'Full-time', '1257L', 'PAY-006', 'Sarah Mitchell', 'demo1@' || v_slug || '-trial.example.com',
-      '14 Cedar Way', 'London', 'E1 6JK', 'United Kingdom', 'Jane Bennett', '+44 7700 300006', 'Mother'),
-    ('EMP-007', 'Daniel', 'O''Brien',  'demo7@' || v_slug || '-trial.example.com', 'Software Engineer',     'Engineering', NULL,                '2024-11-01', '+44 7700 200007', false, true, false, v_company_id, 'Full-time', 25,
+    ('EMP-007', 'Daniel', 'O''Brien',  'demo7@' || v_slug || '-trial.example.com', 'Software Engineer',     'Engineering', NULL,                '2024-11-01', '+44 7700 200007', false, true, false, v_company_id, 'Full-time', 'employed', 25,
       '1993-01-25', 'Male', 'Irish', 'NP789012J', '1 month', 'Single', 'Head Office', 48000, 37.5, 'Full-time', '1257L', 'PAY-007', 'James Wilson', 'demo2@' || v_slug || '-trial.example.com',
       '9 Willow Drive', 'London', 'N1 7LM', 'United Kingdom', 'Sean O''Brien', '+44 7700 300007', 'Father'),
-    ('EMP-008', 'Aisha',  'Khan',      'demo8@' || v_slug || '-trial.example.com', 'Accounts Payable',      'Finance',     NULL,                '2025-02-17', '+44 7700 200008', false, true, false, v_company_id, 'Part-time', 25,
-      '1996-06-11', 'Female', 'British', 'QR890123K', '1 month', 'Married', 'Head Office', 28000, 22.5, 'Part-time', '1257L', 'PAY-008', 'Emma Thompson', 'demo3@' || v_slug || '-trial.example.com',
-      '55 Hazel Grove', 'Leicester', 'LE1 8NP', 'United Kingdom', 'Yusuf Khan', '+44 7700 300008', 'Spouse'),
-    ('EMP-009', 'Marcus', 'Johnson',   'demo9@' || v_slug || '-trial.example.com', 'Warehouse Supervisor',  'Operations',  NULL,                '2024-07-15', '+44 7700 200009', false, true, false, v_company_id, 'Full-time', 25,
-      '1991-04-07', 'Male', 'British', 'ST901234L', '1 month', 'Married', 'Warehouse', 35000, 37.5, 'Full-time', '1257L', 'PAY-009', 'Tom Richards', 'demo4@' || v_slug || '-trial.example.com',
+    -- SHIFT WORKERS (variable pattern, shifts — not zero hours)
+    ('EMP-004', 'Tom',    'Richards',  'demo4@' || v_slug || '-trial.example.com', 'Operations Manager',    'Operations',  v_admin_employee_id, '2024-09-01', '+44 7700 200004', false, true, false, v_company_id, 'Full-time shift worker', 'shift_worker', 25,
+      '1992-07-30', 'Male', 'British', 'GH456789F', '1 month', 'Single', 'Warehouse', 42000, 37.5, NULL, '1257L', 'PAY-004', split_part(v_request.full_name,' ',1)||' '||COALESCE(NULLIF(split_part(v_request.full_name,' ',2),''),''), v_request.work_email,
+      '3 Elm Street', 'Leeds', 'LS1 4EF', 'United Kingdom', 'Karen Richards', '+44 7700 300004', 'Mother'),
+    ('EMP-006', 'Lucy',   'Bennett',   'demo6@' || v_slug || '-trial.example.com', 'HR Assistant',          'HR',          NULL,                '2025-03-10', '+44 7700 200006', false, true, false, v_company_id, 'Part-time shift worker', 'shift_worker', 25,
+      '1998-09-18', 'Female', 'British', 'LM678901H', '1 month', 'Single', 'Head Office', 32000, 22.5, NULL, '1257L', 'PAY-006', 'Sarah Mitchell', 'demo1@' || v_slug || '-trial.example.com',
+      '14 Cedar Way', 'London', 'E1 6JK', 'United Kingdom', 'Jane Bennett', '+44 7700 300006', 'Mother'),
+    ('EMP-009', 'Marcus', 'Johnson',   'demo9@' || v_slug || '-trial.example.com', 'Warehouse Supervisor',  'Operations',  NULL,                '2024-07-15', '+44 7700 200009', false, true, false, v_company_id, 'Weekends shift worker', 'shift_worker', 25,
+      '1991-04-07', 'Male', 'British', 'ST901234L', '1 month', 'Married', 'Warehouse', 35000, 16, NULL, '1257L', 'PAY-009', 'Tom Richards', 'demo4@' || v_slug || '-trial.example.com',
       '22 Ash Lane', 'Nottingham', 'NG1 9QR', 'United Kingdom', 'Lisa Johnson', '+44 7700 300009', 'Spouse'),
-    ('EMP-010', 'Sophie', 'Williams',  'demo10@' || v_slug || '-trial.example.com','Content Manager',       'Marketing',   NULL,                '2025-04-01', '+44 7700 200010', false, true, false, v_company_id, 'Full-time', 25,
-      '1997-08-29', 'Female', 'Welsh', 'UV012345M', '1 month', 'Single', 'Head Office', 40000, 37.5, 'Full-time', '1257L', 'PAY-010', 'Priya Sharma', 'demo5@' || v_slug || '-trial.example.com',
+    -- ZERO HOURS SHIFT WORKERS (variable pattern, zero hours shifts)
+    ('EMP-008', 'Aisha',  'Khan',      'demo8@' || v_slug || '-trial.example.com', 'Accounts Payable',      'Finance',     NULL,                '2025-02-17', '+44 7700 200008', false, true, false, v_company_id, 'Zero hours shift worker', 'shift_worker', 0,
+      '1996-06-11', 'Female', 'British', 'QR890123K', '1 month', 'Married', 'Head Office', 0, 0, NULL, '1257L', 'PAY-008', 'Emma Thompson', 'demo3@' || v_slug || '-trial.example.com',
+      '55 Hazel Grove', 'Leicester', 'LE1 8NP', 'United Kingdom', 'Yusuf Khan', '+44 7700 300008', 'Spouse'),
+    ('EMP-010', 'Sophie', 'Williams',  'demo10@' || v_slug || '-trial.example.com','Content Manager',       'Marketing',   NULL,                '2025-04-01', '+44 7700 200010', false, true, false, v_company_id, 'Zero hours shift worker', 'shift_worker', 0,
+      '1997-08-29', 'Female', 'Welsh', 'UV012345M', '1 month', 'Single', 'Head Office', 0, 0, NULL, '1257L', 'PAY-010', 'Priya Sharma', 'demo5@' || v_slug || '-trial.example.com',
       '7 Rowan Terrace', 'Cardiff', 'CF1 1ST', 'United Kingdom', 'Gareth Williams', '+44 7700 300010', 'Father');
 
   SELECT id INTO v_emp1 FROM employees WHERE employee_number='EMP-001' AND company_id=v_company_id;
@@ -533,38 +537,104 @@ BEGIN
   WHERE EXTRACT(DOW FROM d.dt) BETWEEN 1 AND 5;
 
   -- ═══════════════════════════════════════════════════════════
-  -- SHIFTS & ROTAS (for variable-pattern employees)
+  -- SHIFTS & ROTAS (shift workers only — not employed staff)
   -- ═══════════════════════════════════════════════════════════
 
-  INSERT INTO rotas (name, start_date, end_date, status, company_id)
-  VALUES ('Week ' || to_char(CURRENT_DATE, 'WW') || ' Rota', CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int), CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int) + 6, 'published', v_company_id)
+  -- Rota for contracted shift workers (full-time, part-time, weekends)
+  INSERT INTO rotas (name, start_date, end_date, status, shift_contract_type, company_id)
+  VALUES ('Week ' || to_char(CURRENT_DATE, 'WW') || ' Shift Rota', CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int), CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int) + 6, 'published', 'Full-time shift worker', v_company_id)
   RETURNING id INTO v_rota1;
 
-  INSERT INTO shift_templates (name, start_time, end_time, colour, company_id) VALUES
-    ('Morning',   '06:00', '14:00', '#4caf50', v_company_id),
-    ('Afternoon', '14:00', '22:00', '#2196f3', v_company_id),
-    ('Night',     '22:00', '06:00', '#9c27b0', v_company_id);
+  -- Rota for zero hours workers
+  INSERT INTO rotas (name, start_date, end_date, status, shift_contract_type, company_id)
+  VALUES ('Week ' || to_char(CURRENT_DATE, 'WW') || ' Zero Hours', CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int), CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int) + 6, 'published', 'Zero hours shift worker', v_company_id)
+  RETURNING id INTO v_rota_zh;
 
-  SELECT id INTO v_st_morning   FROM shift_templates WHERE name='Morning'   AND company_id=v_company_id LIMIT 1;
-  SELECT id INTO v_st_afternoon FROM shift_templates WHERE name='Afternoon' AND company_id=v_company_id LIMIT 1;
-  SELECT id INTO v_st_night     FROM shift_templates WHERE name='Night'     AND company_id=v_company_id LIMIT 1;
+  -- Shift templates for contracted shift workers
+  INSERT INTO shift_templates (name, start_time, end_time, colour, shift_contract_type, company_id) VALUES
+    ('Morning',   '06:00', '14:00', '#4caf50', 'Full-time shift worker', v_company_id),
+    ('Afternoon', '14:00', '22:00', '#2196f3', 'Full-time shift worker', v_company_id),
+    ('Night',     '22:00', '06:00', '#9c27b0', 'Full-time shift worker', v_company_id);
 
-  -- Assign shifts for variable employees over current week
+  SELECT id INTO v_st_morning   FROM shift_templates WHERE name='Morning'   AND shift_contract_type='Full-time shift worker' AND company_id=v_company_id LIMIT 1;
+  SELECT id INTO v_st_afternoon FROM shift_templates WHERE name='Afternoon' AND shift_contract_type='Full-time shift worker' AND company_id=v_company_id LIMIT 1;
+  SELECT id INTO v_st_night     FROM shift_templates WHERE name='Night'     AND shift_contract_type='Full-time shift worker' AND company_id=v_company_id LIMIT 1;
+
+  -- Shift templates for zero hours workers
+  INSERT INTO shift_templates (name, start_time, end_time, colour, shift_contract_type, company_id) VALUES
+    ('ZH Morning',   '08:00', '14:00', '#66bb6a', 'Zero hours shift worker', v_company_id),
+    ('ZH Afternoon', '14:00', '20:00', '#42a5f5', 'Zero hours shift worker', v_company_id);
+
+  SELECT id INTO v_st_zh_morning   FROM shift_templates WHERE name='ZH Morning'   AND company_id=v_company_id LIMIT 1;
+  SELECT id INTO v_st_zh_afternoon FROM shift_templates WHERE name='ZH Afternoon' AND company_id=v_company_id LIMIT 1;
+
+  -- Assign shifts for contracted shift workers (emp4=full-time, emp6=part-time, emp9=weekends)
   INSERT INTO shift_assignments (rota_id, employee_id, shift_template_id, date, company_id)
   SELECT v_rota1, e.id,
     CASE
-      WHEN e.id IN (v_emp4, v_emp6) THEN v_st_morning
-      WHEN e.id IN (v_emp8, v_emp10) THEN v_st_afternoon
+      WHEN e.id = v_emp4 THEN v_st_morning
+      WHEN e.id = v_emp6 THEN v_st_afternoon
       ELSE v_st_night
     END,
     d.dt, v_company_id
-  FROM unnest(ARRAY[v_emp4, v_emp6, v_emp8, v_emp9, v_emp10]) AS e(id)
+  FROM unnest(ARRAY[v_emp4, v_emp6]) AS e(id)
   CROSS JOIN generate_series(
     CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int),
     CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int) + 6,
     '1 day'::interval
   ) AS d(dt)
   WHERE EXTRACT(DOW FROM d.dt) BETWEEN 1 AND 5;
+
+  -- Marcus (weekends shift worker) — only Sat + Sun
+  INSERT INTO shift_assignments (rota_id, employee_id, shift_template_id, date, company_id)
+  SELECT v_rota1, v_emp9, v_st_night, d.dt, v_company_id
+  FROM generate_series(
+    CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int),
+    CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int) + 6,
+    '1 day'::interval
+  ) AS d(dt)
+  WHERE EXTRACT(DOW FROM d.dt) IN (0, 6);
+
+  -- Assign shifts for zero hours workers (emp8, emp10) — scattered days only
+  INSERT INTO shift_assignments (rota_id, employee_id, shift_template_id, date, company_id)
+  SELECT v_rota_zh, e.id,
+    CASE WHEN e.id = v_emp8 THEN v_st_zh_morning ELSE v_st_zh_afternoon END,
+    d.dt, v_company_id
+  FROM unnest(ARRAY[v_emp8, v_emp10]) AS e(id)
+  CROSS JOIN generate_series(
+    CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int),
+    CURRENT_DATE - (EXTRACT(DOW FROM CURRENT_DATE)::int) + 6,
+    '1 day'::interval
+  ) AS d(dt)
+  WHERE EXTRACT(DOW FROM d.dt) IN (1, 3, 5);
+
+  -- Employee availability for shift workers (not employed staff)
+  INSERT INTO employee_availability (employee_id, day_of_week, is_available, start_time, end_time, company_id) VALUES
+    -- Tom (full-time shift worker): available Mon-Fri
+    (v_emp4, 1, true, '06:00', '22:00', v_company_id), (v_emp4, 2, true, '06:00', '22:00', v_company_id),
+    (v_emp4, 3, true, '06:00', '22:00', v_company_id), (v_emp4, 4, true, '06:00', '22:00', v_company_id),
+    (v_emp4, 5, true, '06:00', '22:00', v_company_id), (v_emp4, 6, false, NULL, NULL, v_company_id),
+    (v_emp4, 0, false, NULL, NULL, v_company_id),
+    -- Lucy (part-time shift worker): available Mon-Wed
+    (v_emp6, 1, true, '08:00', '22:00', v_company_id), (v_emp6, 2, true, '08:00', '22:00', v_company_id),
+    (v_emp6, 3, true, '08:00', '22:00', v_company_id), (v_emp6, 4, false, NULL, NULL, v_company_id),
+    (v_emp6, 5, false, NULL, NULL, v_company_id), (v_emp6, 6, false, NULL, NULL, v_company_id),
+    (v_emp6, 0, false, NULL, NULL, v_company_id),
+    -- Marcus (weekends shift worker): available Sat-Sun
+    (v_emp9, 1, false, NULL, NULL, v_company_id), (v_emp9, 2, false, NULL, NULL, v_company_id),
+    (v_emp9, 3, false, NULL, NULL, v_company_id), (v_emp9, 4, false, NULL, NULL, v_company_id),
+    (v_emp9, 5, false, NULL, NULL, v_company_id), (v_emp9, 6, true, '06:00', '06:00', v_company_id),
+    (v_emp9, 0, true, '06:00', '06:00', v_company_id),
+    -- Aisha (zero hours): available any day
+    (v_emp8, 1, true, '08:00', '20:00', v_company_id), (v_emp8, 2, true, '08:00', '20:00', v_company_id),
+    (v_emp8, 3, true, '08:00', '20:00', v_company_id), (v_emp8, 4, true, '08:00', '20:00', v_company_id),
+    (v_emp8, 5, true, '08:00', '20:00', v_company_id), (v_emp8, 6, true, '08:00', '16:00', v_company_id),
+    (v_emp8, 0, false, NULL, NULL, v_company_id),
+    -- Sophie (zero hours): available Mon, Wed, Fri, Sat
+    (v_emp10, 1, true, '08:00', '20:00', v_company_id), (v_emp10, 2, false, NULL, NULL, v_company_id),
+    (v_emp10, 3, true, '08:00', '20:00', v_company_id), (v_emp10, 4, false, NULL, NULL, v_company_id),
+    (v_emp10, 5, true, '08:00', '20:00', v_company_id), (v_emp10, 6, true, '09:00', '17:00', v_company_id),
+    (v_emp10, 0, false, NULL, NULL, v_company_id);
 
   -- ═══════════════════════════════════════════════════════════
   -- 1:1 MEETINGS

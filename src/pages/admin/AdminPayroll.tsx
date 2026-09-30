@@ -2071,9 +2071,10 @@ export default function AdminPayroll() {
                 <thead>
                   <tr>
                     <th>Employee</th>
-                    {(tbSubTab === 'shift' || tbSubTab === 'zero_hours' || enabledFeatures.shifts) && <th>Shift Hours</th>}
-                    {(tbSubTab === 'employed' || enabledFeatures.timesheets) && <th>Timesheet Hours</th>}
-                    {enabledFeatures.legal_timesheets && <th>Legal Hours</th>}
+                    {tbSubTab === 'employed' && enabledFeatures.timesheets && <th>Timesheet Hours</th>}
+                    {tbSubTab === 'shift' && <th>Hours Assigned</th>}
+                    {tbSubTab === 'zero_hours' && <th>Zero Hours Assigned</th>}
+                    {tbSubTab === 'employed' && enabledFeatures.legal_timesheets && <th>Legal Hours</th>}
                     <th>Total Hours</th>
                     <th></th>
                   </tr>
@@ -2082,16 +2083,17 @@ export default function AdminPayroll() {
                   {(tbSubTab === 'employed' ? employedEmployees : tbSubTab === 'shift' ? shiftEmployees : zeroHoursEmployees).filter(e => !tbFilterEmp || e.id === tbFilterEmp).slice((tbPage - 1) * PAGE_SIZE, tbPage * PAGE_SIZE).map(emp => {
                     const data = tbData[emp.id]
                     if (!data) return null
-                    const total = data.shiftHrs + data.tsHrs + data.legalHrs
+                    const total = tbSubTab === 'employed' ? data.tsHrs + data.legalHrs : data.shiftHrs
                     if (total === 0 && !tbFilterEmp) return null
                     const isExpanded = tbExpandedEmp === emp.id
                     return (
                       <>
                         <tr key={emp.id} className={isExpanded ? 'admin-row-active' : ''}>
                           <td><strong>{emp.first_name} {emp.last_name}</strong><br /><span style={{ fontSize: 12, color: '#888' }}>{emp.department} · {emp.job_title}</span></td>
-                          {(tbSubTab === 'shift' || tbSubTab === 'zero_hours' || enabledFeatures.shifts) && <td>{data.shiftHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.shiftEntries.length} shifts)</span></td>}
-                          {(tbSubTab === 'employed' || enabledFeatures.timesheets) && <td>{data.tsHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.tsEntries.length} entries)</span></td>}
-                          {enabledFeatures.legal_timesheets && <td>{data.legalHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.legalEntries.length} entries)</span></td>}
+                          {tbSubTab === 'employed' && enabledFeatures.timesheets && <td>{data.tsHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.tsEntries.length} entries)</span></td>}
+                          {tbSubTab === 'shift' && <td>{data.shiftHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.shiftEntries.length} shifts)</span></td>}
+                          {tbSubTab === 'zero_hours' && <td>{data.shiftHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.shiftEntries.length} shifts)</span></td>}
+                          {tbSubTab === 'employed' && enabledFeatures.legal_timesheets && <td>{data.legalHrs.toFixed(1)}h <span style={{ fontSize: 12, color: '#888' }}>({data.legalEntries.length} entries)</span></td>}
                           <td><strong>{total.toFixed(1)}h</strong></td>
                           <td>
                             <button className="admin-btn-icon" onClick={() => setTbExpandedEmp(isExpanded ? null : emp.id)}>
@@ -2101,9 +2103,9 @@ export default function AdminPayroll() {
                         </tr>
                         {isExpanded && (
                           <tr key={`tb-exp-${emp.id}`} className="admin-expanded-row">
-                            <td colSpan={2 + (enabledFeatures.shifts ? 1 : 0) + (enabledFeatures.timesheets ? 1 : 0) + (enabledFeatures.legal_timesheets ? 1 : 0)}>
+                            <td colSpan={2 + 1 + (tbSubTab === 'employed' && enabledFeatures.legal_timesheets ? 1 : 0)}>
                               <div className="admin-tb-detail">
-                                {enabledFeatures.shifts && data.shiftEntries.length > 0 && (
+                                {(tbSubTab === 'shift' || tbSubTab === 'zero_hours') && data.shiftEntries.length > 0 && (
                                   <div className="admin-tb-section">
                                     <h4 className="admin-tb-section-title">Shifts ({data.shiftHrs.toFixed(1)}h scheduled)</h4>
                                     <table className="admin-table admin-table-nested">
@@ -2131,7 +2133,7 @@ export default function AdminPayroll() {
                                   </div>
                                 )}
 
-                                {enabledFeatures.timesheets && data.tsEntries.length > 0 && (
+                                {tbSubTab === 'employed' && data.tsEntries.length > 0 && (
                                   <div className="admin-tb-section">
                                     <h4 className="admin-tb-section-title">Timesheets ({data.tsHrs.toFixed(1)}h)</h4>
                                     <table className="admin-table admin-table-nested">
