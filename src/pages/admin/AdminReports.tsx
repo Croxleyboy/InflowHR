@@ -22,6 +22,8 @@ function csvSafe(val: string): string {
   return `"${s}"`
 }
 
+const PAGE_SIZE = 25
+
 type ReportKey =
   | 'leave-carry-over' | 'outstanding-workflows' | 'pending-leave' | 'pending-expenses'
   | 'overdue-elearning' | 'probation-ending' | 'rtw-expiry' | 'absence-frequency'
@@ -82,6 +84,7 @@ export default function AdminReports() {
   const [reportSummary, setReportSummary] = useState('')
   const [reportKPIs, setReportKPIs] = useState<{ label: string; value: string | number; status?: 'good' | 'warning' | 'danger' | 'neutral' }[]>([])
   const [filter, setFilter] = useState('')
+  const [page, setPage] = useState(1)
 
   const fyStartMonth = selectedCompany?.fy_start_month || 4
   const { startDate: fyStart, endDate: fyEnd } = useMemo(() => getFYRange(fyStartMonth), [fyStartMonth])
@@ -105,6 +108,8 @@ export default function AdminReports() {
     setReportColumns([])
     setReportSummary('')
     setReportKPIs([])
+    setFilter('')
+    setPage(1)
 
     try {
       switch (key) {
@@ -139,15 +144,15 @@ export default function AdminReports() {
   async function loadLeaveCarryOver() {
     const [{ data: employees }, { data: balances }, { data: requests }] = await Promise.all([
       supabase.from('employees').select('id, first_name, last_name, department').eq('company_id', selectedCompanyId).eq('is_active', true),
-      supabase.from('leave_balances').select('employee_id, leave_type_id, entitlement, used, carried_over, leave_type:leave_types!leave_balances_leave_type_id_fkey(name)').eq('company_id', selectedCompanyId),
-      supabase.from('leave_requests').select('employee_id, leave_type_id, total_days, status').eq('company_id', selectedCompanyId).in('status', ['approved', 'pending']).gte('start_date', fyStart.toISOString().split('T')[0]).lte('start_date', fyEnd.toISOString().split('T')[0]),
+      supabase.from('leave_balances').select('employee_id, leave_type_id, total_allowance, used, carried_over, leave_type:leave_types!leave_balances_leave_type_id_fkey(name)').eq('company_id', selectedCompanyId),
+      supabase.from('leave_requests').select('employee_id, leave_type_id, days_requested, status').eq('company_id', selectedCompanyId).in('status', ['approved', 'pending']).gte('start_date', fyStart.toISOString().split('T')[0]).lte('start_date', fyEnd.toISOString().split('T')[0]),
     ])
     const rows = (employees || []).flatMap(emp => {
       const empBals = (balances || []).filter(b => b.employee_id === emp.id)
       return empBals.map(b => {
-        const approved = (requests || []).filter(r => r.employee_id === emp.id && r.leave_type_id === b.leave_type_id && r.status === 'approved').reduce((s, r) => s + Number(r.total_days || 0), 0)
-        const pending = (requests || []).filter(r => r.employee_id === emp.id && r.leave_type_id === b.leave_type_id && r.status === 'pending').reduce((s, r) => s + Number(r.total_days || 0), 0)
-        const entitlement = Number(b.entitlement || 0) + Number(b.carried_over || 0)
+        const approved = (requests || []).filter(r => r.employee_id === emp.id && r.leave_type_id === b.leave_type_id && r.status === 'approved').reduce((s, r) => s + Number(r.days_requested || 0), 0)
+        const pending = (requests || []).filter(r => r.employee_id === emp.id && r.leave_type_id === b.leave_type_id && r.status === 'pending').reduce((s, r) => s + Number(r.days_requested || 0), 0)
+        const entitlement = Number(b.total_allowance || 0) + Number(b.carried_over || 0)
         const used = Number(b.used || 0) + approved
         const projected = Math.max(0, entitlement - used - pending)
         const lt = b.leave_type as unknown as { name: string } | null
@@ -174,7 +179,7 @@ export default function AdminReports() {
     const { data } = await supabase.from('leave_requests').select('*, employee:employees!leave_requests_employee_id_fkey(first_name, last_name, department)').eq('company_id', selectedCompanyId).eq('status', 'pending').order('created_at', { ascending: true })
     const rows = (data || []).map(r => {
       const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000)
-      return { Employee: `${r.employee?.first_name} ${r.employee?.last_name}`, Department: r.employee?.department || '', 'Start Date': fmtDate(r.start_date), 'End Date': fmtDate(r.end_date), Days: Number(r.total_days || 0), 'Days Waiting': days, 'Request Date': fmtDate(r.created_at?.split('T')[0]) }
+      return { Employee: `${r.employee?.first_name} ${r.employee?.last_name}`, Department: r.employee?.department || '', 'Start Date': fmtDate(r.start_date), 'End Date': fmtDate(r.end_date), Days: Number(r.days_requested || 0), 'Days Waiting': days, 'Request Date': fmtDate(r.created_at?.split('T')[0]) }
     })
     const tagged = rows.map(r => ({ ...r, Status: (r['Days Waiting'] as number) > 7 ? 'Overdue' : (r['Days Waiting'] as number) > 3 ? 'Urgent' : 'Pending' }))
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Start Date', label: 'Start Date' }, { key: 'End Date', label: 'End Date' }, { key: 'Days', label: 'Days' }, { key: 'Days Waiting', label: 'Days Waiting' }, { key: 'Request Date', label: 'Requested' }, { key: 'Status', label: 'Status' }])
@@ -193,14 +198,14 @@ export default function AdminReports() {
 
   async function loadAbsenceFrequency() {
     const [{ data: leaveData }, { data: employees }] = await Promise.all([
-      supabase.from('leave_requests').select('employee_id, start_date, total_days').eq('company_id', selectedCompanyId).eq('status', 'approved').gte('start_date', new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0]),
+      supabase.from('leave_requests').select('employee_id, start_date, days_requested').eq('company_id', selectedCompanyId).eq('status', 'approved').gte('start_date', new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0]),
       supabase.from('employees').select('id, first_name, last_name, department').eq('company_id', selectedCompanyId).eq('is_active', true),
     ])
     const byEmp: Record<string, { spells: number; days: number }> = {}
     ;(leaveData || []).forEach(r => {
       if (!byEmp[r.employee_id]) byEmp[r.employee_id] = { spells: 0, days: 0 }
       byEmp[r.employee_id].spells++
-      byEmp[r.employee_id].days += Number(r.total_days || 0)
+      byEmp[r.employee_id].days += Number(r.days_requested || 0)
     })
     const rows = (employees || []).map(e => {
       const ab = byEmp[e.id] || { spells: 0, days: 0 }
@@ -222,10 +227,10 @@ export default function AdminReports() {
   }
 
   async function loadOutstandingWorkflows() {
-    const { data } = await supabase.from('workflow_tracker').select('*').eq('company_id', selectedCompanyId).not('status', 'in', '("completed","cancelled")').order('created_at', { ascending: true })
+    const { data } = await supabase.from('workflow_tracker').select('*').eq('company_id', selectedCompanyId).neq('status', 'Complete').order('created_at', { ascending: true })
     const rows = (data || []).map(r => {
       const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000)
-      return { Title: r.title || r.type, Type: r.type, Status: r.status, 'Assigned To': r.assigned_to_name || '', 'Days Open': days, Created: fmtDate(r.created_at?.split('T')[0]) }
+      return { Title: r.task_description || r.record_type, Type: r.record_type, Status: r.status, 'Assigned To': r.assigned_to || r.emp_display_name || '', 'Days Open': days, Created: fmtDate(r.created_at?.split('T')[0]) }
     })
     const tagged = rows.map(r => ({ ...r, Urgency: (r['Days Open'] as number) > 30 ? 'Critical' : (r['Days Open'] as number) > 14 ? 'Overdue' : (r['Days Open'] as number) > 7 ? 'Urgent' : 'Normal' }))
     setReportColumns([{ key: 'Title', label: 'Title' }, { key: 'Type', label: 'Type' }, { key: 'Status', label: 'Status' }, { key: 'Assigned To', label: 'Assigned To' }, { key: 'Days Open', label: 'Days Open' }, { key: 'Urgency', label: 'Urgency' }, { key: 'Created', label: 'Created' }])
@@ -265,16 +270,21 @@ export default function AdminReports() {
     const { data } = await supabase.from('onboarding').select('*, employee:employees!onboarding_employee_id_fkey(first_name, last_name, department, start_date)').eq('company_id', selectedCompanyId).order('created_at', { ascending: false })
     const rows = (data || []).map(r => {
       const tasks = [
-        { name: 'Contract Signed', done: r.contract_signed },
-        { name: 'IT Setup', done: r.it_setup_complete },
-        { name: 'Bank Details', done: r.bank_details_received },
-        { name: 'Right to Work', done: r.rtw_verified },
-        { name: 'Induction', done: r.induction_complete },
+        { name: 'First Day', done: r.first_day },
+        { name: 'First Week', done: r.first_week },
+        { name: 'First Month', done: r.first_month },
+        { name: 'Feedback', done: r.feedback },
+        { name: 'Three Month', done: r.three_month },
+        { name: 'E-Learning', done: r.elearning },
       ]
       const completed = tasks.filter(t => t.done).length
+      const total = tasks.length
       return {
-        Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '',
-        'Start Date': r.employee?.start_date ? fmtDate(r.employee.start_date) : '', Progress: `${completed}/5`, Status: completed === 5 ? 'Complete' : 'In Progress',
+        Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : (r.firstname ? `${r.firstname} ${r.surname || ''}` : ''),
+        Department: r.employee?.department || r.department || '',
+        'Start Date': r.employee?.start_date ? fmtDate(r.employee.start_date) : (r.start_date ? fmtDate(r.start_date) : ''),
+        Progress: `${completed}/${total}`,
+        Status: r.is_complete ? 'Complete' : completed === total ? 'Complete' : 'In Progress',
         'Outstanding': tasks.filter(t => !t.done).map(t => t.name).join(', ') || 'None',
       }
     })
@@ -287,48 +297,50 @@ export default function AdminReports() {
       { label: 'Total Onboarding', value: rows.length, status: 'neutral' },
       { label: 'Complete', value: complete.length, status: 'good' },
       { label: 'In Progress', value: incomplete.length, status: incomplete.length > 0 ? 'warning' : 'good' },
-      { label: 'Avg Completion', value: `${((avgProgress / 5) * 100).toFixed(0)}%`, status: avgProgress >= 4 ? 'good' : avgProgress >= 2 ? 'warning' : 'danger' },
+      { label: 'Avg Completion', value: `${((avgProgress / 6) * 100).toFixed(0)}%`, status: avgProgress >= 5 ? 'good' : avgProgress >= 3 ? 'warning' : 'danger' },
     ])
     setReportSummary(`${rows.length} onboarding records. ${complete.length} complete, ${incomplete.length} still in progress.`)
   }
 
   async function loadHeadcountDept() {
-    const { data } = await supabase.from('employees').select('department, employment_type, is_active').eq('company_id', selectedCompanyId).eq('is_active', true)
-    const depts: Record<string, { total: number; ft: number; pt: number }> = {}
+    const { data } = await supabase.from('employees').select('department, employment_category, is_active').eq('company_id', selectedCompanyId).eq('is_active', true)
+    const depts: Record<string, { total: number; employed: number; contractor: number; shiftWorker: number; other: number }> = {}
     ;(data || []).forEach(e => {
       const d = e.department || 'Unassigned'
-      if (!depts[d]) depts[d] = { total: 0, ft: 0, pt: 0 }
+      if (!depts[d]) depts[d] = { total: 0, employed: 0, contractor: 0, shiftWorker: 0, other: 0 }
       depts[d].total++
-      if (e.employment_type === 'part_time') depts[d].pt++
-      else depts[d].ft++
+      const cat = e.employment_category || 'not_assigned'
+      if (cat === 'employed') depts[d].employed++
+      else if (cat === 'contractor') depts[d].contractor++
+      else if (cat === 'shift_worker') depts[d].shiftWorker++
+      else depts[d].other++
     })
     const rows = Object.entries(depts).map(([dept, c]) => ({
-      Department: dept, 'Full-Time': c.ft, 'Part-Time': c.pt, Total: c.total, 'FTE Estimate': (c.ft + c.pt * 0.5).toFixed(1),
+      Department: dept, Employed: c.employed, Contractor: c.contractor, 'Shift Worker': c.shiftWorker, Unassigned: c.other, Total: c.total,
     })).sort((a, b) => (b.Total as number) - (a.Total as number))
-    setReportColumns([{ key: 'Department', label: 'Department' }, { key: 'Full-Time', label: 'Full-Time' }, { key: 'Part-Time', label: 'Part-Time' }, { key: 'Total', label: 'Total' }, { key: 'FTE Estimate', label: 'FTE Estimate' }])
+    setReportColumns([{ key: 'Department', label: 'Department' }, { key: 'Employed', label: 'Employed' }, { key: 'Contractor', label: 'Contractor' }, { key: 'Shift Worker', label: 'Shift Worker' }, { key: 'Unassigned', label: 'Unassigned' }, { key: 'Total', label: 'Total' }])
     setReportData(rows)
     const total = (data || []).length
-    const totalFTE = rows.reduce((s, r) => s + parseFloat(r['FTE Estimate'] as string), 0)
-    const totalPT = rows.reduce((s, r) => s + (r['Part-Time'] as number), 0)
+    const totalContractors = rows.reduce((s, r) => s + (r.Contractor as number), 0)
     setReportKPIs([
       { label: 'Total Headcount', value: total, status: 'neutral' },
       { label: 'Departments', value: Object.keys(depts).length, status: 'neutral' },
-      { label: 'FTE Equivalent', value: totalFTE.toFixed(1), status: 'neutral' },
-      { label: 'Part-Time Staff', value: totalPT, status: 'neutral' },
+      { label: 'Employed', value: rows.reduce((s, r) => s + (r.Employed as number), 0), status: 'neutral' },
+      { label: 'Contractors', value: totalContractors, status: 'neutral' },
     ])
-    setReportSummary(`${total} active employees across ${Object.keys(depts).length} departments. ${totalFTE.toFixed(1)} FTE equivalent.`)
+    setReportSummary(`${total} active employees across ${Object.keys(depts).length} departments.`)
   }
 
   async function loadTurnover() {
     const fyStartStr = fyStart.toISOString().split('T')[0]
-    const [{ data: leavers }, { data: active }] = await Promise.all([
-      supabase.from('employees').select('first_name, last_name, department, end_date').eq('company_id', selectedCompanyId).eq('is_active', false).gte('end_date', fyStartStr),
+    const [{ data: offboarded }, { data: active }] = await Promise.all([
+      supabase.from('offboarding').select('employee_name, employee_email, department, end_date, reason').eq('company_id', selectedCompanyId).gte('end_date', fyStartStr),
       supabase.from('employees').select('id').eq('company_id', selectedCompanyId).eq('is_active', true),
     ])
-    const rows = (leavers || []).map(e => ({
-      Employee: `${e.first_name} ${e.last_name}`, Department: e.department || '', 'Leave Date': e.end_date ? fmtDate(e.end_date) : '',
+    const rows = (offboarded || []).map(e => ({
+      Employee: e.employee_name || '', Department: e.department || '', 'Leave Date': e.end_date ? fmtDate(e.end_date) : '', Reason: e.reason || '',
     }))
-    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Leave Date', label: 'Leave Date' }])
+    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Leave Date', label: 'Leave Date' }, { key: 'Reason', label: 'Reason' }])
     setReportData(rows)
     const activeCount = (active || []).length
     const leaverCount = rows.length
@@ -365,10 +377,10 @@ export default function AdminReports() {
   }
 
   async function loadPendingExpenses() {
-    const { data } = await supabase.from('expense_claims').select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, department)').eq('company_id', selectedCompanyId).eq('status', 'submitted').order('created_at', { ascending: true })
+    const { data } = await supabase.from('expense_claims').select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, department)').eq('company_id', selectedCompanyId).eq('status', 'pending').order('created_at', { ascending: true })
     const rows = (data || []).map(r => {
       const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000)
-      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', Description: r.description || '', Amount: `£${Number(r.total_amount || 0).toFixed(2)}`, 'Days Waiting': days, Submitted: fmtDate(r.created_at?.split('T')[0]) }
+      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', Description: r.description || '', Amount: `£${Number(r.amount || 0).toFixed(2)}`, 'Days Waiting': days, Submitted: fmtDate(r.created_at?.split('T')[0]) }
     })
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Description', label: 'Description' }, { key: 'Amount', label: 'Amount' }, { key: 'Days Waiting', label: 'Days Waiting' }, { key: 'Submitted', label: 'Submitted' }])
     setReportData(rows)
@@ -385,15 +397,15 @@ export default function AdminReports() {
   }
 
   async function loadPayrollVariance() {
-    const { data } = await supabase.from('payslips').select('pay_period_start, gross_pay, net_pay, tax_deducted, ni_deducted').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart.toISOString().split('T')[0]).order('pay_period_start')
+    const { data } = await supabase.from('payslips').select('pay_period_start, gross_pay, net_pay, tax, national_insurance').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart.toISOString().split('T')[0]).order('pay_period_start')
     const byMonth: Record<string, { gross: number; net: number; tax: number; ni: number; count: number }> = {}
     ;(data || []).forEach(p => {
       const m = p.pay_period_start.substring(0, 7)
       if (!byMonth[m]) byMonth[m] = { gross: 0, net: 0, tax: 0, ni: 0, count: 0 }
       byMonth[m].gross += Number(p.gross_pay || 0)
       byMonth[m].net += Number(p.net_pay || 0)
-      byMonth[m].tax += Number(p.tax_deducted || 0)
-      byMonth[m].ni += Number(p.ni_deducted || 0)
+      byMonth[m].tax += Number(p.tax || 0)
+      byMonth[m].ni += Number(p.national_insurance || 0)
       byMonth[m].count++
     })
     const months = Object.keys(byMonth).sort()
@@ -420,7 +432,7 @@ export default function AdminReports() {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
     const [{ data: timesheets }, { data: employees }] = await Promise.all([
       supabase.from('timesheets').select('employee_id, hours').eq('company_id', selectedCompanyId).gte('date', thirtyDaysAgo),
-      supabase.from('employees').select('id, first_name, last_name, department, contracted_hours').eq('company_id', selectedCompanyId).eq('is_active', true),
+      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours').eq('company_id', selectedCompanyId).eq('is_active', true),
     ])
     const byEmp: Record<string, number> = {}
     ;(timesheets || []).forEach(t => {
@@ -428,11 +440,11 @@ export default function AdminReports() {
     })
     const rows = (employees || []).filter(e => {
       const logged = byEmp[e.id] || 0
-      const contracted = Number(e.contracted_hours || 37.5) * 4.33
+      const contracted = Number(e.weekly_hours || 37.5) * 4.33
       return logged > contracted
     }).map(e => {
       const logged = byEmp[e.id] || 0
-      const contracted = Number(e.contracted_hours || 37.5) * 4.33
+      const contracted = Number(e.weekly_hours || 37.5) * 4.33
       return { Employee: `${e.first_name} ${e.last_name}`, Department: e.department || '', 'Contracted (monthly)': contracted.toFixed(1), 'Logged (30d)': logged.toFixed(1), Excess: (logged - contracted).toFixed(1) }
     }).sort((a, b) => parseFloat(b.Excess as string) - parseFloat(a.Excess as string))
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Contracted (monthly)', label: 'Contracted (monthly)' }, { key: 'Logged (30d)', label: 'Logged (30d)' }, { key: 'Excess', label: 'Excess Hours' }])
@@ -449,23 +461,22 @@ export default function AdminReports() {
   }
 
   async function loadOverdueElearning() {
-    const today = new Date().toISOString().split('T')[0]
-    const { data } = await supabase.from('course_enrolments').select('*, employee:employees!course_enrolments_employee_id_fkey(first_name, last_name, department), course:elearning_courses!course_enrolments_course_id_fkey(title, is_mandatory)').eq('company_id', selectedCompanyId).eq('status', 'enrolled').not('due_date', 'is', null).lt('due_date', today)
-    const rows = (data || []).filter(r => r.course?.is_mandatory).map(r => {
-      const daysOverdue = Math.floor((Date.now() - new Date(r.due_date + 'T00:00:00').getTime()) / 86400000)
-      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', Course: r.course?.title || '', 'Due Date': fmtDate(r.due_date), 'Days Overdue': daysOverdue }
-    }).sort((a, b) => (b['Days Overdue'] as number) - (a['Days Overdue'] as number))
-    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Course', label: 'Course' }, { key: 'Due Date', label: 'Due Date' }, { key: 'Days Overdue', label: 'Days Overdue' }])
+    const { data: enrolments } = await supabase.from('course_enrolments').select('*, employee:employees!course_enrolments_employee_id_fkey(first_name, last_name, department, company_id), course:courses!course_enrolments_course_id_fkey(title, is_mandatory)').in('status', ['not_started', 'in_progress'])
+    const companyRows = (enrolments || []).filter(r => r.employee?.company_id === selectedCompanyId && r.course?.is_mandatory)
+    const rows = companyRows.map(r => {
+      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', Course: r.course?.title || '', Status: r.status === 'not_started' ? 'Not Started' : 'In Progress', 'Progress': `${r.progress_pct || 0}%` }
+    }).sort((a, b) => parseInt(a.Progress as string) - parseInt(b.Progress as string))
+    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Course', label: 'Course' }, { key: 'Status', label: 'Status' }, { key: 'Progress', label: 'Progress' }])
     setReportData(rows)
     const uniqueEmps = new Set(rows.map(r => r.Employee)).size
-    const avgOverdue = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Overdue'] as number), 0) / rows.length : 0
+    const notStarted = rows.filter(r => r.Status === 'Not Started')
     setReportKPIs([
-      { label: 'Overdue Enrolments', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Incomplete Enrolments', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
       { label: 'Employees Affected', value: uniqueEmps, status: uniqueEmps > 3 ? 'danger' : uniqueEmps > 0 ? 'warning' : 'good' },
-      { label: 'Avg Days Overdue', value: avgOverdue.toFixed(0), status: avgOverdue > 30 ? 'danger' : avgOverdue > 7 ? 'warning' : 'neutral' },
+      { label: 'Not Started', value: notStarted.length, status: notStarted.length > 0 ? 'danger' : 'good' },
       { label: 'Courses Affected', value: new Set(rows.map(r => r.Course)).size, status: 'neutral' },
     ])
-    setReportSummary(`${rows.length} overdue mandatory e-learning enrolments affecting ${uniqueEmps} employees.`)
+    setReportSummary(`${rows.length} incomplete mandatory e-learning enrolments affecting ${uniqueEmps} employees. ${notStarted.length} not yet started.`)
   }
 
   async function loadRtwExpiry() {
@@ -510,23 +521,24 @@ export default function AdminReports() {
   }
 
   async function loadPerformanceOverdue() {
-    const today = new Date().toISOString().split('T')[0]
-    const { data } = await supabase.from('performance_reviews').select('*, employee:employees!performance_reviews_employee_id_fkey(first_name, last_name, department)').eq('company_id', selectedCompanyId).in('status', ['scheduled', 'in_progress']).lt('review_date', today)
+    const { data } = await supabase.from('performance_reviews').select('*, employee:employees!performance_reviews_employee_id_fkey(first_name, last_name, department)').eq('company_id', selectedCompanyId).in('status', ['draft', 'in_progress'])
     const rows = (data || []).map(r => {
-      const days = Math.floor((Date.now() - new Date(r.review_date + 'T00:00:00').getTime()) / 86400000)
-      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', 'Review Type': r.review_type || '', 'Scheduled Date': fmtDate(r.review_date), 'Days Overdue': days, Status: r.status }
-    }).sort((a, b) => (b['Days Overdue'] as number) - (a['Days Overdue'] as number))
-    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Review Type', label: 'Review Type' }, { key: 'Scheduled Date', label: 'Scheduled Date' }, { key: 'Days Overdue', label: 'Days Overdue' }, { key: 'Status', label: 'Status' }])
+      const createdDate = r.created_at?.split('T')[0] || ''
+      const days = createdDate ? Math.floor((Date.now() - new Date(createdDate + 'T00:00:00').getTime()) / 86400000) : 0
+      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', 'Review Period': r.review_period || '', 'Created': createdDate ? fmtDate(createdDate) : '', 'Days Since Created': days, Status: r.status === 'draft' ? 'Draft' : 'In Progress' }
+    }).sort((a, b) => (b['Days Since Created'] as number) - (a['Days Since Created'] as number))
+    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Review Period', label: 'Review Period' }, { key: 'Created', label: 'Created' }, { key: 'Days Since Created', label: 'Days Open' }, { key: 'Status', label: 'Status' }])
     setReportData(rows)
     const uniqueEmps = new Set(rows.map(r => r.Employee)).size
-    const avgOverdue = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Overdue'] as number), 0) / rows.length : 0
+    const avgDays = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Since Created'] as number), 0) / rows.length : 0
+    const drafts = rows.filter(r => r.Status === 'Draft')
     setReportKPIs([
-      { label: 'Overdue Reviews', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Incomplete Reviews', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
       { label: 'Employees Affected', value: uniqueEmps, status: uniqueEmps > 3 ? 'danger' : uniqueEmps > 0 ? 'warning' : 'good' },
-      { label: 'Avg Days Overdue', value: avgOverdue.toFixed(0), status: avgOverdue > 30 ? 'danger' : avgOverdue > 14 ? 'warning' : 'neutral' },
-      { label: 'Most Overdue', value: rows.length > 0 ? `${rows[0]['Days Overdue']}d` : '0d', status: rows.length > 0 && (rows[0]['Days Overdue'] as number) > 30 ? 'danger' : 'neutral' },
+      { label: 'Still in Draft', value: drafts.length, status: drafts.length > 0 ? 'warning' : 'good' },
+      { label: 'Avg Days Open', value: avgDays.toFixed(0), status: avgDays > 30 ? 'danger' : avgDays > 14 ? 'warning' : 'neutral' },
     ])
-    setReportSummary(`${rows.length} performance reviews past their scheduled date. ${uniqueEmps} employees affected.`)
+    setReportSummary(`${rows.length} performance reviews not yet completed. ${uniqueEmps} employees affected. ${drafts.length} still in draft.`)
   }
 
   async function loadSurveyEngagement() {
@@ -538,7 +550,7 @@ export default function AdminReports() {
       const resps = (responses || []).filter(r => r.deployment_id === d.id)
       const uniqueRespondents = new Set(resps.map(r => r.employee_id)).size
       const rate = totalEmps > 0 ? ((uniqueRespondents / totalEmps) * 100).toFixed(1) : '0'
-      return { Survey: d.survey?.title || '', 'Start Date': d.start_date ? fmtDate(d.start_date) : '', 'End Date': d.end_date ? fmtDate(d.end_date) : '', Responses: uniqueRespondents, 'Total Eligible': totalEmps, 'Response Rate': `${rate}%`, Outstanding: totalEmps - uniqueRespondents }
+      return { Survey: d.survey?.title || '', 'Start Date': d.starts_at ? fmtDate(d.starts_at.split('T')[0]) : '', 'End Date': d.ends_at ? fmtDate(d.ends_at.split('T')[0]) : '', Responses: uniqueRespondents, 'Total Eligible': totalEmps, 'Response Rate': `${rate}%`, Outstanding: totalEmps - uniqueRespondents }
     })
     setReportColumns([{ key: 'Survey', label: 'Survey' }, { key: 'Start Date', label: 'Start Date' }, { key: 'End Date', label: 'End Date' }, { key: 'Responses', label: 'Responses' }, { key: 'Total Eligible', label: 'Eligible' }, { key: 'Response Rate', label: 'Response Rate' }, { key: 'Outstanding', label: 'Outstanding' }])
     setReportData(rows)
@@ -583,7 +595,7 @@ export default function AdminReports() {
   async function loadShiftCoverage() {
     const today = new Date().toISOString().split('T')[0]
     const in14 = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
-    const { data } = await supabase.from('shift_assignments' as 'shift_assignments').select('*, shift_template:shift_templates!shift_assignments_template_id_fkey(name, start_time, end_time), employee:employees!shift_assignments_employee_id_fkey(first_name, last_name)').eq('company_id', selectedCompanyId).gte('date', today).lte('date', in14).is('employee_id', null)
+    const { data } = await supabase.from('shift_assignments' as 'shift_assignments').select('*, shift_template:shift_templates!shift_assignments_shift_template_id_fkey(name, start_time, end_time), employee:employees!shift_assignments_employee_id_fkey(first_name, last_name)').eq('company_id', selectedCompanyId).gte('date', today).lte('date', in14).is('employee_id', null)
     const rows = (data || []).map((s: Record<string, unknown>) => ({
       Date: fmtDate(s.date as string),
       Shift: (s.shift_template as Record<string, string>)?.name || '',
@@ -609,20 +621,20 @@ export default function AdminReports() {
   async function loadSkillsGaps() {
     const [{ data: reqs }, { data: empSkills }, { data: skills }] = await Promise.all([
       supabase.from('role_skill_requirements').select('*, skill:skills!role_skill_requirements_skill_id_fkey(name), role:role_profiles!role_skill_requirements_role_profile_id_fkey(title, department)').eq('company_id', selectedCompanyId),
-      supabase.from('employee_skills').select('skill_id, proficiency_level').eq('company_id', selectedCompanyId),
+      supabase.from('employee_skills').select('skill_id, proficiency').eq('company_id', selectedCompanyId),
       supabase.from('skills').select('id, name').eq('company_id', selectedCompanyId),
     ])
     const skillMap = new Map((skills || []).map(s => [s.id, s.name]))
     const empBySkill: Record<string, number[]> = {}
     ;(empSkills || []).forEach(es => {
       if (!empBySkill[es.skill_id]) empBySkill[es.skill_id] = []
-      empBySkill[es.skill_id].push(Number(es.proficiency_level || 0))
+      empBySkill[es.skill_id].push(Number(es.proficiency || 0))
     })
     const rows = (reqs || []).map(r => {
       const levels = empBySkill[r.skill_id] || []
       const avg = levels.length > 0 ? levels.reduce((s, l) => s + l, 0) / levels.length : 0
-      const gap = Number(r.required_level || 3) - avg
-      return { Role: (r.role as Record<string, string>)?.title || '', Department: (r.role as Record<string, string>)?.department || '', Skill: skillMap.get(r.skill_id) || '', 'Required Level': r.required_level || 3, 'Avg Employee Level': avg.toFixed(1), 'Gap': gap.toFixed(1), 'Employees with Skill': levels.length }
+      const gap = Number(r.min_proficiency || 3) - avg
+      return { Role: (r.role as Record<string, string>)?.title || '', Department: (r.role as Record<string, string>)?.department || '', Skill: skillMap.get(r.skill_id) || '', 'Required Level': r.min_proficiency || 3, 'Avg Employee Level': avg.toFixed(1), 'Gap': gap.toFixed(1), 'Employees with Skill': levels.length }
     }).filter(r => parseFloat(r.Gap as string) > 0).sort((a, b) => parseFloat(b.Gap as string) - parseFloat(a.Gap as string))
     setReportColumns([{ key: 'Role', label: 'Role' }, { key: 'Department', label: 'Department' }, { key: 'Skill', label: 'Skill' }, { key: 'Required Level', label: 'Required' }, { key: 'Avg Employee Level', label: 'Avg Level' }, { key: 'Gap', label: 'Gap' }, { key: 'Employees with Skill', label: 'Staff Count' }])
     setReportData(rows)
@@ -656,6 +668,10 @@ export default function AdminReports() {
     ? reportData.filter(row => Object.values(row).some(v => String(v).toLowerCase().includes(filter.toLowerCase())))
     : reportData
 
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / PAGE_SIZE))
+  const pagedData = filteredData.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  useEffect(() => { setPage(1) }, [filter])
   useEffect(() => { setActiveReport(null); setReportData([]); setReportKPIs([]) }, [selectedCompanyId])
 
   if (!selectedCompanyId) return <div className="admin-section"><div className="admin-loading">Select a company to view reports.</div></div>
@@ -765,6 +781,7 @@ export default function AdminReports() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', fontWeight: 500 }}>
                     {filter ? `${filteredData.length} of ${reportData.length} rows` : `${reportData.length} rows`}
+                    {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
                   </span>
                 </div>
               )}
@@ -778,7 +795,7 @@ export default function AdminReports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredData.map((row, i) => (
+                    {pagedData.map((row, i) => (
                       <tr key={i} style={{ background: i % 2 === 0 ? 'var(--card-bg, #fff)' : 'var(--row-alt, rgba(0,0,0,.015))', borderBottom: '1px solid var(--border, #e2e8f0)' }}>
                         {reportColumns.map(c => {
                           const val = String(row[c.key] ?? '')
@@ -792,6 +809,8 @@ export default function AdminReports() {
                             'Warning': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
                             'Pending': { bg: 'rgba(59,130,246,.1)', color: '#2563eb' },
                             'In Progress': { bg: 'rgba(59,130,246,.1)', color: '#2563eb' },
+                            'Draft': { bg: 'rgba(100,116,139,.08)', color: '#64748b' },
+                            'Not Started': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
                             'Normal': { bg: 'rgba(100,116,139,.08)', color: '#64748b' },
                             'Complete': { bg: 'rgba(16,185,129,.1)', color: '#059669' },
                             'Good': { bg: 'rgba(16,185,129,.1)', color: '#059669' },
@@ -815,6 +834,19 @@ export default function AdminReports() {
                   </tbody>
                 </table>
               </div>
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 }}>
+                  <button className="admin-btn alt-btn-secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={{ padding: '6px 14px', fontSize: 13, opacity: page <= 1 ? 0.4 : 1 }}>
+                    Previous
+                  </button>
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary, #64748b)', fontVariantNumeric: 'tabular-nums' }}>
+                    Page {page} of {totalPages}
+                  </span>
+                  <button className="admin-btn alt-btn-secondary" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} style={{ padding: '6px 14px', fontSize: 13, opacity: page >= totalPages ? 0.4 : 1 }}>
+                    Next
+                  </button>
+                </div>
+              )}
               {filteredData.length === 0 && filter && (
                 <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-secondary, #64748b)', fontSize: 13 }}>No results matching "{filter}"</div>
               )}
