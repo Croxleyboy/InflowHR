@@ -114,6 +114,9 @@ interface Employee {
   job_title: string
   department: string
   annual_salary: number | null
+  hourly_rate: number | null
+  pay_frequency: string | null
+  overtime_rate_multiplier: number | null
   tax_code: string | null
   payroll_id: string | null
   employment_category: string | null
@@ -121,6 +124,23 @@ interface Employee {
   bank_sort_code: string | null
   bank_account_number: string | null
   bank_account_name: string | null
+}
+
+interface PeriodReview {
+  id: string
+  company_id: string
+  employee_id: string
+  period_start: string
+  period_end: string
+  total_hours: number
+  adjusted_hours: number | null
+  overtime_hours: number
+  hourly_rate: number
+  gross_pay: number
+  status: string
+  approved_by: string | null
+  approved_at: string | null
+  notes: string | null
 }
 
 interface ModulrIntegration {
@@ -175,7 +195,7 @@ export default function AdminPayroll() {
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics' | 'xero_pay' | 'sage_pay' | 'bacs_export' | 'modulr_payout'>('payslips')
+  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'period_review' | 'time_breakdown' | 'analytics' | 'xero_pay' | 'sage_pay' | 'bacs_export' | 'modulr_payout'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [page, setPage] = useState(1)
@@ -245,6 +265,21 @@ export default function AdminPayroll() {
   const [schedShiftPage, setSchedShiftPage] = useState(1)
   const [schedZeroPage, setSchedZeroPage] = useState(1)
 
+  // Period Review state
+  const [prReviews, setPrReviews] = useState<PeriodReview[]>([])
+  const [prLoading, setPrLoading] = useState(false)
+  const [prSubTab, setPrSubTab] = useState<'shift' | 'zero_hours'>('shift')
+  const [prPeriodStart, setPrPeriodStart] = useState(() => {
+    const d = new Date(); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? -6 : 1)
+    const mon = new Date(d.setDate(diff)); mon.setHours(0, 0, 0, 0); return localDateStr(mon)
+  })
+  const [prPeriodEnd, setPrPeriodEnd] = useState(() => {
+    const d = new Date(); const day = d.getDay(); const diff = d.getDate() - day + (day === 0 ? 0 : 7)
+    const sun = new Date(d.setDate(diff)); sun.setHours(0, 0, 0, 0); return localDateStr(sun)
+  })
+  const [prAdjustments, setPrAdjustments] = useState<Record<string, { hours?: number; overtime?: number; notes?: string }>>({})
+  const [prPage, setPrPage] = useState(1)
+
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
     const d = new Date(); d.setDate(1); return localDateStr(d)
@@ -301,7 +336,7 @@ export default function AdminPayroll() {
     const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes, sRes, mRes, compRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, last_sync_at, payslip_source, last_upload_at, last_upload_filename').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', selectedCompanyId).maybeSingle(),
@@ -439,6 +474,178 @@ export default function AdminPayroll() {
     })
     setPaySettingsSaving(false)
     showSuccess('Payroll settings saved')
+  }
+
+  // ── Period Review helpers ──────────────────────────────────────────────────
+
+  const loadPeriodReviews = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setPrLoading(true)
+    const { data } = await supabase.from('pay_period_reviews')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .gte('period_start', prPeriodStart)
+      .lte('period_end', prPeriodEnd)
+      .order('period_start')
+    setPrReviews((data as PeriodReview[]) || [])
+    setPrLoading(false)
+  }, [selectedCompanyId, prPeriodStart, prPeriodEnd])
+
+  useEffect(() => { if (tab === 'period_review' && employees.length > 0) loadPeriodReviews() }, [tab, loadPeriodReviews, employees.length])
+
+  async function generatePeriodReviews() {
+    if (!selectedCompanyId || !session) return
+    setPrLoading(true)
+    const targetEmps = prSubTab === 'shift' ? shiftEmployees : zeroHoursEmployees
+
+    const { data: checkins } = await supabase.from('checkin_records')
+      .select('employee_id, check_in_at, check_out_at, status')
+      .eq('company_id', selectedCompanyId)
+      .eq('source', 'shifts')
+      .in('status', ['checked_out', 'auto_closed'])
+      .gte('check_in_at', prPeriodStart + 'T00:00:00')
+      .lte('check_in_at', prPeriodEnd + 'T23:59:59')
+
+    const { data: breaks } = await supabase.from('break_records')
+      .select('checkin_record_id, start_at, end_at')
+      .in('checkin_record_id', (checkins || []).map(c => (c as any).id))
+
+    const breaksByCheckin = new Map<string, number>()
+    for (const b of (breaks || []) as any[]) {
+      if (!b.start_at || !b.end_at) continue
+      const mins = (new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / 3600000
+      breaksByCheckin.set(b.checkin_record_id, (breaksByCheckin.get(b.checkin_record_id) || 0) + mins)
+    }
+
+    const hoursByEmp = new Map<string, number>()
+    for (const c of (checkins || []) as any[]) {
+      if (!c.check_out_at) continue
+      const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
+      const breakHrs = breaksByCheckin.get(c.id) || 0
+      const net = Math.max(0, hrs - breakHrs)
+      hoursByEmp.set(c.employee_id, (hoursByEmp.get(c.employee_id) || 0) + net)
+    }
+
+    let created = 0
+    for (const emp of targetEmps) {
+      const totalHrs = Math.round((hoursByEmp.get(emp.id) || 0) * 100) / 100
+      const rate = emp.hourly_rate || 0
+      const existing = prReviews.find(r => r.employee_id === emp.id)
+      if (existing) continue
+
+      const { error } = await supabase.from('pay_period_reviews').insert({
+        company_id: selectedCompanyId,
+        employee_id: emp.id,
+        period_start: prPeriodStart,
+        period_end: prPeriodEnd,
+        total_hours: totalHrs,
+        adjusted_hours: totalHrs,
+        overtime_hours: 0,
+        hourly_rate: rate,
+        gross_pay: Math.round(totalHrs * rate * 100) / 100,
+        status: 'draft',
+      })
+      if (!error) created++
+    }
+
+    if (created > 0) showSuccess(`Generated ${created} period review(s)`)
+    else showError('No new reviews to generate — all employees already have reviews for this period')
+    await loadPeriodReviews()
+  }
+
+  async function approvePeriodReview(reviewId: string) {
+    const adj = prAdjustments[reviewId] || {}
+    const review = prReviews.find(r => r.id === reviewId)
+    if (!review) return
+
+    const adjustedHrs = adj.hours ?? review.adjusted_hours ?? review.total_hours
+    const overtimeHrs = adj.overtime ?? review.overtime_hours
+    const rate = review.hourly_rate
+    const multiplier = employees.find(e => e.id === review.employee_id)?.overtime_rate_multiplier || 1.5
+    const gross = Math.round(((adjustedHrs * rate) + (overtimeHrs * rate * multiplier)) * 100) / 100
+
+    const { error } = await supabase.from('pay_period_reviews').update({
+      adjusted_hours: adjustedHrs,
+      overtime_hours: overtimeHrs,
+      gross_pay: gross,
+      status: 'approved',
+      approved_by: session?.user?.id,
+      approved_at: new Date().toISOString(),
+      notes: adj.notes || review.notes,
+      updated_at: new Date().toISOString(),
+    }).eq('id', reviewId)
+    if (error) showError('Failed to approve: ' + error.message)
+    else { showSuccess('Period approved'); loadPeriodReviews() }
+  }
+
+  async function approveAllPeriodReviews() {
+    const drafts = prReviews.filter(r => r.status === 'draft')
+    if (drafts.length === 0) { showError('No draft reviews to approve'); return }
+    let approved = 0
+    for (const review of drafts) {
+      const adj = prAdjustments[review.id] || {}
+      const adjustedHrs = adj.hours ?? review.adjusted_hours ?? review.total_hours
+      const overtimeHrs = adj.overtime ?? review.overtime_hours
+      const rate = review.hourly_rate
+      const multiplier = employees.find(e => e.id === review.employee_id)?.overtime_rate_multiplier || 1.5
+      const gross = Math.round(((adjustedHrs * rate) + (overtimeHrs * rate * multiplier)) * 100) / 100
+      const { error } = await supabase.from('pay_period_reviews').update({
+        adjusted_hours: adjustedHrs, overtime_hours: overtimeHrs, gross_pay: gross,
+        status: 'approved', approved_by: session?.user?.id, approved_at: new Date().toISOString(),
+        notes: adj.notes || review.notes, updated_at: new Date().toISOString(),
+      }).eq('id', review.id)
+      if (!error) approved++
+    }
+    showSuccess(`Approved ${approved} period review(s)`)
+    loadPeriodReviews()
+  }
+
+  function downloadPeriodExportCsv() {
+    const approved = prReviews.filter(r => r.status === 'approved' || r.status === 'exported')
+    if (approved.length === 0) { showError('No approved reviews to export'); return }
+    const headers = ['Employee Name', 'Payroll ID', 'Period Start', 'Period End', 'Total Hours', 'Adjusted Hours', 'Overtime Hours', 'Hourly Rate', 'Overtime Rate', 'Gross Pay']
+    const rows = approved.map(r => {
+      const emp = employees.find(e => e.id === r.employee_id)
+      const multiplier = emp?.overtime_rate_multiplier || 1.5
+      return [
+        sanitiseCsvCell(`${emp?.first_name ?? ''} ${emp?.last_name ?? ''}`.trim()),
+        sanitiseCsvCell(emp?.payroll_id || ''),
+        sanitiseCsvCell(formatDate(r.period_start)),
+        sanitiseCsvCell(formatDate(r.period_end)),
+        r.total_hours.toFixed(2),
+        (r.adjusted_hours ?? r.total_hours).toFixed(2),
+        r.overtime_hours.toFixed(2),
+        r.hourly_rate.toFixed(2),
+        (r.hourly_rate * multiplier).toFixed(2),
+        r.gross_pay.toFixed(2),
+      ]
+    })
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `gross-pay-export-${prPeriodStart}-to-${prPeriodEnd}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+
+    const totalGross = approved.reduce((s, r) => s + r.gross_pay, 0)
+    supabase.from('payroll_exports').insert({
+      company_id: selectedCompanyId,
+      period_start: prPeriodStart,
+      period_end: prPeriodEnd,
+      export_target: 'csv',
+      employee_count: approved.length,
+      total_gross: totalGross,
+      exported_by: session?.user?.id,
+    })
+
+    for (const r of approved.filter(r => r.status === 'approved')) {
+      supabase.from('pay_period_reviews').update({ status: 'exported', updated_at: new Date().toISOString() }).eq('id', r.id)
+    }
+
+    showSuccess(`Exported ${approved.length} employees — import this CSV into Sage or Xero`)
+    loadPeriodReviews()
   }
 
   async function generateNextPayroll() {
@@ -1486,6 +1693,9 @@ export default function AdminPayroll() {
           <button className={`admin-tab ${tab === 'sage_pay' ? 'admin-tab-active' : ''}`} onClick={() => setTab('sage_pay')}>Sage Payslips</button>
         )}
         <button className={`admin-tab ${tab === 'employees' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employees')}>Employee Pay</button>
+        {(enabledFeatures.shifts) && (
+          <button className={`admin-tab ${tab === 'period_review' ? 'admin-tab-active' : ''}`} onClick={() => setTab('period_review')}>Period Review</button>
+        )}
         {features.modulr_integration && (
           <button className={`admin-tab ${tab === 'bacs_export' ? 'admin-tab-active' : ''}`} onClick={() => setTab('bacs_export')}>BACS Export</button>
         )}
@@ -2077,20 +2287,67 @@ export default function AdminPayroll() {
 
           <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead><tr><th>Employee</th><th>Department</th><th>Gross Pay</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net Pay</th><th>Status</th></tr></thead>
+              <thead><tr>
+                <th>Employee</th><th>Department</th>
+                {empPaySubTab !== 'employed' && <th>Hourly Rate</th>}
+                {empPaySubTab !== 'employed' && <th>Pay Frequency</th>}
+                {empPaySubTab !== 'employed' && <th>OT Multiplier</th>}
+                <th>Gross Pay</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net Pay</th><th>Status</th>
+                {empPaySubTab !== 'employed' && <th></th>}
+              </tr></thead>
               <tbody>
                 {paginatedList.map(emp => {
                   const ps = empPayPayslips.find(p => p.employee?.id === emp.id)
+                  const isHourly = empPaySubTab !== 'employed'
                   return (
                     <tr key={emp.id}>
                       <td><strong>{emp.first_name} {emp.last_name}</strong><br /><span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>{emp.job_title || ''}</span></td>
                       <td>{emp.department || '—'}</td>
+                      {isHourly && (
+                        <td>
+                          <input type="number" className="admin-inline-input" step="0.01" style={{ width: 80 }}
+                            value={emp.hourly_rate ?? ''}
+                            placeholder="0.00"
+                            onChange={async e => {
+                              const val = parseFloat(e.target.value) || null
+                              await supabase.from('employees').update({ hourly_rate: val }).eq('id', emp.id)
+                              setEmployees(prev => prev.map(ee => ee.id === emp.id ? { ...ee, hourly_rate: val } : ee))
+                            }} />
+                        </td>
+                      )}
+                      {isHourly && (
+                        <td>
+                          <select className="admin-inline-select" style={{ width: 110, fontSize: 12 }}
+                            value={emp.pay_frequency || 'monthly'}
+                            onChange={async e => {
+                              await supabase.from('employees').update({ pay_frequency: e.target.value }).eq('id', emp.id)
+                              setEmployees(prev => prev.map(ee => ee.id === emp.id ? { ...ee, pay_frequency: e.target.value } : ee))
+                            }}>
+                            <option value="weekly">Weekly</option>
+                            <option value="fortnightly">Fortnightly</option>
+                            <option value="four_weekly">4-Weekly</option>
+                            <option value="monthly">Monthly</option>
+                          </select>
+                        </td>
+                      )}
+                      {isHourly && (
+                        <td>
+                          <input type="number" className="admin-inline-input" step="0.1" style={{ width: 60 }}
+                            value={emp.overtime_rate_multiplier ?? 1.5}
+                            onChange={async e => {
+                              const val = parseFloat(e.target.value) || 1.5
+                              await supabase.from('employees').update({ overtime_rate_multiplier: val }).eq('id', emp.id)
+                              setEmployees(prev => prev.map(ee => ee.id === emp.id ? { ...ee, overtime_rate_multiplier: val } : ee))
+                            }} />
+                        </td>
+                      )}
                       <td>{ps ? `£${Number(ps.gross_pay).toFixed(2)}` : '—'}</td>
                       <td>{ps ? `£${Number(ps.tax).toFixed(2)}` : '—'}</td>
                       <td>{ps ? `£${Number(ps.national_insurance).toFixed(2)}` : '—'}</td>
                       <td>{ps ? `£${Number(ps.pension).toFixed(2)}` : '—'}</td>
                       <td>{ps ? <strong>£{Number(ps.net_pay).toFixed(2)}</strong> : '—'}</td>
                       <td>{ps ? <span className={`admin-badge admin-badge-${ps.status}`}>{ps.status}</span> : <span className="admin-badge admin-badge-pending">No payslip</span>}</td>
+                      {isHourly && <td></td>}
                     </tr>
                   )
                 })}
@@ -2100,12 +2357,16 @@ export default function AdminPayroll() {
                   <tr style={{ fontWeight: 700 }}>
                     <td>Totals ({activeSlips.length})</td>
                     <td></td>
+                    {empPaySubTab !== 'employed' && <td></td>}
+                    {empPaySubTab !== 'employed' && <td></td>}
+                    {empPaySubTab !== 'employed' && <td></td>}
                     <td>£{activeSlips.reduce((s, p) => s + Number(p.gross_pay), 0).toFixed(2)}</td>
                     <td>£{activeSlips.reduce((s, p) => s + Number(p.tax), 0).toFixed(2)}</td>
                     <td>£{activeSlips.reduce((s, p) => s + Number(p.national_insurance), 0).toFixed(2)}</td>
                     <td>£{activeSlips.reduce((s, p) => s + Number(p.pension), 0).toFixed(2)}</td>
                     <td>£{activeSlips.reduce((s, p) => s + Number(p.net_pay), 0).toFixed(2)}</td>
                     <td></td>
+                    {empPaySubTab !== 'employed' && <td></td>}
                   </tr>
                 </tfoot>
               )}
@@ -2118,6 +2379,185 @@ export default function AdminPayroll() {
                 <button className="admin-action-btn" disabled={activePage >= activeTotalPages} onClick={() => setActivePage(p => p + 1)}>Next</button>
               </div>
             )}
+          </div>
+        </>
+        )
+      })()}
+
+      {tab === 'period_review' && (() => {
+        const targetEmps = prSubTab === 'shift' ? shiftEmployees : zeroHoursEmployees
+        const reviewsByEmp = new Map(prReviews.map(r => [r.employee_id, r]))
+        const prRows = targetEmps.map(emp => {
+          const review = reviewsByEmp.get(emp.id)
+          return { emp, review }
+        })
+        const totalPages = Math.max(1, Math.ceil(prRows.length / PAGE_SIZE))
+        const pagedRows = prRows.slice((prPage - 1) * PAGE_SIZE, prPage * PAGE_SIZE)
+        const approvedReviews = prReviews.filter(r => r.status === 'approved' || r.status === 'exported')
+        const totalGross = approvedReviews.reduce((s, r) => s + r.gross_pay, 0)
+        const draftCount = prReviews.filter(r => r.status === 'draft').length
+
+        return (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0 }}>Period Review</h3>
+            <span style={{ fontSize: 13, color: 'var(--text-muted, #888)' }}>
+              Aggregate check-in hours, review, and approve gross pay for export to Sage/Xero
+            </span>
+          </div>
+
+          {/* Period selector */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 13, fontWeight: 600 }}>Period:</label>
+            <input type="date" className="admin-inline-input" value={prPeriodStart} onChange={e => setPrPeriodStart(e.target.value)} style={{ width: 150 }} />
+            <span style={{ fontSize: 13 }}>to</span>
+            <input type="date" className="admin-inline-input" value={prPeriodEnd} onChange={e => setPrPeriodEnd(e.target.value)} style={{ width: 150 }} />
+            <button className="admin-btn admin-btn-primary" onClick={generatePeriodReviews} disabled={prLoading} style={{ fontSize: 13 }}>
+              {prLoading ? 'Loading...' : 'Generate Reviews'}
+            </button>
+          </div>
+
+          {/* Sub-tabs */}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 16 }}>
+            <button onClick={() => { setPrSubTab('shift'); setPrPage(1) }} style={{
+              padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+              borderRadius: '8px 0 0 8px', cursor: 'pointer',
+              background: prSubTab === 'shift' ? '#7e57c2' : 'var(--bg-card, #fff)',
+              color: prSubTab === 'shift' ? '#fff' : 'var(--text, #1a1a2e)',
+            }}>Shift Workers ({shiftEmployees.length})</button>
+            <button onClick={() => { setPrSubTab('zero_hours'); setPrPage(1) }} style={{
+              padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+              borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+              background: prSubTab === 'zero_hours' ? '#ef6c00' : 'var(--bg-card, #fff)',
+              color: prSubTab === 'zero_hours' ? '#fff' : 'var(--text, #1a1a2e)',
+            }}>Zero Hours ({zeroHoursEmployees.length})</button>
+          </div>
+
+          {/* Summary strip */}
+          {prReviews.length > 0 && (
+            <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+              <div className="admin-mini-stat"><span className="admin-mini-value">{prReviews.length}</span><span>Reviews</span></div>
+              <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#ff9800' }}>{draftCount}</span><span>Draft</span></div>
+              <div className="admin-mini-stat"><span className="admin-mini-value" style={{ color: '#43a047' }}>{approvedReviews.length}</span><span>Approved</span></div>
+              <div className="admin-mini-stat"><span className="admin-mini-value">£{totalGross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span><span>Total Gross</span></div>
+            </div>
+          )}
+
+          {/* Actions bar */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {draftCount > 0 && (
+              <button className="admin-btn admin-btn-primary" onClick={approveAllPeriodReviews} style={{ fontSize: 13 }}>
+                Approve All ({draftCount})
+              </button>
+            )}
+            {approvedReviews.length > 0 && (
+              <button className="admin-btn" onClick={downloadPeriodExportCsv} style={{ fontSize: 13 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Gross Pay CSV ({approvedReviews.length})
+              </button>
+            )}
+          </div>
+
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Total Hours</th>
+                  <th>Adjusted Hours</th>
+                  <th>Overtime Hours</th>
+                  <th>Hourly Rate</th>
+                  <th>Gross Pay</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedRows.map(({ emp, review }) => {
+                  const adj = prAdjustments[review?.id || ''] || {}
+                  const effectiveHrs = review ? (adj.hours ?? review.adjusted_hours ?? review.total_hours) : 0
+                  const effectiveOt = review ? (adj.overtime ?? review.overtime_hours) : 0
+                  const rate = review?.hourly_rate || emp.hourly_rate || 0
+                  const multiplier = emp.overtime_rate_multiplier || 1.5
+                  const liveGross = review ? Math.round(((effectiveHrs * rate) + (effectiveOt * rate * multiplier)) * 100) / 100 : 0
+                  return (
+                    <tr key={emp.id}>
+                      <td>
+                        <strong>{emp.first_name} {emp.last_name}</strong>
+                        <br /><span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>{emp.job_title || ''}</span>
+                      </td>
+                      <td>{review ? review.total_hours.toFixed(2) : '—'}</td>
+                      <td>
+                        {review && review.status === 'draft' ? (
+                          <input type="number" className="admin-inline-input" step="0.25" style={{ width: 80 }}
+                            value={adj.hours ?? review.adjusted_hours ?? review.total_hours}
+                            onChange={e => setPrAdjustments(prev => ({ ...prev, [review.id]: { ...prev[review.id], hours: parseFloat(e.target.value) || 0 } }))} />
+                        ) : review ? (review.adjusted_hours ?? review.total_hours).toFixed(2) : '—'}
+                      </td>
+                      <td>
+                        {review && review.status === 'draft' ? (
+                          <input type="number" className="admin-inline-input" step="0.25" style={{ width: 80 }}
+                            value={adj.overtime ?? review.overtime_hours}
+                            onChange={e => setPrAdjustments(prev => ({ ...prev, [review.id]: { ...prev[review.id], overtime: parseFloat(e.target.value) || 0 } }))} />
+                        ) : review ? review.overtime_hours.toFixed(2) : '—'}
+                      </td>
+                      <td>{rate > 0 ? `£${rate.toFixed(2)}` : <span style={{ color: '#dc2626', fontSize: 12 }}>Not set</span>}</td>
+                      <td><strong>{review ? `£${liveGross.toFixed(2)}` : '—'}</strong></td>
+                      <td>
+                        {review ? (
+                          <span className={`admin-badge ${review.status === 'approved' || review.status === 'exported' ? 'admin-badge-paid' : review.status === 'paid' ? 'admin-badge-paid' : 'admin-badge-pending'}`}>
+                            {review.status}
+                          </span>
+                        ) : <span className="admin-badge admin-badge-draft">No review</span>}
+                      </td>
+                      <td>
+                        {review && review.status === 'draft' && (
+                          <button className="admin-btn-sm" onClick={() => approvePeriodReview(review.id)} style={{ whiteSpace: 'nowrap' }}>
+                            Approve
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              {approvedReviews.length > 0 && (
+                <tfoot>
+                  <tr style={{ fontWeight: 700 }}>
+                    <td>Approved Totals</td>
+                    <td>{approvedReviews.reduce((s, r) => s + r.total_hours, 0).toFixed(2)}</td>
+                    <td>{approvedReviews.reduce((s, r) => s + (r.adjusted_hours ?? r.total_hours), 0).toFixed(2)}</td>
+                    <td>{approvedReviews.reduce((s, r) => s + r.overtime_hours, 0).toFixed(2)}</td>
+                    <td></td>
+                    <td>£{totalGross.toFixed(2)}</td>
+                    <td></td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+            {pagedRows.length === 0 && <div className="admin-empty">No {prSubTab === 'shift' ? 'shift' : 'zero hours'} workers found</div>}
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+                <button className="admin-btn-sm" disabled={prPage <= 1} onClick={() => setPrPage(p => p - 1)}>Previous</button>
+                <span style={{ fontSize: 13, lineHeight: '32px' }}>Page {prPage} of {totalPages}</span>
+                <button className="admin-btn-sm" disabled={prPage >= totalPages} onClick={() => setPrPage(p => p + 1)}>Next</button>
+              </div>
+            )}
+          </div>
+
+          {/* How it works guide */}
+          <div style={{ marginTop: 24, padding: 16, background: 'var(--bg-muted, #f8f9fa)', borderRadius: 10, fontSize: 13, lineHeight: 1.6 }}>
+            <strong>How Period Review Works</strong>
+            <ol style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+              <li>Set the pay period dates above (e.g. this week for weekly pay, this month for monthly)</li>
+              <li>Click <strong>Generate Reviews</strong> — aggregates check-in hours from shifts automatically</li>
+              <li>Adjust hours or overtime if needed, then <strong>Approve</strong> each row or use <strong>Approve All</strong></li>
+              <li>Click <strong>Export Gross Pay CSV</strong> — download and import into your Sage or Xero payroll</li>
+              <li>Sage/Xero calculates PAYE, NI, pension and submits RTI to HMRC</li>
+              <li>Sync net pay back to InflowHR via the Sage/Xero Payslips tab</li>
+              <li>Pay employees via BACS file upload to your bank, or Modulr (Pack C)</li>
+            </ol>
           </div>
         </>
         )
