@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
+import { useFeatures } from '../../context/FeatureContext'
 
 interface TeamsConfig {
   id: string
@@ -111,6 +112,7 @@ export default function AdminIntegrations() {
   const { session } = useAuth()
   const { selectedCompanyId } = useAdminCompany()
   const { showSuccess, showError } = useToast()
+  const { features } = useFeatures()
 
   // Teams state
   const [teamsConfig, setTeamsConfig] = useState<TeamsConfig | null>(null)
@@ -693,7 +695,14 @@ export default function AdminIntegrations() {
         </div>
 
         {/* ── Modulr Card ── */}
-        <div style={cardStyle(true)}>
+        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.modulr_integration ? 1 : 0.55, pointerEvents: features.modulr_integration ? 'auto' : 'none' }}>
+          {!features.modulr_integration && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
+              <span style={{ background: '#00897b', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
+                Requires Pack C Subscription
+              </span>
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}
             onClick={() => setModulrExpanded(!modulrExpanded)}>
             <ModulrLogo />

@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { useAuth } from '../../context/AuthContext'
+import { useFeatures } from '../../context/FeatureContext'
 import { formatDate } from '../../lib/formatters'
 const PAGE_SIZE = 30
 
@@ -170,6 +171,7 @@ export default function AdminPayroll() {
   const { selectedCompanyId, selectedCompany } = useAdminCompany()
   const { showError, showSuccess } = useToast()
   const { session } = useAuth()
+  const { features } = useFeatures()
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
@@ -679,6 +681,41 @@ export default function AdminPayroll() {
   const sageConnected = sageIntegration?.sync_status === 'connected'
   const modulrConnected = modulrIntegration?.status === 'connected'
   const sourcePayslips = useMemo(() => payslips, [payslips])
+
+  const sanitiseCsvCell = (val: string): string => {
+    const s = String(val ?? '')
+    if (/^[=+\-@\t\r]/.test(s)) return `'${s}`
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+  }
+
+  const downloadScheduleCsv = (monthPayslips: Payslip[], monthLabel: string, category: string) => {
+    if (monthPayslips.length === 0) { showError('No payslip data for this month'); return }
+    const headers = ['Employee Name', 'Payroll ID', 'Tax Code', 'Annual Salary', 'Gross Pay', 'Tax', 'National Insurance', 'Pension', 'Other Deductions', 'Net Pay', 'Period Start', 'Period End', 'Payment Date', 'Status']
+    const rows = monthPayslips.map(p => [
+      sanitiseCsvCell(`${p.employee?.first_name ?? ''} ${p.employee?.last_name ?? ''}`.trim()),
+      sanitiseCsvCell(p.payroll_id),
+      sanitiseCsvCell(p.tax_code),
+      p.annual_salary?.toFixed(2) ?? '0.00',
+      p.gross_pay?.toFixed(2) ?? '0.00',
+      p.tax?.toFixed(2) ?? '0.00',
+      p.national_insurance?.toFixed(2) ?? '0.00',
+      p.pension?.toFixed(2) ?? '0.00',
+      p.other_deductions?.toFixed(2) ?? '0.00',
+      p.net_pay?.toFixed(2) ?? '0.00',
+      sanitiseCsvCell(formatDate(p.pay_period_start)),
+      sanitiseCsvCell(formatDate(p.pay_period_end)),
+      sanitiseCsvCell(formatDate(p.payment_date)),
+      sanitiseCsvCell(p.status),
+    ])
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `payroll-${category}-${monthLabel}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
   const shiftEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker'), [employees])
@@ -1449,8 +1486,12 @@ export default function AdminPayroll() {
           <button className={`admin-tab ${tab === 'sage_pay' ? 'admin-tab-active' : ''}`} onClick={() => setTab('sage_pay')}>Sage Payslips</button>
         )}
         <button className={`admin-tab ${tab === 'employees' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employees')}>Employee Pay</button>
-        <button className={`admin-tab ${tab === 'bacs_export' ? 'admin-tab-active' : ''}`} onClick={() => setTab('bacs_export')}>BACS Export</button>
-        <button className={`admin-tab ${tab === 'modulr_payout' ? 'admin-tab-active' : ''}`} onClick={() => { setTab('modulr_payout'); if (modulrConnected && modulrBalance === null) fetchModulrBalance() }}>Modulr Payouts</button>
+        {features.modulr_integration && (
+          <button className={`admin-tab ${tab === 'bacs_export' ? 'admin-tab-active' : ''}`} onClick={() => setTab('bacs_export')}>BACS Export</button>
+        )}
+        {features.modulr_integration && (
+          <button className={`admin-tab ${tab === 'modulr_payout' ? 'admin-tab-active' : ''}`} onClick={() => { setTab('modulr_payout'); if (modulrConnected && modulrBalance === null) fetchModulrBalance() }}>Modulr Payouts</button>
+        )}
         <button className={`admin-tab ${tab === 'schedule' ? 'admin-tab-active' : ''}`} onClick={() => setTab('schedule')}>Payroll Schedule</button>
         {(enabledFeatures.timesheets || enabledFeatures.shifts || enabledFeatures.legal_timesheets) && (
           <>
@@ -2222,7 +2263,7 @@ export default function AdminPayroll() {
             <>
               <div className="admin-table-wrap">
                 <table className="admin-table">
-                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th><th></th></tr></thead>
                   <tbody>
                     {pagedEmpRows.map(r => (
                       <tr key={r.monthKey} className={r.isPast && !r.isClickable ? 'admin-row-muted' : ''}>
@@ -2237,6 +2278,14 @@ export default function AdminPayroll() {
                             <button className={`admin-badge ${r.statusClass}`} style={{ cursor: 'pointer', border: 'none', fontWeight: 600 }} onClick={() => submitPayroll(r.monthKey)}>{r.statusLabel}</button>
                           ) : (
                             <span className={`admin-badge ${r.statusClass}`}>{r.statusLabel}</span>
+                          )}
+                        </td>
+                        <td>
+                          {r.monthPayslips.length > 0 && (
+                            <button className="admin-btn-sm" title="Download CSV" onClick={() => downloadScheduleCsv(r.monthPayslips, r.monthKey, 'employed')} style={{ whiteSpace: 'nowrap' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                              CSV
+                            </button>
                           )}
                         </td>
                       </tr>
@@ -2259,7 +2308,7 @@ export default function AdminPayroll() {
             <>
               <div className="admin-table-wrap">
                 <table className="admin-table">
-                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Submit Opens</th><th>Payslips</th><th>Status</th><th></th></tr></thead>
                   <tbody>
                     {pagedShiftRows.map(r => (
                       <tr key={r.monthKey} className={r.isPast && !r.isClickable ? 'admin-row-muted' : ''}>
@@ -2274,6 +2323,14 @@ export default function AdminPayroll() {
                             <button className={`admin-badge ${r.statusClass}`} style={{ cursor: 'pointer', border: 'none', fontWeight: 600 }} onClick={() => submitPayroll(r.monthKey)}>{r.statusLabel}</button>
                           ) : (
                             <span className={`admin-badge ${r.statusClass}`}>{r.statusLabel}</span>
+                          )}
+                        </td>
+                        <td>
+                          {r.monthPayslips.length > 0 && (
+                            <button className="admin-btn-sm" title="Download CSV" onClick={() => downloadScheduleCsv(r.monthPayslips, r.monthKey, 'shift')} style={{ whiteSpace: 'nowrap' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                              CSV
+                            </button>
                           )}
                         </td>
                       </tr>
@@ -2296,7 +2353,7 @@ export default function AdminPayroll() {
             <>
               <div className="admin-table-wrap">
                 <table className="admin-table">
-                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Pay Dates</th><th>Payslips</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Month</th><th>Period Start</th><th>Period End</th><th>Pay Day</th><th>Pay Dates</th><th>Payslips</th><th>Status</th><th></th></tr></thead>
                   <tbody>
                     {pagedZeroRows.map(r => (
                       <tr key={r.monthKey} className={r.isPast ? 'admin-row-muted' : ''}>
@@ -2307,6 +2364,14 @@ export default function AdminPayroll() {
                         <td>{r.zeroFreqLabel}</td>
                         <td>{r.monthPayslips.length}</td>
                         <td><span className={`admin-badge ${r.statusClass}`}>{r.statusLabel}</span></td>
+                        <td>
+                          {r.monthPayslips.length > 0 && (
+                            <button className="admin-btn-sm" title="Download CSV" onClick={() => downloadScheduleCsv(r.monthPayslips, r.monthKey, 'zero-hours')} style={{ whiteSpace: 'nowrap' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                              CSV
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
