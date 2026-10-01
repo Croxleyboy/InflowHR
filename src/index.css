@@ -5174,8 +5174,7 @@ body {
 
 .desktop-shell {
   display: flex;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
   background: var(--bg);
 }
 
@@ -5187,8 +5186,15 @@ body {
   flex-direction: column;
   background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
   color: #ccc;
+  position: sticky;
+  top: 0;
+  height: 100vh;
   overflow-y: auto;
+  scrollbar-width: none;
   border-right: 1px solid rgba(255,255,255,0.06);
+}
+.desktop-sidebar::-webkit-scrollbar {
+  display: none;
 }
 [data-theme="dark"] .desktop-sidebar {
   background: linear-gradient(180deg, #111122 0%, #0d1117 100%);
@@ -5374,7 +5380,6 @@ body {
 /* ── Main content area ── */
 .desktop-main {
   flex: 1;
-  overflow-y: auto;
   overflow-x: hidden;
   background: var(--bg);
 }
