@@ -80,6 +80,7 @@ export default function AdminReports() {
   const [reportData, setReportData] = useState<Record<string, unknown>[]>([])
   const [reportColumns, setReportColumns] = useState<{ key: string; label: string }[]>([])
   const [reportSummary, setReportSummary] = useState('')
+  const [reportKPIs, setReportKPIs] = useState<{ label: string; value: string | number; status?: 'good' | 'warning' | 'danger' | 'neutral' }[]>([])
   const [filter, setFilter] = useState('')
 
   const fyStartMonth = selectedCompany?.fy_start_month || 4
@@ -103,6 +104,7 @@ export default function AdminReports() {
     setReportData([])
     setReportColumns([])
     setReportSummary('')
+    setReportKPIs([])
 
     try {
       switch (key) {
@@ -151,11 +153,21 @@ export default function AdminReports() {
         const lt = b.leave_type as unknown as { name: string } | null
         return { Employee: `${emp.first_name} ${emp.last_name}`, Department: emp.department || '', 'Leave Type': lt?.name || '', Entitlement: entitlement, Used: used, Pending: pending, 'Projected Unused': projected }
       })
-    }).filter(r => r['Projected Unused'] > 0).sort((a, b) => b['Projected Unused'] - a['Projected Unused'])
-    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Leave Type', label: 'Leave Type' }, { key: 'Entitlement', label: 'Entitlement' }, { key: 'Used', label: 'Used' }, { key: 'Pending', label: 'Pending' }, { key: 'Projected Unused', label: 'Projected Unused' }])
-    setReportData(rows)
+    }).sort((a, b) => (b['Projected Unused'] as number) - (a['Projected Unused'] as number))
+    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Leave Type', label: 'Leave Type' }, { key: 'Entitlement', label: 'Entitlement' }, { key: 'Used', label: 'Used' }, { key: 'Pending', label: 'Pending' }, { key: 'Projected Unused', label: 'Projected Unused' }, { key: 'Status', label: 'Status' }])
+    const withUnused = rows.filter(r => (r['Projected Unused'] as number) > 0)
+    const highUnused = rows.filter(r => (r['Projected Unused'] as number) >= 5)
     const totalUnused = rows.reduce((s, r) => s + (r['Projected Unused'] as number), 0)
-    setReportSummary(`${rows.length} employees with unused leave. ${totalUnused.toFixed(1)} total days projected to carry over at FY end.`)
+    const avgUnused = rows.length > 0 ? totalUnused / rows.length : 0
+    const tagged = rows.map(r => ({ ...r, Status: (r['Projected Unused'] as number) >= 10 ? 'High' : (r['Projected Unused'] as number) >= 5 ? 'Medium' : (r['Projected Unused'] as number) > 0 ? 'Low' : 'None' }))
+    setReportData(tagged)
+    setReportKPIs([
+      { label: 'Total Leave Balances', value: rows.length, status: 'neutral' },
+      { label: 'With Unused Leave', value: withUnused.length, status: withUnused.length > 0 ? 'warning' : 'good' },
+      { label: 'High Unused (5+ days)', value: highUnused.length, status: highUnused.length > 0 ? 'danger' : 'good' },
+      { label: 'Total Days to Carry Over', value: totalUnused.toFixed(1), status: totalUnused > 20 ? 'danger' : totalUnused > 0 ? 'warning' : 'good' },
+    ])
+    setReportSummary(`${rows.length} leave balances across ${(employees || []).length} employees. ${withUnused.length} with projected unused leave (${totalUnused.toFixed(1)} days total, avg ${avgUnused.toFixed(1)} per balance).`)
   }
 
   async function loadPendingLeave() {
@@ -164,27 +176,49 @@ export default function AdminReports() {
       const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000)
       return { Employee: `${r.employee?.first_name} ${r.employee?.last_name}`, Department: r.employee?.department || '', 'Start Date': fmtDate(r.start_date), 'End Date': fmtDate(r.end_date), Days: Number(r.total_days || 0), 'Days Waiting': days, 'Request Date': fmtDate(r.created_at?.split('T')[0]) }
     })
-    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Start Date', label: 'Start Date' }, { key: 'End Date', label: 'End Date' }, { key: 'Days', label: 'Days' }, { key: 'Days Waiting', label: 'Days Waiting' }, { key: 'Request Date', label: 'Requested' }])
-    setReportData(rows)
-    setReportSummary(`${rows.length} leave requests pending approval. ${rows.filter(r => (r['Days Waiting'] as number) > 3).length} waiting more than 3 days.`)
+    const tagged = rows.map(r => ({ ...r, Status: (r['Days Waiting'] as number) > 7 ? 'Overdue' : (r['Days Waiting'] as number) > 3 ? 'Urgent' : 'Pending' }))
+    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Start Date', label: 'Start Date' }, { key: 'End Date', label: 'End Date' }, { key: 'Days', label: 'Days' }, { key: 'Days Waiting', label: 'Days Waiting' }, { key: 'Request Date', label: 'Requested' }, { key: 'Status', label: 'Status' }])
+    setReportData(tagged)
+    const totalDays = rows.reduce((s, r) => s + (r.Days as number), 0)
+    const overThree = rows.filter(r => (r['Days Waiting'] as number) > 3)
+    const overSeven = rows.filter(r => (r['Days Waiting'] as number) > 7)
+    setReportKPIs([
+      { label: 'Pending Requests', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Total Days Requested', value: totalDays.toFixed(1), status: 'neutral' },
+      { label: 'Waiting > 3 Days', value: overThree.length, status: overThree.length > 0 ? 'warning' : 'good' },
+      { label: 'Waiting > 7 Days', value: overSeven.length, status: overSeven.length > 0 ? 'danger' : 'good' },
+    ])
+    setReportSummary(`${rows.length} leave requests pending approval. ${overThree.length} waiting more than 3 days, ${overSeven.length} more than 7 days.`)
   }
 
   async function loadAbsenceFrequency() {
-    const { data } = await supabase.from('leave_requests').select('employee_id, start_date, total_days, employee:employees!leave_requests_employee_id_fkey(first_name, last_name, department)').eq('company_id', selectedCompanyId).eq('status', 'approved').gte('start_date', new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0])
-    const byEmp: Record<string, { name: string; dept: string; spells: number; days: number }> = {}
-    ;(data || []).forEach(r => {
-      const emp = r.employee as unknown as { first_name: string; last_name: string; department: string } | null
-      if (!byEmp[r.employee_id]) byEmp[r.employee_id] = { name: `${emp?.first_name} ${emp?.last_name}`, dept: emp?.department || '', spells: 0, days: 0 }
+    const [{ data: leaveData }, { data: employees }] = await Promise.all([
+      supabase.from('leave_requests').select('employee_id, start_date, total_days').eq('company_id', selectedCompanyId).eq('status', 'approved').gte('start_date', new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0]),
+      supabase.from('employees').select('id, first_name, last_name, department').eq('company_id', selectedCompanyId).eq('is_active', true),
+    ])
+    const byEmp: Record<string, { spells: number; days: number }> = {}
+    ;(leaveData || []).forEach(r => {
+      if (!byEmp[r.employee_id]) byEmp[r.employee_id] = { spells: 0, days: 0 }
       byEmp[r.employee_id].spells++
       byEmp[r.employee_id].days += Number(r.total_days || 0)
     })
-    const rows = Object.values(byEmp).map(e => ({
-      Employee: e.name, Department: e.dept, Spells: e.spells, 'Total Days': e.days, 'Bradford Score': e.spells * e.spells * e.days,
-    })).sort((a, b) => (b['Bradford Score'] as number) - (a['Bradford Score'] as number))
-    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Spells', label: 'Spells (12m)' }, { key: 'Total Days', label: 'Total Days' }, { key: 'Bradford Score', label: 'Bradford Score' }])
+    const rows = (employees || []).map(e => {
+      const ab = byEmp[e.id] || { spells: 0, days: 0 }
+      const bradford = ab.spells * ab.spells * ab.days
+      return { Employee: `${e.first_name} ${e.last_name}`, Department: e.department || '', Spells: ab.spells, 'Total Days': ab.days, 'Bradford Score': bradford, 'Risk Level': bradford >= 500 ? 'High' : bradford >= 200 ? 'Medium' : bradford > 0 ? 'Low' : 'None' }
+    }).sort((a, b) => (b['Bradford Score'] as number) - (a['Bradford Score'] as number))
+    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Spells', label: 'Spells (12m)' }, { key: 'Total Days', label: 'Total Days' }, { key: 'Bradford Score', label: 'Bradford Score' }, { key: 'Risk Level', label: 'Risk Level' }])
     setReportData(rows)
+    const totalDaysLost = rows.reduce((s, r) => s + (r['Total Days'] as number), 0)
     const high = rows.filter(r => (r['Bradford Score'] as number) >= 200)
-    setReportSummary(`${rows.length} employees with absence in the last 12 months. ${high.length} with Bradford score >= 200 (trigger level).`)
+    const withAbsence = rows.filter(r => (r.Spells as number) > 0)
+    setReportKPIs([
+      { label: 'Active Employees', value: rows.length, status: 'neutral' },
+      { label: 'With Absence (12m)', value: withAbsence.length, status: withAbsence.length > 0 ? 'warning' : 'good' },
+      { label: 'High Risk (Bradford 200+)', value: high.length, status: high.length > 0 ? 'danger' : 'good' },
+      { label: 'Total Days Lost', value: totalDaysLost.toFixed(1), status: totalDaysLost > 30 ? 'danger' : totalDaysLost > 10 ? 'warning' : 'good' },
+    ])
+    setReportSummary(`${rows.length} employees reviewed. ${withAbsence.length} with absence in the last 12 months. ${high.length} with Bradford score >= 200 (trigger level). ${totalDaysLost.toFixed(1)} total days lost.`)
   }
 
   async function loadOutstandingWorkflows() {
@@ -193,22 +227,38 @@ export default function AdminReports() {
       const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000)
       return { Title: r.title || r.type, Type: r.type, Status: r.status, 'Assigned To': r.assigned_to_name || '', 'Days Open': days, Created: fmtDate(r.created_at?.split('T')[0]) }
     })
-    setReportColumns([{ key: 'Title', label: 'Title' }, { key: 'Type', label: 'Type' }, { key: 'Status', label: 'Status' }, { key: 'Assigned To', label: 'Assigned To' }, { key: 'Days Open', label: 'Days Open' }, { key: 'Created', label: 'Created' }])
-    setReportData(rows)
+    const tagged = rows.map(r => ({ ...r, Urgency: (r['Days Open'] as number) > 30 ? 'Critical' : (r['Days Open'] as number) > 14 ? 'Overdue' : (r['Days Open'] as number) > 7 ? 'Urgent' : 'Normal' }))
+    setReportColumns([{ key: 'Title', label: 'Title' }, { key: 'Type', label: 'Type' }, { key: 'Status', label: 'Status' }, { key: 'Assigned To', label: 'Assigned To' }, { key: 'Days Open', label: 'Days Open' }, { key: 'Urgency', label: 'Urgency' }, { key: 'Created', label: 'Created' }])
+    setReportData(tagged)
     const overWeek = rows.filter(r => (r['Days Open'] as number) > 7)
-    setReportSummary(`${rows.length} outstanding workflow actions. ${overWeek.length} open for more than 7 days.`)
+    const overMonth = rows.filter(r => (r['Days Open'] as number) > 30)
+    const avgDays = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Open'] as number), 0) / rows.length : 0
+    setReportKPIs([
+      { label: 'Total Outstanding', value: rows.length, status: rows.length > 10 ? 'danger' : rows.length > 5 ? 'warning' : 'neutral' },
+      { label: 'Over 7 Days', value: overWeek.length, status: overWeek.length > 0 ? 'warning' : 'good' },
+      { label: 'Over 30 Days', value: overMonth.length, status: overMonth.length > 0 ? 'danger' : 'good' },
+      { label: 'Avg Days Open', value: avgDays.toFixed(0), status: avgDays > 14 ? 'danger' : avgDays > 7 ? 'warning' : 'good' },
+    ])
+    setReportSummary(`${rows.length} outstanding workflow actions. ${overWeek.length} open for more than 7 days, ${overMonth.length} over 30 days.`)
   }
 
   async function loadStaleTickets() {
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
-    const { data } = await supabase.from('notifications').select('*, employee:employees!notifications_employee_id_fkey(first_name, last_name)').eq('company_id', selectedCompanyId).eq('type', 'hr_ticket').eq('read', false).lt('created_at', sevenDaysAgo).order('created_at', { ascending: true })
+    const { data } = await supabase.from('hr_tickets').select('*').eq('company_id', selectedCompanyId).in('status', ['open', 'in_progress', 'pending']).order('created_at', { ascending: true })
     const rows = (data || []).map(r => {
       const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000)
-      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Subject: r.title || r.message?.substring(0, 60) || '', 'Days Open': days, Created: fmtDate(r.created_at?.split('T')[0]) }
+      return { Ref: r.ref || '', 'Submitted By': r.submitted_by || '', Subject: r.title || '', Category: r.category || '', Status: r.status, 'Days Open': days, Priority: (r.priority || 'normal'), Created: fmtDate(r.created_at?.split('T')[0]) }
     })
-    setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Subject', label: 'Subject' }, { key: 'Days Open', label: 'Days Open' }, { key: 'Created', label: 'Created' }])
+    setReportColumns([{ key: 'Ref', label: 'Ref' }, { key: 'Submitted By', label: 'Submitted By' }, { key: 'Subject', label: 'Subject' }, { key: 'Category', label: 'Category' }, { key: 'Status', label: 'Status' }, { key: 'Days Open', label: 'Days Open' }, { key: 'Priority', label: 'Priority' }, { key: 'Created', label: 'Created' }])
     setReportData(rows)
-    setReportSummary(`${rows.length} unresolved HR tickets older than 7 days.`)
+    const stale = rows.filter(r => (r['Days Open'] as number) > 7)
+    const avgDays = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Open'] as number), 0) / rows.length : 0
+    setReportKPIs([
+      { label: 'Open Tickets', value: rows.length, status: rows.length > 10 ? 'danger' : rows.length > 5 ? 'warning' : 'neutral' },
+      { label: 'Stale (7+ days)', value: stale.length, status: stale.length > 0 ? 'danger' : 'good' },
+      { label: 'Avg Days Open', value: avgDays.toFixed(0), status: avgDays > 7 ? 'danger' : avgDays > 3 ? 'warning' : 'good' },
+      { label: 'Oldest Ticket', value: rows.length > 0 ? `${rows[0]['Days Open']}d` : '0d', status: rows.length > 0 && (rows[0]['Days Open'] as number) > 14 ? 'danger' : 'neutral' },
+    ])
+    setReportSummary(`${rows.length} open HR tickets. ${stale.length} older than 7 days. Average age: ${avgDays.toFixed(0)} days.`)
   }
 
   async function loadOnboardingProgress() {
@@ -231,7 +281,15 @@ export default function AdminReports() {
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Start Date', label: 'Start Date' }, { key: 'Progress', label: 'Progress' }, { key: 'Status', label: 'Status' }, { key: 'Outstanding', label: 'Outstanding Tasks' }])
     setReportData(rows)
     const incomplete = rows.filter(r => r.Status !== 'Complete')
-    setReportSummary(`${rows.length} onboarding records. ${incomplete.length} still in progress.`)
+    const complete = rows.filter(r => r.Status === 'Complete')
+    const avgProgress = rows.length > 0 ? rows.reduce((s, r) => s + parseInt((r.Progress as string).split('/')[0]), 0) / rows.length : 0
+    setReportKPIs([
+      { label: 'Total Onboarding', value: rows.length, status: 'neutral' },
+      { label: 'Complete', value: complete.length, status: 'good' },
+      { label: 'In Progress', value: incomplete.length, status: incomplete.length > 0 ? 'warning' : 'good' },
+      { label: 'Avg Completion', value: `${((avgProgress / 5) * 100).toFixed(0)}%`, status: avgProgress >= 4 ? 'good' : avgProgress >= 2 ? 'warning' : 'danger' },
+    ])
+    setReportSummary(`${rows.length} onboarding records. ${complete.length} complete, ${incomplete.length} still in progress.`)
   }
 
   async function loadHeadcountDept() {
@@ -250,7 +308,15 @@ export default function AdminReports() {
     setReportColumns([{ key: 'Department', label: 'Department' }, { key: 'Full-Time', label: 'Full-Time' }, { key: 'Part-Time', label: 'Part-Time' }, { key: 'Total', label: 'Total' }, { key: 'FTE Estimate', label: 'FTE Estimate' }])
     setReportData(rows)
     const total = (data || []).length
-    setReportSummary(`${total} active employees across ${Object.keys(depts).length} departments.`)
+    const totalFTE = rows.reduce((s, r) => s + parseFloat(r['FTE Estimate'] as string), 0)
+    const totalPT = rows.reduce((s, r) => s + (r['Part-Time'] as number), 0)
+    setReportKPIs([
+      { label: 'Total Headcount', value: total, status: 'neutral' },
+      { label: 'Departments', value: Object.keys(depts).length, status: 'neutral' },
+      { label: 'FTE Equivalent', value: totalFTE.toFixed(1), status: 'neutral' },
+      { label: 'Part-Time Staff', value: totalPT, status: 'neutral' },
+    ])
+    setReportSummary(`${total} active employees across ${Object.keys(depts).length} departments. ${totalFTE.toFixed(1)} FTE equivalent.`)
   }
 
   async function loadTurnover() {
@@ -269,6 +335,12 @@ export default function AdminReports() {
     const monthsElapsed = Math.max(1, (Date.now() - fyStart.getTime()) / (30.44 * 86400000))
     const annualised = (leaverCount / monthsElapsed) * 12
     const rate = activeCount > 0 ? ((annualised / activeCount) * 100).toFixed(1) : '0'
+    setReportKPIs([
+      { label: 'Leavers (FY)', value: leaverCount, status: leaverCount > 5 ? 'danger' : leaverCount > 2 ? 'warning' : 'neutral' },
+      { label: 'Turnover Rate', value: `${rate}%`, status: parseFloat(rate) > 20 ? 'danger' : parseFloat(rate) > 10 ? 'warning' : 'good' },
+      { label: 'Active Headcount', value: activeCount, status: 'neutral' },
+      { label: 'FY Months Elapsed', value: Math.floor(monthsElapsed), status: 'neutral' },
+    ])
     setReportSummary(`${leaverCount} leavers this FY. Annualised turnover rate: ${rate}% (based on ${activeCount} current headcount).`)
   }
 
@@ -282,7 +354,14 @@ export default function AdminReports() {
     }).sort((a, b) => (a['Days Remaining'] as number) - (b['Days Remaining'] as number))
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Job Title', label: 'Job Title' }, { key: 'Probation Ends', label: 'Probation Ends' }, { key: 'Days Remaining', label: 'Days Left' }])
     setReportData(rows)
-    setReportSummary(`${rows.length} employees with probation ending in the next 30 days.`)
+    const within7 = rows.filter(r => (r['Days Remaining'] as number) <= 7)
+    const within14 = rows.filter(r => (r['Days Remaining'] as number) <= 14)
+    setReportKPIs([
+      { label: 'Ending in 30 Days', value: rows.length, status: rows.length > 3 ? 'warning' : 'neutral' },
+      { label: 'Within 7 Days', value: within7.length, status: within7.length > 0 ? 'danger' : 'good' },
+      { label: 'Within 14 Days', value: within14.length, status: within14.length > 0 ? 'warning' : 'good' },
+    ])
+    setReportSummary(`${rows.length} employees with probation ending in the next 30 days. ${within7.length} within 7 days.`)
   }
 
   async function loadPendingExpenses() {
@@ -294,7 +373,15 @@ export default function AdminReports() {
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Description', label: 'Description' }, { key: 'Amount', label: 'Amount' }, { key: 'Days Waiting', label: 'Days Waiting' }, { key: 'Submitted', label: 'Submitted' }])
     setReportData(rows)
     const total = rows.reduce((s, r) => s + parseFloat((r.Amount as string).replace('£', '')), 0)
-    setReportSummary(`${rows.length} expense claims awaiting approval. Total value: £${total.toFixed(2)}.`)
+    const avgWaiting = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Waiting'] as number), 0) / rows.length : 0
+    const overWeek = rows.filter(r => (r['Days Waiting'] as number) > 7)
+    setReportKPIs([
+      { label: 'Pending Claims', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Total Value', value: `£${total.toFixed(2)}`, status: total > 1000 ? 'danger' : total > 500 ? 'warning' : 'neutral' },
+      { label: 'Avg Wait (days)', value: avgWaiting.toFixed(0), status: avgWaiting > 7 ? 'danger' : avgWaiting > 3 ? 'warning' : 'good' },
+      { label: 'Over 7 Days', value: overWeek.length, status: overWeek.length > 0 ? 'danger' : 'good' },
+    ])
+    setReportSummary(`${rows.length} expense claims awaiting approval. Total value: £${total.toFixed(2)}. ${overWeek.length} waiting more than 7 days.`)
   }
 
   async function loadPayrollVariance() {
@@ -318,7 +405,15 @@ export default function AdminReports() {
     })
     setReportColumns([{ key: 'Period', label: 'Period' }, { key: 'Headcount', label: 'Headcount' }, { key: 'Gross Pay', label: 'Gross Pay' }, { key: 'Net Pay', label: 'Net Pay' }, { key: 'Tax', label: 'Tax' }, { key: 'NI', label: 'NI' }, { key: 'Variance %', label: 'MoM Variance' }])
     setReportData(rows)
-    setReportSummary(`${months.length} payroll periods this FY. ${(data || []).length} total payslips processed.`)
+    const totalGross = Object.values(byMonth).reduce((s, m) => s + m.gross, 0)
+    const latestMonth = months.length > 0 ? byMonth[months[months.length - 1]] : null
+    setReportKPIs([
+      { label: 'Periods Processed', value: months.length, status: 'neutral' },
+      { label: 'Total Payslips', value: (data || []).length, status: 'neutral' },
+      { label: 'Total Gross Pay', value: `£${totalGross.toFixed(2)}`, status: 'neutral' },
+      { label: 'Latest Headcount', value: latestMonth?.count || 0, status: 'neutral' },
+    ])
+    setReportSummary(`${months.length} payroll periods this FY. ${(data || []).length} total payslips processed. Total gross: £${totalGross.toFixed(2)}.`)
   }
 
   async function loadOvertimeAlerts() {
@@ -343,6 +438,13 @@ export default function AdminReports() {
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Contracted (monthly)', label: 'Contracted (monthly)' }, { key: 'Logged (30d)', label: 'Logged (30d)' }, { key: 'Excess', label: 'Excess Hours' }])
     setReportData(rows)
     const totalExcess = rows.reduce((s, r) => s + parseFloat(r.Excess as string), 0)
+    const maxExcess = rows.length > 0 ? Math.max(...rows.map(r => parseFloat(r.Excess as string))) : 0
+    setReportKPIs([
+      { label: 'Over Contracted', value: rows.length, status: rows.length > 3 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Total Excess Hours', value: totalExcess.toFixed(1), status: totalExcess > 40 ? 'danger' : totalExcess > 20 ? 'warning' : 'neutral' },
+      { label: 'Max Excess (single)', value: maxExcess.toFixed(1), status: maxExcess > 20 ? 'danger' : maxExcess > 10 ? 'warning' : 'neutral' },
+      { label: 'Total Staff Tracked', value: (employees || []).length, status: 'neutral' },
+    ])
     setReportSummary(`${rows.length} employees exceeding contracted hours. ${totalExcess.toFixed(1)} total excess hours in the last 30 days.`)
   }
 
@@ -355,7 +457,15 @@ export default function AdminReports() {
     }).sort((a, b) => (b['Days Overdue'] as number) - (a['Days Overdue'] as number))
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Course', label: 'Course' }, { key: 'Due Date', label: 'Due Date' }, { key: 'Days Overdue', label: 'Days Overdue' }])
     setReportData(rows)
-    setReportSummary(`${rows.length} overdue mandatory e-learning enrolments across the company.`)
+    const uniqueEmps = new Set(rows.map(r => r.Employee)).size
+    const avgOverdue = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Overdue'] as number), 0) / rows.length : 0
+    setReportKPIs([
+      { label: 'Overdue Enrolments', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Employees Affected', value: uniqueEmps, status: uniqueEmps > 3 ? 'danger' : uniqueEmps > 0 ? 'warning' : 'good' },
+      { label: 'Avg Days Overdue', value: avgOverdue.toFixed(0), status: avgOverdue > 30 ? 'danger' : avgOverdue > 7 ? 'warning' : 'neutral' },
+      { label: 'Courses Affected', value: new Set(rows.map(r => r.Course)).size, status: 'neutral' },
+    ])
+    setReportSummary(`${rows.length} overdue mandatory e-learning enrolments affecting ${uniqueEmps} employees.`)
   }
 
   async function loadRtwExpiry() {
@@ -368,7 +478,14 @@ export default function AdminReports() {
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Nationality', label: 'Nationality' }, { key: 'Expiry Date', label: 'Expiry Date' }, { key: 'Days Left', label: 'Days Left' }, { key: 'Status', label: 'Status' }])
     setReportData(rows)
     const expired = rows.filter(r => r.Status === 'EXPIRED')
-    setReportSummary(`${rows.length} right-to-work documents expiring within 90 days. ${expired.length} already expired.`)
+    const urgent = rows.filter(r => r.Status === 'Urgent')
+    setReportKPIs([
+      { label: 'Expiring (90 days)', value: rows.length, status: rows.length > 3 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Already Expired', value: expired.length, status: expired.length > 0 ? 'danger' : 'good' },
+      { label: 'Within 30 Days', value: urgent.length, status: urgent.length > 0 ? 'danger' : 'good' },
+      { label: 'Upcoming', value: rows.length - expired.length - urgent.length, status: 'neutral' },
+    ])
+    setReportSummary(`${rows.length} right-to-work documents expiring within 90 days. ${expired.length} already expired, ${urgent.length} within 30 days.`)
   }
 
   async function loadDocumentExpiry() {
@@ -381,7 +498,15 @@ export default function AdminReports() {
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Document', label: 'Document' }, { key: 'Expiry Date', label: 'Expiry Date' }, { key: 'Days Left', label: 'Days Left' }, { key: 'Status', label: 'Status' }])
     setReportData(rows)
     const expired = rows.filter(r => r.Status === 'EXPIRED')
-    setReportSummary(`${rows.length} documents expiring within 90 days. ${expired.length} already expired.`)
+    const urgent = rows.filter(r => r.Status === 'Urgent')
+    const uniqueEmps = new Set(rows.map(r => r.Employee)).size
+    setReportKPIs([
+      { label: 'Expiring (90 days)', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Already Expired', value: expired.length, status: expired.length > 0 ? 'danger' : 'good' },
+      { label: 'Within 30 Days', value: urgent.length, status: urgent.length > 0 ? 'danger' : 'good' },
+      { label: 'Employees Affected', value: uniqueEmps, status: 'neutral' },
+    ])
+    setReportSummary(`${rows.length} documents expiring within 90 days. ${expired.length} already expired. ${uniqueEmps} employees affected.`)
   }
 
   async function loadPerformanceOverdue() {
@@ -393,7 +518,15 @@ export default function AdminReports() {
     }).sort((a, b) => (b['Days Overdue'] as number) - (a['Days Overdue'] as number))
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Review Type', label: 'Review Type' }, { key: 'Scheduled Date', label: 'Scheduled Date' }, { key: 'Days Overdue', label: 'Days Overdue' }, { key: 'Status', label: 'Status' }])
     setReportData(rows)
-    setReportSummary(`${rows.length} performance reviews past their scheduled date.`)
+    const uniqueEmps = new Set(rows.map(r => r.Employee)).size
+    const avgOverdue = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Overdue'] as number), 0) / rows.length : 0
+    setReportKPIs([
+      { label: 'Overdue Reviews', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Employees Affected', value: uniqueEmps, status: uniqueEmps > 3 ? 'danger' : uniqueEmps > 0 ? 'warning' : 'good' },
+      { label: 'Avg Days Overdue', value: avgOverdue.toFixed(0), status: avgOverdue > 30 ? 'danger' : avgOverdue > 14 ? 'warning' : 'neutral' },
+      { label: 'Most Overdue', value: rows.length > 0 ? `${rows[0]['Days Overdue']}d` : '0d', status: rows.length > 0 && (rows[0]['Days Overdue'] as number) > 30 ? 'danger' : 'neutral' },
+    ])
+    setReportSummary(`${rows.length} performance reviews past their scheduled date. ${uniqueEmps} employees affected.`)
   }
 
   async function loadSurveyEngagement() {
@@ -409,7 +542,16 @@ export default function AdminReports() {
     })
     setReportColumns([{ key: 'Survey', label: 'Survey' }, { key: 'Start Date', label: 'Start Date' }, { key: 'End Date', label: 'End Date' }, { key: 'Responses', label: 'Responses' }, { key: 'Total Eligible', label: 'Eligible' }, { key: 'Response Rate', label: 'Response Rate' }, { key: 'Outstanding', label: 'Outstanding' }])
     setReportData(rows)
-    setReportSummary(`${rows.length} active survey deployments.`)
+    const totalResponses = rows.reduce((s, r) => s + (r.Responses as number), 0)
+    const totalOutstanding = rows.reduce((s, r) => s + (r.Outstanding as number), 0)
+    const avgRate = rows.length > 0 ? rows.reduce((s, r) => s + parseFloat((r['Response Rate'] as string).replace('%', '')), 0) / rows.length : 0
+    setReportKPIs([
+      { label: 'Active Surveys', value: rows.length, status: 'neutral' },
+      { label: 'Total Responses', value: totalResponses, status: 'neutral' },
+      { label: 'Avg Response Rate', value: `${avgRate.toFixed(0)}%`, status: avgRate < 50 ? 'danger' : avgRate < 75 ? 'warning' : 'good' },
+      { label: 'Outstanding', value: totalOutstanding, status: totalOutstanding > 10 ? 'warning' : 'neutral' },
+    ])
+    setReportSummary(`${rows.length} active survey deployments. ${totalResponses} total responses. ${totalOutstanding} outstanding.`)
   }
 
   async function loadBenefitsUptake() {
@@ -426,7 +568,16 @@ export default function AdminReports() {
     }).sort((a, b) => parseFloat(b['Uptake Rate'] as string) - parseFloat(a['Uptake Rate'] as string))
     setReportColumns([{ key: 'Benefit', label: 'Benefit' }, { key: 'Category', label: 'Category' }, { key: 'Enrolled', label: 'Enrolled' }, { key: 'Eligible Employees', label: 'Eligible' }, { key: 'Uptake Rate', label: 'Uptake Rate' }])
     setReportData(rows)
-    setReportSummary(`${(benefits || []).length} benefits available. Average uptake: ${rows.length > 0 ? (rows.reduce((s, r) => s + parseFloat(r['Uptake Rate'] as string), 0) / rows.length).toFixed(1) : '0'}%.`)
+    const avgUptake = rows.length > 0 ? rows.reduce((s, r) => s + parseFloat(r['Uptake Rate'] as string), 0) / rows.length : 0
+    const highestUptake = rows.length > 0 ? rows[0] : null
+    const lowestUptake = rows.length > 0 ? rows[rows.length - 1] : null
+    setReportKPIs([
+      { label: 'Benefits Available', value: (benefits || []).length, status: 'neutral' },
+      { label: 'Avg Uptake Rate', value: `${avgUptake.toFixed(0)}%`, status: avgUptake < 30 ? 'danger' : avgUptake < 60 ? 'warning' : 'good' },
+      { label: 'Highest Uptake', value: highestUptake ? `${highestUptake['Uptake Rate']}` : '—', status: 'good' },
+      { label: 'Lowest Uptake', value: lowestUptake ? `${lowestUptake['Uptake Rate']}` : '—', status: lowestUptake && parseFloat(lowestUptake['Uptake Rate'] as string) < 20 ? 'danger' : 'neutral' },
+    ])
+    setReportSummary(`${(benefits || []).length} benefits available. Average uptake: ${avgUptake.toFixed(1)}%.`)
   }
 
   async function loadShiftCoverage() {
@@ -441,7 +592,18 @@ export default function AdminReports() {
     }))
     setReportColumns([{ key: 'Date', label: 'Date' }, { key: 'Shift', label: 'Shift' }, { key: 'Time', label: 'Time' }, { key: 'Status', label: 'Status' }])
     setReportData(rows)
-    setReportSummary(`${rows.length} unassigned shift slots in the next 14 days.`)
+    const uniqueDates = new Set(rows.map(r => r.Date)).size
+    const thisWeek = rows.filter(r => {
+      const d = new Date(r.Date as string)
+      return d.getTime() <= Date.now() + 7 * 86400000
+    })
+    setReportKPIs([
+      { label: 'Unassigned Slots', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
+      { label: 'Days Affected', value: uniqueDates, status: uniqueDates > 3 ? 'danger' : uniqueDates > 0 ? 'warning' : 'good' },
+      { label: 'This Week', value: thisWeek.length, status: thisWeek.length > 0 ? 'danger' : 'good' },
+      { label: 'Next Week', value: rows.length - thisWeek.length, status: 'neutral' },
+    ])
+    setReportSummary(`${rows.length} unassigned shift slots in the next 14 days across ${uniqueDates} days.`)
   }
 
   async function loadSkillsGaps() {
@@ -464,7 +626,15 @@ export default function AdminReports() {
     }).filter(r => parseFloat(r.Gap as string) > 0).sort((a, b) => parseFloat(b.Gap as string) - parseFloat(a.Gap as string))
     setReportColumns([{ key: 'Role', label: 'Role' }, { key: 'Department', label: 'Department' }, { key: 'Skill', label: 'Skill' }, { key: 'Required Level', label: 'Required' }, { key: 'Avg Employee Level', label: 'Avg Level' }, { key: 'Gap', label: 'Gap' }, { key: 'Employees with Skill', label: 'Staff Count' }])
     setReportData(rows)
-    setReportSummary(`${rows.length} skills gaps identified across ${new Set(rows.map(r => r.Role)).size} roles.`)
+    const avgGap = rows.length > 0 ? rows.reduce((s, r) => s + parseFloat(r.Gap as string), 0) / rows.length : 0
+    const rolesAffected = new Set(rows.map(r => r.Role)).size
+    setReportKPIs([
+      { label: 'Skills Gaps', value: rows.length, status: rows.length > 10 ? 'danger' : rows.length > 5 ? 'warning' : 'neutral' },
+      { label: 'Roles Affected', value: rolesAffected, status: rolesAffected > 3 ? 'danger' : rolesAffected > 0 ? 'warning' : 'good' },
+      { label: 'Avg Gap Size', value: avgGap.toFixed(1), status: avgGap > 2 ? 'danger' : avgGap > 1 ? 'warning' : 'neutral' },
+      { label: 'Skills Needed', value: new Set(rows.map(r => r.Skill)).size, status: 'neutral' },
+    ])
+    setReportSummary(`${rows.length} skills gaps identified across ${rolesAffected} roles. Average gap: ${avgGap.toFixed(1)} levels.`)
   }
 
   function exportReportCsv() {
@@ -486,7 +656,7 @@ export default function AdminReports() {
     ? reportData.filter(row => Object.values(row).some(v => String(v).toLowerCase().includes(filter.toLowerCase())))
     : reportData
 
-  useEffect(() => { setActiveReport(null); setReportData([]) }, [selectedCompanyId])
+  useEffect(() => { setActiveReport(null); setReportData([]); setReportKPIs([]) }, [selectedCompanyId])
 
   if (!selectedCompanyId) return <div className="admin-section"><div className="admin-loading">Select a company to view reports.</div></div>
 
@@ -529,32 +699,52 @@ export default function AdminReports() {
         </div>
       ) : (
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-            <button className="admin-btn alt-btn-secondary" onClick={() => { setActiveReport(null); setReportData([]) }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
+            <button className="admin-btn alt-btn-secondary" onClick={() => { setActiveReport(null); setReportData([]); setReportKPIs([]) }} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
               All Reports
             </button>
-            <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary, #1e293b)', margin: 0, flex: 1 }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary, #1e293b)', margin: 0, flex: 1 }}>
               {REPORTS.find(r => r.key === activeReport)?.title}
             </h3>
             {reportData.length > 0 && (
-              <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
                   type="text"
                   placeholder="Filter results..."
                   value={filter}
                   onChange={e => setFilter(e.target.value)}
-                  style={{ padding: '6px 12px', border: '1px solid var(--border, #e2e8f0)', borderRadius: 6, fontSize: 13, width: 200 }}
+                  style={{ padding: '8px 12px', border: '1px solid var(--border, #e2e8f0)', borderRadius: 8, fontSize: 13, width: 220, background: 'var(--card-bg, #fff)' }}
                 />
                 <button className="admin-btn alt-btn-secondary" onClick={exportReportCsv} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   Export CSV
                 </button>
-              </>
+              </div>
             )}
           </div>
 
-          {reportSummary && (
+          {reportKPIs.length > 0 && !loading && (
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(reportKPIs.length, 4)}, 1fr)`, gap: 12, marginBottom: 20 }}>
+              {reportKPIs.map((kpi, i) => {
+                const colors: Record<string, { bg: string; border: string; text: string }> = {
+                  good: { bg: 'rgba(16,185,129,.08)', border: 'rgba(16,185,129,.2)', text: '#059669' },
+                  warning: { bg: 'rgba(245,158,11,.08)', border: 'rgba(245,158,11,.2)', text: '#d97706' },
+                  danger: { bg: 'rgba(239,68,68,.08)', border: 'rgba(239,68,68,.2)', text: '#dc2626' },
+                  neutral: { bg: 'rgba(100,116,139,.06)', border: 'rgba(100,116,139,.15)', text: 'var(--text-primary, #1e293b)' },
+                }
+                const c = colors[kpi.status || 'neutral']
+                return (
+                  <div key={i} style={{ padding: '16px 18px', background: c.bg, border: `1px solid ${c.border}`, borderRadius: 10, textAlign: 'center' }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: c.text, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{kpi.value}</div>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)', marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{kpi.label}</div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {reportSummary && !loading && (
             <div style={{ padding: '10px 16px', background: 'rgba(0,137,123,.06)', border: '1px solid rgba(0,137,123,.15)', borderRadius: 8, marginBottom: 16, fontSize: 13, color: 'var(--text-primary, #1e293b)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
               {reportSummary}
@@ -564,33 +754,67 @@ export default function AdminReports() {
           {loading ? (
             <div className="admin-loading">Loading report data...</div>
           ) : reportData.length === 0 && reportSummary ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-secondary, #64748b)' }}>No data found for this report.</div>
+            <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-secondary, #64748b)' }}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4, marginBottom: 12 }}><circle cx="12" cy="12" r="10"/><path d="M8 15h8M9 9h.01M15 9h.01"/></svg>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>No data found for this report</div>
+              <div style={{ fontSize: 12, marginTop: 4 }}>This is a positive result — nothing requires attention</div>
+            </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="alt-table" style={{ width: '100%', fontSize: 13 }}>
-                <thead>
-                  <tr>
-                    {reportColumns.map(c => (
-                      <th key={c.key} style={{ whiteSpace: 'nowrap' }}>{c.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredData.map((row, i) => (
-                    <tr key={i}>
-                      {reportColumns.map(c => {
-                        const val = String(row[c.key] ?? '')
-                        const isAlert = val === 'EXPIRED' || val === 'Urgent'
-                        return (
-                          <td key={c.key} style={isAlert ? { color: '#dc2626', fontWeight: 600 } : undefined}>
-                            {val}
-                          </td>
-                        )
-                      })}
+            <div>
+              {filteredData.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', fontWeight: 500 }}>
+                    {filter ? `${filteredData.length} of ${reportData.length} rows` : `${reportData.length} rows`}
+                  </span>
+                </div>
+              )}
+              <div style={{ overflowX: 'auto', borderRadius: 10, border: '1px solid var(--border, #e2e8f0)' }}>
+                <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--header-bg, #f8fafc)' }}>
+                      {reportColumns.map(c => (
+                        <th key={c.key} style={{ whiteSpace: 'nowrap', padding: '10px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5, color: 'var(--text-secondary, #64748b)', borderBottom: '2px solid var(--border, #e2e8f0)' }}>{c.label}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredData.map((row, i) => (
+                      <tr key={i} style={{ background: i % 2 === 0 ? 'var(--card-bg, #fff)' : 'var(--row-alt, rgba(0,0,0,.015))', borderBottom: '1px solid var(--border, #e2e8f0)' }}>
+                        {reportColumns.map(c => {
+                          const val = String(row[c.key] ?? '')
+                          const statusColors: Record<string, { bg: string; color: string }> = {
+                            'EXPIRED': { bg: 'rgba(239,68,68,.1)', color: '#dc2626' },
+                            'Overdue': { bg: 'rgba(239,68,68,.1)', color: '#dc2626' },
+                            'Critical': { bg: 'rgba(239,68,68,.1)', color: '#dc2626' },
+                            'High': { bg: 'rgba(239,68,68,.1)', color: '#dc2626' },
+                            'Urgent': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
+                            'Medium': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
+                            'Warning': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
+                            'Pending': { bg: 'rgba(59,130,246,.1)', color: '#2563eb' },
+                            'In Progress': { bg: 'rgba(59,130,246,.1)', color: '#2563eb' },
+                            'Normal': { bg: 'rgba(100,116,139,.08)', color: '#64748b' },
+                            'Complete': { bg: 'rgba(16,185,129,.1)', color: '#059669' },
+                            'Good': { bg: 'rgba(16,185,129,.1)', color: '#059669' },
+                            'None': { bg: 'rgba(100,116,139,.06)', color: '#94a3b8' },
+                            'Low': { bg: 'rgba(100,116,139,.08)', color: '#64748b' },
+                            'Upcoming': { bg: 'rgba(59,130,246,.08)', color: '#3b82f6' },
+                            'Unassigned': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
+                          }
+                          const isStatus = (c.key === 'Status' || c.key === 'Urgency' || c.key === 'Risk Level' || c.key === 'Priority') && statusColors[val]
+                          const isNumeric = typeof row[c.key] === 'number' || /^[\d.]+$/.test(val) || /^£/.test(val)
+                          return (
+                            <td key={c.key} style={{ padding: '9px 14px', textAlign: isNumeric && !isStatus ? 'right' : 'left' }}>
+                              {isStatus ? (
+                                <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 12, fontSize: 11, fontWeight: 600, background: statusColors[val].bg, color: statusColors[val].color }}>{val}</span>
+                              ) : val}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
               {filteredData.length === 0 && filter && (
                 <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-secondary, #64748b)', fontSize: 13 }}>No results matching "{filter}"</div>
               )}
