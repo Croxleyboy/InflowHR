@@ -53,6 +53,9 @@ const PACK_B_FEATURE_KEYS = ['teams_integration', 'skills_passport']
 const PACK_A_LABELS = ['Shifts & Rotas', 'Legal Timesheets', 'Space & Desk Booking', 'Asset Management']
 const PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligence']
 
+const PACK_C_FEATURE_KEYS = ['modulr_integration']
+const PACK_C_LABELS = ['Modulr Payments, BACS Export & Direct Payouts']
+
 export default function AdminSubscriptions() {
   const { isSuperAdmin } = useAuth()
   const { showSuccess, showError } = useToast()
@@ -246,7 +249,7 @@ export default function AdminSubscriptions() {
 
     let errorCount = 0
 
-    for (const key of ['hr_core', 'pack_a', 'pack_b']) {
+    for (const key of ['hr_core', 'pack_a', 'pack_b', 'pack_c']) {
       const existing = companyFeatures.find(f => f.feature_key === key)
       const customPrice = customPrices[key]
       const { error } = await supabase
@@ -336,20 +339,23 @@ export default function AdminSubscriptions() {
   const corePricing = pricing.find(p => p.feature_key === 'hr_core')
   const packAPricing = pricing.find(p => p.feature_key === 'pack_a')
   const packBPricing = pricing.find(p => p.feature_key === 'pack_b')
+  const packCPricing = pricing.find(p => p.feature_key === 'pack_c')
   const supportPackages = pricing.filter(p => p.is_support_package)
 
   const packAEnabled = isFeatureEnabled('pack_a')
   const packBEnabled = isFeatureEnabled('pack_b')
+  const packCEnabled = isFeatureEnabled('pack_c')
 
   const coreCost = corePricing ? getEffectivePrice('hr_core') * employeeCount : 0
   const packACost = packAEnabled && packAPricing ? getEffectivePrice('pack_a') * employeeCount : 0
   const packBCost = packBEnabled && packBPricing ? getEffectivePrice('pack_b') * employeeCount : 0
+  const packCCost = packCEnabled && packCPricing ? getEffectivePrice('pack_c') * employeeCount : 0
   const supportCost = supportPackages.reduce((sum, sp) => {
     if (!isFeatureEnabled(sp.feature_key)) return sum
     return sum + (sp.flat_price ?? 0)
   }, 0)
   const platformFee = parseFloat(monthlyPlatformFee) || 30
-  const totalCost = coreCost + packACost + packBCost + supportCost + platformFee
+  const totalCost = coreCost + packACost + packBCost + packCCost + supportCost + platformFee
 
   const tabStyle = (t: string) => ({
     padding: '10px 24px',
@@ -483,6 +489,40 @@ export default function AdminSubscriptions() {
                     </label>
                     <button className="sub-pricing-save" onClick={() => savePricingItem(packBPricing)} disabled={savingPricing === packBPricing.id}>
                       {savingPricing === packBPricing.id ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Pack C */}
+              {packCPricing && (
+                <div className="sub-pricing-card sub-pricing-card-addon" style={{ borderLeft: '4px solid #00897b' }}>
+                  <div className="sub-pricing-name">Pack C: {packCPricing.display_name}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {PACK_C_LABELS.map(f => (
+                      <span key={f} style={{ fontSize: 11, background: '#e0f2f1', color: '#00897b', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
+                    ))}
+                  </div>
+                  <div className="sub-pricing-input-row">
+                    <label>Price</label>
+                    <span>&pound;</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="sub-pricing-input"
+                      value={editPrices[packCPricing.id] || ''}
+                      onChange={e => setEditPrices(prev => ({ ...prev, [packCPricing.id]: e.target.value }))}
+                    />
+                    <span>/user/month</span>
+                  </div>
+                  <div className="sub-pricing-actions">
+                    <label className="admin-toggle-switch">
+                      <input type="checkbox" checked={packCPricing.is_active} onChange={() => togglePricingActive(packCPricing)} />
+                      <span className="admin-toggle-slider" />
+                    </label>
+                    <button className="sub-pricing-save" onClick={() => savePricingItem(packCPricing)} disabled={savingPricing === packCPricing.id}>
+                      {savingPricing === packCPricing.id ? 'Saving...' : 'Save'}
                     </button>
                   </div>
                 </div>
@@ -836,6 +876,80 @@ export default function AdminSubscriptions() {
                     )
                   })()}
 
+                  {/* Pack C: Payment Integration */}
+                  {packCPricing && (() => {
+                    const partialCount = getPackPartialCount(PACK_C_FEATURE_KEYS)
+                    const isPartial = !packCEnabled && partialCount > 0
+                    return (
+                      <div style={{ background: packCEnabled ? '#e0f2f1' : '#f5f5f5', border: `2px solid ${packCEnabled ? '#00897b' : isPartial ? '#ff9800' : '#e0e0e0'}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                          <label className="admin-toggle-switch">
+                            <input
+                              type="checkbox"
+                              checked={packCEnabled}
+                              onChange={() => togglePack('pack_c', packCEnabled)}
+                              disabled={savingFeature === 'pack_c'}
+                            />
+                            <span className="admin-toggle-slider" />
+                          </label>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#00897b' }}>Pack C: Payment Integration</div>
+                            {isPartial && (
+                              <div style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>
+                                {partialCount} of {PACK_C_FEATURE_KEYS.length} features enabled individually — enable pack to include all
+                              </div>
+                            )}
+                          </div>
+                          {customPrices['pack_c'] && customPrices['pack_c'] !== '' && (
+                            <span style={{ fontSize: 10, background: '#e0f2f1', color: '#00897b', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                          {PACK_C_LABELS.map((f, i) => {
+                            const fEnabled = isFeatureEnabled(PACK_C_FEATURE_KEYS[i])
+                            return (
+                              <span key={f} style={{ fontSize: 11, background: fEnabled ? '#b2dfdb' : '#eee', color: fEnabled ? '#00897b' : '#999', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
+                            )
+                          })}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#fff', borderRadius: 6, padding: 12, border: '1px solid #e0e0e0' }}>
+                          <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px' }}>
+                            <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{packCPricing.default_price.toFixed(2)}</div>
+                          </div>
+                          <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: '#00897b', fontWeight: 600, textTransform: 'uppercase' }}>Company Price</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontWeight: 600 }}>&pound;</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                className="admin-input"
+                                style={{ width: 100, fontWeight: 700, fontSize: 16, textAlign: 'center' }}
+                                placeholder={packCPricing.default_price.toFixed(2)}
+                                value={customPrices['pack_c'] ?? ''}
+                                onChange={e => setCustomPrices(prev => ({ ...prev, pack_c: e.target.value }))}
+                              />
+                              <span style={{ fontSize: 12, color: '#666' }}>/user/mo</span>
+                            </div>
+                          </div>
+                          {packCEnabled && (
+                            <div style={{ flex: 1, minWidth: 120, textAlign: 'right' }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#00897b' }}>
+                                &pound;{packCCost.toFixed(2)}/mo
+                              </div>
+                              <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; &pound;{getEffectivePrice('pack_c').toFixed(2)}</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
                   {/* Support Packages */}
                   {supportPackages.length > 0 && (
                     <div style={{ background: '#fff8e1', border: '2px solid #f9a825', borderRadius: 8, padding: 16, marginBottom: 16 }}>
@@ -934,6 +1048,14 @@ export default function AdminSubscriptions() {
                             <td>&pound;{getEffectivePrice('pack_b').toFixed(2)}/user</td>
                             <td>{employeeCount}</td>
                             <td>&pound;{packBCost.toFixed(2)}</td>
+                          </tr>
+                        )}
+                        {packCEnabled && packCPricing && (
+                          <tr>
+                            <td>Pack C: Payment Integration</td>
+                            <td>&pound;{getEffectivePrice('pack_c').toFixed(2)}/user</td>
+                            <td>{employeeCount}</td>
+                            <td>&pound;{packCCost.toFixed(2)}</td>
                           </tr>
                         )}
                         {supportPackages.filter(sp => isFeatureEnabled(sp.feature_key)).map(sp => (
