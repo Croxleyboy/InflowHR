@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import LegalClientMatters from './LegalClientMatters'
 import { toLocalDateStr } from '../../lib/formatters'
+import jsPDF from 'jspdf'
 
 // ── Types ──
 export interface Employee {
@@ -12,6 +14,8 @@ export interface Employee {
   last_name: string
   department: string
   is_active: boolean
+  hourly_rate: number | null
+  charge_out_rate: number | null
 }
 
 export interface LegalClient {
@@ -19,7 +23,64 @@ export interface LegalClient {
   company_id: string
   name: string
   status: 'active' | 'archived'
+  contact_name: string | null
+  contact_email: string | null
+  address_line1: string | null
+  address_line2: string | null
+  city: string | null
+  county: string | null
+  postcode: string | null
+  country: string | null
+  payment_terms_days: number | null
   created_at: string
+}
+
+interface LegalInvoice {
+  id: string
+  company_id: string
+  client_id: string
+  invoice_number: string
+  invoice_date: string
+  due_date: string
+  period_start: string
+  period_end: string
+  subtotal: number
+  vat_rate: number
+  vat_amount: number
+  total: number
+  status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled'
+  notes: string | null
+  created_at: string
+  client?: { name: string } | null
+}
+
+interface LegalInvoiceLine {
+  id: string
+  invoice_id: string
+  timesheet_entry_id: string | null
+  employee_name: string
+  matter_name: string
+  date: string
+  description: string
+  task_code: string | null
+  hours: number
+  rate: number
+  amount: number
+}
+
+interface CompanyBillingDetails {
+  name: string
+  logo_url: string | null
+  company_registration_number: string | null
+  vat_number: string | null
+  billing_address_line1: string | null
+  billing_address_line2: string | null
+  billing_city: string | null
+  billing_county: string | null
+  billing_postcode: string | null
+  billing_country: string | null
+  billing_email: string | null
+  billing_phone: string | null
 }
 
 export interface LegalMatter {
@@ -77,7 +138,7 @@ interface LeaveRequest {
   employee?: { first_name: string; last_name: string } | null
 }
 
-type Tab = 'overview' | 'review' | 'matters' | 'compliance' | 'settings'
+type Tab = 'overview' | 'review' | 'matters' | 'invoices' | 'compliance' | 'settings'
 type ReviewFilter = 'all' | 'draft' | 'submitted' | 'pending' | 'approved' | 'rejected' | 'billed'
 
 // ── Constants ──
@@ -145,7 +206,8 @@ function empName(e: { first_name: string; last_name: string } | null | undefined
 
 export default function AdminLegalTimesheets() {
   const { selectedCompanyId } = useAdminCompany()
-  const { showError } = useToast()
+  const { session } = useAuth()
+  const { showError, showSuccess } = useToast()
   const [tab, setTab] = useState<Tab>('overview')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [entries, setEntries] = useState<TimesheetEntry[]>([])
@@ -174,6 +236,20 @@ export default function AdminLegalTimesheets() {
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [auditReason, setAuditReason] = useState('')
+
+  // Invoice state
+  const [invoices, setInvoices] = useState<LegalInvoice[]>([])
+  const [invoiceLines, setInvoiceLines] = useState<LegalInvoiceLine[]>([])
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
+  const [companyBilling, setCompanyBilling] = useState<CompanyBillingDetails | null>(null)
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false)
+  const [invClient, setInvClient] = useState('')
+  const [invPeriodStart, setInvPeriodStart] = useState('')
+  const [invPeriodEnd, setInvPeriodEnd] = useState('')
+  const [invVatRate, setInvVatRate] = useState(20)
+  const [invNotes, setInvNotes] = useState('')
+  const [invCreating, setInvCreating] = useState(false)
+  const [viewingInvoice, setViewingInvoice] = useState<string | null>(null)
 
   // Settings state
   const ROUNDING_OPTIONS = [
@@ -220,7 +296,7 @@ export default function AdminLegalTimesheets() {
     if (!selectedCompanyId) return
     const { data } = await supabase
       .from('employees')
-      .select('id, first_name, last_name, department, is_active')
+      .select('id, first_name, last_name, department, is_active, hourly_rate, charge_out_rate')
       .eq('company_id', selectedCompanyId)
       .eq('is_active', true)
       .order('first_name')
@@ -511,6 +587,299 @@ export default function AdminLegalTimesheets() {
     setAuditReason('')
   }
 
+  // ── Invoice functions ──
+  const loadCompanyBilling = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase.from('companies')
+      .select('name, logo_url, company_registration_number, vat_number, billing_address_line1, billing_address_line2, billing_city, billing_county, billing_postcode, billing_country, billing_email, billing_phone')
+      .eq('id', selectedCompanyId).single()
+    if (data) setCompanyBilling(data as CompanyBillingDetails)
+  }, [selectedCompanyId])
+
+  const loadInvoices = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setInvoiceLoading(true)
+    const { data } = await supabase.from('legal_invoices')
+      .select('*, client:legal_clients!legal_invoices_client_id_fkey(name)')
+      .eq('company_id', selectedCompanyId)
+      .order('invoice_date', { ascending: false })
+    setInvoices((data as LegalInvoice[]) || [])
+    setInvoiceLoading(false)
+  }, [selectedCompanyId])
+
+  const loadInvoiceLines = useCallback(async (invoiceId: string) => {
+    const { data } = await supabase.from('legal_invoice_lines')
+      .select('*').eq('invoice_id', invoiceId).order('date')
+    setInvoiceLines((data as LegalInvoiceLine[]) || [])
+  }, [])
+
+  useEffect(() => {
+    if (tab === 'invoices') { loadInvoices(); loadCompanyBilling() }
+    if (tab === 'settings') { loadCompanyBilling() }
+  }, [tab, loadInvoices, loadCompanyBilling])
+
+  useEffect(() => {
+    if (viewingInvoice) loadInvoiceLines(viewingInvoice)
+  }, [viewingInvoice, loadInvoiceLines])
+
+  async function createInvoice() {
+    if (!selectedCompanyId || !invClient || !invPeriodStart || !invPeriodEnd) return
+    setInvCreating(true)
+
+    const billableEntries = entries.filter(e =>
+      e.client_id === invClient &&
+      (e.status === 'approved' || e.status === 'billed') &&
+      e.date >= invPeriodStart && e.date <= invPeriodEnd
+    )
+    if (billableEntries.length === 0) {
+      showError('No approved time entries found for this client and period')
+      setInvCreating(false)
+      return
+    }
+
+    const client = clients.find(c => c.id === invClient)
+    const paymentDays = client?.payment_terms_days || 30
+    const invoiceDate = new Date()
+    const dueDate = new Date(invoiceDate)
+    dueDate.setDate(dueDate.getDate() + paymentDays)
+
+    const { data: countData } = await supabase.from('legal_invoices')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', selectedCompanyId)
+    const seq = ((countData as any) || 0) + 1
+    const invoiceNumber = `INV-${invoiceDate.getFullYear()}${String(invoiceDate.getMonth() + 1).padStart(2, '0')}-${String(seq).padStart(4, '0')}`
+
+    const lines: { entry: typeof billableEntries[0]; rate: number; amount: number }[] = billableEntries.map(e => {
+      const emp = employees.find(emp => emp.id === e.employee_id)
+      const rate = emp?.charge_out_rate || 250
+      const hrs = Number(e.duration_hrs)
+      return { entry: e, rate, amount: Math.round(hrs * rate * 100) / 100 }
+    })
+
+    const subtotal = Math.round(lines.reduce((s, l) => s + l.amount, 0) * 100) / 100
+    const vatAmount = Math.round(subtotal * (invVatRate / 100) * 100) / 100
+    const total = Math.round((subtotal + vatAmount) * 100) / 100
+
+    const { data: inv, error } = await supabase.from('legal_invoices').insert({
+      company_id: selectedCompanyId,
+      client_id: invClient,
+      invoice_number: invoiceNumber,
+      invoice_date: toLocalDateStr(invoiceDate),
+      due_date: toLocalDateStr(dueDate),
+      period_start: invPeriodStart,
+      period_end: invPeriodEnd,
+      subtotal, vat_rate: invVatRate, vat_amount: vatAmount, total,
+      status: 'draft',
+      notes: invNotes || null,
+      created_by: session?.user?.id,
+    }).select().single()
+
+    if (error || !inv) {
+      showError('Failed to create invoice: ' + (error?.message || 'Unknown'))
+      setInvCreating(false)
+      return
+    }
+
+    const lineInserts = lines.map(l => ({
+      invoice_id: inv.id,
+      timesheet_entry_id: l.entry.id,
+      employee_name: empName(l.entry.employee),
+      matter_name: l.entry.matter?.name || '',
+      date: l.entry.date,
+      description: l.entry.narrative,
+      task_code: l.entry.task_code,
+      hours: Number(l.entry.duration_hrs),
+      rate: l.rate,
+      amount: l.amount,
+    }))
+    await supabase.from('legal_invoice_lines').insert(lineInserts)
+
+    for (const l of lines) {
+      await supabase.from('legal_timesheet_entries').update({ status: 'billed' }).eq('id', l.entry.id)
+    }
+
+    showSuccess(`Invoice ${invoiceNumber} created — ${lines.length} entries, £${total.toFixed(2)}`)
+    setShowCreateInvoice(false)
+    setInvClient('')
+    setInvNotes('')
+    setInvCreating(false)
+    loadInvoices()
+    loadEntries()
+  }
+
+  async function updateInvoiceStatus(id: string, status: LegalInvoice['status']) {
+    const { error } = await supabase.from('legal_invoices').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) showError('Failed to update: ' + error.message)
+    else { showSuccess(`Invoice marked as ${status}`); loadInvoices() }
+  }
+
+  function generateInvoicePDF(invoice: LegalInvoice, lines: LegalInvoiceLine[]) {
+    const co = companyBilling
+    const client = clients.find(c => c.id === invoice.client_id)
+    const doc = new jsPDF()
+    const pw = doc.internal.pageSize.getWidth()
+    const lm = 20
+    const rm = pw - 20
+    let y = 20
+
+    doc.setFontSize(18)
+    doc.setFont('helvetica', 'bold')
+    doc.text(co?.name || 'Company', lm, y)
+    doc.setFontSize(22)
+    doc.setTextColor(0, 100, 120)
+    doc.text('INVOICE', rm, y, { align: 'right' })
+    doc.setTextColor(0, 0, 0)
+    y += 10
+
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    const coLines = [
+      co?.billing_address_line1, co?.billing_address_line2,
+      [co?.billing_city, co?.billing_county, co?.billing_postcode].filter(Boolean).join(', '),
+      co?.billing_email, co?.billing_phone,
+      co?.company_registration_number ? `Reg: ${co.company_registration_number}` : null,
+      co?.vat_number ? `VAT: ${co.vat_number}` : null,
+    ].filter(Boolean)
+    coLines.forEach(l => { doc.text(l as string, lm, y); y += 4 })
+    y += 6
+
+    doc.setFillColor(240, 245, 248)
+    doc.roundedRect(lm, y, rm - lm, 32, 3, 3, 'F')
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Bill To:', lm + 6, y + 8)
+    doc.setFont('helvetica', 'normal')
+    doc.text(client?.name || '', lm + 6, y + 14)
+    const clAddr = [client?.address_line1, client?.address_line2, [client?.city, client?.postcode].filter(Boolean).join(' ')].filter(Boolean)
+    clAddr.forEach((l, i) => { doc.text(l as string, lm + 6, y + 20 + i * 5) })
+
+    doc.setFont('helvetica', 'bold')
+    doc.text('Invoice #:', rm - 70, y + 8)
+    doc.text('Date:', rm - 70, y + 14)
+    doc.text('Due:', rm - 70, y + 20)
+    doc.text('Period:', rm - 70, y + 26)
+    doc.setFont('helvetica', 'normal')
+    doc.text(invoice.invoice_number, rm - 30, y + 8)
+    doc.text(new Date(invoice.invoice_date + 'T00:00:00').toLocaleDateString('en-GB'), rm - 30, y + 14)
+    doc.text(new Date(invoice.due_date + 'T00:00:00').toLocaleDateString('en-GB'), rm - 30, y + 20)
+    doc.text(`${fmtDate(invoice.period_start)} — ${fmtDate(invoice.period_end)}`, rm - 30, y + 26)
+    y += 40
+
+    doc.setFillColor(0, 100, 120)
+    doc.roundedRect(lm, y, rm - lm, 8, 2, 2, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    const cols = [lm + 4, lm + 24, lm + 62, lm + 100, rm - 50, rm - 30, rm - 4]
+    doc.text('Date', cols[0], y + 5.5)
+    doc.text('Fee Earner', cols[1], y + 5.5)
+    doc.text('Matter', cols[2], y + 5.5)
+    doc.text('Description', cols[3], y + 5.5)
+    doc.text('Hours', cols[4], y + 5.5)
+    doc.text('Rate', cols[5], y + 5.5)
+    doc.text('Amount', cols[6], y + 5.5, { align: 'right' })
+    doc.setTextColor(0, 0, 0)
+    y += 12
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    lines.forEach((line, i) => {
+      if (y > 265) { doc.addPage(); y = 20 }
+      if (i % 2 === 0) {
+        doc.setFillColor(248, 250, 252)
+        doc.rect(lm, y - 4, rm - lm, 7, 'F')
+      }
+      doc.text(new Date(line.date + 'T00:00:00').toLocaleDateString('en-GB'), cols[0], y)
+      doc.text(line.employee_name.substring(0, 20), cols[1], y)
+      doc.text(line.matter_name.substring(0, 20), cols[2], y)
+      doc.text(line.description.substring(0, 25), cols[3], y)
+      doc.text(line.hours.toFixed(2), cols[4], y)
+      doc.text(`£${line.rate.toFixed(0)}`, cols[5], y)
+      doc.text(`£${line.amount.toFixed(2)}`, cols[6], y, { align: 'right' })
+      y += 7
+    })
+
+    y += 6
+    doc.setDrawColor(200, 200, 200)
+    doc.line(rm - 60, y, rm, y)
+    y += 8
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.text('Subtotal:', rm - 60, y)
+    doc.text(`£${invoice.subtotal.toFixed(2)}`, rm, y, { align: 'right' })
+    y += 7
+    doc.text(`VAT (${invoice.vat_rate}%):`, rm - 60, y)
+    doc.text(`£${invoice.vat_amount.toFixed(2)}`, rm, y, { align: 'right' })
+    y += 8
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.text('Total Due:', rm - 60, y)
+    doc.text(`£${invoice.total.toFixed(2)}`, rm, y, { align: 'right' })
+
+    y += 16
+    if (invoice.notes) {
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(9)
+      doc.text(`Notes: ${invoice.notes}`, lm, y)
+      y += 8
+    }
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8)
+    doc.setTextColor(150, 150, 150)
+    doc.text(`Payment terms: ${client?.payment_terms_days || 30} days`, lm, y)
+
+    doc.save(`${invoice.invoice_number}.pdf`)
+  }
+
+  function exportInvoiceSageCsv(invoice: LegalInvoice, lines: LegalInvoiceLine[]) {
+    const client = clients.find(c => c.id === invoice.client_id)
+    const headers = ['Type', 'Account Reference', 'Nominal A/C Ref', 'Date', 'Reference', 'Details', 'Net Amount', 'Tax Code', 'Tax Amount']
+    const rows = lines.map(l => [
+      'SI',
+      client?.name?.substring(0, 8)?.toUpperCase() || 'CLIENT',
+      '4000',
+      new Date(invoice.invoice_date + 'T00:00:00').toLocaleDateString('en-GB'),
+      invoice.invoice_number,
+      `${l.employee_name} - ${l.matter_name} - ${l.hours.toFixed(2)}h`,
+      l.amount.toFixed(2),
+      'T1',
+      (l.amount * (invoice.vat_rate / 100)).toFixed(2),
+    ])
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${invoice.invoice_number}-sage.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportInvoiceXeroCsv(invoice: LegalInvoice, lines: LegalInvoiceLine[]) {
+    const client = clients.find(c => c.id === invoice.client_id)
+    const headers = ['*ContactName', 'EmailAddress', '*InvoiceNumber', '*InvoiceDate', '*DueDate', '*Description', '*Quantity', '*UnitAmount', '*AccountCode', 'TaxType']
+    const rows = lines.map(l => [
+      client?.name || '',
+      client?.contact_email || '',
+      invoice.invoice_number,
+      new Date(invoice.invoice_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      new Date(invoice.due_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      `${l.employee_name} - ${l.matter_name} (${l.hours.toFixed(2)}h @ £${l.rate.toFixed(0)}/hr)`,
+      l.hours.toFixed(2),
+      l.rate.toFixed(2),
+      '200',
+      invoice.vat_rate > 0 ? '20% (VAT on Income)' : 'No VAT',
+    ])
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${invoice.invoice_number}-xero.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   // Export
   function exportToCSV() {
     const approved = entries.filter(e => e.status === 'approved' || e.status === 'billed')
@@ -537,7 +906,9 @@ export default function AdminLegalTimesheets() {
     ]
     approved.forEach((e, i) => {
       const hrs = Number(e.duration_hrs)
-      lines.push(`${e.date}|INV-${Date.now()}|${e.client?.name || ''}|${e.matter?.name || ''}|${hrs * 250}|${e.date}|${e.date}|${e.narrative}|${i + 1}|F|${hrs}|0|${hrs * 250}|${e.date}|${e.task_code}||${e.task_code}|${e.employee_id}|${e.narrative}|FIRM001|250|${empName(e.employee)}|ASSOCIATE[]`)
+      const emp = employees.find(emp => emp.id === e.employee_id)
+      const rate = emp?.charge_out_rate || 250
+      lines.push(`${e.date}|INV-${Date.now()}|${e.client?.name || ''}|${e.matter?.name || ''}|${(hrs * rate).toFixed(2)}|${e.date}|${e.date}|${e.narrative}|${i + 1}|F|${hrs}|0|${(hrs * rate).toFixed(2)}|${e.date}|${e.task_code}||${e.task_code}|${e.employee_id}|${e.narrative}|FIRM001|${rate.toFixed(2)}|${empName(e.employee)}|ASSOCIATE[]`)
     })
     const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -554,25 +925,22 @@ export default function AdminLegalTimesheets() {
     <div className="admin-section alt-section">
       <div className="admin-page-header">
         <h2 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ color: '#00897b' }}>⚖️</span> Legal Timesheet Management
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18" /><path d="M5 7l7-4 7 4" /><path d="M5 7v2a7 7 0 0 0 3.5 6" /><path d="M19 7v2a7 7 0 0 1-3.5 6" /><circle cx="5" cy="7" r="1" fill="#00897b" /><circle cx="19" cy="7" r="1" fill="#00897b" /></svg>
+          Legal Timesheet Management
         </h2>
         <p>Review, approve, and manage employee legal time entries, clients, and matters</p>
       </div>
 
       {/* Tabs */}
       <div className="alt-tabs">
-        {(['overview', 'review', 'matters', 'compliance', 'settings'] as Tab[]).map(t => (
+        {(['overview', 'review', 'matters', 'invoices', 'compliance', 'settings'] as Tab[]).map(t => (
           <button key={t} className={`alt-tab ${tab === t ? 'alt-tab-active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'overview' && '📊 '}
-            {t === 'review' && '✅ '}
-            {t === 'matters' && '📁 '}
-            {t === 'compliance' && '🛡️ '}
-            {t === 'settings' && '⚙️ '}
-            {t === 'overview' && 'Overview'}
-            {t === 'review' && 'Review & Approve'}
-            {t === 'matters' && 'Clients & Matters'}
-            {t === 'compliance' && 'Compliance'}
-            {t === 'settings' && 'Settings'}
+            {t === 'overview' && <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 20V10" /><path d="M12 20V4" /><path d="M6 20v-6" /></svg> Overview</>}
+            {t === 'review' && <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> Review &amp; Approve</>}
+            {t === 'matters' && <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg> Clients &amp; Matters</>}
+            {t === 'invoices' && <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg> Invoices</>}
+            {t === 'compliance' && <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg> Compliance</>}
+            {t === 'settings' && <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg> Settings</>}
             {t === 'review' && pendingCount > 0 && <span className="alt-tab-badge">{pendingCount}</span>}
             {t === 'compliance' && overtimeAlerts > 0 && <span className="alt-tab-badge alt-tab-badge-red">{overtimeAlerts}</span>}
           </button>
@@ -964,18 +1332,231 @@ export default function AdminLegalTimesheets() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                 Export LEDES 1998B
               </button>
-              <button className="admin-btn alt-btn-secondary">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
-                Sync to Payroll
-              </button>
             </div>
           </div>
+        </>
+      )}
+
+      {/* ── INVOICES TAB ── */}
+      {tab === 'invoices' && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Client Invoices</h3>
+            <button className="admin-btn alt-btn-primary" onClick={() => setShowCreateInvoice(true)}>
+              + Create Invoice
+            </button>
+          </div>
+
+          {showCreateInvoice && (
+            <div className="alt-compliance-section" style={{ marginBottom: 16 }}>
+              <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600 }}>Generate Invoice from Approved Time</h4>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Client</label>
+                  <select className="admin-select" style={{ minWidth: 200 }} value={invClient} onChange={e => setInvClient(e.target.value)}>
+                    <option value="">Select client...</option>
+                    {clients.filter(c => c.status === 'active').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Period From</label>
+                  <input type="date" className="admin-inline-input" value={invPeriodStart} onChange={e => setInvPeriodStart(e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Period To</label>
+                  <input type="date" className="admin-inline-input" value={invPeriodEnd} onChange={e => setInvPeriodEnd(e.target.value)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>VAT %</label>
+                  <input type="number" className="admin-inline-input" style={{ width: 70 }} value={invVatRate} onChange={e => setInvVatRate(Number(e.target.value))} />
+                </div>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes (optional)</label>
+                  <input type="text" className="admin-inline-input" style={{ width: '100%' }} value={invNotes} onChange={e => setInvNotes(e.target.value)} placeholder="Payment reference, PO number, etc." />
+                </div>
+              </div>
+              {invClient && invPeriodStart && invPeriodEnd && (
+                <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text-muted, #666)' }}>
+                  {entries.filter(e => e.client_id === invClient && (e.status === 'approved' || e.status === 'billed') && e.date >= invPeriodStart && e.date <= invPeriodEnd).length} approved entries found for this period
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="admin-btn alt-btn-primary" onClick={createInvoice} disabled={invCreating || !invClient || !invPeriodStart || !invPeriodEnd}>
+                  {invCreating ? 'Creating...' : 'Create Invoice'}
+                </button>
+                <button className="admin-btn" onClick={() => setShowCreateInvoice(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {invoiceLoading ? <div className="admin-loading">Loading invoices...</div> : invoices.length === 0 ? (
+            <div className="admin-empty">No invoices created yet. Use approved time entries to generate invoices.</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th>Invoice #</th>
+                    <th>Client</th>
+                    <th>Date</th>
+                    <th>Due</th>
+                    <th>Period</th>
+                    <th>Subtotal</th>
+                    <th>VAT</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map(inv => (
+                    <tr key={inv.id}>
+                      <td><strong>{inv.invoice_number}</strong></td>
+                      <td>{inv.client?.name || '—'}</td>
+                      <td>{new Date(inv.invoice_date + 'T00:00:00').toLocaleDateString('en-GB')}</td>
+                      <td>{new Date(inv.due_date + 'T00:00:00').toLocaleDateString('en-GB')}</td>
+                      <td style={{ fontSize: 12 }}>{fmtDate(inv.period_start)} — {fmtDate(inv.period_end)}</td>
+                      <td>£{Number(inv.subtotal).toFixed(2)}</td>
+                      <td>£{Number(inv.vat_amount).toFixed(2)}</td>
+                      <td><strong>£{Number(inv.total).toFixed(2)}</strong></td>
+                      <td>
+                        <span style={{
+                          padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+                          background: inv.status === 'paid' ? '#e8f5e9' : inv.status === 'sent' ? '#e3f2fd' : inv.status === 'overdue' ? '#ffebee' : inv.status === 'cancelled' ? '#f5f5f5' : '#fff3e0',
+                          color: inv.status === 'paid' ? '#2e7d32' : inv.status === 'sent' ? '#1565c0' : inv.status === 'overdue' ? '#c62828' : inv.status === 'cancelled' ? '#888' : '#e65100',
+                        }}>
+                          {inv.status}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          <button className="admin-btn-sm" onClick={async () => {
+                            setViewingInvoice(inv.id)
+                            await loadInvoiceLines(inv.id)
+                            generateInvoicePDF(inv, (await supabase.from('legal_invoice_lines').select('*').eq('invoice_id', inv.id).order('date')).data as LegalInvoiceLine[] || [])
+                          }}>PDF</button>
+                          <button className="admin-btn-sm" onClick={async () => {
+                            const { data: lns } = await supabase.from('legal_invoice_lines').select('*').eq('invoice_id', inv.id).order('date')
+                            exportInvoiceXeroCsv(inv, lns as LegalInvoiceLine[] || [])
+                          }}>Xero</button>
+                          <button className="admin-btn-sm" onClick={async () => {
+                            const { data: lns } = await supabase.from('legal_invoice_lines').select('*').eq('invoice_id', inv.id).order('date')
+                            exportInvoiceSageCsv(inv, lns as LegalInvoiceLine[] || [])
+                          }}>Sage</button>
+                          {inv.status === 'draft' && <button className="admin-btn-sm" style={{ color: '#1565c0' }} onClick={() => updateInvoiceStatus(inv.id, 'sent')}>Mark Sent</button>}
+                          {(inv.status === 'sent' || inv.status === 'overdue') && <button className="admin-btn-sm" style={{ color: '#2e7d32' }} onClick={() => updateInvoiceStatus(inv.id, 'paid')}>Mark Paid</button>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
       {/* ── SETTINGS TAB ── */}
       {tab === 'settings' && (
         <>
+          {/* Charge-out Rates */}
+          <div className="alt-compliance-section" style={{ marginBottom: 16 }}>
+            <h3 className="alt-section-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+              Fee Earner Charge-out Rates
+            </h3>
+            <p style={{ fontSize: 13, color: '#8b8fa3', marginBottom: 16 }}>
+              Set hourly charge-out rates for each fee earner. These rates are used for client billing and invoicing — separate from the employee's pay rate.
+            </p>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ fontSize: 13, maxWidth: 600 }}>
+                <thead>
+                  <tr>
+                    <th>Employee</th>
+                    <th>Pay Rate (£/hr)</th>
+                    <th>Charge-out Rate (£/hr)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {employees.filter(e => e.is_active).map(emp => (
+                    <tr key={emp.id}>
+                      <td style={{ fontWeight: 600 }}>{emp.first_name} {emp.last_name}</td>
+                      <td style={{ color: '#8b8fa3' }}>{emp.hourly_rate ? `£${Number(emp.hourly_rate).toFixed(2)}` : '—'}</td>
+                      <td>
+                        <input
+                          className="admin-inline-input"
+                          type="number"
+                          step="0.01"
+                          style={{ width: 100 }}
+                          value={emp.charge_out_rate ?? ''}
+                          placeholder="0.00"
+                          onChange={async (e) => {
+                            const val = e.target.value ? parseFloat(e.target.value) : null
+                            await supabase.from('employees').update({ charge_out_rate: val }).eq('id', emp.id)
+                            loadEmployees()
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Company Billing Details */}
+          <div className="alt-compliance-section" style={{ marginBottom: 16 }}>
+            <h3 className="alt-section-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+              Company Billing Details
+            </h3>
+            <p style={{ fontSize: 13, color: '#8b8fa3', marginBottom: 16 }}>
+              Your company details appear on generated invoices — logo, name, address, registration number and VAT number.
+            </p>
+            {companyBilling ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', maxWidth: 600 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Company Reg. No.</label>
+                  <input className="admin-inline-input" style={{ width: '100%' }} value={companyBilling.company_registration_number || ''} onChange={e => setCompanyBilling({ ...companyBilling, company_registration_number: e.target.value })} onBlur={() => supabase.from('companies').update({ company_registration_number: companyBilling.company_registration_number || null }).eq('id', selectedCompanyId)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>VAT Number</label>
+                  <input className="admin-inline-input" style={{ width: '100%' }} value={companyBilling.vat_number || ''} onChange={e => setCompanyBilling({ ...companyBilling, vat_number: e.target.value })} onBlur={() => supabase.from('companies').update({ vat_number: companyBilling.vat_number || null }).eq('id', selectedCompanyId)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Billing Address Line 1</label>
+                  <input className="admin-inline-input" style={{ width: '100%' }} value={companyBilling.billing_address_line1 || ''} onChange={e => setCompanyBilling({ ...companyBilling, billing_address_line1: e.target.value })} onBlur={() => supabase.from('companies').update({ billing_address_line1: companyBilling.billing_address_line1 || null }).eq('id', selectedCompanyId)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Billing Address Line 2</label>
+                  <input className="admin-inline-input" style={{ width: '100%' }} value={companyBilling.billing_address_line2 || ''} onChange={e => setCompanyBilling({ ...companyBilling, billing_address_line2: e.target.value })} onBlur={() => supabase.from('companies').update({ billing_address_line2: companyBilling.billing_address_line2 || null }).eq('id', selectedCompanyId)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>City</label>
+                  <input className="admin-inline-input" style={{ width: '100%' }} value={companyBilling.billing_city || ''} onChange={e => setCompanyBilling({ ...companyBilling, billing_city: e.target.value })} onBlur={() => supabase.from('companies').update({ billing_city: companyBilling.billing_city || null }).eq('id', selectedCompanyId)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>County</label>
+                  <input className="admin-inline-input" style={{ width: '100%' }} value={companyBilling.billing_county || ''} onChange={e => setCompanyBilling({ ...companyBilling, billing_county: e.target.value })} onBlur={() => supabase.from('companies').update({ billing_county: companyBilling.billing_county || null }).eq('id', selectedCompanyId)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Postcode</label>
+                  <input className="admin-inline-input" style={{ width: '100%' }} value={companyBilling.billing_postcode || ''} onChange={e => setCompanyBilling({ ...companyBilling, billing_postcode: e.target.value })} onBlur={() => supabase.from('companies').update({ billing_postcode: companyBilling.billing_postcode || null }).eq('id', selectedCompanyId)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Billing Email</label>
+                  <input className="admin-inline-input" type="email" style={{ width: '100%' }} value={companyBilling.billing_email || ''} onChange={e => setCompanyBilling({ ...companyBilling, billing_email: e.target.value })} onBlur={() => supabase.from('companies').update({ billing_email: companyBilling.billing_email || null }).eq('id', selectedCompanyId)} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Billing Phone</label>
+                  <input className="admin-inline-input" style={{ width: '100%' }} value={companyBilling.billing_phone || ''} onChange={e => setCompanyBilling({ ...companyBilling, billing_phone: e.target.value })} onBlur={() => supabase.from('companies').update({ billing_phone: companyBilling.billing_phone || null }).eq('id', selectedCompanyId)} />
+                </div>
+              </div>
+            ) : (
+              <div className="admin-empty">Loading company billing details...</div>
+            )}
+          </div>
+
           <div className="alt-compliance-section">
             <h3 className="alt-section-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>

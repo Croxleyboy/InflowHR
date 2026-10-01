@@ -22,6 +22,11 @@ export default function LegalClientMatters({ clients, matters, employees, select
   const [newClientName, setNewClientName] = useState('')
   const [editingClientId, setEditingClientId] = useState<string | null>(null)
   const [editClientName, setEditClientName] = useState('')
+  const [editClientBilling, setEditClientBilling] = useState({
+    contact_name: '', contact_email: '', address_line1: '', address_line2: '',
+    city: '', county: '', postcode: '', country: 'United Kingdom', payment_terms_days: 30
+  })
+  const [showBillingFor, setShowBillingFor] = useState<string | null>(null)
   const [editingMatterId, setEditingMatterId] = useState<string | null>(null)
   const [editMatterForm, setEditMatterForm] = useState({ name: '', daily_cap: '', rate_card: 'Associate', assigned_employees: [] as string[], allowed_codes: [] as string[] })
   const [matterForm, setMatterForm] = useState({ name: '', dailyCap: '', rateCard: 'Associate', assigned_employees: [] as string[], codes: [] as string[] })
@@ -54,12 +59,36 @@ export default function LegalClientMatters({ clients, matters, employees, select
   function startEditClient(client: LegalClient) {
     setEditingClientId(client.id)
     setEditClientName(client.name)
+    setEditClientBilling({
+      contact_name: client.contact_name || '',
+      contact_email: client.contact_email || '',
+      address_line1: client.address_line1 || '',
+      address_line2: client.address_line2 || '',
+      city: client.city || '',
+      county: client.county || '',
+      postcode: client.postcode || '',
+      country: client.country || 'United Kingdom',
+      payment_terms_days: client.payment_terms_days || 30,
+    })
+    setShowBillingFor(client.id)
   }
 
   async function saveClientEdit(id: string) {
     if (!editClientName.trim()) return
-    await supabase.from('legal_clients').update({ name: editClientName.trim() }).eq('id', id)
+    await supabase.from('legal_clients').update({
+      name: editClientName.trim(),
+      contact_name: editClientBilling.contact_name || null,
+      contact_email: editClientBilling.contact_email || null,
+      address_line1: editClientBilling.address_line1 || null,
+      address_line2: editClientBilling.address_line2 || null,
+      city: editClientBilling.city || null,
+      county: editClientBilling.county || null,
+      postcode: editClientBilling.postcode || null,
+      country: editClientBilling.country || null,
+      payment_terms_days: editClientBilling.payment_terms_days || 30,
+    }).eq('id', id)
     setEditingClientId(null)
+    setShowBillingFor(null)
     onDataChanged()
   }
 
@@ -126,7 +155,7 @@ export default function LegalClientMatters({ clients, matters, employees, select
                 <>
                   <input className="admin-input" value={editClientName} onChange={e => setEditClientName(e.target.value)} style={{ maxWidth: 260 }} />
                   <button className="admin-btn-sm admin-btn-save" onClick={() => saveClientEdit(client.id)}>Save</button>
-                  <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingClientId(null)}>Cancel</button>
+                  <button className="admin-btn-sm admin-btn-cancel" onClick={() => { setEditingClientId(null); setShowBillingFor(null) }}>Cancel</button>
                 </>
               ) : (
                 <>
@@ -138,9 +167,15 @@ export default function LegalClientMatters({ clients, matters, employees, select
             </div>
             <div className="alt-client-actions">
               {editingClientId !== client.id && (
-                <button className="admin-btn-icon" title="Edit client" onClick={() => startEditClient(client)}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                </button>
+                <>
+                  <button className="admin-btn-sm" style={{ fontSize: 11 }} onClick={() => setShowBillingFor(showBillingFor === client.id ? null : client.id)}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -1 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    Billing
+                  </button>
+                  <button className="admin-btn-icon" title="Edit client" onClick={() => startEditClient(client)}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                  </button>
+                </>
               )}
               <button className="admin-btn-sm" style={{ background: client.status === 'active' ? '#ffebee' : '#e8f5e9', color: client.status === 'active' ? '#c62828' : '#2e7d32' }} onClick={() => toggleClientStatus(client.id, client.status)}>
                 {client.status === 'active' ? 'Archive' : 'Reactivate'}
@@ -150,6 +185,59 @@ export default function LegalClientMatters({ clients, matters, employees, select
               </button>
             </div>
           </div>
+
+          {showBillingFor === client.id && (
+            <div style={{ padding: '12px 16px', background: '#f8f9fa', borderRadius: 8, margin: '8px 0', fontSize: 13 }}>
+              <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 13 }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00897b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6, verticalAlign: -2 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                Billing Details
+              </div>
+              {editingClientId === client.id ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px' }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Contact Name</label>
+                    <input className="admin-inline-input" style={{ width: '100%' }} value={editClientBilling.contact_name} onChange={e => setEditClientBilling(p => ({ ...p, contact_name: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Contact Email</label>
+                    <input className="admin-inline-input" type="email" style={{ width: '100%' }} value={editClientBilling.contact_email} onChange={e => setEditClientBilling(p => ({ ...p, contact_email: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Address Line 1</label>
+                    <input className="admin-inline-input" style={{ width: '100%' }} value={editClientBilling.address_line1} onChange={e => setEditClientBilling(p => ({ ...p, address_line1: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Address Line 2</label>
+                    <input className="admin-inline-input" style={{ width: '100%' }} value={editClientBilling.address_line2} onChange={e => setEditClientBilling(p => ({ ...p, address_line2: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>City</label>
+                    <input className="admin-inline-input" style={{ width: '100%' }} value={editClientBilling.city} onChange={e => setEditClientBilling(p => ({ ...p, city: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>County</label>
+                    <input className="admin-inline-input" style={{ width: '100%' }} value={editClientBilling.county} onChange={e => setEditClientBilling(p => ({ ...p, county: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Postcode</label>
+                    <input className="admin-inline-input" style={{ width: '100%' }} value={editClientBilling.postcode} onChange={e => setEditClientBilling(p => ({ ...p, postcode: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Payment Terms (days)</label>
+                    <input className="admin-inline-input" type="number" style={{ width: '100%' }} value={editClientBilling.payment_terms_days} onChange={e => setEditClientBilling(p => ({ ...p, payment_terms_days: Number(e.target.value) }))} />
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 24px', color: '#555' }}>
+                  <div><strong>Contact:</strong> {client.contact_name || '—'} {client.contact_email ? `(${client.contact_email})` : ''}</div>
+                  <div><strong>Payment Terms:</strong> {client.payment_terms_days || 30} days</div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <strong>Address:</strong> {[client.address_line1, client.address_line2, client.city, client.county, client.postcode].filter(Boolean).join(', ') || '—'}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {client.clientMatters.length > 0 && (
             <div className="admin-table-wrap" style={{ marginTop: 8 }}>
