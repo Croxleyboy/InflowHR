@@ -5411,6 +5411,10 @@ body {
   .desktop-content .dash-card {
     min-height: 80px;
     padding: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18), 0 1.5px 5px rgba(0,0,0,0.10);
+  }
+  .desktop-content .info-card {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
   }
 
   .desktop-content .greeting-row { padding: 14px 20px 8px; }
