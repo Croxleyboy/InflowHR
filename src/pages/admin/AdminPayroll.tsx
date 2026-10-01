@@ -1245,9 +1245,11 @@ export default function AdminPayroll() {
     const latestByEmp = new Map<string, Payslip>()
     for (const p of payslips) {
       if (p.status !== 'processed') continue
-      const existing = latestByEmp.get(p.employee_id)
+      const empId = p.employee?.id
+      if (!empId) continue
+      const existing = latestByEmp.get(empId)
       if (!existing || p.pay_period_start > existing.pay_period_start) {
-        latestByEmp.set(p.employee_id, p)
+        latestByEmp.set(empId, p)
       }
     }
     return employees.map(emp => {
@@ -1332,9 +1334,11 @@ export default function AdminPayroll() {
     const latestByEmp = new Map<string, Payslip>()
     for (const p of payslips) {
       if (p.status !== 'processed') continue
-      const existing = latestByEmp.get(p.employee_id)
+      const empId = p.employee?.id
+      if (!empId) continue
+      const existing = latestByEmp.get(empId)
       if (!existing || p.pay_period_start > existing.pay_period_start) {
-        latestByEmp.set(p.employee_id, p)
+        latestByEmp.set(empId, p)
       }
     }
     return employees.map(emp => {
