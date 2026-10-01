@@ -81,6 +81,7 @@ import AdminCancellations from './pages/admin/AdminCancellations'
 import AdminGettingSetup from './pages/admin/AdminGettingSetup'
 import AdminTeamsTest from './pages/admin/AdminTeamsTest'
 import AdminIntegrations from './pages/admin/AdminIntegrations'
+import AdminReports from './pages/admin/AdminReports'
 import AdminSurveys from './pages/admin/AdminSurveys'
 import SurveyInsights from './pages/admin/SurveyInsights'
 import MySurveys from './pages/MySurveys'
@@ -224,6 +225,7 @@ function AuthGate() {
             <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
             <Route path="surveys" element={<AdminSurveys />} />
             <Route path="surveys/insights" element={<SurveyInsights />} />
+            <Route path="reports" element={<AdminReports />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
             <Route path="integrations" element={<AdminIntegrations />} />
             <Route path="access" element={<AdminAccess />} />
@@ -270,6 +272,7 @@ function AuthGate() {
           <Route path="notifications" element={<AdminNotifications />} />
           <Route path="billing" element={<AdminBilling />} />
           <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
+          <Route path="reports" element={<AdminReports />} />
           <Route path="user-guides" element={<AdminUserGuides />} />
           <Route path="integrations" element={<AdminIntegrations />} />
           <Route path="access" element={<AdminAccess />} />
