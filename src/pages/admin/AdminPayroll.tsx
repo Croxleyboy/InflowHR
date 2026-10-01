@@ -195,7 +195,7 @@ export default function AdminPayroll() {
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'period_review' | 'time_breakdown' | 'analytics' | 'xero_pay' | 'sage_pay' | 'bacs_export' | 'modulr_payout'>('payslips')
+  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'period_review' | 'time_breakdown' | 'analytics' | 'xero_pay' | 'sage_pay' | 'bacs_export' | 'modulr_payout' | 'logs'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [page, setPage] = useState(1)
@@ -279,6 +279,17 @@ export default function AdminPayroll() {
   })
   const [prAdjustments, setPrAdjustments] = useState<Record<string, { hours?: number; overtime?: number; notes?: string }>>({})
   const [prPage, setPrPage] = useState(1)
+
+  // Audit log state
+  interface AuditLogEntry { id: string; action: string; detail: string | null; employee_id: string | null; performed_by: string; performer_name: string | null; status: string; created_at: string }
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditFilterEmp, setAuditFilterEmp] = useState('')
+  const [auditDateFrom, setAuditDateFrom] = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 1); return localDateStr(d)
+  })
+  const [auditDateTo, setAuditDateTo] = useState(() => localDateStr(new Date()))
+  const [auditPage, setAuditPage] = useState(1)
 
   const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [tbPeriodStart, setTbPeriodStart] = useState(() => {
@@ -386,13 +397,14 @@ export default function AdminPayroll() {
     const wasPaid = payslip?.status === 'paid'
 
     const { error } = await supabase.from('payslips').update({ ...editForm, net_pay: net }).eq('id', id)
-    if (error) { showError('Failed to save payslip: ' + error.message); return }
+    if (error) { showError('Failed to save payslip: ' + error.message); logPayrollAction('Payslip Edit', `Failed to save payslip #${id}: ${error.message}`, payslip?.employee?.id, 'error'); return }
 
     // If editing a paid payslip, mark the month's schedule as needing re-download
     if (wasPaid && payslip) {
       await markMonthEdited(payslip.pay_period_start)
     }
 
+    logPayrollAction('Payslip Edit', `Edited payslip for ${payslip?.employee?.first_name} ${payslip?.employee?.last_name} — Gross: £${gross.toFixed(2)}, Net: £${net.toFixed(2)}, Status: ${editForm.status}`, payslip?.employee?.id)
     setEditingId(null)
     loadAll()
     showSuccess('Payslip saved')
@@ -413,9 +425,11 @@ export default function AdminPayroll() {
 
   async function deletePayslip(id: number) {
     if (!confirm('Delete this payslip?')) return
+    const p = payslips.find(ps => ps.id === id)
     const { error } = await supabase.from('payslips').delete().eq('id', id)
-    if (error) { showError('Failed to delete payslip: ' + error.message); return }
-    setPayslips(prev => prev.filter(p => p.id !== id))
+    if (error) { showError('Failed to delete payslip: ' + error.message); logPayrollAction('Payslip Delete', `Failed to delete payslip #${id}: ${error.message}`, p?.employee?.id, 'error'); return }
+    logPayrollAction('Payslip Delete', `Deleted payslip for ${p?.employee?.first_name} ${p?.employee?.last_name} — Period: ${p?.pay_period_start}`, p?.employee?.id)
+    setPayslips(prev => prev.filter(ps => ps.id !== id))
     showSuccess('Payslip deleted')
   }
 
@@ -475,6 +489,40 @@ export default function AdminPayroll() {
     setPaySettingsSaving(false)
     showSuccess('Payroll settings saved')
   }
+
+  // ── Audit log helpers ─────────────────────────────────────────────────────
+
+  async function logPayrollAction(action: string, detail: string, employeeId?: string | null, status: 'success' | 'error' | 'warning' = 'success') {
+    if (!selectedCompanyId || !session?.user?.id) return
+    const userName = session.user.user_metadata?.full_name || session.user.email || 'Unknown'
+    await supabase.from('payroll_audit_log').insert({
+      company_id: selectedCompanyId,
+      action,
+      detail,
+      employee_id: employeeId || null,
+      performed_by: session.user.id,
+      performer_name: userName,
+      status,
+    })
+  }
+
+  const loadAuditLogs = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setAuditLoading(true)
+    let query = supabase.from('payroll_audit_log')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .gte('created_at', auditDateFrom + 'T00:00:00')
+      .lte('created_at', auditDateTo + 'T23:59:59')
+      .order('created_at', { ascending: false })
+      .limit(500)
+    if (auditFilterEmp) query = query.eq('employee_id', auditFilterEmp)
+    const { data } = await query
+    setAuditLogs((data as AuditLogEntry[]) || [])
+    setAuditLoading(false)
+  }, [selectedCompanyId, auditDateFrom, auditDateTo, auditFilterEmp])
+
+  useEffect(() => { if (tab === 'logs') loadAuditLogs() }, [tab, loadAuditLogs])
 
   // ── Period Review helpers ──────────────────────────────────────────────────
 
@@ -548,8 +596,12 @@ export default function AdminPayroll() {
       if (!error) created++
     }
 
-    if (created > 0) showSuccess(`Generated ${created} period review(s)`)
-    else showError('No new reviews to generate — all employees already have reviews for this period')
+    if (created > 0) {
+      showSuccess(`Generated ${created} period review(s)`)
+      logPayrollAction('Generate Period Reviews', `Generated ${created} review(s) for ${prSubTab} workers — Period: ${prPeriodStart} to ${prPeriodEnd}`)
+    } else {
+      showError('No new reviews to generate — all employees already have reviews for this period')
+    }
     await loadPeriodReviews()
   }
 
@@ -574,8 +626,15 @@ export default function AdminPayroll() {
       notes: adj.notes || review.notes,
       updated_at: new Date().toISOString(),
     }).eq('id', reviewId)
-    if (error) showError('Failed to approve: ' + error.message)
-    else { showSuccess('Period approved'); loadPeriodReviews() }
+    if (error) {
+      showError('Failed to approve: ' + error.message)
+      logPayrollAction('Approve Period Review', `Failed to approve review for employee ${review.employee_id}: ${error.message}`, review.employee_id, 'error')
+    } else {
+      const emp = employees.find(e => e.id === review.employee_id)
+      showSuccess('Period approved')
+      logPayrollAction('Approve Period Review', `Approved period review for ${emp?.first_name ?? ''} ${emp?.last_name ?? ''} — Hours: ${adjustedHrs}, Overtime: ${overtimeHrs}, Gross: £${gross.toFixed(2)}`, review.employee_id)
+      loadPeriodReviews()
+    }
   }
 
   async function approveAllPeriodReviews() {
@@ -597,7 +656,40 @@ export default function AdminPayroll() {
       if (!error) approved++
     }
     showSuccess(`Approved ${approved} period review(s)`)
+    logPayrollAction('Approve All Period Reviews', `Bulk approved ${approved} of ${drafts.length} draft review(s) — Period: ${prPeriodStart} to ${prPeriodEnd}`)
     loadPeriodReviews()
+  }
+
+  async function savePeriodAdjustment(reviewId: string) {
+    const adj = prAdjustments[reviewId]
+    if (!adj) { showError('No changes to save'); return }
+    const review = prReviews.find(r => r.id === reviewId)
+    if (!review || review.status !== 'draft') return
+
+    const adjustedHrs = adj.hours ?? review.adjusted_hours ?? review.total_hours
+    const overtimeHrs = adj.overtime ?? review.overtime_hours
+    const rate = review.hourly_rate
+    const multiplier = employees.find(e => e.id === review.employee_id)?.overtime_rate_multiplier || 1.5
+    const gross = Math.round(((adjustedHrs * rate) + (overtimeHrs * rate * multiplier)) * 100) / 100
+
+    const { error } = await supabase.from('pay_period_reviews').update({
+      adjusted_hours: adjustedHrs,
+      overtime_hours: overtimeHrs,
+      gross_pay: gross,
+      notes: adj.notes || review.notes,
+      updated_at: new Date().toISOString(),
+    }).eq('id', reviewId)
+
+    if (error) {
+      showError('Failed to save: ' + error.message)
+      logPayrollAction('Save Period Adjustment', `Failed to save adjustment for review ${reviewId}: ${error.message}`, review.employee_id, 'error')
+    } else {
+      const emp = employees.find(e => e.id === review.employee_id)
+      showSuccess(`Hours saved for ${emp?.first_name ?? ''} ${emp?.last_name ?? ''}`)
+      logPayrollAction('Save Period Adjustment', `Saved hours adjustment for ${emp?.first_name ?? ''} ${emp?.last_name ?? ''} — Adjusted: ${adjustedHrs}h, Overtime: ${overtimeHrs}h, Gross: £${gross.toFixed(2)}`, review.employee_id)
+      setPrAdjustments(prev => { const next = { ...prev }; delete next[reviewId]; return next })
+      loadPeriodReviews()
+    }
   }
 
   function downloadPeriodExportCsv() {
@@ -645,6 +737,7 @@ export default function AdminPayroll() {
     }
 
     showSuccess(`Exported ${approved.length} employees — import this CSV into Sage or Xero`)
+    logPayrollAction('Export Gross Pay CSV', `Exported ${approved.length} employee(s) — Total gross: £${totalGross.toFixed(2)}, Period: ${prPeriodStart} to ${prPeriodEnd}`)
     loadPeriodReviews()
   }
 
@@ -767,10 +860,13 @@ export default function AdminPayroll() {
     setGenerating(false)
     if (errors.length > 0) {
       showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
+      logPayrollAction('Generate Payroll', `Failed to generate payroll for ${MONTH_NAMES[nextMonth]} ${nextYear}: ${errors.length} error(s)`, null, 'error')
     } else if (flaggedCount > 0) {
       showSuccess(`Payroll generated for ${MONTH_NAMES[nextMonth]} ${nextYear} — ${flaggedCount} payslip(s) flagged for review (missing pay details)`)
+      logPayrollAction('Generate Payroll', `Generated payroll for ${MONTH_NAMES[nextMonth]} ${nextYear} — ${employees.length} employee(s), ${flaggedCount} flagged`)
     } else {
       showSuccess(`Payroll generated for ${MONTH_NAMES[nextMonth]} ${nextYear}`)
+      logPayrollAction('Generate Payroll', `Generated payroll for ${MONTH_NAMES[nextMonth]} ${nextYear} — ${employees.length} employee(s)`)
     }
     loadAll()
   }
@@ -866,10 +962,16 @@ export default function AdminPayroll() {
       payroll_id: emp.payroll_id,
       payroll_office: isFlagged ? `Missing: ${missing.join(', ')}` : '',
     })
-    if (error) { showError('Failed to add payslip: ' + error.message); setSaving(false); return }
+    if (error) {
+      showError('Failed to add payslip: ' + error.message)
+      logPayrollAction('Add Payslip', `Failed to add payslip for ${emp.first_name} ${emp.last_name}: ${error.message}`, emp.id, 'error')
+      setSaving(false)
+      return
+    }
     showSuccess(isFlagged
       ? `Payslip added for ${emp.first_name} ${emp.last_name} — FLAGGED: missing ${missing.join(', ')}`
       : `Payslip added for ${emp.first_name} ${emp.last_name} — ${MONTH_NAMES[m - 1]} ${y}`)
+    logPayrollAction('Add Payslip', `Added payslip for ${emp.first_name} ${emp.last_name} — ${MONTH_NAMES[m - 1]} ${y}, Gross: £${gross.toFixed(2)}, Net: £${(adjustedGross - tax - ni - pension).toFixed(2)}${isFlagged ? ' (FLAGGED)' : ''}`, emp.id)
     setShowAddSingle(false)
     setSingleEmpId('')
     setSingleMonth('')
@@ -922,6 +1024,7 @@ export default function AdminPayroll() {
     a.download = `payroll-${category}-${monthLabel}.csv`
     a.click()
     URL.revokeObjectURL(url)
+    logPayrollAction('Download Schedule CSV', `Downloaded payroll CSV — ${category}, ${monthLabel}, ${monthPayslips.length} record(s)`)
   }
 
   const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
@@ -1221,6 +1324,7 @@ export default function AdminPayroll() {
     downloadCsv(`legal-timesheets-${anPeriodStart}-to-${anPeriodEnd}.csv`,
       ['Employee', 'Date', 'Client', 'Matter', 'Task Code', 'Hours', 'Narrative', 'Status'], rows)
     showSuccess('Legal timesheets CSV downloaded')
+    logPayrollAction('Export Legal Timesheets CSV', `Exported ${rows.length} legal timesheet entries — Period: ${anPeriodStart} to ${anPeriodEnd}`)
   }
 
   async function exportShiftsCsv() {
@@ -1247,6 +1351,7 @@ export default function AdminPayroll() {
     downloadCsv(`shifts-${anPeriodStart}-to-${anPeriodEnd}.csv`,
       ['Employee', 'Date', 'Shift', 'Start', 'End', 'Break (mins)', 'Hours'], rows)
     showSuccess('Shifts CSV downloaded')
+    logPayrollAction('Export Shifts CSV', `Exported ${rows.length} shift entries — Period: ${anPeriodStart} to ${anPeriodEnd}`)
   }
 
   async function exportAdjustmentsCsv() {
@@ -1298,6 +1403,7 @@ export default function AdminPayroll() {
     downloadCsv(`payroll-adjustments-${anPeriodStart}-to-${anPeriodEnd}.csv`,
       ['Employee', 'Start Date', 'End Date', 'Type', 'Detail', 'Days', 'Amount (£)', 'Notes'], rows)
     showSuccess('Adjustments CSV downloaded')
+    logPayrollAction('Export Adjustments CSV', `Exported ${rows.length} adjustment entries — Period: ${anPeriodStart} to ${anPeriodEnd}`)
   }
 
   // ── Payslip source toggle ──
@@ -1325,6 +1431,7 @@ export default function AdminPayroll() {
     }
     const label = source === 'xero' ? 'Xero' : source === 'sage' ? 'Sage' : 'InflowHR'
     showSuccess(`Switched to ${label} Payslips`)
+    logPayrollAction('Switch Payslip Source', `Switched payslip source to ${label}`)
     loadAll()
   }
 
@@ -1391,8 +1498,10 @@ export default function AdminPayroll() {
 
     if (flaggedSlips.length > 0) {
       showSuccess(`${monthName} ${yearStr} payroll downloaded — ${payableSlips.length} marked as paid, ${flaggedSlips.length} flagged payslip(s) excluded (review required)`)
+      logPayrollAction('Submit Payroll', `Downloaded & paid ${monthName} ${yearStr} — ${payableSlips.length} paid, ${flaggedSlips.length} flagged (excluded)`)
     } else {
       showSuccess(`${monthName} ${yearStr} payroll downloaded and marked as paid`)
+      logPayrollAction('Submit Payroll', `Downloaded & paid ${monthName} ${yearStr} — ${monthPayslips.length} payslip(s) marked as paid`)
     }
     loadAll()
   }
@@ -1444,7 +1553,10 @@ export default function AdminPayroll() {
     if (result) {
       setXeroPayRun(result.payRun)
       setXeroLivePayslips(result.payslips || [])
+      logPayrollAction('Xero Sync', `Synced ${(result.payslips || []).length} payslip(s) from Xero`)
       loadAll()
+    } else {
+      logPayrollAction('Xero Sync', 'Failed to sync payslips from Xero', null, 'error')
     }
   }
 
@@ -1476,9 +1588,11 @@ export default function AdminPayroll() {
 
       setSageUploadResult(data)
       showSuccess(`${data.matched.length} payslip(s) imported successfully`)
+      logPayrollAction('Sage Import', `Imported ${data.matched.length} payslip(s) from Sage PDF: ${file.name}`)
       loadAll()
     } catch (err: any) {
       showError('Failed to process file: ' + (err.message || 'Unknown error'))
+      logPayrollAction('Sage Import', `Failed to import Sage PDF: ${file.name} — ${(err as Error).message || 'Unknown error'}`, null, 'error')
     }
     setSageUploading(false)
   }
@@ -1542,7 +1656,9 @@ export default function AdminPayroll() {
     a.download = `BACS_PayRun_${localDateStr(new Date())}.csv`
     a.click()
     URL.revokeObjectURL(url)
+    const totalPay = rows.reduce((s, r) => s + r.net_pay, 0)
     showSuccess(`BACS file downloaded with ${rows.length} payments`)
+    logPayrollAction('Download BACS File', `Downloaded BACS file — ${rows.length} payment(s), Total: £${totalPay.toFixed(2)}`)
   }
 
   async function saveBacsOriginator() {
@@ -1630,12 +1746,14 @@ export default function AdminPayroll() {
       const data = await res.json()
       if (res.ok) {
         showSuccess(`Batch payout submitted: ${data.employee_count} payments, £${data.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`)
+        logPayrollAction('Modulr Payout', `Submitted batch payout — ${data.employee_count} payment(s), Total: £${data.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`)
         setShowModulrConfirmModal(false)
         fetchModulrBalance()
       } else {
         showError(data.error || 'Payout submission failed')
+        logPayrollAction('Modulr Payout', `Failed to submit payout: ${data.error || 'Unknown error'}`, null, 'error')
       }
-    } catch { showError('Network error submitting payout') }
+    } catch { showError('Network error submitting payout'); logPayrollAction('Modulr Payout', 'Network error submitting Modulr payout', null, 'error') }
     setModulrSubmitting(false)
   }
 
@@ -1709,6 +1827,7 @@ export default function AdminPayroll() {
             <button className={`admin-tab ${tab === 'analytics' ? 'admin-tab-active' : ''}`} onClick={() => setTab('analytics')}>Analytics</button>
           </>
         )}
+        <button className={`admin-tab ${tab === 'logs' ? 'admin-tab-active' : ''}`} onClick={() => setTab('logs')}>Logs</button>
       </div>
 
       {tab === 'payslips' && (
@@ -2510,7 +2629,12 @@ export default function AdminPayroll() {
                           </span>
                         ) : <span className="admin-badge admin-badge-draft">No review</span>}
                       </td>
-                      <td>
+                      <td style={{ display: 'flex', gap: 4 }}>
+                        {review && review.status === 'draft' && prAdjustments[review.id] && (
+                          <button className="admin-btn-sm" onClick={() => savePeriodAdjustment(review.id)} style={{ whiteSpace: 'nowrap', background: '#2563eb', color: '#fff', border: 'none' }}>
+                            Save
+                          </button>
+                        )}
                         {review && review.status === 'draft' && (
                           <button className="admin-btn-sm" onClick={() => approvePeriodReview(review.id)} style={{ whiteSpace: 'nowrap' }}>
                             Approve
@@ -3609,6 +3733,71 @@ export default function AdminPayroll() {
             </div>
           )}
         </>
+      )}
+
+      {tab === 'logs' && (
+        <div className="admin-card" style={{ padding: 16 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end', marginBottom: 16 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Person</label>
+              <select className="admin-inline-input" style={{ minWidth: 180 }} value={auditFilterEmp} onChange={e => { setAuditFilterEmp(e.target.value); setAuditPage(1) }}>
+                <option value="">All</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>From</label>
+              <input type="date" className="admin-inline-input" value={auditDateFrom} onChange={e => { setAuditDateFrom(e.target.value); setAuditPage(1) }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>To</label>
+              <input type="date" className="admin-inline-input" value={auditDateTo} onChange={e => { setAuditDateTo(e.target.value); setAuditPage(1) }} />
+            </div>
+            <button className="admin-btn" onClick={loadAuditLogs} style={{ fontSize: 13 }}>Refresh</button>
+          </div>
+
+          {auditLoading ? <div className="admin-loading">Loading audit logs...</div> : auditLogs.length === 0 ? (
+            <div className="admin-empty">No payroll audit log entries found for this period</div>
+          ) : (
+            <>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="admin-table" style={{ fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Action</th>
+                      <th>Detail</th>
+                      <th>Performed By</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.slice((auditPage - 1) * 20, auditPage * 20).map(log => (
+                      <tr key={log.id}>
+                        <td style={{ whiteSpace: 'nowrap' }}>{new Date(log.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} {new Date(log.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td><strong>{log.action}</strong></td>
+                        <td style={{ maxWidth: 400, wordBreak: 'break-word' }}>{log.detail || '—'}</td>
+                        <td>{log.performer_name || '—'}</td>
+                        <td>
+                          <span className={`admin-badge ${log.status === 'success' ? 'admin-badge-paid' : log.status === 'error' ? 'admin-badge-overdue' : 'admin-badge-pending'}`}>
+                            {log.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {auditLogs.length > 20 && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+                  <button className="admin-btn-sm" disabled={auditPage <= 1} onClick={() => setAuditPage(p => p - 1)}>Previous</button>
+                  <span style={{ fontSize: 13, lineHeight: '32px' }}>Page {auditPage} of {Math.ceil(auditLogs.length / 20)}</span>
+                  <button className="admin-btn-sm" disabled={auditPage >= Math.ceil(auditLogs.length / 20)} onClick={() => setAuditPage(p => p + 1)}>Next</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   )
