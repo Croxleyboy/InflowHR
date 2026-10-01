@@ -722,113 +722,165 @@ export default function AdminLegalTimesheets() {
     const rm = pw - 20
     let y = 20
 
+    // Company name + INVOICE header
     doc.setFontSize(18)
     doc.setFont('helvetica', 'bold')
+    doc.setTextColor(30, 30, 45)
     doc.text(co?.name || 'Company', lm, y)
-    doc.setFontSize(22)
+    doc.setFontSize(28)
+    doc.setFont('helvetica', 'bold')
     doc.setTextColor(0, 100, 120)
     doc.text('INVOICE', rm, y, { align: 'right' })
-    doc.setTextColor(0, 0, 0)
-    y += 10
+    doc.setTextColor(30, 30, 45)
+    y += 8
 
-    doc.setFontSize(9)
+    // Company address block
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100, 100, 100)
     const coLines = [
       co?.billing_address_line1, co?.billing_address_line2,
       [co?.billing_city, co?.billing_county, co?.billing_postcode].filter(Boolean).join(', '),
       co?.billing_email, co?.billing_phone,
-      co?.company_registration_number ? `Reg: ${co.company_registration_number}` : null,
-      co?.vat_number ? `VAT: ${co.vat_number}` : null,
     ].filter(Boolean)
     coLines.forEach(l => { doc.text(l as string, lm, y); y += 4 })
-    y += 6
+    const regVat = [
+      co?.company_registration_number ? `Reg: ${co.company_registration_number}` : null,
+      co?.vat_number ? `VAT: ${co.vat_number}` : null,
+    ].filter(Boolean).join('  |  ')
+    if (regVat) { doc.text(regVat, lm, y); y += 4 }
+    y += 4
 
-    doc.setFillColor(240, 245, 248)
-    doc.roundedRect(lm, y, rm - lm, 32, 3, 3, 'F')
-    doc.setFontSize(10)
+    // Divider
+    doc.setDrawColor(220, 220, 220)
+    doc.line(lm, y, rm, y)
+    y += 8
+
+    // Invoice detail row — labels across the top
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'bold')
-    doc.text('Bill To:', lm + 6, y + 8)
+    doc.setTextColor(120, 120, 120)
+    doc.text('INVOICE NO', lm, y)
+    doc.text('ISSUE DATE', lm + 45, y)
+    doc.text('DUE DATE', lm + 90, y)
+    doc.text('PERIOD', lm + 130, y)
+    y += 5
     doc.setFont('helvetica', 'normal')
-    doc.text(client?.name || '', lm + 6, y + 14)
-    const clAddr = [client?.address_line1, client?.address_line2, [client?.city, client?.postcode].filter(Boolean).join(' ')].filter(Boolean)
-    clAddr.forEach((l, i) => { doc.text(l as string, lm + 6, y + 20 + i * 5) })
+    doc.setTextColor(30, 30, 45)
+    doc.setFontSize(9)
+    doc.text(invoice.invoice_number, lm, y)
+    doc.text(new Date(invoice.invoice_date + 'T00:00:00').toLocaleDateString('en-GB'), lm + 45, y)
+    doc.text(new Date(invoice.due_date + 'T00:00:00').toLocaleDateString('en-GB'), lm + 90, y)
+    doc.text(`${fmtDate(invoice.period_start)} — ${fmtDate(invoice.period_end)}`, lm + 130, y)
+    y += 12
 
+    // Bill To / Client block
+    const billToLines = [
+      client?.name,
+      client?.contact_name ? `FAO: ${client.contact_name}` : null,
+      client?.address_line1, client?.address_line2,
+      [client?.city, client?.county, client?.postcode].filter(Boolean).join(', '),
+      client?.contact_email,
+    ].filter(Boolean)
+    const boxH = Math.max(24, 10 + billToLines.length * 5)
+    doc.setFillColor(245, 247, 250)
+    doc.roundedRect(lm, y, (rm - lm) / 2 - 5, boxH, 3, 3, 'F')
+    doc.setFontSize(8)
     doc.setFont('helvetica', 'bold')
-    doc.text('Invoice #:', rm - 70, y + 8)
-    doc.text('Date:', rm - 70, y + 14)
-    doc.text('Due:', rm - 70, y + 20)
-    doc.text('Period:', rm - 70, y + 26)
+    doc.setTextColor(120, 120, 120)
+    doc.text('BILL TO', lm + 6, y + 7)
     doc.setFont('helvetica', 'normal')
-    doc.text(invoice.invoice_number, rm - 30, y + 8)
-    doc.text(new Date(invoice.invoice_date + 'T00:00:00').toLocaleDateString('en-GB'), rm - 30, y + 14)
-    doc.text(new Date(invoice.due_date + 'T00:00:00').toLocaleDateString('en-GB'), rm - 30, y + 20)
-    doc.text(`${fmtDate(invoice.period_start)} — ${fmtDate(invoice.period_end)}`, rm - 30, y + 26)
-    y += 40
+    doc.setTextColor(30, 30, 45)
+    doc.setFontSize(9)
+    let by = y + 13
+    if (billToLines[0]) { doc.setFont('helvetica', 'bold'); doc.text(billToLines[0], lm + 6, by); doc.setFont('helvetica', 'normal'); by += 5 }
+    billToLines.slice(1).forEach(l => { doc.setFontSize(8); doc.text(l as string, lm + 6, by); by += 4.5 })
+    y += boxH + 8
 
+    // Line items table header
     doc.setFillColor(0, 100, 120)
-    doc.roundedRect(lm, y, rm - lm, 8, 2, 2, 'F')
+    doc.roundedRect(lm, y, rm - lm, 9, 2, 2, 'F')
     doc.setTextColor(255, 255, 255)
     doc.setFontSize(8)
     doc.setFont('helvetica', 'bold')
-    const cols = [lm + 4, lm + 24, lm + 62, lm + 100, rm - 50, rm - 30, rm - 4]
-    doc.text('Date', cols[0], y + 5.5)
-    doc.text('Fee Earner', cols[1], y + 5.5)
-    doc.text('Matter', cols[2], y + 5.5)
-    doc.text('Description', cols[3], y + 5.5)
-    doc.text('Hours', cols[4], y + 5.5)
-    doc.text('Rate', cols[5], y + 5.5)
-    doc.text('Amount', cols[6], y + 5.5, { align: 'right' })
-    doc.setTextColor(0, 0, 0)
-    y += 12
+    const cols = [lm + 4, lm + 22, lm + 55, lm + 88, rm - 42, rm - 24, rm - 4]
+    doc.text('Date', cols[0], y + 6)
+    doc.text('Fee Earner', cols[1], y + 6)
+    doc.text('Matter', cols[2], y + 6)
+    doc.text('Description', cols[3], y + 6)
+    doc.text('Hours', cols[4], y + 6)
+    doc.text('Rate', cols[5], y + 6)
+    doc.text('Amount', cols[6], y + 6, { align: 'right' })
+    doc.setTextColor(30, 30, 45)
+    y += 13
 
+    // Line items
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     lines.forEach((line, i) => {
-      if (y > 265) { doc.addPage(); y = 20 }
+      if (y > 260) { doc.addPage(); y = 20 }
       if (i % 2 === 0) {
         doc.setFillColor(248, 250, 252)
         doc.rect(lm, y - 4, rm - lm, 7, 'F')
       }
       doc.text(new Date(line.date + 'T00:00:00').toLocaleDateString('en-GB'), cols[0], y)
-      doc.text(line.employee_name.substring(0, 20), cols[1], y)
-      doc.text(line.matter_name.substring(0, 20), cols[2], y)
-      doc.text(line.description.substring(0, 25), cols[3], y)
-      doc.text(line.hours.toFixed(2), cols[4], y)
-      doc.text(`£${line.rate.toFixed(0)}`, cols[5], y)
-      doc.text(`£${line.amount.toFixed(2)}`, cols[6], y, { align: 'right' })
+      doc.text((line.employee_name || '').substring(0, 18), cols[1], y)
+      doc.text((line.matter_name || '').substring(0, 18), cols[2], y)
+      doc.text((line.description || '').substring(0, 22), cols[3], y)
+      doc.text(Number(line.hours).toFixed(2), cols[4], y)
+      doc.text(`£${Number(line.rate).toFixed(2)}`, cols[5], y)
+      doc.text(`£${Number(line.amount).toFixed(2)}`, cols[6], y, { align: 'right' })
       y += 7
     })
 
-    y += 6
-    doc.setDrawColor(200, 200, 200)
-    doc.line(rm - 60, y, rm, y)
+    // Totals
+    y += 4
+    doc.setDrawColor(220, 220, 220)
+    doc.line(rm - 70, y, rm, y)
     y += 8
-    doc.setFontSize(10)
+    doc.setFontSize(9)
     doc.setFont('helvetica', 'normal')
-    doc.text('Subtotal:', rm - 60, y)
-    doc.text(`£${invoice.subtotal.toFixed(2)}`, rm, y, { align: 'right' })
+    doc.setTextColor(80, 80, 80)
+    doc.text('Subtotal', rm - 70, y)
+    doc.text(`£${Number(invoice.subtotal).toFixed(2)}`, rm, y, { align: 'right' })
+    y += 6
+    doc.text(`VAT (${Number(invoice.vat_rate).toFixed(0)}%)`, rm - 70, y)
+    doc.text(`£${Number(invoice.vat_amount).toFixed(2)}`, rm, y, { align: 'right' })
+    y += 3
+    doc.setDrawColor(220, 220, 220)
+    doc.line(rm - 70, y, rm, y)
     y += 7
-    doc.text(`VAT (${invoice.vat_rate}%):`, rm - 60, y)
-    doc.text(`£${invoice.vat_amount.toFixed(2)}`, rm, y, { align: 'right' })
-    y += 8
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(12)
-    doc.text('Total Due:', rm - 60, y)
-    doc.text(`£${invoice.total.toFixed(2)}`, rm, y, { align: 'right' })
+    doc.setTextColor(30, 30, 45)
+    doc.text('Total Due', rm - 70, y)
+    doc.text(`£${Number(invoice.total).toFixed(2)}`, rm, y, { align: 'right' })
 
+    // Footer
     y += 16
     if (invoice.notes) {
       doc.setFont('helvetica', 'normal')
-      doc.setFontSize(9)
+      doc.setFontSize(8)
+      doc.setTextColor(80, 80, 80)
       doc.text(`Notes: ${invoice.notes}`, lm, y)
       y += 8
     }
-    doc.setFont('helvetica', 'italic')
+    doc.setFont('helvetica', 'normal')
     doc.setFontSize(8)
     doc.setTextColor(150, 150, 150)
-    doc.text(`Payment terms: ${client?.payment_terms_days || 30} days`, lm, y)
+    doc.text(`Payment terms: ${client?.payment_terms_days || 30} days from invoice date`, lm, y)
+    y += 4
+    if (co?.vat_number) {
+      doc.text(`VAT Registration Number: ${co.vat_number}`, lm, y)
+    }
 
     doc.save(`${invoice.invoice_number}.pdf`)
+  }
+
+  function csvSafe(val: string): string {
+    let s = (val || '').replace(/"/g, '""')
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
+    return `"${s}"`
   }
 
   function exportInvoiceSageCsv(invoice: LegalInvoice, lines: LegalInvoiceLine[]) {
@@ -836,16 +888,16 @@ export default function AdminLegalTimesheets() {
     const headers = ['Type', 'Account Reference', 'Nominal A/C Ref', 'Date', 'Reference', 'Details', 'Net Amount', 'Tax Code', 'Tax Amount']
     const rows = lines.map(l => [
       'SI',
-      client?.name?.substring(0, 8)?.toUpperCase() || 'CLIENT',
+      (client?.name || 'CLIENT').substring(0, 8).toUpperCase(),
       '4000',
       new Date(invoice.invoice_date + 'T00:00:00').toLocaleDateString('en-GB'),
       invoice.invoice_number,
-      `${l.employee_name} - ${l.matter_name} - ${l.hours.toFixed(2)}h`,
-      l.amount.toFixed(2),
+      `${l.employee_name} - ${l.matter_name} - ${Number(l.hours).toFixed(2)}h`,
+      Number(l.amount).toFixed(2),
       'T1',
-      (l.amount * (invoice.vat_rate / 100)).toFixed(2),
+      (Number(l.amount) * (Number(invoice.vat_rate) / 100)).toFixed(2),
     ])
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n')
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => csvSafe(String(c))).join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -864,13 +916,13 @@ export default function AdminLegalTimesheets() {
       invoice.invoice_number,
       new Date(invoice.invoice_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
       new Date(invoice.due_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-      `${l.employee_name} - ${l.matter_name} (${l.hours.toFixed(2)}h @ £${l.rate.toFixed(0)}/hr)`,
-      l.hours.toFixed(2),
-      l.rate.toFixed(2),
+      `${l.employee_name} - ${l.matter_name} (${Number(l.hours).toFixed(2)}h @ £${Number(l.rate).toFixed(2)}/hr)`,
+      Number(l.hours).toFixed(2),
+      Number(l.rate).toFixed(2),
       '200',
-      invoice.vat_rate > 0 ? '20% (VAT on Income)' : 'No VAT',
+      Number(invoice.vat_rate) > 0 ? '20% (VAT on Income)' : 'No VAT',
     ])
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${(c || '').replace(/"/g, '""')}"`).join(','))].join('\n')
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => csvSafe(String(c))).join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -886,9 +938,9 @@ export default function AdminLegalTimesheets() {
     const headers = ['Date', 'Employee', 'Client', 'Matter', 'Task Code', 'Activity', 'Hours', 'Narrative', 'Status']
     const rows = approved.map(e => {
       const taskLabel = TASK_CODES.find(tc => tc.code === e.task_code)?.label || e.task_code
-      return [e.date, empName(e.employee), e.client?.name || '', e.matter?.name || '', e.task_code, taskLabel, Number(e.duration_hrs).toFixed(1), `"${e.narrative.replace(/"/g, '""')}"`, e.status]
+      return [e.date, empName(e.employee), e.client?.name || '', e.matter?.name || '', e.task_code, taskLabel, Number(e.duration_hrs).toFixed(1), e.narrative, e.status]
     })
-    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const csv = [headers.join(','), ...rows.map(r => r.map(c => csvSafe(String(c))).join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
