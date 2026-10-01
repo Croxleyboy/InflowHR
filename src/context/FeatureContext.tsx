@@ -20,10 +20,11 @@ export interface Features {
   teams_integration: boolean
   xero_integration: boolean
   sage_integration: boolean
+  modulr_integration: boolean
   surveys: boolean
 }
 
-const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management', 'benefits', 'email_notifications', 'xero_integration', 'sage_integration', 'payslips', 'surveys']
+const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management', 'benefits', 'email_notifications', 'xero_integration', 'sage_integration', 'modulr_integration', 'payslips', 'surveys']
 const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   timesheets: 'timesheets',
   performance: 'performance',
@@ -57,6 +58,7 @@ const defaultFeatures: Features = {
   teams_integration: false,
   xero_integration: false,
   sage_integration: false,
+  modulr_integration: false,
   surveys: true,
 }
 

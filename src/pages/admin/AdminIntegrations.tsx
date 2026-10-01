@@ -36,6 +36,15 @@ interface SageIntegration {
   payslip_source: 'inflowhr' | 'sage'
 }
 
+interface ModulrIntegration {
+  id: string
+  company_id: string
+  source_account_id: string
+  status: string
+  status_error: string | null
+  connected_at: string | null
+}
+
 // ── Official brand logos as inline SVGs ──────────────────────────────────────
 
 function TeamsLogo() {
@@ -81,6 +90,21 @@ function SageLogo() {
   )
 }
 
+function ModulrLogo() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect width="512" height="512" rx="64" fill="#1A1A2E"/>
+      <g fill="#00D4AA">
+        <rect x="80" y="200" width="60" height="180" rx="8"/>
+        <rect x="170" y="140" width="60" height="240" rx="8"/>
+        <rect x="260" y="170" width="60" height="210" rx="8"/>
+        <rect x="350" y="120" width="60" height="260" rx="8"/>
+      </g>
+      <text x="256" y="440" textAnchor="middle" fill="#fff" fontSize="48" fontWeight="700" fontFamily="system-ui">modulr</text>
+    </svg>
+  )
+}
+
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function AdminIntegrations() {
@@ -107,6 +131,16 @@ export default function AdminIntegrations() {
   const [sageIntegration, setSageIntegration] = useState<SageIntegration | null>(null)
   const [sageExpanded, setSageExpanded] = useState(false)
 
+  // Modulr state
+  const [modulrIntegration, setModulrIntegration] = useState<ModulrIntegration | null>(null)
+  const [modulrExpanded, setModulrExpanded] = useState(false)
+  const [modulrApiKey, setModulrApiKey] = useState('')
+  const [modulrHmacSecret, setModulrHmacSecret] = useState('')
+  const [modulrSourceAccountId, setModulrSourceAccountId] = useState('')
+  const [modulrShowSecret, setModulrShowSecret] = useState(false)
+  const [modulrConnecting, setModulrConnecting] = useState(false)
+  const [showModulrModal, setShowModulrModal] = useState(false)
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [teamsSubscribed, setTeamsSubscribed] = useState(false)
@@ -124,11 +158,12 @@ export default function AdminIntegrations() {
     if (!companyId) return
     setLoading(true)
 
-    const [teamsRes, teamsBotRes, xeroRes, sageRes, featuresRes] = await Promise.all([
+    const [teamsRes, teamsBotRes, xeroRes, sageRes, modulrRes, featuresRes] = await Promise.all([
       supabase.from('company_teams_config').select('*').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_teams_bot_conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
+      supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
     ])
 
@@ -153,6 +188,7 @@ export default function AdminIntegrations() {
     setXeroIntegration(xeroRes.data as XeroIntegration | null)
     const sage = sageRes.data as SageIntegration | null
     setSageIntegration(sage)
+    setModulrIntegration(modulrRes.data as ModulrIntegration | null)
 
     setLoading(false)
   }
@@ -161,6 +197,7 @@ export default function AdminIntegrations() {
     setTeamsExpanded(false)
     setXeroExpanded(false)
     setSageExpanded(false)
+    setModulrExpanded(false)
     loadAll()
   }, [companyId])
 
@@ -302,6 +339,45 @@ export default function AdminIntegrations() {
     loadAll()
   }
 
+  // ── Modulr handlers ───────────────────────────────────────────────────────
+
+  async function connectModulr() {
+    if (!companyId || !modulrApiKey.trim() || !modulrHmacSecret.trim() || !modulrSourceAccountId.trim()) {
+      showError('All fields are required')
+      return
+    }
+    setModulrConnecting(true)
+    const result = await callEdgeFunction('modulr-connect', {
+      api_key: modulrApiKey.trim(),
+      hmac_secret: modulrHmacSecret.trim(),
+      source_account_id: modulrSourceAccountId.trim(),
+    })
+    setModulrConnecting(false)
+    if (result) {
+      if (result.status === 'connected') {
+        showSuccess('Modulr connected successfully')
+        setShowModulrModal(false)
+        setModulrApiKey('')
+        setModulrHmacSecret('')
+        setModulrSourceAccountId('')
+      } else if (result.status === 'ip_whitelist_pending') {
+        showError(result.error || 'IP Whitelist pending — add our static IP to your Modulr portal')
+      } else {
+        showError(result.error || 'Connection failed')
+      }
+      loadAll()
+    }
+  }
+
+  async function disconnectModulr() {
+    if (!confirm('Disconnect Modulr? This will remove the integration credentials.')) return
+    if (!companyId) return
+    await supabase.from('modulr_integrations').delete().eq('company_id', companyId)
+    setModulrIntegration(null)
+    showSuccess('Modulr disconnected')
+    loadAll()
+  }
+
   // ── Shared styles ─────────────────────────────────────────────────────────
 
   const inputStyle: React.CSSProperties = {
@@ -316,6 +392,7 @@ export default function AdminIntegrations() {
     if (status === 'connected') return <span className="admin-badge admin-badge-approved">Connected</span>
     if (status === 'error') return <span className="admin-badge admin-badge-rejected">Error</span>
     if (status === 'syncing') return <span className="admin-badge admin-badge-pending">Syncing</span>
+    if (status === 'ip_whitelist_pending') return <span className="admin-badge admin-badge-pending">IP Whitelist Pending</span>
     return <span className="admin-badge" style={{ background: 'var(--bg, #f1f5f9)', color: 'var(--text-muted, #64748b)' }}>Not Connected</span>
   }
 
@@ -615,7 +692,174 @@ export default function AdminIntegrations() {
           )}
         </div>
 
+        {/* ── Modulr Card ── */}
+        <div style={cardStyle(true)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}
+            onClick={() => setModulrExpanded(!modulrExpanded)}>
+            <ModulrLogo />
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Modulr Payments</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+                1-Click Faster Payments for payroll payouts
+              </p>
+            </div>
+            {statusBadge(modulrIntegration?.status || 'not_connected')}
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(modulrExpanded)}>
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
+
+          {modulrExpanded && (
+            <div style={{ marginTop: 20 }}>
+              {modulrIntegration?.status === 'connected' && (
+                <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Modulr</strong>
+                      {modulrIntegration.connected_at && (
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
+                          Connected: {new Date(modulrIntegration.connected_at).toLocaleString('en-GB')}
+                        </p>
+                      )}
+                      <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>
+                        Source Account: {modulrIntegration.source_account_id}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="admin-btn admin-btn-primary" onClick={() => setShowModulrModal(true)}>Reconfigure</button>
+                      <button className="admin-btn" onClick={disconnectModulr}>Disconnect</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {modulrIntegration?.status === 'ip_whitelist_pending' && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,248,225,.5)', borderColor: '#ffe0b2' }}>
+                  <strong style={{ fontSize: 13, color: '#e65100' }}>IP Whitelist Pending</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#e65100' }}>
+                    {modulrIntegration.status_error || 'Please add our static IP to your Modulr portal, then click Reconfigure.'}
+                  </p>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <button className="admin-btn admin-btn-primary" onClick={() => setShowModulrModal(true)}>Reconfigure</button>
+                    <button className="admin-btn" onClick={disconnectModulr}>Remove</button>
+                  </div>
+                </div>
+              )}
+
+              {modulrIntegration?.status === 'error' && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,235,238,.5)', borderColor: '#ef9a9a' }}>
+                  <strong style={{ fontSize: 13, color: '#c62828' }}>Connection Error</strong>
+                  {modulrIntegration.status_error && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>{modulrIntegration.status_error}</p>}
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <button className="admin-btn admin-btn-primary" onClick={() => setShowModulrModal(true)}>Reconfigure</button>
+                    <button className="admin-btn" onClick={disconnectModulr}>Remove</button>
+                  </div>
+                </div>
+              )}
+
+              {(!modulrIntegration || modulrIntegration.status === 'not_connected') && (
+                <div style={{ ...sectionStyle, textAlign: 'center', padding: 24 }}>
+                  <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
+                    Connect your Modulr account to enable 1-click Faster Payments directly from the Payroll page.
+                  </p>
+                  <button className="admin-btn admin-btn-primary" onClick={() => setShowModulrModal(true)}
+                    style={{ fontSize: 14, padding: '10px 24px' }}>
+                    Configure Modulr
+                  </button>
+                </div>
+              )}
+
+              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>How it works</p>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                  <li>Bring-your-own-account — connect using your Modulr API credentials</li>
+                  <li>Submit batch Faster Payments for processed pay runs with one click</li>
+                  <li>Payments are sent from your Modulr virtual account to employee bank accounts</li>
+                  <li>Full audit trail of every payout recorded in InflowHR</li>
+                  <li>Works alongside any payroll source (InflowHR, Xero, or Sage)</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
+
+      {/* ── Modulr Configuration Modal ── */}
+      {showModulrModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 16, padding: 32, maxWidth: 520, width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Configure Modulr</h3>
+              <button onClick={() => setShowModulrModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted, #888)' }}>&times;</button>
+            </div>
+
+            <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginBottom: 20 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>Setup Instructions</p>
+              <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                <li>Log into your Modulr Portal &rarr; Settings &rarr; API Access</li>
+                <li>Generate an API Key &amp; HMAC Secret</li>
+                <li>Add our static server egress IP address to your Modulr Allowed IP Whitelist</li>
+                <li>Paste your credentials below and click &ldquo;Save &amp; Test Connection&rdquo;</li>
+              </ol>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={labelStyle}>API Key</label>
+                <input
+                  type="text"
+                  value={modulrApiKey}
+                  onChange={e => setModulrApiKey(e.target.value)}
+                  placeholder="Enter your Modulr API Key"
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>HMAC Secret</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={modulrShowSecret ? 'text' : 'password'}
+                    value={modulrHmacSecret}
+                    onChange={e => setModulrHmacSecret(e.target.value)}
+                    placeholder="Enter your HMAC Secret"
+                    style={inputStyle}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setModulrShowSecret(!modulrShowSecret)}
+                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted, #888)' }}
+                  >
+                    {modulrShowSecret ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle}>Source Account ID</label>
+                <input
+                  type="text"
+                  value={modulrSourceAccountId}
+                  onChange={e => setModulrSourceAccountId(e.target.value)}
+                  placeholder="Modulr Virtual Account / IBAN ID"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
+              <button className="admin-btn" onClick={() => setShowModulrModal(false)}>Cancel</button>
+              <button
+                className="admin-btn admin-btn-primary"
+                onClick={connectModulr}
+                disabled={modulrConnecting || !modulrApiKey.trim() || !modulrHmacSecret.trim() || !modulrSourceAccountId.trim()}
+                style={{ minWidth: 180 }}
+              >
+                {modulrConnecting ? 'Testing Connection...' : 'Save & Test Connection'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

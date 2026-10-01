@@ -117,6 +117,18 @@ interface Employee {
   payroll_id: string | null
   employment_category: string | null
   contract_type: string | null
+  bank_sort_code: string | null
+  bank_account_number: string | null
+  bank_account_name: string | null
+}
+
+interface ModulrIntegration {
+  id: string
+  company_id: string
+  source_account_id: string
+  status: string
+  status_error: string | null
+  connected_at: string | null
 }
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -161,7 +173,7 @@ export default function AdminPayroll() {
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics' | 'xero_pay' | 'sage_pay'>('payslips')
+  const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'time_breakdown' | 'analytics' | 'xero_pay' | 'sage_pay' | 'bacs_export' | 'modulr_payout'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [page, setPage] = useState(1)
@@ -191,6 +203,19 @@ export default function AdminPayroll() {
     skipped?: { employee_name: string; employee_number: string; month: string; existing_source: string }[]
     total_parsed: number
   } | null>(null)
+
+  // Modulr integration state
+  const [modulrIntegration, setModulrIntegration] = useState<ModulrIntegration | null>(null)
+  const [modulrBalance, setModulrBalance] = useState<number | null>(null)
+  const [modulrBalanceLoading, setModulrBalanceLoading] = useState(false)
+  const [modulrSubmitting, setModulrSubmitting] = useState(false)
+  const [showModulrConfirmModal, setShowModulrConfirmModal] = useState(false)
+
+  // BACS export state
+  const [bacsEdits, setBacsEdits] = useState<Record<string, { sort_code?: string; account_number?: string }>>({})
+  const [bacsOriginatorSortCode, setBacsOriginatorSortCode] = useState('')
+  const [bacsOriginatorAccountNo, setBacsOriginatorAccountNo] = useState('')
+  const [bacsOriginatorName, setBacsOriginatorName] = useState('')
 
   // Employee Pay tab month navigation
   const [empPayMonthIdx, setEmpPayMonthIdx] = useState(0)
@@ -272,11 +297,13 @@ export default function AdminPayroll() {
     setLoading(true)
     const fyStart = localDateStr(fyRange.startDate)
     const fyEnd = localDateStr(fyRange.endDate)
-    const [pRes, eRes, xRes, sRes] = await Promise.all([
+    const [pRes, eRes, xRes, sRes, mRes, compRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id, employment_category, contract_type').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, cached_pay_run, cached_payslips').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, last_sync_at, payslip_source, last_upload_at, last_upload_filename').eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('companies').select('bacs_originator_sort_code, bacs_originator_account_no, bacs_originator_name').eq('id', selectedCompanyId).single(),
     ])
     setPayslips((pRes.data as Payslip[]) || [])
     setEmployees((eRes.data as Employee[]) || [])
@@ -285,6 +312,12 @@ export default function AdminPayroll() {
     if (xero?.cached_pay_run) setXeroPayRun(xero.cached_pay_run)
     if (xero?.cached_payslips?.length) setXeroLivePayslips(xero.cached_payslips)
     setSageIntegration(sRes.data as SageIntegration | null)
+    setModulrIntegration(mRes.data as ModulrIntegration | null)
+    if (compRes.data) {
+      setBacsOriginatorSortCode(compRes.data.bacs_originator_sort_code || '')
+      setBacsOriginatorAccountNo(compRes.data.bacs_originator_account_no || '')
+      setBacsOriginatorName(compRes.data.bacs_originator_name || '')
+    }
     setLoading(false)
   }
 
@@ -644,6 +677,7 @@ export default function AdminPayroll() {
 
   const xeroConnected = xeroIntegration?.sync_status === 'connected'
   const sageConnected = sageIntegration?.sync_status === 'connected'
+  const modulrConnected = modulrIntegration?.status === 'connected'
   const sourcePayslips = useMemo(() => payslips, [payslips])
 
   const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
@@ -1205,6 +1239,158 @@ export default function AdminPayroll() {
     setSageUploading(false)
   }
 
+  // ── BACS Export helpers ────────────────────────────────────────────────
+
+  function getBacsPayslipData() {
+    const latestByEmp = new Map<string, Payslip>()
+    for (const p of payslips) {
+      if (p.status !== 'processed') continue
+      const existing = latestByEmp.get(p.employee_id)
+      if (!existing || p.pay_period_start > existing.pay_period_start) {
+        latestByEmp.set(p.employee_id, p)
+      }
+    }
+    return employees.map(emp => {
+      const p = latestByEmp.get(emp.id)
+      const edits = bacsEdits[emp.id] || {}
+      const sortCode = (edits.sort_code ?? emp.bank_sort_code ?? '').replace(/[-\s]/g, '')
+      const accountNo = (edits.account_number ?? emp.bank_account_number ?? '').replace(/\s/g, '')
+      const monthLabel = p ? MONTH_NAMES[new Date(p.pay_period_start).getMonth()] : ''
+      return {
+        employee: emp,
+        payslip: p,
+        net_pay: p?.net_pay ?? 0,
+        sort_code: sortCode,
+        account_number: accountNo,
+        reference: `SALARY ${monthLabel}`.substring(0, 18),
+        valid: /^\d{6}$/.test(sortCode) && /^\d{8}$/.test(accountNo) && (p?.net_pay ?? 0) > 0,
+      }
+    }).filter(r => r.payslip)
+  }
+
+  function downloadBacsFile() {
+    const rows = getBacsPayslipData()
+    if (!rows.length) { showError('No processed payslips found'); return }
+    if (!bacsOriginatorSortCode || !bacsOriginatorAccountNo) {
+      showError('Please set your company originating sort code and account number')
+      return
+    }
+    const invalid = rows.filter(r => !r.valid)
+    if (invalid.length > 0) {
+      showError(`${invalid.length} employee(s) have missing or invalid bank details`)
+      return
+    }
+    const origSc = bacsOriginatorSortCode.replace(/[-\s]/g, '').padEnd(6, '0')
+    const origAn = bacsOriginatorAccountNo.replace(/\s/g, '').padStart(8, '0')
+    const lines = rows.map(r => {
+      const amountPence = Math.round(r.net_pay * 100).toString().padStart(11, '0')
+      const beneficiary = (r.employee.bank_account_name || `${r.employee.first_name} ${r.employee.last_name}`).substring(0, 18).padEnd(18, ' ')
+      const ref = r.reference.padEnd(18, ' ')
+      return `${r.sort_code},${r.account_number},00,99,${origSc},${origAn},${amountPence},${beneficiary},${ref}`
+    })
+    const csv = lines.join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `BACS_PayRun_${localDateStr(new Date())}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    showSuccess(`BACS file downloaded with ${rows.length} payments`)
+  }
+
+  async function saveBacsOriginator() {
+    const { error } = await supabase.from('companies').update({
+      bacs_originator_sort_code: bacsOriginatorSortCode.replace(/[-\s]/g, ''),
+      bacs_originator_account_no: bacsOriginatorAccountNo.replace(/\s/g, ''),
+      bacs_originator_name: bacsOriginatorName,
+    }).eq('id', selectedCompanyId)
+    if (error) showError('Failed to save: ' + error.message)
+    else showSuccess('Originator details saved')
+  }
+
+  // ── Modulr Payout helpers ────────────────────────────────────────────────
+
+  async function fetchModulrBalance() {
+    if (!session) return
+    setModulrBalanceLoading(true)
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${supabaseUrl}/functions/v1/modulr-balance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ company_id: selectedCompanyId }),
+      })
+      const data = await res.json()
+      if (res.ok) setModulrBalance(data.balance)
+      else showError(data.error || 'Failed to fetch balance')
+    } catch { showError('Network error fetching Modulr balance') }
+    setModulrBalanceLoading(false)
+  }
+
+  function getModulrPayoutData() {
+    const latestByEmp = new Map<string, Payslip>()
+    for (const p of payslips) {
+      if (p.status !== 'processed') continue
+      const existing = latestByEmp.get(p.employee_id)
+      if (!existing || p.pay_period_start > existing.pay_period_start) {
+        latestByEmp.set(p.employee_id, p)
+      }
+    }
+    return employees.map(emp => {
+      const p = latestByEmp.get(emp.id)
+      const sortCode = (emp.bank_sort_code ?? '').replace(/[-\s]/g, '')
+      const accountNo = (emp.bank_account_number ?? '').replace(/\s/g, '')
+      const monthLabel = p ? MONTH_NAMES[new Date(p.pay_period_start).getMonth()] : ''
+      const validBank = /^\d{6}$/.test(sortCode) && /^\d{8}$/.test(accountNo)
+      return {
+        employee: emp,
+        payslip: p,
+        net_pay: p?.net_pay ?? 0,
+        sort_code: sortCode,
+        account_number: accountNo,
+        reference: `SALARY ${monthLabel}`.substring(0, 18),
+        status: !p ? 'no_payslip' as const : !validBank ? 'error' as const : 'ready' as const,
+      }
+    }).filter(r => r.payslip)
+  }
+
+  async function submitModulrPayout() {
+    if (!session) return
+    setModulrSubmitting(true)
+    const rows = getModulrPayoutData().filter(r => r.status === 'ready')
+    const payrunRef = `PAY_${localDateStr(new Date())}_${selectedCompanyId.substring(0, 8)}`
+
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${supabaseUrl}/functions/v1/modulr-payout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          company_id: selectedCompanyId,
+          payrun_ref: payrunRef,
+          payments: rows.map(r => ({
+            employee_id: r.employee.id,
+            employee_name: `${r.employee.first_name} ${r.employee.last_name}`,
+            amount: r.net_pay,
+            sort_code: r.sort_code,
+            account_number: r.account_number,
+            reference: r.reference,
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        showSuccess(`Batch payout submitted: ${data.employee_count} payments, £${data.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}`)
+        setShowModulrConfirmModal(false)
+        fetchModulrBalance()
+      } else {
+        showError(data.error || 'Payout submission failed')
+      }
+    } catch { showError('Network error submitting payout') }
+    setModulrSubmitting(false)
+  }
+
   const fyLabel = `FY ${fyRange.startYear}/${fyRange.startYear + 1}`
 
   return (
@@ -1259,6 +1445,8 @@ export default function AdminPayroll() {
           <button className={`admin-tab ${tab === 'sage_pay' ? 'admin-tab-active' : ''}`} onClick={() => setTab('sage_pay')}>Sage Payslips</button>
         )}
         <button className={`admin-tab ${tab === 'employees' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employees')}>Employee Pay</button>
+        <button className={`admin-tab ${tab === 'bacs_export' ? 'admin-tab-active' : ''}`} onClick={() => setTab('bacs_export')}>BACS Export</button>
+        <button className={`admin-tab ${tab === 'modulr_payout' ? 'admin-tab-active' : ''}`} onClick={() => { setTab('modulr_payout'); if (modulrConnected && modulrBalance === null) fetchModulrBalance() }}>Modulr Payouts</button>
         <button className={`admin-tab ${tab === 'schedule' ? 'admin-tab-active' : ''}`} onClick={() => setTab('schedule')}>Payroll Schedule</button>
         {(enabledFeatures.timesheets || enabledFeatures.shifts || enabledFeatures.legal_timesheets) && (
           <>
@@ -1539,6 +1727,238 @@ export default function AdminPayroll() {
           )}
         </>
       )}
+
+      {/* ── BACS Export Tab ── */}
+      {tab === 'bacs_export' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Standard 18 BACS Export</h3>
+            <button className="admin-btn admin-btn-primary" onClick={downloadBacsFile} style={{ fontSize: 13 }}>
+              Download Standard 18 BACS File (.csv)
+            </button>
+          </div>
+
+          <div style={{ border: '1px solid var(--border, #e0e0e0)', borderRadius: 8, padding: 16, marginBottom: 16, background: 'rgba(248,249,255,.5)' }}>
+            <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>Company Originator Details</p>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-muted, #666)' }}>Sort Code</label>
+                <input
+                  type="text" value={bacsOriginatorSortCode}
+                  onChange={e => setBacsOriginatorSortCode(e.target.value.replace(/[^\d-]/g, '').substring(0, 8))}
+                  placeholder="123456" maxLength={8}
+                  style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #ddd)', fontSize: 13, fontFamily: 'monospace', width: 100 }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-muted, #666)' }}>Account No</label>
+                <input
+                  type="text" value={bacsOriginatorAccountNo}
+                  onChange={e => setBacsOriginatorAccountNo(e.target.value.replace(/\D/g, '').substring(0, 8))}
+                  placeholder="12345678" maxLength={8}
+                  style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #ddd)', fontSize: 13, fontFamily: 'monospace', width: 100 }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--text-muted, #666)' }}>Company Name</label>
+                <input
+                  type="text" value={bacsOriginatorName}
+                  onChange={e => setBacsOriginatorName(e.target.value.substring(0, 18))}
+                  placeholder="Company Name" maxLength={18}
+                  style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #ddd)', fontSize: 13, width: 160 }}
+                />
+              </div>
+              <button className="admin-btn" onClick={saveBacsOriginator} style={{ fontSize: 12 }}>Save</button>
+            </div>
+          </div>
+
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Sort Code</th>
+                  <th>Account No</th>
+                  <th>Net Pay</th>
+                  <th>Reference</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {getBacsPayslipData().map(row => {
+                  const scValid = /^\d{6}$/.test(row.sort_code)
+                  const anValid = /^\d{8}$/.test(row.account_number)
+                  return (
+                    <tr key={row.employee.id}>
+                      <td><strong>{row.employee.first_name} {row.employee.last_name}</strong></td>
+                      <td>
+                        <input
+                          type="text"
+                          value={bacsEdits[row.employee.id]?.sort_code ?? row.employee.bank_sort_code ?? ''}
+                          onChange={e => setBacsEdits(prev => ({ ...prev, [row.employee.id]: { ...prev[row.employee.id], sort_code: e.target.value.replace(/[^\d-]/g, '').substring(0, 8) } }))}
+                          maxLength={8}
+                          style={{
+                            padding: '4px 8px', borderRadius: 4, fontSize: 13, fontFamily: 'monospace', width: 80,
+                            border: `1px solid ${scValid ? 'var(--border, #ddd)' : '#ef4444'}`,
+                            background: scValid ? 'var(--bg, #fff)' : 'rgba(239,68,68,0.05)',
+                          }}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          value={bacsEdits[row.employee.id]?.account_number ?? row.employee.bank_account_number ?? ''}
+                          onChange={e => setBacsEdits(prev => ({ ...prev, [row.employee.id]: { ...prev[row.employee.id], account_number: e.target.value.replace(/\D/g, '').substring(0, 8) } }))}
+                          maxLength={8}
+                          style={{
+                            padding: '4px 8px', borderRadius: 4, fontSize: 13, fontFamily: 'monospace', width: 90,
+                            border: `1px solid ${anValid ? 'var(--border, #ddd)' : '#ef4444'}`,
+                            background: anValid ? 'var(--bg, #fff)' : 'rgba(239,68,68,0.05)',
+                          }}
+                        />
+                      </td>
+                      <td style={{ fontWeight: 600 }}>£{row.net_pay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td style={{ fontSize: 12, color: 'var(--text-muted, #666)' }}>{row.reference}</td>
+                      <td>
+                        {row.valid
+                          ? <span className="admin-badge admin-badge-approved">Ready</span>
+                          : <span className="admin-badge admin-badge-rejected">Missing Details</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+                {getBacsPayslipData().length === 0 && (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted, #888)' }}>No processed payslips found for the current period</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modulr Payouts Tab ── */}
+      {tab === 'modulr_payout' && (
+        <div>
+          {!modulrConnected ? (
+            <div style={{ border: '1px solid var(--border, #e0e0e0)', borderRadius: 12, padding: 32, textAlign: 'center', background: 'rgba(248,249,255,.5)' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Enable 1-Click Instant Faster Payments</h3>
+              <p style={{ margin: '0 0 16px', fontSize: 14, color: 'var(--text-muted, #666)' }}>
+                Connect your Modulr account to submit batch payouts directly from InflowHR.
+              </p>
+              <button className="admin-btn admin-btn-primary" onClick={() => window.location.hash = ''} style={{ fontSize: 14, padding: '10px 24px' }}>
+                <a href="/admin/integrations" style={{ color: 'inherit', textDecoration: 'none' }}>Connect Modulr Account</a>
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Modulr Direct Payouts</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{
+                    padding: '8px 16px', borderRadius: 8, fontSize: 14, fontWeight: 700,
+                    background: modulrBalance !== null && modulrBalance >= 0 ? 'rgba(232,245,233,.5)' : 'rgba(255,235,238,.5)',
+                    color: modulrBalance !== null && modulrBalance >= 0 ? '#2e7d32' : '#c62828',
+                    border: `1px solid ${modulrBalance !== null && modulrBalance >= 0 ? '#a5d6a7' : '#ef9a9a'}`,
+                  }}>
+                    {modulrBalanceLoading ? 'Loading...' : modulrBalance !== null
+                      ? `Available Balance: £${modulrBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                      : 'Balance unavailable'}
+                  </div>
+                  <button className="admin-btn" onClick={fetchModulrBalance} disabled={modulrBalanceLoading} style={{ fontSize: 12 }}>Refresh</button>
+                </div>
+              </div>
+
+              {(() => {
+                const payoutData = getModulrPayoutData()
+                const readyRows = payoutData.filter(r => r.status === 'ready')
+                const totalNet = readyRows.reduce((s, r) => s + r.net_pay, 0)
+                const insufficientFunds = modulrBalance !== null && totalNet > modulrBalance
+
+                return (
+                  <>
+                    <div className="admin-table-wrap">
+                      <table className="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Employee</th>
+                            <th>Bank Details</th>
+                            <th>Net Amount</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {payoutData.map(row => (
+                            <tr key={row.employee.id} style={row.status === 'error' ? { background: 'rgba(239,68,68,0.04)' } : undefined}>
+                              <td><strong>{row.employee.first_name} {row.employee.last_name}</strong></td>
+                              <td style={{ fontFamily: 'monospace', fontSize: 13 }}>
+                                {row.sort_code && row.account_number
+                                  ? `${row.sort_code.substring(0, 2)}-${row.sort_code.substring(2, 4)}-${row.sort_code.substring(4)} / ${row.account_number}`
+                                  : <span style={{ color: '#dc2626' }}>Missing</span>}
+                              </td>
+                              <td style={{ fontWeight: 600 }}>£{row.net_pay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td>
+                                {row.status === 'ready' && <span className="admin-badge admin-badge-approved">Ready</span>}
+                                {row.status === 'error' && <span className="admin-badge admin-badge-rejected">Error</span>}
+                                {row.status === 'no_payslip' && <span className="admin-badge admin-badge-pending">No Payslip</span>}
+                              </td>
+                            </tr>
+                          ))}
+                          {payoutData.length === 0 && (
+                            <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted, #888)' }}>No processed payslips found</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {readyRows.length > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, padding: 16, borderRadius: 8, background: insufficientFunds ? 'rgba(255,235,238,.5)' : 'rgba(232,245,233,.5)', border: `1px solid ${insufficientFunds ? '#ef9a9a' : '#a5d6a7'}` }}>
+                        <div>
+                          <strong style={{ fontSize: 14 }}>{readyRows.length} payments</strong>
+                          <span style={{ fontSize: 14, marginLeft: 8 }}>totalling <strong>£{totalNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></span>
+                          {insufficientFunds && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#dc2626', fontWeight: 600 }}>Insufficient Modulr balance</p>}
+                        </div>
+                        <button
+                          className="admin-btn admin-btn-primary"
+                          onClick={() => setShowModulrConfirmModal(true)}
+                          disabled={insufficientFunds || modulrSubmitting}
+                          style={{ fontSize: 14, padding: '10px 20px' }}
+                        >
+                          Submit Batch Payout via Modulr
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Modulr Confirmation Modal */}
+      {showModulrConfirmModal && (() => {
+        const readyRows = getModulrPayoutData().filter(r => r.status === 'ready')
+        const totalNet = readyRows.reduce((s, r) => s + r.net_pay, 0)
+        return (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 12, padding: 24, maxWidth: 480, width: '90%' }}>
+              <h3 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Confirm Batch Payout</h3>
+              <p style={{ margin: '0 0 16px', fontSize: 14, color: 'var(--text, #444)', lineHeight: 1.5 }}>
+                You are about to initiate <strong>{readyRows.length}</strong> Faster Payments totalling <strong>£{totalNet.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong> from your Modulr account.
+              </p>
+              <p style={{ margin: '0 0 16px', fontSize: 13, color: '#dc2626', fontWeight: 600 }}>
+                This action cannot be undone. Payments will be submitted immediately.
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="admin-btn" onClick={() => setShowModulrConfirmModal(false)}>Cancel</button>
+                <button className="admin-btn admin-btn-primary" onClick={submitModulrPayout} disabled={modulrSubmitting} style={{ background: '#dc2626', borderColor: '#dc2626' }}>
+                  {modulrSubmitting ? 'Submitting...' : 'Confirm & Submit'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {tab === 'employees' && (() => {
         const zeroHrsIds = new Set(zeroHoursEmployees.map(e => e.id))
