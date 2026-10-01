@@ -510,7 +510,7 @@ export default function AdminLegalTimesheets() {
     try {
       await Promise.all(ids.map(id => {
         const entry = entries.find(e => e.id === id)
-        if (!entry || !['submitted', 'pending'].includes(entry.status)) return Promise.resolve()
+        if (!entry || ['approved', 'billed', 'rejected'].includes(entry.status)) return Promise.resolve()
         const newLog = [...(entry.audit_log || []), auditEntry]
         return supabase.from('legal_timesheet_entries').update({ status: 'approved', audit_log: newLog }).eq('id', id)
       }))
@@ -528,7 +528,7 @@ export default function AdminLegalTimesheets() {
     try {
       await Promise.all(ids.map(id => {
         const entry = entries.find(e => e.id === id)
-        if (!entry || !['submitted', 'pending'].includes(entry.status)) return Promise.resolve()
+        if (!entry || ['approved', 'billed', 'rejected'].includes(entry.status)) return Promise.resolve()
         const newLog = [...(entry.audit_log || []), auditEntry]
         return supabase.from('legal_timesheet_entries').update({ status: 'rejected', audit_log: newLog }).eq('id', id)
       }))
