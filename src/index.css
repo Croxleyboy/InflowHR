@@ -5384,7 +5384,7 @@ body {
   background: var(--bg);
 }
 .desktop-content {
-  max-width: 800px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 24px 32px 48px;
   min-height: 100%;
