@@ -239,7 +239,7 @@ export default function AdminLegalTimesheets() {
 
   // Invoice state
   const [invoices, setInvoices] = useState<LegalInvoice[]>([])
-  const [invoiceLines, setInvoiceLines] = useState<LegalInvoiceLine[]>([])
+  const [, setInvoiceLines] = useState<LegalInvoiceLine[]>([])
   const [invoiceLoading, setInvoiceLoading] = useState(false)
   const [companyBilling, setCompanyBilling] = useState<CompanyBillingDetails | null>(null)
   const [showCreateInvoice, setShowCreateInvoice] = useState(false)
