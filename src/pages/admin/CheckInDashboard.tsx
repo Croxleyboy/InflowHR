@@ -503,7 +503,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                     return <>
                       <tr key={r.key} style={r.missed ? { background: 'rgba(229,57,53,0.08)' } : r.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
                         <td><strong>{r.name}</strong><br /><span style={{ fontSize: 11, color: '#888' }}>{r.shiftName} ({r.shiftTime})</span></td>
-                        <td><span className={`admin-badge ${ct === 'Zero Hours' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{ct === 'Zero Hours' ? 'Zero Hours' : 'Employed'}</span></td>
+                        <td><span className={`admin-badge ${ct === 'Zero hours shift worker' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{ct === 'Zero hours shift worker' ? 'Zero Hours' : 'Employed'}</span></td>
                         <td>{r.dept || '—'}</td>
                         <td>{formatDate(todayStr)}</td>
                         <td>{r.firstIn ? fmtTime(r.firstIn) : '—'}</td>
@@ -578,7 +578,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                 {liveEnriched.map(r => (
                   <tr key={r.id}>
                     <td>{r.emp_name}</td>
-                    <td><span className={`admin-badge ${r.contractType === 'Zero Hours' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{r.contractType === 'Zero Hours' ? 'Zero Hours' : 'Employed'}</span></td>
+                    <td><span className={`admin-badge ${r.contractType === 'Zero hours shift worker' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{r.contractType === 'Zero hours shift worker' ? 'Zero Hours' : 'Employed'}</span></td>
                     <td>{r.dept || '—'}</td>
                     <td>{fmtTime(r.check_in_at)}</td>
                     <td>{duration(r.check_in_at, null)}</td>
@@ -641,7 +641,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                       return <>
                         <tr key={r.key} style={r.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
                           <td><strong>{r.name}</strong><br /><span style={{ fontSize: 11, color: '#888' }}>{r.shiftName} ({r.shiftTime})</span></td>
-                          <td><span className={`admin-badge ${ct === 'Zero Hours' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{ct === 'Zero Hours' ? 'Zero Hours' : 'Employed'}</span></td>
+                          <td><span className={`admin-badge ${ct === 'Zero hours shift worker' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{ct === 'Zero hours shift worker' ? 'Zero Hours' : 'Employed'}</span></td>
                           <td>{r.dept || '—'}</td>
                           <td>{fmtDate(r.date + 'T00:00:00')}</td>
                           <td>{r.firstIn ? fmtTime(r.firstIn) : '—'}</td>
@@ -718,7 +718,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                   {paginated.map(r => (
                     <tr key={r.id}>
                       <td>{r.emp_name}</td>
-                      <td><span className={`admin-badge ${r.contractType === 'Zero Hours' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{r.contractType === 'Zero Hours' ? 'Zero Hours' : 'Employed'}</span></td>
+                      <td><span className={`admin-badge ${r.contractType === 'Zero hours shift worker' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{r.contractType === 'Zero hours shift worker' ? 'Zero Hours' : 'Employed'}</span></td>
                       <td>{r.dept || '—'}</td>
                       <td>{fmtDate(r.check_in_at)}</td>
                       <td>{fmtTime(r.check_in_at)}</td>
