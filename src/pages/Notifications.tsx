@@ -551,15 +551,19 @@ export default function Notifications() {
             let subtitle = 'Required'
             if (course.deadline) {
               const deadlineDate = new Date(course.deadline)
-              const daysLeft = Math.max(0, Math.floor((deadlineDate.getTime() - todayDate.getTime()) / 86400000))
-              subtitle = `Due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`
+              const daysLeft = Math.floor((deadlineDate.getTime() - todayDate.getTime()) / 86400000)
+              if (daysLeft < 0) {
+                subtitle = `Overdue — was due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+              } else {
+                subtitle = `Due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} (${daysLeft} day${daysLeft !== 1 ? 's' : ''} left)`
+              }
             }
             personalReminders.push({
               id: `elearn-${course.id}`,
               type: 'elearning',
               title: course.title,
               subtitle,
-              date: course.deadline || new Date().toISOString(),
+              date: todayStr,
               navigateTo: '/elearning',
             })
           })
@@ -578,6 +582,7 @@ export default function Notifications() {
         .eq('company_id', companyId)
         .eq('status', 'confirmed')
         .gte('created_at', threeDaysAgo.toISOString())
+        .gte('booking_date', todayStr)
         .order('created_at', { ascending: false })
         .limit(5)
 
@@ -609,6 +614,7 @@ export default function Notifications() {
         .eq('employee_id', HARDCODED_EMPLOYEE_ID)
         .eq('company_id', companyId)
         .gte('created_at', threeDaysAgo.toISOString())
+        .gte('date', todayStr)
         .order('created_at', { ascending: false })
         .limit(5)
 
@@ -674,7 +680,6 @@ export default function Notifications() {
 
     const currentTime = `${String(todayDate.getHours()).padStart(2, '0')}:${String(todayDate.getMinutes()).padStart(2, '0')}`
     const activeReminders = personalReminders.filter(r => {
-      if (r.type === 'confirm_booking' || r.type === 'confirm_shift') return true
       if (r.date > todayStr) return true
       if (r.date === todayStr) {
         if (r.time) return r.time >= currentTime
