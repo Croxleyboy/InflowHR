@@ -95,7 +95,14 @@ Deno.serve(async (req) => {
       .eq('is_active', true)
       .maybeSingle()
 
-    if (!record || !caller || record.company_id !== caller.company_id) {
+    let authorised = caller && record && record.company_id === caller.company_id
+    if (!authorised && record) {
+      const { data: sa } = await supabase.from('super_admins')
+        .select('id').eq('email', user.email).maybeSingle()
+      if (sa) authorised = true
+    }
+
+    if (!record || !authorised) {
       return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: corsHeaders })
     }
 
