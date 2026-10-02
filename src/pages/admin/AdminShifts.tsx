@@ -201,8 +201,8 @@ export default function AdminShifts() {
       </div>
 
       {showAdd && (
-        <div className="admin-table-wrap" style={{ marginBottom: 16 }}>
-          <table className="admin-table">
+        <div className="admin-table-wrap" style={{ marginBottom: 16, overflowX: 'visible' }}>
+          <table className="admin-table" style={{ tableLayout: 'auto' }}>
             <thead>
               <tr>
                 <th>Name</th><th>Start</th><th>End</th><th>Break (mins)</th><th>Colour</th>
@@ -216,7 +216,7 @@ export default function AdminShifts() {
             </thead>
             <tbody>
               <tr>
-                <td><input className="admin-inline-input" value={addForm.name} onChange={e => setAddForm(p => ({...p, name: e.target.value}))} placeholder="Shift name" /></td>
+                <td><input className="admin-inline-input" value={addForm.name} onChange={e => setAddForm(p => ({...p, name: e.target.value}))} placeholder="Shift name" style={{ minWidth: 200 }} /></td>
                 <td><input type="time" className="admin-inline-input" value={addForm.start_time} onChange={e => setAddForm(p => ({...p, start_time: e.target.value}))} /></td>
                 <td><input type="time" className="admin-inline-input" value={addForm.end_time} onChange={e => setAddForm(p => ({...p, end_time: e.target.value}))} /></td>
                 <td><input type="number" className="admin-inline-input admin-inline-sm" value={addForm.break_minutes} onChange={e => setAddForm(p => ({...p, break_minutes: +e.target.value}))} /></td>
@@ -257,8 +257,8 @@ export default function AdminShifts() {
       )}
 
       {loading ? <div className="admin-loading">Loading...</div> : (
-        <div className="admin-table-wrap">
-          <table className="admin-table">
+        <div className="admin-table-wrap" style={{ overflowX: 'visible' }}>
+          <table className="admin-table" style={{ tableLayout: 'auto' }}>
             <thead>
               <tr>
                 <th>Name</th><th>Start</th><th>End</th><th>Break (mins)</th><th>Colour</th>
@@ -273,7 +273,7 @@ export default function AdminShifts() {
             <tbody>
               {filtered.map(t => (
                 <tr key={t.id}>
-                  <td>{editingId === t.id ? <input className="admin-inline-input" value={editForm.name} onChange={e => setEditForm(p => ({...p, name: e.target.value}))} /> : t.name}</td>
+                  <td>{editingId === t.id ? <input className="admin-inline-input" value={editForm.name} onChange={e => setEditForm(p => ({...p, name: e.target.value}))} style={{ minWidth: 200 }} /> : t.name}</td>
                   <td>{editingId === t.id ? <input type="time" className="admin-inline-input" value={editForm.start_time} onChange={e => setEditForm(p => ({...p, start_time: e.target.value}))} /> : t.start_time}</td>
                   <td>{editingId === t.id ? <input type="time" className="admin-inline-input" value={editForm.end_time} onChange={e => setEditForm(p => ({...p, end_time: e.target.value}))} /> : t.end_time}</td>
                   <td>{editingId === t.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={editForm.break_minutes} onChange={e => setEditForm(p => ({...p, break_minutes: +e.target.value}))} /> : t.break_minutes}</td>
