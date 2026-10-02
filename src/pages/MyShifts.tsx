@@ -363,7 +363,8 @@ export default function MyShifts() {
     fetchMyShifts()
     if (filter === 'everyone') fetchAllShifts()
     fetchTemplates()
-  }, [fetchMyShifts, fetchAllShifts, fetchTemplates, filter])
+    fetchCorrections()
+  }, [fetchMyShifts, fetchAllShifts, fetchTemplates, fetchCorrections, filter])
 
   const activeShifts = filter === 'everyone' ? allShifts : shifts
 
@@ -620,7 +621,7 @@ export default function MyShifts() {
                           onClick={async () => {
                             if (!companyUser?.company_id || !employeeId) return
                             setSubmitting(flagKey)
-                            await supabase.from('shift_corrections').insert({
+                            const { error } = await supabase.from('shift_corrections').upsert({
                               company_id: companyUser.company_id,
                               employee_id: employeeId,
                               shift_assignment_id: flag.assignmentId,
@@ -632,8 +633,12 @@ export default function MyShifts() {
                               variance_minutes: flag.varianceMins,
                               employee_comment: commentDrafts[flagKey]?.trim(),
                               status: 'submitted',
-                            })
+                            }, { onConflict: 'company_id,shift_assignment_id,correction_type' })
                             setSubmitting(null)
+                            if (error) {
+                              alert('Failed to submit correction: ' + error.message)
+                              return
+                            }
                             setCommentDrafts(prev => { const n = { ...prev }; delete n[flagKey]; return n })
                             fetchCorrections()
                           }}
