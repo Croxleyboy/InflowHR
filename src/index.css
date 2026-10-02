@@ -868,6 +868,31 @@ body {
   border-color: #e65100;
 }
 .shifts-tab-active:hover { background: #bf360c; border-color: #bf360c; color: #fff; }
+.shifts-tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; font-size: 9px; font-weight: 800; background: #dc2626; color: #fff; margin-left: 4px; }
+
+/* ── Shift Correction Flag ── */
+.sc-correction-flag { display: inline-flex; align-items: center; margin-left: 6px; cursor: pointer; vertical-align: middle; animation: sc-flag-pulse 2s infinite; }
+@keyframes sc-flag-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* ── Shift Tasks Tab ── */
+.sc-tasks-container { padding: 8px 16px 100px; }
+.sc-tasks-heading { font-size: 13px; font-weight: 700; color: var(--text); margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.sc-task-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 10px; }
+.sc-task-card-pending { border-left: 3px solid #dc2626; }
+.sc-task-card-declined { border-left: 3px solid #dc2626; background: #fef2f2; }
+.sc-task-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.sc-task-type-badge { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: rgba(220,38,38,0.1); color: #dc2626; text-transform: uppercase; letter-spacing: 0.3px; }
+.sc-task-badge-declined { background: #dc2626; color: #fff; }
+.sc-task-date { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+.sc-task-status { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+.sc-task-card-body { display: flex; flex-direction: column; gap: 6px; }
+.sc-task-detail { font-size: 12px; color: var(--text); }
+.sc-task-admin-msg { font-size: 11px; color: var(--text-muted); padding: 6px 8px; background: rgba(0,0,0,0.04); border-radius: 6px; }
+.sc-task-comment { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; font-family: inherit; resize: vertical; background: var(--bg); color: var(--text); }
+.sc-task-comment:focus { outline: none; border-color: #e65100; }
+.sc-task-submit { align-self: flex-end; background: #e65100; color: #fff; border: none; border-radius: 8px; padding: 6px 16px; font-size: 12px; font-weight: 700; cursor: pointer; transition: background 0.15s; }
+.sc-task-submit:hover:not(:disabled) { background: #bf360c; }
+.sc-task-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ── Shift Swap Page ── */
 .swap-tabs { display: flex; gap: 4px; margin: 12px 16px; background: var(--bg-card); border-radius: 12px; padding: 4px; border: 1px solid var(--border); }

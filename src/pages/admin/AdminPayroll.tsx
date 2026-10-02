@@ -547,16 +547,28 @@ export default function AdminPayroll() {
     const targetEmps = prSubTab === 'shift' ? shiftEmployees : zeroHoursEmployees
 
     const { data: checkins } = await supabase.from('checkin_records')
-      .select('employee_id, check_in_at, check_out_at, status')
+      .select('employee_id, check_in_at, check_out_at, status, shift_assignment_id')
       .eq('company_id', selectedCompanyId)
       .eq('source', 'shifts')
       .in('status', ['checked_out', 'auto_closed'])
       .gte('check_in_at', prPeriodStart + 'T00:00:00')
       .lte('check_in_at', prPeriodEnd + 'T23:59:59')
 
+    const assignmentIds = [...new Set((checkins || []).filter((c: any) => c.shift_assignment_id).map((c: any) => c.shift_assignment_id))]
+    const { data: unresolvedCorrections } = assignmentIds.length > 0
+      ? await supabase.from('shift_corrections')
+          .select('shift_assignment_id')
+          .eq('company_id', selectedCompanyId)
+          .in('shift_assignment_id', assignmentIds)
+          .in('status', ['pending', 'submitted', 'declined'])
+      : { data: [] }
+    const blockedAssignments = new Set((unresolvedCorrections || []).map((sc: any) => sc.shift_assignment_id))
+
+    const approvedCheckins = (checkins || []).filter((c: any) => !c.shift_assignment_id || !blockedAssignments.has(c.shift_assignment_id))
+
     const { data: breaks } = await supabase.from('break_records')
       .select('checkin_record_id, start_at, end_at')
-      .in('checkin_record_id', (checkins || []).map(c => (c as any).id))
+      .in('checkin_record_id', approvedCheckins.map(c => (c as any).id))
 
     const breaksByCheckin = new Map<string, number>()
     for (const b of (breaks || []) as any[]) {
@@ -566,7 +578,7 @@ export default function AdminPayroll() {
     }
 
     const hoursByEmp = new Map<string, number>()
-    for (const c of (checkins || []) as any[]) {
+    for (const c of approvedCheckins as any[]) {
       if (!c.check_out_at) continue
       const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
       const breakHrs = breaksByCheckin.get(c.id) || 0

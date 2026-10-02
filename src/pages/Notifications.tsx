@@ -242,6 +242,15 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'shift_correction' || type === 'ShiftCorrection') {
+    return (
+      <div className="notif-icon" style={{ background: '#dc2626' }}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
+          <circle cx="12" cy="12" r="10" /><path d="M12 8v4m0 4h.01" />
+        </svg>
+      </div>
+    )
+  }
   if (type === 'Missed Check-In') {
     return (
       <div className="notif-icon notif-icon-missed-checkin">

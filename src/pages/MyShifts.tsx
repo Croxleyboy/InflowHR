@@ -55,7 +55,31 @@ interface GroupedShift {
   shiftContractType?: string | null
 }
 
-type FilterTab = 'only_me' | 'everyone' | 'availability' | 'replacements'
+interface CorrectionFlag {
+  assignmentId: string
+  type: 'late_checkin' | 'early_checkout' | 'no_checkin' | 'no_checkout'
+  varianceMins: number
+  expectedTime: string
+  actualTime: string
+  checkinRecordId?: string
+  shiftDate: string
+  shiftName: string
+}
+
+interface ShiftCorrection {
+  id: string
+  shift_assignment_id: string
+  correction_type: string
+  status: string
+  employee_comment: string | null
+  admin_comment: string | null
+  shift_date: string
+  expected_time: string | null
+  actual_time: string | null
+  variance_minutes: number
+}
+
+type FilterTab = 'only_me' | 'everyone' | 'availability' | 'replacements' | 'tasks'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -149,6 +173,10 @@ export default function MyShifts() {
   const [weekStart, setWeekStart] = useState(() => getWeekStart(new Date()))
   const [editingId, setEditingId] = useState<string | null>(null)
   const [popupShift, setPopupShift] = useState<GroupedShift | null>(null)
+  const [correctionFlags, setCorrectionFlags] = useState<CorrectionFlag[]>([])
+  const [corrections, setCorrections] = useState<ShiftCorrection[]>([])
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState<string | null>(null)
 
   const today = useMemo(() => new Date(), [])
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart])
@@ -236,10 +264,96 @@ export default function MyShifts() {
     setTemplates((data || []) as AvailableTemplate[])
   }, [companyUser?.company_id])
 
+  const fetchCorrections = useCallback(async () => {
+    if (!employeeId || !companyUser?.company_id) return
+    const [ciRes, scRes] = await Promise.all([
+      supabase
+        .from('checkin_records')
+        .select('id, shift_assignment_id, check_in_at, check_out_at, status')
+        .eq('company_id', companyUser.company_id)
+        .eq('employee_id', employeeId)
+        .eq('source', 'shifts'),
+      supabase
+        .from('shift_corrections')
+        .select('id, shift_assignment_id, correction_type, status, employee_comment, admin_comment, shift_date, expected_time, actual_time, variance_minutes')
+        .eq('company_id', companyUser.company_id)
+        .eq('employee_id', employeeId),
+    ])
+    const checkins = (ciRes.data || []) as { id: string; shift_assignment_id: string; check_in_at: string; check_out_at: string | null; status: string }[]
+    const ciMap: Record<string, typeof checkins[0]> = {}
+    for (const c of checkins) {
+      if (c.shift_assignment_id) ciMap[c.shift_assignment_id] = c
+    }
+
+    const flags: CorrectionFlag[] = []
+    const existingCorrections = new Set((scRes.data || []).map((sc: any) => `${sc.shift_assignment_id}|${sc.correction_type}`))
+
+    for (const s of shifts) {
+      if (!s.shift_template) continue
+      const shiftDate = new Date(s.date + 'T00:00:00')
+      const now = new Date()
+      if (shiftDate > now) continue
+
+      const ci = ciMap[s.id]
+      const expectedStart = new Date(`${s.date}T${s.shift_template.start_time}`)
+      const expectedEnd = new Date(`${s.date}T${s.shift_template.end_time}`)
+
+      if (!ci) {
+        if (!existingCorrections.has(`${s.id}|no_checkin`)) {
+          flags.push({
+            assignmentId: s.id, type: 'no_checkin', varianceMins: 0,
+            expectedTime: s.shift_template.start_time, actualTime: '-',
+            shiftDate: s.date, shiftName: s.shift_template.name,
+          })
+        }
+        continue
+      }
+
+      const actualStart = new Date(ci.check_in_at)
+      const lateMins = Math.round((actualStart.getTime() - expectedStart.getTime()) / 60000)
+      if (lateMins > 15 && !existingCorrections.has(`${s.id}|late_checkin`)) {
+        flags.push({
+          assignmentId: s.id, type: 'late_checkin', varianceMins: lateMins,
+          expectedTime: s.shift_template.start_time,
+          actualTime: actualStart.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+          checkinRecordId: ci.id, shiftDate: s.date, shiftName: s.shift_template.name,
+        })
+      }
+
+      if (!ci.check_out_at && (ci.status === 'checked_in' || ci.status === 'auto_closed')) {
+        if (!existingCorrections.has(`${s.id}|no_checkout`)) {
+          flags.push({
+            assignmentId: s.id, type: 'no_checkout', varianceMins: 0,
+            expectedTime: s.shift_template.end_time, actualTime: '-',
+            checkinRecordId: ci.id, shiftDate: s.date, shiftName: s.shift_template.name,
+          })
+        }
+      } else if (ci.check_out_at) {
+        const actualEnd = new Date(ci.check_out_at)
+        const earlyMins = Math.round((expectedEnd.getTime() - actualEnd.getTime()) / 60000)
+        if (earlyMins > 10 && !existingCorrections.has(`${s.id}|early_checkout`)) {
+          flags.push({
+            assignmentId: s.id, type: 'early_checkout', varianceMins: earlyMins,
+            expectedTime: s.shift_template.end_time,
+            actualTime: actualEnd.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+            checkinRecordId: ci.id, shiftDate: s.date, shiftName: s.shift_template.name,
+          })
+        }
+      }
+    }
+
+    setCorrectionFlags(flags)
+    setCorrections((scRes.data || []) as ShiftCorrection[])
+  }, [employeeId, companyUser?.company_id, shifts])
+
   useEffect(() => {
     fetchMyShifts()
     fetchTemplates()
   }, [fetchMyShifts, fetchTemplates])
+
+  useEffect(() => {
+    if (shifts.length > 0) fetchCorrections()
+  }, [shifts, fetchCorrections])
 
   useEffect(() => {
     if (filter === 'everyone') fetchAllShifts()
@@ -383,6 +497,7 @@ export default function MyShifts() {
           { key: 'everyone' as FilterTab, label: t('shifts.everyone') },
           { key: 'availability' as FilterTab, label: t('shifts.availability') },
           { key: 'replacements' as FilterTab, label: t('shifts.replacements') },
+          { key: 'tasks' as FilterTab, label: 'Tasks' },
         ]).map(f => (
           <button
             key={f.key}
@@ -390,6 +505,9 @@ export default function MyShifts() {
             onClick={() => { setFilter(f.key); if (f.key === 'availability') navigate('/shifts/availability'); if (f.key === 'replacements') navigate('/shifts/swap') }}
           >
             {f.label}
+            {f.key === 'tasks' && (correctionFlags.length + corrections.filter(c => c.status === 'declined').length) > 0 && (
+              <span className="shifts-tab-badge">{correctionFlags.length + corrections.filter(c => c.status === 'declined').length}</span>
+            )}
           </button>
         ))}
       </div>
@@ -456,7 +574,145 @@ export default function MyShifts() {
 
       {/* Shift List */}
       <div className="schedule-shift-list">
-        {filter === 'replacements' ? (
+        {filter === 'tasks' ? (
+          <div className="sc-tasks-container">
+            {correctionFlags.length === 0 && corrections.filter(c => c.status === 'declined').length === 0 && corrections.filter(c => c.status === 'submitted' || c.status === 'approved').length === 0 && (
+              <div className="schedule-no-shift" style={{ textAlign: 'center', padding: '32px 0' }}>
+                <p>No shift corrections at this time.</p>
+              </div>
+            )}
+
+            {/* Pending correction flags */}
+            {correctionFlags.length > 0 && (
+              <>
+                <h3 className="sc-tasks-heading">Corrections Required</h3>
+                {correctionFlags.map(flag => {
+                  const flagLabels: Record<string, string> = {
+                    late_checkin: 'Late Check-in',
+                    early_checkout: 'Early Check-out',
+                    no_checkin: 'No Check-in',
+                    no_checkout: 'No Check-out',
+                  }
+                  const flagKey = `${flag.assignmentId}|${flag.type}`
+                  const fmtDate = new Date(flag.shiftDate + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                  return (
+                    <div key={flagKey} className="sc-task-card sc-task-card-pending">
+                      <div className="sc-task-card-header">
+                        <span className="sc-task-type-badge">{flagLabels[flag.type]}</span>
+                        <span className="sc-task-date">{fmtDate}</span>
+                      </div>
+                      <div className="sc-task-card-body">
+                        <div className="sc-task-detail"><strong>{flag.shiftName}</strong></div>
+                        <div className="sc-task-detail">
+                          Expected: {flag.expectedTime} · Actual: {flag.actualTime}
+                          {flag.varianceMins > 0 && ` (${flag.varianceMins} mins)`}
+                        </div>
+                        <textarea
+                          className="sc-task-comment"
+                          placeholder="Add your comment..."
+                          value={commentDrafts[flagKey] || ''}
+                          onChange={e => setCommentDrafts(prev => ({ ...prev, [flagKey]: e.target.value }))}
+                          rows={2}
+                        />
+                        <button
+                          className="sc-task-submit"
+                          disabled={!commentDrafts[flagKey]?.trim() || submitting === flagKey}
+                          onClick={async () => {
+                            if (!companyUser?.company_id || !employeeId) return
+                            setSubmitting(flagKey)
+                            await supabase.from('shift_corrections').insert({
+                              company_id: companyUser.company_id,
+                              employee_id: employeeId,
+                              shift_assignment_id: flag.assignmentId,
+                              checkin_record_id: flag.checkinRecordId || null,
+                              correction_type: flag.type,
+                              shift_date: flag.shiftDate,
+                              expected_time: flag.expectedTime,
+                              actual_time: flag.actualTime,
+                              variance_minutes: flag.varianceMins,
+                              employee_comment: commentDrafts[flagKey]?.trim(),
+                              status: 'submitted',
+                            })
+                            setSubmitting(null)
+                            setCommentDrafts(prev => { const n = { ...prev }; delete n[flagKey]; return n })
+                            fetchCorrections()
+                          }}
+                        >
+                          {submitting === flagKey ? 'Submitting...' : 'Submit'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {/* Declined corrections — need attention */}
+            {corrections.filter(c => c.status === 'declined').length > 0 && (
+              <>
+                <h3 className="sc-tasks-heading" style={{ color: '#dc2626' }}>Declined — Action Required</h3>
+                {corrections.filter(c => c.status === 'declined').map(sc => {
+                  const flagLabels: Record<string, string> = {
+                    late_checkin: 'Late Check-in', early_checkout: 'Early Check-out',
+                    no_checkin: 'No Check-in', no_checkout: 'No Check-out',
+                  }
+                  const fmtDate = new Date(sc.shift_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                  return (
+                    <div key={sc.id} className="sc-task-card sc-task-card-declined">
+                      <div className="sc-task-card-header">
+                        <span className="sc-task-type-badge sc-task-badge-declined">{flagLabels[sc.correction_type] || sc.correction_type}</span>
+                        <span className="sc-task-date">{fmtDate}</span>
+                      </div>
+                      <div className="sc-task-card-body">
+                        <div className="sc-task-detail">
+                          Expected: {sc.expected_time || '-'} · Actual: {sc.actual_time || '-'}
+                          {sc.variance_minutes > 0 && ` (${sc.variance_minutes} mins)`}
+                        </div>
+                        {sc.admin_comment && <div className="sc-task-admin-msg">Admin: {sc.admin_comment}</div>}
+                        <div className="sc-task-admin-msg" style={{ color: '#dc2626' }}>Please speak to your shift manager regarding this shift.</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {/* Submitted / approved corrections */}
+            {corrections.filter(c => c.status === 'submitted' || c.status === 'approved').length > 0 && (
+              <>
+                <h3 className="sc-tasks-heading">Submitted Corrections</h3>
+                {corrections.filter(c => c.status === 'submitted' || c.status === 'approved').map(sc => {
+                  const flagLabels: Record<string, string> = {
+                    late_checkin: 'Late Check-in', early_checkout: 'Early Check-out',
+                    no_checkin: 'No Check-in', no_checkout: 'No Check-out',
+                  }
+                  const statusColors: Record<string, { bg: string; color: string }> = {
+                    submitted: { bg: '#fff3e0', color: '#e65100' },
+                    approved: { bg: '#e8f5e9', color: '#2e7d32' },
+                  }
+                  const st = statusColors[sc.status] || { bg: '#f5f5f5', color: '#666' }
+                  const fmtDate = new Date(sc.shift_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                  return (
+                    <div key={sc.id} className="sc-task-card">
+                      <div className="sc-task-card-header">
+                        <span className="sc-task-type-badge">{flagLabels[sc.correction_type] || sc.correction_type}</span>
+                        <span className="sc-task-status" style={{ background: st.bg, color: st.color }}>{sc.status.charAt(0).toUpperCase() + sc.status.slice(1)}</span>
+                        <span className="sc-task-date">{fmtDate}</span>
+                      </div>
+                      <div className="sc-task-card-body">
+                        <div className="sc-task-detail">
+                          Expected: {sc.expected_time || '-'} · Actual: {sc.actual_time || '-'}
+                        </div>
+                        {sc.employee_comment && <div className="sc-task-detail" style={{ fontStyle: 'italic' }}>"{sc.employee_comment}"</div>}
+                        {sc.admin_comment && <div className="sc-task-admin-msg">Admin: {sc.admin_comment}</div>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+          </div>
+        ) : filter === 'replacements' ? (
           <div className="schedule-no-shift" style={{ textAlign: 'center', padding: '32px 0' }}>
             <p>No replacement requests at this time.</p>
           </div>
@@ -555,6 +811,7 @@ export default function MyShifts() {
                     const cardColor = getCardColor(s.shift_template?.id || s.id)
                     const canEdit = s.rota?.status === 'draft'
                     const isEditing = editingId === s.id
+                    const hasFlag = correctionFlags.some(f => f.assignmentId === s.id)
 
                     return (
                       <div
@@ -564,7 +821,14 @@ export default function MyShifts() {
                       >
                         <div className="sc-block-top">
                           <div className="sc-block-info">
-                            <div className="sc-block-name" style={{ color: cardColor.text }}>{s.shift_template?.name || 'Shift'}</div>
+                            <div className="sc-block-name" style={{ color: cardColor.text }}>
+                              {s.shift_template?.name || 'Shift'}
+                              {hasFlag && (
+                                <span className="sc-correction-flag" title="Time correction required" onClick={() => setFilter('tasks')}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" stroke="#dc2626" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                                </span>
+                              )}
+                            </div>
                             <div className="sc-block-time">
                               {formatTimeShort(s.shift_template?.start_time || '')} - {formatTimeShort(s.shift_template?.end_time || '')}
                             </div>
