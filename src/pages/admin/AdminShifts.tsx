@@ -201,8 +201,8 @@ export default function AdminShifts() {
       </div>
 
       {showAdd && (
-        <div className="admin-table-wrap" style={{ marginBottom: 16, overflowX: 'visible' }}>
-          <table className="admin-table" style={{ tableLayout: 'auto' }}>
+        <div className="admin-table-wrap" style={{ marginBottom: 16 }}>
+          <table className="admin-table">
             <thead>
               <tr>
                 <th>Name</th><th>Start</th><th>End</th><th>Break (mins)</th><th>Colour</th>
@@ -257,8 +257,8 @@ export default function AdminShifts() {
       )}
 
       {loading ? <div className="admin-loading">Loading...</div> : (
-        <div className="admin-table-wrap" style={{ overflowX: 'visible' }}>
-          <table className="admin-table" style={{ tableLayout: 'auto' }}>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
             <thead>
               <tr>
                 <th>Name</th><th>Start</th><th>End</th><th>Break (mins)</th><th>Colour</th>

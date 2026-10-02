@@ -129,7 +129,7 @@
 .admin-need-help:hover .admin-need-help-inner { background: #2a2a2a; }
 
 /* Main content */
-.admin-main { flex: 1; padding: 20px 16px 40px; max-width: 1200px; width: 100%; margin: 0 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.admin-main { flex: 1; padding: 20px 16px 40px; max-width: 1600px; width: 100%; margin: 0 auto; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
 /* Page header */
 .admin-page-header { margin-bottom: 20px; }
