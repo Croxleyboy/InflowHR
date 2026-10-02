@@ -189,6 +189,7 @@ export default function AdminEmployees() {
       salary_group: emp.salary_group || 'N/A',
       qualifications: emp.qualifications || '',
       religion: emp.religion || '',
+      start_date: emp.start_date || '',
     })
     setEditLieuDays(lieuDays[emp.id]?.lieu_days ?? 0)
   }
@@ -889,6 +890,10 @@ export default function AdminEmployees() {
                                             <option value="shift_worker">Shift Worker</option>
                                             <option value="contractor">Contractor</option>
                                           </select>
+                                        </div>
+                                        <div className="admin-form-field">
+                                          <label style={{ fontSize: 12 }}>Start Date</label>
+                                          <input className="admin-inline-input" type="date" value={editForm.start_date || ''} onChange={e => setEditForm(p => ({...p, start_date: e.target.value}))} />
                                         </div>
                                         {showField('location') && (
                                           <div className="admin-form-field">
