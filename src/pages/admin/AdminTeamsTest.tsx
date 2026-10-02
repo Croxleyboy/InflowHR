@@ -111,6 +111,10 @@ export default function AdminTeamsTest() {
   const [emailTestError, setEmailTestError] = useState('')
   const [emailTestEmployee, setEmailTestEmployee] = useState<Employee | null>(null)
 
+  const [brevoDiag, setBrevoDiag] = useState<Record<string, any> | null>(null)
+  const [brevoDiagLoading, setBrevoDiagLoading] = useState(false)
+  const [brevoDiagError, setBrevoDiagError] = useState('')
+
   const providerToken = session?.provider_token || null
   const companyDomain = selectedCompany?.domain || ''
 
@@ -167,6 +171,32 @@ export default function AdminTeamsTest() {
     } catch (err: any) {
       setEmailTestError(err.message)
       setEmailTestStatus('error')
+    }
+  }
+
+  async function runBrevoDiagnostics() {
+    setBrevoDiagLoading(true)
+    setBrevoDiagError('')
+    setBrevoDiag(null)
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession()
+      const token = currentSession?.access_token
+      if (!token) throw new Error('No session — please sign in again')
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/brevo-diagnostics`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: '{}',
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setBrevoDiag(data)
+    } catch (err: any) {
+      setBrevoDiagError(err.message)
+    } finally {
+      setBrevoDiagLoading(false)
     }
   }
 
@@ -565,6 +595,243 @@ export default function AdminTeamsTest() {
                 )}
               </div>
             </div>
+          </div>
+
+          {/* Brevo Connection & Diagnostics */}
+          <div className="teams-test-section">
+            <h3 className="teams-test-heading">Brevo Connection & Diagnostics</h3>
+            <div className="teams-test-guidance">
+              <p style={{ margin: '0 0 12px' }}>Test the live Brevo SMTP API connection, verify sender/domain authentication, and review delivery statistics.</p>
+              <button className="admin-add-btn" onClick={runBrevoDiagnostics} disabled={brevoDiagLoading}>
+                {brevoDiagLoading ? 'Running Diagnostics…' : 'Run Brevo Diagnostics'}
+              </button>
+              {brevoDiagError && (
+                <div className="teams-test-error" style={{ marginTop: 12 }}>{brevoDiagError}</div>
+              )}
+            </div>
+
+            {brevoDiag && (
+              <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* API Key Status */}
+                <div style={{ padding: 16, borderRadius: 8, border: '1px solid var(--border-color, #e0e0e0)', background: 'var(--card-bg, #fff)' }}>
+                  <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>API Key</h4>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                      background: brevoDiag.api_key_set ? '#43a047' : '#c62828',
+                    }} />
+                    <span style={{ fontWeight: 600 }}>{brevoDiag.api_key_set ? 'Set' : 'Not Set'}</span>
+                    {brevoDiag.api_key_prefix && (
+                      <code style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted, #888)' }}>{brevoDiag.api_key_prefix}</code>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 4 }}>
+                    Configured sender: <code>{brevoDiag.configured_sender}</code>
+                  </div>
+                </div>
+
+                {/* Account */}
+                {brevoDiag.account && (
+                  <div style={{ padding: 16, borderRadius: 8, border: `1px solid ${brevoDiag.account.status === 'ok' ? '#43a047' : '#c62828'}`, background: 'var(--card-bg, #fff)' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: brevoDiag.account.status === 'ok' ? '#43a047' : '#c62828',
+                      }} />
+                      Account
+                    </h4>
+                    {brevoDiag.account.status === 'ok' ? (
+                      <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <div><strong>Company:</strong> {brevoDiag.account.company_name || '—'}</div>
+                        <div><strong>Email:</strong> {brevoDiag.account.email || '—'}</div>
+                        <div><strong>Plan:</strong> {brevoDiag.account.plan || '—'}</div>
+                        <div><strong>Credits:</strong> {brevoDiag.account.credits_remaining ?? '—'} ({brevoDiag.account.credits_type || '—'})</div>
+                      </div>
+                    ) : (
+                      <div className="teams-test-error">{brevoDiag.account.message || `Error ${brevoDiag.account.code}`}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Sender Verification */}
+                {brevoDiag.sender && (
+                  <div style={{ padding: 16, borderRadius: 8, border: `1px solid ${brevoDiag.sender.status === 'ok' ? '#43a047' : brevoDiag.sender.status === 'warning' ? '#d97706' : '#c62828'}`, background: 'var(--card-bg, #fff)' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: brevoDiag.sender.status === 'ok' ? '#43a047' : brevoDiag.sender.status === 'warning' ? '#d97706' : '#c62828',
+                      }} />
+                      Sender Verification
+                    </h4>
+                    {brevoDiag.sender.status === 'error' ? (
+                      <div className="teams-test-error">{brevoDiag.sender.message || `Error ${brevoDiag.sender.code}`}</div>
+                    ) : (
+                      <div style={{ fontSize: 13 }}>
+                        <div style={{ marginBottom: 8 }}>
+                          <strong>{brevoDiag.sender.configured_email}</strong>
+                          {brevoDiag.sender.found_in_brevo ? (
+                            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: brevoDiag.sender.active ? '#e8f5e9' : '#fff3e0', color: brevoDiag.sender.active ? '#2e7d32' : '#e65100' }}>
+                              {brevoDiag.sender.active ? 'Active' : 'Inactive'}
+                            </span>
+                          ) : (
+                            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#fce4ec', color: '#c62828' }}>
+                              Not Found in Brevo
+                            </span>
+                          )}
+                        </div>
+                        {brevoDiag.sender.all_senders?.length > 0 && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #888)', marginBottom: 4 }}>All registered senders:</div>
+                            {brevoDiag.sender.all_senders.map((s: { email: string; active: boolean; name: string }, i: number) => (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '3px 0' }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.active ? '#43a047' : '#ccc' }} />
+                                <span>{s.name} &lt;{s.email}&gt;</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Domain Authentication */}
+                {brevoDiag.domain && (
+                  <div style={{ padding: 16, borderRadius: 8, border: `1px solid ${brevoDiag.domain.status === 'ok' ? '#43a047' : brevoDiag.domain.status === 'warning' ? '#d97706' : '#c62828'}`, background: 'var(--card-bg, #fff)' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: brevoDiag.domain.status === 'ok' ? '#43a047' : brevoDiag.domain.status === 'warning' ? '#d97706' : '#c62828',
+                      }} />
+                      Domain Authentication (DKIM/SPF)
+                    </h4>
+                    {brevoDiag.domain.status === 'error' ? (
+                      <div className="teams-test-error">{brevoDiag.domain.message || `Error ${brevoDiag.domain.code}`}</div>
+                    ) : (
+                      <div style={{ fontSize: 13 }}>
+                        <div>
+                          <strong>{brevoDiag.domain.sender_domain}</strong>
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: brevoDiag.domain.authenticated ? '#e8f5e9' : '#fce4ec', color: brevoDiag.domain.authenticated ? '#2e7d32' : '#c62828' }}>
+                            {brevoDiag.domain.authenticated ? 'Authenticated' : 'Not Authenticated'}
+                          </span>
+                          {!brevoDiag.domain.found_in_brevo && (
+                            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#fce4ec', color: '#c62828' }}>
+                              Domain not registered
+                            </span>
+                          )}
+                        </div>
+                        {!brevoDiag.domain.authenticated && brevoDiag.domain.found_in_brevo && (
+                          <p style={{ margin: '8px 0 0', fontSize: 12, color: '#c62828' }}>
+                            Add DKIM and SPF DNS records for this domain in your DNS provider. Check the Brevo dashboard for the required records.
+                          </p>
+                        )}
+                        {brevoDiag.domain.all_domains?.length > 0 && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #888)', marginBottom: 4 }}>All registered domains:</div>
+                            {brevoDiag.domain.all_domains.map((d: { domain: string; authenticated: boolean }, i: number) => (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '3px 0' }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: d.authenticated ? '#43a047' : '#ccc' }} />
+                                <span>{d.domain}</span>
+                                <span style={{ fontSize: 11, color: d.authenticated ? '#2e7d32' : '#999' }}>{d.authenticated ? 'authenticated' : 'pending'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SMTP Delivery Stats */}
+                {brevoDiag.smtp_stats && (
+                  <div style={{ padding: 16, borderRadius: 8, border: `1px solid ${brevoDiag.smtp_stats.status === 'ok' ? '#43a047' : '#c62828'}`, background: 'var(--card-bg, #fff)' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: brevoDiag.smtp_stats.status === 'ok' ? '#43a047' : '#c62828',
+                      }} />
+                      SMTP Delivery Statistics
+                    </h4>
+                    {brevoDiag.smtp_stats.status === 'ok' ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+                        {[
+                          { label: 'Requests', value: brevoDiag.smtp_stats.requests, color: '#1565c0' },
+                          { label: 'Delivered', value: brevoDiag.smtp_stats.delivered, color: '#2e7d32' },
+                          { label: 'Opens', value: brevoDiag.smtp_stats.opens, color: '#6a1b9a' },
+                          { label: 'Clicks', value: brevoDiag.smtp_stats.clicks, color: '#00838f' },
+                          { label: 'Bounces', value: brevoDiag.smtp_stats.bounces, color: brevoDiag.smtp_stats.bounces > 0 ? '#c62828' : '#999' },
+                          { label: 'Blocked', value: brevoDiag.smtp_stats.blocked, color: brevoDiag.smtp_stats.blocked > 0 ? '#c62828' : '#999' },
+                          { label: 'Spam Reports', value: brevoDiag.smtp_stats.spam_reports, color: brevoDiag.smtp_stats.spam_reports > 0 ? '#c62828' : '#999' },
+                          { label: 'Invalid', value: brevoDiag.smtp_stats.invalid, color: brevoDiag.smtp_stats.invalid > 0 ? '#c62828' : '#999' },
+                        ].map(stat => (
+                          <div key={stat.label} style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--surface, #f5f5f5)', textAlign: 'center' }}>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: stat.color }}>{stat.value?.toLocaleString() ?? 0}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', marginTop: 2 }}>{stat.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="teams-test-error">{brevoDiag.smtp_stats.message || `Error ${brevoDiag.smtp_stats.code}`}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* Recent Events */}
+                {brevoDiag.recent_events && (
+                  <div style={{ padding: 16, borderRadius: 8, border: '1px solid var(--border-color, #e0e0e0)', background: 'var(--card-bg, #fff)' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 700 }}>Recent Email Events</h4>
+                    {brevoDiag.recent_events.status === 'ok' ? (
+                      brevoDiag.recent_events.events?.length > 0 ? (
+                        <div style={{ overflowX: 'auto' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ borderBottom: '2px solid var(--border-color, #e0e0e0)' }}>
+                                <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600 }}>Date</th>
+                                <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600 }}>Event</th>
+                                <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600 }}>Recipient</th>
+                                <th style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600 }}>Subject</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {brevoDiag.recent_events.events.map((ev: { date: string; event: string; email: string; subject: string }, i: number) => {
+                                const eventColour: Record<string, string> = {
+                                  delivered: '#2e7d32', opened: '#6a1b9a', clicked: '#00838f',
+                                  bounced: '#c62828', hardBounce: '#c62828', softBounce: '#d97706',
+                                  blocked: '#c62828', spam: '#c62828', request: '#1565c0',
+                                  deferred: '#d97706', unsubscribed: '#999',
+                                }
+                                return (
+                                  <tr key={i} style={{ borderBottom: '1px solid var(--border-color, #e0e0e0)' }}>
+                                    <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{new Date(ev.date).toLocaleString('en-GB')}</td>
+                                    <td style={{ padding: '6px 10px' }}>
+                                      <span style={{
+                                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                                        background: (eventColour[ev.event] || '#999') + '18',
+                                        color: eventColour[ev.event] || '#999',
+                                      }}>{ev.event}</span>
+                                    </td>
+                                    <td style={{ padding: '6px 10px' }}>{ev.email}</td>
+                                    <td style={{ padding: '6px 10px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.subject}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p style={{ fontSize: 13, color: 'var(--text-muted, #888)' }}>No recent email events found</p>
+                      )
+                    ) : (
+                      <div className="teams-test-error">{brevoDiag.recent_events.message || `Error ${brevoDiag.recent_events.code}`}</div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', textAlign: 'right' }}>
+                  Diagnostics run at {new Date(brevoDiag.timestamp).toLocaleString('en-GB')}
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
