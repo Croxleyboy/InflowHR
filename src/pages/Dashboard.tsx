@@ -254,37 +254,38 @@ export default function Dashboard() {
         .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
         .then(({ count }) => { if (count && count > 0) setPendingOneToOnes(count) })
 
-      // Count open reminders — must match what Notifications page shows
+      // Count open reminders — mirrors Notifications.tsx personalReminders logic exactly
       ;(async () => {
         let count = 0
         const now = new Date()
         const weekAhead = new Date(now); weekAhead.setDate(weekAhead.getDate() + 7)
         const weekAheadStr = toLocalDateStr(weekAhead)
 
-        let watchlistIds: string[] = []
-        try { watchlistIds = JSON.parse(localStorage.getItem('inflowhr-kudos-watchlist') || '[]') } catch { /* empty */ }
-
-        if (watchlistIds.length > 0) {
-          const { data: colleagues } = await supabase.from('employees')
-            .select('id, date_of_birth').eq('company_id', companyUser.company_id).eq('is_active', true).not('date_of_birth', 'is', null)
-          if (colleagues) {
-            const yr = now.getFullYear()
-            colleagues.forEach((c: any) => {
-              if (!c.date_of_birth || c.id === employeeId || !watchlistIds.includes(c.id)) return
-              const dob = new Date(c.date_of_birth)
-              const bday = new Date(yr, dob.getMonth(), dob.getDate())
-              if (bday < now) bday.setFullYear(yr + 1)
-              if (Math.floor((bday.getTime() - now.getTime()) / 86400000) <= 30) count++
-            })
-          }
+        // Birthdays — all colleagues within 7 days (matches Notifications)
+        const { data: colleagues } = await supabase.from('employees')
+          .select('id, date_of_birth').eq('company_id', companyUser.company_id).eq('is_active', true).not('date_of_birth', 'is', null)
+        if (colleagues) {
+          const yr = now.getFullYear()
+          colleagues.forEach((c: any) => {
+            if (!c.date_of_birth || c.id === employeeId) return
+            const dob = new Date(c.date_of_birth)
+            const bday = new Date(yr, dob.getMonth(), dob.getDate())
+            if (bday < now) bday.setFullYear(yr + 1)
+            const diffDays = Math.floor((bday.getTime() - now.getTime()) / 86400000)
+            if (diffDays >= 0 && diffDays <= 7) count++
+          })
         }
 
-        const { count: shiftCount } = await supabase.from('shift_assignments')
-          .select('id', { count: 'exact', head: true })
+        // Upcoming shifts — next 7 days, published rotas only (matches Notifications)
+        const { data: upcomingShifts } = await supabase.from('shift_assignments')
+          .select('id, date, rota:rotas(status)')
           .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
           .gte('date', today).lte('date', weekAheadStr)
-        count += shiftCount || 0
+        if (upcomingShifts) {
+          count += upcomingShifts.filter((s: any) => s.rota?.status === 'published').length
+        }
 
+        // Upcoming bookings — next 7 days (matches Notifications)
         const { count: bookingCount } = await supabase.from('space_bookings')
           .select('id', { count: 'exact', head: true })
           .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
@@ -308,13 +309,14 @@ export default function Dashboard() {
           }).length
         }
 
-        // Booking confirmations in last 3 days — exclude those already counted as upcoming
+        // Booking confirmations in last 3 days — must have future booking_date, exclude already-counted upcoming
         const threeDaysAgo = new Date(now); threeDaysAgo.setDate(threeDaysAgo.getDate() - 3)
         const { data: confirmBookings } = await supabase.from('space_bookings')
           .select('id, booking_date')
           .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
           .eq('status', 'confirmed')
           .gte('created_at', threeDaysAgo.toISOString())
+          .gte('booking_date', today)
           .limit(10)
         if (confirmBookings) {
           count += confirmBookings.filter((b: any) =>
@@ -322,11 +324,12 @@ export default function Dashboard() {
           ).length
         }
 
-        // Shift confirmations in last 3 days — exclude those already counted as upcoming
+        // Shift confirmations in last 3 days — must have future date, exclude already-counted upcoming
         const { data: recentShifts } = await supabase.from('shift_assignments')
           .select('id, date, rota:rotas(status)')
           .eq('employee_id', employeeId).eq('company_id', companyUser.company_id)
           .gte('created_at', threeDaysAgo.toISOString())
+          .gte('date', today)
           .limit(10)
         if (recentShifts) {
           count += recentShifts.filter((s: any) =>
@@ -334,6 +337,7 @@ export default function Dashboard() {
           ).length
         }
 
+        // E-learning — check both DB and localStorage for completions (matches Notifications)
         if (features.elearning) {
           const [enabledRes, completedRes, empDeptRes] = await Promise.all([
             supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', companyUser.company_id).eq('is_enabled', true),
@@ -343,6 +347,15 @@ export default function Dashboard() {
           const myDept = (empDeptRes.data as any)?.department || ''
           const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
           const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+          try {
+            const raw = localStorage.getItem('inflowhr-elearning')
+            if (raw) {
+              const parsed = JSON.parse(raw)
+              if (Array.isArray(parsed.completed)) {
+                parsed.completed.forEach((id: string) => completedIds.add(id))
+              }
+            }
+          } catch {}
           const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
           count += outstandingIds.length
         }
