@@ -30,6 +30,7 @@ type ReportKey =
   | 'headcount-dept' | 'turnover' | 'overtime-alerts' | 'shift-coverage'
   | 'payroll-variance' | 'benefits-uptake' | 'skills-gaps' | 'onboarding-progress'
   | 'performance-overdue' | 'survey-engagement' | 'stale-tickets' | 'document-expiry'
+  | 'shift-discrepancies'
 
 interface ReportDef {
   key: ReportKey
@@ -60,6 +61,7 @@ const REPORTS: ReportDef[] = [
   { key: 'survey-engagement', title: 'Survey Response Rates', description: 'Active survey deployments with response rate and outstanding count', category: 'engagement', icon: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', feature: 'surveys' },
   { key: 'benefits-uptake', title: 'Benefits Enrolment Rate', description: 'Available benefits and percentage of eligible employees enrolled', category: 'engagement', icon: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>', feature: 'benefits' },
   { key: 'shift-coverage', title: 'Shift Coverage Gaps', description: 'Upcoming shifts with unfilled slots or no assigned employee', category: 'operations', icon: '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>', feature: 'shifts' },
+  { key: 'shift-discrepancies', title: 'Shift Discrepancy Report', description: 'Missed check-ins, late arrivals, early departures and short hours with per-employee trends', category: 'operations', icon: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', feature: 'shifts' },
   { key: 'skills-gaps', title: 'Skills Gap Analysis', description: 'Role requirements vs actual employee skill levels across departments', category: 'engagement', icon: '<path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44"/>', feature: 'skills_passport' },
 ]
 
@@ -132,6 +134,7 @@ export default function AdminReports() {
         case 'survey-engagement': await loadSurveyEngagement(); break
         case 'benefits-uptake': await loadBenefitsUptake(); break
         case 'shift-coverage': await loadShiftCoverage(); break
+        case 'shift-discrepancies': await loadShiftDiscrepancies(); break
         case 'skills-gaps': await loadSkillsGaps(); break
       }
     } catch {
@@ -592,6 +595,121 @@ export default function AdminReports() {
     setReportSummary(`${(benefits || []).length} benefits available. Average uptake: ${avgUptake.toFixed(1)}%.`)
   }
 
+  async function loadShiftDiscrepancies() {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
+    const today = new Date().toISOString().split('T')[0]
+    const LATE_THRESHOLD_MINS = 10
+    const EARLY_THRESHOLD_MINS = 10
+    const SHORT_HOURS_THRESHOLD_MINS = 30
+
+    const [{ data: assignments }, { data: checkins }] = await Promise.all([
+      supabase.from('shift_assignments' as 'shift_assignments').select('id, date, employee_id, employee:employees!shift_assignments_employee_id_fkey(first_name, last_name), shift_template:shift_templates!shift_assignments_shift_template_id_fkey(name, start_time, end_time, break_minutes), rota:rotas!shift_assignments_rota_id_fkey(status)').eq('company_id', selectedCompanyId).gte('date', thirtyDaysAgo).lte('date', today).not('employee_id', 'is', null),
+      supabase.from('checkin_records' as 'checkin_records').select('shift_assignment_id, check_in_at, check_out_at, status').eq('company_id', selectedCompanyId).eq('source', 'shifts').gte('check_in_at', thirtyDaysAgo + 'T00:00:00'),
+    ])
+
+    const checkinByAssignment = new Map<string, Record<string, unknown>>()
+    ;(checkins || []).forEach((c: Record<string, unknown>) => {
+      if (c.shift_assignment_id) checkinByAssignment.set(c.shift_assignment_id as string, c)
+    })
+
+    const rows: Record<string, unknown>[] = []
+    const employeeIssues: Record<string, { name: string; noCheckin: number; late: number; earlyOut: number; missedCheckout: number; shortHours: number }> = {}
+
+    ;(assignments || []).filter((a: Record<string, unknown>) => (a.rota as Record<string, unknown>)?.status === 'published').forEach((a: Record<string, unknown>) => {
+      const emp = a.employee as Record<string, string>
+      const tmpl = a.shift_template as Record<string, unknown>
+      if (!emp || !tmpl) return
+      const empName = `${emp.first_name} ${emp.last_name}`
+      const empId = a.employee_id as string
+      if (!employeeIssues[empId]) employeeIssues[empId] = { name: empName, noCheckin: 0, late: 0, earlyOut: 0, missedCheckout: 0, shortHours: 0 }
+
+      const checkin = checkinByAssignment.get(a.id as string)
+      const shiftName = (tmpl.name as string) || ''
+      const shiftStart = tmpl.start_time as string
+      const shiftEnd = tmpl.end_time as string
+      const breakMins = Number(tmpl.break_minutes || 0)
+      const dateStr = a.date as string
+
+      if (!checkin) {
+        const assignmentDate = new Date(dateStr + 'T00:00:00')
+        if (assignmentDate < new Date(today + 'T00:00:00')) {
+          rows.push({ Employee: empName, Date: fmtDate(dateStr), Shift: shiftName, Expected: `${shiftStart} — ${shiftEnd}`, Actual: '—', 'Discrepancy Type': 'No Check-in', Variance: 'Entire shift' })
+          employeeIssues[empId].noCheckin++
+        }
+        return
+      }
+
+      const checkinTime = new Date(checkin.check_in_at as string)
+      const scheduledStart = new Date(`${dateStr}T${shiftStart}`)
+      const lateMins = Math.round((checkinTime.getTime() - scheduledStart.getTime()) / 60000)
+      if (lateMins > LATE_THRESHOLD_MINS) {
+        rows.push({ Employee: empName, Date: fmtDate(dateStr), Shift: shiftName, Expected: shiftStart, Actual: checkinTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'Discrepancy Type': 'Late Check-in', Variance: `${lateMins} mins late` })
+        employeeIssues[empId].late++
+      }
+
+      if (checkin.status === 'checked_in' || checkin.status === 'auto_closed') {
+        rows.push({ Employee: empName, Date: fmtDate(dateStr), Shift: shiftName, Expected: shiftEnd, Actual: checkin.status === 'auto_closed' ? 'Auto-closed' : 'Still open', 'Discrepancy Type': 'Missed Check-out', Variance: checkin.status === 'auto_closed' ? 'Auto-closed by system' : 'No check-out recorded' })
+        employeeIssues[empId].missedCheckout++
+      } else if (checkin.check_out_at) {
+        const checkoutTime = new Date(checkin.check_out_at as string)
+        const scheduledEnd = new Date(`${dateStr}T${shiftEnd}`)
+        const earlyMins = Math.round((scheduledEnd.getTime() - checkoutTime.getTime()) / 60000)
+        if (earlyMins > EARLY_THRESHOLD_MINS) {
+          rows.push({ Employee: empName, Date: fmtDate(dateStr), Shift: shiftName, Expected: shiftEnd, Actual: checkoutTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), 'Discrepancy Type': 'Early Check-out', Variance: `${earlyMins} mins early` })
+          employeeIssues[empId].earlyOut++
+        }
+
+        const workedMins = Math.round((checkoutTime.getTime() - checkinTime.getTime()) / 60000) - breakMins
+        const [sh, sm] = shiftStart.split(':').map(Number)
+        const [eh, em] = shiftEnd.split(':').map(Number)
+        const expectedMins = (eh * 60 + em) - (sh * 60 + sm) - breakMins
+        const shortfall = expectedMins - workedMins
+        if (shortfall > SHORT_HOURS_THRESHOLD_MINS && earlyMins <= EARLY_THRESHOLD_MINS && lateMins <= LATE_THRESHOLD_MINS) {
+          const hrs = Math.floor(shortfall / 60)
+          const mins = shortfall % 60
+          rows.push({ Employee: empName, Date: fmtDate(dateStr), Shift: shiftName, Expected: `${Math.floor(expectedMins / 60)}h ${expectedMins % 60}m`, Actual: `${Math.floor(workedMins / 60)}h ${workedMins % 60}m`, 'Discrepancy Type': 'Short Hours', Variance: hrs > 0 ? `${hrs}h ${mins}m short` : `${mins}m short` })
+          employeeIssues[empId].shortHours++
+        }
+      }
+    })
+
+    rows.sort((a, b) => {
+      const da = new Date((a.Date as string).split(' ').reverse().join('-'))
+      const db = new Date((b.Date as string).split(' ').reverse().join('-'))
+      return db.getTime() - da.getTime()
+    })
+
+    setReportColumns([
+      { key: 'Employee', label: 'Employee' }, { key: 'Date', label: 'Date' }, { key: 'Shift', label: 'Shift' },
+      { key: 'Expected', label: 'Expected' }, { key: 'Actual', label: 'Actual' },
+      { key: 'Discrepancy Type', label: 'Discrepancy Type' }, { key: 'Variance', label: 'Variance' },
+    ])
+    setReportData(rows)
+
+    const noCheckins = rows.filter(r => r['Discrepancy Type'] === 'No Check-in').length
+    const missedCheckouts = rows.filter(r => r['Discrepancy Type'] === 'Missed Check-out').length
+    const lateCheckins = rows.filter(r => r['Discrepancy Type'] === 'Late Check-in').length
+    const employeesAffected = Object.keys(employeeIssues).filter(id => {
+      const e = employeeIssues[id]
+      return e.noCheckin + e.late + e.earlyOut + e.missedCheckout + e.shortHours > 0
+    }).length
+
+    setReportKPIs([
+      { label: 'Total Discrepancies', value: rows.length, status: rows.length > 20 ? 'danger' : rows.length > 5 ? 'warning' : 'good' },
+      { label: 'No Check-ins', value: noCheckins, status: noCheckins > 5 ? 'danger' : noCheckins > 0 ? 'warning' : 'good' },
+      { label: 'Missed Check-outs', value: missedCheckouts, status: missedCheckouts > 5 ? 'danger' : missedCheckouts > 0 ? 'warning' : 'good' },
+      { label: 'Employees Affected', value: employeesAffected, status: employeesAffected > 5 ? 'danger' : employeesAffected > 0 ? 'warning' : 'neutral' },
+    ])
+
+    const trendEmployees = Object.values(employeeIssues)
+      .filter(e => e.noCheckin + e.late + e.earlyOut + e.missedCheckout + e.shortHours > 0)
+      .sort((a, b) => (b.noCheckin + b.late + b.earlyOut + b.missedCheckout + b.shortHours) - (a.noCheckin + a.late + a.earlyOut + a.missedCheckout + a.shortHours))
+    const trendSummary = trendEmployees.length > 0
+      ? ` Top offenders: ${trendEmployees.slice(0, 3).map(e => `${e.name} (${e.noCheckin + e.late + e.earlyOut + e.missedCheckout + e.shortHours} issues)`).join(', ')}.`
+      : ''
+    setReportSummary(`${rows.length} discrepancies found across ${employeesAffected} employees in the last 30 days. ${noCheckins} missed check-ins, ${lateCheckins} late arrivals, ${missedCheckouts} missed check-outs.${trendSummary}`)
+  }
+
   async function loadShiftCoverage() {
     const today = new Date().toISOString().split('T')[0]
     const in14 = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]
@@ -818,8 +936,13 @@ export default function AdminReports() {
                             'Low': { bg: 'rgba(100,116,139,.08)', color: '#64748b' },
                             'Upcoming': { bg: 'rgba(59,130,246,.08)', color: '#3b82f6' },
                             'Unassigned': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
+                            'No Check-in': { bg: 'rgba(239,68,68,.1)', color: '#dc2626' },
+                            'Missed Check-out': { bg: 'rgba(239,68,68,.1)', color: '#dc2626' },
+                            'Late Check-in': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
+                            'Early Check-out': { bg: 'rgba(245,158,11,.1)', color: '#d97706' },
+                            'Short Hours': { bg: 'rgba(59,130,246,.1)', color: '#2563eb' },
                           }
-                          const isStatus = (c.key === 'Status' || c.key === 'Urgency' || c.key === 'Risk Level' || c.key === 'Priority') && statusColors[val]
+                          const isStatus = (c.key === 'Status' || c.key === 'Urgency' || c.key === 'Risk Level' || c.key === 'Priority' || c.key === 'Discrepancy Type') && statusColors[val]
                           const isNumeric = typeof row[c.key] === 'number' || /^[\d.]+$/.test(val) || /^£/.test(val)
                           return (
                             <td key={c.key} style={{ padding: '9px 14px', textAlign: isNumeric && !isStatus ? 'right' : 'left' }}>
