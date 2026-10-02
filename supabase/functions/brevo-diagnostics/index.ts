@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
     const { data: sa } = await adminSb.from('super_admins')
-      .select('id').eq('auth_user_id', user.id).maybeSingle()
+      .select('id').eq('email', user.email).maybeSingle()
     if (!sa) return json({ error: 'Super admin access required' }, 403)
 
     const results: Record<string, unknown> = {
@@ -106,21 +106,21 @@ Deno.serve(async (req) => {
 
     // 3. Domain verification
     try {
-      const senderDomain = SENDER_EMAIL.split('@')[1]
+      const senderDomain = SENDER_EMAIL.split('@')[1] || ''
       const res = await fetch('https://api.brevo.com/v3/senders/domains', { headers: brevoHeaders })
       if (res.ok) {
         const data = await res.json()
         const domains = (data.domains || []) as { domain: string; authenticated: boolean; dns_records?: unknown }[]
-        const ourDomain = domains.find(
-          (d: { domain: string }) => d.domain.toLowerCase() === senderDomain?.toLowerCase()
-        )
+        const ourDomain = senderDomain
+          ? domains.find((d) => d.domain && d.domain.toLowerCase() === senderDomain.toLowerCase())
+          : null
         results.domain = {
           status: ourDomain?.authenticated ? 'ok' : 'warning',
-          sender_domain: senderDomain,
+          sender_domain: senderDomain || '(unknown)',
           found_in_brevo: !!ourDomain,
           authenticated: ourDomain?.authenticated ?? false,
           total_domains: domains.length,
-          all_domains: domains.map((d: { domain: string; authenticated: boolean }) => ({
+          all_domains: domains.filter((d) => d.domain).map((d) => ({
             domain: d.domain, authenticated: d.authenticated,
           })),
         }
