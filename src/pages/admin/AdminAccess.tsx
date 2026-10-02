@@ -59,6 +59,9 @@ const FEATURE_KEYS = [
   { key: 'space_management', label: 'Space Management' },
   { key: 'assets', label: 'Asset Management' },
   { key: 'talent_intelligence', label: 'Talent Intelligence' },
+  { key: 'integrations', label: 'Integrations' },
+  { key: 'surveys', label: 'Surveys & Feedback' },
+  { key: 'reports', label: 'Reports' },
   { key: 'user_guides', label: 'User Guides' },
   { key: 'access', label: 'Access Management' },
   { key: 'feature_switching', label: 'Feature Switching' },
@@ -265,6 +268,7 @@ export default function AdminAccess() {
       timesheets: 'timesheets', performance: 'performance', shifts: 'shifts',
       legal_timesheets: 'legal_timesheets', space_management: 'space_booking',
       assets: 'asset_management', talent_intelligence: 'skills_passport',
+      surveys: 'surveys',
     }
     return FEATURE_KEYS.filter(f => {
       const cfKey = featureMap[f.key]
