@@ -543,6 +543,16 @@ export default function Notifications() {
       const myDept = (empDeptRes.data as any)?.department || ''
       const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
       const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+      // Also check localStorage for completions (primary source of truth)
+      try {
+        const raw = localStorage.getItem('inflowhr-elearning')
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (Array.isArray(parsed.completed)) {
+            parsed.completed.forEach((id: string) => completedIds.add(id))
+          }
+        }
+      } catch {}
       const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
       if (outstandingIds.length > 0) {
         const { data: courses } = await supabase.from('elearning_courses').select('id, title, deadline').in('id', outstandingIds)
