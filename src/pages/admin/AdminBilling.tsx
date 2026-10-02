@@ -53,8 +53,9 @@ function generateInvoicePDF(
   year: number,
   baselineName: string,
   baselinePrice: number,
-  packs: { name: string; price: number }[],
+  packs: { name: string; price: number; features?: string[] }[],
   employeeCount: number,
+  companyId?: string,
 ) {
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
@@ -70,7 +71,7 @@ function generateInvoicePDF(
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(120, 120, 120)
   doc.text('kumonix.com', lm, y + 6)
-  doc.text('hello@kumonix.com', lm, y + 11)
+  doc.text('support@kumonix.com', lm, y + 11)
 
   doc.setFontSize(28)
   doc.setFont('helvetica', 'bold')
@@ -79,7 +80,8 @@ function generateInvoicePDF(
   y += 24
 
   const now = new Date()
-  const invoiceNum = `INV-${year}${String(MONTH_FULL.indexOf(monthLabel) + 1).padStart(2, '0')}-${companyName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()}`
+  const companySlug = companyId ? companyId.replace(/-/g, '').substring(0, 8).toUpperCase() : companyName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()
+  const invoiceNum = `INV-${year}${String(MONTH_FULL.indexOf(monthLabel) + 1).padStart(2, '0')}-${companySlug}`
   const issueDate = new Date(now.getFullYear(), now.getMonth(), 1)
   const dueDate = new Date(issueDate)
   dueDate.setDate(dueDate.getDate() + 30)
@@ -143,24 +145,33 @@ function generateInvoicePDF(
   doc.setTextColor(30, 30, 45)
   doc.setFont('helvetica', 'normal')
 
-  const rows: { name: string; type: string; price: number; users: number; amount: number }[] = []
-  rows.push({ name: baselineName, type: 'Core', price: baselinePrice, users: employeeCount, amount: baselinePrice * employeeCount })
-  packs.forEach(a => {
-    rows.push({ name: a.name, type: 'Pack', price: a.price, users: employeeCount, amount: a.price * employeeCount })
-  })
-
-  rows.forEach((r, i) => {
-    if (i % 2 === 0) {
+  let rowIdx = 0
+  const drawRow = (name: string, type: string, price: string, users: string, amount: string, indent = false, bold = false) => {
+    if (rowIdx % 2 === 0) {
       doc.setFillColor(248, 249, 252)
       doc.rect(lm, y - 4, rm - lm, 8, 'F')
     }
     doc.setFontSize(9)
-    doc.text(r.name, lm + 4, y)
-    doc.text(r.type, lm + 80, y)
-    doc.text(`£${r.price.toFixed(2)}`, lm + 110, y)
-    doc.text(String(r.users), lm + 140, y)
-    doc.text(`£${r.amount.toFixed(2)}`, rm - 4, y, { align: 'right' })
+    doc.setFont('helvetica', bold ? 'bold' : 'normal')
+    doc.text(name, indent ? lm + 12 : lm + 4, y)
+    doc.text(type, lm + 80, y)
+    doc.text(price, lm + 110, y)
+    doc.text(users, lm + 140, y)
+    doc.text(amount, rm - 4, y, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
     y += 8
+    rowIdx++
+  }
+
+  drawRow(baselineName, 'Core', `£${baselinePrice.toFixed(2)}`, String(employeeCount), `£${(baselinePrice * employeeCount).toFixed(2)}`)
+
+  packs.forEach(p => {
+    drawRow(p.name, 'Pack', `£${p.price.toFixed(2)}`, String(employeeCount), `£${(p.price * employeeCount).toFixed(2)}`, false, true)
+    if (p.features && p.features.length > 0) {
+      p.features.forEach(feat => {
+        drawRow(feat, '', '', '', '', true)
+      })
+    }
   })
 
   y += 4
@@ -168,7 +179,7 @@ function generateInvoicePDF(
   doc.line(lm + 100, y, rm, y)
   y += 8
 
-  const subtotal = rows.reduce((s, r) => s + r.amount, 0)
+  const subtotal = baselinePrice * employeeCount + packs.reduce((s, p) => s + p.price * employeeCount, 0)
   const vat = subtotal * VAT_RATE
   const total = subtotal + vat
 
@@ -206,7 +217,7 @@ function generateInvoicePDF(
   doc.text('Kumonix Ltd', lm, y)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(150, 150, 150)
-  doc.text('  |  kumonix.com  |  hello@kumonix.com', lm + 26, y)
+  doc.text('  |  kumonix.com  |  support@kumonix.com', lm + 26, y)
 
   const safeCompany = companyName.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-')
   doc.save(`Invoice-${safeCompany}-${monthLabel}-${year}.pdf`)
@@ -216,7 +227,8 @@ function generateAnnualInvoicePDF(
   companyName: string,
   fyLabel: string,
   annualPrice: number,
-  subscribedFeatures: { name: string; type: string }[],
+  subscribedFeatures: { name: string; type: string; pack?: string }[],
+  companyId?: string,
 ) {
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
@@ -232,7 +244,7 @@ function generateAnnualInvoicePDF(
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(120, 120, 120)
   doc.text('kumonix.com', lm, y + 6)
-  doc.text('hello@kumonix.com', lm, y + 11)
+  doc.text('support@kumonix.com', lm, y + 11)
 
   doc.setFontSize(28)
   doc.setFont('helvetica', 'bold')
@@ -241,7 +253,8 @@ function generateAnnualInvoicePDF(
   y += 24
 
   const now = new Date()
-  const invoiceNum = `INV-${fyLabel.replace(/[^a-zA-Z0-9]/g, '')}-${companyName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()}-FP`
+  const companySlug = companyId ? companyId.replace(/-/g, '').substring(0, 8).toUpperCase() : companyName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 6).toUpperCase()
+  const invoiceNum = `INV-${fyLabel.replace(/[^a-zA-Z0-9]/g, '')}-${companySlug}-FP`
   const fmtDate = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
   const dueDate = new Date(now)
   dueDate.setDate(dueDate.getDate() + 30)
@@ -300,16 +313,41 @@ function generateAnnualInvoicePDF(
   doc.setTextColor(30, 30, 45)
   doc.setFont('helvetica', 'normal')
 
-  subscribedFeatures.forEach((f, i) => {
-    if (i % 2 === 0) {
+  let rowIdx = 0
+  const drawAnnualRow = (name: string, type: string, indent = false, bold = false) => {
+    if (rowIdx % 2 === 0) {
       doc.setFillColor(248, 249, 252)
       doc.rect(lm, y - 4, rm - lm, 8, 'F')
     }
     doc.setFontSize(9)
-    doc.text(f.name, lm + 4, y)
-    doc.text(f.type, lm + 110, y)
+    doc.setFont('helvetica', bold ? 'bold' : 'normal')
+    doc.text(name, indent ? lm + 12 : lm + 4, y)
+    doc.text(type, lm + 110, y)
+    doc.setFont('helvetica', 'normal')
     y += 8
-  })
+    rowIdx++
+  }
+
+  const grouped = new Map<string, string[]>()
+  const ungrouped: { name: string; type: string }[] = []
+  for (const f of subscribedFeatures) {
+    if (f.pack) {
+      if (!grouped.has(f.pack)) grouped.set(f.pack, [])
+      grouped.get(f.pack)!.push(f.name)
+    } else {
+      ungrouped.push(f)
+    }
+  }
+
+  for (const f of ungrouped) {
+    drawAnnualRow(f.name, f.type)
+  }
+  for (const [packName, feats] of grouped) {
+    drawAnnualRow(packName, 'Pack', false, true)
+    for (const feat of feats) {
+      drawAnnualRow(feat, '', true)
+    }
+  }
 
   y += 4
   doc.setDrawColor(220, 220, 220)
@@ -354,7 +392,7 @@ function generateAnnualInvoicePDF(
   doc.text('Kumonix Ltd', lm, y)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(150, 150, 150)
-  doc.text('  |  kumonix.com  |  hello@kumonix.com', lm + 26, y)
+  doc.text('  |  kumonix.com  |  support@kumonix.com', lm + 26, y)
 
   const safeCompany = companyName.replace(/[^a-zA-Z0-9-_ ]/g, '').replace(/\s+/g, '-')
   doc.save(`Invoice-${safeCompany}-Annual-${fyLabel.replace(/\s+/g, '-')}.pdf`)
@@ -662,24 +700,34 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     if (!isCurrent && snap && snap.feature_details?.length > 0) {
       const coreDetail = snap.feature_details.find(d => d.key === baseline.feature_key)
       const addonDetails = snap.feature_details.filter(d => d.key !== baseline.feature_key)
+      const invoicePacks = addonDetails.map(d => {
+        const features = d.key === 'pack_a' ? packFeatures(d.name, BILLING_PACK_A_LABELS) : d.key === 'pack_b' ? packFeatures(d.name, BILLING_PACK_B_LABELS) : undefined
+        return { name: d.name, price: d.price, features }
+      })
       generateInvoicePDF(
         companyName,
         month,
         year,
         coreDetail?.name || baseline.display_name,
         snap.core_per_user,
-        addonDetails.map(d => ({ name: d.name, price: d.price })),
+        invoicePacks,
         snap.employee_count,
+        companyId,
       )
     } else {
+      const invoicePacks = enabledAddons.map(a => {
+        const features = a.feature_key === 'pack_a' ? BILLING_PACK_A_LABELS : a.feature_key === 'pack_b' ? BILLING_PACK_B_LABELS : undefined
+        return { name: a.display_name, price: effectivePrice(a), features }
+      })
       generateInvoicePDF(
         companyName,
         month,
         year,
         baseline.display_name,
         effectivePrice(baseline),
-        enabledAddons.map(a => ({ name: a.display_name, price: effectivePrice(a) })),
+        invoicePacks,
         employeeCount,
+        companyId,
       )
     }
   }
@@ -694,13 +742,19 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   }
 
   function handleAnnualInvoice() {
-    const allFeatures: { name: string; type: string }[] = []
+    const allFeatures: { name: string; type: string; pack?: string }[] = []
     if (baseline) allFeatures.push({ name: baseline.display_name, type: 'Core' })
-    if (packAEnabled && packAPricing) allFeatures.push({ name: 'Pack A: ' + packAPricing.display_name, type: 'Pack A' })
-    if (packBEnabled && packBPricing) allFeatures.push({ name: 'Pack B: ' + packBPricing.display_name, type: 'Pack B' })
+    if (packAEnabled && packAPricing) {
+      allFeatures.push({ name: 'Pack A: ' + packAPricing.display_name, type: 'Pack A' })
+      BILLING_PACK_A_LABELS.forEach(l => allFeatures.push({ name: l, type: '', pack: 'Pack A: ' + packAPricing.display_name }))
+    }
+    if (packBEnabled && packBPricing) {
+      allFeatures.push({ name: 'Pack B: ' + packBPricing.display_name, type: 'Pack B' })
+      BILLING_PACK_B_LABELS.forEach(l => allFeatures.push({ name: l, type: '', pack: 'Pack B: ' + packBPricing.display_name }))
+    }
     if (packCEnabled && packCPricing) allFeatures.push({ name: 'Pack C: ' + packCPricing.display_name, type: 'Pack C' })
     enabledSupport.forEach(sp => allFeatures.push({ name: sp.display_name, type: 'Support' }))
-    generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures)
+    generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures, companyId)
   }
 
   if (loading) return <div className="admin-section"><div className="admin-loading">Loading...</div></div>
@@ -1290,6 +1344,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
   const [employeeCounts, setEmployeeCounts] = useState<Record<string, number>>({})
   const [platformFees, setPlatformFees] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
+  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set())
 
   useEffect(() => { load() }, [companies])
 
@@ -1380,16 +1435,26 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
   const platformFeeTotal = companyData.reduce((s, c) => s + c.platformFee, 0)
   const totalEmployees = companyData.reduce((s, c) => s + c.employees, 0)
 
-  function handleInvoice(c: typeof companyData[0]) {
+  function handleInvoice(c: typeof companyData[0], month?: string, year?: number) {
     const now = new Date()
+    const m = month || MONTH_FULL[now.getMonth()]
+    const y = year || now.getFullYear()
+    const invoicePacks = c.addonDetails.map(d => {
+      const key = d.name.toLowerCase()
+      const features = key.includes('pack a') || key.includes('workforce') ? BILLING_PACK_A_LABELS
+        : key.includes('pack b') || key.includes('enterprise') ? BILLING_PACK_B_LABELS
+        : undefined
+      return { ...d, features }
+    })
     generateInvoicePDF(
       c.name,
-      MONTH_FULL[now.getMonth()],
-      now.getFullYear(),
+      m,
+      y,
       c.baselineName,
       c.baselinePrice,
-      c.addonDetails,
+      invoicePacks,
       c.employees,
+      c.id,
     )
   }
 
@@ -1510,6 +1575,106 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <div style={{ marginTop: 32 }}>
+        <h3 style={{ margin: '0 0 16px' }}>Monthly Billing Records — {new Date().getFullYear()}</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {MONTH_FULL.map((month, idx) => {
+            const monthNum = idx + 1
+            const isExpanded = expandedMonths.has(monthNum)
+            const now = new Date()
+            const isFuture = new Date().getFullYear() === now.getFullYear() && monthNum > now.getMonth() + 1
+            const isCurrent = monthNum === now.getMonth() + 1
+            const monthTotal = isFuture ? 0 : companyData.reduce((s, c) => s + c.monthly, 0)
+            const monthCompanyCount = isFuture ? 0 : companyData.filter(c => c.employees > 0).length
+
+            return (
+              <div key={month} style={{ border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', background: isCurrent ? '#f8f9ff' : '#fff', opacity: isFuture ? 0.5 : 1 }}>
+                <button
+                  onClick={() => {
+                    if (isFuture) return
+                    setExpandedMonths(prev => {
+                      const next = new Set(prev)
+                      if (next.has(monthNum)) next.delete(monthNum)
+                      else next.add(monthNum)
+                      return next
+                    })
+                  }}
+                  disabled={isFuture}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', border: 'none', background: 'none', cursor: isFuture ? 'not-allowed' : 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                >
+                  <span style={{ fontSize: 14, color: '#666', width: 20, textAlign: 'center' }}>{isExpanded ? '▼' : '▶'}</span>
+                  <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>
+                    {month} {now.getFullYear()}
+                    {isCurrent && <span style={{ marginLeft: 8, fontSize: 10, background: '#1565c0', color: '#fff', padding: '2px 8px', borderRadius: 10, fontWeight: 600, verticalAlign: 'middle' }}>Current</span>}
+                    {isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#999' }}>Upcoming</span>}
+                  </span>
+                  {!isFuture && (
+                    <>
+                      <span style={{ fontSize: 12, color: '#888' }}>{monthCompanyCount} {monthCompanyCount === 1 ? 'company' : 'companies'}</span>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: '#1565c0', minWidth: 90, textAlign: 'right' }}>&pound;{monthTotal.toFixed(2)}</span>
+                    </>
+                  )}
+                </button>
+
+                {isExpanded && !isFuture && (
+                  <div style={{ borderTop: '1px solid #e0e0e0', padding: '0 8px 8px' }}>
+                    <div className="admin-table-wrap" style={{ marginTop: 0 }}>
+                      <table className="admin-table" style={{ fontSize: 13 }}>
+                        <thead>
+                          <tr>
+                            <th>Company</th>
+                            <th>Users</th>
+                            <th>Core</th>
+                            <th>Packs</th>
+                            <th>Platform Fee</th>
+                            <th>VAT</th>
+                            <th>Total</th>
+                            <th>Invoice</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {companyData.filter(c => c.employees > 0).map(c => (
+                            <tr key={c.id}>
+                              <td>
+                                <strong>{c.name}</strong>
+                                {c.isTrial && (
+                                  <span style={{ marginLeft: 6, fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Trial</span>
+                                )}
+                              </td>
+                              <td>{c.employees}</td>
+                              <td>&pound;{c.core.toFixed(2)}</td>
+                              <td>&pound;{c.addonsTotal.toFixed(2)}</td>
+                              <td>&pound;{c.platformFee.toFixed(2)}</td>
+                              <td>&pound;{c.vat.toFixed(2)}</td>
+                              <td><strong>&pound;{c.monthly.toFixed(2)}</strong></td>
+                              <td>
+                                <button className="billing-invoice-btn-table" title={`Download invoice for ${month}`} onClick={() => handleInvoice(c, month, now.getFullYear())}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          <tr style={{ fontWeight: 700, background: '#f5f7fa' }}>
+                            <td>Month Total</td>
+                            <td>{companyData.reduce((s, c) => s + c.employees, 0)}</td>
+                            <td>&pound;{platformCore.toFixed(2)}</td>
+                            <td>&pound;{platformAddons.toFixed(2)}</td>
+                            <td>&pound;{platformFeeTotal.toFixed(2)}</td>
+                            <td>&pound;{platformVat.toFixed(2)}</td>
+                            <td>&pound;{monthTotal.toFixed(2)}</td>
+                            <td></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
