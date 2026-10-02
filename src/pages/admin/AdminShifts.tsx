@@ -14,6 +14,7 @@ interface ShiftTemplate {
   role_required: string | null
   department: string | null
   shift_contract_type: string | null
+  work_from_home: boolean
   is_active: boolean
   created_at: string
 }
@@ -31,7 +32,7 @@ interface ShiftSkill {
   is_active: boolean
 }
 
-const EMPTY_TEMPLATE = { name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, colour: '#4CAF50', role_required: '', department: '', shift_contract_type: '', is_active: true }
+const EMPTY_TEMPLATE = { name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, colour: '#4CAF50', role_required: '', department: '', shift_contract_type: '', work_from_home: false, is_active: true }
 
 export default function AdminShifts() {
   const { selectedCompanyId } = useAdminCompany()
@@ -49,17 +50,20 @@ export default function AdminShifts() {
   const [templateSkills, setTemplateSkills] = useState<Record<string, string[]>>({})
   const [addSkillIds, setAddSkillIds] = useState<string[]>([])
   const [editSkillIds, setEditSkillIds] = useState<string[]>([])
+  const [wfhEnabled, setWfhEnabled] = useState(false)
 
   useEffect(() => { if (selectedCompanyId) load() }, [selectedCompanyId])
 
   async function load() {
     setLoading(true)
-    const [{ data }, { data: skills }, { data: tSkills }] = await Promise.all([
+    const [{ data }, { data: skills }, { data: tSkills }, { data: checkinSettings }] = await Promise.all([
       supabase.from('shift_templates').select('*').eq('company_id', selectedCompanyId).order('name'),
       supabase.from('shift_skills').select('id, name, is_active').eq('company_id', selectedCompanyId).eq('is_active', true).order('name'),
       supabase.from('shift_template_skills').select('shift_template_id, shift_skill_id').eq('company_id', selectedCompanyId),
+      supabase.from('checkin_settings').select('allow_work_from_home').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
     setTemplates((data as ShiftTemplate[]) || [])
+    setWfhEnabled(checkinSettings?.allow_work_from_home ?? false)
     setShiftSkills((skills as ShiftSkill[]) || [])
     const map: Record<string, string[]> = {}
     ;(tSkills || []).forEach((r: any) => {
@@ -82,6 +86,7 @@ export default function AdminShifts() {
       role_required: addForm.role_required || null,
       department: addForm.department || null,
       shift_contract_type: addForm.shift_contract_type,
+      work_from_home: addForm.work_from_home,
       is_active: addForm.is_active,
     }).select('id').single()
     if (error) { showError('Failed to add shift template: ' + error.message); return }
@@ -107,6 +112,7 @@ export default function AdminShifts() {
       role_required: t.role_required || '',
       department: t.department || '',
       shift_contract_type: t.shift_contract_type || '',
+      work_from_home: t.work_from_home,
       is_active: t.is_active,
     })
     setEditSkillIds(templateSkills[t.id] || [])
@@ -122,6 +128,7 @@ export default function AdminShifts() {
       role_required: editForm.role_required || null,
       department: editForm.department || null,
       shift_contract_type: editForm.shift_contract_type || null,
+      work_from_home: editForm.work_from_home,
       is_active: editForm.is_active,
     }).eq('id', id)
     if (error) { showError('Failed to update shift template: ' + error.message); return }
@@ -203,6 +210,7 @@ export default function AdminShifts() {
                 <th className="admin-shift-hide-mobile">Role Required</th>
                 <th className="admin-shift-hide-mobile">Department</th>
                 <th className="admin-shift-hide-mobile">Required Skills</th>
+                {wfhEnabled && <th>WFH</th>}
                 <th>Active</th><th>Actions</th>
               </tr>
             </thead>
@@ -233,6 +241,9 @@ export default function AdminShifts() {
                     </div>
                   ) : <span style={{ color: '#999', fontSize: 12 }}>No skills</span>}
                 </td>
+                {wfhEnabled && <td>
+                  <input type="checkbox" checked={addForm.work_from_home} onChange={e => setAddForm(p => ({...p, work_from_home: e.target.checked}))} />
+                </td>}
                 <td>
                   <input type="checkbox" checked={addForm.is_active} onChange={e => setAddForm(p => ({...p, is_active: e.target.checked}))} />
                 </td>
@@ -255,6 +266,7 @@ export default function AdminShifts() {
                 <th className="admin-shift-hide-mobile">Role Required</th>
                 <th className="admin-shift-hide-mobile">Department</th>
                 <th className="admin-shift-hide-mobile">Required Skills</th>
+                {wfhEnabled && <th>WFH</th>}
                 <th>Status</th><th>Actions</th>
               </tr>
             </thead>
@@ -292,6 +304,9 @@ export default function AdminShifts() {
                         : 'None'
                     )}
                   </td>
+                  {wfhEnabled && <td>{editingId === t.id ? (
+                    <input type="checkbox" checked={editForm.work_from_home} onChange={e => setEditForm(p => ({...p, work_from_home: e.target.checked}))} />
+                  ) : t.work_from_home ? <span className="admin-badge admin-badge-info">WFH</span> : '—'}</td>}
                   <td>{editingId === t.id ? (
                     <input type="checkbox" checked={editForm.is_active} onChange={e => setEditForm(p => ({...p, is_active: e.target.checked}))} />
                   ) : <span className={`admin-badge ${t.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>{t.is_active ? 'Active' : 'Inactive'}</span>}</td>
