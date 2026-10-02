@@ -45,7 +45,7 @@ interface CheckInState {
   activeCheckin: CheckinRecord | null
   activeBreak: BreakRecord | null
   loading: boolean
-  checkIn: (source: 'timesheets' | 'shifts', shiftAssignmentId?: string) => Promise<{ ok: boolean; error?: string; wfh?: boolean }>
+  checkIn: (source: 'timesheets' | 'shifts', shiftAssignmentId?: string, wfhOverride?: boolean) => Promise<{ ok: boolean; error?: string; wfh?: boolean }>
   checkOut: () => Promise<{ ok: boolean; error?: string }>
   startBreak: (type: 'lunch' | 'short' | 'other') => Promise<{ ok: boolean; error?: string }>
   endBreak: () => Promise<{ ok: boolean; error?: string }>
@@ -117,14 +117,23 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
     }
   }, [workLocations, settings])
 
-  const checkIn = useCallback(async (source: 'timesheets' | 'shifts', shiftAssignmentId?: string) => {
+  const checkIn = useCallback(async (source: 'timesheets' | 'shifts', shiftAssignmentId?: string, wfhOverride?: boolean) => {
     if (!companyId || !employeeId) return { ok: false, error: 'Not authenticated' }
     if (activeCheckin) return { ok: false, error: 'You are already checked in' }
 
-    const locResult = await getLocation()
-    if ('error' in locResult) return { ok: false, error: locResult.error }
+    let coords: Coords | null = null
+    let location: WorkLocation | null = null
+    let wfh = false
 
-    const { coords, location, wfh } = locResult
+    if (wfhOverride) {
+      wfh = true
+    } else {
+      const locResult = await getLocation()
+      if ('error' in locResult) return { ok: false, error: locResult.error }
+      coords = locResult.coords
+      location = locResult.location
+      wfh = locResult.wfh
+    }
     const { data, error } = await supabase.from('checkin_records').insert({
       company_id: companyId,
       employee_id: employeeId,

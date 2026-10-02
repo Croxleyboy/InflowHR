@@ -30,6 +30,7 @@ export default function ShiftCheckIn() {
   const [breaks, setBreaks] = useState<BreakRow[]>([])
   const [loading, setLoading] = useState(true)
   const [acting, setActing] = useState(false)
+  const [wfhSelected, setWfhSelected] = useState(false)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const loadData = useCallback(async () => {
@@ -130,8 +131,8 @@ export default function ShiftCheckIn() {
       setActing(false)
       return
     }
-    const result = await checkIn('shifts', todayShift?.id)
-    if (result.ok) { showSuccess(result.wfh ? 'Checked in from home' : 'Checked in for shift'); loadData() }
+    const result = await checkIn('shifts', todayShift?.id, wfhSelected || undefined)
+    if (result.ok) { showSuccess(result.wfh ? 'Checked in from home' : 'Checked in for shift'); setWfhSelected(false); loadData() }
     else showError(result.error || 'Check-in failed')
     setActing(false)
   }
@@ -233,6 +234,28 @@ export default function ShiftCheckIn() {
           :root:not([data-theme="light"]) .ci-shift-info { background: #3e2723; border-color: #6d4c41; }
           :root:not([data-theme="light"]) .ci-shift-name { color: #ffcc80; }
           :root:not([data-theme="light"]) .ci-shift-time { color: #ffab91; }
+        }
+
+        .ci-wfh-option { background: #fff3e0; border: 1px solid #ffcc80; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+        .ci-wfh-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+        .ci-wfh-toggle input { display: none; }
+        .ci-wfh-slider { width: 40px; height: 22px; background: #ccc; border-radius: 11px; position: relative; transition: background 0.2s; flex-shrink: 0; }
+        .ci-wfh-slider::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+        .ci-wfh-toggle input:checked + .ci-wfh-slider { background: #e65100; }
+        .ci-wfh-toggle input:checked + .ci-wfh-slider::after { transform: translateX(18px); }
+        .ci-wfh-label { font-size: 14px; font-weight: 600; color: #e65100; }
+        .ci-wfh-note { font-size: 11px; color: #bf360c; margin: 6px 0 0; font-style: italic; }
+        [data-theme="dark"] .ci-wfh-option { background: #3e2723; border-color: #6d4c41; }
+        [data-theme="dark"] .ci-wfh-label { color: #ffcc80; }
+        [data-theme="dark"] .ci-wfh-note { color: #ffab91; }
+        [data-theme="dark"] .ci-wfh-slider { background: #555; }
+        [data-theme="dark"] .ci-wfh-toggle input:checked + .ci-wfh-slider { background: #bf360c; }
+        @media (prefers-color-scheme: dark) {
+          :root:not([data-theme="light"]) .ci-wfh-option { background: #3e2723; border-color: #6d4c41; }
+          :root:not([data-theme="light"]) .ci-wfh-label { color: #ffcc80; }
+          :root:not([data-theme="light"]) .ci-wfh-note { color: #ffab91; }
+          :root:not([data-theme="light"]) .ci-wfh-slider { background: #555; }
+          :root:not([data-theme="light"]) .ci-wfh-toggle input:checked + .ci-wfh-slider { background: #bf360c; }
         }
 
         .ci-status-actions { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border, #eee); margin-bottom: 10px; }
@@ -349,6 +372,23 @@ export default function ShiftCheckIn() {
           <div className="ci-shift-info">
             <span className="ci-shift-name">{todayShift.template_name}</span>
             <span className="ci-shift-time">{todayShift.start_time?.slice(0, 5)} — {todayShift.end_time?.slice(0, 5)}</span>
+          </div>
+        )}
+
+        {settings?.allow_work_from_home && !activeShiftCheckin && canCheckInShift && (
+          <div className="ci-wfh-option">
+            <label className="ci-wfh-toggle">
+              <input
+                type="checkbox"
+                checked={wfhSelected}
+                onChange={e => setWfhSelected(e.target.checked)}
+              />
+              <span className="ci-wfh-slider" />
+              <span className="ci-wfh-label">Work from Home</span>
+            </label>
+            {wfhSelected && (
+              <p className="ci-wfh-note">This must be approved by your manager first</p>
+            )}
           </div>
         )}
 
