@@ -76,13 +76,15 @@ Deno.serve(async (req) => {
       empPage++
     }
 
-    // Load InflowHR employees for this company to match by email
+    // Load InflowHR employees for this company to match by xero_employee_id or email
     const { data: inflowEmployees } = await sb
       .from('employees')
-      .select('id, email')
+      .select('id, email, xero_employee_id')
       .eq('company_id', company_id)
+    const xeroIdToInflowId: Record<string, string> = {}
     const emailToInflowId: Record<string, string> = {}
     for (const e of (inflowEmployees || [])) {
+      if (e.xero_employee_id) xeroIdToInflowId[e.xero_employee_id] = e.id
       if (e.email) emailToInflowId[e.email.toLowerCase()] = e.id
     }
 
@@ -100,8 +102,10 @@ Deno.serve(async (req) => {
       const studentLoan = empTaxLines.find(t => t.description?.includes('Student Loan'))?.amount ?? 0
       const totalReimbursements = (s.totalReimbursements as number) ?? 0
 
-      const xeroEmail = xeroEmployees[s.employeeID as string] || null
-      const inflowEmployeeId = xeroEmail ? emailToInflowId[xeroEmail] : null
+      const xeroEmpId = s.employeeID as string
+      const xeroEmail = xeroEmployees[xeroEmpId] || null
+      const inflowEmployeeId = xeroIdToInflowId[xeroEmpId]
+        || (xeroEmail ? emailToInflowId[xeroEmail] : null)
 
       return {
         payslip_id: s.paySlipID as string,
@@ -130,6 +134,19 @@ Deno.serve(async (req) => {
     const periodStart = completedRun.periodStartDate?.split('T')[0]
     const periodEnd = completedRun.periodEndDate?.split('T')[0]
     const paymentDate = completedRun.paymentDate?.split('T')[0]
+
+    // Store xero_employee_id on InflowHR employees matched by email (one-time mapping)
+    const mappingsToStore: { inflowId: string; xeroId: string }[] = []
+    for (const ps of payslips) {
+      if (!ps.inflow_employee_id || !ps.xero_employee_id) continue
+      if (!xeroIdToInflowId[ps.xero_employee_id]) {
+        mappingsToStore.push({ inflowId: ps.inflow_employee_id, xeroId: ps.xero_employee_id })
+        xeroIdToInflowId[ps.xero_employee_id] = ps.inflow_employee_id
+      }
+    }
+    for (const m of mappingsToStore) {
+      await sb.from('employees').update({ xero_employee_id: m.xeroId }).eq('id', m.inflowId)
+    }
 
     for (const ps of payslips) {
       if (!ps.inflow_employee_id) continue

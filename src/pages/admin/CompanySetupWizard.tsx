@@ -57,6 +57,7 @@ interface SetupRow {
   qualifications: string
   religion: string
   salary_group: string
+  xero_employee_id: string
 }
 
 const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
@@ -101,6 +102,7 @@ const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
   'qualifications': 'qualifications', 'qualification': 'qualifications',
   'religion': 'religion', 'faith': 'religion',
   'salary group': 'salary_group', 'salary_group': 'salary_group', 'pay grade': 'salary_group', 'pay band': 'salary_group',
+  'xero employee id': 'xero_employee_id', 'xero_employee_id': 'xero_employee_id',
 }
 
 const SETUP_STEPS = [
@@ -202,7 +204,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
   }
 
   function generateTemplate() {
-    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'Religion', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Salary Group', 'Qualifications', 'Assigned Leave Days', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number', 'Role']
+    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'Religion', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Tax Code', 'Payroll ID', 'Xero Employee ID', 'Salary Group', 'Qualifications', 'Assigned Leave Days', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number', 'Role']
     const ws = XLSX.utils.aoa_to_sheet([headers])
     ws['!cols'] = headers.map(() => ({ wch: 20 }))
     const wb = XLSX.utils.book_new()

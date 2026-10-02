@@ -185,6 +185,7 @@ export default function AdminOnboarding() {
     'annual salary': 'annual_salary', 'tax code': 'tax_code', 'payroll id': 'payroll_id',
     'leave allowance': 'leave_allowance', 'assigned leave days': 'leave_allowance',
     'religion': 'religion', 'salary group': 'salary_group', 'qualifications': 'qualifications',
+    'xero employee id': 'xero_employee_id',
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -278,7 +279,7 @@ export default function AdminOnboarding() {
   }
 
   function generateBulkTemplate() {
-    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'Religion', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Salary Group', 'Tax Code', 'Payroll ID', 'Leave Allowance', 'Qualifications', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number']
+    const headers = ['First Name', 'Surname', 'Work Email', 'Personal Email', 'Job Title', 'Department', 'Manager Name', 'Manager Email', 'Location', 'Phone', 'Employee Number', 'Start Date', 'Contract Type', 'Date of Birth', 'Gender', 'Nationality', 'Marital Status', 'Religion', 'NI Number', 'Address Line 1', 'Address Line 2', 'City', 'County', 'Postcode', 'Country', 'Working Pattern', 'Weekly Hours', 'Probation End Date', 'Notice Period', 'Annual Salary', 'Salary Group', 'Tax Code', 'Payroll ID', 'Xero Employee ID', 'Leave Allowance', 'Qualifications', 'Emergency Contact Name', 'Emergency Contact Phone', 'Emergency Contact Relationship', 'Bank Account Name', 'Bank Sort Code', 'Bank Account Number']
     const ws = XLSX.utils.aoa_to_sheet([headers])
     ws['!cols'] = headers.map(() => ({ wch: 20 }))
     const wb = XLSX.utils.book_new()
