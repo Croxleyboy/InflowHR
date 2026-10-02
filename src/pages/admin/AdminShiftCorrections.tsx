@@ -46,6 +46,7 @@ export default function AdminShiftCorrections() {
   const [processing, setProcessing] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTimes, setEditTimes] = useState<{ checkIn: string; checkOut: string }>({ checkIn: '', checkOut: '' })
+  const [approveTimes, setApproveTimes] = useState<Record<string, { checkIn: string; checkOut: string }>>({})
 
   const fetchCorrections = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -92,23 +93,18 @@ export default function AdminShiftCorrections() {
 
   const handleApprove = async (c: Correction) => {
     if (!companyUser?.company_id || !adminEmpId) return
+    const times = approveTimes[c.id]
+    if (!times?.checkIn && !times?.checkOut) return
     setProcessing(c.id)
 
-    await supabase.from('shift_corrections').update({
-      status: 'approved',
-      admin_comment: adminComments[c.id]?.trim() || null,
-      resolved_by: adminEmpId,
-      resolved_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }).eq('id', c.id).eq('company_id', companyUser.company_id)
+    const isCheckinType = c.correction_type === 'late_checkin' || c.correction_type === 'no_checkin'
+    const isCheckoutType = c.correction_type === 'early_checkout' || c.correction_type === 'no_checkout'
 
-    if (c.checkin_record_id && c.expected_time) {
+    if (c.checkin_record_id) {
       const updates: Record<string, string> = {}
-      if (c.correction_type === 'late_checkin' || c.correction_type === 'no_checkin') {
-        updates.check_in_at = new Date(`${c.shift_date}T${c.expected_time}`).toISOString()
-      }
-      if (c.correction_type === 'early_checkout' || c.correction_type === 'no_checkout') {
-        updates.check_out_at = new Date(`${c.shift_date}T${c.expected_time}`).toISOString()
+      if (isCheckinType && times.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${times.checkIn}`).toISOString()
+      if (isCheckoutType && times.checkOut) {
+        updates.check_out_at = new Date(`${c.shift_date}T${times.checkOut}`).toISOString()
         updates.status = 'checked_out'
       }
       if (Object.keys(updates).length > 0) {
@@ -116,10 +112,37 @@ export default function AdminShiftCorrections() {
           .eq('id', c.checkin_record_id)
           .eq('company_id', companyUser.company_id)
       }
+    } else {
+      const row: Record<string, any> = {
+        company_id: companyUser.company_id,
+        employee_id: c.employee_id,
+        source: 'shifts',
+        shift_assignment_id: c.shift_assignment_id,
+        status: 'checked_out',
+      }
+      if (times.checkIn) row.check_in_at = new Date(`${c.shift_date}T${times.checkIn}`).toISOString()
+      if (times.checkOut) row.check_out_at = new Date(`${c.shift_date}T${times.checkOut}`).toISOString()
+      const { data: newRec } = await supabase.from('checkin_records').insert(row).select('id').single()
+      if (newRec) {
+        await supabase.from('shift_corrections').update({ checkin_record_id: newRec.id }).eq('id', c.id)
+      }
     }
+
+    const commentParts: string[] = []
+    if (times.checkIn) commentParts.push(`check-in corrected to ${times.checkIn}`)
+    if (times.checkOut) commentParts.push(`check-out corrected to ${times.checkOut}`)
+
+    await supabase.from('shift_corrections').update({
+      status: 'approved',
+      admin_comment: adminComments[c.id]?.trim() || commentParts.join(', '),
+      resolved_by: adminEmpId,
+      resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', c.id).eq('company_id', companyUser.company_id)
 
     setProcessing(null)
     setAdminComments(prev => { const n = { ...prev }; delete n[c.id]; return n })
+    setApproveTimes(prev => { const n = { ...prev }; delete n[c.id]; return n })
     fetchCorrections()
   }
 
@@ -150,20 +173,35 @@ export default function AdminShiftCorrections() {
   }
 
   const handleManualCorrect = async (c: Correction) => {
-    if (!companyUser?.company_id || !adminEmpId || !c.checkin_record_id) return
+    if (!companyUser?.company_id || !adminEmpId) return
     setProcessing(c.id)
 
-    const updates: Record<string, string> = {}
-    if (editTimes.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${editTimes.checkIn}`).toISOString()
-    if (editTimes.checkOut) {
-      updates.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
-      updates.status = 'checked_out'
-    }
-
-    if (Object.keys(updates).length > 0) {
-      await supabase.from('checkin_records').update(updates)
-        .eq('id', c.checkin_record_id)
-        .eq('company_id', companyUser.company_id)
+    if (c.checkin_record_id) {
+      const updates: Record<string, string> = {}
+      if (editTimes.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${editTimes.checkIn}`).toISOString()
+      if (editTimes.checkOut) {
+        updates.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
+        updates.status = 'checked_out'
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('checkin_records').update(updates)
+          .eq('id', c.checkin_record_id)
+          .eq('company_id', companyUser.company_id)
+      }
+    } else {
+      const row: Record<string, any> = {
+        company_id: companyUser.company_id,
+        employee_id: c.employee_id,
+        source: 'shifts',
+        shift_assignment_id: c.shift_assignment_id,
+        status: 'checked_out',
+      }
+      if (editTimes.checkIn) row.check_in_at = new Date(`${c.shift_date}T${editTimes.checkIn}`).toISOString()
+      if (editTimes.checkOut) row.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
+      const { data: newRec } = await supabase.from('checkin_records').insert(row).select('id').single()
+      if (newRec) {
+        await supabase.from('shift_corrections').update({ checkin_record_id: newRec.id }).eq('id', c.id)
+      }
     }
 
     await supabase.from('shift_corrections').update({
@@ -253,35 +291,64 @@ export default function AdminShiftCorrections() {
                       </span>
                     </td>
                     <td>
-                      {c.status === 'submitted' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <input
-                            type="text"
-                            placeholder="Admin comment (optional)"
-                            value={adminComments[c.id] || ''}
-                            onChange={e => setAdminComments(prev => ({ ...prev, [c.id]: e.target.value }))}
-                            style={{ fontSize: 11, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, width: 160 }}
-                          />
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <button
-                              className="admin-btn admin-btn-primary"
-                              style={{ fontSize: 11, padding: '4px 10px' }}
-                              disabled={processing === c.id}
-                              onClick={() => handleApprove(c)}
-                            >
-                              Approve
-                            </button>
-                            <button
-                              className="admin-btn"
-                              style={{ fontSize: 11, padding: '4px 10px', background: '#dc2626', color: '#fff', border: 'none' }}
-                              disabled={processing === c.id}
-                              onClick={() => handleDecline(c)}
-                            >
-                              Decline
-                            </button>
+                      {c.status === 'submitted' && (() => {
+                        const isIn = c.correction_type === 'late_checkin' || c.correction_type === 'no_checkin'
+                        const isOut = c.correction_type === 'early_checkout' || c.correction_type === 'no_checkout'
+                        const at = approveTimes[c.id] || { checkIn: '', checkOut: '' }
+                        const hasTime = (isIn && at.checkIn) || (isOut && at.checkOut)
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {isIn && (
+                              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                <label style={{ fontSize: 10 }}>In:</label>
+                                <input
+                                  type="time"
+                                  value={at.checkIn}
+                                  onChange={e => setApproveTimes(prev => ({ ...prev, [c.id]: { ...at, checkIn: e.target.value } }))}
+                                  style={{ fontSize: 11, padding: '2px 4px' }}
+                                />
+                              </div>
+                            )}
+                            {isOut && (
+                              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                                <label style={{ fontSize: 10 }}>Out:</label>
+                                <input
+                                  type="time"
+                                  value={at.checkOut}
+                                  onChange={e => setApproveTimes(prev => ({ ...prev, [c.id]: { ...at, checkOut: e.target.value } }))}
+                                  style={{ fontSize: 11, padding: '2px 4px' }}
+                                />
+                              </div>
+                            )}
+                            <input
+                              type="text"
+                              placeholder="Admin comment (optional)"
+                              value={adminComments[c.id] || ''}
+                              onChange={e => setAdminComments(prev => ({ ...prev, [c.id]: e.target.value }))}
+                              style={{ fontSize: 11, padding: '4px 6px', border: '1px solid var(--border)', borderRadius: 6, width: 160 }}
+                            />
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                className="admin-btn admin-btn-primary"
+                                style={{ fontSize: 11, padding: '4px 10px' }}
+                                disabled={processing === c.id || !hasTime}
+                                onClick={() => handleApprove(c)}
+                                title={!hasTime ? 'Set corrected time before approving' : ''}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                className="admin-btn"
+                                style={{ fontSize: 11, padding: '4px 10px', background: '#dc2626', color: '#fff', border: 'none' }}
+                                disabled={processing === c.id}
+                                onClick={() => handleDecline(c)}
+                              >
+                                Decline
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )
+                      })()}
                       {c.status === 'declined' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           {editingId === c.id ? (

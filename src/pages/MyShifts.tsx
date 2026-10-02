@@ -177,6 +177,8 @@ export default function MyShifts() {
   const [corrections, setCorrections] = useState<ShiftCorrection[]>([])
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState<string | null>(null)
+  const [actionsPage, setActionsPage] = useState(0)
+  const ACTIONS_PER_PAGE = 10
 
   const today = useMemo(() => new Date(), [])
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart])
@@ -498,12 +500,12 @@ export default function MyShifts() {
           { key: 'everyone' as FilterTab, label: t('shifts.everyone') },
           { key: 'availability' as FilterTab, label: t('shifts.availability') },
           { key: 'replacements' as FilterTab, label: t('shifts.replacements') },
-          { key: 'tasks' as FilterTab, label: 'Tasks' },
+          { key: 'tasks' as FilterTab, label: 'Actions' },
         ]).map(f => (
           <button
             key={f.key}
             className={`shifts-tab${filter === f.key ? ' shifts-tab-active' : ''}`}
-            onClick={() => { setFilter(f.key); if (f.key === 'availability') navigate('/shifts/availability'); if (f.key === 'replacements') navigate('/shifts/swap') }}
+            onClick={() => { setFilter(f.key); if (f.key === 'tasks') setActionsPage(0); if (f.key === 'availability') navigate('/shifts/availability'); if (f.key === 'replacements') navigate('/shifts/swap') }}
           >
             {f.label}
             {f.key === 'tasks' && (correctionFlags.length + corrections.filter(c => c.status === 'declined').length) > 0 && (
@@ -575,149 +577,170 @@ export default function MyShifts() {
 
       {/* Shift List */}
       <div className="schedule-shift-list">
-        {filter === 'tasks' ? (
+        {filter === 'tasks' ? (() => {
+          const declined = corrections.filter(c => c.status === 'declined')
+          const submitted = corrections.filter(c => c.status === 'submitted' || c.status === 'approved')
+          const totalItems = correctionFlags.length + declined.length + submitted.length
+          const totalPages = Math.max(1, Math.ceil(totalItems / ACTIONS_PER_PAGE))
+          const safeActionsPage = Math.min(actionsPage, totalPages - 1)
+          const startIdx = safeActionsPage * ACTIONS_PER_PAGE
+          const endIdx = startIdx + ACTIONS_PER_PAGE
+
+          type ActionItem = { kind: 'flag'; data: CorrectionFlag } | { kind: 'declined'; data: ShiftCorrection } | { kind: 'submitted'; data: ShiftCorrection }
+          const allItems: ActionItem[] = [
+            ...correctionFlags.map(f => ({ kind: 'flag' as const, data: f })),
+            ...declined.map(c => ({ kind: 'declined' as const, data: c })),
+            ...submitted.map(c => ({ kind: 'submitted' as const, data: c })),
+          ]
+          const pageItems = allItems.slice(startIdx, endIdx)
+
+          const flagLabels: Record<string, string> = {
+            late_checkin: 'Late Check-in', early_checkout: 'Early Check-out',
+            no_checkin: 'No Check-in', no_checkout: 'No Check-out',
+          }
+
+          return (
           <div className="sc-tasks-container">
-            {correctionFlags.length === 0 && corrections.filter(c => c.status === 'declined').length === 0 && corrections.filter(c => c.status === 'submitted' || c.status === 'approved').length === 0 && (
+            {totalItems === 0 && (
               <div className="schedule-no-shift" style={{ textAlign: 'center', padding: '32px 0' }}>
-                <p>No shift corrections at this time.</p>
+                <p>No shift actions at this time.</p>
               </div>
             )}
 
-            {/* Pending correction flags */}
-            {correctionFlags.length > 0 && (
-              <>
-                <h3 className="sc-tasks-heading">Corrections Required</h3>
-                {correctionFlags.map(flag => {
-                  const flagLabels: Record<string, string> = {
-                    late_checkin: 'Late Check-in',
-                    early_checkout: 'Early Check-out',
-                    no_checkin: 'No Check-in',
-                    no_checkout: 'No Check-out',
-                  }
-                  const flagKey = `${flag.assignmentId}|${flag.type}`
-                  const fmtDate = new Date(flag.shiftDate + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                  return (
-                    <div key={flagKey} className="sc-task-card sc-task-card-pending">
-                      <div className="sc-task-card-header">
-                        <span className="sc-task-type-badge">{flagLabels[flag.type]}</span>
-                        <span className="sc-task-date">{fmtDate}</span>
-                      </div>
-                      <div className="sc-task-card-body">
-                        <div className="sc-task-detail"><strong>{flag.shiftName}</strong></div>
-                        <div className="sc-task-detail">
-                          Expected: {flag.expectedTime} · Actual: {flag.actualTime}
-                          {flag.varianceMins > 0 && ` (${flag.varianceMins} mins)`}
-                        </div>
-                        <textarea
-                          className="sc-task-comment"
-                          placeholder="Add your comment..."
-                          value={commentDrafts[flagKey] || ''}
-                          onChange={e => setCommentDrafts(prev => ({ ...prev, [flagKey]: e.target.value }))}
-                          rows={2}
-                        />
-                        <button
-                          className="sc-task-submit"
-                          disabled={!commentDrafts[flagKey]?.trim() || submitting === flagKey}
-                          onClick={async () => {
-                            if (!companyUser?.company_id || !employeeId) return
-                            setSubmitting(flagKey)
-                            const { error } = await supabase.from('shift_corrections').upsert({
-                              company_id: companyUser.company_id,
-                              employee_id: employeeId,
-                              shift_assignment_id: flag.assignmentId,
-                              checkin_record_id: flag.checkinRecordId || null,
-                              correction_type: flag.type,
-                              shift_date: flag.shiftDate,
-                              expected_time: flag.expectedTime,
-                              actual_time: flag.actualTime,
-                              variance_minutes: flag.varianceMins,
-                              employee_comment: commentDrafts[flagKey]?.trim(),
-                              status: 'submitted',
-                            }, { onConflict: 'company_id,shift_assignment_id,correction_type' })
-                            setSubmitting(null)
-                            if (error) {
-                              alert('Failed to submit correction: ' + error.message)
-                              return
-                            }
-                            setCommentDrafts(prev => { const n = { ...prev }; delete n[flagKey]; return n })
-                            fetchCorrections()
-                          }}
-                        >
-                          {submitting === flagKey ? 'Submitting...' : 'Submit'}
-                        </button>
-                      </div>
+            {pageItems.some(i => i.kind === 'flag') && <h3 className="sc-tasks-heading">Corrections Required</h3>}
+            {pageItems.filter(i => i.kind === 'flag').map(item => {
+              const flag = item.data as CorrectionFlag
+              const flagKey = `${flag.assignmentId}|${flag.type}`
+              const fmtDate = new Date(flag.shiftDate + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+              return (
+                <div key={flagKey} className="sc-task-card sc-task-card-pending">
+                  <div className="sc-task-card-header">
+                    <span className="sc-task-type-badge">{flagLabels[flag.type]}</span>
+                    <span className="sc-task-date">{fmtDate}</span>
+                  </div>
+                  <div className="sc-task-card-body">
+                    <div className="sc-task-detail"><strong>{flag.shiftName}</strong></div>
+                    <div className="sc-task-detail">
+                      Expected: {flag.expectedTime} · Actual: {flag.actualTime}
+                      {flag.varianceMins > 0 && ` (${flag.varianceMins} mins)`}
                     </div>
-                  )
-                })}
-              </>
-            )}
+                    <textarea
+                      className="sc-task-comment"
+                      placeholder="Add your comment..."
+                      value={commentDrafts[flagKey] || ''}
+                      onChange={e => setCommentDrafts(prev => ({ ...prev, [flagKey]: e.target.value }))}
+                      rows={2}
+                    />
+                    <button
+                      className="sc-task-submit"
+                      disabled={!commentDrafts[flagKey]?.trim() || submitting === flagKey}
+                      onClick={async () => {
+                        if (!companyUser?.company_id || !employeeId) return
+                        setSubmitting(flagKey)
+                        const { error } = await supabase.from('shift_corrections').upsert({
+                          company_id: companyUser.company_id,
+                          employee_id: employeeId,
+                          shift_assignment_id: flag.assignmentId,
+                          checkin_record_id: flag.checkinRecordId || null,
+                          correction_type: flag.type,
+                          shift_date: flag.shiftDate,
+                          expected_time: flag.expectedTime,
+                          actual_time: flag.actualTime,
+                          variance_minutes: flag.varianceMins,
+                          employee_comment: commentDrafts[flagKey]?.trim(),
+                          status: 'submitted',
+                        }, { onConflict: 'company_id,shift_assignment_id,correction_type' })
+                        setSubmitting(null)
+                        if (error) {
+                          alert('Failed to submit correction: ' + error.message)
+                          return
+                        }
+                        setCommentDrafts(prev => { const n = { ...prev }; delete n[flagKey]; return n })
+                        fetchCorrections()
+                      }}
+                    >
+                      {submitting === flagKey ? 'Submitting...' : 'Submit'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
 
-            {/* Declined corrections — need attention */}
-            {corrections.filter(c => c.status === 'declined').length > 0 && (
-              <>
-                <h3 className="sc-tasks-heading" style={{ color: '#dc2626' }}>Declined — Action Required</h3>
-                {corrections.filter(c => c.status === 'declined').map(sc => {
-                  const flagLabels: Record<string, string> = {
-                    late_checkin: 'Late Check-in', early_checkout: 'Early Check-out',
-                    no_checkin: 'No Check-in', no_checkout: 'No Check-out',
-                  }
-                  const fmtDate = new Date(sc.shift_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                  return (
-                    <div key={sc.id} className="sc-task-card sc-task-card-declined">
-                      <div className="sc-task-card-header">
-                        <span className="sc-task-type-badge sc-task-badge-declined">{flagLabels[sc.correction_type] || sc.correction_type}</span>
-                        <span className="sc-task-date">{fmtDate}</span>
-                      </div>
-                      <div className="sc-task-card-body">
-                        <div className="sc-task-detail">
-                          Expected: {sc.expected_time || '-'} · Actual: {sc.actual_time || '-'}
-                          {sc.variance_minutes > 0 && ` (${sc.variance_minutes} mins)`}
-                        </div>
-                        {sc.admin_comment && <div className="sc-task-admin-msg">Admin: {sc.admin_comment}</div>}
-                        <div className="sc-task-admin-msg" style={{ color: '#dc2626' }}>Please speak to your shift manager regarding this shift.</div>
-                      </div>
+            {pageItems.some(i => i.kind === 'declined') && <h3 className="sc-tasks-heading" style={{ color: '#dc2626' }}>Declined — Action Required</h3>}
+            {pageItems.filter(i => i.kind === 'declined').map(item => {
+              const sc = item.data as ShiftCorrection
+              const fmtDate = new Date(sc.shift_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+              return (
+                <div key={sc.id} className="sc-task-card sc-task-card-declined">
+                  <div className="sc-task-card-header">
+                    <span className="sc-task-type-badge sc-task-badge-declined">{flagLabels[sc.correction_type] || sc.correction_type}</span>
+                    <span className="sc-task-date">{fmtDate}</span>
+                  </div>
+                  <div className="sc-task-card-body">
+                    <div className="sc-task-detail">
+                      Expected: {sc.expected_time || '-'} · Actual: {sc.actual_time || '-'}
+                      {sc.variance_minutes > 0 && ` (${sc.variance_minutes} mins)`}
                     </div>
-                  )
-                })}
-              </>
-            )}
+                    {sc.admin_comment && <div className="sc-task-admin-msg">Admin: {sc.admin_comment}</div>}
+                    <div className="sc-task-admin-msg" style={{ color: '#dc2626' }}>Please speak to your shift manager regarding this shift.</div>
+                  </div>
+                </div>
+              )
+            })}
 
-            {/* Submitted / approved corrections */}
-            {corrections.filter(c => c.status === 'submitted' || c.status === 'approved').length > 0 && (
-              <>
-                <h3 className="sc-tasks-heading">Submitted Corrections</h3>
-                {corrections.filter(c => c.status === 'submitted' || c.status === 'approved').map(sc => {
-                  const flagLabels: Record<string, string> = {
-                    late_checkin: 'Late Check-in', early_checkout: 'Early Check-out',
-                    no_checkin: 'No Check-in', no_checkout: 'No Check-out',
-                  }
-                  const statusColors: Record<string, { bg: string; color: string }> = {
-                    submitted: { bg: '#fff3e0', color: '#e65100' },
-                    approved: { bg: '#e8f5e9', color: '#2e7d32' },
-                  }
-                  const st = statusColors[sc.status] || { bg: '#f5f5f5', color: '#666' }
-                  const fmtDate = new Date(sc.shift_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-                  return (
-                    <div key={sc.id} className="sc-task-card">
-                      <div className="sc-task-card-header">
-                        <span className="sc-task-type-badge">{flagLabels[sc.correction_type] || sc.correction_type}</span>
-                        <span className="sc-task-status" style={{ background: st.bg, color: st.color }}>{sc.status.charAt(0).toUpperCase() + sc.status.slice(1)}</span>
-                        <span className="sc-task-date">{fmtDate}</span>
-                      </div>
-                      <div className="sc-task-card-body">
-                        <div className="sc-task-detail">
-                          Expected: {sc.expected_time || '-'} · Actual: {sc.actual_time || '-'}
-                        </div>
-                        {sc.employee_comment && <div className="sc-task-detail" style={{ fontStyle: 'italic' }}>"{sc.employee_comment}"</div>}
-                        {sc.admin_comment && <div className="sc-task-admin-msg">Admin: {sc.admin_comment}</div>}
-                      </div>
+            {pageItems.some(i => i.kind === 'submitted') && <h3 className="sc-tasks-heading">Submitted Corrections</h3>}
+            {pageItems.filter(i => i.kind === 'submitted').map(item => {
+              const sc = item.data as ShiftCorrection
+              const statusColors: Record<string, { bg: string; color: string }> = {
+                submitted: { bg: '#fff3e0', color: '#e65100' },
+                approved: { bg: '#e8f5e9', color: '#2e7d32' },
+              }
+              const st = statusColors[sc.status] || { bg: '#f5f5f5', color: '#666' }
+              const fmtDate = new Date(sc.shift_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+              return (
+                <div key={sc.id} className="sc-task-card">
+                  <div className="sc-task-card-header">
+                    <span className="sc-task-type-badge">{flagLabels[sc.correction_type] || sc.correction_type}</span>
+                    <span className="sc-task-status" style={{ background: st.bg, color: st.color }}>{sc.status.charAt(0).toUpperCase() + sc.status.slice(1)}</span>
+                    <span className="sc-task-date">{fmtDate}</span>
+                  </div>
+                  <div className="sc-task-card-body">
+                    <div className="sc-task-detail">
+                      Expected: {sc.expected_time || '-'} · Actual: {sc.actual_time || '-'}
                     </div>
-                  )
-                })}
-              </>
+                    {sc.employee_comment && <div className="sc-task-detail" style={{ fontStyle: 'italic' }}>"{sc.employee_comment}"</div>}
+                    {sc.admin_comment && <div className="sc-task-admin-msg">Admin: {sc.admin_comment}</div>}
+                  </div>
+                </div>
+              )
+            })}
+
+            {totalPages > 1 && (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '16px 0' }}>
+                <button
+                  className="admin-btn"
+                  style={{ fontSize: 12, padding: '6px 12px' }}
+                  disabled={safeActionsPage === 0}
+                  onClick={() => setActionsPage(p => Math.max(0, p - 1))}
+                >
+                  Previous
+                </button>
+                <span style={{ fontSize: 12, color: '#666' }}>
+                  Page {safeActionsPage + 1} of {totalPages}
+                </span>
+                <button
+                  className="admin-btn"
+                  style={{ fontSize: 12, padding: '6px 12px' }}
+                  disabled={safeActionsPage >= totalPages - 1}
+                  onClick={() => setActionsPage(p => Math.min(totalPages - 1, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
             )}
           </div>
-        ) : filter === 'replacements' ? (
+          )
+        })() : filter === 'replacements' ? (
           <div className="schedule-no-shift" style={{ textAlign: 'center', padding: '32px 0' }}>
             <p>No replacement requests at this time.</p>
           </div>
