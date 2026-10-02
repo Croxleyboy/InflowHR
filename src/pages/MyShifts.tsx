@@ -562,6 +562,17 @@ export default function MyShifts() {
             </div>
           )
         }
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const now = new Date()
+        const nowMins = now.getHours() * 60 + now.getMinutes()
+        const hasUpcomingShift = shifts.some(s => {
+          if (s.date !== todayStr || s.employee_id !== employeeId) return false
+          const end = s.shift_template?.end_time
+          if (!end) return false
+          const [eh, em] = end.split(':').map(Number)
+          return eh * 60 + em > nowMins
+        })
+        if (!hasUpcomingShift) return null
         return (
           <button
             className="dash-checkin-banner"
