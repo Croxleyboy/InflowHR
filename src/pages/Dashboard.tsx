@@ -143,7 +143,7 @@ export default function Dashboard() {
   const [isBirthday, setIsBirthday] = useState(false)
   const [anniversaryYears, setAnniversaryYears] = useState<number | null>(null)
   const [showBirthdayPopup, setShowBirthdayPopup] = useState(false)
-  const [colleagueBirthdays, setColleagueBirthdays] = useState<{ name: string; date: string; isToday: boolean }[]>([])
+  const [colleagueBirthdays, setColleagueBirthdays] = useState<{ name: string; date: string; isToday: boolean; type: 'birthday' | 'anniversary'; years?: number }[]>([])
   const [nextOneToOne, setNextOneToOne] = useState<{ date: string; time: string | null; with_name: string } | null>(null)
   const [newGoals, setNewGoals] = useState<{ title: string; due_date: string | null }[]>([])
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
@@ -266,12 +266,13 @@ export default function Dashboard() {
           .select('id, date_of_birth').eq('company_id', companyUser.company_id).eq('is_active', true).not('date_of_birth', 'is', null)
         if (colleagues) {
           const yr = now.getFullYear()
+          const todayMidnightCount = new Date(yr, now.getMonth(), now.getDate())
           colleagues.forEach((c: any) => {
             if (!c.date_of_birth || c.id === employeeId) return
-            const dob = new Date(c.date_of_birth)
+            const dob = new Date(c.date_of_birth + 'T00:00:00')
             const bday = new Date(yr, dob.getMonth(), dob.getDate())
-            if (bday < now) bday.setFullYear(yr + 1)
-            const diffDays = Math.floor((bday.getTime() - now.getTime()) / 86400000)
+            if (bday < todayMidnightCount) bday.setFullYear(yr + 1)
+            const diffDays = Math.round((bday.getTime() - todayMidnightCount.getTime()) / 86400000)
             if (diffDays >= 0 && diffDays <= 7) count++
           })
         }
@@ -374,7 +375,7 @@ export default function Dashboard() {
         const todayMonth = now.getMonth()
         const todayDay = now.getDate()
         if (meRow.date_of_birth) {
-          const dob = new Date(meRow.date_of_birth)
+          const dob = new Date(meRow.date_of_birth + 'T00:00:00')
           if (dob.getMonth() === todayMonth && dob.getDate() === todayDay) {
             setIsBirthday(true)
             const seenKey = `inflowhr-birthday-seen-${now.getFullYear()}`
@@ -385,7 +386,7 @@ export default function Dashboard() {
           }
         }
         if (meRow.start_date) {
-          const sd = new Date(meRow.start_date)
+          const sd = new Date(meRow.start_date + 'T00:00:00')
           if (sd.getMonth() === todayMonth && sd.getDate() === todayDay) {
             const years = now.getFullYear() - sd.getFullYear()
             if (years > 0) setAnniversaryYears(years)
@@ -393,33 +394,50 @@ export default function Dashboard() {
         }
       })()
 
-      // Colleague birthdays — next 7 days
+      // Colleague birthdays & work anniversaries — next 7 days
       ;(async () => {
         const { data: colleagues } = await supabase.from('employees')
-          .select('id, first_name, last_name, date_of_birth')
+          .select('id, first_name, last_name, date_of_birth, start_date')
           .eq('company_id', companyUser.company_id)
           .eq('is_active', true)
-          .not('date_of_birth', 'is', null)
         if (!colleagues) return
         const now = new Date()
         const yr = now.getFullYear()
-        const todayMonth = now.getMonth()
-        const todayDay = now.getDate()
-        const upcoming: { name: string; date: string; isToday: boolean; diff: number }[] = []
+        const todayMidnight = new Date(yr, now.getMonth(), now.getDate())
+        const upcoming: { name: string; date: string; isToday: boolean; diff: number; type: 'birthday' | 'anniversary'; years?: number }[] = []
         colleagues.forEach((c: any) => {
-          if (!c.date_of_birth || c.id === employeeId) return
-          const dob = new Date(c.date_of_birth)
-          const bday = new Date(yr, dob.getMonth(), dob.getDate())
-          if (bday < now) bday.setFullYear(yr + 1)
-          const diff = Math.floor((bday.getTime() - now.getTime()) / 86400000)
-          if (diff <= 7) {
-            const isToday = dob.getMonth() === todayMonth && dob.getDate() === todayDay
-            upcoming.push({
-              name: `${c.first_name} ${c.last_name}`,
-              date: bday.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
-              isToday,
-              diff,
-            })
+          if (c.id === employeeId) return
+          if (c.date_of_birth) {
+            const dob = new Date(c.date_of_birth + 'T00:00:00')
+            const bday = new Date(yr, dob.getMonth(), dob.getDate())
+            if (bday < todayMidnight) bday.setFullYear(yr + 1)
+            const diff = Math.round((bday.getTime() - todayMidnight.getTime()) / 86400000)
+            if (diff <= 7) {
+              upcoming.push({
+                name: `${c.first_name} ${c.last_name}`,
+                date: bday.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+                isToday: diff === 0,
+                diff,
+                type: 'birthday',
+              })
+            }
+          }
+          if (c.start_date) {
+            const sd = new Date(c.start_date + 'T00:00:00')
+            const anniv = new Date(yr, sd.getMonth(), sd.getDate())
+            if (anniv < todayMidnight) anniv.setFullYear(yr + 1)
+            const diff = Math.round((anniv.getTime() - todayMidnight.getTime()) / 86400000)
+            const years = anniv.getFullYear() - sd.getFullYear()
+            if (diff <= 7 && years > 0) {
+              upcoming.push({
+                name: `${c.first_name} ${c.last_name}`,
+                date: anniv.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+                isToday: diff === 0,
+                diff,
+                type: 'anniversary',
+                years,
+              })
+            }
           }
         })
         upcoming.sort((a, b) => a.diff - b.diff)
@@ -1621,12 +1639,16 @@ export default function Dashboard() {
             <div className="dash-birthdays-card">
               <div className="dash-tasks-card-head">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M12 3v4"/><path d="M12 3c-1 0-2 1-2 2s1 2 2 2 2-1 2-2-1-2-2-2z"/><path d="M7 14V9a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v5"/></svg>
-                <strong>Birthdays</strong>
+                <strong>Birthdays & Anniversaries</strong>
               </div>
               {colleagueBirthdays.map((b, i) => (
                 <div className="dash-tasks-item" key={i}>
                   <span className="dash-tasks-value">{b.name}</span>
-                  <span className="dash-tasks-sub">{b.isToday ? 'Today!' : b.date}</span>
+                  <span className="dash-tasks-sub">
+                    {b.type === 'birthday'
+                      ? (b.isToday ? 'Birthday today!' : `Birthday — ${b.date}`)
+                      : (b.isToday ? `${b.years} yr anniversary today!` : `${b.years} yr anniversary — ${b.date}`)}
+                  </span>
                 </div>
               ))}
             </div>

@@ -414,10 +414,11 @@ export default function Notifications() {
         const thisYear = todayDate.getFullYear()
         colleagues.forEach((c: { id: string; first_name: string; last_name: string; date_of_birth: string | null }) => {
           if (!c.date_of_birth || c.id === HARDCODED_EMPLOYEE_ID) return
-          const dob = new Date(c.date_of_birth)
+          const dob = new Date(c.date_of_birth + 'T00:00:00')
           const birthdayThisYear = new Date(thisYear, dob.getMonth(), dob.getDate())
-          if (birthdayThisYear < todayDate) birthdayThisYear.setFullYear(thisYear + 1)
-          const diffDays = Math.floor((birthdayThisYear.getTime() - todayDate.getTime()) / 86400000)
+          const todayMidnight = new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate())
+          if (birthdayThisYear < todayMidnight) birthdayThisYear.setFullYear(thisYear + 1)
+          const diffDays = Math.round((birthdayThisYear.getTime() - todayMidnight.getTime()) / 86400000)
           if (diffDays >= 0 && diffDays <= 7) {
             const dateStr = toLocalDateStr(birthdayThisYear)
             personalReminders.push({
