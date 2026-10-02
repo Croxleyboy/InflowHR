@@ -59,7 +59,7 @@ interface RoleProfile {
 const PROFICIENCY_LABELS = ['', 'Foundational', 'Developing', 'Proficient', 'Advanced', 'Expert']
 const PROFICIENCY_COLORS = ['', '#6b7280', '#3b82f6', '#8b5cf6', '#f59e0b', '#10b981']
 const STATUS_LABELS: Record<string, string> = { self_declared: 'Self-declared', pending_validation: 'Pending', validated: 'Validated', rejected: 'Rejected' }
-const STATUS_COLORS: Record<string, string> = { self_declared: '#6b7280', pending_validation: '#f59e0b', validated: '#16a34a', rejected: '#dc2626' }
+const STATUS_BADGE_CLASS: Record<string, string> = { self_declared: 'sp-badge-self', pending_validation: 'sp-badge-pending', validated: 'sp-badge-validated', rejected: 'sp-badge-rejected' }
 const TIMEFRAME_LABELS: Record<string, string> = { '6_months': 'Within 6 months', '1_year': 'Within 1 year', '2_years': 'Within 2 years', '3_plus_years': '3+ years' }
 
 type Tab = 'skills' | 'certifications' | 'aspirations' | 'matching'
@@ -98,25 +98,45 @@ export default function SkillsPassport() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  const validatedCount = mySkills.filter(s => s.status === 'validated').length
+  const pendingCount = mySkills.filter(s => s.status === 'pending_validation').length
+
   return (
-    <div className="feature-page">
-      <header className="feature-header">
-        <button className="feature-back" onClick={() => navigate('/')}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    <div className="sp-page">
+      <header className="sp-header">
+        <button className="sp-header-back" onClick={() => navigate('/')}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <h1 className="feature-title">Skills Passport</h1>
-        <button className="feature-refresh" onClick={loadData}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <h1 className="sp-header-title">Skills Passport</h1>
+        <button className="sp-header-refresh" onClick={loadData}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M23 4v6h-6M1 20v-6h6"/>
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
           </svg>
         </button>
       </header>
 
-      <div className="feature-tabs">
+      {!loading && tab === 'skills' && (
+        <div className="sp-summary">
+          <div className="sp-stat">
+            <div className="sp-stat-value">{mySkills.length}</div>
+            <div className="sp-stat-label">Total Skills</div>
+          </div>
+          <div className="sp-stat">
+            <div className="sp-stat-value" style={{ color: '#16a34a' }}>{validatedCount}</div>
+            <div className="sp-stat-label">Validated</div>
+          </div>
+          <div className="sp-stat">
+            <div className="sp-stat-value" style={{ color: '#f59e0b' }}>{pendingCount}</div>
+            <div className="sp-stat-label">Pending</div>
+          </div>
+        </div>
+      )}
+
+      <div className="sp-tabs">
         {(['skills', 'certifications', 'aspirations', 'matching'] as Tab[]).map(t => (
-          <button key={t} className={`feature-tab ${tab === t ? 'feature-tab-active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'skills' ? 'My Skills' : t === 'certifications' ? 'Certifications' : t === 'aspirations' ? 'Career Goals' : 'Role Matching'}
+          <button key={t} className={`sp-tab ${tab === t ? 'sp-tab-active' : ''}`} onClick={() => setTab(t)}>
+            {t === 'skills' ? 'My Skills' : t === 'certifications' ? 'Certs' : t === 'aspirations' ? 'Goals' : 'Matching'}
           </button>
         ))}
       </div>
@@ -144,6 +164,23 @@ export default function SkillsPassport() {
       {!loading && tab === 'matching' && (
         <RoleMatchingTab companyId={companyId} employeeId={employeeId || ''} mySkills={mySkills} />
       )}
+    </div>
+  )
+}
+
+function ProficiencyBar({ level }: { level: number }) {
+  return (
+    <div className="sp-proficiency-bar" title={PROFICIENCY_LABELS[level]}>
+      {[1,2,3,4,5].map(n => (
+        <div
+          key={n}
+          className="sp-proficiency-seg"
+          style={{ background: n <= level ? PROFICIENCY_COLORS[level] : undefined }}
+        />
+      ))}
+      <span style={{ fontSize: 11, fontWeight: 600, marginLeft: 4, color: PROFICIENCY_COLORS[level] }}>
+        {PROFICIENCY_LABELS[level]}
+      </span>
     </div>
   )
 }
@@ -315,17 +352,20 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0' }}>
-        <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>{mySkills.length} skill{mySkills.length !== 1 ? 's' : ''} recorded</span>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 14 }}>+ Add Skill</button>
+      <div className="sp-section-bar">
+        <span className="sp-section-count">{mySkills.length} skill{mySkills.length !== 1 ? 's' : ''} recorded</span>
+        <button className="sp-add-btn" onClick={() => setShowAdd(true)}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Add Skill
+        </button>
       </div>
 
       {showAdd && (
-        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <h3 style={{ marginTop: 0 }}>Add a Skill</h3>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Skill</label>
-            <select className="form-select" value={addSkillId} onChange={e => setAddSkillId(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)' }}>
+        <div className="sp-form">
+          <div className="sp-form-title">Add a Skill</div>
+          <div className="sp-form-field">
+            <label className="sp-form-label">Skill</label>
+            <select className="sp-form-input" value={addSkillId} onChange={e => setAddSkillId(e.target.value)}>
               <option value="">Select a skill...</option>
               {categories.map(cat => {
                 const catSkills = availableSkills.filter(s => s.category_id === cat.id)
@@ -338,19 +378,19 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
               })}
             </select>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Proficiency Level</label>
-            <div style={{ display: 'flex', gap: 6 }}>
+          <div className="sp-form-field">
+            <label className="sp-form-label">Proficiency Level</label>
+            <div className="sp-proficiency-picker">
               {[1,2,3,4,5].map(n => (
                 <button
                   key={n}
+                  className="sp-proficiency-opt"
                   onClick={() => setAddProficiency(n)}
                   style={{
-                    flex: 1, padding: '8px 4px', borderRadius: 8, fontSize: 12, fontWeight: addProficiency === n ? 600 : 400,
-                    border: `2px solid ${addProficiency === n ? PROFICIENCY_COLORS[n] : 'var(--border)'}`,
-                    background: addProficiency === n ? PROFICIENCY_COLORS[n] + '20' : 'transparent',
-                    color: addProficiency === n ? PROFICIENCY_COLORS[n] : 'var(--text-muted)',
-                    cursor: 'pointer',
+                    borderColor: addProficiency === n ? PROFICIENCY_COLORS[n] : undefined,
+                    background: addProficiency === n ? PROFICIENCY_COLORS[n] + '18' : undefined,
+                    color: addProficiency === n ? PROFICIENCY_COLORS[n] : undefined,
+                    fontWeight: addProficiency === n ? 600 : undefined,
                   }}
                 >
                   {PROFICIENCY_LABELS[n]}
@@ -358,49 +398,56 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
               ))}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" onClick={addSkill} disabled={saving} style={{ padding: '8px 20px', borderRadius: 8 }}>{saving ? 'Adding...' : 'Add Skill'}</button>
-            <button className="btn" onClick={() => setShowAdd(false)} style={{ padding: '8px 20px', borderRadius: 8 }}>Cancel</button>
+          <div className="sp-form-actions">
+            <button className="sp-btn-submit" onClick={addSkill} disabled={saving}>{saving ? 'Adding...' : 'Add Skill'}</button>
+            <button className="sp-btn-cancel" onClick={() => setShowAdd(false)}>Cancel</button>
           </div>
         </div>
       )}
 
       {mySkills.length === 0 && !showAdd && (
-        <div className="card" style={{ padding: 24, textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-muted)' }}>You haven't added any skills yet. Start building your skills passport by adding your first skill.</p>
+        <div className="sp-empty">
+          <div className="sp-empty-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+            </svg>
+          </div>
+          <p className="sp-empty-text">You haven't added any skills yet. Start building your skills passport by adding your first skill.</p>
+          <button className="sp-add-btn" onClick={() => setShowAdd(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            Add Your First Skill
+          </button>
         </div>
       )}
 
       {grouped.map(group => (
-        <div key={group.id} style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 14, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '16px 0 8px' }}>{group.name}</h3>
+        <div key={group.id}>
+          <div className="sp-category-label">{group.name}</div>
           {group.skills.map(es => (
-            <div key={es.id} className="card" style={{ padding: 14, marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>{es.skill_name}</div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+            <div key={es.id} className="sp-card">
+              <div className="sp-card-top">
+                <div className="sp-card-info">
+                  <div className="sp-card-name">{es.skill_name}</div>
+                  <div className="sp-card-meta">
                     <select
+                      className="sp-proficiency-select"
                       value={es.proficiency}
                       onChange={e => updateProficiency(es.id, Number(e.target.value))}
-                      style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, border: `1px solid ${PROFICIENCY_COLORS[es.proficiency]}`, color: PROFICIENCY_COLORS[es.proficiency], background: 'transparent', cursor: 'pointer' }}
+                      style={{ color: PROFICIENCY_COLORS[es.proficiency], borderColor: PROFICIENCY_COLORS[es.proficiency] + '60' }}
                     >
                       {[1,2,3,4,5].map(n => <option key={n} value={n}>{PROFICIENCY_LABELS[n]}</option>)}
                     </select>
-                    <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, background: STATUS_COLORS[es.status] + '20', color: STATUS_COLORS[es.status] }}>
+                    <span className={`sp-badge ${STATUS_BADGE_CLASS[es.status] || 'sp-badge-self'}`}>
                       {STATUS_LABELS[es.status]}
                     </span>
                   </div>
+                  <ProficiencyBar level={es.proficiency} />
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div className="sp-card-actions">
                   {(es.status === 'self_declared' || es.status === 'rejected') && (
-                    <button onClick={() => requestValidation(es)} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, border: '1px solid #3b82f6', color: '#3b82f6', background: 'transparent', cursor: 'pointer' }}>
-                      Request Validation
-                    </button>
+                    <button className="sp-btn-validate" onClick={() => requestValidation(es)}>Validate</button>
                   )}
-                  <button onClick={() => removeSkill(es.id)} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, border: '1px solid #dc2626', color: '#dc2626', background: 'transparent', cursor: 'pointer' }}>
-                    Remove
-                  </button>
+                  <button className="sp-btn-remove" onClick={() => removeSkill(es.id)}>Remove</button>
                 </div>
               </div>
             </div>
@@ -468,58 +515,82 @@ function CertificationsTab({ companyId, employeeId, showSuccess, showError }: {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0' }}>
-        <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>{certs.length} certification{certs.length !== 1 ? 's' : ''}</span>
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)} style={{ padding: '8px 16px', borderRadius: 8, fontSize: 14 }}>+ Add Certification</button>
+      <div className="sp-section-bar">
+        <span className="sp-section-count">{certs.length} certification{certs.length !== 1 ? 's' : ''}</span>
+        <button className="sp-add-btn" onClick={() => setShowAdd(true)}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          Add Certification
+        </button>
       </div>
 
       {showAdd && (
-        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <h3 style={{ marginTop: 0 }}>New Certification</h3>
-          <input className="form-input" placeholder="Certification name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={{ width: '100%', marginBottom: 8, padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
-          <input className="form-input" placeholder="Issuing body" value={form.issuing_body} onChange={e => setForm({ ...form, issuing_body: e.target.value })} style={{ width: '100%', marginBottom: 8, padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Issue Date</label>
-              <input type="date" value={form.issue_date} onChange={e => setForm({ ...form, issue_date: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
+        <div className="sp-form">
+          <div className="sp-form-title">New Certification</div>
+          <div className="sp-form-field">
+            <label className="sp-form-label">Certification Name</label>
+            <input className="sp-form-input" placeholder="e.g. CIPD Level 5" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div className="sp-form-field">
+            <label className="sp-form-label">Issuing Body</label>
+            <input className="sp-form-input" placeholder="e.g. CIPD" value={form.issuing_body} onChange={e => setForm({ ...form, issuing_body: e.target.value })} />
+          </div>
+          <div className="sp-form-row">
+            <div className="sp-form-field">
+              <label className="sp-form-label">Issue Date</label>
+              <input type="date" className="sp-form-input" value={form.issue_date} onChange={e => setForm({ ...form, issue_date: e.target.value })} />
             </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Expiry Date (optional)</label>
-              <input type="date" value={form.expiry_date} onChange={e => setForm({ ...form, expiry_date: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
+            <div className="sp-form-field">
+              <label className="sp-form-label">Expiry Date</label>
+              <input type="date" className="sp-form-input" value={form.expiry_date} onChange={e => setForm({ ...form, expiry_date: e.target.value })} />
             </div>
           </div>
-          <input className="form-input" placeholder="Credential ID (optional)" value={form.credential_id} onChange={e => setForm({ ...form, credential_id: e.target.value })} style={{ width: '100%', marginBottom: 8, padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
-          <input className="form-input" placeholder="Credential URL (optional)" value={form.credential_url} onChange={e => setForm({ ...form, credential_url: e.target.value })} style={{ width: '100%', marginBottom: 12, padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" onClick={addCert} disabled={saving} style={{ padding: '8px 20px', borderRadius: 8 }}>{saving ? 'Saving...' : 'Add'}</button>
-            <button className="btn" onClick={() => setShowAdd(false)} style={{ padding: '8px 20px', borderRadius: 8 }}>Cancel</button>
+          <div className="sp-form-field">
+            <label className="sp-form-label">Credential ID (optional)</label>
+            <input className="sp-form-input" placeholder="e.g. ABC-12345" value={form.credential_id} onChange={e => setForm({ ...form, credential_id: e.target.value })} />
+          </div>
+          <div className="sp-form-field">
+            <label className="sp-form-label">Credential URL (optional)</label>
+            <input className="sp-form-input" placeholder="https://..." value={form.credential_url} onChange={e => setForm({ ...form, credential_url: e.target.value })} />
+          </div>
+          <div className="sp-form-actions">
+            <button className="sp-btn-submit" onClick={addCert} disabled={saving}>{saving ? 'Saving...' : 'Add'}</button>
+            <button className="sp-btn-cancel" onClick={() => setShowAdd(false)}>Cancel</button>
           </div>
         </div>
       )}
 
       {certs.length === 0 && !showAdd && (
-        <div className="card" style={{ padding: 24, textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-muted)' }}>No certifications recorded yet.</p>
+        <div className="sp-empty">
+          <div className="sp-empty-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/>
+            </svg>
+          </div>
+          <p className="sp-empty-text">No certifications recorded yet. Add your professional qualifications and certificates.</p>
+          <button className="sp-add-btn" onClick={() => setShowAdd(true)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+            Add Certification
+          </button>
         </div>
       )}
 
       {certs.map(cert => (
-        <div key={cert.id} className="card" style={{ padding: 14, marginBottom: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div key={cert.id} className="sp-cert-card">
+          <div className="sp-cert-header">
             <div>
-              <div style={{ fontWeight: 600 }}>{cert.name}</div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{cert.issuing_body}</div>
-              <div style={{ fontSize: 13, marginTop: 4 }}>
+              <div className="sp-cert-name">{cert.name}</div>
+              <div className="sp-cert-issuer">{cert.issuing_body}</div>
+              <div className="sp-cert-dates">
                 Issued: {formatDate(cert.issue_date)}
-                {cert.expiry_date && <span> · Expires: {formatDate(cert.expiry_date)}</span>}
+                {cert.expiry_date && <span> &middot; Expires: {formatDate(cert.expiry_date)}</span>}
               </div>
-              {cert.credential_id && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>ID: {cert.credential_id}</div>}
+              {cert.credential_id && <div className="sp-cert-id">ID: {cert.credential_id}</div>}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 12, background: cert.status === 'active' ? '#dcfce7' : '#fee2e2', color: cert.status === 'active' ? '#16a34a' : '#dc2626' }}>
+            <div className="sp-cert-actions">
+              <span className={`sp-badge ${cert.status === 'active' ? 'sp-badge-active' : cert.status === 'expired' ? 'sp-badge-expired' : 'sp-badge-revoked'}`}>
                 {cert.status === 'active' ? 'Active' : cert.status === 'expired' ? 'Expired' : 'Revoked'}
               </span>
-              <button onClick={() => deleteCert(cert.id)} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, border: '1px solid #dc2626', color: '#dc2626', background: 'transparent', cursor: 'pointer' }}>Remove</button>
+              <button className="sp-btn-remove" style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, border: '1px solid transparent', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => deleteCert(cert.id)}>Remove</button>
             </div>
           </div>
         </div>
@@ -582,72 +653,77 @@ function AspirationsTab({ companyId, employeeId, showSuccess, showError }: {
 
   if (!aspiration && !editing) {
     return (
-      <div className="card" style={{ padding: 24, textAlign: 'center' }}>
-        <p style={{ color: 'var(--text-muted)', marginBottom: 12 }}>You haven't set any career goals yet. Share your aspirations to help your organisation understand your development interests.</p>
-        <button className="btn btn-primary" onClick={() => setEditing(true)} style={{ padding: '8px 20px', borderRadius: 8 }}>Set Career Goals</button>
+      <div className="sp-empty">
+        <div className="sp-empty-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+        </div>
+        <p className="sp-empty-text">You haven't set any career goals yet. Share your aspirations to help your organisation understand your development interests.</p>
+        <button className="sp-add-btn" onClick={() => setEditing(true)}>Set Career Goals</button>
       </div>
     )
   }
 
   if (editing) {
     return (
-      <div className="card" style={{ padding: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Career Goals</h3>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Target Role</label>
-          <input value={form.target_role} onChange={e => setForm({ ...form, target_role: e.target.value })} placeholder="e.g. Senior Software Engineer" style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
+      <div className="sp-form">
+        <div className="sp-form-title">Career Goals</div>
+        <div className="sp-form-field">
+          <label className="sp-form-label">Target Role</label>
+          <input className="sp-form-input" value={form.target_role} onChange={e => setForm({ ...form, target_role: e.target.value })} placeholder="e.g. Senior Software Engineer" />
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Target Department</label>
-          <input value={form.target_department} onChange={e => setForm({ ...form, target_department: e.target.value })} placeholder="e.g. Engineering" style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
+        <div className="sp-form-field">
+          <label className="sp-form-label">Target Department</label>
+          <input className="sp-form-input" value={form.target_department} onChange={e => setForm({ ...form, target_department: e.target.value })} placeholder="e.g. Engineering" />
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Timeframe</label>
-          <select value={form.timeframe} onChange={e => setForm({ ...form, timeframe: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)' }}>
+        <div className="sp-form-field">
+          <label className="sp-form-label">Timeframe</label>
+          <select className="sp-form-input" value={form.timeframe} onChange={e => setForm({ ...form, timeframe: e.target.value })}>
             <option value="">Select timeframe...</option>
             {Object.entries(TIMEFRAME_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </div>
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Notes</label>
-          <textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} placeholder="Any additional details about your career aspirations..." style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid var(--border)' }} />
+        <div className="sp-form-field">
+          <label className="sp-form-label">Notes</label>
+          <textarea className="sp-form-input" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} placeholder="Any additional details about your career aspirations..." style={{ resize: 'vertical' }} />
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-primary" onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 8 }}>{saving ? 'Saving...' : 'Save'}</button>
-          <button className="btn" onClick={() => setEditing(false)} style={{ padding: '8px 20px', borderRadius: 8 }}>Cancel</button>
+        <div className="sp-form-actions">
+          <button className="sp-btn-submit" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+          <button className="sp-btn-cancel" onClick={() => setEditing(false)}>Cancel</button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="card" style={{ padding: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h3 style={{ margin: 0 }}>Career Goals</h3>
-        <button className="btn" onClick={() => setEditing(true)} style={{ padding: '6px 14px', borderRadius: 8, fontSize: 13 }}>Edit</button>
+    <div className="sp-goals-card">
+      <div className="sp-goals-header">
+        <div className="sp-goals-title">Career Goals</div>
+        <button className="sp-goals-edit" onClick={() => setEditing(true)}>Edit</button>
       </div>
       {aspiration?.target_role && (
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target Role</div>
-          <div style={{ fontWeight: 500 }}>{aspiration.target_role}</div>
+        <div className="sp-goals-field">
+          <div className="sp-goals-label">Target Role</div>
+          <div className="sp-goals-value">{aspiration.target_role}</div>
         </div>
       )}
       {aspiration?.target_department && (
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Department</div>
-          <div style={{ fontWeight: 500 }}>{aspiration.target_department}</div>
+        <div className="sp-goals-field">
+          <div className="sp-goals-label">Department</div>
+          <div className="sp-goals-value">{aspiration.target_department}</div>
         </div>
       )}
       {aspiration?.timeframe && (
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Timeframe</div>
-          <div style={{ fontWeight: 500 }}>{TIMEFRAME_LABELS[aspiration.timeframe] || aspiration.timeframe}</div>
+        <div className="sp-goals-field">
+          <div className="sp-goals-label">Timeframe</div>
+          <div className="sp-goals-value">{TIMEFRAME_LABELS[aspiration.timeframe] || aspiration.timeframe}</div>
         </div>
       )}
       {aspiration?.notes && (
-        <div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Notes</div>
-          <div>{aspiration.notes}</div>
+        <div className="sp-goals-field">
+          <div className="sp-goals-label">Notes</div>
+          <div className="sp-goals-value" style={{ fontWeight: 400 }}>{aspiration.notes}</div>
         </div>
       )}
     </div>
@@ -706,36 +782,43 @@ function RoleMatchingTab({ companyId, employeeId, mySkills }: {
 
   if (roles.length === 0) {
     return (
-      <div className="card" style={{ padding: 24, textAlign: 'center' }}>
-        <p style={{ color: 'var(--text-muted)' }}>No role profiles with skill requirements have been defined yet. Check back when your organisation has set up role profiles.</p>
+      <div className="sp-empty">
+        <div className="sp-empty-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+          </svg>
+        </div>
+        <p className="sp-empty-text">No role profiles with skill requirements have been defined yet. Check back when your organisation has set up role profiles.</p>
       </div>
     )
   }
 
+  const matchColor = (pct: number) => pct >= 80 ? '#16a34a' : pct >= 50 ? '#f59e0b' : '#dc2626'
+
   return (
     <div>
-      <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '12px 0' }}>
+      <p className="sp-match-note">
         These scores show how your recorded skills compare to each role's requirements. They are for development planning only and do not represent hiring or promotion decisions.
       </p>
       {roles.map(role => (
-        <div key={role.id} className="card" style={{ padding: 14, marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div key={role.id} className="sp-match-card">
+          <div className="sp-match-top">
             <div>
-              <div style={{ fontWeight: 600 }}>{role.title}</div>
-              {role.department && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{role.department}</div>}
+              <div className="sp-match-role">{role.title}</div>
+              {role.department && <div className="sp-match-dept">{role.department}</div>}
             </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: role.match >= 80 ? '#16a34a' : role.match >= 50 ? '#f59e0b' : '#dc2626' }}>
+            <div className="sp-match-pct" style={{ color: matchColor(role.match) }}>
               {role.match}%
             </div>
           </div>
-          <div style={{ background: 'var(--border)', borderRadius: 4, height: 6, marginBottom: 8 }}>
-            <div style={{ background: role.match >= 80 ? '#16a34a' : role.match >= 50 ? '#f59e0b' : '#dc2626', height: '100%', borderRadius: 4, width: `${role.match}%`, transition: 'width 0.3s' }} />
+          <div className="sp-match-bar">
+            <div className="sp-match-fill" style={{ width: `${role.match}%`, background: matchColor(role.match) }} />
           </div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{role.met} of {role.total} requirements met</div>
+          <div className="sp-match-reqs">{role.met} of {role.total} requirements met</div>
           {role.gaps.length > 0 && (
-            <details style={{ marginTop: 8, fontSize: 13 }}>
-              <summary style={{ cursor: 'pointer', color: 'var(--text-muted)' }}>Skill gaps ({role.gaps.length})</summary>
-              <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+            <details className="sp-match-gaps">
+              <summary>Skill gaps ({role.gaps.length})</summary>
+              <ul>
                 {role.gaps.map((g, i) => <li key={i}>{g}</li>)}
               </ul>
             </details>
