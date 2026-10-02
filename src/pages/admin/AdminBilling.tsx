@@ -701,7 +701,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       const coreDetail = snap.feature_details.find(d => d.key === baseline.feature_key)
       const addonDetails = snap.feature_details.filter(d => d.key !== baseline.feature_key)
       const invoicePacks = addonDetails.map(d => {
-        const features = d.key === 'pack_a' ? packFeatures(d.name, BILLING_PACK_A_LABELS) : d.key === 'pack_b' ? packFeatures(d.name, BILLING_PACK_B_LABELS) : undefined
+        const features = d.key === 'pack_a' ? BILLING_PACK_A_LABELS : d.key === 'pack_b' ? BILLING_PACK_B_LABELS : undefined
         return { name: d.name, price: d.price, features }
       })
       generateInvoicePDF(
