@@ -140,6 +140,12 @@ export default function Dashboard() {
   const [lastTimesheet, setLastTimesheet] = useState<{ date: string; hours: number } | null>(null)
   const [workPatternDays, setWorkPatternDays] = useState<boolean[] | null>(null)
   const [lastShiftWorked, setLastShiftWorked] = useState<{ date: string; hours: number } | null>(null)
+  const [isBirthday, setIsBirthday] = useState(false)
+  const [anniversaryYears, setAnniversaryYears] = useState<number | null>(null)
+  const [showBirthdayPopup, setShowBirthdayPopup] = useState(false)
+  const [colleagueBirthdays, setColleagueBirthdays] = useState<{ name: string; date: string; isToday: boolean }[]>([])
+  const [nextOneToOne, setNextOneToOne] = useState<{ date: string; time: string | null; with_name: string } | null>(null)
+  const [newGoals, setNewGoals] = useState<{ title: string; due_date: string | null }[]>([])
   const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
   useEffect(() => {
     const handler = () => setDashMode(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
@@ -342,6 +348,111 @@ export default function Dashboard() {
         }
 
         setReminderCount(count)
+      })()
+
+      // Birthday & work anniversary check
+      ;(async () => {
+        const { data: meRow } = await supabase.from('employees')
+          .select('date_of_birth, start_date')
+          .eq('id', employeeId)
+          .maybeSingle()
+        if (!meRow) return
+        const now = new Date()
+        const todayMonth = now.getMonth()
+        const todayDay = now.getDate()
+        if (meRow.date_of_birth) {
+          const dob = new Date(meRow.date_of_birth)
+          if (dob.getMonth() === todayMonth && dob.getDate() === todayDay) {
+            setIsBirthday(true)
+            const seenKey = `inflowhr-birthday-seen-${now.getFullYear()}`
+            if (!localStorage.getItem(seenKey)) {
+              setShowBirthdayPopup(true)
+              localStorage.setItem(seenKey, '1')
+            }
+          }
+        }
+        if (meRow.start_date) {
+          const sd = new Date(meRow.start_date)
+          if (sd.getMonth() === todayMonth && sd.getDate() === todayDay) {
+            const years = now.getFullYear() - sd.getFullYear()
+            if (years > 0) setAnniversaryYears(years)
+          }
+        }
+      })()
+
+      // Colleague birthdays — next 7 days
+      ;(async () => {
+        const { data: colleagues } = await supabase.from('employees')
+          .select('id, first_name, last_name, date_of_birth')
+          .eq('company_id', companyUser.company_id)
+          .eq('is_active', true)
+          .not('date_of_birth', 'is', null)
+        if (!colleagues) return
+        const now = new Date()
+        const yr = now.getFullYear()
+        const todayMonth = now.getMonth()
+        const todayDay = now.getDate()
+        const upcoming: { name: string; date: string; isToday: boolean; diff: number }[] = []
+        colleagues.forEach((c: any) => {
+          if (!c.date_of_birth || c.id === employeeId) return
+          const dob = new Date(c.date_of_birth)
+          const bday = new Date(yr, dob.getMonth(), dob.getDate())
+          if (bday < now) bday.setFullYear(yr + 1)
+          const diff = Math.floor((bday.getTime() - now.getTime()) / 86400000)
+          if (diff <= 7) {
+            const isToday = dob.getMonth() === todayMonth && dob.getDate() === todayDay
+            upcoming.push({
+              name: `${c.first_name} ${c.last_name}`,
+              date: bday.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+              isToday,
+              diff,
+            })
+          }
+        })
+        upcoming.sort((a, b) => a.diff - b.diff)
+        setColleagueBirthdays(upcoming)
+      })()
+
+      // Next 1:1 meeting
+      ;(async () => {
+        const todayDate = toLocalDateStr()
+        const { data: meeting } = await supabase.from('one_to_one_meetings')
+          .select('id, scheduled_date, scheduled_time, manager_id, employee_id')
+          .eq('company_id', companyUser.company_id)
+          .in('status', ['pending', 'accepted'])
+          .gte('scheduled_date', todayDate)
+          .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
+          .order('scheduled_date', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (!meeting) return
+        const otherId = meeting.manager_id === employeeId ? meeting.employee_id : meeting.manager_id
+        const { data: otherEmp } = await supabase.from('employees')
+          .select('first_name, last_name')
+          .eq('id', otherId)
+          .maybeSingle()
+        setNextOneToOne({
+          date: meeting.scheduled_date,
+          time: meeting.scheduled_time?.slice(0, 5) || null,
+          with_name: otherEmp ? `${otherEmp.first_name} ${otherEmp.last_name}` : 'colleague',
+        })
+      })()
+
+      // Recent goals assigned to this employee
+      ;(async () => {
+        const sevenDaysAgo = new Date()
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+        const { data: goals } = await supabase.from('performance_goals')
+          .select('title, due_date, created_at')
+          .eq('employee_id', employeeId)
+          .eq('company_id', companyUser.company_id)
+          .eq('status', 'active')
+          .gte('created_at', sevenDaysAgo.toISOString())
+          .order('created_at', { ascending: false })
+          .limit(3)
+        if (goals && goals.length > 0) {
+          setNewGoals(goals.map((g: any) => ({ title: g.title, due_date: g.due_date })))
+        }
       })()
 
       supabase.from('expense_claims')
@@ -1438,6 +1549,90 @@ export default function Dashboard() {
           </>
         )
       })()}
+
+      {isDesktop && (isBirthday || anniversaryYears) && (
+        <div className="dash-celebration-banner">
+          {isBirthday && (
+            <div className="dash-celebration-item dash-celebration-birthday">
+              <span className="dash-celebration-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M12 3v4"/><path d="M12 3c-1 0-2 1-2 2s1 2 2 2 2-1 2-2-1-2-2-2z"/><path d="M7 14V9a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v5"/></svg>
+              </span>
+              <div>
+                <strong>Happy Birthday!</strong>
+                <span>Wishing you a wonderful day</span>
+              </div>
+            </div>
+          )}
+          {anniversaryYears && (
+            <div className="dash-celebration-item dash-celebration-anniversary">
+              <span className="dash-celebration-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+              </span>
+              <div>
+                <strong>Happy {anniversaryYears} Year{anniversaryYears !== 1 ? 's' : ''} Anniversary!</strong>
+                <span>Thank you for your dedication</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isDesktop && (nextOneToOne || newGoals.length > 0 || colleagueBirthdays.length > 0) && (
+        <div className="dash-desktop-cards">
+          {(nextOneToOne || newGoals.length > 0) && (
+            <div className="dash-tasks-card" onClick={() => navigate(nextOneToOne ? '/one-to-ones' : '/performance-goals')}>
+              <div className="dash-tasks-card-head">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <strong>My Tasks</strong>
+              </div>
+              {nextOneToOne && (
+                <div className="dash-tasks-item">
+                  <span className="dash-tasks-label">Next 1:1</span>
+                  <span className="dash-tasks-value">
+                    {new Date(nextOneToOne.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                    {nextOneToOne.time ? ` at ${nextOneToOne.time}` : ''}
+                  </span>
+                  <span className="dash-tasks-sub">with {nextOneToOne.with_name}</span>
+                </div>
+              )}
+              {newGoals.map((g, i) => (
+                <div className="dash-tasks-item" key={i}>
+                  <span className="dash-tasks-label">{i === 0 ? 'New Goals' : ''}</span>
+                  <span className="dash-tasks-value">{g.title}</span>
+                  {g.due_date && <span className="dash-tasks-sub">Due {new Date(g.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {colleagueBirthdays.length > 0 && (
+            <div className="dash-birthdays-card">
+              <div className="dash-tasks-card-head">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M12 3v4"/><path d="M12 3c-1 0-2 1-2 2s1 2 2 2 2-1 2-2-1-2-2-2z"/><path d="M7 14V9a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v5"/></svg>
+                <strong>Birthdays</strong>
+              </div>
+              {colleagueBirthdays.map((b, i) => (
+                <div className="dash-tasks-item" key={i}>
+                  <span className="dash-tasks-value">{b.name}</span>
+                  <span className="dash-tasks-sub">{b.isToday ? 'Today!' : b.date}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {showBirthdayPopup && (
+        <div className="dash-birthday-overlay" onClick={() => setShowBirthdayPopup(false)}>
+          <div className="dash-birthday-popup" onClick={e => e.stopPropagation()}>
+            <div className="dash-birthday-popup-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M12 3v4"/><path d="M12 3c-1 0-2 1-2 2s1 2 2 2 2-1 2-2-1-2-2-2z"/><path d="M7 14V9a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v5"/></svg>
+            </div>
+            <h2>Happy Birthday{employeeName ? `, ${employeeName.split(' ')[0]}` : ''}!</h2>
+            <p>Wishing you a fantastic day from everyone at {company?.name || 'the team'}. We hope your year ahead is filled with success and happiness.</p>
+            <button className="dash-birthday-popup-btn" onClick={() => setShowBirthdayPopup(false)}>Thank you!</button>
+          </div>
+        </div>
+      )}
 
       {dashMode === 'info' ? (() => {
         const visibleCards = infoCardOrder.map(key => renderInfoCard(key)).filter(Boolean)

@@ -5411,14 +5411,110 @@ body {
   .desktop-content .dash-card {
     min-height: 80px;
     padding: 16px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.18), 0 1.5px 5px rgba(0,0,0,0.10);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.12);
   }
   .desktop-content .info-card {
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.12), 0 1.5px 4px rgba(0,0,0,0.08);
+  }
+  .desktop-content .info-section-card {
+    box-shadow: 0 4px 14px rgba(0,0,0,0.10), 0 1.5px 4px rgba(0,0,0,0.06);
   }
 
   .desktop-content .greeting-row { padding: 14px 20px 8px; }
   .desktop-content .announcements { padding: 8px 20px 20px; }
+
+  /* Celebration banner — desktop only */
+  .dash-celebration-banner {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    padding: 10px 20px; margin: 0;
+  }
+  .dash-celebration-item {
+    display: flex; align-items: center; gap: 12px;
+    flex: 1 1 240px; padding: 14px 18px; border-radius: 12px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+  }
+  .dash-celebration-item div { display: flex; flex-direction: column; gap: 2px; }
+  .dash-celebration-item strong { font-size: 0.95rem; }
+  .dash-celebration-item span:not(.dash-celebration-icon) { font-size: 0.82rem; opacity: 0.75; }
+  .dash-celebration-birthday {
+    background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+    color: #e65100;
+  }
+  .dash-celebration-anniversary {
+    background: linear-gradient(135deg, #e8eaf6 0%, #c5cae9 100%);
+    color: #283593;
+  }
+  .dash-celebration-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* Desktop tasks & birthdays cards */
+  .dash-desktop-cards {
+    display: flex; gap: 14px; padding: 6px 20px 10px;
+  }
+  .dash-tasks-card, .dash-birthdays-card {
+    flex: 1 1 0; background: var(--bg, #fff); border: 1px solid var(--border, #e0e0e0);
+    border-radius: 14px; padding: 16px 18px; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.10), 0 1.5px 4px rgba(0,0,0,0.06);
+    transition: box-shadow 0.2s;
+  }
+  .dash-tasks-card:hover, .dash-birthdays-card:hover {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.10);
+  }
+  .dash-tasks-card-head {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 12px; font-size: 0.92rem;
+  }
+  .dash-tasks-item {
+    padding: 6px 0; border-top: 1px solid var(--border, #eee);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .dash-tasks-item:first-of-type { border-top: none; }
+  .dash-tasks-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.55; font-weight: 600; }
+  .dash-tasks-value { font-size: 0.88rem; font-weight: 500; }
+  .dash-tasks-sub { font-size: 0.78rem; opacity: 0.6; }
+
+  /* Birthday popup — overlay */
+  .dash-birthday-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    animation: dashFadeIn 0.3s ease;
+  }
+  .dash-birthday-popup {
+    background: #fff; border-radius: 20px; padding: 40px 36px; max-width: 420px;
+    text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    animation: dashPopIn 0.35s ease;
+  }
+  .dash-birthday-popup-icon { margin-bottom: 12px; }
+  .dash-birthday-popup h2 { font-size: 1.5rem; margin: 0 0 12px; color: #e65100; }
+  .dash-birthday-popup p { font-size: 0.95rem; line-height: 1.5; color: #555; margin: 0 0 20px; }
+  .dash-birthday-popup-btn {
+    background: linear-gradient(135deg, #e65100, #ff8f00); color: #fff;
+    border: none; border-radius: 10px; padding: 12px 32px; font-size: 1rem;
+    font-weight: 600; cursor: pointer;
+  }
+  @keyframes dashFadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes dashPopIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  /* Dark mode overrides for celebration elements */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .dash-celebration-birthday {
+      background: linear-gradient(135deg, #3e2723 0%, #4e342e 100%); color: #ffb74d;
+    }
+    :root:not([data-theme="light"]) .dash-celebration-anniversary {
+      background: linear-gradient(135deg, #1a237e 0%, #283593 100%); color: #90caf9;
+    }
+    :root:not([data-theme="light"]) .dash-birthday-popup { background: #1e1e2e; }
+    :root:not([data-theme="light"]) .dash-birthday-popup h2 { color: #ffb74d; }
+    :root:not([data-theme="light"]) .dash-birthday-popup p { color: #aaa; }
+  }
+  [data-theme="dark"] .dash-celebration-birthday {
+    background: linear-gradient(135deg, #3e2723 0%, #4e342e 100%); color: #ffb74d;
+  }
+  [data-theme="dark"] .dash-celebration-anniversary {
+    background: linear-gradient(135deg, #1a237e 0%, #283593 100%); color: #90caf9;
+  }
+  [data-theme="dark"] .dash-birthday-popup { background: #1e1e2e; }
+  [data-theme="dark"] .dash-birthday-popup h2 { color: #ffb74d; }
+  [data-theme="dark"] .dash-birthday-popup p { color: #aaa; }
 
   .desktop-content .claims-list,
   .desktop-content .directory-list,
