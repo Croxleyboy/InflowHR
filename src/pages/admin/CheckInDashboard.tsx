@@ -303,6 +303,27 @@ export default function CheckInDashboardPanel({ source }: Props) {
     }).sort((a, b) => b.date.localeCompare(a.date) || a.name.localeCompare(b.name))
   }, [source, filteredHistory, historyAssignments, employees, tmplMap])
 
+  function getWorkPattern(checkins: (CheckinRow & { loc_name?: string })[]) {
+    if (checkins.length === 0) return { label: '—', isSplit: false, segments: [] }
+    const sorted = [...checkins].sort((a, b) => a.check_in_at.localeCompare(b.check_in_at))
+    const segments = sorted.map(c => {
+      const loc = c.work_from_home ? 'Home' : (c.loc_name || (c.check_in_location_id ? locationNames[c.check_in_location_id] || 'On-site' : 'On-site'))
+      const endTime = c.check_out_at ? new Date(c.check_out_at) : new Date()
+      const mins = Math.round((endTime.getTime() - new Date(c.check_in_at).getTime()) / 60000)
+      const h = Math.floor(mins / 60)
+      const m = mins % 60
+      return { loc, isWfh: c.work_from_home, dur: m > 0 ? `${h}h ${m}m` : `${h}h`, inTime: c.check_in_at, outTime: c.check_out_at }
+    })
+    const hasWfh = segments.some(s => s.isWfh)
+    const hasOnsite = segments.some(s => !s.isWfh)
+    const isSplit = hasWfh && hasOnsite
+    if (!isSplit) {
+      return { label: hasWfh ? 'Home' : segments[0]?.loc || 'On-site', isSplit: false, segments }
+    }
+    const summary = segments.map(s => `${s.loc} ${s.dur}`).join(' → ')
+    return { label: summary, isSplit: true, segments }
+  }
+
   function fmtTime(iso: string) {
     return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   }
@@ -347,8 +368,14 @@ export default function CheckInDashboardPanel({ source }: Props) {
       if (!empGroups[name]) empGroups[name] = []
       empGroups[name].push(r)
     })
-    const lines = ['Employee,Department,Date,Check In,Check Out,Duration (hrs),Location,Status']
+    const lines = ['Employee,Department,Date,Check In,Check Out,Duration (hrs),Location,Work Pattern,Status']
     Object.keys(empGroups).sort().forEach(name => {
+      const byDate = new Map<string, CheckinRow[]>()
+      empGroups[name].forEach(r => {
+        const d = r.check_in_at.substring(0, 10)
+        if (!byDate.has(d)) byDate.set(d, [])
+        byDate.get(d)!.push(r)
+      })
       empGroups[name].forEach(r => {
         const dept = employees[r.employee_id]?.dept || ''
         const date = fmtDate(r.check_in_at)
@@ -358,8 +385,12 @@ export default function CheckInDashboardPanel({ source }: Props) {
           ? ((new Date(r.check_out_at).getTime() - new Date(r.check_in_at).getTime()) / 3600000).toFixed(2)
           : ''
         const loc = r.work_from_home ? 'Remote' : (r.check_in_location_id ? locationNames[r.check_in_location_id] || 'On-site' : '')
+        const dayRecords = byDate.get(r.check_in_at.substring(0, 10)) || []
+        const hasWfh = dayRecords.some(dr => dr.work_from_home)
+        const hasOnsite = dayRecords.some(dr => !dr.work_from_home)
+        const workPattern = hasWfh && hasOnsite ? 'Split' : r.work_from_home ? 'Home' : 'On-site'
         const status = r.status === 'checked_in' ? 'In' : r.status === 'checked_out' ? 'Out' : r.status === 'auto_closed' ? 'Auto' : 'Cancelled'
-        lines.push(`"${name}","${dept}","${date}","${inTime}","${outTime}","${durHrs}","${loc}","${status}"`)
+        lines.push(`"${name}","${dept}","${date}","${inTime}","${outTime}","${durHrs}","${loc}","${workPattern}","${status}"`)
       })
     })
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
@@ -447,6 +478,18 @@ export default function CheckInDashboardPanel({ source }: Props) {
           <div className="admin-stat-card">
             <div className="admin-stat-label">WFH Today</div>
             <div className="admin-stat-value">{wfhToday}</div>
+            <div className="admin-stat-sub" style={{ fontSize: 10, color: '#888' }}>
+              {(() => {
+                const empDays = new Map<string, { hasWfh: boolean; hasOnsite: boolean }>()
+                todayRecords.forEach(r => {
+                  const e = empDays.get(r.employee_id) || { hasWfh: false, hasOnsite: false }
+                  if (r.work_from_home) e.hasWfh = true; else e.hasOnsite = true
+                  empDays.set(r.employee_id, e)
+                })
+                const splitCount = Array.from(empDays.values()).filter(e => e.hasWfh && e.hasOnsite).length
+                return splitCount > 0 ? `${splitCount} split` : ''
+              })()}
+            </div>
           </div>
           <div className="admin-stat-card">
             <div className="admin-stat-label">Avg Hours</div>
@@ -495,11 +538,12 @@ export default function CheckInDashboardPanel({ source }: Props) {
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
-                  <tr><th>Employee</th><th>Type</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Status</th><th></th></tr>
+                  <tr><th>Employee</th><th>Type</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Work Pattern</th><th>Status</th><th></th></tr>
                 </thead>
                 <tbody>
                   {rotaEmployeeRows.map(r => {
                     const ct = employees[r.empId]?.contractType || 'Permanent'
+                    const pattern = getWorkPattern(r.checkins)
                     return <>
                       <tr key={r.key} style={r.missed ? { background: 'rgba(229,57,53,0.08)' } : r.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
                         <td><strong>{r.name}</strong><br /><span style={{ fontSize: 11, color: '#888' }}>{r.shiftName} ({r.shiftTime})</span></td>
@@ -512,6 +556,18 @@ export default function CheckInDashboardPanel({ source }: Props) {
                           {r.hasCheckedIn || r.isCheckedIn ? fmtMins(r.totalMins) : '—'}
                           {r.belowExpected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>}
                           {r.metExpected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                        </td>
+                        <td>
+                          {r.checkins.length === 0 ? '—' : pattern.isSplit ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span className="admin-badge" style={{ background: '#ede9fe', color: '#7c3aed', fontSize: 10 }}>Split</span>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{pattern.label}</span>
+                            </span>
+                          ) : (
+                            <span className={`admin-badge ${pattern.label === 'Home' ? 'admin-badge-info' : 'admin-badge-active'}`} style={{ fontSize: 10 }}>
+                              {pattern.label}
+                            </span>
+                          )}
                         </td>
                         <td>
                           {r.missed
@@ -534,7 +590,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                       </tr>
                       {expandedShiftRow === r.key && r.checkins.length > 0 && (
                         <tr key={`exp-${r.key}`} className="admin-expanded-row">
-                          <td colSpan={9}>
+                          <td colSpan={10}>
                             <table className="admin-table admin-table-nested" style={{ margin: '4px 0' }}>
                               <thead><tr><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Location</th><th>Status</th></tr></thead>
                               <tbody>
@@ -633,11 +689,12 @@ export default function CheckInDashboardPanel({ source }: Props) {
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
-                    <tr><th>Employee</th><th>Type</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Status</th><th></th></tr>
+                    <tr><th>Employee</th><th>Type</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Work Pattern</th><th>Status</th><th></th></tr>
                   </thead>
                   <tbody>
                     {shiftPaginated.map(r => {
                       const ct = employees[r.empId]?.contractType || 'Permanent'
+                      const pattern = getWorkPattern(r.checkins)
                       return <>
                         <tr key={r.key} style={r.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
                           <td><strong>{r.name}</strong><br /><span style={{ fontSize: 11, color: '#888' }}>{r.shiftName} ({r.shiftTime})</span></td>
@@ -650,6 +707,18 @@ export default function CheckInDashboardPanel({ source }: Props) {
                             {r.checkins.length > 0 ? fmtMins(r.totalMins) : '—'}
                             {r.belowExpected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>}
                             {r.metExpected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>}
+                          </td>
+                          <td>
+                            {r.checkins.length === 0 ? '—' : pattern.isSplit ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span className="admin-badge" style={{ background: '#ede9fe', color: '#7c3aed', fontSize: 10 }}>Split</span>
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{pattern.label}</span>
+                              </span>
+                            ) : (
+                              <span className={`admin-badge ${pattern.label === 'Home' ? 'admin-badge-info' : 'admin-badge-active'}`} style={{ fontSize: 10 }}>
+                                {pattern.label}
+                              </span>
+                            )}
                           </td>
                           <td>
                             {r.forgotCheckout
@@ -670,7 +739,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                         </tr>
                         {expandedHistoryRow === r.key && r.checkins.length > 0 && (
                           <tr key={`exp-${r.key}`} className="admin-expanded-row">
-                            <td colSpan={9}>
+                            <td colSpan={10}>
                               <table className="admin-table admin-table-nested" style={{ margin: '4px 0' }}>
                                 <thead><tr><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Location</th><th>Status</th></tr></thead>
                                 <tbody>
@@ -694,7 +763,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                         )}
                       </>
                     })}
-                    {shiftPaginated.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
+                    {shiftPaginated.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
                   </tbody>
                 </table>
               </div>
