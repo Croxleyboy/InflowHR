@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
-import { supabase, sendNotificationEmail } from '../../lib/supabase'
+import { supabase } from '../../lib/supabase'
 
 interface Employee {
   id: string
@@ -165,7 +165,25 @@ export default function AdminTeamsTest() {
         .select('id')
         .single()
       if (error) throw new Error(error.message)
-      await sendNotificationEmail({ ...notifPayload, id: notifRow?.id, email_sent: false })
+
+      const { data: { session: currentSession } } = await supabase.auth.getSession()
+      const token = currentSession?.access_token
+      if (!token) throw new Error('No session — please sign in again')
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/send-notification-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ record: { ...notifPayload, id: notifRow?.id, email_sent: false } }),
+      })
+      const body = await res.json().catch(() => ({}))
+
+      if (!res.ok) throw new Error(body.error || `Edge function returned ${res.status}`)
+      if (body.skipped) throw new Error('Email skipped — send_email is false or already sent')
+      if (body.error) throw new Error(body.error)
+
       setEmailTestStatus('sent')
       setTimeout(() => setEmailTestStatus('idle'), 5000)
     } catch (err: any) {
