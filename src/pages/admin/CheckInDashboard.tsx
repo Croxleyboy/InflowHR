@@ -61,8 +61,9 @@ export default function CheckInDashboardPanel({ source }: Props) {
   const [liveRecords, setLiveRecords] = useState<CheckinRow[]>([])
   const [history, setHistory] = useState<CheckinRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [employees, setEmployees] = useState<Record<string, { name: string; dept: string }>>({})
+  const [employees, setEmployees] = useState<Record<string, { name: string; dept: string; contractType: string }>>({})
   const [locationNames, setLocationNames] = useState<Record<string, string>>({})
+  const [filterLocation, setFilterLocation] = useState('')
   const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date(); d.setDate(1); return toLocalDateStr(d)
   })
@@ -84,7 +85,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
     setLoading(true)
 
     const [empRes, locRes, liveRes, histRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name, department').eq('company_id', companyId).eq('is_active', true),
+      supabase.from('employees').select('id, first_name, last_name, department, contract_type').eq('company_id', companyId).eq('is_active', true),
       supabase.from('work_locations').select('id, name').eq('company_id', companyId),
       supabase.from('checkin_records').select('*').eq('company_id', companyId).eq('source', source).eq('status', 'checked_in').order('check_in_at', { ascending: false }),
       supabase.from('checkin_records').select('*').eq('company_id', companyId).eq('source', source)
@@ -92,9 +93,9 @@ export default function CheckInDashboardPanel({ source }: Props) {
         .order('check_in_at', { ascending: false }).limit(500),
     ])
 
-    const empMap: Record<string, { name: string; dept: string }> = {}
-    if (empRes.data) empRes.data.forEach((e: { id: string; first_name: string; last_name: string; department: string | null }) => {
-      empMap[e.id] = { name: `${e.first_name} ${e.last_name}`, dept: e.department || '' }
+    const empMap: Record<string, { name: string; dept: string; contractType: string }> = {}
+    if (empRes.data) empRes.data.forEach((e: { id: string; first_name: string; last_name: string; department: string | null; contract_type: string | null }) => {
+      empMap[e.id] = { name: `${e.first_name} ${e.last_name}`, dept: e.department || '', contractType: e.contract_type || 'Permanent' }
     })
     setEmployees(empMap)
 
@@ -124,17 +125,22 @@ export default function CheckInDashboardPanel({ source }: Props) {
   }, [companyId, source, dateFrom, dateTo])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { setPage(1) }, [search, filterDept])
+  useEffect(() => { setPage(1) }, [search, filterDept, filterLocation])
 
   const enriched = (rows: CheckinRow[]) => rows.map(r => ({
     ...r,
     emp_name: employees[r.employee_id]?.name || 'Unknown',
     dept: employees[r.employee_id]?.dept || '',
+    contractType: employees[r.employee_id]?.contractType || 'Permanent',
     loc_name: r.check_in_location_id ? locationNames[r.check_in_location_id] || '' : r.work_from_home ? 'Remote' : '',
   }))
 
   const filteredHistory = enriched(history).filter(r => {
     if (filterDept && r.dept !== filterDept) return false
+    if (filterLocation) {
+      if (filterLocation === 'remote' && !r.work_from_home) return false
+      if (filterLocation !== 'remote' && r.check_in_location_id !== filterLocation) return false
+    }
     if (search.trim()) {
       const q = search.toLowerCase()
       return r.emp_name.toLowerCase().includes(q) || r.loc_name.toLowerCase().includes(q) || r.status.toLowerCase().includes(q)
@@ -417,7 +423,13 @@ export default function CheckInDashboardPanel({ source }: Props) {
 
   if (loading) return <div className="admin-loading">Loading...</div>
 
-  const liveEnriched = enriched(liveRecords)
+  const liveEnriched = enriched(liveRecords).filter(r => {
+    if (filterLocation) {
+      if (filterLocation === 'remote' && !r.work_from_home) return false
+      if (filterLocation !== 'remote' && r.check_in_location_id !== filterLocation) return false
+    }
+    return true
+  })
 
   return (
     <div>
@@ -483,13 +495,15 @@ export default function CheckInDashboardPanel({ source }: Props) {
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
-                  <tr><th>Employee</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Status</th><th></th></tr>
+                  <tr><th>Employee</th><th>Type</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Status</th><th></th></tr>
                 </thead>
                 <tbody>
-                  {rotaEmployeeRows.map(r => (
-                    <>
+                  {rotaEmployeeRows.map(r => {
+                    const ct = employees[r.empId]?.contractType || 'Permanent'
+                    return <>
                       <tr key={r.key} style={r.missed ? { background: 'rgba(229,57,53,0.08)' } : r.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
                         <td><strong>{r.name}</strong><br /><span style={{ fontSize: 11, color: '#888' }}>{r.shiftName} ({r.shiftTime})</span></td>
+                        <td><span className={`admin-badge ${ct === 'Zero Hours' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{ct === 'Zero Hours' ? 'Zero Hours' : 'Employed'}</span></td>
                         <td>{r.dept || '—'}</td>
                         <td>{formatDate(todayStr)}</td>
                         <td>{r.firstIn ? fmtTime(r.firstIn) : '—'}</td>
@@ -520,7 +534,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                       </tr>
                       {expandedShiftRow === r.key && r.checkins.length > 0 && (
                         <tr key={`exp-${r.key}`} className="admin-expanded-row">
-                          <td colSpan={8}>
+                          <td colSpan={9}>
                             <table className="admin-table admin-table-nested" style={{ margin: '4px 0' }}>
                               <thead><tr><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Location</th><th>Status</th></tr></thead>
                               <tbody>
@@ -543,7 +557,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                         </tr>
                       )}
                     </>
-                  ))}
+                  })}
                 </tbody>
               </table>
             </div>
@@ -558,12 +572,13 @@ export default function CheckInDashboardPanel({ source }: Props) {
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
-                <tr><th>Employee</th><th>Department</th><th>Since</th><th>Duration</th><th>Location</th></tr>
+                <tr><th>Employee</th><th>Type</th><th>Department</th><th>Since</th><th>Duration</th><th>Location</th></tr>
               </thead>
               <tbody>
                 {liveEnriched.map(r => (
                   <tr key={r.id}>
                     <td>{r.emp_name}</td>
+                    <td><span className={`admin-badge ${r.contractType === 'Zero Hours' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{r.contractType === 'Zero Hours' ? 'Zero Hours' : 'Employed'}</span></td>
                     <td>{r.dept || '—'}</td>
                     <td>{fmtTime(r.check_in_at)}</td>
                     <td>{duration(r.check_in_at, null)}</td>
@@ -599,6 +614,14 @@ export default function CheckInDashboardPanel({ source }: Props) {
               {uniqueDepts.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#888', display: 'block' }}>Location</label>
+            <select className="admin-input" value={filterLocation} onChange={e => setFilterLocation(e.target.value)} style={{ maxWidth: 180 }}>
+              <option value="">All Locations</option>
+              <option value="remote">Remote</option>
+              {Object.entries(locationNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          </div>
           <input className="admin-input" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} style={{ maxWidth: 200 }} />
         </div>
 
@@ -610,13 +633,15 @@ export default function CheckInDashboardPanel({ source }: Props) {
               <div className="admin-table-wrap">
                 <table className="admin-table">
                   <thead>
-                    <tr><th>Employee</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Status</th><th></th></tr>
+                    <tr><th>Employee</th><th>Type</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Status</th><th></th></tr>
                   </thead>
                   <tbody>
-                    {shiftPaginated.map(r => (
-                      <>
+                    {shiftPaginated.map(r => {
+                      const ct = employees[r.empId]?.contractType || 'Permanent'
+                      return <>
                         <tr key={r.key} style={r.forgotCheckout ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
                           <td><strong>{r.name}</strong><br /><span style={{ fontSize: 11, color: '#888' }}>{r.shiftName} ({r.shiftTime})</span></td>
+                          <td><span className={`admin-badge ${ct === 'Zero Hours' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{ct === 'Zero Hours' ? 'Zero Hours' : 'Employed'}</span></td>
                           <td>{r.dept || '—'}</td>
                           <td>{fmtDate(r.date + 'T00:00:00')}</td>
                           <td>{r.firstIn ? fmtTime(r.firstIn) : '—'}</td>
@@ -645,7 +670,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                         </tr>
                         {expandedHistoryRow === r.key && r.checkins.length > 0 && (
                           <tr key={`exp-${r.key}`} className="admin-expanded-row">
-                            <td colSpan={8}>
+                            <td colSpan={9}>
                               <table className="admin-table admin-table-nested" style={{ margin: '4px 0' }}>
                                 <thead><tr><th>Check-In</th><th>Check-Out</th><th>Duration</th><th>Location</th><th>Status</th></tr></thead>
                                 <tbody>
@@ -668,8 +693,8 @@ export default function CheckInDashboardPanel({ source }: Props) {
                           </tr>
                         )}
                       </>
-                    ))}
-                    {shiftPaginated.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
+                    })}
+                    {shiftPaginated.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -687,12 +712,13 @@ export default function CheckInDashboardPanel({ source }: Props) {
             <div className="admin-table-wrap">
               <table className="admin-table">
                 <thead>
-                  <tr><th>Employee</th><th>Department</th><th>Date</th><th>In</th><th>Out</th><th>Duration</th><th>Location</th><th>Status</th></tr>
+                  <tr><th>Employee</th><th>Type</th><th>Department</th><th>Date</th><th>In</th><th>Out</th><th>Duration</th><th>Location</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                   {paginated.map(r => (
                     <tr key={r.id}>
                       <td>{r.emp_name}</td>
+                      <td><span className={`admin-badge ${r.contractType === 'Zero Hours' ? 'admin-badge-info' : 'admin-badge-complete'}`} style={{ fontSize: 10 }}>{r.contractType === 'Zero Hours' ? 'Zero Hours' : 'Employed'}</span></td>
                       <td>{r.dept || '—'}</td>
                       <td>{fmtDate(r.check_in_at)}</td>
                       <td>{fmtTime(r.check_in_at)}</td>
@@ -706,7 +732,7 @@ export default function CheckInDashboardPanel({ source }: Props) {
                       </td>
                     </tr>
                   ))}
-                  {paginated.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
+                  {paginated.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: '#999' }}>No records found</td></tr>}
                 </tbody>
               </table>
             </div>
