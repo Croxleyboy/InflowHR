@@ -163,7 +163,10 @@ function generateInvoicePDF(
     rowIdx++
   }
 
-  drawRow(baselineName, 'Core', `£${baselinePrice.toFixed(2)}`, String(employeeCount), `£${(baselinePrice * employeeCount).toFixed(2)}`)
+  drawRow(baselineName, 'Core', `£${baselinePrice.toFixed(2)}`, String(employeeCount), `£${(baselinePrice * employeeCount).toFixed(2)}`, false, true)
+  BILLING_CORE_FEATURES.forEach(feat => {
+    drawRow(feat, '', '', '', '', true)
+  })
 
   packs.forEach(p => {
     drawRow(p.name, 'Pack', `£${p.price.toFixed(2)}`, String(employeeCount), `£${(p.price * employeeCount).toFixed(2)}`, false, true)
@@ -340,9 +343,17 @@ function generateAnnualInvoicePDF(
   }
 
   for (const f of ungrouped) {
-    drawAnnualRow(f.name, f.type)
+    if (grouped.has(f.name)) {
+      drawAnnualRow(f.name, f.type, false, true)
+      for (const feat of grouped.get(f.name)!) {
+        drawAnnualRow(feat, '', true)
+      }
+    } else {
+      drawAnnualRow(f.name, f.type)
+    }
   }
   for (const [packName, feats] of grouped) {
+    if (ungrouped.some(u => u.name === packName)) continue
     drawAnnualRow(packName, 'Pack', false, true)
     for (const feat of feats) {
       drawAnnualRow(feat, '', true)
@@ -743,7 +754,10 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
 
   function handleAnnualInvoice() {
     const allFeatures: { name: string; type: string; pack?: string }[] = []
-    if (baseline) allFeatures.push({ name: baseline.display_name, type: 'Core' })
+    if (baseline) {
+      allFeatures.push({ name: baseline.display_name, type: 'Core' })
+      BILLING_CORE_FEATURES.forEach(l => allFeatures.push({ name: l, type: '', pack: baseline.display_name }))
+    }
     if (packAEnabled && packAPricing) {
       allFeatures.push({ name: 'Pack A: ' + packAPricing.display_name, type: 'Pack A' })
       BILLING_PACK_A_LABELS.forEach(l => allFeatures.push({ name: l, type: '', pack: 'Pack A: ' + packAPricing.display_name }))
@@ -1343,8 +1357,10 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
   const [allFeatures, setAllFeatures] = useState<CompanyFeature[]>([])
   const [employeeCounts, setEmployeeCounts] = useState<Record<string, number>>({})
   const [platformFees, setPlatformFees] = useState<Record<string, number>>({})
+  const [companyStartDates, setCompanyStartDates] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
-  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set())
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
+  const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set([new Date().getFullYear()]))
 
   useEffect(() => { load() }, [companies])
 
@@ -1354,17 +1370,20 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
     const [pricingRes, featuresRes, companiesRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
       supabase.from('company_features').select('*'),
-      supabase.from('companies').select('id, monthly_platform_fee'),
+      supabase.from('companies').select('id, monthly_platform_fee, created_at'),
     ])
     setPricing((pricingRes.data as PricingRow[]) || [])
     setAllFeatures((featuresRes.data as CompanyFeature[]) || [])
     const fees: Record<string, number> = {}
+    const starts: Record<string, string> = {}
     if (companiesRes.data) {
-      for (const c of companiesRes.data as { id: string; monthly_platform_fee: number | null }[]) {
+      for (const c of companiesRes.data as { id: string; monthly_platform_fee: number | null; created_at: string | null }[]) {
         fees[c.id] = c.monthly_platform_fee ?? 30
+        if (c.created_at) starts[c.id] = c.created_at
       }
     }
     setPlatformFees(fees)
+    setCompanyStartDates(starts)
 
     const counts: Record<string, number> = {}
     const { data: metrics } = await supabase.rpc('get_all_company_metrics')
@@ -1423,9 +1442,21 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         addonDetails: enabledAddons.map(a => ({ name: a.display_name, price: effectivePrice(a) })),
         isTrial: c.is_trial || false,
         trialEndDate: c.trial_end_date || null,
+        billingStartMonth: (() => {
+          const ca = companyStartDates[c.id]
+          if (!ca) return 1
+          const d = new Date(ca)
+          return d.getMonth() + 2 > 12 ? 1 : d.getMonth() + 2
+        })(),
+        billingStartYear: (() => {
+          const ca = companyStartDates[c.id]
+          if (!ca) return 2024
+          const d = new Date(ca)
+          return d.getMonth() + 2 > 12 ? d.getFullYear() + 1 : d.getFullYear()
+        })(),
       }
     }).sort((a, b) => b.monthly - a.monthly)
-  }, [companies, pricing, allFeatures, employeeCounts, platformFees])
+  }, [companies, pricing, allFeatures, employeeCounts, platformFees, companyStartDates])
 
   const platformSubtotal = companyData.reduce((s, c) => s + c.subtotal, 0)
   const platformVat = companyData.reduce((s, c) => s + c.vat, 0)
@@ -1577,105 +1608,161 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         </table>
       </div>
 
-      <div style={{ marginTop: 32 }}>
-        <h3 style={{ margin: '0 0 16px' }}>Monthly Billing Records — {new Date().getFullYear()}</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {MONTH_FULL.map((month, idx) => {
-            const monthNum = idx + 1
-            const isExpanded = expandedMonths.has(monthNum)
-            const now = new Date()
-            const isFuture = new Date().getFullYear() === now.getFullYear() && monthNum > now.getMonth() + 1
-            const isCurrent = monthNum === now.getMonth() + 1
-            const monthTotal = isFuture ? 0 : companyData.reduce((s, c) => s + c.monthly, 0)
-            const monthCompanyCount = isFuture ? 0 : companyData.filter(c => c.employees > 0).length
+      {(() => {
+        const now = new Date()
+        const currentYear = now.getFullYear()
+        const currentMonth = now.getMonth() + 1
+        const earliestYear = Math.min(currentYear, ...companyData.map(c => c.billingStartYear))
+        const years = Array.from({ length: currentYear - earliestYear + 1 }, (_, i) => currentYear - i)
 
-            return (
-              <div key={month} style={{ border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden', background: isCurrent ? '#f8f9ff' : '#fff', opacity: isFuture ? 0.5 : 1 }}>
-                <button
-                  onClick={() => {
-                    if (isFuture) return
-                    setExpandedMonths(prev => {
-                      const next = new Set(prev)
-                      if (next.has(monthNum)) next.delete(monthNum)
-                      else next.add(monthNum)
-                      return next
-                    })
-                  }}
-                  disabled={isFuture}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', border: 'none', background: 'none', cursor: isFuture ? 'not-allowed' : 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
-                >
-                  <span style={{ fontSize: 14, color: '#666', width: 20, textAlign: 'center' }}>{isExpanded ? '▼' : '▶'}</span>
-                  <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>
-                    {month} {now.getFullYear()}
-                    {isCurrent && <span style={{ marginLeft: 8, fontSize: 10, background: '#1565c0', color: '#fff', padding: '2px 8px', borderRadius: 10, fontWeight: 600, verticalAlign: 'middle' }}>Current</span>}
-                    {isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#999' }}>Upcoming</span>}
-                  </span>
-                  {!isFuture && (
-                    <>
-                      <span style={{ fontSize: 12, color: '#888' }}>{monthCompanyCount} {monthCompanyCount === 1 ? 'company' : 'companies'}</span>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: '#1565c0', minWidth: 90, textAlign: 'right' }}>&pound;{monthTotal.toFixed(2)}</span>
-                    </>
-                  )}
-                </button>
+        return (
+          <div style={{ marginTop: 32 }}>
+            <h3 style={{ margin: '0 0 16px' }}>Monthly Billing Records</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {years.map(year => {
+                const isYearExpanded = expandedYears.has(year)
+                const isCurrentYear = year === currentYear
+                const yearTotal = companyData.reduce((s, c) => {
+                  const monthsActive = MONTH_FULL.filter((_, idx) => {
+                    const m = idx + 1
+                    if (year === currentYear && m > currentMonth) return false
+                    return year > c.billingStartYear || (year === c.billingStartYear && m >= c.billingStartMonth)
+                  }).length
+                  return s + c.monthly * monthsActive
+                }, 0)
 
-                {isExpanded && !isFuture && (
-                  <div style={{ borderTop: '1px solid #e0e0e0', padding: '0 8px 8px' }}>
-                    <div className="admin-table-wrap" style={{ marginTop: 0 }}>
-                      <table className="admin-table" style={{ fontSize: 13 }}>
-                        <thead>
-                          <tr>
-                            <th>Company</th>
-                            <th>Users</th>
-                            <th>Core</th>
-                            <th>Packs</th>
-                            <th>Platform Fee</th>
-                            <th>VAT</th>
-                            <th>Total</th>
-                            <th>Invoice</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {companyData.filter(c => c.employees > 0).map(c => (
-                            <tr key={c.id}>
-                              <td>
-                                <strong>{c.name}</strong>
-                                {c.isTrial && (
-                                  <span style={{ marginLeft: 6, fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Trial</span>
+                return (
+                  <div key={year} style={{ border: '1px solid #d0d0d0', borderRadius: 10, overflow: 'hidden', background: isCurrentYear ? '#fafbff' : '#fff' }}>
+                    <button
+                      onClick={() => setExpandedYears(prev => {
+                        const next = new Set(prev)
+                        if (next.has(year)) next.delete(year)
+                        else next.add(year)
+                        return next
+                      })}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                    >
+                      <span style={{ fontSize: 16, color: '#555', width: 20, textAlign: 'center' }}>{isYearExpanded ? '▼' : '▶'}</span>
+                      <span style={{ fontWeight: 700, fontSize: 17, flex: 1 }}>
+                        {year}
+                        {isCurrentYear && <span style={{ marginLeft: 10, fontSize: 10, background: '#1565c0', color: '#fff', padding: '2px 10px', borderRadius: 10, fontWeight: 600, verticalAlign: 'middle' }}>Current Year</span>}
+                      </span>
+                      <span style={{ fontWeight: 700, fontSize: 15, color: '#1565c0' }}>&pound;{yearTotal.toFixed(2)}</span>
+                    </button>
+
+                    {isYearExpanded && (
+                      <div style={{ borderTop: '1px solid #e0e0e0', padding: '8px 12px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {MONTH_FULL.map((month, idx) => {
+                          const monthNum = idx + 1
+                          const monthKey = `${year}-${monthNum}`
+                          const isExpanded = expandedMonths.has(monthKey)
+                          const isFuture = year === currentYear && monthNum > currentMonth
+                          const isCurrent = year === currentYear && monthNum === currentMonth
+                          const billableCompanies = companyData.filter(c =>
+                            c.employees > 0 &&
+                            (year > c.billingStartYear || (year === c.billingStartYear && monthNum >= c.billingStartMonth))
+                          )
+                          const monthTotal = isFuture ? 0 : billableCompanies.reduce((s, c) => s + c.monthly, 0)
+                          const monthCoreTot = billableCompanies.reduce((s, c) => s + c.core, 0)
+                          const monthAddonTot = billableCompanies.reduce((s, c) => s + c.addonsTotal, 0)
+                          const monthFeeTot = billableCompanies.reduce((s, c) => s + c.platformFee, 0)
+                          const monthVatTot = billableCompanies.reduce((s, c) => s + c.vat, 0)
+                          const monthEmpTot = billableCompanies.reduce((s, c) => s + c.employees, 0)
+
+                          return (
+                            <div key={month} style={{ border: '1px solid #e8e8e8', borderRadius: 8, overflow: 'hidden', background: isCurrent ? '#f0f4ff' : '#fff', opacity: isFuture ? 0.5 : 1 }}>
+                              <button
+                                onClick={() => {
+                                  if (isFuture) return
+                                  setExpandedMonths(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(monthKey)) next.delete(monthKey)
+                                    else next.add(monthKey)
+                                    return next
+                                  })
+                                }}
+                                disabled={isFuture}
+                                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', border: 'none', background: 'none', cursor: isFuture ? 'not-allowed' : 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                              >
+                                <span style={{ fontSize: 13, color: '#666', width: 16, textAlign: 'center' }}>{isExpanded ? '▾' : '▸'}</span>
+                                <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>
+                                  {month}
+                                  {isCurrent && <span style={{ marginLeft: 8, fontSize: 10, background: '#1565c0', color: '#fff', padding: '2px 8px', borderRadius: 10, fontWeight: 600, verticalAlign: 'middle' }}>Current</span>}
+                                  {isFuture && <span style={{ marginLeft: 8, fontSize: 11, color: '#999' }}>Upcoming</span>}
+                                </span>
+                                {!isFuture && (
+                                  <>
+                                    <span style={{ fontSize: 12, color: '#888' }}>{billableCompanies.length} {billableCompanies.length === 1 ? 'company' : 'companies'}</span>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#1565c0', minWidth: 80, textAlign: 'right' }}>&pound;{monthTotal.toFixed(2)}</span>
+                                  </>
                                 )}
-                              </td>
-                              <td>{c.employees}</td>
-                              <td>&pound;{c.core.toFixed(2)}</td>
-                              <td>&pound;{c.addonsTotal.toFixed(2)}</td>
-                              <td>&pound;{c.platformFee.toFixed(2)}</td>
-                              <td>&pound;{c.vat.toFixed(2)}</td>
-                              <td><strong>&pound;{c.monthly.toFixed(2)}</strong></td>
-                              <td>
-                                <button className="billing-invoice-btn-table" title={`Download invoice for ${month}`} onClick={() => handleInvoice(c, month, now.getFullYear())}>
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                          <tr style={{ fontWeight: 700, background: '#f5f7fa' }}>
-                            <td>Month Total</td>
-                            <td>{companyData.reduce((s, c) => s + c.employees, 0)}</td>
-                            <td>&pound;{platformCore.toFixed(2)}</td>
-                            <td>&pound;{platformAddons.toFixed(2)}</td>
-                            <td>&pound;{platformFeeTotal.toFixed(2)}</td>
-                            <td>&pound;{platformVat.toFixed(2)}</td>
-                            <td>&pound;{monthTotal.toFixed(2)}</td>
-                            <td></td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                              </button>
+
+                              {isExpanded && !isFuture && (
+                                <div style={{ borderTop: '1px solid #e8e8e8', padding: '0 8px 8px' }}>
+                                  <div className="admin-table-wrap" style={{ marginTop: 0 }}>
+                                    <table className="admin-table" style={{ fontSize: 13 }}>
+                                      <thead>
+                                        <tr>
+                                          <th>Company</th>
+                                          <th>Users</th>
+                                          <th>Core</th>
+                                          <th>Packs</th>
+                                          <th>Platform Fee</th>
+                                          <th>VAT</th>
+                                          <th>Total</th>
+                                          <th>Invoice</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {billableCompanies.map(c => (
+                                          <tr key={c.id}>
+                                            <td>
+                                              <strong>{c.name}</strong>
+                                              {c.isTrial && (
+                                                <span style={{ marginLeft: 6, fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Trial</span>
+                                              )}
+                                            </td>
+                                            <td>{c.employees}</td>
+                                            <td>&pound;{c.core.toFixed(2)}</td>
+                                            <td>&pound;{c.addonsTotal.toFixed(2)}</td>
+                                            <td>&pound;{c.platformFee.toFixed(2)}</td>
+                                            <td>&pound;{c.vat.toFixed(2)}</td>
+                                            <td><strong>&pound;{c.monthly.toFixed(2)}</strong></td>
+                                            <td>
+                                              <button className="billing-invoice-btn-table" title={`Download invoice for ${month} ${year}`} onClick={() => handleInvoice(c, month, year)}>
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                        <tr style={{ fontWeight: 700, background: '#f5f7fa' }}>
+                                          <td>Month Total</td>
+                                          <td>{monthEmpTot}</td>
+                                          <td>&pound;{monthCoreTot.toFixed(2)}</td>
+                                          <td>&pound;{monthAddonTot.toFixed(2)}</td>
+                                          <td>&pound;{monthFeeTot.toFixed(2)}</td>
+                                          <td>&pound;{monthVatTot.toFixed(2)}</td>
+                                          <td>&pound;{monthTotal.toFixed(2)}</td>
+                                          <td></td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
