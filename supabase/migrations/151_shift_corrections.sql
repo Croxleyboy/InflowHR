@@ -25,24 +25,20 @@ ALTER TABLE shift_corrections ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "shift_corrections_read"
   ON shift_corrections FOR SELECT
   USING (
-    company_id = get_my_company_id()
-    OR company_id IN (SELECT e.company_id FROM employees e JOIN company_users cu ON cu.employee_id = e.id WHERE cu.auth_user_id = auth.uid())
+    EXISTS (SELECT 1 FROM company_users cu WHERE cu.auth_user_id = auth.uid() AND cu.company_id = shift_corrections.company_id AND cu.is_active = true)
     OR is_super_admin()
   );
 
 CREATE POLICY "shift_corrections_insert"
   ON shift_corrections FOR INSERT
   WITH CHECK (
-    (company_id = get_my_company_id()
-     OR company_id IN (SELECT e.company_id FROM employees e JOIN company_users cu ON cu.employee_id = e.id WHERE cu.auth_user_id = auth.uid()))
-    AND employee_id IN (SELECT cu.employee_id FROM company_users cu WHERE cu.auth_user_id = auth.uid() AND cu.employee_id IS NOT NULL)
+    EXISTS (SELECT 1 FROM company_users cu WHERE cu.auth_user_id = auth.uid() AND cu.company_id = shift_corrections.company_id AND cu.is_active = true)
   );
 
 CREATE POLICY "shift_corrections_update"
   ON shift_corrections FOR UPDATE
   USING (
-    company_id = get_my_company_id()
-    OR company_id IN (SELECT e.company_id FROM employees e JOIN company_users cu ON cu.employee_id = e.id WHERE cu.auth_user_id = auth.uid())
+    EXISTS (SELECT 1 FROM company_users cu WHERE cu.auth_user_id = auth.uid() AND cu.company_id = shift_corrections.company_id AND cu.is_active = true)
     OR is_super_admin()
   );
 
