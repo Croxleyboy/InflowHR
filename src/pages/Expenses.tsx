@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import ExpenseGraph from '../components/ExpenseGraph'
 import { formatDateLong as formatDate } from '../lib/formatters'
 
-type ClaimStatus = 'draft' | 'pending' | 'submitted' | 'approved' | 'rejected'
+type ClaimStatus = 'draft' | 'pending' | 'submitted' | 'approved' | 'rejected' | 'processing' | 'paid'
 type Filter = ClaimStatus | 'all'
 
 interface Claim {
@@ -25,6 +25,8 @@ const statusColor: Record<ClaimStatus, string> = {
   submitted: '#2196f3',
   approved: '#4caf50',
   rejected: '#f44336',
+  processing: '#1565c0',
+  paid: '#2e7d32',
 }
 
 function formatAmount(n: number) {
@@ -84,6 +86,8 @@ export default function Expenses() {
     { key: 'submitted', label: t('expenses.submitted') },
     { key: 'pending', label: t('expenses.pending') },
     { key: 'approved', label: t('expenses.approved') },
+    { key: 'processing', label: 'Processing' },
+    { key: 'paid', label: 'Paid' },
     { key: 'all', label: t('expenses.all') },
   ]
 

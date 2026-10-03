@@ -23,6 +23,7 @@ interface Claim {
   cost_center: string
   created_at: string
   submitted_at: string | null
+  expense_export_id: string | null
   employee: { first_name: string; last_name: string; email: string; avatar_url: string | null } | null
   line_items?: LineItem[]
 }
@@ -41,7 +42,7 @@ interface ExportLog {
   exported_at: string
 }
 
-const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected']
+const STATUS_OPTIONS = ['draft', 'pending', 'approved', 'rejected', 'processing', 'paid']
 const DEFAULT_COST_CENTERS = ['External expenses', 'Internal costs', 'Travel & Transport', 'Client entertainment', 'Office supplies', 'IT & Software', 'Training & Development']
 const DEFAULT_EXPENSE_TYPES = [
   'Flights', 'Trains', 'Taxis', 'Car rental', 'Mileage', 'Parking and tolls',
@@ -85,6 +86,9 @@ export default function AdminExpenses() {
   const [exportMonth, setExportMonth] = useState('all')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [exportEntries, setExportEntries] = useState<any[]>([])
+  const [bulkStatusTarget, setBulkStatusTarget] = useState<'approved' | 'paid'>('approved')
+  const [bulkStatusChanging, setBulkStatusChanging] = useState(false)
 
   const fyMonthOptions = useMemo(() => {
     const opts: { value: string; label: string; start: Date; end: Date }[] = []
@@ -110,6 +114,17 @@ export default function AdminExpenses() {
       .order('exported_at', { ascending: false })
       .limit(50)
     if (data) setExportLogs(data)
+  }, [selectedCompanyId])
+
+  const loadExportEntries = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase
+      .from('expense_export_entries')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .order('created_at', { ascending: false })
+      .limit(100)
+    if (data) setExportEntries(data)
   }, [selectedCompanyId])
 
   const loadExpenseSettings = useCallback(async () => {
@@ -149,7 +164,36 @@ export default function AdminExpenses() {
       setFyLabel(fy.label)
     })
   }, [selectedCompanyId, loadExpenseSettings])
-  useEffect(() => { if (selectedCompanyId) loadExportLogs() }, [selectedCompanyId, loadExportLogs])
+  useEffect(() => { if (selectedCompanyId) { loadExportLogs(); loadExportEntries() } }, [selectedCompanyId, loadExportLogs, loadExportEntries])
+
+  async function lockExportedClaims(expClaims: any[], exportType: string) {
+    const now = new Date()
+    const exportId = `EXP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+    const changedBy = employeeName || employeeEmail || 'Admin'
+
+    const claimIds = expClaims.map((c: any) => c.id)
+    await supabase.from('expense_claims')
+      .update({ status: 'processing', expense_export_id: exportId })
+      .in('id', claimIds)
+
+    const entries = expClaims.map((c: any) => ({
+      company_id: selectedCompanyId,
+      expense_export_id: exportId,
+      expense_claim_id: c.id,
+      reference_number: c.reference_number,
+      employee_name: c.employee ? `${c.employee.first_name} ${c.employee.last_name}` : '',
+      amount: Number(c.amount),
+      previous_status: c.status,
+      new_status: 'processing',
+      changed_by: changedBy,
+      export_type: exportType,
+    }))
+    await supabase.from('expense_export_entries').insert(entries)
+
+    loadClaims()
+    loadExportEntries()
+    return exportId
+  }
 
   async function exportExpenses() {
     if (!selectedCompanyId) return
@@ -253,6 +297,8 @@ export default function AdminExpenses() {
       a.click()
       URL.revokeObjectURL(url)
 
+      const exportId = await lockExportedClaims(expClaims, 'zip')
+
       const now2 = new Date()
       const exportDate = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(now2.getDate()).padStart(2, '0')}`
       const exportedBy = employeeName || employeeEmail
@@ -265,7 +311,7 @@ export default function AdminExpenses() {
       }, { onConflict: 'company_id,exported_by,export_date' })
       loadExportLogs()
 
-      showSuccess(`Exported ${expClaims.length} claims with ${receiptIndex} receipts`)
+      showSuccess(`Exported ${expClaims.length} claims (${exportId}) — status set to Processing`)
     } catch (err: any) {
       showError('Export failed: ' + (err.message || 'Unknown error'))
     }
@@ -366,7 +412,8 @@ export default function AdminExpenses() {
       a.click()
       URL.revokeObjectURL(url)
 
-      showSuccess(`Xero export: ${expClaims.length} claims ready for import`)
+      const exportId = await lockExportedClaims(expClaims, 'xero')
+      showSuccess(`Xero export: ${expClaims.length} claims (${exportId}) — status set to Processing`)
     } catch (err: any) {
       showError('Xero export failed: ' + (err.message || 'Unknown error'))
     }
@@ -468,7 +515,8 @@ export default function AdminExpenses() {
       a.click()
       URL.revokeObjectURL(url)
 
-      showSuccess(`Sage export: ${expClaims.length} claims ready for import`)
+      const exportId = await lockExportedClaims(expClaims, 'sage')
+      showSuccess(`Sage export: ${expClaims.length} claims (${exportId}) — status set to Processing`)
     } catch (err: any) {
       showError('Sage export failed: ' + (err.message || 'Unknown error'))
     }
@@ -508,6 +556,10 @@ export default function AdminExpenses() {
 
   async function saveEdit(id: number) {
     const claim = claims.find(c => c.id === id)
+    if (claim?.status === 'processing') {
+      showError('This expense is locked for processing. Change its status back to Approved first.')
+      return
+    }
     const oldStatus = claim?.status
     const newStatus = editForm.status
 
@@ -588,9 +640,12 @@ export default function AdminExpenses() {
   }
 
   async function deleteClaim(id: number, skipConfirm = false) {
-    if (!skipConfirm && !confirm('Delete this expense claim and all line items?')) return
-
     const claim = claims.find(c => c.id === id)
+    if (claim?.status === 'processing' || claim?.status === 'paid') {
+      showError(`Cannot delete an expense in ${claim.status} status.`)
+      return
+    }
+    if (!skipConfirm && !confirm('Delete this expense claim and all line items?')) return
 
     const { error } = await supabase.from('expense_claims').delete().eq('id', id)
     if (error) { showError('Failed to delete expense claim: ' + error.message); return }
@@ -655,6 +710,47 @@ export default function AdminExpenses() {
     showSuccess(`Deleted ${selectedIds.size} expense claim${selectedIds.size > 1 ? 's' : ''}`)
   }
 
+  async function bulkChangeStatus() {
+    const processingSelected = claims.filter(c => selectedIds.has(c.id) && (c.status === 'processing' || c.status === 'paid'))
+    if (processingSelected.length === 0) {
+      showError('No processing/paid expenses selected')
+      return
+    }
+    const targetLabel = bulkStatusTarget === 'approved' ? 'Approved' : 'Paid'
+    if (!confirm(`Change ${processingSelected.length} expense(s) to ${targetLabel}? This will be logged for audit.`)) return
+    setBulkStatusChanging(true)
+
+    const changedBy = employeeName || employeeEmail || 'Admin'
+    const ids = processingSelected.map(c => c.id)
+
+    await supabase.from('expense_claims')
+      .update({
+        status: bulkStatusTarget,
+        expense_export_id: bulkStatusTarget === 'approved' ? null : undefined,
+      })
+      .in('id', ids)
+
+    const entries = processingSelected.map(c => ({
+      company_id: selectedCompanyId,
+      expense_export_id: c.expense_export_id || 'MANUAL',
+      expense_claim_id: c.id,
+      reference_number: c.reference_number,
+      employee_name: c.employee ? `${c.employee.first_name} ${c.employee.last_name}` : '',
+      amount: Number(c.amount),
+      previous_status: c.status,
+      new_status: bulkStatusTarget,
+      changed_by: changedBy,
+      export_type: 'status_change',
+    }))
+    await supabase.from('expense_export_entries').insert(entries)
+
+    setSelectedIds(new Set())
+    setBulkStatusChanging(false)
+    loadClaims()
+    loadExportEntries()
+    showSuccess(`${processingSelected.length} expense(s) changed to ${targetLabel}`)
+  }
+
   function toggleSelect(id: number) {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -678,6 +774,11 @@ export default function AdminExpenses() {
   }
 
   async function saveLineEdit(lineId: number, claimId: number) {
+    const parentClaim = claims.find(c => c.id === claimId)
+    if (parentClaim?.status === 'processing') {
+      showError('This expense is locked for processing. Change its status back to Approved first.')
+      return
+    }
     const { error } = await supabase.from('expense_line_items').update({
       title: lineForm.title, expense_type: lineForm.expense_type, amount: lineForm.amount, date_of_purchase: lineForm.date_of_purchase,
     }).eq('id', lineId)
@@ -694,6 +795,11 @@ export default function AdminExpenses() {
   }
 
   async function deleteLineItem(lineId: number, claimId: number) {
+    const parentClaim = claims.find(c => c.id === claimId)
+    if (parentClaim?.status === 'processing') {
+      showError('This expense is locked for processing. Change its status back to Approved first.')
+      return
+    }
     if (!confirm('Delete this line item?')) return
     const { error } = await supabase.from('expense_line_items').delete().eq('id', lineId)
     if (error) { showError('Failed to delete line item: ' + error.message); return }
@@ -757,7 +863,7 @@ export default function AdminExpenses() {
       })
       months.push({
         label,
-        approved: inMonth.filter(c => c.status === 'approved').reduce((s, c) => s + Number(c.amount), 0),
+        approved: inMonth.filter(c => c.status === 'approved' || c.status === 'processing' || c.status === 'paid').reduce((s, c) => s + Number(c.amount), 0),
         submitted: inMonth.filter(c => c.status === 'pending' || c.status === 'submitted').reduce((s, c) => s + Number(c.amount), 0),
         declined: inMonth.filter(c => c.status === 'rejected').reduce((s, c) => s + Number(c.amount), 0),
       })
@@ -847,7 +953,7 @@ export default function AdminExpenses() {
           />
 
           {selectedIds.size > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', flexWrap: 'wrap' }}>
               <button
                 className="admin-btn admin-btn-danger"
                 onClick={bulkDeleteClaims}
@@ -856,6 +962,20 @@ export default function AdminExpenses() {
               >
                 {bulkDeleting ? 'Deleting...' : `Delete Selected (${selectedIds.size})`}
               </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <select className="admin-select" value={bulkStatusTarget} onChange={e => setBulkStatusTarget(e.target.value as 'approved' | 'paid')} style={{ fontSize: 12 }}>
+                  <option value="approved">Approved (unlock)</option>
+                  <option value="paid">Paid</option>
+                </select>
+                <button
+                  className="admin-btn-sm admin-btn-save"
+                  onClick={bulkChangeStatus}
+                  disabled={bulkStatusChanging}
+                  style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+                >
+                  {bulkStatusChanging ? 'Updating...' : 'Change Status'}
+                </button>
+              </div>
               <button className="admin-btn" onClick={() => setSelectedIds(new Set())} style={{ fontSize: 13 }}>Clear Selection</button>
             </div>
           )}
@@ -912,7 +1032,14 @@ export default function AdminExpenses() {
                                 <div><strong>Cost Center:</strong> {claim.cost_center || '—'}</div>
                                 <div><strong>Submitted:</strong> {claim.submitted_at ? new Date(claim.submitted_at).toLocaleDateString('en-GB') : '—'}</div>
                                 <div><strong>Created:</strong> {new Date(claim.created_at).toLocaleDateString('en-GB')}</div>
+                                {claim.expense_export_id && <div><strong>Export ID:</strong> <span className="admin-td-mono">{claim.expense_export_id}</span></div>}
                               </div>
+                              {(claim.status === 'processing' || claim.status === 'paid') && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 8, marginBottom: 8, fontSize: 12, color: '#1565c0' }}>
+                                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                  Locked — this expense is {claim.status}. Select it and use Change Status to unlock.
+                                </div>
+                              )}
                               <h4>Line Items</h4>
                               {(claim.line_items && claim.line_items.length > 0) ? (
                                 <table className="admin-subtable">
@@ -1070,6 +1197,34 @@ export default function AdminExpenses() {
             </div>
           ) : (
             <div className="admin-empty">No exports yet</div>
+          )}
+
+          <h3 style={{ marginTop: 24 }}>Export Audit Log</h3>
+          {exportEntries.length > 0 ? (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr><th>Date</th><th>Export ID</th><th>Ref</th><th>Employee</th><th>Amount</th><th>From</th><th>To</th><th>Changed By</th><th>Type</th></tr>
+                </thead>
+                <tbody>
+                  {exportEntries.map((e: any) => (
+                    <tr key={e.id}>
+                      <td>{new Date(e.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date(e.created_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+                      <td className="admin-td-mono" style={{ fontSize: 11 }}>{e.expense_export_id}</td>
+                      <td className="admin-td-mono">{e.reference_number}</td>
+                      <td>{e.employee_name}</td>
+                      <td>£{Number(e.amount).toFixed(2)}</td>
+                      <td><span className={`admin-badge admin-badge-${e.previous_status}`}>{e.previous_status}</span></td>
+                      <td><span className={`admin-badge admin-badge-${e.new_status}`}>{e.new_status}</span></td>
+                      <td>{e.changed_by}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{e.export_type.replace('_', ' ')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="admin-empty">No export audit entries yet</div>
           )}
         </div>
       )}
