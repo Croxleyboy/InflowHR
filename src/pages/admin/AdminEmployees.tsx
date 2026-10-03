@@ -40,7 +40,7 @@ interface Employee {
   bank_account_name: string | null
   probation_end_date: string | null
   notice_period: string | null
-  working_pattern: string | null
+  contracted_days: boolean[] | null
   weekly_hours: number | null
   location: string | null
   contract_type: string | null
@@ -55,17 +55,7 @@ interface Employee {
   qualifications: string | null
   religion: string | null
   manager_id: string | null
-  work_pattern_id: string | null
   employment_category: string
-}
-
-interface WorkPattern {
-  id: string
-  company_id: string
-  name: string
-  days: boolean[]
-  pattern_type: string
-  is_active: boolean
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -89,10 +79,7 @@ export default function AdminEmployees() {
   const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
   const [lieuDays, setLieuDays] = useState<Record<string, { balanceId: number; lieu_days: number }>>({})
   const [editLieuDays, setEditLieuDays] = useState<number>(0)
-  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart' | 'patterns'>('management')
-  const [workPatterns, setWorkPatterns] = useState<WorkPattern[]>([])
-  const [editingPattern, setEditingPattern] = useState<WorkPattern | null>(null)
-  const [newPattern, setNewPattern] = useState({ name: '', days: [true,true,true,true,true,false,false], pattern_type: 'fixed' })
+  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart'>('management')
   const [recordsSearch, setRecordsSearch] = useState('')
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
@@ -133,12 +120,10 @@ export default function AdminEmployees() {
 
   async function load() {
     setLoading(true)
-    const [{ data }, { data: onbData }, { data: wpData }] = await Promise.all([
+    const [{ data }, { data: onbData }] = await Promise.all([
       supabase.from('employees').select('*').eq('company_id', selectedCompanyId).order('last_name'),
       supabase.from('onboarding').select('user_email, initial_setup_complete').eq('company_id', selectedCompanyId),
-      supabase.from('work_patterns').select('*').eq('company_id', selectedCompanyId).order('name'),
     ])
-    setWorkPatterns((wpData as WorkPattern[]) || [])
     setEmployees((data as Employee[]) || [])
     const map: Record<string, boolean> = {}
     ;(onbData || []).forEach((o: any) => { map[o.user_email?.toLowerCase()] = o.initial_setup_complete === true })
@@ -180,7 +165,7 @@ export default function AdminEmployees() {
       bank_account_name: emp.bank_account_name || '',
       probation_end_date: emp.probation_end_date || '', notice_period: emp.notice_period || '',
       employment_category: emp.employment_category || 'not_assigned',
-      working_pattern: emp.working_pattern || '', weekly_hours: emp.weekly_hours ?? '', work_pattern_id: emp.work_pattern_id || '',
+      contracted_days: emp.contracted_days || [true,true,true,true,true,false,false], weekly_hours: emp.weekly_hours ?? '',
       location: emp.location || '', contract_type: emp.contract_type || '',
       annual_salary: emp.annual_salary ?? '', tax_code: emp.tax_code || '',
       payroll_id: emp.payroll_id || '', personal_email: emp.personal_email || '',
@@ -489,39 +474,6 @@ export default function AdminEmployees() {
     return parts.join(', ')
   }
 
-  async function savePattern(pattern: Partial<WorkPattern> & { name: string; days: boolean[]; pattern_type: string }) {
-    if (!pattern.name.trim()) { showError('Pattern name is required'); return }
-    if (editingPattern) {
-      const { error } = await supabase.from('work_patterns').update({ name: pattern.name, days: pattern.days, pattern_type: pattern.pattern_type, is_active: editingPattern.is_active }).eq('id', editingPattern.id)
-      if (error) { showError('Failed to update: ' + error.message); return }
-      showSuccess('Work pattern updated')
-      setEditingPattern(null)
-    } else {
-      const { error } = await supabase.from('work_patterns').insert({ company_id: selectedCompanyId, name: pattern.name, days: pattern.days, pattern_type: pattern.pattern_type })
-      if (error) { showError('Failed to create: ' + error.message); return }
-      showSuccess('Work pattern created')
-      setNewPattern({ name: '', days: [true,true,true,true,true,false,false], pattern_type: 'fixed' })
-    }
-    const { data } = await supabase.from('work_patterns').select('*').eq('company_id', selectedCompanyId).order('name')
-    setWorkPatterns((data as WorkPattern[]) || [])
-  }
-
-  async function togglePatternActive(id: string, active: boolean) {
-    const { error } = await supabase.from('work_patterns').update({ is_active: active }).eq('id', id)
-    if (error) { showError('Failed to update: ' + error.message); return }
-    setWorkPatterns(prev => prev.map(p => p.id === id ? { ...p, is_active: active } : p))
-  }
-
-  async function deletePattern(id: string) {
-    const usedBy = employees.filter(e => e.work_pattern_id === id)
-    if (usedBy.length > 0) { showError(`Cannot delete — ${usedBy.length} employee(s) are assigned to this pattern. Reassign them first.`); return }
-    if (!window.confirm('Permanently delete this work pattern?')) return
-    const { error } = await supabase.from('work_patterns').delete().eq('id', id)
-    if (error) { showError('Failed to delete: ' + error.message); return }
-    setWorkPatterns(prev => prev.filter(p => p.id !== id))
-    showSuccess('Work pattern deleted')
-  }
-
   return (
     <div className="admin-section">
       <div className="admin-page-header">
@@ -533,7 +485,6 @@ export default function AdminEmployees() {
         <button className={`admin-tab ${activeTab === 'management' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('management')}>Employee Management</button>
         <button className={`admin-tab ${activeTab === 'records' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('records')}>Employee Records</button>
         <button className={`admin-tab ${activeTab === 'orgchart' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('orgchart')}>Org Chart</button>
-        <button className={`admin-tab ${activeTab === 'patterns' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('patterns')}>Work Patterns</button>
       </div>
 
       {activeTab === 'records' && (
@@ -693,7 +644,7 @@ export default function AdminEmployees() {
                   maskValue={maskValue}
                   toggleReveal={toggleReveal}
                   formatDate={formatDate}
-                  workPatternName={workPatterns.find(p => p.id === selectedEmployee.work_pattern_id)?.name}
+                  contractedDays={selectedEmployee.contracted_days}
                 />
               </div>
             )}
@@ -852,21 +803,20 @@ export default function AdminEmployees() {
 
                                     const showField = (field: string) => {
                                       if (isZeroHours) return ['location', 'contract_type', 'manager_name', 'manager_email'].includes(field)
-                                      if (isContractor) return !['contract_type', 'working_pattern', 'probation_end_date', 'notice_period', 'leave_allowance', 'salary_group', 'lieu_days', 'work_pattern_id'].includes(field)
-                                      if (isShiftNonZero) return field !== 'working_pattern'
+                                      if (isContractor) return !['contract_type', 'probation_end_date', 'notice_period', 'leave_allowance', 'salary_group', 'lieu_days', 'contracted_days'].includes(field)
                                       return true
                                     }
 
                                     function handleCategoryChange(newCat: string) {
                                       const u: Record<string, any> = { employment_category: newCat, contract_type: '' }
                                       if (newCat === 'not_assigned') {
-                                        Object.assign(u, { working_pattern: '', weekly_hours: '', probation_end_date: '', notice_period: '', manager_name: '', manager_email: '', leave_allowance: '', salary_group: '', location: '', work_pattern_id: '' })
+                                        Object.assign(u, { weekly_hours: '', probation_end_date: '', notice_period: '', manager_name: '', manager_email: '', leave_allowance: '', salary_group: '', location: '' })
                                         setEditLieuDays(0)
                                       } else if (newCat === 'contractor') {
-                                        Object.assign(u, { working_pattern: '', probation_end_date: '', notice_period: '', leave_allowance: '', salary_group: '', work_pattern_id: '' })
+                                        Object.assign(u, { probation_end_date: '', notice_period: '', leave_allowance: '', salary_group: '' })
                                         setEditLieuDays(0)
                                       } else if (newCat === 'shift_worker') {
-                                        u.working_pattern = ''
+                                        u.contracted_days = null
                                       }
                                       setEditForm(p => ({ ...p, ...u }))
                                     }
@@ -874,7 +824,7 @@ export default function AdminEmployees() {
                                     function handleContractChange(newCt: string) {
                                       const u: Record<string, any> = { contract_type: newCt }
                                       if (cat === 'shift_worker' && newCt === 'Zero hours shift worker') {
-                                        Object.assign(u, { weekly_hours: '', probation_end_date: '', notice_period: '', leave_allowance: '', salary_group: '', working_pattern: '', work_pattern_id: '' })
+                                        Object.assign(u, { weekly_hours: '', probation_end_date: '', notice_period: '', leave_allowance: '', salary_group: '' })
                                         setEditLieuDays(0)
                                       }
                                       setEditForm(p => ({ ...p, ...u }))
@@ -909,12 +859,19 @@ export default function AdminEmployees() {
                                             </select>
                                           </div>
                                         )}
-                                        {showField('working_pattern') && (
-                                          <div className="admin-form-field">
-                                            <label style={{ fontSize: 12 }}>Working Pattern (Legacy)</label>
-                                            <select className="admin-select" value={editForm.working_pattern || ''} onChange={e => setEditForm(p => ({...p, working_pattern: e.target.value}))}>
-                                              {['', 'Full-time', 'Part-time', 'Compressed', 'Flexible', 'Shift', 'Term-time'].map(o => <option key={o} value={o}>{o || '—'}</option>)}
-                                            </select>
+                                        {showField('contracted_days') && (
+                                          <div className="admin-form-field" style={{ gridColumn: 'span 2' }}>
+                                            <label style={{ fontSize: 12 }}>Contracted Days {cat === 'shift_worker' ? '(variable — any day)' : ''}</label>
+                                            {cat === 'shift_worker' ? (
+                                              <span style={{ fontSize: 12, color: '#6b7280' }}>Shift workers can work any day — managed via rotas</span>
+                                            ) : (
+                                              <div style={{ display: 'flex', gap: 4 }}>
+                                                {DAY_LABELS.map((d, i) => (
+                                                  <button key={d} type="button" onClick={() => setEditForm(p => { const days = [...(p.contracted_days || [true,true,true,true,true,false,false])]; days[i] = !days[i]; return {...p, contracted_days: days} })}
+                                                    style={{ width: 36, height: 32, border: (editForm.contracted_days || [true,true,true,true,true,false,false])[i] ? '2px solid #1565c0' : '1px solid #ccc', borderRadius: 6, background: (editForm.contracted_days || [true,true,true,true,true,false,false])[i] ? '#e3f2fd' : '#fff', color: (editForm.contracted_days || [true,true,true,true,true,false,false])[i] ? '#1565c0' : '#999', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{d}</button>
+                                                ))}
+                                              </div>
+                                            )}
                                           </div>
                                         )}
                                         {showField('weekly_hours') && (
@@ -963,17 +920,6 @@ export default function AdminEmployees() {
                                           <div className="admin-form-field">
                                             <label style={{ fontSize: 12 }}>Lieu Days</label>
                                             <input className="admin-inline-input" type="number" min="0" step="0.5" value={editLieuDays} onChange={e => setEditLieuDays(parseFloat(e.target.value) || 0)} />
-                                          </div>
-                                        )}
-                                        {showField('work_pattern_id') && (
-                                          <div className="admin-form-field">
-                                            <label style={{ fontSize: 12 }}>Shift Pattern</label>
-                                            <select className="admin-select" value={editForm.work_pattern_id || ''} onChange={e => setEditForm(p => ({...p, work_pattern_id: e.target.value || null}))}>
-                                              <option value="">Not Assigned</option>
-                                              {workPatterns.filter(wp => wp.is_active).map(wp => (
-                                                <option key={wp.id} value={wp.id}>{wp.name} ({wp.pattern_type === 'variable' ? 'Any day' : wp.days.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ')})</option>
-                                              ))}
-                                            </select>
                                           </div>
                                         )}
                                       </div>
@@ -1067,7 +1013,7 @@ export default function AdminEmployees() {
                                   {emp.employment_category !== 'contractor' && <div><strong>Leave Allowance:</strong> {emp.leave_allowance ?? 15} days</div>}
                                   {emp.employment_category !== 'contractor' && <div><strong>Lieu Days:</strong> {lieuDays[emp.id]?.lieu_days ?? 0} days</div>}
                                   {emp.employment_category !== 'contractor' && <div><strong>Salary Group:</strong> {emp.salary_group || 'N/A'}</div>}
-                                  {emp.work_pattern_id && <div><strong>Shift Pattern:</strong> {(() => { const wp = workPatterns.find(p => p.id === emp.work_pattern_id); return wp ? `${wp.name} (${wp.pattern_type === 'variable' ? 'Any day' : wp.days.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ')})` : '—' })()}</div>}
+                                  <div><strong>Contracted Days:</strong> {emp.employment_category === 'shift_worker' ? 'Variable (any day)' : emp.contracted_days ? emp.contracted_days.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ') : 'Mon–Fri'}</div>
                                 </div>
                                 {emp.qualifications && (
                                   <div>
@@ -1139,140 +1085,6 @@ export default function AdminEmployees() {
         </div>
       )}
       </>}
-      {activeTab === 'patterns' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ background: '#f0f4ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: 16, fontSize: 13, color: '#3730a3' }}>
-            Define contracted working days for your employees. Assigning a work pattern controls which days appear as "At Work" on the employee dashboard and restricts shift/rota assignments to contracted days only.
-          </div>
-
-          {/* Create new pattern */}
-          <div style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, background: '#fafbfc' }}>
-            <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Create Work Pattern</h4>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-              <div className="admin-form-field" style={{ flex: '1 1 200px' }}>
-                <label style={{ fontSize: 12 }}>Pattern Name</label>
-                <input className="admin-inline-input" placeholder="e.g. Day Shift, Night Shift" value={newPattern.name} onChange={e => setNewPattern(p => ({...p, name: e.target.value}))} />
-              </div>
-              <div className="admin-form-field" style={{ flex: '0 0 auto' }}>
-                <label style={{ fontSize: 12 }}>Type</label>
-                <select className="admin-select" value={newPattern.pattern_type} onChange={e => setNewPattern(p => ({...p, pattern_type: e.target.value, days: e.target.value === 'variable' ? [true,true,true,true,true,true,true] : p.days}))}>
-                  <option value="fixed">Fixed Days</option>
-                  <option value="variable">Variable (Any Day)</option>
-                </select>
-              </div>
-              {newPattern.pattern_type === 'fixed' && (
-                <div className="admin-form-field" style={{ flex: '0 0 auto' }}>
-                  <label style={{ fontSize: 12 }}>Working Days</label>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {DAY_LABELS.map((d, i) => (
-                      <button key={d} onClick={() => setNewPattern(p => { const days = [...p.days]; days[i] = !days[i]; return {...p, days} })}
-                        style={{ width: 36, height: 32, border: newPattern.days[i] ? '2px solid #1565c0' : '1px solid #ccc', borderRadius: 6, background: newPattern.days[i] ? '#e3f2fd' : '#fff', color: newPattern.days[i] ? '#1565c0' : '#999', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>{d}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <button className="admin-btn" onClick={() => savePattern(newPattern)} style={{ height: 36 }}>Create</button>
-            </div>
-          </div>
-
-          {/* Existing patterns */}
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th>Pattern Name</th>
-                <th>Type</th>
-                <th>Working Days</th>
-                <th>Employees</th>
-                <th>Status</th>
-                <th style={{ width: 160 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {workPatterns.map(wp => {
-                const assignedCount = employees.filter(e => e.work_pattern_id === wp.id).length
-                const isEditing = editingPattern?.id === wp.id
-                return (
-                  <tr key={wp.id} style={{ opacity: wp.is_active ? 1 : 0.5 }}>
-                    <td>
-                      {isEditing ? (
-                        <input className="admin-inline-input" value={editingPattern!.name} onChange={e => setEditingPattern(p => p ? {...p, name: e.target.value} : p)} style={{ width: '100%' }} />
-                      ) : wp.name}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <select className="admin-select" value={editingPattern!.pattern_type} onChange={e => setEditingPattern(p => p ? {...p, pattern_type: e.target.value, days: e.target.value === 'variable' ? [true,true,true,true,true,true,true] : p.days} : p)} style={{ fontSize: 12 }}>
-                          <option value="fixed">Fixed</option>
-                          <option value="variable">Variable</option>
-                        </select>
-                      ) : wp.pattern_type === 'variable' ? 'Variable' : 'Fixed'}
-                    </td>
-                    <td>
-                      {isEditing && editingPattern!.pattern_type === 'fixed' ? (
-                        <div style={{ display: 'flex', gap: 3 }}>
-                          {DAY_LABELS.map((d, i) => (
-                            <button key={d} onClick={() => setEditingPattern(p => { if (!p) return p; const days = [...p.days]; days[i] = !days[i]; return {...p, days} })}
-                              style={{ width: 32, height: 28, border: editingPattern!.days[i] ? '2px solid #1565c0' : '1px solid #ccc', borderRadius: 4, background: editingPattern!.days[i] ? '#e3f2fd' : '#fff', color: editingPattern!.days[i] ? '#1565c0' : '#999', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>{d}</button>
-                          ))}
-                        </div>
-                      ) : wp.pattern_type === 'variable' ? (
-                        <span style={{ color: '#6b7280', fontSize: 12 }}>Any day</span>
-                      ) : (
-                        <div style={{ display: 'flex', gap: 3 }}>
-                          {DAY_LABELS.map((d, i) => (
-                            <span key={d} style={{ width: 28, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4, background: wp.days[i] ? '#e3f2fd' : '#f5f5f5', color: wp.days[i] ? '#1565c0' : '#ccc', fontSize: 10, fontWeight: 600 }}>{d}</span>
-                          ))}
-                        </div>
-                      )}
-                    </td>
-                    <td><span style={{ fontWeight: 600 }}>{assignedCount}</span></td>
-                    <td>
-                      <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 600, background: wp.is_active ? '#e8f5e9' : '#fce4ec', color: wp.is_active ? '#2e7d32' : '#c62828' }}>
-                        {wp.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        {isEditing ? (
-                          <>
-                            <button className="admin-action-btn" onClick={() => savePattern(editingPattern!)} style={{ fontSize: 11 }}>Save</button>
-                            <button className="admin-action-btn" onClick={() => setEditingPattern(null)} style={{ fontSize: 11 }}>Cancel</button>
-                          </>
-                        ) : (
-                          <>
-                            <button className="admin-action-btn" onClick={() => setEditingPattern({...wp})} style={{ fontSize: 11 }}>Edit</button>
-                            <button className="admin-action-btn" onClick={() => togglePatternActive(wp.id, !wp.is_active)} style={{ fontSize: 11 }}>{wp.is_active ? 'Disable' : 'Enable'}</button>
-                            <button className="admin-action-btn" onClick={() => deletePattern(wp.id)} style={{ fontSize: 11, color: '#c62828' }}>Delete</button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-              {workPatterns.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#999', padding: 24 }}>No work patterns defined. Create one above.</td></tr>
-              )}
-            </tbody>
-          </table>
-
-          {/* Unassigned employees */}
-          {(() => {
-            const unassigned = employees.filter(e => e.is_active && !e.work_pattern_id)
-            if (unassigned.length === 0) return null
-            return (
-              <div style={{ border: '1px solid #fff3cd', borderRadius: 8, padding: 16, background: '#fffde7' }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#e65100' }}>{unassigned.length} active employee{unassigned.length !== 1 ? 's' : ''} without a work pattern</h4>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {unassigned.slice(0, 20).map(e => (
-                    <span key={e.id} style={{ padding: '3px 10px', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 12, fontSize: 12 }}>{e.first_name} {e.last_name}</span>
-                  ))}
-                  {unassigned.length > 20 && <span style={{ fontSize: 12, color: '#999' }}>+{unassigned.length - 20} more</span>}
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-      )}
     </div>
   )
 }

@@ -95,7 +95,6 @@ interface OnboardRecord {
   bank_account_name: string | null
   probation_end_date: string | null
   notice_period: string | null
-  working_pattern: string | null
   weekly_hours: number | null
   annual_salary: number | null
   tax_code: string | null
@@ -141,7 +140,7 @@ export default function AdminOnboarding() {
     address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom',
     emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '',
     ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '',
-    probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: '37.5',
+    probation_end_date: '', notice_period: '', weekly_hours: '37.5',
     annual_salary: '', tax_code: '', payroll_id: '', religion: '', salary_group: 'N/A', qualifications: '',
   })
 
@@ -181,7 +180,7 @@ export default function AdminOnboarding() {
     'ni number': 'ni_number', 'bank sort code': 'bank_sort_code',
     'bank account number': 'bank_account_number', 'bank account name': 'bank_account_name',
     'probation end date': 'probation_end_date', 'notice period': 'notice_period',
-    'working pattern': 'working_pattern', 'weekly hours': 'weekly_hours',
+    'weekly hours': 'weekly_hours',
     'annual salary': 'annual_salary', 'tax code': 'tax_code', 'payroll id': 'payroll_id',
     'leave allowance': 'leave_allowance', 'assigned leave days': 'leave_allowance',
     'religion': 'religion', 'salary group': 'salary_group', 'qualifications': 'qualifications',
@@ -740,7 +739,6 @@ export default function AdminOnboarding() {
       bank_account_name: record.bank_account_name || null,
       probation_end_date: record.probation_end_date || null,
       notice_period: record.notice_period || null,
-      working_pattern: record.working_pattern || null,
       weekly_hours: record.weekly_hours || null,
       annual_salary: record.annual_salary || null,
       tax_code: record.tax_code || null,
@@ -1030,12 +1028,6 @@ export default function AdminOnboarding() {
           <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
             <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Employment</legend>
             <div className="admin-form-grid">
-              <div className="admin-form-field">
-                <label>Working Pattern</label>
-                <select className="admin-select" value={newForm.working_pattern} onChange={e => setNewForm(p => ({...p, working_pattern: e.target.value}))}>
-                  <option>Full-time</option><option>Part-time</option><option>Compressed</option><option>Flexible</option><option>Shift</option><option>Term-time</option>
-                </select>
-              </div>
               <div className="admin-form-field">
                 <label>Weekly Hours</label>
                 <input type="number" step="0.5" className="admin-input" value={newForm.weekly_hours} onChange={e => setNewForm(p => ({...p, weekly_hours: e.target.value}))} />

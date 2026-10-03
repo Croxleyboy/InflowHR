@@ -99,7 +99,7 @@ export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features, dashboardStyle } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser, workPatternType, employmentCategory, isSuperAdmin } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser, employmentCategory, isSuperAdmin } = useAuth()
   const navigate = useNavigate()
   const { activeCheckin, activeBreak, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
@@ -239,11 +239,8 @@ export default function Dashboard() {
       const today = toLocalDateStr()
 
       ;(async () => {
-        const { data: empRow } = await supabase.from('employees').select('work_pattern_id').eq('id', employeeId).maybeSingle()
-        if (empRow?.work_pattern_id) {
-          const { data: wp } = await supabase.from('work_patterns').select('days, pattern_type').eq('id', empRow.work_pattern_id).maybeSingle()
-          if (wp) { setWorkPatternDays(wp.days) }
-        }
+        const { data: empRow } = await supabase.from('employees').select('contracted_days').eq('id', employeeId).maybeSingle()
+        if (empRow) { setWorkPatternDays(empRow.contracted_days) }
       })()
 
       supabase.from('one_to_one_meetings')
@@ -903,7 +900,7 @@ export default function Dashboard() {
         const elapsed = isActive ? `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}` : ''
         const todayShift = shiftWindowInfo.displayShift && shiftWindowInfo.displayShift.date === toLocalDateStr() ? shiftWindowInfo.displayShift : null
         const todayDow = (new Date().getDay() + 6) % 7
-        const isContractedDay = !workPatternDays || workPatternType === 'variable' || workPatternDays[todayDow]
+        const isContractedDay = !workPatternDays || employmentCategory === 'shift_worker' || workPatternDays[todayDow]
         const statusLabel = isActive ? 'Checked In' : onLeaveToday ? 'On Leave' : !isContractedDay ? 'Not Working' : todayShift ? 'On Shift' : 'At Work'
         const statusColor = onLeaveToday ? '#e53935' : !isContractedDay ? '#7e57c2' : todayShift ? '#e65100' : '#43a047'
         const iconBg = onLeaveToday ? '#ffebee' : !isContractedDay ? '#ede7f6' : todayShift ? '#fff3e0' : '#e8f5e9'
@@ -1359,7 +1356,7 @@ export default function Dashboard() {
     }
   }
 
-  const isShiftWorker = workPatternType === 'variable'
+  const isShiftWorker = employmentCategory === 'shift_worker'
   const quickMenuItems: { label: string; path: string; icon: ReactNode }[] = (() => {
     const items: { label: string; path: string; icon: ReactNode; featureKey: string | null; pattern?: 'fixed' | 'variable' }[] = [
       { label: 'My Profile', path: '/my-profile', featureKey: null, icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },

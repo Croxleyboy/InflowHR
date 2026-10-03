@@ -38,7 +38,7 @@ interface Employee {
   bank_account_name: string | null
   probation_end_date: string | null
   notice_period: string | null
-  working_pattern: string | null
+  contracted_days: boolean[] | null
   weekly_hours: number | null
   location: string | null
   contract_type: string | null
@@ -52,14 +52,15 @@ interface Employee {
   salary_group: string | null
   qualifications: string | null
   religion: string | null
-  work_pattern_id: string | null
   employment_category: string
 }
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 interface Props {
   employee: Employee
   companyId: string
-  workPatternName?: string
+  contractedDays?: boolean[] | null
   lieuDays: number
   maskValue: (v: string | null, empId: string, field: string) => string
   toggleReveal: (empId: string, field: string) => void
@@ -135,7 +136,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, fontWeight: 600, background: s.bg, color: s.color }}>{status.charAt(0).toUpperCase() + status.slice(1)}</span>
 }
 
-export default function EmployeeRecordModules({ employee, companyId, lieuDays, maskValue, toggleReveal, formatDate, workPatternName }: Props) {
+export default function EmployeeRecordModules({ employee, companyId, lieuDays, maskValue, toggleReveal, formatDate, contractedDays }: Props) {
   const { features } = useFeatures()
   const { employeeName } = useAuth()
   const { showError, showSuccess } = useToast()
@@ -324,7 +325,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         <div style={cardStyle}>
           <h4 style={headingStyle}>Employment</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
-            <div><span style={labelStyle}>Work Pattern</span>{workPatternName || employee.working_pattern || '—'}</div>
+            <div><span style={labelStyle}>Contracted Days</span>{employee.employment_category === 'shift_worker' ? 'Variable (any day)' : contractedDays ? contractedDays.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ') : 'Mon–Fri'}</div>
             <div><span style={labelStyle}>Weekly Hours</span>{employee.weekly_hours ?? '—'}</div>
             <div><span style={labelStyle}>Contract Type</span>{employee.contract_type || '—'}</div>
             <div><span style={labelStyle}>Notice Period</span>{employee.notice_period || '—'}</div>

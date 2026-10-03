@@ -8,7 +8,7 @@ interface Employee {
   first_name: string
   last_name: string
   department: string | null
-  work_pattern_id: string | null
+  employment_category: string | null
   contract_type: string | null
 }
 
@@ -92,8 +92,8 @@ export default function AdminAvailabilityOverview() {
   async function load() {
     setLoading(true)
     const threeWeeksEnd = toLocalDateStr(addDays(getMonday(new Date()), 27))
-    const [empRes, availRes, leaveRes, demandRes, wpRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name, department, work_pattern_id, contract_type')
+    const [empRes, availRes, leaveRes, demandRes] = await Promise.all([
+      supabase.from('employees').select('id, first_name, last_name, department, employment_category, contract_type')
         .eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
       supabase.from('employee_availability').select('employee_id, day_of_week, is_available, start_time, end_time')
         .eq('company_id', selectedCompanyId),
@@ -103,12 +103,9 @@ export default function AdminAvailabilityOverview() {
         .lte('start_date', threeWeeksEnd),
       supabase.from('labour_demand').select('shift_template_id, day_of_week, min_staff, shift_templates(name, colour)')
         .eq('company_id', selectedCompanyId),
-      supabase.from('work_patterns').select('id, pattern_type')
-        .eq('company_id', selectedCompanyId).eq('is_active', true),
     ])
-    const variableIds = new Set((wpRes.data || []).filter((p: any) => p.pattern_type === 'variable').map((p: any) => p.id))
     const allEmps = (empRes.data as Employee[]) || []
-    setEmployees(allEmps.filter(e => !e.work_pattern_id || variableIds.has(e.work_pattern_id)))
+    setEmployees(allEmps.filter(e => e.employment_category === 'shift_worker'))
     setAvailability((availRes.data as AvailabilityRecord[]) || [])
     setLeave((leaveRes.data as LeaveRecord[]) || [])
 

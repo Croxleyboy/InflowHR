@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (empId) {
         const { data: empRow } = await supabase
           .from('employees')
-          .select('is_admin, work_pattern_id, employment_category')
+          .select('is_admin, employment_category')
           .eq('id', empId)
           .single()
         if (empRow) {
@@ -153,17 +153,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               .update({ role: expectedRole })
               .eq('id', cu.id)
           }
-          setEmploymentCategory(empRow.employment_category || 'not_assigned')
-          if (empRow.work_pattern_id) {
-            const { data: wp } = await supabase
-              .from('work_patterns')
-              .select('pattern_type')
-              .eq('id', empRow.work_pattern_id)
-              .single()
-            setWorkPatternType(wp?.pattern_type === 'variable' ? 'variable' : 'fixed')
-          } else {
-            setWorkPatternType('fixed')
-          }
+          const empCat = empRow.employment_category || 'not_assigned'
+          setEmploymentCategory(empCat)
+          setWorkPatternType(empCat === 'shift_worker' ? 'variable' : 'fixed')
         }
       }
 
