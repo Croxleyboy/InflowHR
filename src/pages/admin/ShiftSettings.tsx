@@ -30,8 +30,18 @@ export default function ShiftSettings() {
   const companyId = selectedCompanyId || ''
   const { showSuccess, showError } = useToast()
 
+  const defaultAppSettings: ShiftAppSettings = {
+    allow_shift_swaps: true,
+    swap_require_manager_approval: true,
+    swap_request_window_days: 7,
+    shift_reminder_enabled: true,
+    shift_reminder_hours_before: 2,
+    rota_published_notify: true,
+    swap_notifications_enabled: true,
+  }
+
   const [settings, setSettings] = useState<CheckinSettings | null>(null)
-  const [appSettings, setAppSettings] = useState<ShiftAppSettings | null>(null)
+  const [appSettings, setAppSettings] = useState<ShiftAppSettings>(defaultAppSettings)
   const [locations, setLocations] = useState<WorkLocationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -48,7 +58,7 @@ export default function ShiftSettings() {
       supabase.from('checkin_settings').select('*').eq('company_id', companyId).single(),
       supabase.from('work_locations').select('*').eq('company_id', companyId).order('name'),
       supabase.from('employees').select('department').eq('company_id', companyId).eq('is_active', true),
-      supabase.from('app_settings').select('allow_shift_swaps, swap_require_manager_approval, swap_request_window_days, shift_reminder_enabled, shift_reminder_hours_before, rota_published_notify, swap_notifications_enabled').eq('company_id', companyId).single(),
+      supabase.from('app_settings').select('*').eq('company_id', companyId).single(),
     ])
     if (sRes.data) setSettings(sRes.data)
     else {
@@ -60,7 +70,17 @@ export default function ShiftSettings() {
       const unique = [...new Set(dRes.data.map((d: { department: string | null }) => d.department).filter(Boolean))] as string[]
       setDepartments(unique.sort())
     }
-    if (asRes.data) setAppSettings(asRes.data as ShiftAppSettings)
+    if (asRes.data) {
+      setAppSettings({
+        allow_shift_swaps: asRes.data.allow_shift_swaps ?? defaultAppSettings.allow_shift_swaps,
+        swap_require_manager_approval: asRes.data.swap_require_manager_approval ?? defaultAppSettings.swap_require_manager_approval,
+        swap_request_window_days: asRes.data.swap_request_window_days ?? defaultAppSettings.swap_request_window_days,
+        shift_reminder_enabled: asRes.data.shift_reminder_enabled ?? defaultAppSettings.shift_reminder_enabled,
+        shift_reminder_hours_before: asRes.data.shift_reminder_hours_before ?? defaultAppSettings.shift_reminder_hours_before,
+        rota_published_notify: asRes.data.rota_published_notify ?? defaultAppSettings.rota_published_notify,
+        swap_notifications_enabled: asRes.data.swap_notifications_enabled ?? defaultAppSettings.swap_notifications_enabled,
+      })
+    }
     setLoading(false)
   }, [companyId])
 
@@ -368,46 +388,44 @@ export default function ShiftSettings() {
           </div>
         </div>
 
-        {appSettings && (
-          <div className="ss-settings-grid">
-            <div className="ss-setting-row">
-              <div className="ss-setting-info">
-                <span className="ss-setting-label">Allow Shift Swaps</span>
-                <span className="ss-setting-hint">Enable employees to request swaps with colleagues</span>
-              </div>
-              <label className="admin-toggle" style={{ cursor: 'pointer' }}>
-                <input type="checkbox" checked={appSettings.allow_shift_swaps} onChange={() => updateAppSetting('allow_shift_swaps', !appSettings.allow_shift_swaps)} />
-                <span className="admin-toggle-slider" />
-              </label>
+        <div className="ss-settings-grid">
+          <div className="ss-setting-row">
+            <div className="ss-setting-info">
+              <span className="ss-setting-label">Allow Shift Swaps</span>
+              <span className="ss-setting-hint">Enable employees to request swaps with colleagues</span>
             </div>
-            {appSettings.allow_shift_swaps && (
-              <>
-                <div className="ss-setting-row">
-                  <div className="ss-setting-info">
-                    <span className="ss-setting-label">Require Manager Approval</span>
-                    <span className="ss-setting-hint">Swaps must be approved by a manager before taking effect</span>
-                  </div>
-                  <label className="admin-toggle" style={{ cursor: 'pointer' }}>
-                    <input type="checkbox" checked={appSettings.swap_require_manager_approval} onChange={() => updateAppSetting('swap_require_manager_approval', !appSettings.swap_require_manager_approval)} />
-                    <span className="admin-toggle-slider" />
-                  </label>
-                </div>
-                <div className="ss-setting-row">
-                  <div className="ss-setting-info">
-                    <span className="ss-setting-label">Swap Request Window</span>
-                    <span className="ss-setting-hint">Minimum days in advance a swap can be requested</span>
-                  </div>
-                  <div className="ss-input-suffix">
-                    <input className="admin-input" type="number" min={1} max={30} value={appSettings.swap_request_window_days}
-                      onChange={e => updateAppSetting('swap_request_window_days', parseInt(e.target.value, 10) || 7)}
-                    />
-                    <span>days</span>
-                  </div>
-                </div>
-              </>
-            )}
+            <label className="admin-toggle" style={{ cursor: 'pointer' }}>
+              <input type="checkbox" checked={appSettings.allow_shift_swaps} onChange={() => updateAppSetting('allow_shift_swaps', !appSettings.allow_shift_swaps)} />
+              <span className="admin-toggle-slider" />
+            </label>
           </div>
-        )}
+          {appSettings.allow_shift_swaps && (
+            <>
+              <div className="ss-setting-row">
+                <div className="ss-setting-info">
+                  <span className="ss-setting-label">Require Manager Approval</span>
+                  <span className="ss-setting-hint">Swaps must be approved by a manager before taking effect</span>
+                </div>
+                <label className="admin-toggle" style={{ cursor: 'pointer' }}>
+                  <input type="checkbox" checked={appSettings.swap_require_manager_approval} onChange={() => updateAppSetting('swap_require_manager_approval', !appSettings.swap_require_manager_approval)} />
+                  <span className="admin-toggle-slider" />
+                </label>
+              </div>
+              <div className="ss-setting-row">
+                <div className="ss-setting-info">
+                  <span className="ss-setting-label">Swap Request Window</span>
+                  <span className="ss-setting-hint">Minimum days in advance a swap can be requested</span>
+                </div>
+                <div className="ss-input-suffix">
+                  <input className="admin-input" type="number" min={1} max={30} value={appSettings.swap_request_window_days}
+                    onChange={e => updateAppSetting('swap_request_window_days', parseInt(e.target.value, 10) || 7)}
+                  />
+                  <span>days</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Notifications */}
@@ -422,54 +440,52 @@ export default function ShiftSettings() {
           </div>
         </div>
 
-        {appSettings && (
-          <div className="ss-settings-grid">
-            <div className="ss-setting-row">
-              <div className="ss-setting-info">
-                <span className="ss-setting-label">Shift Reminders</span>
-                <span className="ss-setting-hint">Send a reminder before upcoming shifts</span>
-              </div>
-              <label className="admin-toggle" style={{ cursor: 'pointer' }}>
-                <input type="checkbox" checked={appSettings.shift_reminder_enabled} onChange={() => updateAppSetting('shift_reminder_enabled', !appSettings.shift_reminder_enabled)} />
-                <span className="admin-toggle-slider" />
-              </label>
+        <div className="ss-settings-grid">
+          <div className="ss-setting-row">
+            <div className="ss-setting-info">
+              <span className="ss-setting-label">Shift Reminders</span>
+              <span className="ss-setting-hint">Send a reminder before upcoming shifts</span>
             </div>
-            {appSettings.shift_reminder_enabled && (
-              <div className="ss-setting-row">
-                <div className="ss-setting-info">
-                  <span className="ss-setting-label">Reminder Lead Time</span>
-                  <span className="ss-setting-hint">How far in advance to send the shift reminder</span>
-                </div>
-                <div className="ss-input-suffix">
-                  <input className="admin-input" type="number" min={1} max={48} value={appSettings.shift_reminder_hours_before}
-                    onChange={e => updateAppSetting('shift_reminder_hours_before', parseInt(e.target.value, 10) || 2)}
-                  />
-                  <span>hrs</span>
-                </div>
-              </div>
-            )}
-            <div className="ss-setting-row">
-              <div className="ss-setting-info">
-                <span className="ss-setting-label">Rota Published Alerts</span>
-                <span className="ss-setting-hint">Notify employees when a new rota is published</span>
-              </div>
-              <label className="admin-toggle" style={{ cursor: 'pointer' }}>
-                <input type="checkbox" checked={appSettings.rota_published_notify} onChange={() => updateAppSetting('rota_published_notify', !appSettings.rota_published_notify)} />
-                <span className="admin-toggle-slider" />
-              </label>
-            </div>
-            <div className="ss-setting-row">
-              <div className="ss-setting-info">
-                <span className="ss-setting-label">Swap Notifications</span>
-                <span className="ss-setting-hint">Notify employees about swap requests, approvals, and rejections</span>
-              </div>
-              <label className="admin-toggle" style={{ cursor: 'pointer' }}>
-                <input type="checkbox" checked={appSettings.swap_notifications_enabled} onChange={() => updateAppSetting('swap_notifications_enabled', !appSettings.swap_notifications_enabled)} />
-                <span className="admin-toggle-slider" />
-              </label>
-            </div>
+            <label className="admin-toggle" style={{ cursor: 'pointer' }}>
+              <input type="checkbox" checked={appSettings.shift_reminder_enabled} onChange={() => updateAppSetting('shift_reminder_enabled', !appSettings.shift_reminder_enabled)} />
+              <span className="admin-toggle-slider" />
+            </label>
           </div>
-        )}
+          {appSettings.shift_reminder_enabled && (
+            <div className="ss-setting-row">
+              <div className="ss-setting-info">
+                <span className="ss-setting-label">Reminder Lead Time</span>
+                <span className="ss-setting-hint">How far in advance to send the shift reminder</span>
+              </div>
+              <div className="ss-input-suffix">
+                <input className="admin-input" type="number" min={1} max={48} value={appSettings.shift_reminder_hours_before}
+                  onChange={e => updateAppSetting('shift_reminder_hours_before', parseInt(e.target.value, 10) || 2)}
+                />
+                <span>hrs</span>
+              </div>
+            </div>
+          )}
+          <div className="ss-setting-row">
+            <div className="ss-setting-info">
+              <span className="ss-setting-label">Rota Published Alerts</span>
+              <span className="ss-setting-hint">Notify employees when a new rota is published</span>
+            </div>
+            <label className="admin-toggle" style={{ cursor: 'pointer' }}>
+              <input type="checkbox" checked={appSettings.rota_published_notify} onChange={() => updateAppSetting('rota_published_notify', !appSettings.rota_published_notify)} />
+              <span className="admin-toggle-slider" />
+            </label>
+          </div>
+          <div className="ss-setting-row">
+            <div className="ss-setting-info">
+              <span className="ss-setting-label">Swap Notifications</span>
+              <span className="ss-setting-hint">Notify employees about swap requests, approvals, and rejections</span>
+            </div>
+            <label className="admin-toggle" style={{ cursor: 'pointer' }}>
+              <input type="checkbox" checked={appSettings.swap_notifications_enabled} onChange={() => updateAppSetting('swap_notifications_enabled', !appSettings.swap_notifications_enabled)} />
+              <span className="admin-toggle-slider" />
+            </label>
+          </div>
+        </div>
       </div>
     </div>
   )
