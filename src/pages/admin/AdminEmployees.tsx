@@ -793,7 +793,6 @@ export default function AdminEmployees() {
                                     const ct = editForm.contract_type || ''
                                     const isContractor = cat === 'contractor'
                                     const isZeroHours = cat === 'shift_worker' && ct === 'Zero hours shift worker'
-                                    const isShiftNonZero = cat === 'shift_worker' && !isZeroHours
 
                                     const contractOpts = cat === 'employed'
                                       ? ['', 'Full-time', 'Part-time', 'Student', 'Temporary']
