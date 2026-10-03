@@ -24,9 +24,12 @@ SET contracted_days = NULL
 WHERE employment_category = 'shift_worker'
   AND work_pattern_id IS NULL;
 
--- Step 3: Drop the FK constraint and column
+-- Step 3: Drop the FK constraints and columns referencing work_patterns
 ALTER TABLE employees DROP CONSTRAINT IF EXISTS employees_work_pattern_id_fkey;
 ALTER TABLE employees DROP COLUMN IF EXISTS work_pattern_id;
+
+ALTER TABLE onboarding DROP CONSTRAINT IF EXISTS onboarding_work_pattern_id_fkey;
+ALTER TABLE onboarding DROP COLUMN IF EXISTS work_pattern_id;
 
 -- Step 4: Drop the legacy working_pattern column
 ALTER TABLE employees DROP COLUMN IF EXISTS working_pattern;
