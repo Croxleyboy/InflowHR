@@ -30,7 +30,7 @@ interface Employee {
   first_name: string
   last_name: string
   avatar_url?: string | null
-  work_pattern_id?: string | null
+  employment_category?: string | null
   contract_type?: string | null
 }
 
@@ -158,7 +158,7 @@ export default function ShiftSwap() {
 
     const today = toLocalDateStr()
 
-    const [myShiftsRes, allAssignRes, employeesRes, swapRes, wpRes, rotaRes] = await Promise.all([
+    const [myShiftsRes, allAssignRes, employeesRes, swapRes, rotaRes] = await Promise.all([
       supabase
         .from('shift_assignments')
         .select('*, shift_template:shift_templates(id, name, start_time, end_time, colour), rota:rotas(name, status)')
@@ -172,7 +172,7 @@ export default function ShiftSwap() {
         .gte('date', today),
       supabase
         .from('employees')
-        .select('id, first_name, last_name, avatar_url, work_pattern_id, contract_type')
+        .select('id, first_name, last_name, avatar_url, employment_category, contract_type')
         .eq('company_id', companyUser.company_id)
         .eq('is_active', true),
       supabase
@@ -181,11 +181,6 @@ export default function ShiftSwap() {
         .eq('company_id', companyUser.company_id)
         .or(`requesting_employee_id.eq.${employeeId},target_employee_id.eq.${employeeId}`)
         .order('created_at', { ascending: false }),
-      supabase
-        .from('work_patterns')
-        .select('id, pattern_type')
-        .eq('company_id', companyUser.company_id)
-        .eq('is_active', true),
       supabase
         .from('rotas')
         .select('id, name, status')
@@ -200,9 +195,8 @@ export default function ShiftSwap() {
     setMyShifts(publishedMyShifts as ShiftAssignment[])
     setAllShiftAssignments(publishedAllAssign as ShiftAssignment[])
 
-    const variablePatternIds = new Set((wpRes.data || []).filter((p: any) => p.pattern_type === 'variable').map((p: any) => p.id))
     const allEmps = (employeesRes.data || []) as Employee[]
-    setEmployees(allEmps.filter(e => !e.work_pattern_id || variablePatternIds.has(e.work_pattern_id)))
+    setEmployees(allEmps.filter(e => e.employment_category === 'shift_worker'))
 
     const swapRows = (swapRes.data || []) as any[]
     const allShiftIds = [

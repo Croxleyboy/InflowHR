@@ -42,7 +42,7 @@ interface ReportEmployee {
   last_name: string
   department: string | null
   weekly_hours: number | null
-  working_pattern: string | null
+  contract_type: string | null
   is_active: boolean
 }
 
@@ -671,7 +671,7 @@ function EmployeeTimeReport({ companyId, period, viewMode, directReportIds }: { 
   async function loadReport() {
     setLoading(true)
     const [empRes, tsRes, ciSettingsRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, working_pattern, is_active').eq('company_id', companyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, contract_type, is_active').eq('company_id', companyId).eq('is_active', true).order('last_name'),
       supabase.from('timesheets').select('employee_id, hours').eq('company_id', companyId).gte('date', range.start).lte('date', range.end),
       supabase.from('checkin_settings').select('timesheets_checkin_enabled').eq('company_id', companyId).single(),
     ])
@@ -780,7 +780,7 @@ function EmployeeTimeReport({ companyId, period, viewMode, directReportIds }: { 
                       {checkinHours > 0 ? `${checkinHours.toFixed(1)}h` : '—'}
                     </td>
                   )}
-                  <td>{emp.working_pattern || 'Full-time'}</td>
+                  <td>{emp.contract_type || 'Full-time'}</td>
                 </tr>
               ))}
             </tbody>
@@ -825,7 +825,7 @@ function MetricsReport({ companyId, fyStartMonth }: { companyId: string; fyStart
     const fyStart = localDateStr(fyRange.startDate)
     const fyEnd = localDateStr(fyRange.endDate)
     const [empRes, tsRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, working_pattern, is_active').eq('company_id', companyId).eq('is_active', true),
+      supabase.from('employees').select('id, first_name, last_name, department, weekly_hours, contract_type, is_active').eq('company_id', companyId).eq('is_active', true),
       supabase.from('timesheets').select('employee_id, date, hours, project_id').eq('company_id', companyId).gte('date', fyStart).lte('date', fyEnd),
     ])
     setEmployees((empRes.data as ReportEmployee[]) || [])
@@ -859,8 +859,8 @@ function MetricsReport({ companyId, fyStartMonth }: { companyId: string; fyStart
       employees.forEach(emp => {
         const weeklyHrs = emp.weekly_hours || 37.5
         const monthlyHrs = (weeklyHrs / 5) * workingDays
-        const pattern = (emp.working_pattern || 'Full-time').toLowerCase()
-        if (pattern === 'full-time') {
+        const ct = (emp.contract_type || 'Full-time').toLowerCase()
+        if (ct === 'full-time') {
           fullTimeContracted += monthlyHrs
         } else {
           const empTs = monthTs.filter(t => t.employee_id === emp.id)

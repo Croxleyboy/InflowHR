@@ -33,15 +33,8 @@ interface Employee {
   id: string
   first_name: string
   last_name: string
-  work_pattern_id: string | null
+  employment_category: string | null
   contract_type: string | null
-}
-
-interface WorkPattern {
-  id: string
-  name: string
-  days: boolean[]
-  pattern_type: string
 }
 
 interface ShiftTemplate {
@@ -315,20 +308,17 @@ export default function AdminRotas() {
   const loadGridData = useCallback(async (rota: Rota, ws?: Date) => {
     const weekS = ws || weekStart
     const weekEnd = addDays(weekS, 6)
-    const [empRes, tmplRes, assignRes, leaveRes, availRes, wpRes, tsRes, esRes] = await Promise.all([
-      supabase.from('employees').select('id, first_name, last_name, work_pattern_id, contract_type').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
+    const [empRes, tmplRes, assignRes, leaveRes, availRes, tsRes, esRes] = await Promise.all([
+      supabase.from('employees').select('id, first_name, last_name, employment_category, contract_type').eq('company_id', selectedCompanyId).eq('is_active', true).order('first_name'),
       supabase.from('shift_templates').select('id, name, colour, start_time, end_time, break_minutes, shift_contract_type').eq('company_id', selectedCompanyId).eq('is_active', true),
       supabase.from('shift_assignments').select('*').eq('rota_id', rota.id),
       supabase.from('leave_requests').select('employee_id, start_date, end_date').eq('company_id', selectedCompanyId).in('status', ['pending', 'approved']),
       supabase.from('employee_availability').select('employee_id, day_of_week, start_time, end_time, is_available').eq('company_id', selectedCompanyId),
-      supabase.from('work_patterns').select('id, name, days, pattern_type').eq('company_id', selectedCompanyId).eq('is_active', true),
       supabase.from('shift_template_skills').select('shift_template_id, shift_skill_id').eq('company_id', selectedCompanyId),
       supabase.from('employee_shift_skills').select('employee_id, shift_skill_id').eq('company_id', selectedCompanyId),
     ])
     const allEmps = (empRes.data as Employee[]) || []
-    const wpData = (wpRes.data as WorkPattern[]) || []
-    const variablePatternIds = new Set(wpData.filter(p => p.pattern_type === 'variable').map(p => p.id))
-    const shiftEligible = allEmps.filter(e => !e.work_pattern_id || variablePatternIds.has(e.work_pattern_id))
+    const shiftEligible = allEmps.filter(e => e.employment_category === 'shift_worker')
     const rotaContractType = rota.shift_contract_type
     const filtered = rotaContractType
       ? shiftEligible.filter(e => e.contract_type === rotaContractType)

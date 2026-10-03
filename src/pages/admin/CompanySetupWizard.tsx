@@ -51,7 +51,6 @@ interface SetupRow {
   bank_account_name: string
   probation_end_date: string
   notice_period: string
-  working_pattern: string
   weekly_hours: number
   leave_allowance: number | null
   qualifications: string
@@ -96,7 +95,6 @@ const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
   'bank account name': 'bank_account_name', 'bank_account_name': 'bank_account_name',
   'probation end date': 'probation_end_date', 'probation_end_date': 'probation_end_date',
   'notice period': 'notice_period', 'notice_period': 'notice_period',
-  'working pattern': 'working_pattern', 'working_pattern': 'working_pattern',
   'weekly hours': 'weekly_hours', 'weekly_hours': 'weekly_hours',
   'leave allowance': 'leave_allowance', 'assigned leave days': 'leave_allowance',
   'qualifications': 'qualifications', 'qualification': 'qualifications',
@@ -160,7 +158,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
       const errors: string[] = []
       const mapped: SetupRow[] = raw.map((row, i) => {
-        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', working_pattern: 'Full-time', weekly_hours: 37.5, leave_allowance: null, qualifications: '', religion: '', salary_group: '' }
+        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', weekly_hours: 37.5, leave_allowance: null, qualifications: '', religion: '', salary_group: '' }
         for (const [excelCol, val] of Object.entries(row)) {
           const key = SETUP_COLUMN_MAP[excelCol.toLowerCase().trim()]
           if (key) {
@@ -357,7 +355,6 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           bank_account_name: row.bank_account_name || null,
           probation_end_date: row.probation_end_date || null,
           notice_period: row.notice_period || null,
-          working_pattern: row.working_pattern || null,
           weekly_hours: row.weekly_hours || null,
           annual_salary: row.annual_salary || null,
           tax_code: row.tax_code || null,
@@ -414,7 +411,6 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           bank_account_name: row.bank_account_name || null,
           probation_end_date: row.probation_end_date || null,
           notice_period: row.notice_period || null,
-          working_pattern: row.working_pattern || null,
           weekly_hours: row.weekly_hours || null,
           annual_salary: row.annual_salary || null,
           tax_code: row.tax_code || null,
