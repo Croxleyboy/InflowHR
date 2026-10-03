@@ -48,6 +48,7 @@ interface BenefitDoc {
   benefit_type_id: number
   file_name: string
   file_url: string
+  scan_status?: string
 }
 
 export default function AdminBenefits() {
@@ -325,13 +326,38 @@ export default function AdminBenefits() {
       benefit_type_id: benefitId,
       file_name: file.name,
       file_url: fileUrl,
+      scan_status: 'pending',
     }).select('*').single()
 
     if (insertErr) { showError('Failed to save document record: ' + insertErr.message); setUploading(false); return }
     if (inserted) setDocs(prev => [inserted as BenefitDoc, ...prev])
     setUploading(false)
     setUploadBenefitId(null)
-    showSuccess('Document uploaded')
+    showSuccess('Document uploaded — virus scan in progress')
+
+    if (inserted?.id) {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        fetch(`${(supabase as any).supabaseUrl}/functions/v1/scan-document`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+            apikey: (supabase as any).supabaseKey,
+          },
+          body: JSON.stringify({
+            storagePath: filePath,
+            documentId: inserted.id,
+            bucket: 'benefit-documents',
+            tableName: 'benefit_documents',
+          }),
+        }).then(async () => {
+          const { data: refreshed } = await supabase.from('benefit_documents')
+            .select('*').eq('company_id', companyId)
+          if (refreshed) setDocs(refreshed as BenefitDoc[])
+        }).catch(() => {})
+      }
+    }
   }
 
   async function deleteDoc(docId: number) {
@@ -623,9 +649,20 @@ export default function AdminBenefits() {
                       <tr key={d.id}>
                         <td>{bt?.title || 'Unknown'}</td>
                         <td>
-                          <a href={d.file_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>
-                            {d.file_name}
-                          </a>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <a href={d.file_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}>
+                              {d.file_name}
+                            </a>
+                            {d.scan_status && d.scan_status !== 'clean' && (
+                              <span style={{
+                                fontSize: 9, padding: '1px 6px', borderRadius: 3, fontWeight: 600,
+                                background: d.scan_status === 'infected' ? '#ffebee' : d.scan_status === 'scanning' || d.scan_status === 'pending' ? '#e3f2fd' : d.scan_status === 'skipped' ? '#f5f5f5' : '#fff3e0',
+                                color: d.scan_status === 'infected' ? '#c62828' : d.scan_status === 'scanning' || d.scan_status === 'pending' ? '#1565c0' : d.scan_status === 'skipped' ? '#888' : '#e65100',
+                              }}>
+                                {d.scan_status === 'infected' ? '⚠ Malware detected' : d.scan_status === 'scanning' ? 'Scanning…' : d.scan_status === 'pending' ? 'Scan pending' : d.scan_status === 'skipped' ? 'Scan skipped' : 'Scan ' + d.scan_status}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="admin-actions">
                           <button className="admin-btn-icon admin-btn-danger" onClick={() => deleteDoc(d.id)}>

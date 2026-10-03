@@ -225,6 +225,7 @@ export default function AdminPayroll() {
     skipped?: { employee_name: string; employee_number: string; month: string; existing_source: string }[]
     total_parsed: number
   } | null>(null)
+  const [sageScanStatus, setSageScanStatus] = useState<string | null>(null)
 
   // Modulr integration state
   const [modulrIntegration, setModulrIntegration] = useState<ModulrIntegration | null>(null)
@@ -1575,6 +1576,7 @@ export default function AdminPayroll() {
   async function handleSagePdfUpload(file: File) {
     setSageUploading(true)
     setSageUploadResult(null)
+    setSageScanStatus(null)
     try {
       const token = session?.access_token
       if (!token) { showError('Not authenticated'); setSageUploading(false); return }
@@ -1602,6 +1604,24 @@ export default function AdminPayroll() {
       showSuccess(`${data.matched.length} payslip(s) imported successfully`)
       logPayrollAction('Sage Import', `Imported ${data.matched.length} payslip(s) from Sage PDF: ${file.name}`)
       loadAll()
+
+      setSageScanStatus('scanning')
+      fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scan-document`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          storagePath,
+          documentId: storagePath,
+          bucket: 'sage-payslips',
+          tableName: 'sage-payslips',
+        }),
+      }).then(r => r.json()).then(result => {
+        setSageScanStatus(result.status || 'error')
+      }).catch(() => { setSageScanStatus('error') })
     } catch (err: any) {
       showError('Failed to process file: ' + (err.message || 'Unknown error'))
       logPayrollAction('Sage Import', `Failed to import Sage PDF: ${file.name} — ${(err as Error).message || 'Unknown error'}`, null, 'error')
@@ -3620,6 +3640,20 @@ export default function AdminPayroll() {
                 <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#2e7d32' }}>
                   Sage Payslip Import Complete
                 </h3>
+
+                {sageScanStatus && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 6, marginBottom: 12,
+                    background: sageScanStatus === 'clean' ? '#e8f5e9' : sageScanStatus === 'infected' ? '#ffebee' : sageScanStatus === 'scanning' ? '#e3f2fd' : sageScanStatus === 'skipped' ? '#f5f5f5' : '#fff3e0',
+                    color: sageScanStatus === 'clean' ? '#2e7d32' : sageScanStatus === 'infected' ? '#c62828' : sageScanStatus === 'scanning' ? '#1565c0' : sageScanStatus === 'skipped' ? '#666' : '#e65100',
+                    fontSize: 12, fontWeight: 600,
+                  }}>
+                    <span style={{ fontSize: 14 }}>
+                      {sageScanStatus === 'clean' ? '✓' : sageScanStatus === 'infected' ? '⚠' : sageScanStatus === 'scanning' ? '⏳' : 'ℹ'}
+                    </span>
+                    {sageScanStatus === 'clean' ? 'Virus scan: file is clean' : sageScanStatus === 'infected' ? 'Virus scan: malware detected — file removed from storage' : sageScanStatus === 'scanning' ? 'Virus scan in progress…' : sageScanStatus === 'skipped' ? 'Virus scan skipped (not configured)' : `Virus scan: ${sageScanStatus}`}
+                  </div>
+                )}
 
                 {sageUploadResult.matched.length > 0 && (
                   <>

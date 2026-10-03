@@ -3,6 +3,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const VIRUSTOTAL_API_KEY = Deno.env.get('VIRUSTOTAL_API_KEY')
 const ALLOWED_ORIGIN = 'https://app.inflowhr.com'
 
+const ALLOWED_BUCKETS: Record<string, string> = {
+  'employee-documents': 'employee_documents',
+  'benefit-documents': 'benefit_documents',
+  'sage-payslips': 'sage-payslips',
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -37,7 +43,11 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { storagePath, documentId } = await req.json()
+    const body = await req.json()
+    const { storagePath, documentId } = body
+    const bucket = body.bucket || 'employee-documents'
+    const tableName = body.tableName || 'employee_documents'
+
     if (!storagePath || !documentId) {
       return new Response(JSON.stringify({ error: 'Missing storagePath or documentId' }), {
         status: 400,
@@ -45,29 +55,42 @@ Deno.serve(async (req) => {
       })
     }
 
-    if (!VIRUSTOTAL_API_KEY) {
-      await supabase.from('employee_documents')
-        .update({ scan_status: 'skipped' })
-        .eq('id', documentId)
+    if (!ALLOWED_BUCKETS[bucket]) {
+      return new Response(JSON.stringify({ error: 'Invalid bucket' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
+    if (!Object.values(ALLOWED_BUCKETS).includes(tableName) && tableName !== 'sage-payslips') {
+      return new Response(JSON.stringify({ error: 'Invalid table' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const updateStatus = async (status: string) => {
+      if (tableName === 'sage-payslips') return
+      await supabase.from(tableName)
+        .update({ scan_status: status })
+        .eq('id', documentId)
+    }
+
+    if (!VIRUSTOTAL_API_KEY) {
+      await updateStatus('skipped')
       return new Response(JSON.stringify({ status: 'skipped', reason: 'No VirusTotal API key configured' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    await supabase.from('employee_documents')
-      .update({ scan_status: 'scanning' })
-      .eq('id', documentId)
+    await updateStatus('scanning')
 
     const { data: fileData, error: dlErr } = await supabase.storage
-      .from('employee-documents')
+      .from(bucket)
       .download(storagePath)
 
     if (dlErr || !fileData) {
-      await supabase.from('employee_documents')
-        .update({ scan_status: 'error' })
-        .eq('id', documentId)
-
+      await updateStatus('error')
       return new Response(JSON.stringify({ error: 'Failed to download file for scanning' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -84,10 +107,7 @@ Deno.serve(async (req) => {
     })
 
     if (!uploadRes.ok) {
-      await supabase.from('employee_documents')
-        .update({ scan_status: 'error' })
-        .eq('id', documentId)
-
+      await updateStatus('error')
       return new Response(JSON.stringify({ error: 'VirusTotal upload failed', detail: await uploadRes.text() }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -98,10 +118,7 @@ Deno.serve(async (req) => {
     const analysisId = uploadResult?.data?.id
 
     if (!analysisId) {
-      await supabase.from('employee_documents')
-        .update({ scan_status: 'error' })
-        .eq('id', documentId)
-
+      await updateStatus('error')
       return new Response(JSON.stringify({ error: 'No analysis ID returned' }), {
         status: 502,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -132,10 +149,7 @@ Deno.serve(async (req) => {
     }
 
     if (!scanResult) {
-      await supabase.from('employee_documents')
-        .update({ scan_status: 'timeout' })
-        .eq('id', documentId)
-
+      await updateStatus('timeout')
       return new Response(JSON.stringify({ status: 'timeout', message: 'Scan did not complete in time' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -146,15 +160,10 @@ Deno.serve(async (req) => {
     const isSafe = malicious === 0
 
     if (isSafe) {
-      await supabase.from('employee_documents')
-        .update({ scan_status: 'clean' })
-        .eq('id', documentId)
+      await updateStatus('clean')
     } else {
-      await supabase.storage.from('employee-documents').remove([storagePath])
-
-      await supabase.from('employee_documents')
-        .update({ scan_status: 'infected' })
-        .eq('id', documentId)
+      await supabase.storage.from(bucket).remove([storagePath])
+      await updateStatus('infected')
     }
 
     return new Response(JSON.stringify({
