@@ -1693,7 +1693,9 @@ body {
 .detail-status-submitted { background: #fff3e0; color: #e65100; }
 .detail-status-approved { background: #e8f5e9; color: #2e7d32; }
 .detail-status-rejected { background: #ffebee; color: #c62828; }
-.detail-status-paid { background: #e3f2fd; color: #1565c0; }
+.detail-status-pending { background: #fff3e0; color: #e65100; }
+.detail-status-processing { background: #e3f2fd; color: #1565c0; }
+.detail-status-paid { background: #e8f5e9; color: #2e7d32; }
 .detail-delete {
   background: none; border: none; cursor: pointer; padding: 4px;
   flex-shrink: 0;
@@ -1994,6 +1996,8 @@ body {
 .status-pending { background: #fff3e0; color: #e65100; }
 .status-approved { background: #e8f5e9; color: #2e7d32; }
 .status-rejected { background: #ffebee; color: #c62828; }
+.status-processing { background: #e3f2fd; color: #1565c0; }
+.status-paid { background: #e8f5e9; color: #2e7d32; }
 .approval-decided {
   padding: 16px; text-align: center;
   font-size: 14px; color: var(--text-muted); font-style: italic;
