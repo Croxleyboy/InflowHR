@@ -4,8 +4,8 @@ import AdminRotaManager from './AdminRotas'
 import AdminShiftReports from './AdminShiftReports'
 import AdminLabourDemand from './AdminLabourDemand'
 import AdminAvailabilityOverview from './AdminAvailabilityOverview'
-import CheckInSettingsPanel from './CheckInSettings'
 import CheckInDashboardPanel from './CheckInDashboard'
+import ShiftSettings from './ShiftSettings'
 import AdminShiftSkills from './AdminShiftSkills'
 import AdminShiftCorrections from './AdminShiftCorrections'
 
@@ -39,7 +39,7 @@ export default function AdminShiftsRotas() {
       {tab === 'reports' && <AdminShiftReports />}
       {tab === 'checkin' && <CheckInDashboardPanel source="shifts" />}
       {tab === 'corrections' && <AdminShiftCorrections />}
-      {tab === 'settings' && <CheckInSettingsPanel source="shifts" />}
+      {tab === 'settings' && <ShiftSettings />}
     </div>
   )
 }
