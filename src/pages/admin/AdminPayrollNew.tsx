@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
-import { useAuth } from '../../context/AuthContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { formatDate } from '../../lib/formatters'
 
@@ -85,7 +84,6 @@ type View = 'dashboard' | 'payslips' | 'employee_pay' | 'schedule' | 'reporting'
 export default function AdminPayrollNew() {
   const { selectedCompanyId, selectedCompany } = useAdminCompany()
   const { showError, showSuccess } = useToast()
-  const { session } = useAuth()
   const { features } = useFeatures()
 
   const [view, setView] = useState<View>('dashboard')
@@ -129,12 +127,6 @@ export default function AdminPayrollNew() {
   const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
   const shiftEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker'), [employees])
   const zeroHoursEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker'), [employees])
-
-  const catByEmpId = useMemo(() => {
-    const map: Record<string, string> = {}
-    employees.forEach(e => { map[e.id] = e.employment_category || 'not_assigned' })
-    return map
-  }, [employees])
 
   // Current month
   const now = new Date()
