@@ -56,6 +56,7 @@ import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminExpenses from './pages/admin/AdminExpenses'
 import AdminLeave from './pages/admin/AdminLeave'
 import AdminPayroll from './pages/admin/AdminPayroll'
+import AdminPayrollNew from './pages/admin/AdminPayrollNew'
 import AdminEmployees from './pages/admin/AdminEmployees'
 import AdminKudos from './pages/admin/AdminKudos'
 import AdminELearning from './pages/admin/AdminELearning'
@@ -207,6 +208,7 @@ function AuthGate() {
             <Route path="expenses" element={<AdminExpenses />} />
             <Route path="leave" element={<AdminLeave />} />
             <Route path="payroll" element={<AdminPayroll />} />
+            <Route path="payroll-new" element={<AdminPayrollNew />} />
             <Route path="employees" element={<AdminEmployees />} />
             <Route path="kudos" element={<AdminKudos />} />
             <Route path="elearning" element={<AdminELearning />} />
@@ -260,6 +262,7 @@ function AuthGate() {
           <Route path="expenses" element={<AdminExpenses />} />
           <Route path="leave" element={<AdminLeave />} />
           <Route path="payroll" element={<AdminPayroll />} />
+          <Route path="payroll-new" element={<AdminPayrollNew />} />
           <Route path="employees" element={<AdminEmployees />} />
           <Route path="kudos" element={<AdminKudos />} />
           <Route path="elearning" element={<AdminELearning />} />
