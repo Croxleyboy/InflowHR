@@ -72,6 +72,10 @@ Deno.serve(async (req) => {
     if (!connections.length) {
       return redirect(getFrontendUrl() + '?xero=error&reason=no_tenant')
     }
+    // Pick the most recently connected tenant (handles multiple orgs)
+    connections.sort((a: { updatedDateUtc: string }, b: { updatedDateUtc: string }) =>
+      (b.updatedDateUtc || '').localeCompare(a.updatedDateUtc || '')
+    )
     const tenantId = connections[0].tenantId
 
     // Upsert into xero_integrations (service role bypasses RLS)
