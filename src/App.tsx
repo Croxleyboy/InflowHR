@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { ThemeProvider } from './context/ThemeContext'
 import { ToastProvider } from './context/ToastContext'
 import { FeatureProvider } from './context/FeatureContext'
@@ -93,10 +93,29 @@ import ShiftCheckIn from './pages/ShiftCheckIn'
 import CheckInPrompt from './components/CheckInPrompt'
 import { CheckInProvider } from './context/CheckInContext'
 
+const ROUTE_PERM_MAP: Record<string, string> = {
+  expenses: 'expenses', leave: 'leave', payroll: 'payroll', 'payroll-new': 'payroll',
+  employees: 'employees', kudos: 'kudos', elearning: 'elearning', announcements: 'announcements',
+  onboarding: 'onboarding', tickets: 'tickets', benefits: 'benefits', timesheets: 'timesheets',
+  performance: 'performance', shifts: 'shifts', notifications: 'notifications', billing: 'billing',
+  'legal-timesheets': 'legal_timesheets', 'space-management': 'space_management', assets: 'assets',
+  'talent-intelligence': 'talent_intelligence', surveys: 'surveys', reports: 'reports',
+  integrations: 'integrations', access: 'access', 'user-guides': 'user_guides',
+}
+
 function AdminGate() {
-  const { companyUser, isSuperAdmin, portalRole } = useAuth()
+  const { companyUser, isSuperAdmin, portalRole, portalPermissions } = useAuth()
+  const location = useLocation()
   if (!isSuperAdmin && (!companyUser || (!['admin', 'hr'].includes(companyUser.role) && !portalRole))) {
     return <Navigate to="/" replace />
+  }
+  const isFullAccess = isSuperAdmin || companyUser?.role === 'admin' || portalRole === 'company_admin'
+  if (!isFullAccess && portalPermissions) {
+    const seg = location.pathname.replace('/admin/', '').split('/')[0]
+    const permKey = ROUTE_PERM_MAP[seg]
+    if (permKey && portalPermissions[permKey] === false) {
+      return <Navigate to="/admin" replace />
+    }
   }
   return <Outlet />
 }

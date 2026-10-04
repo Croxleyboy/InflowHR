@@ -38,6 +38,7 @@ interface AuthState {
   isManager: boolean
   canPostNotifications: boolean
   portalRole: string | null
+  portalPermissions: Record<string, boolean> | null
   workPatternType: 'fixed' | 'variable' | null
   employmentCategory: string | null
   avatarUrl: string | null
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [canPostNotifications, setCanPostNotifications] = useState(false)
   const [portalRole, setPortalRole] = useState<string | null>(null)
+  const [portalPermissions, setPortalPermissions] = useState<Record<string, boolean> | null>(null)
   const [workPatternType, setWorkPatternType] = useState<'fixed' | 'variable' | null>(null)
   const [employmentCategory, setEmploymentCategory] = useState<string | null>(null)
 
@@ -221,7 +223,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq('employee_id', empId)
           .eq('company_id', cu.company_id)
           .maybeSingle()
-          .then(({ data }) => setPortalRole(data?.role_key || null))
+          .then(({ data }) => {
+            const rk = data?.role_key || null
+            setPortalRole(rk)
+            if (rk) {
+              supabase.from('admin_portal_roles')
+                .select('permissions')
+                .eq('company_id', cu.company_id)
+                .eq('role_key', rk)
+                .maybeSingle()
+                .then(({ data: roleData }) => setPortalPermissions(roleData?.permissions || null))
+            } else {
+              setPortalPermissions(null)
+            }
+          })
       }
     } else {
       // No active company_users row — check if user has a deactivated row in a cancelled company
@@ -380,7 +395,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const employeeEmail = user?.email || ''
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, workPatternType, employmentCategory, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, portalPermissions, workPatternType, employmentCategory, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
       {children}
     </AuthContext.Provider>
   )

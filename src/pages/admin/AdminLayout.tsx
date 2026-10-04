@@ -11,6 +11,7 @@ interface MenuItem {
   end?: boolean
   superAdminOnly?: boolean
   feature?: keyof Features
+  permKey?: string
 }
 
 interface MenuGroup {
@@ -35,67 +36,67 @@ const MENU_GROUPS: (MenuItem | MenuGroup)[] = [
     label: 'People',
     svg: '<circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>',
     items: [
-      { path: '/admin/employees', label: 'Employees', svg: '<circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M17 11a4 4 0 1 0 0-8"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>' },
-      { path: '/admin/onboarding', label: 'Onboard / Offboard', svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>' },
-      { path: '/admin/tickets', label: 'HR Tickets', svg: '<path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2"/><path d="M22 15v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2"/><path d="M2 10a2 2 0 0 1 0 4"/><path d="M22 10a2 2 0 0 0 0 4"/>' },
+      { path: '/admin/employees', label: 'Employees', svg: '<circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M17 11a4 4 0 1 0 0-8"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>', permKey: 'employees' },
+      { path: '/admin/onboarding', label: 'Onboard / Offboard', svg: '<path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>', permKey: 'onboarding' },
+      { path: '/admin/tickets', label: 'HR Tickets', svg: '<path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2"/><path d="M22 15v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2"/><path d="M2 10a2 2 0 0 1 0 4"/><path d="M22 10a2 2 0 0 0 0 4"/>', permKey: 'tickets' },
     ],
   },
   {
     label: 'Time & Attendance',
     svg: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     items: [
-      { path: '/admin/leave', label: 'Leave', svg: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>', feature: 'leave' },
-      { path: '/admin/timesheets', label: 'Timesheets', svg: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', feature: 'timesheets' },
-      { path: '/admin/shifts', label: 'Shifts & Rotas', svg: '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>', feature: 'shifts' },
-      { path: '/admin/legal-timesheets', label: 'Legal Timesheets', svg: '<path d="M12 3v18"/><path d="M6 6l6 3 6-3"/><path d="M4 10l4 10h-8z" transform="translate(0)"/><path d="M16 10l4 10h-8z"/>', feature: 'legal_timesheets' },
+      { path: '/admin/leave', label: 'Leave', svg: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>', feature: 'leave', permKey: 'leave' },
+      { path: '/admin/timesheets', label: 'Timesheets', svg: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>', feature: 'timesheets', permKey: 'timesheets' },
+      { path: '/admin/shifts', label: 'Shifts & Rotas', svg: '<polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>', feature: 'shifts', permKey: 'shifts' },
+      { path: '/admin/legal-timesheets', label: 'Legal Timesheets', svg: '<path d="M12 3v18"/><path d="M6 6l6 3 6-3"/><path d="M4 10l4 10h-8z" transform="translate(0)"/><path d="M16 10l4 10h-8z"/>', feature: 'legal_timesheets', permKey: 'legal_timesheets' },
     ],
   },
   {
     label: 'Pay & Finance',
     svg: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
     items: [
-      { path: '/admin/payroll', label: 'Payroll', svg: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/>', feature: 'payslips' },
-      { path: '/admin/payroll-new', label: 'Payroll (New)', svg: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/><path d="M19 3v4M21 5h-4"/>', feature: 'payslips' },
-      { path: '/admin/expenses', label: 'Expenses', svg: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', feature: 'expenses' },
-      { path: '/admin/billing', label: 'Billing', svg: '<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>' },
+      { path: '/admin/payroll', label: 'Payroll', svg: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/>', feature: 'payslips', permKey: 'payroll' },
+      { path: '/admin/payroll-new', label: 'Payroll (New)', svg: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/><path d="M19 3v4M21 5h-4"/>', feature: 'payslips', permKey: 'payroll' },
+      { path: '/admin/expenses', label: 'Expenses', svg: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', feature: 'expenses', permKey: 'expenses' },
+      { path: '/admin/billing', label: 'Billing', svg: '<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>', permKey: 'billing' },
     ],
   },
   {
     label: 'Engagement',
     svg: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
     items: [
-      { path: '/admin/kudos', label: 'Kudos', svg: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', feature: 'kudos' },
-      { path: '/admin/announcements', label: 'Announcements', svg: '<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>' },
-      { path: '/admin/surveys', label: 'Surveys & Feedback', svg: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', feature: 'surveys' },
+      { path: '/admin/kudos', label: 'Kudos', svg: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', feature: 'kudos', permKey: 'kudos' },
+      { path: '/admin/announcements', label: 'Announcements', svg: '<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>', permKey: 'announcements' },
+      { path: '/admin/surveys', label: 'Surveys & Feedback', svg: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', feature: 'surveys', permKey: 'surveys' },
     ],
   },
   {
     label: 'Learning & Growth',
     svg: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
     items: [
-      { path: '/admin/elearning', label: 'E-Learning', svg: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>', feature: 'elearning' },
-      { path: '/admin/performance', label: 'Performance', svg: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>', feature: 'performance' },
-      { path: '/admin/talent-intelligence', label: 'Talent Intelligence', svg: '<path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04Z"/>', feature: 'skills_passport' },
+      { path: '/admin/elearning', label: 'E-Learning', svg: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>', feature: 'elearning', permKey: 'elearning' },
+      { path: '/admin/performance', label: 'Performance', svg: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>', feature: 'performance', permKey: 'performance' },
+      { path: '/admin/talent-intelligence', label: 'Talent Intelligence', svg: '<path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04Z"/>', feature: 'skills_passport', permKey: 'talent_intelligence' },
     ],
   },
   {
     label: 'Workplace',
     svg: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>',
     items: [
-      { path: '/admin/space-management', label: 'Space Management', svg: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>', feature: 'space_booking' },
-      { path: '/admin/assets', label: 'Asset Management', svg: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>', feature: 'asset_management' },
-      { path: '/admin/benefits', label: 'Benefits', svg: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>', feature: 'benefits' },
+      { path: '/admin/space-management', label: 'Space Management', svg: '<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>', feature: 'space_booking', permKey: 'space_management' },
+      { path: '/admin/assets', label: 'Asset Management', svg: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>', feature: 'asset_management', permKey: 'assets' },
+      { path: '/admin/benefits', label: 'Benefits', svg: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>', feature: 'benefits', permKey: 'benefits' },
     ],
   },
   {
     label: 'Settings',
     svg: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
     items: [
-      { path: '/admin/reports', label: 'Reports', svg: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
-      { path: '/admin/integrations', label: 'Integrations', svg: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>' },
-      { path: '/admin/access', label: 'Access', svg: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>' },
-      { path: '/admin/notifications', label: 'Notifications', svg: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>' },
-      { path: '/admin/user-guides', label: 'User Guides', svg: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>' },
+      { path: '/admin/reports', label: 'Reports', svg: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>', permKey: 'reports' },
+      { path: '/admin/integrations', label: 'Integrations', svg: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>', permKey: 'integrations' },
+      { path: '/admin/access', label: 'Access', svg: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', permKey: 'access' },
+      { path: '/admin/notifications', label: 'Notifications', svg: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', permKey: 'notifications' },
+      { path: '/admin/user-guides', label: 'User Guides', svg: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>', permKey: 'user_guides' },
     ],
   },
 ]
@@ -110,13 +111,18 @@ function AdminLayoutInner() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set())
   const navigate = useNavigate()
   const location = useLocation()
-  const { isSuperAdmin, employeeEmail, companyUser } = useAuth()
+  const { isSuperAdmin, employeeEmail, companyUser, portalRole, portalPermissions } = useAuth()
   const { features } = useFeatures()
   const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany } = useAdminCompany()
 
-  const isItemVisible = (item: MenuItem) =>
-    (!item.superAdminOnly || isSuperAdmin) &&
-    (!item.feature || isSuperAdmin || features[item.feature])
+  const isFullAccess = isSuperAdmin || companyUser?.role === 'admin' || portalRole === 'company_admin'
+
+  const isItemVisible = (item: MenuItem) => {
+    if (item.superAdminOnly && !isSuperAdmin) return false
+    if (item.feature && !isSuperAdmin && !features[item.feature]) return false
+    if (item.permKey && !isFullAccess && portalPermissions && portalPermissions[item.permKey] === false) return false
+    return true
+  }
 
   const toggleGroup = (label: string) => {
     setExpandedGroups(prev => {

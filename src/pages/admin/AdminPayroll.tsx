@@ -1115,9 +1115,6 @@ export default function AdminPayroll() {
       : base
   }, [filterStatus, filterEmployee, sourcePayslips, search, payslipSubTab, empCategoryById])
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-
   const groupedByMonth = useMemo(() => {
     const groups: { key: string; label: string; payslips: Payslip[] }[] = []
     const map = new Map<string, Payslip[]>()
