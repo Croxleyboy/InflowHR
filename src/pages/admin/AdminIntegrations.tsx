@@ -109,7 +109,8 @@ function ModulrLogo() {
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function AdminIntegrations() {
-  const { session } = useAuth()
+  const { session, isSuperAdmin, companyUser } = useAuth()
+  const canDisconnect = isSuperAdmin || companyUser?.role === 'admin'
   const { selectedCompanyId } = useAdminCompany()
   const { showSuccess, showError } = useToast()
   const { features } = useFeatures()
@@ -585,7 +586,7 @@ export default function AdminIntegrations() {
                         </p>
                       )}
                     </div>
-                    <button className="admin-btn" onClick={disconnectXero}>Disconnect</button>
+                    {canDisconnect && <button className="admin-btn" onClick={disconnectXero}>Disconnect</button>}
                   </div>
                 </div>
               )}
@@ -596,7 +597,7 @@ export default function AdminIntegrations() {
                   {xeroIntegration.sync_error && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>{xeroIntegration.sync_error}</p>}
                   <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
                     <button className="admin-btn admin-btn-primary" onClick={connectXero} disabled={xeroConnecting}>{xeroConnecting ? 'Redirecting...' : 'Reconnect'}</button>
-                    <button className="admin-btn" onClick={disconnectXero}>Remove</button>
+                    {canDisconnect && <button className="admin-btn" onClick={disconnectXero}>Remove</button>}
                   </div>
                 </div>
               )}
@@ -664,7 +665,7 @@ export default function AdminIntegrations() {
                         </p>
                       )}
                     </div>
-                    <button className="admin-btn" onClick={disconnectSage}>Disconnect</button>
+                    {canDisconnect && <button className="admin-btn" onClick={disconnectSage}>Disconnect</button>}
                   </div>
                 </div>
               )}
@@ -745,7 +746,7 @@ export default function AdminIntegrations() {
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="admin-btn admin-btn-primary" onClick={() => setShowModulrModal(true)}>Reconfigure</button>
-                      <button className="admin-btn" onClick={disconnectModulr}>Disconnect</button>
+                      {canDisconnect && <button className="admin-btn" onClick={disconnectModulr}>Disconnect</button>}
                     </div>
                   </div>
                 </div>
@@ -759,7 +760,7 @@ export default function AdminIntegrations() {
                   </p>
                   <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
                     <button className="admin-btn admin-btn-primary" onClick={() => setShowModulrModal(true)}>Reconfigure</button>
-                    <button className="admin-btn" onClick={disconnectModulr}>Remove</button>
+                    {canDisconnect && <button className="admin-btn" onClick={disconnectModulr}>Remove</button>}
                   </div>
                 </div>
               )}
@@ -770,7 +771,7 @@ export default function AdminIntegrations() {
                   {modulrIntegration.status_error && <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>{modulrIntegration.status_error}</p>}
                   <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
                     <button className="admin-btn admin-btn-primary" onClick={() => setShowModulrModal(true)}>Reconfigure</button>
-                    <button className="admin-btn" onClick={disconnectModulr}>Remove</button>
+                    {canDisconnect && <button className="admin-btn" onClick={disconnectModulr}>Remove</button>}
                   </div>
                 </div>
               )}
