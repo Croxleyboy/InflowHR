@@ -30,14 +30,6 @@ const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const VAT_RATE = 0.20
 
-const BILLING_PACK_A_LABELS = ['Shifts & Rotas', 'Legal Timesheets', 'Space & Desk Booking', 'Asset Management']
-const BILLING_PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligence', 'Modulr Payments & BACS Export']
-const BILLING_CORE_FEATURES = [
-  'Leave', 'Performance', 'E-Learning', 'Expenses', 'Onboarding/Offboarding',
-  'Payroll / Xero / Sage', 'Kudos', 'Announcements & Notifications',
-  'Benefits', 'GDPR Document Storage', 'Timesheets', 'HR Tickets', 'Email Notifications',
-  'Surveys & Feedback',
-]
 
 export default function AdminBilling() {
   const { isSuperAdmin } = useAuth()
@@ -53,7 +45,7 @@ function generateInvoicePDF(
   year: number,
   baselineName: string,
   baselinePrice: number,
-  packs: { name: string; price: number; features?: string[] }[],
+  packs: { name: string; price: number }[],
   employeeCount: number,
   companyId?: string,
 ) {
@@ -164,17 +156,9 @@ function generateInvoicePDF(
   }
 
   drawRow(baselineName, 'Core', `£${baselinePrice.toFixed(2)}`, String(employeeCount), `£${(baselinePrice * employeeCount).toFixed(2)}`, false, true)
-  BILLING_CORE_FEATURES.forEach(feat => {
-    drawRow(feat, '', '', '', '', true)
-  })
 
   packs.forEach(p => {
     drawRow(p.name, 'Pack', `£${p.price.toFixed(2)}`, String(employeeCount), `£${(p.price * employeeCount).toFixed(2)}`, false, true)
-    if (p.features && p.features.length > 0) {
-      p.features.forEach(feat => {
-        drawRow(feat, '', '', '', '', true)
-      })
-    }
   })
 
   y += 4
@@ -709,8 +693,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       const coreDetail = snap.feature_details.find(d => d.key === baseline.feature_key)
       const addonDetails = snap.feature_details.filter(d => d.key !== baseline.feature_key)
       const invoicePacks = addonDetails.map(d => {
-        const features = d.key === 'pack_a' ? BILLING_PACK_A_LABELS : d.key === 'pack_b' ? BILLING_PACK_B_LABELS : undefined
-        return { name: d.name, price: d.price, features }
+        return { name: d.name, price: d.price }
       })
       generateInvoicePDF(
         companyName,
@@ -724,8 +707,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       )
     } else {
       const invoicePacks = enabledAddons.map(a => {
-        const features = a.feature_key === 'pack_a' ? BILLING_PACK_A_LABELS : a.feature_key === 'pack_b' ? BILLING_PACK_B_LABELS : undefined
-        return { name: a.display_name, price: effectivePrice(a), features }
+        return { name: a.display_name, price: effectivePrice(a) }
       })
       generateInvoicePDF(
         companyName,
@@ -753,15 +735,12 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     const allFeatures: { name: string; type: string; pack?: string }[] = []
     if (baseline) {
       allFeatures.push({ name: baseline.display_name, type: 'Core' })
-      BILLING_CORE_FEATURES.forEach(l => allFeatures.push({ name: l, type: '', pack: baseline.display_name }))
     }
     if (packAEnabled && packAPricing) {
       allFeatures.push({ name: 'Pack A: ' + packAPricing.display_name, type: 'Pack A' })
-      BILLING_PACK_A_LABELS.forEach(l => allFeatures.push({ name: l, type: '', pack: 'Pack A: ' + packAPricing.display_name }))
     }
     if (packBEnabled && packBPricing) {
       allFeatures.push({ name: 'Pack B: ' + packBPricing.display_name, type: 'Pack B' })
-      BILLING_PACK_B_LABELS.forEach(l => allFeatures.push({ name: l, type: '', pack: 'Pack B: ' + packBPricing.display_name }))
     }
     enabledSupport.forEach(sp => allFeatures.push({ name: sp.display_name, type: 'Support' }))
     generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures, companyId)
@@ -846,20 +825,10 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       {!isFixed && (packAEnabled || packBEnabled || enabledSupport.length > 0) && (
         <div className="billing-addons" style={{ flexWrap: 'wrap', gap: 6 }}>
           {packAEnabled && (
-            <>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#2e7d32' }}>Pack A:</span>
-              {BILLING_PACK_A_LABELS.map(label => (
-                <span key={label} className="billing-addon-chip" style={{ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7' }}>{label}</span>
-              ))}
-            </>
+            <span className="billing-addon-chip" style={{ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7', fontWeight: 600 }}>Pack A: Workforce &amp; Operations</span>
           )}
           {packBEnabled && (
-            <>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#7b1fa2' }}>Pack B:</span>
-              {BILLING_PACK_B_LABELS.map(label => (
-                <span key={label} className="billing-addon-chip" style={{ background: '#f3e5f5', color: '#7b1fa2', border: '1px solid #ce93d8' }}>{label}</span>
-              ))}
-            </>
+            <span className="billing-addon-chip" style={{ background: '#f3e5f5', color: '#7b1fa2', border: '1px solid #ce93d8', fontWeight: 600 }}>Pack B: Pro Integrations</span>
           )}
           {enabledSupport.map(sp => (
             <span key={sp.feature_key} className="billing-addon-chip" style={{ background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80' }}>
@@ -1097,14 +1066,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                 <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(effectivePrice(baseline) * employeeCount).toFixed(2)}</>}</td>
               </tr>
             )}
-            {baseline && (
-              <tr>
-                <td colSpan={isFixed ? 2 : 3} style={{ paddingLeft: 24, fontSize: 12, color: '#888', borderBottom: '1px solid #f0f0f0' }}>
-                  {BILLING_CORE_FEATURES.join(' · ')}
-                </td>
-                <td style={{ borderBottom: '1px solid #f0f0f0' }}></td>
-              </tr>
-            )}
             {packAEnabled && packAPricing && (
               <>
                 <tr>
@@ -1112,12 +1073,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                   <td><span className="admin-badge" style={{ background: '#e8f5e9', color: '#2e7d32' }}>Pack A</span></td>
                   {!isFixed && <td>&pound;{packAPrice.toFixed(2)}</td>}
                   <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(packAPrice * employeeCount).toFixed(2)}</>}</td>
-                </tr>
-                <tr>
-                  <td colSpan={isFixed ? 2 : 3} style={{ paddingLeft: 24, fontSize: 12, color: '#888', borderBottom: '1px solid #f0f0f0' }}>
-                    {BILLING_PACK_A_LABELS.join(' · ')}
-                  </td>
-                  <td style={{ borderBottom: '1px solid #f0f0f0' }}></td>
                 </tr>
               </>
             )}
@@ -1128,12 +1083,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                   <td><span className="admin-badge" style={{ background: '#f3e5f5', color: '#7b1fa2' }}>Pack B</span></td>
                   {!isFixed && <td>&pound;{packBPrice.toFixed(2)}</td>}
                   <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(packBPrice * employeeCount).toFixed(2)}</>}</td>
-                </tr>
-                <tr>
-                  <td colSpan={isFixed ? 2 : 3} style={{ paddingLeft: 24, fontSize: 12, color: '#888', borderBottom: '1px solid #f0f0f0' }}>
-                    {BILLING_PACK_B_LABELS.join(' · ')}
-                  </td>
-                  <td style={{ borderBottom: '1px solid #f0f0f0' }}></td>
                 </tr>
               </>
             )}
@@ -1437,11 +1386,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
     const m = month || MONTH_FULL[now.getMonth()]
     const y = year || now.getFullYear()
     const invoicePacks = c.addonDetails.map(d => {
-      const key = d.name.toLowerCase()
-      const features = key.includes('pack a') || key.includes('workforce') ? BILLING_PACK_A_LABELS
-        : key.includes('pack b') || key.includes('enterprise') ? BILLING_PACK_B_LABELS
-        : undefined
-      return { ...d, features }
+      return { name: d.name, price: d.price }
     })
     generateInvoicePDF(
       c.name,
