@@ -306,7 +306,10 @@ export default function AdminIntegrations() {
     if (!confirm('Disconnect from Xero? This will remove the integration and delete all Xero payslip data.')) return
     if (!companyId) return
     await supabase.from('payslips').delete().eq('company_id', companyId).eq('source', 'xero')
-    await supabase.from('xero_integrations').delete().eq('company_id', companyId)
+    const { error } = await supabase.from('xero_integrations').delete().eq('company_id', companyId)
+    if (error) { showError('Failed to disconnect Xero: ' + error.message); return }
+    const { data: check } = await supabase.from('xero_integrations').select('id').eq('company_id', companyId).maybeSingle()
+    if (check) { showError('Failed to disconnect Xero — you may not have permission. Please ask a company admin.'); return }
     setXeroIntegration(null)
     showSuccess('Xero disconnected')
     loadAll()
@@ -335,7 +338,10 @@ export default function AdminIntegrations() {
     if (!confirm('Disconnect from Sage? This will remove the integration and delete all Sage payslip data.')) return
     if (!companyId) return
     await supabase.from('payslips').delete().eq('company_id', companyId).eq('source', 'sage')
-    await supabase.from('sage_integrations').delete().eq('company_id', companyId)
+    const { error } = await supabase.from('sage_integrations').delete().eq('company_id', companyId)
+    if (error) { showError('Failed to disconnect Sage: ' + error.message); return }
+    const { data: check } = await supabase.from('sage_integrations').select('id').eq('company_id', companyId).maybeSingle()
+    if (check) { showError('Failed to disconnect Sage — you may not have permission. Please ask a company admin.'); return }
     setSageIntegration(null)
     showSuccess('Sage disconnected')
     loadAll()
@@ -374,7 +380,10 @@ export default function AdminIntegrations() {
   async function disconnectModulr() {
     if (!confirm('Disconnect Modulr? This will remove the integration credentials.')) return
     if (!companyId) return
-    await supabase.from('modulr_integrations').delete().eq('company_id', companyId)
+    const { error } = await supabase.from('modulr_integrations').delete().eq('company_id', companyId)
+    if (error) { showError('Failed to disconnect Modulr: ' + error.message); return }
+    const { data: check } = await supabase.from('modulr_integrations').select('id').eq('company_id', companyId).maybeSingle()
+    if (check) { showError('Failed to disconnect Modulr — you may not have permission. Please ask a company admin.'); return }
     setModulrIntegration(null)
     showSuccess('Modulr disconnected')
     loadAll()
