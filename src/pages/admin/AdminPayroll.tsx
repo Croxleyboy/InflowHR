@@ -1617,7 +1617,7 @@ export default function AdminPayroll() {
       body: JSON.stringify({ company_id: selectedCompanyId, ...body }),
     })
     const data = await res.json()
-    if (!res.ok) { showError(data.error || 'Xero request failed'); return null }
+    if (!res.ok) { showError(data.detail ? `${data.error}: ${data.detail}` : (data.error || 'Xero request failed')); return null }
     return data
   }
 
