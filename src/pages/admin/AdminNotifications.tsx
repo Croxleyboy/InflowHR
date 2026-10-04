@@ -55,12 +55,12 @@ const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
   elearning_reminders_enabled: false,
 }
 
-const EMAIL_TOGGLES: { key: keyof EmailSettings; label: string; description: string }[] = [
+const EMAIL_TOGGLES: { key: keyof EmailSettings; label: string; description: string; requiredFeature?: string }[] = [
   { key: 'leave_enabled', label: 'Leave Confirmations', description: 'Email employees when their leave request is approved or declined' },
   { key: 'expenses_enabled', label: 'Expense Confirmations', description: 'Email employees when their expense claim is approved or declined' },
-  { key: 'shifts_enabled', label: 'Shift Notifications', description: 'Email employees when they are assigned a new shift' },
+  { key: 'shifts_enabled', label: 'Shift Notifications', description: 'Email employees when they are assigned a new shift', requiredFeature: 'shifts' },
   { key: 'kudos_enabled', label: 'Kudos Received', description: 'Email employees when they receive kudos recognition from a colleague' },
-  { key: 'space_booking_enabled', label: 'Booking Confirmations', description: 'Email employees when their desk or meeting room booking is confirmed' },
+  { key: 'space_booking_enabled', label: 'Booking Confirmations', description: 'Email employees when their desk or meeting room booking is confirmed', requiredFeature: 'space_booking' },
   { key: 'performance_reminders_enabled', label: '1:1 Reminders', description: 'Email employees one day before a scheduled 1:1 performance meeting' },
   { key: 'elearning_reminders_enabled', label: 'E-Learning Expiry Reminders', description: 'Email employees one day before an e-learning course deadline expires' },
 ]
@@ -512,45 +512,54 @@ export default function AdminNotifications() {
 
           {loadingEmail ? <div className="admin-loading">Loading...</div> : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {EMAIL_TOGGLES.map(toggle => (
-                <div
-                  key={toggle.key}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '14px 18px',
-                    background: emailSettings[toggle.key] ? 'var(--card-bg-active, #f0fdf4)' : 'var(--card-bg, #fff)',
-                    border: `1px solid ${emailSettings[toggle.key] ? '#43a047' : 'var(--border-color, #e0e0e0)'}`,
-                    borderRadius: 8,
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <label className="admin-toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={emailSettings[toggle.key]}
-                      onChange={() => toggleEmailSetting(toggle.key)}
-                      disabled={savingEmail === toggle.key}
-                    />
-                    <span className="admin-toggle-slider" />
-                  </label>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary, #333)' }}>{toggle.label}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 2 }}>{toggle.description}</div>
+              {EMAIL_TOGGLES.map(toggle => {
+                const featureLocked = toggle.requiredFeature && !companyFeatures[toggle.requiredFeature as keyof typeof companyFeatures]
+                return (
+                  <div
+                    key={toggle.key}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 16,
+                      padding: '14px 18px',
+                      background: featureLocked ? '#fafafa' : emailSettings[toggle.key] ? 'var(--card-bg-active, #f0fdf4)' : 'var(--card-bg, #fff)',
+                      border: `1px solid ${featureLocked ? '#e0e0e0' : emailSettings[toggle.key] ? '#43a047' : 'var(--border-color, #e0e0e0)'}`,
+                      borderRadius: 8,
+                      transition: 'all 0.2s',
+                      opacity: featureLocked ? 0.6 : 1,
+                    }}
+                  >
+                    <label className="admin-toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={!featureLocked && emailSettings[toggle.key]}
+                        onChange={() => toggleEmailSetting(toggle.key)}
+                        disabled={!!featureLocked || savingEmail === toggle.key}
+                      />
+                      <span className="admin-toggle-slider" />
+                    </label>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary, #333)' }}>{toggle.label}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 2 }}>{toggle.description}</div>
+                      {featureLocked && (
+                        <div style={{ fontSize: 11, color: '#e65100', fontWeight: 600, marginTop: 4 }}>
+                          Requires {toggle.requiredFeature === 'shifts' ? 'Shifts & Rotas' : 'Space & Desk Booking'} subscription (Pack A)
+                        </div>
+                      )}
+                    </div>
+                    <span style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      padding: '3px 10px',
+                      borderRadius: 12,
+                      background: featureLocked ? '#fff3e0' : emailSettings[toggle.key] ? '#e8f5e9' : '#f5f5f5',
+                      color: featureLocked ? '#e65100' : emailSettings[toggle.key] ? '#2e7d32' : '#999',
+                    }}>
+                      {featureLocked ? 'Locked' : savingEmail === toggle.key ? 'Saving...' : emailSettings[toggle.key] ? 'On' : 'Off'}
+                    </span>
                   </div>
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: '3px 10px',
-                    borderRadius: 12,
-                    background: emailSettings[toggle.key] ? '#e8f5e9' : '#f5f5f5',
-                    color: emailSettings[toggle.key] ? '#2e7d32' : '#999',
-                  }}>
-                    {savingEmail === toggle.key ? 'Saving...' : emailSettings[toggle.key] ? 'On' : 'Off'}
-                  </span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </>

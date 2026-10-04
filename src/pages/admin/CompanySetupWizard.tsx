@@ -251,9 +251,21 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         { company_id: companyId, feature_key: 'benefits', is_enabled: false },
         { company_id: companyId, feature_key: 'legal_timesheets', is_enabled: false },
         { company_id: companyId, feature_key: 'space_booking', is_enabled: false },
+        { company_id: companyId, feature_key: 'email_notifications', is_enabled: false },
       ]
       const { error: featuresErr } = await supabase.from('company_features').insert(standardFeatures)
       if (featuresErr) { showError('Failed to create company features: ' + featuresErr.message); return }
+
+      await supabase.from('email_notification_settings').insert({
+        company_id: companyId,
+        leave_enabled: false,
+        expenses_enabled: false,
+        shifts_enabled: false,
+        kudos_enabled: false,
+        space_booking_enabled: false,
+        performance_reminders_enabled: false,
+        elearning_reminders_enabled: false,
+      })
     }
 
     const { data: existingAnn } = await supabase

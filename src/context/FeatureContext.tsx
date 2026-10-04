@@ -35,6 +35,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   space_booking: 'space_booking',
   skills_passport: 'skills_passport',
   teams_integration: 'teams_integration',
+  email_notifications: 'email_notifications',
 }
 const PACK_A_FEATURES: (keyof Features)[] = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
 const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport', 'modulr_integration']
