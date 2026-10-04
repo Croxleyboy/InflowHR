@@ -48,6 +48,8 @@ function generateInvoicePDF(
   packs: { name: string; price: number }[],
   employeeCount: number,
   companyId?: string,
+  supportItems?: { name: string; price: number }[],
+  platformFee?: number,
 ) {
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
@@ -161,12 +163,23 @@ function generateInvoicePDF(
     drawRow(p.name, 'Pack', `£${p.price.toFixed(2)}`, String(employeeCount), `£${(p.price * employeeCount).toFixed(2)}`, false, true)
   })
 
+  if (supportItems && supportItems.length > 0) {
+    supportItems.forEach(sp => {
+      drawRow(sp.name, 'Support', `£${sp.price.toFixed(2)} flat`, '', `£${sp.price.toFixed(2)}`, false, true)
+    })
+  }
+
+  if (platformFee && platformFee > 0) {
+    drawRow('Platform Fee', 'Flat', `£${platformFee.toFixed(2)} flat`, '', `£${platformFee.toFixed(2)}`, false, true)
+  }
+
   y += 4
   doc.setDrawColor(220, 220, 220)
   doc.line(lm + 100, y, rm, y)
   y += 8
 
-  const subtotal = baselinePrice * employeeCount + packs.reduce((s, p) => s + p.price * employeeCount, 0)
+  const supportTotal = (supportItems || []).reduce((s, sp) => s + sp.price, 0)
+  const subtotal = baselinePrice * employeeCount + packs.reduce((s, p) => s + p.price * employeeCount, 0) + supportTotal + (platformFee || 0)
   const vat = subtotal * VAT_RATE
   const total = subtotal + vat
 
@@ -704,6 +717,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         invoicePacks,
         snap.employee_count,
         companyId,
+        enabledSupport.map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
+        monthlyPlatformFee,
       )
     } else {
       const invoicePacks = enabledAddons.map(a => {
@@ -718,6 +733,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         invoicePacks,
         employeeCount,
         companyId,
+        enabledSupport.map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
+        monthlyPlatformFee,
       )
     }
   }
@@ -1397,6 +1414,8 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
       invoicePacks,
       c.employees,
       c.id,
+      [],
+      c.platformFee,
     )
   }
 
