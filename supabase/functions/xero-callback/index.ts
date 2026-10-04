@@ -3,10 +3,12 @@
 // Exchanges the code for tokens, fetches tenant ID, saves to DB,
 // then redirects the browser back to the app.
 
-import { getSupabase, getXeroEnv, corsHeaders, redirect, verifyState } from '../_shared/xero.ts'
+import { getSupabase, getXeroEnv, getValidXeroToken, corsHeaders, redirect, verifyState } from '../_shared/xero.ts'
 
 const TOKEN_URL = 'https://identity.xero.com/connect/token'
 const CONNECTIONS_URL = 'https://api.xero.com/connections'
+const XERO_PAYROLL_UK = 'https://api.xero.com/payroll.xro/1.0'
+const XERO_PAYROLL_AU = 'https://api.xero.com/payroll.xro/2.0'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -98,6 +100,13 @@ Deno.serve(async (req) => {
       return redirect(getFrontendUrl() + '?xero=error&reason=db')
     }
 
+    // Auto-sync: match Xero employees to InflowHR employees by email
+    try {
+      await autoSyncEmployees(sb, tokens.access_token, tenantId, companyId)
+    } catch {
+      // Non-blocking — connection succeeded even if sync fails
+    }
+
     return redirect(getFrontendUrl() + '?xero=connected')
   } catch (err) {
     console.error('xero-callback error:', err)
@@ -107,4 +116,79 @@ Deno.serve(async (req) => {
 
 function getFrontendUrl(): string {
   return Deno.env.get('FRONTEND_URL') || 'https://inflowhr.co.uk/admin/payroll'
+}
+
+async function autoSyncEmployees(
+  sb: ReturnType<typeof getSupabase>,
+  accessToken: string,
+  tenantId: string,
+  companyId: string,
+) {
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'xero-tenant-id': tenantId,
+    Accept: 'application/json',
+  }
+
+  // Detect UK vs AU
+  let baseUrl = XERO_PAYROLL_UK
+  const testRes = await fetch(`${baseUrl}/PayRuns`, { headers })
+  if (!testRes.ok) {
+    const errText = await testRes.text()
+    if (errText.includes('AU Customer') || errText.includes('ValidationException')) {
+      baseUrl = XERO_PAYROLL_AU
+    } else {
+      return
+    }
+  }
+
+  // Fetch all Xero employees
+  const xeroEmployees: { xeroId: string; email: string }[] = []
+  let empPage = 1
+  while (true) {
+    const empRes = await fetch(`${baseUrl}/Employees?page=${empPage}`, { headers })
+    if (!empRes.ok) break
+    const empData = await empRes.json()
+    const employees = empData.Employees || empData.employees || []
+    if (!employees.length) break
+    for (const e of employees) {
+      const eId = e.EmployeeID || e.employeeID
+      const eEmail = (e.Email || e.email || '').toLowerCase()
+      if (eId && eEmail) xeroEmployees.push({ xeroId: eId, email: eEmail })
+    }
+    if (employees.length < 100) break
+    empPage++
+  }
+
+  if (!xeroEmployees.length) return
+
+  // Load InflowHR employees
+  const { data: inflowEmployees } = await sb
+    .from('employees')
+    .select('id, email, xero_employee_id')
+    .eq('company_id', companyId)
+
+  const emailToInflowId: Record<string, string> = {}
+  const alreadyLinked = new Set<string>()
+  for (const e of (inflowEmployees || [])) {
+    if (e.email) emailToInflowId[e.email.toLowerCase()] = e.id
+    if (e.xero_employee_id) alreadyLinked.add(e.id)
+  }
+
+  let matched = 0
+  for (const xe of xeroEmployees) {
+    const inflowId = emailToInflowId[xe.email]
+    if (!inflowId || alreadyLinked.has(inflowId)) continue
+    await sb.from('employees').update({ xero_employee_id: xe.xeroId }).eq('id', inflowId)
+    matched++
+  }
+
+  if (matched > 0) {
+    await sb.from('payroll_audit_log').insert({
+      company_id: companyId,
+      action: 'Xero Employee Auto-Sync',
+      detail: `Auto-linked ${matched} employee(s) to Xero by email on connection`,
+      status: 'success',
+    })
+  }
 }

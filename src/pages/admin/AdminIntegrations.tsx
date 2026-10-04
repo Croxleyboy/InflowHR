@@ -129,6 +129,8 @@ export default function AdminIntegrations() {
   const [xeroIntegration, setXeroIntegration] = useState<XeroIntegration | null>(null)
   const [xeroExpanded, setXeroExpanded] = useState(false)
   const [xeroConnecting, setXeroConnecting] = useState(false)
+  const [xeroEmpSync, setXeroEmpSync] = useState<{ total: number; linked: number; unlinked: string[] } | null>(null)
+  const [xeroSyncing, setXeroSyncing] = useState(false)
 
   // Sage state
   const [sageIntegration, setSageIntegration] = useState<SageIntegration | null>(null)
@@ -192,6 +194,22 @@ export default function AdminIntegrations() {
     const sage = sageRes.data as SageIntegration | null
     setSageIntegration(sage)
     setModulrIntegration(modulrRes.data as ModulrIntegration | null)
+
+    // Load Xero employee sync status
+    if (xeroRes.data && (xeroRes.data as XeroIntegration).sync_status === 'connected') {
+      const { data: emps } = await supabase
+        .from('employees')
+        .select('first_name, last_name, email, xero_employee_id')
+        .eq('company_id', companyId)
+        .eq('is_active', true)
+      if (emps) {
+        const linked = emps.filter(e => e.xero_employee_id).length
+        const unlinked = emps.filter(e => !e.xero_employee_id).map(e => `${e.first_name} ${e.last_name}`)
+        setXeroEmpSync({ total: emps.length, linked, unlinked })
+      }
+    } else {
+      setXeroEmpSync(null)
+    }
 
     setLoading(false)
   }
@@ -301,6 +319,22 @@ export default function AdminIntegrations() {
     const result = await callEdgeFunction('xero-connect')
     setXeroConnecting(false)
     if (result?.url) window.location.href = result.url
+  }
+
+  async function syncXeroEmployees() {
+    setXeroSyncing(true)
+    const result = await callEdgeFunction('xero-sync-employees')
+    setXeroSyncing(false)
+    if (result) {
+      if (result.matched > 0) {
+        showSuccess(`Linked ${result.matched} employee(s) to Xero by email`)
+      } else if (result.unmatched > 0) {
+        showError(`No new matches found — ${result.unmatched} Xero employee(s) have no matching email in InflowHR`)
+      } else {
+        showSuccess('All employees already linked')
+      }
+      loadAll()
+    }
   }
 
   async function disconnectXero() {
@@ -576,19 +610,44 @@ export default function AdminIntegrations() {
           {xeroExpanded && (
             <div style={{ marginTop: 20 }}>
               {xeroIntegration?.sync_status === 'connected' && (
-                <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-                    <div>
-                      <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Xero</strong>
-                      {xeroIntegration.last_sync_at && (
-                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
-                          Last synced: {new Date(xeroIntegration.last_sync_at).toLocaleString('en-GB')}
-                        </p>
-                      )}
+                <>
+                  <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                      <div>
+                        <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to Xero</strong>
+                        {xeroIntegration.last_sync_at && (
+                          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
+                            Last synced: {new Date(xeroIntegration.last_sync_at).toLocaleString('en-GB')}
+                          </p>
+                        )}
+                      </div>
+                      {canDisconnect && <button className="admin-btn" onClick={disconnectXero}>Disconnect</button>}
                     </div>
-                    {canDisconnect && <button className="admin-btn" onClick={disconnectXero}>Disconnect</button>}
                   </div>
-                </div>
+
+                  {xeroEmpSync && (
+                    <div style={{ ...sectionStyle, background: 'rgba(232,242,255,.5)', borderColor: '#90caf9' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                        <div>
+                          <strong style={{ fontSize: 13, color: '#1565c0' }}>
+                            Employee Linking: {xeroEmpSync.linked}/{xeroEmpSync.total} linked to Xero
+                          </strong>
+                          {xeroEmpSync.unlinked.length > 0 && (
+                            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#1976d2' }}>
+                              Not linked: {xeroEmpSync.unlinked.join(', ')}
+                            </p>
+                          )}
+                          <p style={{ margin: '2px 0 0', fontSize: 11, color: '#64b5f6' }}>
+                            Employees are matched by email address
+                          </p>
+                        </div>
+                        <button className="admin-btn" onClick={syncXeroEmployees} disabled={xeroSyncing} style={{ fontSize: 13 }}>
+                          {xeroSyncing ? 'Syncing...' : 'Re-sync Employees'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {xeroIntegration?.sync_status === 'error' && (
