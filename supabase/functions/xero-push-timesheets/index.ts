@@ -131,21 +131,29 @@ Deno.serve(async (req) => {
     let defaultEarningsRateId = rateMappings?.find(m => m.inflow_rate_name === 'default')?.xero_earnings_rate_id
 
     if (!defaultEarningsRateId) {
-      // Fetch earning rates from Xero, pick the first ordinary-time or regular one
-      const rateUrl = baseUrl === XERO_PAYROLL_UK ? `${baseUrl}/EarningsRates` : `${baseUrl}/PayItems`
-      const rateRes = await fetch(rateUrl, {
+      // Try /EarningsRates first (works for both UK v1 and AU v2), fall back to /PayItems (AU v1)
+      let rates: { EarningsRateID?: string; earningsRateID?: string; Name?: string; name?: string; EarningsType?: string; earningsType?: string }[] = []
+
+      const rateRes = await fetch(`${baseUrl}/EarningsRates`, {
         headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
       })
       if (rateRes.ok) {
         const rateBody = await rateRes.json()
-        let rates: { EarningsRateID?: string; earningsRateID?: string; Name?: string; name?: string; EarningsType?: string; earningsType?: string }[] = []
+        rates = rateBody.EarningsRates || rateBody.earningsRates || []
+      }
 
-        if (baseUrl === XERO_PAYROLL_UK) {
-          rates = rateBody.EarningsRates || rateBody.earningsRates || []
-        } else {
-          const payItems = rateBody.PayItems || rateBody.payItems || {}
+      if (!rates.length) {
+        const piRes = await fetch(`${baseUrl}/PayItems`, {
+          headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+        })
+        if (piRes.ok) {
+          const piBody = await piRes.json()
+          const payItems = piBody.PayItems || piBody.payItems || {}
           rates = payItems.EarningsRates || payItems.earningsRates || []
         }
+      }
+
+      if (rates.length) {
 
         // Prefer "Ordinary Time" or "Regular" earnings rate
         const ordinaryRate = rates.find(r => {
