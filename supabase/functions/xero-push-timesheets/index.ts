@@ -103,16 +103,17 @@ Deno.serve(async (req) => {
     let payrollCalendarId = xeroIntegration?.payroll_calendar_id
 
     if (!payrollCalendarId) {
-      // Fetch payroll calendars from Xero and use the first one
-      const calUrl = baseUrl === XERO_PAYROLL_UK ? `${baseUrl}/PayrollCalendars` : `${baseUrl}/PayrollCalendars`
+      const calUrl = baseUrl === XERO_PAYROLL_UK ? `${baseUrl}/PayrollCalendars` : `${baseUrl}/PayCalendars`
       const calRes = await fetch(calUrl, {
         headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
       })
       if (calRes.ok) {
         const calBody = await calRes.json()
-        const calendars = calBody.PayrollCalendars || calBody.payrollCalendars || []
+        const calendars = calBody.PayrollCalendars || calBody.payrollCalendars
+          || calBody.PayCalendars || calBody.payCalendars || []
         if (calendars.length) {
           payrollCalendarId = calendars[0].PayrollCalendarID || calendars[0].payrollCalendarID
+            || calendars[0].PayCalendarID || calendars[0].payCalendarID
           await sb.from('xero_integrations').update({ payroll_calendar_id: payrollCalendarId }).eq('company_id', company_id)
         }
       }
