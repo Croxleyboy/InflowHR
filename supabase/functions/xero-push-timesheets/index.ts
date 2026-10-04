@@ -177,6 +177,25 @@ Deno.serve(async (req) => {
       }
     }
 
+    // For AU v2: fetch each employee's payroll calendar from their Xero record
+    const empCalendarCache: Record<string, string | null> = {}
+    async function getEmployeeCalendarId(xeroEmployeeId: string): Promise<string | null> {
+      if (empCalendarCache[xeroEmployeeId] !== undefined) return empCalendarCache[xeroEmployeeId]
+      if (payrollCalendarId) { empCalendarCache[xeroEmployeeId] = payrollCalendarId; return payrollCalendarId }
+      const empRes = await fetch(`${baseUrl}/Employees/${xeroEmployeeId}`, {
+        headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+      })
+      if (empRes.ok) {
+        const empBody = await empRes.json()
+        const employee = empBody.Employee || empBody.employee || (empBody.Employees && empBody.Employees[0]) || (empBody.employees && empBody.employees[0])
+        const calId = employee?.PayrollCalendarID || employee?.payrollCalendarID || employee?.payCalendarID || null
+        empCalendarCache[xeroEmployeeId] = calId
+        return calId
+      }
+      empCalendarCache[xeroEmployeeId] = null
+      return null
+    }
+
     // Push timesheets to Xero
     const results: { employee: string; status: string; xeroTimesheetId?: string; error?: string }[] = []
     const skipped: { employee: string; reason: string }[] = []
@@ -198,8 +217,6 @@ Deno.serve(async (req) => {
         continue
       }
 
-      // Build timesheet lines — one line per day, spread hours evenly across working days
-      // For simplicity, create a single line with total hours on the period start date
       let timesheetPayload: Record<string, unknown>
       if (baseUrl === XERO_PAYROLL_UK) {
         timesheetPayload = {
@@ -214,7 +231,9 @@ Deno.serve(async (req) => {
           }],
         }
       } else {
-        // AU v2: dates as ISO strings, numberOfUnits as daily array
+        // AU v2: fetch employee's own payroll calendar
+        const empCalId = await getEmployeeCalendarId(emp.xeroId)
+
         const start = new Date(period_start)
         const end = new Date(period_end)
         const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
@@ -235,7 +254,7 @@ Deno.serve(async (req) => {
         }
 
         timesheetPayload = {
-          payrollCalendarID: payrollCalendarId || undefined,
+          payrollCalendarID: empCalId || undefined,
           employeeID: emp.xeroId,
           startDate: period_start,
           endDate: period_end,
@@ -293,7 +312,8 @@ Deno.serve(async (req) => {
 
       if (!tsRes.ok) {
         const errText = await tsRes.text()
-        const debugInfo = `API: ${baseUrl}, Calendar: ${payrollCalendarId || 'none'}, EarningsRate: ${defaultEarningsRateId}, Period: ${period_start} to ${period_end}, Hours: ${hours}`
+        const empCal = baseUrl === XERO_PAYROLL_AU ? (empCalendarCache[emp.xeroId!] || 'none') : (payrollCalendarId || 'none')
+        const debugInfo = `API: ${baseUrl}, Calendar: ${empCal}, EarningsRate: ${defaultEarningsRateId}, Period: ${period_start} to ${period_end}, Hours: ${hours}, Days: ${Math.round((new Date(period_end).getTime() - new Date(period_start).getTime()) / 86400000) + 1}`
         results.push({ employee: emp.name, status: 'failed', error: `${sanitiseXeroError(errText)} [${debugInfo}]` })
         continue
       }
