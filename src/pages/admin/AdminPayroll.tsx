@@ -198,7 +198,7 @@ export default function AdminPayroll() {
   const [tab, setTab] = useState<'payslips' | 'schedule' | 'employees' | 'period_review' | 'time_breakdown' | 'analytics' | 'xero_pay' | 'sage_pay' | 'bacs_export' | 'modulr_payout' | 'logs'>('payslips')
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
-  const [page, setPage] = useState(1)
+  const [, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<Record<string, any>>({})

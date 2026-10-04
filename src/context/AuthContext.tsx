@@ -229,7 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (rk) {
               supabase.from('admin_portal_roles')
                 .select('permissions')
-                .eq('company_id', cu.company_id)
+                .eq('company_id', cu!.company_id)
                 .eq('role_key', rk)
                 .maybeSingle()
                 .then(({ data: roleData }) => setPortalPermissions(roleData?.permissions || null))
