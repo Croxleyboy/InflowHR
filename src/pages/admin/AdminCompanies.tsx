@@ -293,7 +293,7 @@ export default function AdminCompanies() {
       const allFeatureKeys = [
         'expenses', 'leave', 'kudos', 'elearning', 'timesheets',
         'payroll', 'performance', 'shifts', 'benefits', 'legal_timesheets',
-        'space_booking', 'asset_management',
+        'space_booking', 'asset_management', 'email_notifications',
       ]
       const defaultEnabled = ['expenses', 'leave', 'kudos', 'elearning', 'timesheets']
       const featureRows = allFeatureKeys.map(key => ({
@@ -304,6 +304,17 @@ export default function AdminCompanies() {
       }))
       const { error: featuresError } = await supabase.from('company_features').insert(featureRows)
       if (featuresError) showError('Failed to create default company features: ' + featuresError.message)
+
+      await supabase.from('email_notification_settings').insert({
+        company_id: newCo.id,
+        leave_enabled: false,
+        expenses_enabled: false,
+        shifts_enabled: false,
+        kudos_enabled: false,
+        space_booking_enabled: false,
+        performance_reminders_enabled: false,
+        elearning_reminders_enabled: false,
+      })
 
       if (form.isTrial) {
         const { data: pricingRows } = await supabase.from('subscription_pricing').select('feature_key').eq('is_addon', false)

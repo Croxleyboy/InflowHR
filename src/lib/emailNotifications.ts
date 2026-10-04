@@ -22,6 +22,15 @@ interface SendEmailNotificationParams {
 export async function sendFeatureEmail(params: SendEmailNotificationParams): Promise<void> {
   const { companyId, employeeId, featureKey, title, message, type = 'info', link } = params
 
+  const { data: featureRow } = await supabase
+    .from('company_features')
+    .select('is_enabled')
+    .eq('company_id', companyId)
+    .eq('feature_key', 'email_notifications')
+    .single()
+
+  if (!featureRow?.is_enabled) return
+
   const { data: settings } = await supabase
     .from('email_notification_settings')
     .select('*')
