@@ -2,6 +2,11 @@ import { getSupabase, getValidXeroToken, corsHeaders, json } from '../_shared/xe
 
 const XERO_PAYROLL_UK = 'https://api.xero.com/payroll.xro/1.0'
 const XERO_PAYROLL_AU = 'https://api.xero.com/payroll.xro/2.0'
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+
+function sanitiseXeroError(raw: string): string {
+  return raw.slice(0, 500).replace(/[<>"'&]/g, '')
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -19,6 +24,13 @@ Deno.serve(async (req) => {
     const { company_id, period_start, period_end } = await req.json()
     if (!company_id) return json({ error: 'company_id required' }, 400)
     if (!period_start || !period_end) return json({ error: 'period_start and period_end required' }, 400)
+
+    if (!DATE_RE.test(period_start) || !DATE_RE.test(period_end)) {
+      return json({ error: 'period_start and period_end must be YYYY-MM-DD' }, 400)
+    }
+    if (isNaN(Date.parse(period_start)) || isNaN(Date.parse(period_end))) {
+      return json({ error: 'Invalid date values' }, 400)
+    }
 
     const { data: cu } = await sb
       .from('company_users')
@@ -49,7 +61,7 @@ Deno.serve(async (req) => {
       if (errText.includes('AU Customer') || errText.includes('ValidationException')) {
         baseUrl = XERO_PAYROLL_AU
       } else {
-        return json({ error: 'Failed to connect to Xero Payroll API', detail: errText }, 502)
+        return json({ error: 'Failed to connect to Xero Payroll API', detail: sanitiseXeroError(errText) }, 502)
       }
     }
 
@@ -223,7 +235,7 @@ Deno.serve(async (req) => {
           results.push({ employee: emp.name, status: 'updated', xeroTimesheetId: review.xero_timesheet_id })
         } else {
           const errText = await updateRes.text()
-          results.push({ employee: emp.name, status: 'update_failed', error: errText })
+          results.push({ employee: emp.name, status: 'update_failed', error: sanitiseXeroError(errText) })
         }
         continue
       }
@@ -238,7 +250,7 @@ Deno.serve(async (req) => {
 
       if (!tsRes.ok) {
         const errText = await tsRes.text()
-        results.push({ employee: emp.name, status: 'failed', error: errText })
+        results.push({ employee: emp.name, status: 'failed', error: sanitiseXeroError(errText) })
         continue
       }
 
@@ -264,6 +276,7 @@ Deno.serve(async (req) => {
 
     // Record the export
     const successCount = results.filter(r => r.status === 'created' || r.status === 'updated').length
+    const failedCount = results.filter(r => r.status === 'failed' || r.status === 'update_failed').length
     if (successCount > 0) {
       const totalGross = reviews
         .filter(r => empMap[r.employee_id]?.xeroId)
@@ -282,9 +295,21 @@ Deno.serve(async (req) => {
       })
     }
 
+    // GDPR audit log — record third-party data transfer
+    const auditDetail = `Xero timesheet push — Period: ${period_start} to ${period_end}. ` +
+      `Pushed: ${successCount}, Failed: ${failedCount}, Skipped: ${skipped.length}. ` +
+      `Data sent to Xero: employee IDs, worked hours, earning rate IDs.`
+    await sb.from('payroll_audit_log').insert({
+      company_id,
+      user_id: user.id,
+      action: 'Xero Timesheet Push',
+      detail: auditDetail,
+      status: failedCount > 0 && successCount === 0 ? 'error' : 'success',
+    })
+
     return json({
-      pushed: results.filter(r => r.status === 'created' || r.status === 'updated').length,
-      failed: results.filter(r => r.status === 'failed' || r.status === 'update_failed').length,
+      pushed: successCount,
+      failed: failedCount,
       skipped: skipped.length,
       results,
       skipped_details: skipped,

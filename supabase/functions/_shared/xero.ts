@@ -69,7 +69,7 @@ export async function getValidXeroToken(companyId: string): Promise<{
   const sb = getSupabase()
   const { data: row } = await sb
     .from('xero_integrations')
-    .select('*')
+    .select('access_token, refresh_token, expires_at, tenant_id')
     .eq('company_id', companyId)
     .single()
 
