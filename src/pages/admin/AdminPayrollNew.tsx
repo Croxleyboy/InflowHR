@@ -6,7 +6,6 @@ import { useFeatures } from '../../context/FeatureContext'
 import { formatDate } from '../../lib/formatters'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-const PAGE_SIZE = 20
 
 function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -502,7 +501,7 @@ export default function AdminPayrollNew() {
     showSuccess('Draft payslip deleted')
   }
 
-  async function deleteDraftMonth(monthKey: string, monthPayslips: Payslip[]) {
+  async function deleteDraftMonth(_monthKey: string, monthPayslips: Payslip[]) {
     const drafts = monthPayslips.filter(p => p.status === 'draft')
     if (drafts.length === 0) { showError('No draft payslips to delete'); return }
     if (!confirm(`Delete ${drafts.length} draft payslip(s) for this month?`)) return
@@ -522,7 +521,7 @@ export default function AdminPayrollNew() {
     showSuccess('Status updated')
   }
 
-  async function bulkUpdateMonthStatus(monthPayslips: Payslip[], newStatus: string, monthKey: string) {
+  async function bulkUpdateMonthStatus(monthPayslips: Payslip[], newStatus: string, _monthKey: string) {
     const eligible = monthPayslips.filter(p => p.status !== newStatus)
     if (eligible.length === 0) return
     if (!confirm(`Set ${eligible.length} payslip(s) to "${newStatus}" for this month?`)) return
@@ -546,11 +545,6 @@ export default function AdminPayrollNew() {
     }
     const b = map[status] || { label: status, cls: 'pn-badge-grey' }
     return <span className={`pn-badge ${b.cls}`}>{b.label}</span>
-  }
-
-  const payslipStatusBadge = (status: string) => {
-    const cls = status === 'paid' ? 'admin-badge-paid' : status === 'draft' ? 'admin-badge-draft' : status === 'flagged' ? 'admin-badge-rejected' : status === 'processed' ? 'admin-badge-approved' : 'admin-badge-pending'
-    return <span className={`admin-badge ${cls}`}>{status}</span>
   }
 
   // Breadcrumb nav
@@ -668,12 +662,12 @@ export default function AdminPayrollNew() {
                       </button>
                     )}
                     {wt.status === 'in_progress' && (
-                      <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => { setPayslipTypeFilter(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
+                      <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
                         Review Payslips
                       </button>
                     )}
                     {(wt.status === 'submitted' || wt.status === 'paid') && (
-                      <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipTypeFilter(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
+                      <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
                         View Payslips
                       </button>
                     )}
@@ -1424,7 +1418,7 @@ export default function AdminPayrollNew() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                    <button className="admin-btn" onClick={() => { setView('payslips'); setPayslipTypeFilter('all') }}>Review Payslips</button>
+                    <button className="admin-btn" onClick={() => { setView('payslips') }}>Review Payslips</button>
                     <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
                       Next: Submit & Pay →
                     </button>
@@ -1521,7 +1515,7 @@ export default function AdminPayrollNew() {
                 All payslips have been processed and marked as paid. Employees will see their payslips on their next login.
               </p>
               <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
-                <button className="admin-btn" onClick={() => { setView('payslips'); setPayslipTypeFilter('all') }}>View Payslips</button>
+                <button className="admin-btn" onClick={() => { setView('payslips') }}>View Payslips</button>
                 <button className="admin-btn admin-btn-primary" onClick={() => setView('dashboard')}>Back to Dashboard</button>
               </div>
             </div>
