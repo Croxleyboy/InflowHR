@@ -275,16 +275,26 @@ Deno.serve(async (req) => {
 
       // Create new timesheet — AU v2 may expect array wrapper
       const tsUrl = `${baseUrl}/Timesheets`
-      const tsBody = baseUrl === XERO_PAYROLL_AU ? [timesheetPayload] : timesheetPayload
-      const tsRes = await fetch(tsUrl, {
+      // Try single object first (works for UK v1 and some AU v2)
+      let tsRes = await fetch(tsUrl, {
         method: 'POST',
         headers: xeroHeaders,
-        body: JSON.stringify(tsBody),
+        body: JSON.stringify(timesheetPayload),
       })
+
+      // If single object fails on AU, try array wrapper
+      if (!tsRes.ok && baseUrl === XERO_PAYROLL_AU) {
+        tsRes = await fetch(tsUrl, {
+          method: 'POST',
+          headers: xeroHeaders,
+          body: JSON.stringify([timesheetPayload]),
+        })
+      }
 
       if (!tsRes.ok) {
         const errText = await tsRes.text()
-        results.push({ employee: emp.name, status: 'failed', error: sanitiseXeroError(errText) })
+        const debugInfo = `API: ${baseUrl}, Calendar: ${payrollCalendarId || 'none'}, EarningsRate: ${defaultEarningsRateId}, Period: ${period_start} to ${period_end}, Hours: ${hours}`
+        results.push({ employee: emp.name, status: 'failed', error: `${sanitiseXeroError(errText)} [${debugInfo}]` })
         continue
       }
 
