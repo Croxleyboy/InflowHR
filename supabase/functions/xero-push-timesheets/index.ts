@@ -219,7 +219,6 @@ Deno.serve(async (req) => {
         const end = new Date(period_end)
         const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
         const dailyHours = new Array(days).fill(0)
-        // Spread hours across weekdays only
         let weekdays = 0
         for (let i = 0; i < days; i++) {
           const d = new Date(start)
@@ -236,6 +235,7 @@ Deno.serve(async (req) => {
         }
 
         timesheetPayload = {
+          payrollCalendarID: payrollCalendarId || undefined,
           employeeID: emp.xeroId,
           startDate: period_start,
           endDate: period_end,
@@ -273,12 +273,13 @@ Deno.serve(async (req) => {
         continue
       }
 
-      // Create new timesheet
+      // Create new timesheet — AU v2 may expect array wrapper
       const tsUrl = `${baseUrl}/Timesheets`
+      const tsBody = baseUrl === XERO_PAYROLL_AU ? [timesheetPayload] : timesheetPayload
       const tsRes = await fetch(tsUrl, {
         method: 'POST',
         headers: xeroHeaders,
-        body: JSON.stringify(timesheetPayload),
+        body: JSON.stringify(tsBody),
       })
 
       if (!tsRes.ok) {
