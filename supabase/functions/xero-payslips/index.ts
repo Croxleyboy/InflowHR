@@ -1,6 +1,7 @@
 import { getSupabase, getValidXeroToken, corsHeaders, json } from '../_shared/xero.ts'
 
 const XERO_PAYROLL_UK = 'https://api.xero.com/payroll.xro/1.0'
+const XERO_PAYROLL_AU = 'https://api.xero.com/payroll.xro/2.0'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -36,25 +37,33 @@ Deno.serve(async (req) => {
       Accept: 'application/json',
     }
 
-    // Fetch pay runs (UK Payroll API v1 — PascalCase response)
-    const payRunsRes = await fetch(`${XERO_PAYROLL_UK}/PayRuns`, { headers })
+    // Try UK Payroll API first, fall back to AU if tenant is AU
+    let baseUrl = XERO_PAYROLL_UK
+    let payRunsRes = await fetch(`${baseUrl}/PayRuns`, { headers })
     if (!payRunsRes.ok) {
       const errText = await payRunsRes.text()
-      return json({ error: 'Failed to fetch pay runs from Xero', detail: errText }, 502)
+      if (errText.includes('AU Customer') || errText.includes('ValidationException')) {
+        baseUrl = XERO_PAYROLL_AU
+        payRunsRes = await fetch(`${baseUrl}/PayRuns`, { headers })
+        if (!payRunsRes.ok) {
+          const auErrText = await payRunsRes.text()
+          return json({ error: 'Failed to fetch pay runs from Xero', detail: auErrText }, 502)
+        }
+      } else {
+        return json({ error: 'Failed to fetch pay runs from Xero', detail: errText }, 502)
+      }
     }
+
     const payRunsBody = await payRunsRes.json()
     const payRuns = payRunsBody.PayRuns || payRunsBody.payRuns || []
     if (!payRuns.length) return json({ payRun: null, payslips: [] })
 
-    // UK API fields: PayRunID, PayRunPeriodStartDate, PayRunPeriodEndDate, PaymentDate, PayRunStatus
-    // Sort newest first by period end date
     payRuns.sort((a: Record<string, string>, b: Record<string, string>) => {
-      const aDate = a.PayRunPeriodEndDate || a.periodEndDate || ''
-      const bDate = b.PayRunPeriodEndDate || b.periodEndDate || ''
+      const aDate = a.PayRunPeriodEndDate || a.periodEndDate || a.payRunPeriodEndDate || ''
+      const bDate = b.PayRunPeriodEndDate || b.periodEndDate || b.payRunPeriodEndDate || ''
       return bDate.localeCompare(aDate)
     })
 
-    // Find the most recent posted pay run (UK uses "POSTED", AU uses "Posted")
     const completedRun = payRuns.find((r: Record<string, string>) => {
       const status = (r.PayRunStatus || r.payRunStatus || '').toUpperCase()
       return status === 'POSTED'
@@ -63,8 +72,11 @@ Deno.serve(async (req) => {
     const payRunId = completedRun.PayRunID || completedRun.payRunID
     if (!payRunId) return json({ error: 'No valid pay run found' }, 404)
 
-    // Fetch payslips for this pay run (UK API)
-    const payslipsRes = await fetch(`${XERO_PAYROLL_UK}/Payslips?PayRunID=${payRunId}`, { headers })
+    // Fetch payslips for this pay run (endpoint casing differs: UK=Payslips, AU=PaySlips)
+    const payslipListUrl = baseUrl === XERO_PAYROLL_UK
+      ? `${baseUrl}/Payslips?PayRunID=${payRunId}`
+      : `${baseUrl}/PaySlips?PayRunID=${payRunId}`
+    const payslipsRes = await fetch(payslipListUrl, { headers })
     if (!payslipsRes.ok) {
       const errText = await payslipsRes.text()
       return json({ error: 'Failed to fetch payslips from Xero', detail: errText }, 502)
@@ -72,16 +84,18 @@ Deno.serve(async (req) => {
     const payslipsBody = await payslipsRes.json()
     const rawSlips = payslipsBody.Payslips || payslipsBody.paySlips || []
 
-    // UK payslip list endpoint only returns summary data (EmployeeID, FirstName, LastName)
-    // We need to fetch each payslip individually for full breakdown
+    // Fetch each payslip individually for full breakdown
     const detailedSlips = []
     for (const slip of rawSlips) {
-      const slipId = slip.PayslipID || slip.paySlipID
+      const slipId = slip.PayslipID || slip.paySlipID || slip.payslipID
       if (!slipId) continue
-      const detailRes = await fetch(`${XERO_PAYROLL_UK}/Payslips/${slipId}`, { headers })
+      const slipDetailUrl = baseUrl === XERO_PAYROLL_UK
+        ? `${baseUrl}/Payslips/${slipId}`
+        : `${baseUrl}/PaySlips/${slipId}`
+      const detailRes = await fetch(slipDetailUrl, { headers })
       if (detailRes.ok) {
         const detailBody = await detailRes.json()
-        const detail = detailBody.Payslip || (detailBody.Payslips && detailBody.Payslips[0]) || slip
+        const detail = detailBody.Payslip || detailBody.paySlip || (detailBody.Payslips && detailBody.Payslips[0]) || slip
         detailedSlips.push(detail)
       } else {
         detailedSlips.push(slip)
@@ -92,7 +106,7 @@ Deno.serve(async (req) => {
     const xeroEmployees: Record<string, string> = {}
     let empPage = 1
     while (true) {
-      const empRes = await fetch(`${XERO_PAYROLL_UK}/Employees?page=${empPage}`, { headers })
+      const empRes = await fetch(`${baseUrl}/Employees?page=${empPage}`, { headers })
       if (!empRes.ok) break
       const empData = await empRes.json()
       const employees = empData.Employees || empData.employees || []
@@ -122,13 +136,11 @@ Deno.serve(async (req) => {
 
     // Parse payslips — handle both UK PascalCase and AU camelCase field names
     const payslips = detailedSlips.map((s: Record<string, unknown>) => {
-      // UK API uses EarningsLines, DeductionLines, TaxLines, etc.
       const earningsLines = (s.EarningsLines || s.earningsLines || []) as { EarningsType?: string; earningsType?: string; Amount?: number; amount?: number }[]
       const deductionLines = (s.DeductionLines || s.deductionLines || []) as { DeductionType?: string; deductionType?: string; DisplayName?: string; displayName?: string; Amount?: number; amount?: number }[]
       const taxLines = (s.TaxLines || s.taxLines || s.employeeTaxLines || []) as { Description?: string; description?: string; TaxType?: string; taxType?: string; Amount?: number; amount?: number; Percentage?: number }[]
       const reimbursementLines = (s.ReimbursementLines || s.reimbursementLines || []) as { Description?: string; description?: string; DisplayName?: string; displayName?: string; Amount?: number; amount?: number }[]
 
-      // Tax (PAYE)
       const paye = taxLines
         .filter(t => {
           const desc = (t.Description || t.description || t.TaxType || t.taxType || '').toUpperCase()
@@ -136,7 +148,6 @@ Deno.serve(async (req) => {
         })
         .reduce((sum, t) => sum + (t.Amount ?? t.amount ?? 0), 0)
 
-      // Employee NI
       const employeeNI = taxLines
         .filter(t => {
           const desc = (t.Description || t.description || t.TaxType || t.taxType || '').toUpperCase()
@@ -144,7 +155,6 @@ Deno.serve(async (req) => {
         })
         .reduce((sum, t) => sum + (t.Amount ?? t.amount ?? 0), 0)
 
-      // Student loan
       const studentLoan = taxLines
         .filter(t => {
           const desc = (t.Description || t.description || t.TaxType || t.taxType || '').toUpperCase()
@@ -152,10 +162,8 @@ Deno.serve(async (req) => {
         })
         .reduce((sum, t) => sum + (t.Amount ?? t.amount ?? 0), 0)
 
-      // Total deductions
       const totalDeductions = deductionLines.reduce((sum, d) => sum + (d.Amount ?? d.amount ?? 0), 0)
 
-      // Total reimbursements
       const totalReimbursements = (s.TotalReimbursements ?? s.totalReimbursements ??
         reimbursementLines.reduce((sum, r) => sum + (r.Amount ?? r.amount ?? 0), 0)) as number
 
@@ -165,7 +173,7 @@ Deno.serve(async (req) => {
         || (xeroEmail ? emailToInflowId[xeroEmail] : null)
 
       return {
-        payslip_id: (s.PayslipID || s.paySlipID) as string,
+        payslip_id: (s.PayslipID || s.paySlipID || s.payslipID) as string,
         xero_employee_id: xeroEmpId,
         inflow_employee_id: inflowEmployeeId,
         first_name: (s.FirstName || s.firstName) as string,
@@ -188,8 +196,8 @@ Deno.serve(async (req) => {
     })
 
     // Upsert matched payslips into the payslips table so employees see them
-    const periodStart = (completedRun.PayRunPeriodStartDate || completedRun.periodStartDate || '')?.split('T')[0]
-    const periodEnd = (completedRun.PayRunPeriodEndDate || completedRun.periodEndDate || '')?.split('T')[0]
+    const periodStart = (completedRun.PayRunPeriodStartDate || completedRun.periodStartDate || completedRun.payRunPeriodStartDate || '')?.split('T')[0]
+    const periodEnd = (completedRun.PayRunPeriodEndDate || completedRun.periodEndDate || completedRun.payRunPeriodEndDate || '')?.split('T')[0]
     const paymentDate = (completedRun.PaymentDate || completedRun.paymentDate || '')?.split('T')[0]
 
     // Store xero_employee_id on InflowHR employees matched by email (one-time mapping)
@@ -232,8 +240,8 @@ Deno.serve(async (req) => {
 
     const payRunData = {
       id: payRunId,
-      period_start: completedRun.PayRunPeriodStartDate || completedRun.periodStartDate,
-      period_end: completedRun.PayRunPeriodEndDate || completedRun.periodEndDate,
+      period_start: completedRun.PayRunPeriodStartDate || completedRun.periodStartDate || completedRun.payRunPeriodStartDate,
+      period_end: completedRun.PayRunPeriodEndDate || completedRun.periodEndDate || completedRun.payRunPeriodEndDate,
       payment_date: completedRun.PaymentDate || completedRun.paymentDate,
       status: completedRun.PayRunStatus || completedRun.payRunStatus,
     }
