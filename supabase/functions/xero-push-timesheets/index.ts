@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
     let payrollCalendarId = xeroIntegration?.payroll_calendar_id
 
     if (!payrollCalendarId) {
-      const calUrl = baseUrl === XERO_PAYROLL_UK ? `${baseUrl}/PayrollCalendars` : `${baseUrl}/PayCalendars`
+      const calUrl = `${baseUrl}/PayrollCalendars`
       const calRes = await fetch(calUrl, {
         headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
       })
@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
           await sb.from('xero_integrations').update({ payroll_calendar_id: payrollCalendarId }).eq('company_id', company_id)
         }
       }
-      if (!payrollCalendarId) {
+      if (!payrollCalendarId && baseUrl === XERO_PAYROLL_UK) {
         return json({ error: 'No payroll calendar found in Xero. Please set one up in Xero first.' }, 400)
       }
     }
@@ -192,27 +192,51 @@ Deno.serve(async (req) => {
 
       // Build timesheet lines — one line per day, spread hours evenly across working days
       // For simplicity, create a single line with total hours on the period start date
-      const timesheetPayload = baseUrl === XERO_PAYROLL_UK
-        ? {
-            PayrollCalendarID: payrollCalendarId,
-            EmployeeID: emp.xeroId,
-            StartDate: period_start,
-            EndDate: period_end,
-            TimesheetLines: [{
-              Date: period_start,
-              EarningsRateID: defaultEarningsRateId,
-              NumberOfUnits: hours,
-            }],
-          }
-        : {
-            EmployeeID: emp.xeroId,
-            StartDate: `/Date(${new Date(period_start).getTime()})/`,
-            EndDate: `/Date(${new Date(period_end).getTime()})/`,
-            TimesheetLines: [{
-              EarningsRateID: defaultEarningsRateId,
-              NumberOfUnits: [hours],
-            }],
-          }
+      let timesheetPayload: Record<string, unknown>
+      if (baseUrl === XERO_PAYROLL_UK) {
+        timesheetPayload = {
+          PayrollCalendarID: payrollCalendarId,
+          EmployeeID: emp.xeroId,
+          StartDate: period_start,
+          EndDate: period_end,
+          TimesheetLines: [{
+            Date: period_start,
+            EarningsRateID: defaultEarningsRateId,
+            NumberOfUnits: hours,
+          }],
+        }
+      } else {
+        // AU v2: dates as ISO strings, numberOfUnits as daily array
+        const start = new Date(period_start)
+        const end = new Date(period_end)
+        const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+        const dailyHours = new Array(days).fill(0)
+        // Spread hours across weekdays only
+        let weekdays = 0
+        for (let i = 0; i < days; i++) {
+          const d = new Date(start)
+          d.setDate(d.getDate() + i)
+          const dow = d.getDay()
+          if (dow !== 0 && dow !== 6) weekdays++
+        }
+        const hoursPerDay = weekdays > 0 ? Math.round((hours / weekdays) * 100) / 100 : hours
+        for (let i = 0; i < days; i++) {
+          const d = new Date(start)
+          d.setDate(d.getDate() + i)
+          const dow = d.getDay()
+          if (dow !== 0 && dow !== 6) dailyHours[i] = hoursPerDay
+        }
+
+        timesheetPayload = {
+          employeeID: emp.xeroId,
+          startDate: period_start,
+          endDate: period_end,
+          timesheetLines: [{
+            earningsRateID: defaultEarningsRateId,
+            numberOfUnits: dailyHours,
+          }],
+        }
+      }
 
       // If already pushed, try to update
       if (review.xero_timesheet_id) {
