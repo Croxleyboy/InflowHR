@@ -214,6 +214,7 @@ export default function AdminPayroll() {
   // Xero integration state
   const [xeroIntegration, setXeroIntegration] = useState<XeroIntegration | null>(null)
   const [xeroSyncing, setXeroSyncing] = useState(false)
+  const [xeroPushing, setXeroPushing] = useState(false)
   const [xeroLivePayslips, setXeroLivePayslips] = useState<XeroPayslipRow[]>([])
   const [xeroPayRun, setXeroPayRun] = useState<XeroPayRun | null>(null)
   const [showXeroDisconnectModal, setShowXeroDisconnectModal] = useState(false)
@@ -791,6 +792,52 @@ export default function AdminPayroll() {
     showSuccess(`Exported ${approved.length} employees — import this CSV into Sage or Xero`)
     logPayrollAction('Export Gross Pay CSV', `Exported ${approved.length} employee(s) — Total gross: £${totalGross.toFixed(2)}, Period: ${prPeriodStart} to ${prPeriodEnd}`)
     loadPeriodReviews()
+  }
+
+  async function pushTimesheetsToXero() {
+    const approved = prReviews.filter(r => r.status === 'approved' || r.status === 'exported')
+    if (approved.length === 0) { showError('No approved reviews to push'); return }
+    setXeroPushing(true)
+    const result = await callXeroFunction('xero-push-timesheets', {
+      period_start: prPeriodStart,
+      period_end: prPeriodEnd,
+    })
+    setXeroPushing(false)
+    if (result) {
+      const parts: string[] = []
+      if (result.pushed > 0) parts.push(`${result.pushed} pushed`)
+      if (result.failed > 0) parts.push(`${result.failed} failed`)
+      if (result.skipped > 0) parts.push(`${result.skipped} skipped`)
+      const summary = parts.join(', ')
+
+      if (result.failed > 0 || result.skipped > 0) {
+        const errors: string[] = []
+        if (result.results) {
+          for (const r of result.results) {
+            if (r.status === 'failed' || r.status === 'update_failed') {
+              errors.push(`${r.employee}: ${r.error || 'Unknown error'}`)
+            }
+          }
+        }
+        if (result.skipped_details) {
+          for (const s of result.skipped_details) {
+            errors.push(`${s.employee}: ${s.reason}`)
+          }
+        }
+        const detail = errors.length > 0 ? `\n${errors.join('\n')}` : ''
+        if (result.pushed > 0) {
+          showSuccess(`Xero push: ${summary}${detail}`)
+        } else {
+          showError(`Xero push: ${summary}${detail}`)
+        }
+      } else {
+        showSuccess(`Pushed ${result.pushed} timesheet(s) to Xero`)
+      }
+      logPayrollAction('Push Timesheets to Xero', `${summary} — Period: ${prPeriodStart} to ${prPeriodEnd}`)
+      loadPeriodReviews()
+    } else {
+      logPayrollAction('Push Timesheets to Xero', 'Failed to push timesheets to Xero', null, 'error')
+    }
   }
 
   async function generateNextPayroll() {
@@ -2744,6 +2791,16 @@ export default function AdminPayroll() {
               <button className="admin-btn" onClick={downloadPeriodExportCsv} style={{ fontSize: 13 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Export Gross Pay CSV ({approvedReviews.length})
+              </button>
+            )}
+            {xeroIntegration && approvedReviews.length > 0 && (
+              <button className="admin-btn" onClick={pushTimesheetsToXero} disabled={xeroPushing} style={{ fontSize: 13 }}>
+                {xeroPushing ? 'Pushing…' : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ verticalAlign: -2, marginRight: 4 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Push to Xero ({approvedReviews.length})
+                  </>
+                )}
               </button>
             )}
           </div>

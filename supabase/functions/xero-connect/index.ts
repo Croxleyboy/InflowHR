@@ -9,10 +9,11 @@ const SCOPES = [
   'profile',
   'email',
   'offline_access',
-  'payroll.payruns.read',
-  'payroll.employees.read',
-  'payroll.payslip.read',
-  'payroll.settings.read',
+  'payroll.payruns',
+  'payroll.employees',
+  'payroll.payslip',
+  'payroll.settings',
+  'payroll.timesheets',
 ].join(' ')
 
 Deno.serve(async (req) => {

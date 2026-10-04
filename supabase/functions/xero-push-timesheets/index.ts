@@ -1,0 +1,295 @@
+import { getSupabase, getValidXeroToken, corsHeaders, json } from '../_shared/xero.ts'
+
+const XERO_PAYROLL_UK = 'https://api.xero.com/payroll.xro/1.0'
+const XERO_PAYROLL_AU = 'https://api.xero.com/payroll.xro/2.0'
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+
+  try {
+    const sb = getSupabase()
+
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) return json({ error: 'Unauthorized' }, 401)
+    const { data: { user }, error: authErr } = await sb.auth.getUser(
+      authHeader.replace('Bearer ', '')
+    )
+    if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
+
+    const { company_id, period_start, period_end } = await req.json()
+    if (!company_id) return json({ error: 'company_id required' }, 400)
+    if (!period_start || !period_end) return json({ error: 'period_start and period_end required' }, 400)
+
+    const { data: cu } = await sb
+      .from('company_users')
+      .select('role')
+      .eq('auth_user_id', user.id)
+      .eq('company_id', company_id)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (!cu || (cu.role !== 'admin' && cu.role !== 'hr')) return json({ error: 'Access denied' }, 403)
+
+    const creds = await getValidXeroToken(company_id)
+    if (!creds) return json({ error: 'Xero not connected — please connect first' }, 400)
+
+    const xeroHeaders = {
+      Authorization: `Bearer ${creds.accessToken}`,
+      'xero-tenant-id': creds.tenantId,
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    }
+
+    // Detect UK vs AU API
+    let baseUrl = XERO_PAYROLL_UK
+    const testRes = await fetch(`${baseUrl}/PayRuns`, {
+      headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+    })
+    if (!testRes.ok) {
+      const errText = await testRes.text()
+      if (errText.includes('AU Customer') || errText.includes('ValidationException')) {
+        baseUrl = XERO_PAYROLL_AU
+      } else {
+        return json({ error: 'Failed to connect to Xero Payroll API', detail: errText }, 502)
+      }
+    }
+
+    // Fetch approved period reviews for this period
+    const { data: reviews, error: revErr } = await sb
+      .from('pay_period_reviews')
+      .select('id, employee_id, total_hours, adjusted_hours, overtime_hours, hourly_rate, gross_pay, status, xero_timesheet_id')
+      .eq('company_id', company_id)
+      .eq('period_start', period_start)
+      .eq('period_end', period_end)
+      .in('status', ['approved', 'exported'])
+
+    if (revErr) return json({ error: 'Failed to load period reviews', detail: revErr.message }, 500)
+    if (!reviews?.length) return json({ error: 'No approved period reviews found for this period' }, 404)
+
+    // Load employees with xero_employee_id
+    const employeeIds = reviews.map(r => r.employee_id)
+    const { data: employees } = await sb
+      .from('employees')
+      .select('id, first_name, last_name, xero_employee_id, hourly_rate')
+      .in('id', employeeIds)
+
+    const empMap: Record<string, { xeroId: string | null; name: string; rate: number }> = {}
+    for (const e of (employees || [])) {
+      empMap[e.id] = {
+        xeroId: e.xero_employee_id,
+        name: `${e.first_name} ${e.last_name}`,
+        rate: e.hourly_rate || 0,
+      }
+    }
+
+    // Get or fetch payroll calendar ID
+    const { data: xeroIntegration } = await sb
+      .from('xero_integrations')
+      .select('payroll_calendar_id')
+      .eq('company_id', company_id)
+      .single()
+
+    let payrollCalendarId = xeroIntegration?.payroll_calendar_id
+
+    if (!payrollCalendarId) {
+      // Fetch payroll calendars from Xero and use the first one
+      const calUrl = baseUrl === XERO_PAYROLL_UK ? `${baseUrl}/PayrollCalendars` : `${baseUrl}/PayrollCalendars`
+      const calRes = await fetch(calUrl, {
+        headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+      })
+      if (calRes.ok) {
+        const calBody = await calRes.json()
+        const calendars = calBody.PayrollCalendars || calBody.payrollCalendars || []
+        if (calendars.length) {
+          payrollCalendarId = calendars[0].PayrollCalendarID || calendars[0].payrollCalendarID
+          await sb.from('xero_integrations').update({ payroll_calendar_id: payrollCalendarId }).eq('company_id', company_id)
+        }
+      }
+      if (!payrollCalendarId) {
+        return json({ error: 'No payroll calendar found in Xero. Please set one up in Xero first.' }, 400)
+      }
+    }
+
+    // Get or auto-detect earning rate mapping
+    const { data: rateMappings } = await sb
+      .from('xero_earning_rate_mappings')
+      .select('inflow_rate_name, xero_earnings_rate_id')
+      .eq('company_id', company_id)
+
+    let defaultEarningsRateId = rateMappings?.find(m => m.inflow_rate_name === 'default')?.xero_earnings_rate_id
+
+    if (!defaultEarningsRateId) {
+      // Fetch earning rates from Xero, pick the first ordinary-time or regular one
+      const rateUrl = baseUrl === XERO_PAYROLL_UK ? `${baseUrl}/EarningsRates` : `${baseUrl}/PayItems`
+      const rateRes = await fetch(rateUrl, {
+        headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+      })
+      if (rateRes.ok) {
+        const rateBody = await rateRes.json()
+        let rates: { EarningsRateID?: string; earningsRateID?: string; Name?: string; name?: string; EarningsType?: string; earningsType?: string }[] = []
+
+        if (baseUrl === XERO_PAYROLL_UK) {
+          rates = rateBody.EarningsRates || rateBody.earningsRates || []
+        } else {
+          const payItems = rateBody.PayItems || rateBody.payItems || {}
+          rates = payItems.EarningsRates || payItems.earningsRates || []
+        }
+
+        // Prefer "Ordinary Time" or "Regular" earnings rate
+        const ordinaryRate = rates.find(r => {
+          const name = (r.Name || r.name || '').toUpperCase()
+          const etype = (r.EarningsType || r.earningsType || '').toUpperCase()
+          return name.includes('ORDINARY') || name.includes('REGULAR') || name.includes('STANDARD')
+            || etype === 'ORDINARYTIMEEARNINGS' || etype === 'REGULAREARNINGS'
+        }) || rates[0]
+
+        if (ordinaryRate) {
+          defaultEarningsRateId = ordinaryRate.EarningsRateID || ordinaryRate.earningsRateID
+          await sb.from('xero_earning_rate_mappings').upsert({
+            company_id,
+            inflow_rate_name: 'default',
+            xero_earnings_rate_id: defaultEarningsRateId!,
+          }, { onConflict: 'company_id,inflow_rate_name' })
+        }
+      }
+      if (!defaultEarningsRateId) {
+        return json({ error: 'No earning rates found in Xero. Please set up at least one earning rate.' }, 400)
+      }
+    }
+
+    // Push timesheets to Xero
+    const results: { employee: string; status: string; xeroTimesheetId?: string; error?: string }[] = []
+    const skipped: { employee: string; reason: string }[] = []
+
+    for (const review of reviews) {
+      const emp = empMap[review.employee_id]
+      if (!emp) {
+        skipped.push({ employee: review.employee_id, reason: 'Employee not found' })
+        continue
+      }
+      if (!emp.xeroId) {
+        skipped.push({ employee: emp.name, reason: 'No Xero employee mapping — run Fetch Payslips first to link employees' })
+        continue
+      }
+
+      const hours = Number(review.adjusted_hours ?? review.total_hours ?? 0)
+      if (hours <= 0) {
+        skipped.push({ employee: emp.name, reason: 'No hours to push' })
+        continue
+      }
+
+      // Build timesheet lines — one line per day, spread hours evenly across working days
+      // For simplicity, create a single line with total hours on the period start date
+      const timesheetPayload = baseUrl === XERO_PAYROLL_UK
+        ? {
+            PayrollCalendarID: payrollCalendarId,
+            EmployeeID: emp.xeroId,
+            StartDate: period_start,
+            EndDate: period_end,
+            TimesheetLines: [{
+              Date: period_start,
+              EarningsRateID: defaultEarningsRateId,
+              NumberOfUnits: hours,
+            }],
+          }
+        : {
+            EmployeeID: emp.xeroId,
+            StartDate: `/Date(${new Date(period_start).getTime()})/`,
+            EndDate: `/Date(${new Date(period_end).getTime()})/`,
+            TimesheetLines: [{
+              EarningsRateID: defaultEarningsRateId,
+              NumberOfUnits: [hours],
+            }],
+          }
+
+      // If already pushed, try to update
+      if (review.xero_timesheet_id) {
+        // Revert to draft first, then update
+        const revertUrl = baseUrl === XERO_PAYROLL_UK
+          ? `${baseUrl}/Timesheets/${review.xero_timesheet_id}/RevertToDraft`
+          : null
+
+        if (revertUrl) {
+          await fetch(revertUrl, { method: 'POST', headers: xeroHeaders })
+        }
+
+        const updateUrl = `${baseUrl}/Timesheets/${review.xero_timesheet_id}`
+        const updateRes = await fetch(updateUrl, {
+          method: 'PUT',
+          headers: xeroHeaders,
+          body: JSON.stringify(timesheetPayload),
+        })
+
+        if (updateRes.ok) {
+          results.push({ employee: emp.name, status: 'updated', xeroTimesheetId: review.xero_timesheet_id })
+        } else {
+          const errText = await updateRes.text()
+          results.push({ employee: emp.name, status: 'update_failed', error: errText })
+        }
+        continue
+      }
+
+      // Create new timesheet
+      const tsUrl = `${baseUrl}/Timesheets`
+      const tsRes = await fetch(tsUrl, {
+        method: 'POST',
+        headers: xeroHeaders,
+        body: JSON.stringify(timesheetPayload),
+      })
+
+      if (!tsRes.ok) {
+        const errText = await tsRes.text()
+        results.push({ employee: emp.name, status: 'failed', error: errText })
+        continue
+      }
+
+      const tsBody = await tsRes.json()
+      const createdTs = tsBody.Timesheet || tsBody.timesheet ||
+        (tsBody.Timesheets && tsBody.Timesheets[0]) ||
+        (tsBody.timesheets && tsBody.timesheets[0])
+      const xeroTimesheetId = createdTs?.TimesheetID || createdTs?.timesheetID
+
+      if (xeroTimesheetId) {
+        // Store the Xero timesheet ID and mark as exported
+        await sb.from('pay_period_reviews').update({
+          xero_timesheet_id: xeroTimesheetId,
+          xero_pushed_at: new Date().toISOString(),
+          status: 'exported',
+        }).eq('id', review.id)
+
+        results.push({ employee: emp.name, status: 'created', xeroTimesheetId })
+      } else {
+        results.push({ employee: emp.name, status: 'created_no_id' })
+      }
+    }
+
+    // Record the export
+    const successCount = results.filter(r => r.status === 'created' || r.status === 'updated').length
+    if (successCount > 0) {
+      const totalGross = reviews
+        .filter(r => empMap[r.employee_id]?.xeroId)
+        .reduce((sum, r) => sum + Number(r.gross_pay || 0), 0)
+
+      await sb.from('payroll_exports').insert({
+        company_id,
+        period_start,
+        period_end,
+        export_target: 'xero',
+        employee_count: successCount,
+        total_gross: totalGross,
+        status: 'exported',
+        exported_by: user.id,
+        notes: `Pushed ${successCount} timesheet(s) to Xero`,
+      })
+    }
+
+    return json({
+      pushed: results.filter(r => r.status === 'created' || r.status === 'updated').length,
+      failed: results.filter(r => r.status === 'failed' || r.status === 'update_failed').length,
+      skipped: skipped.length,
+      results,
+      skipped_details: skipped,
+    })
+  } catch (err) {
+    return json({ error: (err as Error).message }, 500)
+  }
+})
