@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
@@ -208,6 +208,8 @@ export default function AdminPayroll() {
   const [showAddSingle, setShowAddSingle] = useState(false)
   const [singleEmpId, setSingleEmpId] = useState('')
   const [singleMonth, setSingleMonth] = useState('')
+  const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set())
+  const [bulkUpdating, setBulkUpdating] = useState(false)
 
   // Xero integration state
   const [xeroIntegration, setXeroIntegration] = useState<XeroIntegration | null>(null)
@@ -425,13 +427,50 @@ export default function AdminPayroll() {
   }
 
   async function deletePayslip(id: number) {
-    if (!confirm('Delete this payslip?')) return
     const p = payslips.find(ps => ps.id === id)
+    if (p && p.status !== 'draft') { showError('Only draft payslips can be deleted'); return }
+    if (!confirm('Delete this draft payslip?')) return
     const { error } = await supabase.from('payslips').delete().eq('id', id)
     if (error) { showError('Failed to delete payslip: ' + error.message); logPayrollAction('Payslip Delete', `Failed to delete payslip #${id}: ${error.message}`, p?.employee?.id, 'error'); return }
-    logPayrollAction('Payslip Delete', `Deleted payslip for ${p?.employee?.first_name} ${p?.employee?.last_name} — Period: ${p?.pay_period_start}`, p?.employee?.id)
+    logPayrollAction('Payslip Delete', `Deleted draft payslip for ${p?.employee?.first_name} ${p?.employee?.last_name} — Period: ${p?.pay_period_start}`, p?.employee?.id)
     setPayslips(prev => prev.filter(ps => ps.id !== id))
-    showSuccess('Payslip deleted')
+    showSuccess('Draft payslip deleted')
+  }
+
+  async function deleteDraftMonth(monthKey: string, monthPayslips: Payslip[]) {
+    const drafts = monthPayslips.filter(p => p.status === 'draft')
+    if (drafts.length === 0) { showError('No draft payslips to delete'); return }
+    if (!confirm(`Delete ${drafts.length} draft payslip(s) for this month?`)) return
+    const ids = drafts.map(p => p.id)
+    const { error } = await supabase.from('payslips').delete().in('id', ids)
+    if (error) { showError('Failed to delete drafts: ' + error.message); return }
+    logPayrollAction('Bulk Delete Drafts', `Deleted ${drafts.length} draft payslip(s) — Month: ${monthKey}`)
+    setPayslips(prev => prev.filter(ps => !ids.includes(ps.id)))
+    showSuccess(`${drafts.length} draft payslip(s) deleted`)
+  }
+
+  async function updatePayslipStatus(id: number, newStatus: string) {
+    const p = payslips.find(ps => ps.id === id)
+    if (!p) return
+    const { error } = await supabase.from('payslips').update({ status: newStatus }).eq('id', id)
+    if (error) { showError('Failed to update status: ' + error.message); return }
+    logPayrollAction('Status Change', `Changed status for ${p.employee?.first_name} ${p.employee?.last_name} from ${p.status} to ${newStatus}`, p.employee?.id)
+    setPayslips(prev => prev.map(ps => ps.id === id ? { ...ps, status: newStatus } : ps))
+    showSuccess('Status updated')
+  }
+
+  async function bulkUpdateMonthStatus(monthPayslips: Payslip[], newStatus: string, monthKey: string) {
+    const eligible = monthPayslips.filter(p => p.status !== newStatus)
+    if (eligible.length === 0) return
+    if (!confirm(`Set ${eligible.length} payslip(s) to "${newStatus}" for this month?`)) return
+    setBulkUpdating(true)
+    const ids = eligible.map(p => p.id)
+    const { error } = await supabase.from('payslips').update({ status: newStatus }).in('id', ids)
+    setBulkUpdating(false)
+    if (error) { showError('Bulk update failed: ' + error.message); return }
+    logPayrollAction('Bulk Status Change', `Set ${eligible.length} payslip(s) to ${newStatus} — Month: ${monthKey}`)
+    setPayslips(prev => prev.map(ps => ids.includes(ps.id) ? { ...ps, status: newStatus } : ps))
+    showSuccess(`${eligible.length} payslip(s) set to ${newStatus}`)
   }
 
   // Payroll schedule statuses stored in xero_integrations.cached_pay_run.schedule_statuses
@@ -1078,6 +1117,32 @@ export default function AdminPayroll() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  const groupedByMonth = useMemo(() => {
+    const groups: { key: string; label: string; payslips: Payslip[] }[] = []
+    const map = new Map<string, Payslip[]>()
+    filtered.forEach(p => {
+      const d = new Date(p.pay_period_start + 'T00:00:00')
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(p)
+    })
+    const sortedKeys = Array.from(map.keys()).sort((a, b) => b.localeCompare(a))
+    sortedKeys.forEach(key => {
+      const [yr, mo] = key.split('-').map(Number)
+      const label = `${MONTH_NAMES[mo - 1]} ${yr}`
+      groups.push({ key, label, payslips: map.get(key)! })
+    })
+    return groups
+  }, [filtered])
+
+  useEffect(() => {
+    if (groupedByMonth.length > 0) {
+      const latestKey = groupedByMonth[0].key
+      const olderKeys = groupedByMonth.slice(1).map(g => g.key)
+      setCollapsedMonths(new Set(olderKeys.filter(k => k !== latestKey)))
+    }
+  }, [groupedByMonth.length])
 
   useEffect(() => { setPage(1) }, [search])
 
@@ -1993,143 +2058,220 @@ export default function AdminPayroll() {
           />
 
           {loading ? <div className="admin-loading">Loading...</div> : (
-            <div className="admin-table-wrap">
-              <table className="admin-table">
-                <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Source</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {paginated.map(p => (
-                    <>
-                      <tr key={p.id} className={`${expandedId === p.id ? 'admin-row-active' : ''} ${p.status === 'flagged' ? 'admin-row-flagged' : ''}`}>
-                        <td className="admin-td-mono">{p.reference_number}</td>
-                        <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
-                        <td>{new Date(p.pay_period_start + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</td>
-                        <td><span style={{
-                          fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
-                          background: p.source === 'sage' ? '#e0f2e9' : p.source === 'xero' ? '#dbeafe' : '#f3f0ff',
-                          color: p.source === 'sage' ? '#166534' : p.source === 'xero' ? '#1e40af' : '#5b21b6',
-                        }}>{p.source === 'sage' ? 'Sage' : p.source === 'xero' ? 'Xero' : 'InflowHR'}</span></td>
-                        <td>£{Number(p.gross_pay).toFixed(2)}</td>
-                        <td>£{Number(p.tax).toFixed(2)}</td>
-                        <td>£{Number(p.national_insurance).toFixed(2)}</td>
-                        <td>£{Number(p.pension).toFixed(2)}</td>
-                        <td><strong>£{Number(p.net_pay).toFixed(2)}</strong></td>
-                        <td><span className={`admin-badge admin-badge-${p.status}`}>{p.status}</span></td>
-                        <td className="admin-actions">
-                          {editingId === p.id ? (
-                            <>
-                              <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(p.id)}>Save</button>
-                              <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
-                            </>
-                          ) : (
-                            <>
-                              <button className="admin-btn-icon" onClick={() => { const next = expandedId === p.id ? null : p.id; setExpandedId(next); if (next && p.employee?.id && !empBenefits[p.employee.id]) { supabase.from('benefit_enrollments').select('enrolled_at, benefit_type:benefit_types(title, monthly_cost)').eq('company_id', selectedCompanyId).eq('employee_id', p.employee.id).is('option_id', null).then(({ data }) => { setEmpBenefits(prev => ({ ...prev, [p.employee!.id]: (data || []).map((r: any) => ({ title: r.benefit_type?.title || '', enrolled_at: r.enrolled_at, monthly_cost: r.benefit_type?.monthly_cost || 0 })) })) }) } }}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={expandedId === p.id ? "18 15 12 9 6 15" : "6 9 12 15 18 9"}/></svg>
-                              </button>
-                              <button className="admin-btn-icon" onClick={() => startEdit(p)}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                              </button>
-                              <button className="admin-btn-icon admin-btn-danger" onClick={() => deletePayslip(p.id)}>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                      {expandedId === p.id && (
-                        <tr key={`exp-${p.id}`} className="admin-expanded-row">
-                          <td colSpan={11}>
-                            {editingId === p.id ? (
-                              <div className="admin-detail-grid admin-detail-grid-4">
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Gross Pay</label><input type="number" className="admin-inline-input" value={editForm.gross_pay} onChange={e => setEditForm(f => ({...f, gross_pay: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax</label><input type="number" className="admin-inline-input" value={editForm.tax} onChange={e => setEditForm(f => ({...f, tax: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>National Insurance</label><input type="number" className="admin-inline-input" value={editForm.national_insurance} onChange={e => setEditForm(f => ({...f, national_insurance: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Pension</label><input type="number" className="admin-inline-input" value={editForm.pension} onChange={e => setEditForm(f => ({...f, pension: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Other Deductions</label><input type="number" className="admin-inline-input" value={editForm.other_deductions} onChange={e => setEditForm(f => ({...f, other_deductions: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Salary Sacrifice</label><input type="number" className="admin-inline-input" value={editForm.monthly_deductions} onChange={e => setEditForm(f => ({...f, monthly_deductions: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Overtime</label><input type="number" className="admin-inline-input" value={editForm.overtime} onChange={e => setEditForm(f => ({...f, overtime: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Adjustments</label><input type="number" className="admin-inline-input" value={editForm.adjustments} onChange={e => setEditForm(f => ({...f, adjustments: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax Code</label><input className="admin-inline-input" value={editForm.tax_code} onChange={e => setEditForm(f => ({...f, tax_code: e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Annual Salary</label><input type="number" className="admin-inline-input" value={editForm.annual_salary} onChange={e => setEditForm(f => ({...f, annual_salary: +e.target.value}))} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Payroll ID</label><input className="admin-inline-input" value={editForm.payroll_id} readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} /></div>
-                                <div><label style={{ fontSize: 12, fontWeight: 600 }}>Status</label>
-                                  <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(f => ({...f, status: e.target.value}))}>
-                                    <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
-                                  </select>
-                                </div>
-                                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-                                  <span style={{ fontSize: 13, fontWeight: 600, marginRight: 'auto', color: 'var(--text, #1a1a2e)' }}>
-                                    Calculated Net: £{((Number(editForm.gross_pay) - Number(editForm.monthly_deductions || 0)) + Number(editForm.overtime || 0) + Number(editForm.adjustments || 0) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions)).toFixed(2)}
-                                  </span>
-                                  <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(p.id)}>Save</button>
-                                  <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                {p.status === 'flagged' && p.payroll_office && (
-                                  <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                                    <span style={{ color: '#dc2626', fontWeight: 600, fontSize: 13 }}>{p.payroll_office}</span>
-                                    <span style={{ color: '#991b1b', fontSize: 12 }}>— Update the employee record and edit this payslip to correct values before processing.</span>
-                                  </div>
-                                )}
-                                <div className="admin-detail-grid admin-detail-grid-4">
-                                  <div><strong>Tax Code:</strong> {p.tax_code}</div>
-                                  <div><strong>Annual Salary:</strong> £{Number(p.annual_salary || 0).toLocaleString()}</div>
-                                  <div><strong>Tax:</strong> £{Number(p.tax).toFixed(2)}</div>
-                                  <div><strong>NI:</strong> £{Number(p.national_insurance).toFixed(2)}</div>
-                                  <div><strong>Pension:</strong> £{Number(p.pension).toFixed(2)}</div>
-                                  <div><strong>Overtime:</strong> £{Number(p.overtime || 0).toFixed(2)}</div>
-                                  <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
-                                  <div><strong>Other Deductions:</strong> £{Number(p.other_deductions || 0).toFixed(2)}</div>
-                                  <div><strong>Salary Sacrifice:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
-                                  {Number(p.monthly_deductions || 0) > 0 && (() => {
-                                    const sacrifice = Number(p.monthly_deductions || 0)
-                                    const gross = Number(p.gross_pay || 0)
-                                    const adjustedGross = gross - sacrifice
-                                    const taxRate = adjustedGross > 0 ? Number(p.tax) / adjustedGross : 0.2
-                                    const niRate = adjustedGross > 0 ? Number(p.national_insurance) / adjustedGross : 0.12
-                                    const taxSaving = Math.round(sacrifice * taxRate * 100) / 100
-                                    const niSaving = Math.round(sacrifice * niRate * 100) / 100
-                                    const totalSaving = Math.round((taxSaving + niSaving) * 100) / 100
-                                    return (
-                                      <div><strong>Benefit Tax Saving:</strong> <span style={{ color: '#16a34a', fontWeight: 600 }}>£{totalSaving.toFixed(2)}</span> <span style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)' }}>(£{taxSaving.toFixed(2)} tax + £{niSaving.toFixed(2)} NI)</span></div>
-                                    )
-                                  })()}
-                                  <div><strong>Payment Date:</strong> {new Date(p.payment_date + 'T00:00:00').toLocaleDateString('en-GB')}</div>
-                                  <div><strong>Payroll ID:</strong> {p.payroll_id || '—'}</div>
-                                  <div><strong>Bank Account:</strong> {p.bank_account || '—'}</div>
-                                </div>
-                                {p.employee?.id && (empBenefits[p.employee.id] || []).length > 0 && (
-                                  <div style={{ marginTop: '12px' }}>
-                                    <strong style={{ fontSize: '13px' }}>Benefit Subscriptions:</strong>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
-                                      {empBenefits[p.employee.id].map((b, i) => (
-                                        <span key={i} style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px' }}>
-                                          {b.title} — £{b.monthly_cost.toFixed(2)}/mo (since {new Date(b.enrolled_at).toLocaleDateString('en-GB')})
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  ))}
-                </tbody>
-              </table>
+            <>
               {filtered.length === 0 && <div className="admin-empty">No payslips found</div>}
-              {totalPages > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 12 }}>
-                  <button className="admin-action-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</button>
-                  <span style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
-                  <button className="admin-action-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</button>
-                </div>
-              )}
-            </div>
+              {groupedByMonth.map((group, groupIdx) => {
+                const isCollapsed = collapsedMonths.has(group.key)
+                const gPaid = group.payslips.filter(p => p.status === 'paid').length
+                const gDraft = group.payslips.filter(p => p.status === 'draft').length
+                const gProcessed = group.payslips.filter(p => p.status === 'processed').length
+                const gFlagged = group.payslips.filter(p => p.status === 'flagged').length
+                const gGross = group.payslips.reduce((s, p) => s + Number(p.gross_pay), 0)
+                const gNet = group.payslips.reduce((s, p) => s + Number(p.net_pay), 0)
+                const isLatest = groupIdx === 0
+
+                return (
+                  <div key={group.key} style={{ marginBottom: 16, border: '1px solid var(--border, #e5e7eb)', borderRadius: 10, overflow: 'hidden' }}>
+                    {/* Month header */}
+                    <div
+                      onClick={() => setCollapsedMonths(prev => {
+                        const next = new Set(prev)
+                        if (next.has(group.key)) next.delete(group.key)
+                        else next.add(group.key)
+                        return next
+                      })}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer',
+                        background: isLatest ? 'var(--primary, #5c6bc0)' : 'var(--bg-secondary, #f5f6fa)',
+                        color: isLatest ? '#fff' : 'var(--text, #1a1a2e)',
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, transition: 'transform 0.2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                      <span style={{ fontWeight: 700, fontSize: 15 }}>{group.label}</span>
+                      {isLatest && <span style={{ fontSize: 11, fontWeight: 600, background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: 8 }}>Current</span>}
+                      <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontSize: 12 }}>{group.payslips.length} payslip{group.payslips.length !== 1 ? 's' : ''}</span>
+                        {gPaid > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.2)' : '#dcfce7', color: isLatest ? '#fff' : '#166534' }}>{gPaid} paid</span>}
+                        {gProcessed > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.2)' : '#dbeafe', color: isLatest ? '#fff' : '#1e40af' }}>{gProcessed} processed</span>}
+                        {gDraft > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.2)' : '#fef3c7', color: isLatest ? '#fff' : '#92400e' }}>{gDraft} draft</span>}
+                        {gFlagged > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.15)' : '#fef2f2', color: isLatest ? '#fca5a5' : '#dc2626' }}>{gFlagged} flagged</span>}
+                        <span style={{ fontSize: 12, opacity: 0.8 }}>Gross: £{gGross.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>Net: £{gNet.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+
+                    {/* Expanded content */}
+                    {!isCollapsed && (
+                      <div style={{ padding: '0' }}>
+                        {/* Bulk actions bar */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', background: 'var(--bg-card, #fff)', borderBottom: '1px solid var(--border, #e5e7eb)', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Bulk Actions:</span>
+                          <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => bulkUpdateMonthStatus(group.payslips, 'draft', group.key)} style={{ fontSize: 11 }}>All → Draft</button>
+                          <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => bulkUpdateMonthStatus(group.payslips, 'processed', group.key)} style={{ fontSize: 11 }}>All → Processed</button>
+                          <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => bulkUpdateMonthStatus(group.payslips, 'paid', group.key)} style={{ fontSize: 11 }}>All → Paid</button>
+                          {gDraft > 0 && (
+                            <button className="admin-btn-sm admin-btn-danger" disabled={bulkUpdating} onClick={() => deleteDraftMonth(group.key, group.payslips)} style={{ fontSize: 11, marginLeft: 'auto' }}>
+                              Delete {gDraft} Draft{gDraft !== 1 ? 's' : ''}
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="admin-table-wrap">
+                          <table className="admin-table">
+                            <thead><tr><th>Ref</th><th>Employee</th><th>Source</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
+                            <tbody>
+                              {group.payslips.map(p => {
+                                const isPaid = p.status === 'paid'
+                                const isDraft = p.status === 'draft'
+                                return (
+                                  <React.Fragment key={p.id}>
+                                    <tr className={`${expandedId === p.id ? 'admin-row-active' : ''} ${p.status === 'flagged' ? 'admin-row-flagged' : ''}`}>
+                                      <td className="admin-td-mono">{p.reference_number}</td>
+                                      <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
+                                      <td><span style={{
+                                        fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                                        background: p.source === 'sage' ? '#e0f2e9' : p.source === 'xero' ? '#dbeafe' : '#f3f0ff',
+                                        color: p.source === 'sage' ? '#166534' : p.source === 'xero' ? '#1e40af' : '#5b21b6',
+                                      }}>{p.source === 'sage' ? 'Sage' : p.source === 'xero' ? 'Xero' : 'InflowHR'}</span></td>
+                                      <td>£{Number(p.gross_pay).toFixed(2)}</td>
+                                      <td>£{Number(p.tax).toFixed(2)}</td>
+                                      <td>£{Number(p.national_insurance).toFixed(2)}</td>
+                                      <td>£{Number(p.pension).toFixed(2)}</td>
+                                      <td><strong>£{Number(p.net_pay).toFixed(2)}</strong></td>
+                                      <td>
+                                        <select
+                                          className="admin-inline-select"
+                                          value={p.status}
+                                          onChange={e => updatePayslipStatus(p.id, e.target.value)}
+                                          style={{ fontSize: 11, padding: '2px 6px', minWidth: 90, borderRadius: 6, fontWeight: 600 }}
+                                        >
+                                          <option value="flagged">Flagged</option>
+                                          <option value="draft">Draft</option>
+                                          <option value="processed">Processed</option>
+                                          <option value="paid">Paid</option>
+                                        </select>
+                                      </td>
+                                      <td className="admin-actions">
+                                        {editingId === p.id ? (
+                                          <>
+                                            <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(p.id)}>Save</button>
+                                            <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <button className="admin-btn-icon" onClick={() => { const next = expandedId === p.id ? null : p.id; setExpandedId(next); if (next && p.employee?.id && !empBenefits[p.employee.id]) { supabase.from('benefit_enrollments').select('enrolled_at, benefit_type:benefit_types(title, monthly_cost)').eq('company_id', selectedCompanyId).eq('employee_id', p.employee.id).is('option_id', null).then(({ data }) => { setEmpBenefits(prev => ({ ...prev, [p.employee!.id]: (data || []).map((r: any) => ({ title: r.benefit_type?.title || '', enrolled_at: r.enrolled_at, monthly_cost: r.benefit_type?.monthly_cost || 0 })) })) }) } }}>
+                                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={expandedId === p.id ? "18 15 12 9 6 15" : "6 9 12 15 18 9"}/></svg>
+                                            </button>
+                                            {!isPaid && (
+                                              <button className="admin-btn-icon" onClick={() => startEdit(p)}>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                                              </button>
+                                            )}
+                                            {isDraft && (
+                                              <button className="admin-btn-icon admin-btn-danger" onClick={() => deletePayslip(p.id)}>
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                              </button>
+                                            )}
+                                          </>
+                                        )}
+                                      </td>
+                                    </tr>
+                                    {expandedId === p.id && (
+                                      <tr className="admin-expanded-row">
+                                        <td colSpan={10}>
+                                          {editingId === p.id ? (
+                                            <div className="admin-detail-grid admin-detail-grid-4">
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Gross Pay</label><input type="number" className="admin-inline-input" value={editForm.gross_pay} onChange={e => setEditForm(f => ({...f, gross_pay: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax</label><input type="number" className="admin-inline-input" value={editForm.tax} onChange={e => setEditForm(f => ({...f, tax: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>National Insurance</label><input type="number" className="admin-inline-input" value={editForm.national_insurance} onChange={e => setEditForm(f => ({...f, national_insurance: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Pension</label><input type="number" className="admin-inline-input" value={editForm.pension} onChange={e => setEditForm(f => ({...f, pension: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Other Deductions</label><input type="number" className="admin-inline-input" value={editForm.other_deductions} onChange={e => setEditForm(f => ({...f, other_deductions: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Salary Sacrifice</label><input type="number" className="admin-inline-input" value={editForm.monthly_deductions} onChange={e => setEditForm(f => ({...f, monthly_deductions: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Overtime</label><input type="number" className="admin-inline-input" value={editForm.overtime} onChange={e => setEditForm(f => ({...f, overtime: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Adjustments</label><input type="number" className="admin-inline-input" value={editForm.adjustments} onChange={e => setEditForm(f => ({...f, adjustments: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Tax Code</label><input className="admin-inline-input" value={editForm.tax_code} onChange={e => setEditForm(f => ({...f, tax_code: e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Annual Salary</label><input type="number" className="admin-inline-input" value={editForm.annual_salary} onChange={e => setEditForm(f => ({...f, annual_salary: +e.target.value}))} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Payroll ID</label><input className="admin-inline-input" value={editForm.payroll_id} readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} /></div>
+                                              <div><label style={{ fontSize: 12, fontWeight: 600 }}>Status</label>
+                                                <select className="admin-inline-select" value={editForm.status} onChange={e => setEditForm(f => ({...f, status: e.target.value}))}>
+                                                  <option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
+                                                </select>
+                                              </div>
+                                              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                                                <span style={{ fontSize: 13, fontWeight: 600, marginRight: 'auto', color: 'var(--text, #1a1a2e)' }}>
+                                                  Calculated Net: £{((Number(editForm.gross_pay) - Number(editForm.monthly_deductions || 0)) + Number(editForm.overtime || 0) + Number(editForm.adjustments || 0) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions)).toFixed(2)}
+                                                </span>
+                                                <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(p.id)}>Save</button>
+                                                <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <>
+                                              {p.status === 'flagged' && p.payroll_office && (
+                                                <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                                  <span style={{ color: '#dc2626', fontWeight: 600, fontSize: 13 }}>{p.payroll_office}</span>
+                                                  <span style={{ color: '#991b1b', fontSize: 12 }}>— Update the employee record and edit this payslip to correct values before processing.</span>
+                                                </div>
+                                              )}
+                                              <div className="admin-detail-grid admin-detail-grid-4">
+                                                <div><strong>Tax Code:</strong> {p.tax_code}</div>
+                                                <div><strong>Annual Salary:</strong> £{Number(p.annual_salary || 0).toLocaleString()}</div>
+                                                <div><strong>Tax:</strong> £{Number(p.tax).toFixed(2)}</div>
+                                                <div><strong>NI:</strong> £{Number(p.national_insurance).toFixed(2)}</div>
+                                                <div><strong>Pension:</strong> £{Number(p.pension).toFixed(2)}</div>
+                                                <div><strong>Overtime:</strong> £{Number(p.overtime || 0).toFixed(2)}</div>
+                                                <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
+                                                <div><strong>Other Deductions:</strong> £{Number(p.other_deductions || 0).toFixed(2)}</div>
+                                                <div><strong>Salary Sacrifice:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
+                                                {Number(p.monthly_deductions || 0) > 0 && (() => {
+                                                  const sacrifice = Number(p.monthly_deductions || 0)
+                                                  const gross = Number(p.gross_pay || 0)
+                                                  const adjustedGross = gross - sacrifice
+                                                  const taxRate = adjustedGross > 0 ? Number(p.tax) / adjustedGross : 0.2
+                                                  const niRate = adjustedGross > 0 ? Number(p.national_insurance) / adjustedGross : 0.12
+                                                  const taxSaving = Math.round(sacrifice * taxRate * 100) / 100
+                                                  const niSaving = Math.round(sacrifice * niRate * 100) / 100
+                                                  const totalSaving = Math.round((taxSaving + niSaving) * 100) / 100
+                                                  return (
+                                                    <div><strong>Benefit Tax Saving:</strong> <span style={{ color: '#16a34a', fontWeight: 600 }}>£{totalSaving.toFixed(2)}</span> <span style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)' }}>(£{taxSaving.toFixed(2)} tax + £{niSaving.toFixed(2)} NI)</span></div>
+                                                  )
+                                                })()}
+                                                <div><strong>Payment Date:</strong> {new Date(p.payment_date + 'T00:00:00').toLocaleDateString('en-GB')}</div>
+                                                <div><strong>Payroll ID:</strong> {p.payroll_id || '—'}</div>
+                                                <div><strong>Bank Account:</strong> {p.bank_account || '—'}</div>
+                                              </div>
+                                              {p.employee?.id && (empBenefits[p.employee.id] || []).length > 0 && (
+                                                <div style={{ marginTop: '12px' }}>
+                                                  <strong style={{ fontSize: '13px' }}>Benefit Subscriptions:</strong>
+                                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
+                                                    {empBenefits[p.employee.id].map((b, i) => (
+                                                      <span key={i} style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px' }}>
+                                                        {b.title} — £{b.monthly_cost.toFixed(2)}/mo (since {new Date(b.enrolled_at).toLocaleDateString('en-GB')})
+                                                      </span>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </React.Fragment>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </>
           )}
         </>
       )}
