@@ -31,7 +31,7 @@ const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'Jul
 const VAT_RATE = 0.20
 
 const BILLING_PACK_A_LABELS = ['Shifts & Rotas', 'Legal Timesheets', 'Space & Desk Booking', 'Asset Management']
-const BILLING_PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligence']
+const BILLING_PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligence', 'Modulr Payments & BACS Export']
 const BILLING_CORE_FEATURES = [
   'Leave', 'Performance', 'E-Learning', 'Expenses', 'Onboarding/Offboarding',
   'Payroll / Xero / Sage', 'Kudos', 'Announcements & Notifications',
@@ -612,7 +612,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   const baseline = useMemo(() => pricing.find(p => p.feature_key === 'hr_core' || !p.is_addon), [pricing])
   const packAPricing = useMemo(() => pricing.find(p => p.feature_key === 'pack_a'), [pricing])
   const packBPricing = useMemo(() => pricing.find(p => p.feature_key === 'pack_b'), [pricing])
-  const packCPricing = useMemo(() => pricing.find(p => p.feature_key === 'pack_c'), [pricing])
   const supportPackages = useMemo(() => pricing.filter(p => p.is_support_package), [pricing])
   const enabledKeys = useMemo(() => new Set(features.filter(f => f.is_enabled).map(f => f.feature_key)), [features])
   const enabledAddons = useMemo(() => {
@@ -621,7 +620,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
 
   const packAEnabled = enabledKeys.has('pack_a')
   const packBEnabled = enabledKeys.has('pack_b')
-  const packCEnabled = enabledKeys.has('pack_c')
   const enabledSupport = useMemo(() => supportPackages.filter(sp => enabledKeys.has(sp.feature_key)), [supportPackages, enabledKeys])
 
   const effectivePrice = useCallback((pr: PricingRow): number => {
@@ -633,11 +631,10 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   const hasCustomCore = baseline ? (baselinePrice !== baseline.default_price) : false
   const packAPrice = packAPricing && packAEnabled ? effectivePrice(packAPricing) : 0
   const packBPrice = packBPricing && packBEnabled ? effectivePrice(packBPricing) : 0
-  const packCPrice = packCPricing && packCEnabled ? effectivePrice(packCPricing) : 0
   const supportTotal = enabledSupport.reduce((sum, sp) => sum + (sp.flat_price ?? 0), 0)
   const isFixed = billingType === 'fixed' && fixedAnnualPrice > 0
   const fixedMonthly = isFixed ? fixedAnnualPrice / 12 : 0
-  const perUserTotal = baselinePrice + packAPrice + packBPrice + packCPrice
+  const perUserTotal = baselinePrice + packAPrice + packBPrice
   const subtotal = (isFixed ? fixedMonthly : perUserTotal * employeeCount) + supportTotal + monthlyPlatformFee
   const vat = subtotal * VAT_RATE
   const monthlyTotal = subtotal + vat
@@ -766,7 +763,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       allFeatures.push({ name: 'Pack B: ' + packBPricing.display_name, type: 'Pack B' })
       BILLING_PACK_B_LABELS.forEach(l => allFeatures.push({ name: l, type: '', pack: 'Pack B: ' + packBPricing.display_name }))
     }
-    if (packCEnabled && packCPricing) allFeatures.push({ name: 'Pack C: ' + packCPricing.display_name, type: 'Pack C' })
     enabledSupport.forEach(sp => allFeatures.push({ name: sp.display_name, type: 'Support' }))
     generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures, companyId)
   }
@@ -828,15 +824,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
             )}
             {packBEnabled && (
               <div className="billing-card" style={{ borderTop: '3px solid #7b1fa2' }}>
-                <span className="billing-card-label" style={{ color: '#7b1fa2' }}>Pack B: Enterprise</span>
+                <span className="billing-card-label" style={{ color: '#7b1fa2' }}>Pack B: Pro Integrations</span>
                 <span className="billing-card-value">&pound;{packBPrice.toFixed(2)}</span>
-                <span className="billing-card-sub">per user / month</span>
-              </div>
-            )}
-            {packCEnabled && (
-              <div className="billing-card" style={{ borderTop: '3px solid #00897b' }}>
-                <span className="billing-card-label" style={{ color: '#00897b' }}>Pack C: Payments</span>
-                <span className="billing-card-value">&pound;{packCPrice.toFixed(2)}</span>
                 <span className="billing-card-sub">per user / month</span>
               </div>
             )}
@@ -854,7 +843,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         )}
       </div>
 
-      {!isFixed && (packAEnabled || packBEnabled || packCEnabled || enabledSupport.length > 0) && (
+      {!isFixed && (packAEnabled || packBEnabled || enabledSupport.length > 0) && (
         <div className="billing-addons" style={{ flexWrap: 'wrap', gap: 6 }}>
           {packAEnabled && (
             <>
@@ -870,12 +859,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
               {BILLING_PACK_B_LABELS.map(label => (
                 <span key={label} className="billing-addon-chip" style={{ background: '#f3e5f5', color: '#7b1fa2', border: '1px solid #ce93d8' }}>{label}</span>
               ))}
-            </>
-          )}
-          {packCEnabled && (
-            <>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#00897b' }}>Pack C:</span>
-              <span className="billing-addon-chip" style={{ background: '#e0f2f1', color: '#00897b', border: '1px solid #80cbc4' }}>Modulr Payments &amp; BACS Export</span>
             </>
           )}
           {enabledSupport.map(sp => (
@@ -914,7 +897,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                 <span><span className="billing-legend-dot" style={{ background: '#1565c0' }} />Core</span>
                 {packAEnabled && <span><span className="billing-legend-dot" style={{ background: '#43a047' }} />Pack A</span>}
                 {packBEnabled && <span><span className="billing-legend-dot" style={{ background: '#7b1fa2' }} />Pack B</span>}
-                {packCEnabled && <span><span className="billing-legend-dot" style={{ background: '#00897b' }} />Pack C</span>}
               </>
             )}
             <span><span className="billing-legend-dot" style={{ background: '#3949ab' }} />Platform Fee</span>
@@ -1142,7 +1124,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
             {packBEnabled && packBPricing && (
               <>
                 <tr>
-                  <td style={{ color: '#7b1fa2', fontWeight: 600 }}>Pack B: Enterprise Integrations</td>
+                  <td style={{ color: '#7b1fa2', fontWeight: 600 }}>Pack B: Pro Integrations</td>
                   <td><span className="admin-badge" style={{ background: '#f3e5f5', color: '#7b1fa2' }}>Pack B</span></td>
                   {!isFixed && <td>&pound;{packBPrice.toFixed(2)}</td>}
                   <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(packBPrice * employeeCount).toFixed(2)}</>}</td>
@@ -1150,22 +1132,6 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                 <tr>
                   <td colSpan={isFixed ? 2 : 3} style={{ paddingLeft: 24, fontSize: 12, color: '#888', borderBottom: '1px solid #f0f0f0' }}>
                     {BILLING_PACK_B_LABELS.join(' · ')}
-                  </td>
-                  <td style={{ borderBottom: '1px solid #f0f0f0' }}></td>
-                </tr>
-              </>
-            )}
-            {packCEnabled && packCPricing && (
-              <>
-                <tr>
-                  <td style={{ color: '#00897b', fontWeight: 600 }}>Pack C: Payment Integration</td>
-                  <td><span className="admin-badge" style={{ background: '#e0f2f1', color: '#00897b' }}>Pack C</span></td>
-                  {!isFixed && <td>&pound;{packCPrice.toFixed(2)}</td>}
-                  <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(packCPrice * employeeCount).toFixed(2)}</>}</td>
-                </tr>
-                <tr>
-                  <td colSpan={isFixed ? 2 : 3} style={{ paddingLeft: 24, fontSize: 12, color: '#888', borderBottom: '1px solid #f0f0f0' }}>
-                    Modulr Payments &middot; BACS Export &middot; Direct Payouts
                   </td>
                   <td style={{ borderBottom: '1px solid #f0f0f0' }}></td>
                 </tr>

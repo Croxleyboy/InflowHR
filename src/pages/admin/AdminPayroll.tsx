@@ -2712,7 +2712,7 @@ export default function AdminPayroll() {
               <li>Click <strong>Export Gross Pay CSV</strong> — download and import into your Sage or Xero payroll</li>
               <li>Sage/Xero calculates PAYE, NI, pension and submits RTI to HMRC</li>
               <li>Sync net pay back to InflowHR via the Sage/Xero Payslips tab</li>
-              <li>Pay employees via BACS file upload to your bank, or Modulr (Pack C)</li>
+              <li>Pay employees via BACS file upload to your bank, or Modulr (Pro Integrations)</li>
             </ol>
           </div>
         </>

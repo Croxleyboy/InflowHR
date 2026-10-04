@@ -699,7 +699,7 @@ export default function AdminIntegrations() {
           {!features.modulr_integration && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
               <span style={{ background: '#00897b', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
-                Requires Pack C Subscription
+                Requires Pro Integrations (Pack B)
               </span>
             </div>
           )}

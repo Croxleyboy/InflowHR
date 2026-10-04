@@ -37,8 +37,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   teams_integration: 'teams_integration',
 }
 const PACK_A_FEATURES: (keyof Features)[] = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
-const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport']
-const PACK_C_FEATURES: (keyof Features)[] = ['modulr_integration']
+const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport', 'modulr_integration']
 
 const defaultFeatures: Features = {
   expenses: true,
@@ -135,14 +134,6 @@ export function FeatureProvider({ children }: { children: ReactNode }) {
         visible[key] = dbRows.get(key)?.is_visible ?? true
       }
     }
-    const packCEnabled = dbRows.get('pack_c')?.is_enabled ?? false
-    if (packCEnabled) {
-      for (const key of PACK_C_FEATURES) {
-        subscribed[key] = true
-        visible[key] = dbRows.get(key)?.is_visible ?? true
-      }
-    }
-
     setCompanyFeatures(subscribed)
     setFeaturesState(visible)
     setFeaturesLoaded(true)
