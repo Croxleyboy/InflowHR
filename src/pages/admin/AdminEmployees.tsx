@@ -56,6 +56,10 @@ interface Employee {
   religion: string | null
   manager_id: string | null
   employment_category: string
+  pay_pattern_override: string | null
+  overtime_handling_override: string | null
+  time_recording_override: string | null
+  is_payroll_exception: boolean
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -79,11 +83,26 @@ export default function AdminEmployees() {
   const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
   const [lieuDays, setLieuDays] = useState<Record<string, { balanceId: number; lieu_days: number }>>({})
   const [editLieuDays, setEditLieuDays] = useState<number>(0)
-  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart'>('management')
+  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart' | 'settings'>('management')
   const [recordsSearch, setRecordsSearch] = useState('')
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  // Worker type settings state
+  interface WorkerTypeSetting {
+    id?: number
+    company_id: string
+    worker_type: string
+    pay_pattern: string
+    overtime_handling: string
+    time_recording: string
+    overtime_rate_multiplier: number
+  }
+  const [workerSettings, setWorkerSettings] = useState<WorkerTypeSetting[]>([])
+  const [editingSettings, setEditingSettings] = useState<Record<string, WorkerTypeSetting>>({})
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [changeLog, setChangeLog] = useState<{ id: number; worker_type: string; setting_name: string; old_value: string; new_value: string; exception_count: number; created_at: string }[]>([])
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
@@ -143,6 +162,35 @@ export default function AdminEmployees() {
       setLieuDays(lieuMap)
     }
 
+    // Load worker type settings
+    const { data: wtsData } = await supabase
+      .from('worker_type_settings')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+    setWorkerSettings(wtsData || [])
+    const editMap: Record<string, WorkerTypeSetting> = {}
+    for (const wt of ['employed', 'shift_worker', 'zero_hours']) {
+      const existing = (wtsData || []).find((s: WorkerTypeSetting) => s.worker_type === wt)
+      editMap[wt] = existing || {
+        company_id: selectedCompanyId,
+        worker_type: wt,
+        pay_pattern: wt === 'employed' ? 'monthly' : 'weekly',
+        overtime_handling: 'none',
+        time_recording: wt === 'shift_worker' ? 'checkin' : 'timesheet',
+        overtime_rate_multiplier: 1.50,
+      }
+    }
+    setEditingSettings(editMap)
+
+    // Load recent change log
+    const { data: logData } = await supabase
+      .from('worker_setting_change_log')
+      .select('id, worker_type, setting_name, old_value, new_value, exception_count, created_at')
+      .eq('company_id', selectedCompanyId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    setChangeLog(logData || [])
+
     setLoading(false)
   }
 
@@ -175,6 +223,10 @@ export default function AdminEmployees() {
       qualifications: emp.qualifications || '',
       religion: emp.religion || '',
       start_date: emp.start_date || '',
+      pay_pattern_override: emp.pay_pattern_override || '',
+      overtime_handling_override: emp.overtime_handling_override || '',
+      time_recording_override: emp.time_recording_override || '',
+      is_payroll_exception: emp.is_payroll_exception || false,
     })
     setEditLieuDays(lieuDays[emp.id]?.lieu_days ?? 0)
   }
@@ -386,6 +438,73 @@ export default function AdminEmployees() {
     load()
   }
 
+  async function saveWorkerTypeSettings(workerType: string) {
+    setSettingsSaving(true)
+    const setting = editingSettings[workerType]
+    if (!setting) { setSettingsSaving(false); return }
+
+    const existing = workerSettings.find(s => s.worker_type === workerType)
+    const changedFields: { name: string; oldVal: string; newVal: string }[] = []
+
+    if (existing) {
+      if (existing.pay_pattern !== setting.pay_pattern) changedFields.push({ name: 'pay_pattern', oldVal: existing.pay_pattern, newVal: setting.pay_pattern })
+      if (existing.overtime_handling !== setting.overtime_handling) changedFields.push({ name: 'overtime_handling', oldVal: existing.overtime_handling, newVal: setting.overtime_handling })
+      if (existing.time_recording !== setting.time_recording) changedFields.push({ name: 'time_recording', oldVal: existing.time_recording, newVal: setting.time_recording })
+      if (Number(existing.overtime_rate_multiplier) !== Number(setting.overtime_rate_multiplier)) changedFields.push({ name: 'overtime_rate_multiplier', oldVal: String(existing.overtime_rate_multiplier), newVal: String(setting.overtime_rate_multiplier) })
+    }
+
+    const { error } = await supabase.from('worker_type_settings').upsert({
+      company_id: selectedCompanyId,
+      worker_type: workerType,
+      pay_pattern: setting.pay_pattern,
+      overtime_handling: setting.overtime_handling,
+      time_recording: setting.time_recording,
+      overtime_rate_multiplier: setting.overtime_rate_multiplier,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,worker_type' })
+
+    if (error) { showError('Failed to save settings: ' + error.message); setSettingsSaving(false); return }
+
+    // Find employees with overrides (exceptions) for this worker type
+    const workerTypeFilter = workerType === 'zero_hours'
+      ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker')
+      : workerType === 'shift_worker'
+      ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker')
+      : employees.filter(e => e.employment_category === 'employed')
+
+    // Log changes with exception tracking
+    for (const change of changedFields) {
+      const overrideField = change.name + '_override' as keyof Employee
+      const exceptionIds = workerTypeFilter
+        .filter(e => e[overrideField] != null)
+        .map(e => e.id)
+
+      await supabase.from('worker_setting_change_log').insert({
+        company_id: selectedCompanyId,
+        worker_type: workerType,
+        setting_name: change.name,
+        old_value: change.oldVal,
+        new_value: change.newVal,
+        exception_employee_ids: exceptionIds,
+        exception_count: exceptionIds.length,
+      })
+    }
+
+    showSuccess('Settings saved')
+    setSettingsSaving(false)
+    load()
+  }
+
+  function getEffectiveSetting(emp: Employee, field: 'pay_pattern' | 'overtime_handling' | 'time_recording'): string {
+    const overrideVal = emp[`${field}_override` as keyof Employee] as string | null
+    if (overrideVal) return overrideVal
+    const workerType = emp.employment_category === 'shift_worker' && emp.contract_type === 'Zero hours shift worker' ? 'zero_hours'
+      : emp.employment_category === 'shift_worker' ? 'shift_worker' : 'employed'
+    const setting = workerSettings.find(s => s.worker_type === workerType)
+    if (setting) return setting[field]
+    return field === 'pay_pattern' ? 'monthly' : field === 'time_recording' ? 'checkin' : 'none'
+  }
+
   const departments = useMemo(() => {
     const depts = new Set<string>()
     employees.forEach(e => { if (e.department) depts.add(e.department) })
@@ -485,6 +604,7 @@ export default function AdminEmployees() {
         <button className={`admin-tab ${activeTab === 'management' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('management')}>Employee Management</button>
         <button className={`admin-tab ${activeTab === 'records' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('records')}>Employee Records</button>
         <button className={`admin-tab ${activeTab === 'orgchart' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('orgchart')}>Org Chart</button>
+        <button className={`admin-tab ${activeTab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('settings')}>Payroll Settings</button>
       </div>
 
       {activeTab === 'records' && (
@@ -654,6 +774,225 @@ export default function AdminEmployees() {
 
       {activeTab === 'orgchart' && (
         <OrgChart employees={employees} />
+      )}
+
+      {activeTab === 'settings' && (
+        <div className="admin-settings-section">
+          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
+            Set company-wide defaults for how each worker type records time, gets paid, and handles overtime.
+            Individual employees can be overridden in their profile — overridden employees become exceptions and won't change when you update these defaults.
+          </p>
+
+          {/* Employed / Salaried Staff */}
+          {(() => {
+            const wt = 'employed'
+            const s = editingSettings[wt]
+            if (!s) return null
+            const empCount = employees.filter(e => e.is_active && e.employment_category === 'employed').length
+            const exceptionCount = employees.filter(e => e.is_active && e.employment_category === 'employed' && e.is_payroll_exception).length
+            return (
+              <div className="admin-settings-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>Employed / Salaried Staff</h3>
+                    <span style={{ fontSize: 12, color: '#6b7280' }}>
+                      {empCount} employee{empCount !== 1 ? 's' : ''}
+                      {exceptionCount > 0 && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>}
+                    </span>
+                  </div>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#3b82f6' }} />
+                </div>
+                <div className="admin-detail-grid admin-detail-grid-3">
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>Pay Pattern</label>
+                    <select className="admin-select" value={s.pay_pattern} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], pay_pattern: e.target.value } }))}>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Handling</label>
+                    <select className="admin-select" value={s.overtime_handling} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_handling: e.target.value } }))}>
+                      <option value="none">None</option>
+                      <option value="overtime">Overtime (Paid)</option>
+                      <option value="toil">TOIL (Time Off in Lieu)</option>
+                    </select>
+                  </div>
+                  {s.overtime_handling === 'overtime' && (
+                    <div className="admin-form-field">
+                      <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Rate Multiplier</label>
+                      <input className="admin-inline-input" type="number" step="0.25" min="1" max="3" value={s.overtime_rate_multiplier} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_rate_multiplier: parseFloat(e.target.value) || 1.5 } }))} />
+                    </div>
+                  )}
+                </div>
+                <div style={{ marginTop: 12, textAlign: 'right' }}>
+                  <button className="admin-btn admin-btn-primary" disabled={settingsSaving} onClick={() => saveWorkerTypeSettings(wt)}>
+                    {settingsSaving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Employed Shift Workers */}
+          {(() => {
+            const wt = 'shift_worker'
+            const s = editingSettings[wt]
+            if (!s) return null
+            const empCount = employees.filter(e => e.is_active && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker').length
+            const exceptionCount = employees.filter(e => e.is_active && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker' && e.is_payroll_exception).length
+            return (
+              <div className="admin-settings-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>Employed Shift Workers</h3>
+                    <span style={{ fontSize: 12, color: '#6b7280' }}>
+                      {empCount} employee{empCount !== 1 ? 's' : ''}
+                      {exceptionCount > 0 && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>}
+                    </span>
+                  </div>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#8b5cf6' }} />
+                </div>
+                <div className="admin-detail-grid admin-detail-grid-3">
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>Time Recording</label>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], time_recording: 'checkin' } }))}
+                        style={{ padding: '6px 14px', borderRadius: 6, border: s.time_recording === 'checkin' ? '2px solid #8b5cf6' : '1px solid #d1d5db', background: s.time_recording === 'checkin' ? '#ede9fe' : '#fff', color: s.time_recording === 'checkin' ? '#6d28d9' : '#6b7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      >Check-in</button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], time_recording: 'timesheet' } }))}
+                        style={{ padding: '6px 14px', borderRadius: 6, border: s.time_recording === 'timesheet' ? '2px solid #8b5cf6' : '1px solid #d1d5db', background: s.time_recording === 'timesheet' ? '#ede9fe' : '#fff', color: s.time_recording === 'timesheet' ? '#6d28d9' : '#6b7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                      >Timesheets</button>
+                    </div>
+                  </div>
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>Pay Pattern</label>
+                    <select className="admin-select" value={s.pay_pattern} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], pay_pattern: e.target.value } }))}>
+                      <option value="weekly">Weekly</option>
+                      <option value="bi_weekly">Bi-weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Handling</label>
+                    <select className="admin-select" value={s.overtime_handling} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_handling: e.target.value } }))}>
+                      <option value="none">None</option>
+                      <option value="overtime">Overtime (Paid)</option>
+                      <option value="toil">TOIL (Time Off in Lieu)</option>
+                    </select>
+                  </div>
+                  {s.overtime_handling === 'overtime' && (
+                    <div className="admin-form-field">
+                      <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Rate Multiplier</label>
+                      <input className="admin-inline-input" type="number" step="0.25" min="1" max="3" value={s.overtime_rate_multiplier} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_rate_multiplier: parseFloat(e.target.value) || 1.5 } }))} />
+                    </div>
+                  )}
+                </div>
+                <div style={{ marginTop: 12, textAlign: 'right' }}>
+                  <button className="admin-btn admin-btn-primary" disabled={settingsSaving} onClick={() => saveWorkerTypeSettings(wt)}>
+                    {settingsSaving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Zero Hours Workers */}
+          {(() => {
+            const wt = 'zero_hours'
+            const s = editingSettings[wt]
+            if (!s) return null
+            const empCount = employees.filter(e => e.is_active && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker').length
+            const exceptionCount = employees.filter(e => e.is_active && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker' && e.is_payroll_exception).length
+            return (
+              <div className="admin-settings-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>Zero Hours Workers</h3>
+                    <span style={{ fontSize: 12, color: '#6b7280' }}>
+                      {empCount} employee{empCount !== 1 ? 's' : ''}
+                      {exceptionCount > 0 && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>}
+                    </span>
+                  </div>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} />
+                </div>
+                <div className="admin-detail-grid admin-detail-grid-3">
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>Pay Pattern</label>
+                    <select className="admin-select" value={s.pay_pattern} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], pay_pattern: e.target.value } }))}>
+                      <option value="weekly">Weekly</option>
+                      <option value="bi_weekly">Bi-weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  <div className="admin-form-field">
+                    <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Handling</label>
+                    <select className="admin-select" value={s.overtime_handling} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_handling: e.target.value } }))}>
+                      <option value="none">None</option>
+                      <option value="overtime">Overtime (Paid)</option>
+                      <option value="toil">TOIL (Time Off in Lieu)</option>
+                    </select>
+                  </div>
+                  {s.overtime_handling === 'overtime' && (
+                    <div className="admin-form-field">
+                      <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Rate Multiplier</label>
+                      <input className="admin-inline-input" type="number" step="0.25" min="1" max="3" value={s.overtime_rate_multiplier} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_rate_multiplier: parseFloat(e.target.value) || 1.5 } }))} />
+                    </div>
+                  )}
+                </div>
+                <div style={{ marginTop: 12, textAlign: 'right' }}>
+                  <button className="admin-btn admin-btn-primary" disabled={settingsSaving} onClick={() => saveWorkerTypeSettings(wt)}>
+                    {settingsSaving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Exception / Change Log */}
+          {changeLog.length > 0 && (
+            <div className="admin-settings-group">
+              <h3>Settings Change Log</h3>
+              <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>
+                Shows when company defaults changed and how many employees were exceptions (not updated).
+              </p>
+              <table className="admin-table" style={{ fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Worker Type</th>
+                    <th>Setting</th>
+                    <th>Changed From</th>
+                    <th>Changed To</th>
+                    <th>Exceptions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changeLog.map(log => (
+                    <tr key={log.id}>
+                      <td>{new Date(log.created_at).toLocaleDateString('en-GB')}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{log.worker_type.replace('_', ' ')}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{log.setting_name.replace(/_/g, ' ')}</td>
+                      <td>{log.old_value?.replace('_', '-') || '—'}</td>
+                      <td>{log.new_value?.replace('_', '-') || '—'}</td>
+                      <td>
+                        {log.exception_count > 0 ? (
+                          <span style={{ padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{log.exception_count}</span>
+                        ) : (
+                          <span style={{ color: '#9ca3af' }}>0</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
 
       {activeTab === 'management' && <>
@@ -830,6 +1169,7 @@ export default function AdminEmployees() {
                                     }
 
                                     return (
+                                      <>
                                       <div className="admin-detail-grid admin-detail-grid-3">
                                         <div className="admin-form-field">
                                           <label style={{ fontSize: 12 }}>Work Pattern</label>
@@ -922,6 +1262,59 @@ export default function AdminEmployees() {
                                           </div>
                                         )}
                                       </div>
+                                      {cat !== 'not_assigned' && cat !== 'contractor' && (
+                                        <div style={{ marginTop: 16, padding: 12, background: '#f9fafb', borderRadius: 8, border: '1px solid #e5e7eb' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                            <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>Payroll Overrides</span>
+                                            {editForm.is_payroll_exception && (
+                                              <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e' }}>Exception</span>
+                                            )}
+                                          </div>
+                                          <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 8px' }}>
+                                            Leave blank to use company defaults. Setting a value makes this employee an exception.
+                                          </p>
+                                          <div className="admin-detail-grid admin-detail-grid-3">
+                                            <div className="admin-form-field">
+                                              <label style={{ fontSize: 12 }}>Pay Pattern Override</label>
+                                              <select className="admin-select" value={editForm.pay_pattern_override || ''} onChange={e => {
+                                                const val = e.target.value || null
+                                                setEditForm(p => ({ ...p, pay_pattern_override: val, is_payroll_exception: !!(val || p.overtime_handling_override || p.time_recording_override) }))
+                                              }}>
+                                                <option value="">Use company default</option>
+                                                <option value="weekly">Weekly</option>
+                                                <option value="bi_weekly">Bi-weekly</option>
+                                                <option value="monthly">Monthly</option>
+                                              </select>
+                                            </div>
+                                            <div className="admin-form-field">
+                                              <label style={{ fontSize: 12 }}>Overtime Override</label>
+                                              <select className="admin-select" value={editForm.overtime_handling_override || ''} onChange={e => {
+                                                const val = e.target.value || null
+                                                setEditForm(p => ({ ...p, overtime_handling_override: val, is_payroll_exception: !!(p.pay_pattern_override || val || p.time_recording_override) }))
+                                              }}>
+                                                <option value="">Use company default</option>
+                                                <option value="none">None</option>
+                                                <option value="overtime">Overtime (Paid)</option>
+                                                <option value="toil">TOIL</option>
+                                              </select>
+                                            </div>
+                                            {cat === 'shift_worker' && (
+                                              <div className="admin-form-field">
+                                                <label style={{ fontSize: 12 }}>Time Recording Override</label>
+                                                <select className="admin-select" value={editForm.time_recording_override || ''} onChange={e => {
+                                                  const val = e.target.value || null
+                                                  setEditForm(p => ({ ...p, time_recording_override: val, is_payroll_exception: !!(p.pay_pattern_override || p.overtime_handling_override || val) }))
+                                                }}>
+                                                  <option value="">Use company default</option>
+                                                  <option value="checkin">Check-in</option>
+                                                  <option value="timesheet">Timesheets</option>
+                                                </select>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                      </>
                                     )
                                   })()}
                                 </fieldset>
@@ -1013,6 +1406,15 @@ export default function AdminEmployees() {
                                   {emp.employment_category !== 'contractor' && <div><strong>Lieu Days:</strong> {lieuDays[emp.id]?.lieu_days ?? 0} days</div>}
                                   {emp.employment_category !== 'contractor' && <div><strong>Salary Group:</strong> {emp.salary_group || 'N/A'}</div>}
                                   <div><strong>Contracted Days:</strong> {emp.employment_category === 'shift_worker' ? 'Variable (any day)' : emp.contracted_days ? emp.contracted_days.map((d, i) => d ? DAY_LABELS[i] : null).filter(Boolean).join(', ') : 'Mon–Fri'}</div>
+                                  {emp.employment_category !== 'not_assigned' && emp.employment_category !== 'contractor' && (
+                                    <>
+                                      <div><strong>Pay Pattern:</strong> {(getEffectiveSetting(emp, 'pay_pattern') || '').replace('_', '-')} {emp.pay_pattern_override && <span style={{ fontSize: 10, color: '#92400e' }}>(override)</span>}</div>
+                                      <div><strong>Overtime:</strong> {(getEffectiveSetting(emp, 'overtime_handling') || 'none').replace('_', ' ')} {emp.overtime_handling_override && <span style={{ fontSize: 10, color: '#92400e' }}>(override)</span>}</div>
+                                      {emp.employment_category === 'shift_worker' && (
+                                        <div><strong>Time Recording:</strong> {getEffectiveSetting(emp, 'time_recording') === 'checkin' ? 'Check-in' : 'Timesheets'} {emp.time_recording_override && <span style={{ fontSize: 10, color: '#92400e' }}>(override)</span>}</div>
+                                      )}
+                                    </>
+                                  )}
                                 </div>
                                 {emp.qualifications && (
                                   <div>
