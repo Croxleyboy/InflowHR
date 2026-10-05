@@ -11,24 +11,89 @@ function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function calcMonthlyTax(annualTaxable: number): number {
+type PayFrequency = 'weekly' | 'bi_weekly' | 'monthly'
+
+function getPeriodsPerYear(freq: PayFrequency): number {
+  if (freq === 'weekly') return 52
+  if (freq === 'bi_weekly') return 26
+  return 12
+}
+
+function calcTax(annualTaxable: number, freq: PayFrequency): number {
   const personalAllowance = annualTaxable > 125140 ? 0 : Math.max(0, 12570 - Math.max(0, (annualTaxable - 100000) / 2))
   const taxable = Math.max(0, annualTaxable - personalAllowance)
   let tax = 0
   if (taxable > 0) tax += Math.min(taxable, 37700) * 0.2
   if (taxable > 37700) tax += Math.min(taxable - 37700, 87440) * 0.4
   if (taxable > 125140) tax += (taxable - 125140) * 0.45
-  return Math.round((tax / 12) * 100) / 100
+  return Math.round((tax / getPeriodsPerYear(freq)) * 100) / 100
 }
 
-function calcMonthlyNI(annualGross: number): number {
-  const monthlyGross = annualGross / 12
-  const primaryThreshold = 1048
-  const upperEarningsLimit = 4189
+function calcNI(annualGross: number, freq: PayFrequency): number {
+  const periods = getPeriodsPerYear(freq)
+  const periodGross = annualGross / periods
+  const primaryThreshold = 12570 / periods
+  const upperEarningsLimit = 50270 / periods
   let ni = 0
-  if (monthlyGross > primaryThreshold) ni += Math.min(monthlyGross - primaryThreshold, upperEarningsLimit - primaryThreshold) * 0.08
-  if (monthlyGross > upperEarningsLimit) ni += (monthlyGross - upperEarningsLimit) * 0.02
+  if (periodGross > primaryThreshold) ni += Math.min(periodGross - primaryThreshold, upperEarningsLimit - primaryThreshold) * 0.08
+  if (periodGross > upperEarningsLimit) ni += (periodGross - upperEarningsLimit) * 0.02
   return Math.round(ni * 100) / 100
+}
+
+function prorateBenefit(monthlyCost: number, freq: PayFrequency): number {
+  if (freq === 'weekly') return Math.round((monthlyCost * 12 / 52) * 100) / 100
+  if (freq === 'bi_weekly') return Math.round((monthlyCost * 12 / 26) * 100) / 100
+  return monthlyCost
+}
+
+function getPeriodBoundaries(year: number, month: number, freq: PayFrequency, fyStartMonth: number): { start: Date; end: Date }[] {
+  if (freq === 'monthly') {
+    return [{ start: new Date(year, month, 1), end: new Date(year, month + 1, 0) }]
+  }
+  const fyStartDate = new Date(month >= fyStartMonth - 1 ? year : year - 1, fyStartMonth - 1, 1)
+  const daysPerPeriod = freq === 'weekly' ? 7 : 14
+  const monthStart = new Date(year, month, 1)
+  const monthEnd = new Date(year, month + 1, 0)
+  const periods: { start: Date; end: Date }[] = []
+  let anchor = new Date(fyStartDate)
+  while (anchor <= monthEnd) {
+    const periodEnd = new Date(anchor)
+    periodEnd.setDate(periodEnd.getDate() + daysPerPeriod - 1)
+    if (periodEnd >= monthStart && anchor <= monthEnd) {
+      periods.push({
+        start: anchor < monthStart ? monthStart : new Date(anchor),
+        end: periodEnd > monthEnd ? monthEnd : periodEnd,
+      })
+    }
+    anchor = new Date(anchor)
+    anchor.setDate(anchor.getDate() + daysPerPeriod)
+    if (anchor > monthEnd) break
+  }
+  return periods.length > 0 ? periods : [{ start: monthStart, end: monthEnd }]
+}
+
+interface WorkerTypeSetting {
+  id: number; company_id: string; worker_type: string
+  pay_pattern: PayFrequency; overtime_handling: string; time_recording: string
+  overtime_rate_multiplier: number
+}
+
+function getEffectiveSetting(emp: Employee, settings: WorkerTypeSetting[], field: 'pay_pattern' | 'overtime_handling' | 'time_recording'): string {
+  const overrideField = `${field}_override` as 'pay_pattern_override' | 'overtime_handling_override' | 'time_recording_override'
+  const override = (emp as any)[overrideField]
+  if (override) return override
+  const wt = emp.employment_category === 'shift_worker'
+    ? (emp.contract_type === 'Zero hours shift worker' ? 'zero_hours' : 'shift_worker')
+    : 'employed'
+  const setting = settings.find(s => s.worker_type === wt)
+  if (setting) return setting[field]
+  return field === 'pay_pattern' ? 'monthly' : field === 'overtime_handling' ? 'none' : 'checkin'
+}
+
+interface PeriodReview {
+  id: string; employee_id: string; period_start: string; period_end: string
+  total_hours: number; adjusted_hours: number; overtime_hours: number
+  hourly_rate: number; gross_pay: number; status: string
 }
 
 function getPayDay(year: number, month: number, mode: 'end' | 'start' | 'custom', customDay: number): Date {
@@ -71,6 +136,8 @@ interface Employee {
   overtime_rate_multiplier: number | null; tax_code: string | null; payroll_id: string | null
   employment_category: string | null; contract_type: string | null
   bank_sort_code: string | null; bank_account_number: string | null; bank_account_name: string | null
+  pay_pattern_override: string | null; overtime_handling_override: string | null
+  time_recording_override: string | null; is_payroll_exception: boolean | null
 }
 
 interface AuditLogEntry {
@@ -122,6 +189,9 @@ export default function AdminPayrollNew() {
   const [bulkUpdating, setBulkUpdating] = useState(false)
   const [payslipSubTab, setPayslipSubTab] = useState<'employed' | 'shift'>('employed')
   const [empBenefits, setEmpBenefits] = useState<Record<string, { title: string; enrolled_at: string; monthly_cost: number }[]>>({})
+  const [workerSettings, setWorkerSettings] = useState<WorkerTypeSetting[]>([])
+  const [wizPeriodReviews, setWizPeriodReviews] = useState<PeriodReview[]>([])
+  const [wizOvertimeHours, setWizOvertimeHours] = useState<Record<string, number>>({})
 
   // FY
   const fyStartMonth = selectedCompany?.fy_start_month || 4
@@ -232,7 +302,7 @@ export default function AdminPayrollNew() {
     const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes, sRes, mRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, status').eq('company_id', selectedCompanyId).maybeSingle(),
@@ -242,6 +312,10 @@ export default function AdminPayrollNew() {
     setXeroConnected(!!(xRes.data && (xRes.data as any).sync_status !== 'not_connected'))
     setSageConnected(!!(sRes.data && (sRes.data as any).sync_status !== 'not_connected'))
     setModulrConnected(!!(mRes.data && (mRes.data as any).status === 'active'))
+
+    // Load worker type settings
+    const { data: wtsData } = await supabase.from('worker_type_settings').select('*').eq('company_id', selectedCompanyId)
+    setWorkerSettings((wtsData as WorkerTypeSetting[]) || [])
 
     // Load pay settings from xero_integrations.cached_pay_run
     const settingsRes = await supabase.from('xero_integrations').select('cached_pay_run').eq('company_id', selectedCompanyId).maybeSingle()
@@ -325,6 +399,21 @@ export default function AdminPayrollNew() {
     }
   }, [groupedByMonth.length])
 
+  async function loadWizPeriodReviews() {
+    if (!selectedCompanyId) return
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextMonth = nextDate.getMonth()
+    const nextYear = nextDate.getFullYear()
+    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
+    const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
+    const { data } = await supabase.from('pay_period_reviews')
+      .select('id, employee_id, period_start, period_end, total_hours, adjusted_hours, overtime_hours, hourly_rate, gross_pay, status')
+      .eq('company_id', selectedCompanyId)
+      .gte('period_start', monthStart)
+      .lte('period_end', monthEnd)
+    setWizPeriodReviews((data as PeriodReview[]) || [])
+  }
+
   // Wizard: generate payslips for selected worker types
   async function wizGenerate() {
     setWizGenerating(true)
@@ -353,10 +442,7 @@ export default function AdminPayrollNew() {
       return
     }
 
-    const startDate = new Date(nextYear, nextMonth, 1)
     const endOfMonth = new Date(nextYear, nextMonth + 1, 0)
-    const paymentDate = new Date(endOfMonth)
-    paymentDate.setDate(paymentDate.getDate() - 3)
     const batch = Date.now().toString(36).slice(-4)
 
     const { data: allEnrollments } = await supabase
@@ -364,13 +450,13 @@ export default function AdminPayrollNew() {
       .select('employee_id, enrolled_at, benefit_type:benefit_types(monthly_cost, is_enabled)')
       .eq('company_id', selectedCompanyId)
       .is('option_id', null)
-    const benefitCostMap: Record<string, number> = {}
+    const benefitCostMapMonthly: Record<string, number> = {}
     if (allEnrollments) {
       for (const row of allEnrollments as any[]) {
         const bt = row.benefit_type
         if (!bt?.is_enabled || !bt.monthly_cost) continue
         if (new Date(row.enrolled_at) > endOfMonth) continue
-        benefitCostMap[row.employee_id] = (benefitCostMap[row.employee_id] || 0) + (bt.monthly_cost || 0)
+        benefitCostMapMonthly[row.employee_id] = (benefitCostMapMonthly[row.employee_id] || 0) + (bt.monthly_cost || 0)
       }
     }
 
@@ -384,48 +470,113 @@ export default function AdminPayrollNew() {
     }
 
     const errors: string[] = []
-    for (let idx = 0; idx < targetEmployees.length; idx++) {
-      const emp = targetEmployees[idx]
+    let payslipIdx = 0
+    for (const emp of targetEmployees) {
       if (!emp.payroll_id) {
         nextPayrollSeq++
         emp.payroll_id = `PAY-${String(nextPayrollSeq).padStart(4, '0')}`
         await supabase.from('employees').update({ payroll_id: emp.payroll_id }).eq('id', emp.id)
       }
 
-      const latest = payslips.find(p => p.employee?.id === emp.id)
-      const salary = emp.annual_salary || latest?.annual_salary || 42000
-      const gross = Math.round((salary / 12) * 100) / 100
-      const benefitDeductions = Math.round((benefitCostMap[emp.id] || 0) * 100) / 100
-      const annualAfterSacrifice = salary - (benefitDeductions * 12)
-      const tax = latest ? Number(latest.tax) : calcMonthlyTax(annualAfterSacrifice)
-      const ni = latest ? Number(latest.national_insurance) : calcMonthlyNI(annualAfterSacrifice)
-      const pen = latest ? Number(latest.pension) : Math.round(gross * 0.05 * 100) / 100
+      const isShiftOrZero = emp.employment_category === 'shift_worker'
+      const freq = getEffectiveSetting(emp, workerSettings, 'pay_pattern') as PayFrequency
+      const overtimeHandling = getEffectiveSetting(emp, workerSettings, 'overtime_handling')
+      const periods = getPeriodBoundaries(nextYear, nextMonth, freq, fyStartMonth)
 
-      const missing: string[] = []
-      if (!emp.annual_salary && !latest?.annual_salary) missing.push('Annual salary')
-      if (!emp.tax_code && !latest?.tax_code) missing.push('Tax code')
+      if (isShiftOrZero) {
+        const empReview = wizPeriodReviews.find(r => r.employee_id === emp.id && r.status === 'approved')
+        if (!empReview) {
+          errors.push(`${emp.first_name} ${emp.last_name}: No approved period review`)
+          continue
+        }
 
-      const { error } = await supabase.from('payslips').insert({
-        employee_id: emp.id, company_id: selectedCompanyId,
-        reference_number: `PAY-${nextKey}-${batch}-${String(idx + 1).padStart(3, '0')}`,
-        pay_period_start: localDateStr(startDate), pay_period_end: localDateStr(endOfMonth),
-        gross_pay: gross, tax, national_insurance: ni, pension: pen, other_deductions: 0,
-        monthly_deductions: benefitDeductions,
-        net_pay: (gross - benefitDeductions) - tax - ni - pen,
-        payment_date: localDateStr(paymentDate),
-        status: missing.length > 0 ? 'flagged' : 'draft',
-        tax_code: emp.tax_code || latest?.tax_code || '1257L',
-        annual_salary: salary, payroll_id: emp.payroll_id,
-        payroll_office: missing.length > 0 ? `Missing: ${missing.join(', ')}` : '',
-      })
-      if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
+        const reviewGross = Number(empReview.gross_pay)
+        const annualised = reviewGross * getPeriodsPerYear(freq)
+        const benefitMonthly = benefitCostMapMonthly[emp.id] || 0
+        const benefitPeriod = prorateBenefit(benefitMonthly, freq)
+        const annualAfterSacrifice = annualised - (benefitMonthly * 12)
+        const tax = calcTax(annualAfterSacrifice, freq)
+        const ni = calcNI(annualAfterSacrifice, freq)
+        const pen = Math.round(reviewGross * 0.05 * 100) / 100
+
+        for (let pi = 0; pi < periods.length; pi++) {
+          payslipIdx++
+          const period = periods[pi]
+          const paymentDate = new Date(period.end)
+          paymentDate.setDate(paymentDate.getDate() + 3)
+
+          const { error } = await supabase.from('payslips').insert({
+            employee_id: emp.id, company_id: selectedCompanyId,
+            reference_number: `PAY-${nextKey}-${batch}-${String(payslipIdx).padStart(3, '0')}`,
+            pay_period_start: localDateStr(period.start), pay_period_end: localDateStr(period.end),
+            pay_period_type: freq,
+            source_review_id: empReview.id,
+            gross_pay: reviewGross, tax, national_insurance: ni, pension: pen, other_deductions: 0,
+            monthly_deductions: benefitPeriod,
+            net_pay: (reviewGross - benefitPeriod) - tax - ni - pen,
+            payment_date: localDateStr(paymentDate),
+            status: 'draft',
+            tax_code: emp.tax_code || '1257L',
+            annual_salary: emp.annual_salary || 0,
+            payroll_id: emp.payroll_id,
+            overtime: Number(empReview.overtime_hours) || 0,
+          })
+          if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
+          if (freq === 'monthly') break
+        }
+      } else {
+        const latest = payslips.find(p => p.employee?.id === emp.id)
+        const salary = emp.annual_salary || latest?.annual_salary || 42000
+        const periodsPerYear = getPeriodsPerYear(freq)
+        const gross = Math.round((salary / periodsPerYear) * 100) / 100
+        const benefitMonthly = benefitCostMapMonthly[emp.id] || 0
+        const benefitPeriod = prorateBenefit(benefitMonthly, freq)
+        const annualAfterSacrifice = salary - (benefitMonthly * 12)
+        const tax = latest ? Math.round((Number(latest.tax) * 12 / periodsPerYear) * 100) / 100 : calcTax(annualAfterSacrifice, freq)
+        const ni = latest ? Math.round((Number(latest.national_insurance) * 12 / periodsPerYear) * 100) / 100 : calcNI(annualAfterSacrifice, freq)
+        const pen = latest ? Math.round((Number(latest.pension) * 12 / periodsPerYear) * 100) / 100 : Math.round(gross * 0.05 * 100) / 100
+
+        const empOvertimeHrs = overtimeHandling === 'overtime' ? (wizOvertimeHours[emp.id] || 0) : 0
+        const multiplier = emp.overtime_rate_multiplier || 1.5
+        const hourlyFromSalary = salary / (52 * 37.5)
+        const overtimePay = empOvertimeHrs > 0 ? Math.round(empOvertimeHrs * hourlyFromSalary * multiplier * 100) / 100 : 0
+
+        const missing: string[] = []
+        if (!emp.annual_salary && !latest?.annual_salary) missing.push('Annual salary')
+        if (!emp.tax_code && !latest?.tax_code) missing.push('Tax code')
+
+        for (let pi = 0; pi < periods.length; pi++) {
+          payslipIdx++
+          const period = periods[pi]
+          const paymentDate = new Date(period.end)
+          paymentDate.setDate(paymentDate.getDate() + 3)
+
+          const { error } = await supabase.from('payslips').insert({
+            employee_id: emp.id, company_id: selectedCompanyId,
+            reference_number: `PAY-${nextKey}-${batch}-${String(payslipIdx).padStart(3, '0')}`,
+            pay_period_start: localDateStr(period.start), pay_period_end: localDateStr(period.end),
+            pay_period_type: freq,
+            gross_pay: gross, tax, national_insurance: ni, pension: pen, other_deductions: 0,
+            monthly_deductions: benefitPeriod,
+            net_pay: (gross - benefitPeriod) + overtimePay - tax - ni - pen,
+            payment_date: localDateStr(paymentDate),
+            status: missing.length > 0 ? 'flagged' : 'draft',
+            tax_code: emp.tax_code || latest?.tax_code || '1257L',
+            annual_salary: salary, payroll_id: emp.payroll_id,
+            payroll_office: missing.length > 0 ? `Missing: ${missing.join(', ')}` : '',
+            overtime: overtimePay,
+          })
+          if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
+          if (freq === 'monthly') break
+        }
+      }
     }
 
     setWizGenerating(false)
     if (errors.length > 0) {
-      showError(`Failed to generate ${errors.length} payslip(s)`)
+      showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
     } else {
-      showSuccess(`Generated ${targetEmployees.length} payslips for ${MONTH_NAMES[nextDate.getMonth()]} ${nextDate.getFullYear()}`)
+      showSuccess(`Generated payslips for ${MONTH_NAMES[nextDate.getMonth()]} ${nextDate.getFullYear()}`)
       setWizGenerated(true)
       await loadAll()
     }
@@ -450,6 +601,15 @@ export default function AdminPayrollNew() {
     setWizGenerated(false)
     setWizComplete(false)
     setWizPayMethod('external')
+    setWizOvertimeHours({})
+    setWizPeriodReviews([])
+  }
+
+  function advanceToStep2() {
+    if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) {
+      loadWizPeriodReviews()
+    }
+    setWizStep(2)
   }
 
   function toggleWizWorkerType(t: 'employed' | 'shift' | 'zero_hours') {
@@ -1275,7 +1435,7 @@ export default function AdminPayrollNew() {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button className="admin-btn" onClick={() => setView('dashboard')}>Cancel</button>
-                <button className="admin-btn admin-btn-primary" disabled={wizWorkerTypes.size === 0} onClick={() => setWizStep(2)}>
+                <button className="admin-btn admin-btn-primary" disabled={wizWorkerTypes.size === 0} onClick={advanceToStep2}>
                   Next: Review →
                 </button>
               </div>
@@ -1283,31 +1443,77 @@ export default function AdminPayrollNew() {
           )}
 
           {/* Step 2: Review */}
-          {wizStep === 2 && (
+          {wizStep === 2 && (() => {
+            const shiftReviewsApproved = wizPeriodReviews.filter(r => r.status === 'approved' && shiftEmployees.some(e => e.id === r.employee_id))
+            const shiftReviewsPending = wizPeriodReviews.filter(r => r.status !== 'approved' && shiftEmployees.some(e => e.id === r.employee_id))
+            const zeroReviewsApproved = wizPeriodReviews.filter(r => r.status === 'approved' && zeroHoursEmployees.some(e => e.id === r.employee_id))
+            const zeroReviewsPending = wizPeriodReviews.filter(r => r.status !== 'approved' && zeroHoursEmployees.some(e => e.id === r.employee_id))
+            const shiftMissingReview = shiftEmployees.filter(e => !wizPeriodReviews.some(r => r.employee_id === e.id))
+            const zeroMissingReview = zeroHoursEmployees.filter(e => !wizPeriodReviews.some(r => r.employee_id === e.id))
+            const hasShiftBlocker = wizWorkerTypes.has('shift') && (shiftReviewsPending.length > 0 || shiftMissingReview.length > 0)
+            const hasZeroBlocker = wizWorkerTypes.has('zero_hours') && (zeroReviewsPending.length > 0 || zeroMissingReview.length > 0)
+            const canProceed = !hasShiftBlocker && !hasZeroBlocker
+
+            const employedOvertimeHandling = employedEmployees.length > 0
+              ? getEffectiveSetting(employedEmployees[0], workerSettings, 'overtime_handling')
+              : 'none'
+            const employedFreq = employedEmployees.length > 0
+              ? getEffectiveSetting(employedEmployees[0], workerSettings, 'pay_pattern') as PayFrequency
+              : 'monthly' as PayFrequency
+            const periodsPerYear = getPeriodsPerYear(employedFreq)
+
+            return (
             <div className="admin-settings-group" style={{ marginTop: 20 }}>
               <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Review Before Generating</h3>
               <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                Review the employees and their pay details before generating payslips. Payslips will be created for the next calendar month.
+                Review the employees and their pay details before generating payslips for the next period.
               </p>
 
               {wizWorkerTypes.has('employed') && employedEmployees.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#5c6bc0' }}>Employed Staff ({employedEmployees.length})</h4>
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 12 }}>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">£{employedEmployees.reduce((s, e) => s + (e.annual_salary || 0), 0).toLocaleString()}</span>
                         <span className="pn-worker-metric-label">Total annual salary</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">£{Math.round(employedEmployees.reduce((s, e) => s + ((e.annual_salary || 42000) / 12), 0)).toLocaleString()}</span>
-                        <span className="pn-worker-metric-label">Est. monthly gross</span>
+                        <span className="pn-worker-metric-value">£{Math.round(employedEmployees.reduce((s, e) => s + ((e.annual_salary || 42000) / periodsPerYear), 0)).toLocaleString()}</span>
+                        <span className="pn-worker-metric-label">Est. {employedFreq === 'weekly' ? 'weekly' : employedFreq === 'bi_weekly' ? 'bi-weekly' : 'monthly'} gross</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value" style={{ textTransform: 'capitalize' }}>{employedFreq.replace('_', '-')}</span>
+                        <span className="pn-worker-metric-label">Pay pattern</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">{employedEmployees.filter(e => !e.tax_code).length}</span>
                         <span className="pn-worker-metric-label">Missing tax codes</span>
                       </div>
                     </div>
+                    {employedOvertimeHandling === 'overtime' && (
+                      <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 10, marginTop: 4 }}>
+                        <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 8px', color: '#5c6bc0' }}>Overtime Hours (enter per employee)</p>
+                        <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                          {employedEmployees.map(emp => (
+                            <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                              <span style={{ fontSize: 13, minWidth: 160 }}>{emp.first_name} {emp.last_name}</span>
+                              <input type="number" min="0" step="0.5" style={{ width: 70, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: '1px solid var(--border, #d1d5db)' }}
+                                value={wizOvertimeHours[emp.id] || ''}
+                                onChange={e => setWizOvertimeHours(prev => ({ ...prev, [emp.id]: Number(e.target.value) || 0 }))}
+                                placeholder="0"
+                              />
+                              <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>hrs @ {emp.overtime_rate_multiplier || 1.5}x</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {employedOvertimeHandling === 'toil' && (
+                      <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 10, marginTop: 4 }}>
+                        <p style={{ fontSize: 12, color: '#5c6bc0', margin: 0 }}>TOIL policy active — overtime hours will be added to time off in lieu balances, not paid.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1317,18 +1523,36 @@ export default function AdminPayrollNew() {
                   <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#7e57c2' }}>Shift Workers ({shiftEmployees.length})</h4>
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
                     <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '0 0 8px' }}>
-                      Shift worker payslips are calculated from hours worked × hourly rate. Ensure check-in data and timesheets are up to date before generating.
+                      Shift worker payslips are generated from approved period reviews (hours worked × hourly rate).
                     </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">£{shiftEmployees.reduce((s, e) => s + (e.hourly_rate || 0), 0).toFixed(2)}</span>
-                        <span className="pn-worker-metric-label">Combined hourly rate</span>
+                        <span className="pn-worker-metric-value" style={{ color: '#2e7d32' }}>{shiftReviewsApproved.length}</span>
+                        <span className="pn-worker-metric-label">Approved reviews</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{shiftEmployees.filter(e => !e.hourly_rate).length}</span>
-                        <span className="pn-worker-metric-label">Missing hourly rates</span>
+                        <span className="pn-worker-metric-value" style={{ color: shiftReviewsPending.length > 0 ? '#e65100' : undefined }}>{shiftReviewsPending.length}</span>
+                        <span className="pn-worker-metric-label">Pending reviews</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">£{shiftReviewsApproved.reduce((s, r) => s + Number(r.gross_pay), 0).toFixed(2)}</span>
+                        <span className="pn-worker-metric-label">Total approved gross</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">{shiftReviewsApproved.reduce((s, r) => s + Number(r.adjusted_hours), 0).toFixed(1)}</span>
+                        <span className="pn-worker-metric-label">Total approved hours</span>
                       </div>
                     </div>
+                    {hasShiftBlocker && (
+                      <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 13 }}>
+                        <strong style={{ color: '#e65100' }}>Cannot generate payslips</strong>
+                        <p style={{ margin: '4px 0 0', color: '#bf360c', fontSize: 12 }}>
+                          {shiftMissingReview.length > 0 && `${shiftMissingReview.length} employee(s) have no period review. `}
+                          {shiftReviewsPending.length > 0 && `${shiftReviewsPending.length} review(s) are not yet approved. `}
+                          Go to Payroll → Period Review to generate and approve reviews first.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1338,30 +1562,49 @@ export default function AdminPayrollNew() {
                   <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#ef6c00' }}>Zero Hours Workers ({zeroHoursEmployees.length})</h4>
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
                     <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '0 0 8px' }}>
-                      Zero hours workers have no guaranteed hours. Pay is based entirely on hours actually worked during the period.
+                      Zero hours pay is based entirely on hours actually worked. Approved period reviews required.
                     </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{zeroHoursEmployees.length}</span>
-                        <span className="pn-worker-metric-label">Active workers</span>
+                        <span className="pn-worker-metric-value" style={{ color: '#2e7d32' }}>{zeroReviewsApproved.length}</span>
+                        <span className="pn-worker-metric-label">Approved reviews</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{zeroHoursEmployees.filter(e => !e.hourly_rate).length}</span>
-                        <span className="pn-worker-metric-label">Missing hourly rates</span>
+                        <span className="pn-worker-metric-value" style={{ color: zeroReviewsPending.length > 0 ? '#e65100' : undefined }}>{zeroReviewsPending.length}</span>
+                        <span className="pn-worker-metric-label">Pending reviews</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">£{zeroReviewsApproved.reduce((s, r) => s + Number(r.gross_pay), 0).toFixed(2)}</span>
+                        <span className="pn-worker-metric-label">Total approved gross</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">{zeroReviewsApproved.reduce((s, r) => s + Number(r.adjusted_hours), 0).toFixed(1)}</span>
+                        <span className="pn-worker-metric-label">Total approved hours</span>
                       </div>
                     </div>
+                    {hasZeroBlocker && (
+                      <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 13 }}>
+                        <strong style={{ color: '#e65100' }}>Cannot generate payslips</strong>
+                        <p style={{ margin: '4px 0 0', color: '#bf360c', fontSize: 12 }}>
+                          {zeroMissingReview.length > 0 && `${zeroMissingReview.length} employee(s) have no period review. `}
+                          {zeroReviewsPending.length > 0 && `${zeroReviewsPending.length} review(s) are not yet approved. `}
+                          Go to Payroll → Period Review to generate and approve reviews first.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
                 <button className="admin-btn" onClick={() => setWizStep(1)}>← Back</button>
-                <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(3)}>
+                <button className="admin-btn admin-btn-primary" disabled={!canProceed} onClick={() => setWizStep(3)}>
                   Next: Generate Payslips →
                 </button>
               </div>
             </div>
-          )}
+            )
+          })()}
 
           {/* Step 3: Generate */}
           {wizStep === 3 && (

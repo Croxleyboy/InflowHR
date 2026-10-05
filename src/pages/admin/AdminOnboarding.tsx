@@ -69,6 +69,7 @@ interface OnboardRecord {
   telephone: string
   employee_number: string
   contract_type: string
+  employment_category: string | null
   equipment_order: string
   is_complete: boolean
   first_day: boolean
@@ -135,7 +136,7 @@ export default function AdminOnboarding() {
   const [newForm, setNewForm] = useState<Record<string, string>>({
     firstname: '', surname: '', user_email: '', job_title: '', department: '',
     start_date: '', manager: '', manager_email: '', personal_email: '',
-    location: '', telephone: '', employee_number: '', contract_type: 'Full-time',
+    location: '', telephone: '', employee_number: '', contract_type: 'Full-time', employment_category: 'employed',
     date_of_birth: '', gender: '', nationality: '', marital_status: '',
     address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom',
     emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '',
@@ -185,6 +186,7 @@ export default function AdminOnboarding() {
     'leave allowance': 'leave_allowance', 'assigned leave days': 'leave_allowance',
     'religion': 'religion', 'salary group': 'salary_group', 'qualifications': 'qualifications',
     'xero employee id': 'xero_employee_id',
+    'employment category': 'employment_category', 'worker type': 'employment_category',
   }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
@@ -717,6 +719,7 @@ export default function AdminOnboarding() {
       company_id: selectedCompanyId,
       location: record.location || '',
       contract_type: record.contract_type || '',
+      employment_category: record.employment_category || 'employed',
       personal_email: record.personal_email || '',
       manager_name: record.manager || '',
       manager_email: record.manager_email || '',
@@ -978,6 +981,24 @@ export default function AdminOnboarding() {
                 <select className="admin-select" value={newForm.contract_type} onChange={e => setNewForm(p => ({...p, contract_type: e.target.value}))}>
                   <option>Full-time</option><option>Part-time</option><option>Contract</option><option>Apprentice</option><option>Intern</option><option>Guest</option>
                 </select>
+              </div>
+              <div className="admin-form-field">
+                <label>Employment Category</label>
+                <select className="admin-select" value={newForm.employment_category} onChange={e => setNewForm(p => ({...p, employment_category: e.target.value}))}>
+                  <option value="employed">Employed (Salaried)</option>
+                  <option value="shift_worker">Shift Worker</option>
+                </select>
+                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                  {newForm.employment_category === 'employed'
+                    ? 'Paid a fixed salary divided by pay period. Uses timesheets for time recording.'
+                    : newForm.contract_type === 'Zero hours shift worker'
+                      ? 'Zero hours — no guaranteed hours, paid per shift worked × hourly rate.'
+                      : 'Works scheduled shifts, paid based on hours worked × hourly rate.'
+                  }
+                </div>
+                <div style={{ fontSize: 11, color: '#1565c0', marginTop: 2 }}>
+                  Payroll settings for this category are configured in Admin → Employees → Payroll Settings.
+                </div>
               </div>
             </div>
           </fieldset>
