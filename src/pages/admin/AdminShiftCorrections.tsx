@@ -100,6 +100,8 @@ export default function AdminShiftCorrections() {
     const isCheckinType = c.correction_type === 'late_checkin' || c.correction_type === 'no_checkin'
     const isCheckoutType = c.correction_type === 'early_checkout' || c.correction_type === 'no_checkout'
 
+    let resolvedCheckinId = c.checkin_record_id || undefined
+
     if (c.checkin_record_id) {
       const updates: Record<string, string> = {}
       if (isCheckinType && times.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${times.checkIn}`).toISOString()
@@ -124,8 +126,13 @@ export default function AdminShiftCorrections() {
       if (times.checkOut) row.check_out_at = new Date(`${c.shift_date}T${times.checkOut}`).toISOString()
       const { data: newRec } = await supabase.from('checkin_records').insert(row).select('id').single()
       if (newRec) {
+        resolvedCheckinId = newRec.id
         await supabase.from('shift_corrections').update({ checkin_record_id: newRec.id }).eq('id', c.id)
       }
+    }
+
+    if (resolvedCheckinId) {
+      await updateLinkedTimesheet(resolvedCheckinId, companyUser.company_id, c.shift_date, times.checkIn, times.checkOut)
     }
 
     const commentParts: string[] = []
@@ -176,6 +183,8 @@ export default function AdminShiftCorrections() {
     if (!companyUser?.company_id || !adminEmpId) return
     setProcessing(c.id)
 
+    let manualCheckinId = c.checkin_record_id || undefined
+
     if (c.checkin_record_id) {
       const updates: Record<string, string> = {}
       if (editTimes.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${editTimes.checkIn}`).toISOString()
@@ -200,8 +209,13 @@ export default function AdminShiftCorrections() {
       if (editTimes.checkOut) row.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
       const { data: newRec } = await supabase.from('checkin_records').insert(row).select('id').single()
       if (newRec) {
+        manualCheckinId = newRec.id
         await supabase.from('shift_corrections').update({ checkin_record_id: newRec.id }).eq('id', c.id)
       }
+    }
+
+    if (manualCheckinId) {
+      await updateLinkedTimesheet(manualCheckinId, companyUser.company_id, c.shift_date, editTimes.checkIn, editTimes.checkOut)
     }
 
     await supabase.from('shift_corrections').update({
@@ -216,6 +230,42 @@ export default function AdminShiftCorrections() {
     setEditingId(null)
     setEditTimes({ checkIn: '', checkOut: '' })
     fetchCorrections()
+  }
+
+  const updateLinkedTimesheet = async (
+    checkinRecordId: string,
+    companyId: string,
+    shiftDate: string,
+    checkIn: string,
+    checkOut: string,
+  ) => {
+    try {
+      const { data: linkedTs } = await supabase
+        .from('timesheets')
+        .select('id')
+        .eq('source_checkin_id', checkinRecordId)
+        .eq('company_id', companyId)
+        .maybeSingle()
+
+      if (!linkedTs) return
+
+      const tsUpdates: Record<string, any> = { source: 'adjusted' }
+      if (checkIn) tsUpdates.start_time = new Date(`${shiftDate}T${checkIn}`).toISOString()
+      if (checkOut) tsUpdates.end_time = new Date(`${shiftDate}T${checkOut}`).toISOString()
+
+      if (checkIn && checkOut) {
+        const start = new Date(`${shiftDate}T${checkIn}`)
+        const end = new Date(`${shiftDate}T${checkOut}`)
+        const diffHours = Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60))
+        tsUpdates.hours = Math.round(diffHours * 100) / 100
+      }
+
+      await supabase.from('timesheets').update(tsUpdates)
+        .eq('id', linkedTs.id)
+        .eq('company_id', companyId)
+    } catch {
+      // Timesheet update is non-blocking; skip silently
+    }
   }
 
   const filtered = statusFilter === 'all' ? corrections : corrections.filter(c => c.status === statusFilter)

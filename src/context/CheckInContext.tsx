@@ -165,6 +165,9 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
   const checkOut = useCallback(async () => {
     if (!activeCheckin || !companyId || !employeeId) return { ok: false, error: 'No active check-in' }
 
+    const now = new Date()
+    const nowIso = now.toISOString()
+
     let outLat: number | null = null
     let outLng: number | null = null
     let outLocId: string | null = null
@@ -177,22 +180,70 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
     } catch { /* proceed without location */ }
 
     const { error } = await supabase.from('checkin_records').update({
-      check_out_at: new Date().toISOString(),
+      check_out_at: nowIso,
       check_out_lat: outLat,
       check_out_lng: outLng,
       check_out_location_id: outLocId,
       status: 'checked_out',
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     }).eq('id', activeCheckin.id)
 
     if (error) return { ok: false, error: error.message }
 
     if (activeBreak) {
       await supabase.from('break_records').update({
-        break_end: new Date().toISOString(),
+        break_end: nowIso,
       }).eq('id', activeBreak.id)
       setActiveBreak(null)
     }
+
+    // Auto-create timesheet entry from check-in
+    try {
+      const checkInTime = new Date(activeCheckin.check_in_at)
+      const totalMs = now.getTime() - checkInTime.getTime()
+
+      // Fetch all completed breaks for this check-in to subtract break time
+      const { data: breaks } = await supabase.from('break_records')
+        .select('break_start, break_end')
+        .eq('checkin_record_id', activeCheckin.id)
+        .not('break_end', 'is', null)
+
+      let breakMs = 0
+      if (breaks) {
+        for (const b of breaks) {
+          if (b.break_start && b.break_end) {
+            breakMs += new Date(b.break_end).getTime() - new Date(b.break_start).getTime()
+          }
+        }
+      }
+
+      // If the active break was just closed above, it's already included in the query above
+      // since we updated it before this block runs
+
+      const netMinutes = Math.max(0, (totalMs - breakMs) / 60000)
+      const netHours = Math.round(netMinutes / 60 * 100) / 100
+
+      const checkinDate = checkInTime.toISOString().split('T')[0]
+      const locationName = activeCheckin.check_in_location_id
+        ? workLocations.find(l => l.id === activeCheckin.check_in_location_id)?.name || ''
+        : ''
+
+      await supabase.from('timesheets').insert({
+        employee_id: employeeId,
+        company_id: companyId,
+        date: checkinDate,
+        end_date: checkinDate,
+        start_time: activeCheckin.check_in_at,
+        end_time: nowIso,
+        hours: netHours,
+        status: 'pending',
+        source: 'checkin',
+        source_checkin_id: activeCheckin.id,
+        location: locationName,
+        role: '',
+        description: activeCheckin.source === 'shifts' ? 'Shift check-in' : 'Timesheet check-in',
+      })
+    } catch { /* timesheet creation failure must not block checkout */ }
 
     setActiveCheckin(null)
     return { ok: true }
