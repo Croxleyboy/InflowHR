@@ -808,7 +808,7 @@ export default function AdminPayrollNew() {
       const hasAdjustments = adjustments.overtime.length > 0 || adjustments.unpaid_leave.length > 0 || adjustments.benefit_changes.length > 0
 
       if (hasAdjustments && connectedProvider === 'xero') {
-        const { data, error } = await supabase.functions.invoke('xero-push-adjustments', {
+        const { data: xeroResult, error } = await supabase.functions.invoke('xero-push-adjustments', {
           headers: { Authorization: `Bearer ${session.access_token}` },
           body: { company_id: selectedCompanyId, pay_run_id: payRunId, adjustments },
         })
@@ -821,7 +821,20 @@ export default function AdminPayrollNew() {
           } catch { /* context not available */ }
           throw new Error(msg)
         }
-        if (data?.error) throw new Error(data.error)
+        if (xeroResult?.error) throw new Error(xeroResult.error)
+        if (xeroResult?.pushed === 0 && xeroResult?.skipped > 0) {
+          const reasons = (xeroResult.skipped_details || []).map((s: any) => `${s.employee}: ${s.reason}`).join('; ')
+          showError(`0 adjustments pushed — all ${xeroResult.skipped} employees skipped. ${reasons}`)
+          await supabase.from('pay_runs').update({ status: 'draft' }).eq('id', payRunId)
+          setWizGenerating(false)
+          return
+        }
+        if (xeroResult) {
+          const parts = [`${xeroResult.pushed} adjustment(s) pushed to Xero (${xeroResult.api} API)`]
+          if (xeroResult.failed > 0) parts.push(`${xeroResult.failed} failed`)
+          if (xeroResult.skipped > 0) parts.push(`${xeroResult.skipped} skipped`)
+          showSuccess(parts.join(', '))
+        }
       } else if (hasAdjustments && connectedProvider === 'sage') {
         const targetEmployees = employees.filter(e => {
           if (wizWorkerTypes.has('employed') && e.employment_category !== 'shift_worker') return true
@@ -861,9 +874,9 @@ export default function AdminPayrollNew() {
       await supabase.from('pay_runs').update({ status: 'exported' }).eq('id', payRunId)
       setWizGenerated(true)
       setWizExported(true)
-      if (hasAdjustments) {
-        showSuccess(`Adjustments pushed to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'} — run your pay run in the provider, then sync back`)
-      } else {
+      if (hasAdjustments && connectedProvider === 'sage') {
+        showSuccess('Adjustments exported to Sage CSV — import in Sage, then sync back')
+      } else if (!hasAdjustments) {
         showSuccess('TOIL lieu days credited — no adjustment lines were pushed to the provider')
       }
       await loadAll()
