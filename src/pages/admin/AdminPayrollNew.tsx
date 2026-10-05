@@ -434,8 +434,6 @@ export default function AdminPayrollNew() {
       .eq('status', 'approved')
       .gte('date', monthStart)
       .lte('date', monthEnd)
-    setWizApprovedTimesheets((data as { employee_id: string; hours: number }[]) || [])
-
     const hoursByEmp: Record<string, number> = {}
     if (data) {
       for (const t of data as { employee_id: string; hours: number }[]) {
@@ -831,7 +829,6 @@ export default function AdminPayrollNew() {
     setWizPayMethod('external')
     setWizOvertimeHours({})
     setWizPeriodReviews([])
-    setWizApprovedTimesheets([])
     setWizPayRunId(null)
     setWizExporting(false)
     setWizExported(false)
