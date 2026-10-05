@@ -824,9 +824,13 @@ export default function AdminPayrollNew() {
         }
         if (xeroResult?.error) throw new Error(xeroResult.error)
         setWizPushResult(xeroResult)
-        if (xeroResult?.pushed === 0 && xeroResult?.skipped > 0) {
-          const reasons = (xeroResult.skipped_details || []).map((s: any) => `${s.employee}: ${s.reason}`).join('; ')
-          showError(`0 adjustments pushed — all ${xeroResult.skipped} employees skipped. ${reasons}`)
+        if (xeroResult?.pushed === 0) {
+          const reasons: string[] = []
+          if (xeroResult.skipped_details) reasons.push(...xeroResult.skipped_details.map((s: any) => `${s.employee}: ${s.reason}`))
+          if (xeroResult.failed_summary) reasons.push(xeroResult.failed_summary)
+          if (xeroResult.results) reasons.push(...xeroResult.results.filter((r: any) => r.status === 'failed').map((r: any) => `${r.employee}: ${r.error || 'unknown error'}`))
+          const uniqueReasons = [...new Set(reasons)]
+          showError(`0 adjustments pushed. ${uniqueReasons.join('; ') || 'Check the banner for details.'}`)
           await supabase.from('pay_runs').update({ status: 'draft' }).eq('id', payRunId)
           setWizGenerating(false)
           return
