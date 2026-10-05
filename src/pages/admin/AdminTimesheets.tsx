@@ -21,6 +21,8 @@ interface Timesheet {
   status: string
   created_at: string
   project_id: string | null
+  source: string | null
+  source_checkin_id: string | null
   employee: { first_name: string; last_name: string; email: string; avatar_url: string | null } | null
   project: { name: string; customer_name: string } | null
 }
@@ -133,6 +135,7 @@ export default function AdminTimesheets() {
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterSource, setFilterSource] = useState('')
   const [search, setSearch] = useState('')
   const [entriesPage, setEntriesPage] = useState(1)
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -164,7 +167,7 @@ export default function AdminTimesheets() {
     setLoading(true)
     const { data } = await supabase
       .from('timesheets')
-      .select('*, employee:employees!timesheets_employee_id_fkey(first_name, last_name, email, avatar_url), project:customer_projects!timesheets_project_id_fkey(name, customer_name)')
+      .select('*, source, source_checkin_id, employee:employees!timesheets_employee_id_fkey(first_name, last_name, email, avatar_url), project:customer_projects!timesheets_project_id_fkey(name, customer_name)')
       .eq('company_id', selectedCompanyId)
       .order('date', { ascending: false })
     setTimesheets((data as Timesheet[]) || [])
@@ -350,6 +353,10 @@ export default function AdminTimesheets() {
       if (viewMode === 'manager' && !directReportIds.includes(t.employee_id)) return false
       if (filterStatus && t.status !== filterStatus) return false
       if (filterEmployee && t.employee && `${t.employee.first_name} ${t.employee.last_name}` !== filterEmployee) return false
+      if (filterSource) {
+        const tsSource = t.source || 'manual'
+        if (tsSource !== filterSource) return false
+      }
       if (search) {
         const q = search.toLowerCase()
         const name = t.employee ? `${t.employee.first_name} ${t.employee.last_name}`.toLowerCase() : ''
@@ -357,9 +364,9 @@ export default function AdminTimesheets() {
       }
       return true
     })
-  }, [timesheets, filterStatus, filterEmployee, search, viewMode, directReportIds])
+  }, [timesheets, filterStatus, filterEmployee, filterSource, search, viewMode, directReportIds])
 
-  useEffect(() => { setEntriesPage(1) }, [search, filterStatus, filterEmployee])
+  useEffect(() => { setEntriesPage(1) }, [search, filterStatus, filterEmployee, filterSource])
 
   const entriesTotalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE))
   const paginatedEntries = filteredEntries.slice((entriesPage - 1) * PAGE_SIZE, entriesPage * PAGE_SIZE)
@@ -438,6 +445,12 @@ export default function AdminTimesheets() {
               <option value="">All Statuses</option>
               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
+            <select value={filterSource} onChange={e => setFilterSource(e.target.value)} className="admin-select">
+              <option value="">All Sources</option>
+              <option value="checkin">Clock-in</option>
+              <option value="manual">Manual</option>
+              <option value="adjusted">Adjusted</option>
+            </select>
           </div>
 
           {loading ? <div className="admin-loading">Loading...</div> : (
@@ -451,6 +464,7 @@ export default function AdminTimesheets() {
                     <th>Hours</th>
                     <th>Project</th>
                     <th>Location</th>
+                    <th>Source</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
@@ -488,6 +502,20 @@ export default function AdminTimesheets() {
                         ? <input className="admin-inline-input" value={editForm.location || ''} onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} />
                         : ts.location
                       }</td>
+                      <td>{(() => {
+                        const source = ts.source || 'manual'
+                        const label = source === 'checkin' ? 'Clock-in' : source === 'adjusted' ? 'Adjusted' : 'Manual'
+                        const bg = source === 'checkin' ? '#16a34a' : source === 'adjusted' ? '#d97706' : '#3b82f6'
+                        const badge = (
+                          <span
+                            style={{ display: 'inline-block', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: bg, color: '#fff', cursor: source === 'checkin' && ts.source_checkin_id ? 'pointer' : 'default' }}
+                            title={source === 'checkin' && ts.source_checkin_id ? 'Linked to check-in record' : undefined}
+                          >
+                            {label}
+                          </span>
+                        )
+                        return badge
+                      })()}</td>
                       <td>{editingId === ts.id ? (
                         <select className="admin-inline-select" value={editForm.status || ''} onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}>
                           {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}

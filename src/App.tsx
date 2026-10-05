@@ -55,7 +55,6 @@ import AdminLayout from './pages/admin/AdminLayout'
 import AdminDashboard from './pages/admin/AdminDashboard'
 import AdminExpenses from './pages/admin/AdminExpenses'
 import AdminLeave from './pages/admin/AdminLeave'
-import AdminPayroll from './pages/admin/AdminPayroll'
 import AdminPayrollNew from './pages/admin/AdminPayrollNew'
 import AdminEmployees from './pages/admin/AdminEmployees'
 import AdminKudos from './pages/admin/AdminKudos'
@@ -94,7 +93,7 @@ import CheckInPrompt from './components/CheckInPrompt'
 import { CheckInProvider } from './context/CheckInContext'
 
 const ROUTE_PERM_MAP: Record<string, string> = {
-  expenses: 'expenses', leave: 'leave', payroll: 'payroll', 'payroll-new': 'payroll',
+  expenses: 'expenses', leave: 'leave', payroll: 'payroll',
   employees: 'employees', kudos: 'kudos', elearning: 'elearning', announcements: 'announcements',
   onboarding: 'onboarding', tickets: 'tickets', benefits: 'benefits', timesheets: 'timesheets',
   performance: 'performance', shifts: 'shifts', notifications: 'notifications', billing: 'billing',
@@ -226,8 +225,7 @@ function AuthGate() {
             <Route path="getting-setup" element={<AdminGettingSetup />} />
             <Route path="expenses" element={<AdminExpenses />} />
             <Route path="leave" element={<AdminLeave />} />
-            <Route path="payroll" element={<AdminPayroll />} />
-            <Route path="payroll-new" element={<AdminPayrollNew />} />
+            <Route path="payroll" element={<AdminPayrollNew />} />
             <Route path="employees" element={<AdminEmployees />} />
             <Route path="kudos" element={<AdminKudos />} />
             <Route path="elearning" element={<AdminELearning />} />
@@ -280,8 +278,7 @@ function AuthGate() {
           <Route path="getting-setup" element={<AdminGettingSetup />} />
           <Route path="expenses" element={<AdminExpenses />} />
           <Route path="leave" element={<AdminLeave />} />
-          <Route path="payroll" element={<AdminPayroll />} />
-          <Route path="payroll-new" element={<AdminPayrollNew />} />
+          <Route path="payroll" element={<AdminPayrollNew />} />
           <Route path="employees" element={<AdminEmployees />} />
           <Route path="kudos" element={<AdminKudos />} />
           <Route path="elearning" element={<AdminELearning />} />
@@ -290,10 +287,16 @@ function AuthGate() {
           <Route path="tickets" element={<AdminTickets />} />
           <Route path="benefits" element={<AdminBenefits />} />
           <Route path="timesheets" element={<AdminTimesheets />} />
+          <Route path="performance" element={<AdminPerformance />} />
           <Route path="shifts" element={<AdminShiftsRotas />} />
           <Route path="notifications" element={<AdminNotifications />} />
           <Route path="billing" element={<AdminBilling />} />
           <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
+          <Route path="space-management" element={<AdminSpaceManagement />} />
+          <Route path="assets" element={<AdminAssetManagement />} />
+          <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
+          <Route path="surveys" element={<AdminSurveys />} />
+          <Route path="surveys/insights" element={<SurveyInsights />} />
           <Route path="reports" element={<AdminReports />} />
           <Route path="user-guides" element={<AdminUserGuides />} />
           <Route path="integrations" element={<AdminIntegrations />} />

@@ -56,7 +56,6 @@ const MENU_GROUPS: (MenuItem | MenuGroup)[] = [
     svg: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
     items: [
       { path: '/admin/payroll', label: 'Payroll', svg: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/>', feature: 'payslips', permKey: 'payroll' },
-      { path: '/admin/payroll-new', label: 'Payroll (New)', svg: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/><path d="M19 3v4M21 5h-4"/>', feature: 'payslips', permKey: 'payroll' },
       { path: '/admin/expenses', label: 'Expenses', svg: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', feature: 'expenses', permKey: 'expenses' },
       { path: '/admin/billing', label: 'Billing', svg: '<rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/>', permKey: 'billing' },
     ],

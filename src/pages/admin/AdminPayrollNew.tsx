@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { useFeatures } from '../../context/FeatureContext'
+import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/formatters'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -138,6 +139,7 @@ interface Employee {
   bank_sort_code: string | null; bank_account_number: string | null; bank_account_name: string | null
   pay_pattern_override: string | null; overtime_handling_override: string | null
   time_recording_override: string | null; is_payroll_exception: boolean | null
+  weekly_hours: number | null
 }
 
 interface AuditLogEntry {
@@ -151,6 +153,7 @@ export default function AdminPayrollNew() {
   const { selectedCompanyId, selectedCompany } = useAdminCompany()
   const { showError, showSuccess } = useToast()
   const { features } = useFeatures()
+  const { session } = useAuth()
 
   const [view, setView] = useState<View>('dashboard')
   const [loading, setLoading] = useState(true)
@@ -192,6 +195,11 @@ export default function AdminPayrollNew() {
   const [workerSettings, setWorkerSettings] = useState<WorkerTypeSetting[]>([])
   const [wizPeriodReviews, setWizPeriodReviews] = useState<PeriodReview[]>([])
   const [wizOvertimeHours, setWizOvertimeHours] = useState<Record<string, number>>({})
+  const [wizApprovedTimesheets, setWizApprovedTimesheets] = useState<{ employee_id: string; hours: number }[]>([])
+  const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
+  const [wizExporting, setWizExporting] = useState(false)
+  const [wizExported, setWizExported] = useState(false)
+  const [wizReleasing, setWizReleasing] = useState(false)
 
   // FY
   const fyStartMonth = selectedCompany?.fy_start_month || 4
@@ -302,7 +310,7 @@ export default function AdminPayrollNew() {
     const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes, sRes, mRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception, weekly_hours').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, status').eq('company_id', selectedCompanyId).maybeSingle(),
@@ -414,6 +422,44 @@ export default function AdminPayrollNew() {
     setWizPeriodReviews((data as PeriodReview[]) || [])
   }
 
+  async function loadWizTimesheets() {
+    if (!selectedCompanyId) return
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextMonth = nextDate.getMonth()
+    const nextYear = nextDate.getFullYear()
+    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
+    const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
+    const { data } = await supabase.from('timesheets')
+      .select('employee_id, hours')
+      .eq('company_id', selectedCompanyId)
+      .eq('status', 'approved')
+      .gte('date', monthStart)
+      .lte('date', monthEnd)
+    setWizApprovedTimesheets((data as { employee_id: string; hours: number }[]) || [])
+
+    const hoursByEmp: Record<string, number> = {}
+    if (data) {
+      for (const t of data as { employee_id: string; hours: number }[]) {
+        hoursByEmp[t.employee_id] = (hoursByEmp[t.employee_id] || 0) + Number(t.hours)
+      }
+    }
+
+    const autoOvertime: Record<string, number> = {}
+    for (const emp of employees) {
+      const overtimeHandling = getEffectiveSetting(emp, workerSettings, 'overtime_handling')
+      if (overtimeHandling === 'none') continue
+      const approvedHours = hoursByEmp[emp.id] || 0
+      if (approvedHours <= 0) continue
+      const weeklyHours = emp.weekly_hours || 37.5
+      const freq = getEffectiveSetting(emp, workerSettings, 'pay_pattern') as PayFrequency
+      const weeksInPeriod = freq === 'weekly' ? 1 : freq === 'bi_weekly' ? 2 : 52 / 12
+      const contractedHours = weeklyHours * weeksInPeriod
+      const overtime = Math.max(0, approvedHours - contractedHours)
+      if (overtime > 0) autoOvertime[emp.id] = Math.round(overtime * 100) / 100
+    }
+    setWizOvertimeHours(autoOvertime)
+  }
+
   // Wizard: generate payslips for selected worker types
   async function wizGenerate() {
     setWizGenerating(true)
@@ -444,6 +490,28 @@ export default function AdminPayrollNew() {
 
     const endOfMonth = new Date(nextYear, nextMonth + 1, 0)
     const batch = Date.now().toString(36).slice(-4)
+    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
+    const monthEnd = localDateStr(endOfMonth)
+
+    // Create pay_runs record
+    const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
+    const { data: payRunData, error: payRunError } = await supabase.from('pay_runs').insert({
+      company_id: selectedCompanyId,
+      frequency: 'monthly',
+      period_start: monthStart,
+      period_end: monthEnd,
+      status: 'generating',
+      worker_types: workerTypeArr,
+      created_by: session?.user?.id || null,
+    }).select('id').single()
+
+    if (payRunError) {
+      showError('Failed to create pay run: ' + payRunError.message)
+      setWizGenerating(false)
+      return
+    }
+    const payRunId = payRunData.id
+    setWizPayRunId(payRunId)
 
     const { data: allEnrollments } = await supabase
       .from('benefit_enrollments')
@@ -499,6 +567,17 @@ export default function AdminPayrollNew() {
         const ni = calcNI(annualAfterSacrifice, freq)
         const pen = Math.round(reviewGross * 0.05 * 100) / 100
 
+        // TOIL: credit lieu_days for overtime instead of paying it
+        if (overtimeHandling === 'toil' && Number(empReview.overtime_hours) > 0) {
+          const dailyHours = (emp.weekly_hours || 37.5) / 5
+          const toilDays = Math.round(Number(empReview.overtime_hours) / dailyHours * 100) / 100
+          try {
+            const { data: lb } = await supabase.from('leave_balances').select('lieu_days').eq('employee_id', emp.id).maybeSingle()
+            const currentLieu = lb?.lieu_days || 0
+            await supabase.from('leave_balances').update({ lieu_days: currentLieu + toilDays }).eq('employee_id', emp.id)
+          } catch { /* TOIL credit failure is non-blocking */ }
+        }
+
         for (let pi = 0; pi < periods.length; pi++) {
           payslipIdx++
           const period = periods[pi]
@@ -511,6 +590,7 @@ export default function AdminPayrollNew() {
             pay_period_start: localDateStr(period.start), pay_period_end: localDateStr(period.end),
             pay_period_type: freq,
             source_review_id: empReview.id,
+            pay_run_id: payRunId,
             gross_pay: reviewGross, tax, national_insurance: ni, pension: pen, other_deductions: 0,
             monthly_deductions: benefitPeriod,
             net_pay: (reviewGross - benefitPeriod) - tax - ni - pen,
@@ -538,8 +618,19 @@ export default function AdminPayrollNew() {
 
         const empOvertimeHrs = overtimeHandling === 'overtime' ? (wizOvertimeHours[emp.id] || 0) : 0
         const multiplier = emp.overtime_rate_multiplier || 1.5
-        const hourlyFromSalary = salary / (52 * 37.5)
+        const hourlyFromSalary = salary / (52 * (emp.weekly_hours || 37.5))
         const overtimePay = empOvertimeHrs > 0 ? Math.round(empOvertimeHrs * hourlyFromSalary * multiplier * 100) / 100 : 0
+
+        // TOIL: credit lieu_days for employed staff overtime
+        if (overtimeHandling === 'toil' && empOvertimeHrs > 0) {
+          const dailyHours = (emp.weekly_hours || 37.5) / 5
+          const toilDays = Math.round(empOvertimeHrs / dailyHours * 100) / 100
+          try {
+            const { data: lb } = await supabase.from('leave_balances').select('lieu_days').eq('employee_id', emp.id).maybeSingle()
+            const currentLieu = lb?.lieu_days || 0
+            await supabase.from('leave_balances').update({ lieu_days: currentLieu + toilDays }).eq('employee_id', emp.id)
+          } catch { /* TOIL credit failure is non-blocking */ }
+        }
 
         const missing: string[] = []
         if (!emp.annual_salary && !latest?.annual_salary) missing.push('Annual salary')
@@ -556,6 +647,7 @@ export default function AdminPayrollNew() {
             reference_number: `PAY-${nextKey}-${batch}-${String(payslipIdx).padStart(3, '0')}`,
             pay_period_start: localDateStr(period.start), pay_period_end: localDateStr(period.end),
             pay_period_type: freq,
+            pay_run_id: payRunId,
             gross_pay: gross, tax, national_insurance: ni, pension: pen, other_deductions: 0,
             monthly_deductions: benefitPeriod,
             net_pay: (gross - benefitPeriod) + overtimePay - tax - ni - pen,
@@ -572,6 +664,9 @@ export default function AdminPayrollNew() {
       }
     }
 
+    // Update pay_run status
+    await supabase.from('pay_runs').update({ status: 'draft' }).eq('id', payRunId)
+
     setWizGenerating(false)
     if (errors.length > 0) {
       showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
@@ -582,16 +677,150 @@ export default function AdminPayrollNew() {
     }
   }
 
-  async function wizMarkPaid() {
+  // Phase 4: Export functions
+  async function wizExport() {
+    if (!wizPayRunId || !selectedCompanyId) return
+    setWizExporting(true)
+
+    try {
+      if (wizPayMethod === 'bacs') {
+        await wizExportBacs()
+      } else if (wizPayMethod === 'xero') {
+        await wizExportXero()
+      } else if (wizPayMethod === 'sage') {
+        await wizExportSageCsv()
+      } else if (wizPayMethod === 'modulr') {
+        await wizExportModulr()
+      }
+
+      // Update pay_run status and payment_method
+      await supabase.from('pay_runs').update({
+        status: 'exported',
+        payment_method: wizPayMethod,
+      }).eq('id', wizPayRunId)
+
+      setWizExported(true)
+      showSuccess(`Pay run exported via ${wizPayMethod.toUpperCase()}`)
+    } catch (err: any) {
+      showError('Export failed: ' + (err?.message || 'Unknown error'))
+    }
+    setWizExporting(false)
+  }
+
+  async function wizExportBacs() {
     const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     const nextKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`
-    const toMark = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && (p.status === 'draft' || p.status === 'processed'))
-    for (const p of toMark) {
+    const runPayslips = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && p.status === 'draft')
+    if (!runPayslips.length) throw new Error('No draft payslips found for this period')
+
+    const { data: compData } = await supabase.from('companies')
+      .select('bacs_originator_sort_code, bacs_originator_account_no, bacs_originator_name')
+      .eq('id', selectedCompanyId).single()
+    const origSc = (compData?.bacs_originator_sort_code || '').replace(/[-\s]/g, '').padEnd(6, '0')
+    const origAn = (compData?.bacs_originator_account_no || '').replace(/\s/g, '').padStart(8, '0')
+    if (!origSc || origSc === '000000') throw new Error('Company BACS originator sort code not set. Configure in Payroll Schedule.')
+
+    const lines = runPayslips.map(p => {
+      const emp = employees.find(e => e.id === p.employee?.id)
+      if (!emp) return null
+      const sortCode = (emp.bank_sort_code || '').replace(/[-\s]/g, '')
+      const accountNo = (emp.bank_account_number || '').replace(/\s/g, '')
+      if (!/^\d{6}$/.test(sortCode) || !/^\d{8}$/.test(accountNo)) return null
+      const amountPence = Math.round(Number(p.net_pay) * 100).toString().padStart(11, '0')
+      const beneficiary = (emp.bank_account_name || `${emp.first_name} ${emp.last_name}`).substring(0, 18).padEnd(18, ' ')
+      const ref = `SALARY ${MONTH_NAMES[nextDate.getMonth()]}`.substring(0, 18).padEnd(18, ' ')
+      return `${sortCode},${accountNo},00,99,${origSc},${origAn},${amountPence},${beneficiary},${ref}`
+    }).filter(Boolean)
+
+    if (!lines.length) throw new Error('No employees with valid bank details')
+    const csv = lines.join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `BACS_PayRun_${localDateStr(new Date())}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function wizExportXero() {
+    if (!session) throw new Error('Not authenticated')
+    const { data, error } = await supabase.functions.invoke('xero-push-timesheets', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      body: { company_id: selectedCompanyId, pay_run_id: wizPayRunId },
+    })
+    if (error) throw error
+    if (data?.error) throw new Error(data.error)
+  }
+
+  async function wizExportSageCsv() {
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`
+    const runPayslips = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && p.status === 'draft')
+    if (!runPayslips.length) throw new Error('No draft payslips found')
+
+    const header = 'Employee ID,Name,Gross Pay,Tax,NI,Pension,Net Pay,Overtime,Pay Period Start,Pay Period End'
+    const rows = runPayslips.map(p => {
+      const name = p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : ''
+      const safeName = name.replace(/[=+\-@\t\r]/g, "'$&")
+      return `${p.payroll_id || ''},${safeName},${p.gross_pay},${p.tax},${p.national_insurance},${p.pension},${p.net_pay},${p.overtime},${p.pay_period_start},${p.pay_period_end}`
+    })
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `Sage_PayRun_${localDateStr(new Date())}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function wizExportModulr() {
+    if (!session) throw new Error('Not authenticated')
+    const { data, error } = await supabase.functions.invoke('modulr-payout', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      body: { company_id: selectedCompanyId, pay_run_id: wizPayRunId },
+    })
+    if (error) throw error
+    if (data?.error) throw new Error(data.error)
+  }
+
+  // Phase 5: Sync + release
+  async function wizSyncXero() {
+    if (!session || !selectedCompanyId) return
+    setWizExporting(true)
+    try {
+      const { data, error } = await supabase.functions.invoke('xero-payslips', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: { company_id: selectedCompanyId },
+      })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
+      if (wizPayRunId) {
+        await supabase.from('pay_runs').update({ status: 'synced' }).eq('id', wizPayRunId)
+      }
+      showSuccess('Pay run synced from Xero — payslips updated with actual tax/NI')
+      await loadAll()
+    } catch (err: any) {
+      showError('Xero sync failed: ' + (err?.message || 'Unknown error'))
+    }
+    setWizExporting(false)
+  }
+
+  async function wizRelease() {
+    if (!wizPayRunId) return
+    setWizReleasing(true)
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`
+    const toRelease = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && (p.status === 'draft' || p.status === 'processed'))
+    for (const p of toRelease) {
       await supabase.from('payslips').update({ status: 'paid' }).eq('id', p.id)
     }
-    showSuccess(`Marked ${toMark.length} payslips as paid`)
+    await supabase.from('pay_runs').update({ status: 'released', completed_at: new Date().toISOString() }).eq('id', wizPayRunId)
+    showSuccess(`Released ${toRelease.length} payslips to employees`)
     setWizComplete(true)
     await loadAll()
+    setWizReleasing(false)
   }
 
   function startRunPayroll() {
@@ -603,12 +832,18 @@ export default function AdminPayrollNew() {
     setWizPayMethod('external')
     setWizOvertimeHours({})
     setWizPeriodReviews([])
+    setWizApprovedTimesheets([])
+    setWizPayRunId(null)
+    setWizExporting(false)
+    setWizExported(false)
+    setWizReleasing(false)
   }
 
   function advanceToStep2() {
     if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) {
       loadWizPeriodReviews()
     }
+    loadWizTimesheets()
     setWizStep(2)
   }
 
@@ -1364,7 +1599,7 @@ export default function AdminPayrollNew() {
         <div className="pn-wizard">
           {/* Progress steps */}
           <div className="pn-wizard-steps">
-            {['Select Workers', 'Review', 'Generate', 'Submit & Pay', 'Complete'].map((label, i) => {
+            {['Select Workers', 'Review', 'Generate', 'Export', 'Sync & Release'].map((label, i) => {
               const step = i + 1
               const isActive = wizStep === step
               const isDone = wizStep > step || wizComplete
@@ -1491,9 +1726,14 @@ export default function AdminPayrollNew() {
                         <span className="pn-worker-metric-label">Missing tax codes</span>
                       </div>
                     </div>
-                    {employedOvertimeHandling === 'overtime' && (
+                    {(employedOvertimeHandling === 'overtime' || employedOvertimeHandling === 'toil') && (
                       <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 10, marginTop: 4 }}>
-                        <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 8px', color: '#5c6bc0' }}>Overtime Hours (enter per employee)</p>
+                        <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px', color: '#5c6bc0' }}>
+                          {employedOvertimeHandling === 'toil' ? 'TOIL Hours (auto-calculated from timesheets, adjustable)' : 'Overtime Hours (auto-calculated from timesheets, adjustable)'}
+                        </p>
+                        {employedOvertimeHandling === 'toil' && (
+                          <p style={{ fontSize: 11, color: '#7e57c2', margin: '0 0 8px' }}>Hours will be credited as time off in lieu, not paid.</p>
+                        )}
                         <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                           {employedEmployees.map(emp => (
                             <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -1504,14 +1744,12 @@ export default function AdminPayrollNew() {
                                 placeholder="0"
                               />
                               <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>hrs @ {emp.overtime_rate_multiplier || 1.5}x</span>
+                              {wizOvertimeHours[emp.id] > 0 && (
+                                <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Auto</span>
+                              )}
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
-                    {employedOvertimeHandling === 'toil' && (
-                      <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 10, marginTop: 4 }}>
-                        <p style={{ fontSize: 12, color: '#5c6bc0', margin: 0 }}>TOIL policy active — overtime hours will be added to time off in lieu balances, not paid.</p>
                       </div>
                     )}
                   </div>
@@ -1674,9 +1912,9 @@ export default function AdminPayrollNew() {
           {/* Step 4: Submit & Pay */}
           {wizStep === 4 && (
             <div className="admin-settings-group" style={{ marginTop: 20 }}>
-              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Submit & Pay</h3>
+              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Export Payroll</h3>
               <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                Choose how you want to process payment for this payroll run. Select your payment method and confirm.
+                Choose how to export this payroll run to your accounting system or bank.
               </p>
 
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
@@ -1740,28 +1978,109 @@ export default function AdminPayrollNew() {
                 </p>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
-                <button className="admin-btn admin-btn-primary" onClick={wizMarkPaid}>
-                  Confirm & Mark as Paid
-                </button>
-              </div>
+              {!wizExported ? (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                  <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
+                  <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={wizExport}>
+                    {wizExporting ? 'Exporting…' : wizPayMethod === 'external' ? 'Mark as Externally Managed' : `Export via ${wizPayMethod.toUpperCase()}`}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 14, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <div>
+                      <strong style={{ color: '#2e7d32' }}>Exported successfully</strong>
+                      <p style={{ fontSize: 12, margin: '2px 0 0', color: '#558b2f' }}>
+                        {wizPayMethod === 'xero' ? 'Data sent to Xero. Run your pay run in Xero, then sync back.' :
+                         wizPayMethod === 'sage' ? 'CSV downloaded. Import into Sage, then upload the PDF payslips.' :
+                         wizPayMethod === 'bacs' ? 'BACS file downloaded. Upload to your bank.' :
+                         wizPayMethod === 'modulr' ? 'Payments submitted via Modulr.' :
+                         'Marked as externally managed.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                    <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(5)}>
+                      Next: Sync & Release →
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
-          {/* Step 5: Complete */}
+          {/* Step 5: Sync & Release */}
           {wizStep === 5 || wizComplete ? (
-            <div className="admin-settings-group" style={{ marginTop: 20, textAlign: 'center', padding: 40 }}>
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" style={{ marginBottom: 12 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-              <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#2e7d32' }}>Payroll Run Complete</h3>
-              <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 20 }}>
-                All payslips have been processed and marked as paid. Employees will see their payslips on their next login.
-              </p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
-                <button className="admin-btn" onClick={() => { setView('payslips') }}>View Payslips</button>
-                <button className="admin-btn admin-btn-primary" onClick={() => setView('dashboard')}>Back to Dashboard</button>
+            wizComplete ? (
+              <div className="admin-settings-group" style={{ marginTop: 20, textAlign: 'center', padding: 40 }}>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" style={{ marginBottom: 12 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#2e7d32' }}>Payroll Run Complete</h3>
+                <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 20 }}>
+                  Payslips have been released. Employees will see them on their next login.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
+                  <button className="admin-btn" onClick={() => setView('payslips')}>View Payslips</button>
+                  <button className="admin-btn admin-btn-primary" onClick={() => setView('dashboard')}>Back to Dashboard</button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="admin-settings-group" style={{ marginTop: 20 }}>
+                <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Sync & Release</h3>
+                <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
+                  Sync actual pay run data from your accounting system, then release payslips to employees.
+                </p>
+
+                {/* Sync options */}
+                {wizPayMethod === 'xero' && xeroConnected && (
+                  <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <strong style={{ fontSize: 14 }}>Sync from Xero</strong>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0' }}>
+                          Fetch actual tax/NI/deductions from your Xero pay run to update payslips with final figures.
+                        </p>
+                      </div>
+                      <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={wizSyncXero} style={{ fontSize: 13 }}>
+                        {wizExporting ? 'Syncing…' : 'Fetch Pay Run'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {wizPayMethod === 'sage' && (
+                  <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+                    <strong style={{ fontSize: 14 }}>Import from Sage</strong>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0' }}>
+                      After running payroll in Sage, upload the PDF payslips from the Payslips view (Sage will parse and update figures).
+                    </p>
+                  </div>
+                )}
+
+                {wizPayMethod === 'external' && (
+                  <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+                    <p style={{ fontSize: 13, margin: 0, color: '#1565c0' }}>
+                      When your external payroll is complete, release the payslips below so employees can view them.
+                    </p>
+                  </div>
+                )}
+
+                {/* Release gate */}
+                <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
+                  <strong style={{ color: '#e65100', fontSize: 14 }}>Release to Employees</strong>
+                  <p style={{ fontSize: 12, color: '#bf360c', margin: '4px 0 0' }}>
+                    Once released, employees will see their payslips in their app. This cannot be undone.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                  <button className="admin-btn" onClick={() => setWizStep(4)}>← Back</button>
+                  <button className="admin-btn admin-btn-primary" disabled={wizReleasing} onClick={wizRelease} style={{ background: '#2e7d32' }}>
+                    {wizReleasing ? 'Releasing…' : 'Release Payslips to Employees'}
+                  </button>
+                </div>
+              </div>
+            )
           ) : null}
         </div>
       )}
