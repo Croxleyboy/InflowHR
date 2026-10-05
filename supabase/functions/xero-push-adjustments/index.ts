@@ -360,6 +360,9 @@ Deno.serve(async (req) => {
         }
       }
 
+      const empCalForDebug = isAU ? (empCalendarCache[emp.xeroId!] || payrollCalendarId || 'none') : (payrollCalendarId || 'none')
+      const debugInfo = `API: ${isAU ? 'AU-v2' : 'UK-v1'}, Calendar: ${empCalForDebug}, EarningsRate: ${defaultEarningsRateId}, Period: ${payRun.period_start} to ${payRun.period_end}, Hours: ${ot.hours}`
+
       const tsUrl = `${baseUrl}/Timesheets`
       let tsRes = await fetch(tsUrl, {
         method: 'POST',
@@ -375,6 +378,26 @@ Deno.serve(async (req) => {
         })
       }
 
+      if (!tsRes.ok && isAU) {
+        const ukPayload = {
+          PayrollCalendarID: payrollCalendarId,
+          EmployeeID: emp.xeroId,
+          StartDate: payRun.period_start,
+          EndDate: payRun.period_end,
+          TimesheetLines: [{
+            Date: payRun.period_start,
+            EarningsRateID: defaultEarningsRateId,
+            NumberOfUnits: ot.hours,
+          }],
+        }
+        const ukRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
+          method: 'POST',
+          headers: xeroHeaders,
+          body: JSON.stringify(ukPayload),
+        })
+        if (ukRes.ok) tsRes = ukRes
+      }
+
       if (!tsRes.ok) {
         const errText = await tsRes.text()
         timesheetResults.push({
@@ -384,7 +407,7 @@ Deno.serve(async (req) => {
           multiplier: ot.multiplier,
           rate: emp.hourlyRate,
           amount: overtimeAmount,
-          error: sanitise(errText),
+          error: `${sanitise(errText)} [${debugInfo}]`,
         })
         continue
       }
