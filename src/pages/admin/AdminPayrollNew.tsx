@@ -820,7 +820,51 @@ export default function AdminPayrollNew() {
     setWizReleasing(false)
   }
 
-  function startRunPayroll() {
+  async function startRunPayroll() {
+    // Check for an in-progress pay run and resume from the correct step
+    if (selectedCompanyId) {
+      const { data: activeRun } = await supabase.from('pay_runs')
+        .select('id, status, worker_types, payment_method')
+        .eq('company_id', selectedCompanyId)
+        .in('status', ['generating', 'exported', 'synced'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (activeRun && activeRun.length > 0) {
+        const run = activeRun[0]
+        setWizPayRunId(run.id)
+        setWizGenerated(true)
+        setWizComplete(false)
+        setWizReleasing(false)
+
+        const types = new Set<'employed' | 'shift' | 'zero_hours'>()
+        if (run.worker_types?.includes('employed')) types.add('employed')
+        if (run.worker_types?.includes('shift_worker')) types.add('shift')
+        if (run.worker_types?.includes('zero_hours')) types.add('zero_hours')
+        setWizWorkerTypes(types)
+
+        if (run.status === 'generating') {
+          setWizStep(4)
+          setWizExported(false)
+          setWizPayMethod(run.payment_method || 'external')
+        } else if (run.status === 'exported') {
+          setWizStep(5)
+          setWizExported(true)
+          setWizPayMethod(run.payment_method || 'external')
+        } else if (run.status === 'synced') {
+          setWizStep(5)
+          setWizExported(true)
+          setWizPayMethod(run.payment_method || 'external')
+        }
+
+        setWizExporting(false)
+        setWizOvertimeHours({})
+        setWizPeriodReviews([])
+        setView('run_payroll')
+        return
+      }
+    }
+
     setView('run_payroll')
     setWizStep(1)
     setWizWorkerTypes(new Set())
@@ -1053,9 +1097,14 @@ export default function AdminPayrollNew() {
                       </button>
                     )}
                     {wt.status === 'in_progress' && (
-                      <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
-                        Review Payslips
-                      </button>
+                      <>
+                        <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={startRunPayroll}>
+                          Continue Pay Run
+                        </button>
+                        <button className="admin-btn" style={{ fontSize: 13, marginLeft: 6 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
+                          Review Payslips
+                        </button>
+                      </>
                     )}
                     {(wt.status === 'submitted' || wt.status === 'paid') && (
                       <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
@@ -1168,6 +1217,16 @@ export default function AdminPayrollNew() {
       {/* ── PAYSLIPS BROWSE ────────────────────────────────────── */}
       {view === 'payslips' && (
         <>
+          {/* Resume pay run banner */}
+          {wizPayRunId && (
+            <div style={{ background: '#fff3e0', border: '1px solid #ffb74d', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#e65100' }}>A pay run is in progress. Review your payslips below, then continue the wizard to export and release.</span>
+              </div>
+              <button className="admin-btn admin-btn-primary" style={{ fontSize: 13, whiteSpace: 'nowrap' }} onClick={startRunPayroll}>Continue Pay Run →</button>
+            </div>
+          )}
           {/* Employed / Shift sub-tabs */}
           <div style={{ display: 'flex', gap: 0, marginBottom: 12 }}>
             <button
