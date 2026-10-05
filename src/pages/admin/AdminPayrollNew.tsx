@@ -547,24 +547,36 @@ export default function AdminPayrollNew() {
     const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
     const monthEnd = localDateStr(endOfMonth)
 
-    // Create pay_runs record
     const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
-    const { data: payRunData, error: payRunError } = await supabase.from('pay_runs').insert({
-      company_id: selectedCompanyId,
-      frequency: 'monthly',
-      period_start: monthStart,
-      period_end: monthEnd,
-      status: 'generating',
-      worker_types: workerTypeArr,
-      created_by: session?.user?.id || null,
-    }).select('id').single()
+    const { data: existingRun } = await supabase.from('pay_runs')
+      .select('id').eq('company_id', selectedCompanyId).eq('frequency', 'monthly')
+      .eq('period_start', monthStart).eq('period_end', monthEnd).maybeSingle()
+
+    let payRunData: { id: string } | null = null
+    let payRunError: any = null
+
+    if (existingRun) {
+      const res = await supabase.from('pay_runs').update({
+        status: 'generating', worker_types: workerTypeArr, created_by: session?.user?.id || null,
+      }).eq('id', existingRun.id).select('id').single()
+      payRunData = res.data
+      payRunError = res.error
+    } else {
+      const res = await supabase.from('pay_runs').insert({
+        company_id: selectedCompanyId, frequency: 'monthly', period_start: monthStart,
+        period_end: monthEnd, status: 'generating', worker_types: workerTypeArr,
+        created_by: session?.user?.id || null,
+      }).select('id').single()
+      payRunData = res.data
+      payRunError = res.error
+    }
 
     if (payRunError) {
       showError('Failed to create pay run: ' + payRunError.message)
       setWizGenerating(false)
       return
     }
-    const payRunId = payRunData.id
+    const payRunId = payRunData!.id
     setWizPayRunId(payRunId)
 
     const { data: allEnrollments } = await supabase
@@ -741,23 +753,36 @@ export default function AdminPayrollNew() {
     const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
 
     const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
-    const { data: payRunData, error: payRunError } = await supabase.from('pay_runs').insert({
-      company_id: selectedCompanyId,
-      frequency: 'monthly',
-      period_start: monthStart,
-      period_end: monthEnd,
-      status: 'generating',
-      payment_method: connectedProvider || 'external',
-      worker_types: workerTypeArr,
-      created_by: session?.user?.id || null,
-    }).select('id').single()
+    const { data: existingRun } = await supabase.from('pay_runs')
+      .select('id').eq('company_id', selectedCompanyId).eq('frequency', 'monthly')
+      .eq('period_start', monthStart).eq('period_end', monthEnd).maybeSingle()
+
+    let payRunData: { id: string } | null = null
+    let payRunError: any = null
+
+    if (existingRun) {
+      const res = await supabase.from('pay_runs').update({
+        status: 'generating', payment_method: connectedProvider || 'external',
+        worker_types: workerTypeArr, created_by: session?.user?.id || null,
+      }).eq('id', existingRun.id).select('id').single()
+      payRunData = res.data
+      payRunError = res.error
+    } else {
+      const res = await supabase.from('pay_runs').insert({
+        company_id: selectedCompanyId, frequency: 'monthly', period_start: monthStart,
+        period_end: monthEnd, status: 'generating', payment_method: connectedProvider || 'external',
+        worker_types: workerTypeArr, created_by: session?.user?.id || null,
+      }).select('id').single()
+      payRunData = res.data
+      payRunError = res.error
+    }
 
     if (payRunError) {
       showError('Failed to create pay run: ' + payRunError.message)
       setWizGenerating(false)
       return
     }
-    const payRunId = payRunData.id
+    const payRunId = payRunData!.id
     setWizPayRunId(payRunId)
 
     try {
