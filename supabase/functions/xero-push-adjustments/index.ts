@@ -115,16 +115,17 @@ Deno.serve(async (req) => {
     const unpaidLeaveDeductionId = findRateId(deductionTypes, ['UNPAID', 'UNPAIDLEAVE', 'LEAVE WITHOUT PAY'])
     const defaultEarningsId = findRateId(earningsRates, ['ORDINARY', 'REGULAR', 'STANDARD', 'ORDINARYTIMEEARNINGS'])
 
-    // Get payroll calendar
-    const payrollCalendarId = await getPayrollCalendarId(sb, company_id, baseUrl, xeroHeaders)
-    if (!payrollCalendarId) {
-      return json({ error: 'No payroll calendar found in Xero. Please set one up in Xero first.' }, 400)
-    }
-
-    // Find or create a draft pay run in Xero
-    const xeroPayRun = await findOrCreateXeroPayRun(baseUrl, xeroHeaders, payrollCalendarId, payRun.period_start, payRun.period_end, isAU)
+    // Find an existing draft pay run, or create one if a payroll calendar exists
+    let xeroPayRun = await findExistingDraftPayRun(baseUrl, xeroHeaders, payRun.period_start, payRun.period_end)
     if (!xeroPayRun) {
-      return json({ error: 'Could not find or create a pay run in Xero for this period. Create one manually in Xero first.' }, 400)
+      const payrollCalendarId = await getPayrollCalendarId(sb, company_id, baseUrl, xeroHeaders)
+      if (!payrollCalendarId) {
+        return json({ error: 'No draft pay run found and no payroll calendar in Xero. Either create a draft pay run manually in Xero for this period, or set up a payroll calendar.' }, 400)
+      }
+      xeroPayRun = await createXeroPayRun(baseUrl, xeroHeaders, payrollCalendarId, payRun.period_start, payRun.period_end, isAU)
+      if (!xeroPayRun) {
+        return json({ error: 'Could not create a pay run in Xero for this period. Create one manually in Xero first.' }, 400)
+      }
     }
 
     // Get payslip stubs
@@ -367,13 +368,11 @@ async function getPayrollCalendarId(
   return calId || null
 }
 
-async function findOrCreateXeroPayRun(
+async function findExistingDraftPayRun(
   baseUrl: string,
   headers: Record<string, string>,
-  payrollCalendarId: string,
   periodStart: string,
-  periodEnd: string,
-  isAU: boolean
+  periodEnd: string
 ): Promise<{ id: string } | null> {
   const listRes = await fetch(`${baseUrl}/PayRuns`, { headers })
   if (!listRes.ok) return null
@@ -393,8 +392,17 @@ async function findOrCreateXeroPayRun(
       return { id: pr.PayRunID || pr.payRunID }
     }
   }
+  return null
+}
 
-  // Create a new draft pay run
+async function createXeroPayRun(
+  baseUrl: string,
+  headers: Record<string, string>,
+  payrollCalendarId: string,
+  periodStart: string,
+  periodEnd: string,
+  isAU: boolean
+): Promise<{ id: string } | null> {
   let createPayload: Record<string, unknown>
   if (isAU) {
     createPayload = {
