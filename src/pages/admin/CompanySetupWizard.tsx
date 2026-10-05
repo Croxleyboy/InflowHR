@@ -57,6 +57,7 @@ interface SetupRow {
   religion: string
   salary_group: string
   xero_employee_id: string
+  employment_category: string
 }
 
 const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
@@ -101,14 +102,58 @@ const SETUP_COLUMN_MAP: Record<string, keyof SetupRow> = {
   'religion': 'religion', 'faith': 'religion',
   'salary group': 'salary_group', 'salary_group': 'salary_group', 'pay grade': 'salary_group', 'pay band': 'salary_group',
   'xero employee id': 'xero_employee_id', 'xero_employee_id': 'xero_employee_id',
+  'employment category': 'employment_category', 'employment_category': 'employment_category', 'worker type': 'employment_category',
 }
 
 const SETUP_STEPS = [
   { label: 'Select Company', icon: '🏢' },
   { label: 'Upload Data', icon: '📤' },
   { label: 'Review & Assign Admin', icon: '👀' },
+  { label: 'Payroll Settings', icon: '⚙️' },
   { label: 'Process', icon: '✅' },
 ]
+
+const WORKER_TYPE_LABELS: Record<string, string> = {
+  employed: 'Employed (Salaried)',
+  shift_worker: 'Shift Workers',
+  zero_hours: 'Zero Hours',
+}
+
+const WORKER_TYPE_DESCRIPTIONS: Record<string, string> = {
+  employed: 'Full-time or part-time salaried employees paid a fixed annual salary divided by pay period.',
+  shift_worker: 'Employees who work scheduled shifts and are paid based on hours worked × hourly rate.',
+  zero_hours: 'Workers with no guaranteed hours, paid based on shifts worked × hourly rate.',
+}
+
+const PAY_PATTERN_HELP: Record<string, string> = {
+  weekly: 'Paid every week (52 pay periods per year). Tax and NI calculated on weekly thresholds.',
+  bi_weekly: 'Paid every two weeks (26 pay periods per year). Tax and NI calculated on fortnightly thresholds.',
+  monthly: 'Paid once per month (12 pay periods per year). Standard UK payroll cycle.',
+}
+
+const OVERTIME_HELP: Record<string, string> = {
+  overtime: 'Overtime hours are recorded and paid at the configured multiplier rate (e.g. 1.5×).',
+  toil: 'Overtime hours are converted to Time Off In Lieu — added to the employee\'s leave balance instead of being paid.',
+  none: 'No overtime tracking. Any hours beyond contracted time are not separately recorded or compensated.',
+}
+
+const TIME_RECORDING_HELP: Record<string, string> = {
+  timesheet: 'Employees submit monthly timesheets recording their working hours.',
+  checkin: 'Employees check in and out of shifts using the app, recording exact start/end times and location.',
+}
+
+interface WorkerTypeDefault {
+  pay_pattern: string
+  overtime_handling: string
+  time_recording: string
+  overtime_rate_multiplier: number
+}
+
+const WORKER_TYPE_DEFAULTS: Record<string, WorkerTypeDefault> = {
+  employed: { pay_pattern: 'monthly', overtime_handling: 'none', time_recording: 'timesheet', overtime_rate_multiplier: 1.5 },
+  shift_worker: { pay_pattern: 'weekly', overtime_handling: 'overtime', time_recording: 'checkin', overtime_rate_multiplier: 1.5 },
+  zero_hours: { pay_pattern: 'weekly', overtime_handling: 'none', time_recording: 'checkin', overtime_rate_multiplier: 1.5 },
+}
 
 interface CompanySetupWizardProps {
   onSetupComplete: (companyId?: string) => void
@@ -129,6 +174,11 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
   const [processResult, setProcessResult] = useState<{ onboarding: number; employees: number; payslips: number; admin: string; errors: string[] } | null>(null)
   const setupFileRef = useRef<HTMLInputElement>(null)
   const [fyStartMonth, setFyStartMonth] = useState(4)
+  const [workerTypeSettings, setWorkerTypeSettings] = useState<Record<string, WorkerTypeDefault>>({
+    employed: { ...WORKER_TYPE_DEFAULTS.employed },
+    shift_worker: { ...WORKER_TYPE_DEFAULTS.shift_worker },
+    zero_hours: { ...WORKER_TYPE_DEFAULTS.zero_hours },
+  })
 
   useEffect(() => {
     loadCompanies()
@@ -158,7 +208,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
       const errors: string[] = []
       const mapped: SetupRow[] = raw.map((row, i) => {
-        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', weekly_hours: 37.5, leave_allowance: null, qualifications: '', religion: '', salary_group: '' }
+        const out: Record<string, any> = { contract_type: 'Full-time', annual_salary: 0, tax_code: '1257L', payroll_id: '', role: 'employee', personal_email: '', date_of_birth: '', gender: '', nationality: '', marital_status: '', address_line1: '', address_line2: '', city: '', county: '', postcode: '', country: 'United Kingdom', emergency_contact_name: '', emergency_contact_phone: '', emergency_contact_relationship: '', ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '', probation_end_date: '', notice_period: '', weekly_hours: 37.5, leave_allowance: null, qualifications: '', religion: '', salary_group: '', employment_category: 'employed' }
         for (const [excelCol, val] of Object.entries(row)) {
           const key = SETUP_COLUMN_MAP[excelCol.toLowerCase().trim()]
           if (key) {
@@ -298,6 +348,23 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
     await ensureCompanyFoundation(setupCompanyId)
 
+    for (const [wt, s] of Object.entries(workerTypeSettings)) {
+      await supabase.from('worker_type_settings').upsert({
+        company_id: setupCompanyId,
+        worker_type: wt,
+        pay_pattern: s.pay_pattern,
+        overtime_handling: s.overtime_handling,
+        time_recording: s.time_recording,
+        overtime_rate_multiplier: s.overtime_rate_multiplier,
+      }, { onConflict: 'company_id,worker_type' })
+    }
+
+    await supabase.from('payroll_audit_log').insert({
+      company_id: setupCompanyId,
+      action: 'worker_type_settings_initial_setup',
+      details: JSON.stringify(workerTypeSettings),
+    })
+
     const now = new Date()
     const periodStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
@@ -402,6 +469,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           company_id: setupCompanyId,
           location: row.location || null,
           contract_type: row.contract_type || 'Full-time',
+          employment_category: row.employment_category || 'employed',
           manager_name: row.manager || null,
           manager_email: row.manager_email || null,
           date_of_birth: row.date_of_birth || null,
@@ -569,6 +637,11 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
     setSetupErrors([])
     setAdminEmail('')
     setProcessResult(null)
+    setWorkerTypeSettings({
+      employed: { ...WORKER_TYPE_DEFAULTS.employed },
+      shift_worker: { ...WORKER_TYPE_DEFAULTS.shift_worker },
+      zero_hours: { ...WORKER_TYPE_DEFAULTS.zero_hours },
+    })
   }
 
   const setupCompany = companies.find(c => c.id === setupCompanyId)
@@ -670,7 +743,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
                 <button className="admin-btn admin-btn-primary" disabled={!setupCompanyId} onClick={() => setSetupStep(1)}>
                   Next: Upload Data
                 </button>
-                <button className="admin-btn" disabled={!setupCompanyId} style={{ background: '#ff9800', color: '#fff' }} onClick={() => { setSetupRows([]); setSetupStep(3) }}>
+                <button className="admin-btn" disabled={!setupCompanyId} style={{ background: '#ff9800', color: '#fff' }} onClick={() => { setSetupRows([]); setSetupStep(4) }}>
                   Skip to Foundation Only
                 </button>
               </div>
@@ -731,7 +804,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
           <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
             <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => { setSetupStep(0); setSetupRows([]); setSetupErrors([]) }}>Back</button>
-            <button className="admin-btn" style={{ background: '#ff9800', color: '#fff' }} onClick={() => { setSetupRows([]); setSetupStep(3) }}>
+            <button className="admin-btn" style={{ background: '#ff9800', color: '#fff' }} onClick={() => { setSetupRows([]); setSetupStep(4) }}>
               Skip — Foundation Only
             </button>
             <button className="admin-btn admin-btn-primary" disabled={setupRows.length === 0 || setupErrors.length > 0} onClick={() => setSetupStep(2)}>
@@ -803,17 +876,131 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
           <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
             <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => setSetupStep(1)}>Back</button>
             <button className="admin-btn" style={{ background: '#ff9800', color: '#fff' }} onClick={() => { setAdminEmail(''); setSetupStep(3) }}>
-              Skip Admin — Process Employees Only
+              Skip Admin
             </button>
             <button className="admin-btn admin-btn-primary" disabled={!adminEmail} onClick={() => setSetupStep(3)} style={{ background: '#43a047' }}>
-              Process {setupRows.length} Employees
+              Next: Payroll Settings
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 4: Process */}
+      {/* Step 4: Payroll Settings */}
       {setupStep === 3 && (
+        <div>
+          <h3>Payroll Settings — Worker Type Defaults</h3>
+          <p style={{ color: '#666', marginBottom: 8 }}>
+            Configure how each worker type is paid for <strong>{setupCompany?.name}</strong>.
+            These are company-wide defaults — individual employees can be given overrides later.
+          </p>
+          <div style={{ background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 8, padding: 12, marginBottom: 20, fontSize: 13 }}>
+            <strong>How to change later:</strong> Go to Admin → Employees → Payroll Settings tab.
+            Changes are logged with an impact assessment for GDPR compliance.
+            Per-employee overrides can be set on each employee's record.
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 24 }}>
+            {(['employed', 'shift_worker', 'zero_hours'] as const).map(wt => {
+              const s = workerTypeSettings[wt]
+              const isDefault = JSON.stringify(s) === JSON.stringify(WORKER_TYPE_DEFAULTS[wt])
+              return (
+                <div key={wt} style={{ border: '1px solid #e0e0e0', borderRadius: 12, padding: 16, background: '#fafafa' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <h4 style={{ margin: 0, fontSize: 15, color: '#1a237e' }}>{WORKER_TYPE_LABELS[wt]}</h4>
+                    {isDefault && (
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#e8f5e9', color: '#2e7d32', fontWeight: 600 }}>
+                        Recommended
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: 12, color: '#666', margin: '0 0 12px' }}>{WORKER_TYPE_DESCRIPTIONS[wt]}</p>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#333', display: 'block', marginBottom: 4 }}>Pay Pattern</label>
+                    <select
+                      className="admin-select"
+                      value={s.pay_pattern}
+                      onChange={e => setWorkerTypeSettings(prev => ({ ...prev, [wt]: { ...prev[wt], pay_pattern: e.target.value } }))}
+                      style={{ width: '100%' }}
+                    >
+                      <option value="weekly">Weekly (52 periods/year)</option>
+                      <option value="bi_weekly">Bi-weekly (26 periods/year)</option>
+                      <option value="monthly">Monthly (12 periods/year)</option>
+                    </select>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{PAY_PATTERN_HELP[s.pay_pattern]}</div>
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#333', display: 'block', marginBottom: 4 }}>Overtime Handling</label>
+                    <select
+                      className="admin-select"
+                      value={s.overtime_handling}
+                      onChange={e => setWorkerTypeSettings(prev => ({ ...prev, [wt]: { ...prev[wt], overtime_handling: e.target.value } }))}
+                      style={{ width: '100%' }}
+                    >
+                      <option value="none">None — no overtime tracking</option>
+                      <option value="overtime">Paid Overtime — hours × multiplier rate</option>
+                      <option value="toil">TOIL — overtime converted to leave balance</option>
+                    </select>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{OVERTIME_HELP[s.overtime_handling]}</div>
+                  </div>
+
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#333', display: 'block', marginBottom: 4 }}>Time Recording Method</label>
+                    <select
+                      className="admin-select"
+                      value={s.time_recording}
+                      onChange={e => setWorkerTypeSettings(prev => ({ ...prev, [wt]: { ...prev[wt], time_recording: e.target.value } }))}
+                      style={{ width: '100%' }}
+                    >
+                      <option value="timesheet">Timesheet — monthly hours submission</option>
+                      <option value="checkin">Check-in — shift start/end via app</option>
+                    </select>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{TIME_RECORDING_HELP[s.time_recording]}</div>
+                  </div>
+
+                  {s.overtime_handling === 'overtime' && (
+                    <div style={{ marginBottom: 8 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#333', display: 'block', marginBottom: 4 }}>Overtime Rate Multiplier</label>
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="1"
+                        max="3"
+                        className="admin-input"
+                        value={s.overtime_rate_multiplier}
+                        onChange={e => setWorkerTypeSettings(prev => ({ ...prev, [wt]: { ...prev[wt], overtime_rate_multiplier: parseFloat(e.target.value) || 1.5 } }))}
+                        style={{ width: 80 }}
+                      />
+                      <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>× base hourly rate (e.g. 1.5 = time and a half)</span>
+                    </div>
+                  )}
+
+                  {!isDefault && (
+                    <button
+                      className="admin-btn"
+                      style={{ fontSize: 11, padding: '4px 10px', background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80', marginTop: 4 }}
+                      onClick={() => setWorkerTypeSettings(prev => ({ ...prev, [wt]: { ...WORKER_TYPE_DEFAULTS[wt] } }))}
+                    >
+                      Reset to recommended defaults
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => setSetupStep(setupRows.length > 0 ? 2 : 0)}>Back</button>
+            <button className="admin-btn admin-btn-primary" onClick={() => setSetupStep(4)} style={{ background: '#43a047' }}>
+              {setupRows.length > 0 ? `Next: Process ${setupRows.length} Employees` : 'Next: Create Foundation'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 5: Process */}
+      {setupStep === 4 && (
         <div>
           {!processResult && !processing && (
             <div style={{ textAlign: 'center', padding: '40px 20px' }}>
@@ -837,7 +1024,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
               )}
 
               <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-                <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => setSetupStep(setupRows.length > 0 ? 2 : 1)}>Back</button>
+                <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333' }} onClick={() => setSetupStep(3)}>Back</button>
                 <button className="admin-btn admin-btn-primary" onClick={processSetup} style={{ background: '#43a047', padding: '12px 32px', fontSize: 16 }}>
                   {setupRows.length > 0 ? 'Confirm & Process' : 'Create Foundation Records'}
                 </button>

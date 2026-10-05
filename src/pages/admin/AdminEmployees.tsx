@@ -104,6 +104,12 @@ export default function AdminEmployees() {
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [changeLog, setChangeLog] = useState<{ id: number; worker_type: string; setting_name: string; old_value: string; new_value: string; exception_count: number; created_at: string }[]>([])
 
+  // Impact assessment modal state
+  const [impactModal, setImpactModal] = useState<{
+    open: boolean; workerType: string; changes: { name: string; oldVal: string; newVal: string }[]
+    affectedCount: number; exceptionCount: number; effectiveDate: string; confirmText: string
+  }>({ open: false, workerType: '', changes: [], affectedCount: 0, exceptionCount: 0, effectiveDate: '', confirmText: '' })
+
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
     const key = `${employeeId}:${field}`
@@ -438,10 +444,9 @@ export default function AdminEmployees() {
     load()
   }
 
-  async function saveWorkerTypeSettings(workerType: string) {
-    setSettingsSaving(true)
+  function saveWorkerTypeSettings(workerType: string) {
     const setting = editingSettings[workerType]
-    if (!setting) { setSettingsSaving(false); return }
+    if (!setting) return
 
     const existing = workerSettings.find(s => s.worker_type === workerType)
     const changedFields: { name: string; oldVal: string; newVal: string }[] = []
@@ -452,6 +457,42 @@ export default function AdminEmployees() {
       if (existing.time_recording !== setting.time_recording) changedFields.push({ name: 'time_recording', oldVal: existing.time_recording, newVal: setting.time_recording })
       if (Number(existing.overtime_rate_multiplier) !== Number(setting.overtime_rate_multiplier)) changedFields.push({ name: 'overtime_rate_multiplier', oldVal: String(existing.overtime_rate_multiplier), newVal: String(setting.overtime_rate_multiplier) })
     }
+
+    if (changedFields.length === 0 && existing) {
+      showSuccess('No changes to save')
+      return
+    }
+
+    const workerTypeFilter = workerType === 'zero_hours'
+      ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker')
+      : workerType === 'shift_worker'
+      ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker')
+      : employees.filter(e => e.employment_category === 'employed')
+
+    const exceptionCount = workerTypeFilter.filter(e =>
+      e.pay_pattern_override != null || e.overtime_handling_override != null || e.time_recording_override != null
+    ).length
+
+    const nextMonth = new Date()
+    nextMonth.setMonth(nextMonth.getMonth() + 1, 1)
+    const defaultEffective = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-${String(nextMonth.getDate()).padStart(2, '0')}`
+
+    setImpactModal({
+      open: true,
+      workerType,
+      changes: changedFields,
+      affectedCount: workerTypeFilter.length - exceptionCount,
+      exceptionCount,
+      effectiveDate: defaultEffective,
+      confirmText: '',
+    })
+  }
+
+  async function confirmSaveWorkerTypeSettings() {
+    const { workerType, changes, effectiveDate } = impactModal
+    setSettingsSaving(true)
+    const setting = editingSettings[workerType]
+    if (!setting) { setSettingsSaving(false); return }
 
     const { error } = await supabase.from('worker_type_settings').upsert({
       company_id: selectedCompanyId,
@@ -465,19 +506,20 @@ export default function AdminEmployees() {
 
     if (error) { showError('Failed to save settings: ' + error.message); setSettingsSaving(false); return }
 
-    // Find employees with overrides (exceptions) for this worker type
     const workerTypeFilter = workerType === 'zero_hours'
       ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker')
       : workerType === 'shift_worker'
       ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker')
       : employees.filter(e => e.employment_category === 'employed')
 
-    // Log changes with exception tracking
-    for (const change of changedFields) {
+    const impactParts: string[] = []
+    for (const change of changes) {
       const overrideField = change.name + '_override' as keyof Employee
       const exceptionIds = workerTypeFilter
         .filter(e => e[overrideField] != null)
         .map(e => e.id)
+
+      impactParts.push(`${change.name}: ${change.oldVal} → ${change.newVal}`)
 
       await supabase.from('worker_setting_change_log').insert({
         company_id: selectedCompanyId,
@@ -487,10 +529,20 @@ export default function AdminEmployees() {
         new_value: change.newVal,
         exception_employee_ids: exceptionIds,
         exception_count: exceptionIds.length,
+        effective_date: effectiveDate || null,
+        impact_summary: `Affects ${workerTypeFilter.length - exceptionIds.length} employee(s), ${exceptionIds.length} exception(s)`,
       })
     }
 
-    showSuccess('Settings saved')
+    await supabase.from('payroll_audit_log').insert({
+      company_id: selectedCompanyId,
+      action: 'Worker Type Settings Changed',
+      detail: `${workerType}: ${impactParts.join('; ')}. Effective: ${effectiveDate || 'Immediately'}`,
+      status: 'success',
+    })
+
+    setImpactModal({ open: false, workerType: '', changes: [], affectedCount: 0, exceptionCount: 0, effectiveDate: '', confirmText: '' })
+    showSuccess('Settings saved with audit trail')
     setSettingsSaving(false)
     load()
   }
@@ -990,6 +1042,80 @@ export default function AdminEmployees() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Impact Assessment Modal */}
+          {impactModal.open && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'var(--bg, #fff)', borderRadius: 12, padding: 24, maxWidth: 520, width: '90vw', maxHeight: '85vh', overflowY: 'auto' }}>
+                <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" style={{ verticalAlign: -3, marginRight: 6 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  Payroll Settings Impact Assessment
+                </h3>
+                <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', margin: '0 0 16px' }}>
+                  Changing payroll settings affects how employees are paid. Please review the impact carefully.
+                </p>
+
+                {(() => {
+                  const now = new Date()
+                  const hour = now.getHours()
+                  const day = now.getDay()
+                  const isBusinessHours = day >= 1 && day <= 5 && hour >= 9 && hour < 17
+                  return isBusinessHours ? (
+                    <div style={{ background: '#fff3e0', borderRadius: 8, padding: 12, marginBottom: 14, display: 'flex', gap: 10 }}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      <div style={{ fontSize: 13 }}>
+                        <strong style={{ color: '#e65100' }}>Out-of-hours recommended</strong>
+                        <p style={{ margin: '4px 0 0', color: '#bf360c', fontSize: 12 }}>
+                          This change is recommended to be made outside of business hours (before 09:00 or after 17:00, or at weekends) to minimise disruption to payroll processing.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null
+                })()}
+
+                <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 14 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 8px', textTransform: 'capitalize' }}>
+                    {impactModal.workerType.replace('_', ' ')} — Changes
+                  </p>
+                  {impactModal.changes.map(c => (
+                    <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                      <span style={{ textTransform: 'capitalize' }}>{c.name.replace(/_/g, ' ')}</span>
+                      <span><span style={{ textDecoration: 'line-through', color: 'var(--text-muted, #999)' }}>{c.oldVal.replace('_', '-')}</span> → <strong>{c.newVal.replace('_', '-')}</strong></span>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', marginTop: 8, paddingTop: 8, fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>
+                    <p style={{ margin: '0 0 2px' }}><strong>{impactModal.affectedCount}</strong> employee(s) will be affected by this change</p>
+                    {impactModal.exceptionCount > 0 && (
+                      <p style={{ margin: 0 }}><strong>{impactModal.exceptionCount}</strong> employee(s) have individual overrides and will not be changed</p>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Effective Date</label>
+                  <input type="date" value={impactModal.effectiveDate} onChange={e => setImpactModal(prev => ({ ...prev, effectiveDate: e.target.value }))}
+                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', fontSize: 13, width: '100%' }}
+                  />
+                  <p style={{ fontSize: 11, color: 'var(--text-muted, #999)', margin: '4px 0 0' }}>When this change takes effect for payroll calculations</p>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Type CONFIRM to proceed</label>
+                  <input type="text" value={impactModal.confirmText} onChange={e => setImpactModal(prev => ({ ...prev, confirmText: e.target.value }))}
+                    placeholder="CONFIRM" autoComplete="off"
+                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', fontSize: 13, width: '100%' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                  <button className="admin-btn" onClick={() => setImpactModal(prev => ({ ...prev, open: false }))}>Cancel</button>
+                  <button className="admin-btn admin-btn-primary" disabled={impactModal.confirmText !== 'CONFIRM' || settingsSaving} onClick={confirmSaveWorkerTypeSettings}>
+                    {settingsSaving ? 'Saving...' : 'Apply Changes'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

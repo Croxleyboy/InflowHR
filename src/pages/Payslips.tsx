@@ -53,7 +53,9 @@ export default function Payslips() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl, company, companyUser } = useAuth()
-  const [payslip, setPayslip] = useState<PayslipData | null>(null)
+  const [monthPayslips, setMonthPayslips] = useState<PayslipData[]>([])
+  const [selectedPayslipIdx, setSelectedPayslipIdx] = useState(0)
+  const payslip = monthPayslips[selectedPayslipIdx] || null
   const [loading, setLoading] = useState(true)
   const [employeeRole, setEmployeeRole] = useState('')
   const [benefitDeductions, setBenefitDeductions] = useState<BenefitDeduction[]>([])
@@ -78,12 +80,13 @@ export default function Payslips() {
       .eq('company_id', companyUser?.company_id)
       .gte('pay_period_start', startOfMonth)
       .lte('pay_period_start', endStr)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-    setPayslip(data as PayslipData | null)
+      .order('pay_period_start', { ascending: true })
+      .limit(10)
+    const results = (data as PayslipData[] | null) || []
+    setMonthPayslips(results)
+    setSelectedPayslipIdx(0)
 
-    if (!data && !initialised && monthIdx > 0) {
+    if (results.length === 0 && !initialised && monthIdx > 0) {
       setInitialised(true)
       setMonthIdx(i => i - 1)
       return
@@ -192,6 +195,27 @@ export default function Payslips() {
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6"/></svg>
         </button>
       </div>
+
+      {monthPayslips.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap', padding: '0 16px 8px' }}>
+          {monthPayslips.map((p, i) => {
+            const start = new Date(p.pay_period_start + 'T00:00:00')
+            const end = new Date(p.pay_period_end + 'T00:00:00')
+            const label = `${start.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} – ${end.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}`
+            return (
+              <button key={p.id} onClick={() => setSelectedPayslipIdx(i)}
+                style={{
+                  padding: '4px 10px', borderRadius: 16, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                  border: i === selectedPayslipIdx ? '2px solid #5c6bc0' : '1px solid rgba(255,255,255,0.3)',
+                  background: i === selectedPayslipIdx ? 'rgba(92,107,192,0.2)' : 'rgba(255,255,255,0.1)',
+                  color: '#fff',
+                }}>
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {loading ? (
         <div className="payslips-loading">{t('common.loading')}</div>

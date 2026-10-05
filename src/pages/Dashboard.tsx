@@ -757,17 +757,20 @@ export default function Dashboard() {
         .then(({ data }) => { setOnLeaveToday(!!data) })
 
       supabase.from('payslips')
-        .select('net_pay, pay_period_end')
+        .select('net_pay, pay_period_start, pay_period_end, pay_period_type')
         .eq('employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
         .order('payment_date', { ascending: false })
         .limit(1)
         .maybeSingle()
         .then(({ data }) => {
-          if (data) setLastPayslip({
-            net_pay: data.net_pay,
-            month: new Date(data.pay_period_end + 'T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-          })
+          if (data) {
+            const pType = (data as any).pay_period_type
+            const label = pType && pType !== 'monthly'
+              ? `${new Date(data.pay_period_start + 'T00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} – ${new Date(data.pay_period_end + 'T00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+              : new Date(data.pay_period_end + 'T00:00').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+            setLastPayslip({ net_pay: data.net_pay, month: label })
+          }
         })
 
       supabase.from('kudos')
