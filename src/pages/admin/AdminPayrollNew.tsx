@@ -198,7 +198,14 @@ export default function AdminPayrollNew() {
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
   const [wizExported, setWizExported] = useState(false)
-  const [wizPushResult, setWizPushResult] = useState<{ pushed: number; failed: number; skipped: number; api: string; results?: { employee: string; status: string; error?: string }[]; skipped_details?: { employee: string; reason: string }[] } | null>(null)
+  const [wizPushResult, setWizPushResult] = useState<{
+    pushed: number; failed: number; skipped: number; api: string;
+    timesheet_results?: { employee: string; status: string; hours: number; multiplier: number; rate: number; amount: number; xeroTimesheetId?: string; error?: string }[];
+    manual_items?: { employee: string; type: string; description: string; amount: number; days?: number }[];
+    skipped_details?: { employee: string; reason: string }[];
+    results?: { employee: string; status: string; error?: string }[];
+    failed_summary?: string;
+  } | null>(null)
   const [wizReleasing, setWizReleasing] = useState(false)
   const [wizUnpaidLeave, setWizUnpaidLeave] = useState<{ employee_id: string; days: number; employee_name: string }[]>([])
   const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
@@ -824,11 +831,10 @@ export default function AdminPayrollNew() {
         }
         if (xeroResult?.error) throw new Error(xeroResult.error)
         setWizPushResult(xeroResult)
-        if (xeroResult?.pushed === 0) {
+        if (xeroResult?.pushed === 0 && (!xeroResult.manual_items || xeroResult.manual_items.length === 0)) {
           const reasons: string[] = []
           if (xeroResult.skipped_details) reasons.push(...xeroResult.skipped_details.map((s: any) => `${s.employee}: ${s.reason}`))
-          if (xeroResult.failed_summary) reasons.push(xeroResult.failed_summary)
-          if (xeroResult.results) reasons.push(...xeroResult.results.filter((r: any) => r.status === 'failed').map((r: any) => `${r.employee}: ${r.error || 'unknown error'}`))
+          if (xeroResult.timesheet_results) reasons.push(...xeroResult.timesheet_results.filter((r: any) => r.status === 'failed').map((r: any) => `${r.employee}: ${r.error || 'unknown error'}`))
           const uniqueReasons = [...new Set(reasons)]
           showError(`0 adjustments pushed. ${uniqueReasons.join('; ') || 'Check the banner for details.'}`)
           await supabase.from('pay_runs').update({ status: 'draft' }).eq('id', payRunId)
@@ -836,7 +842,9 @@ export default function AdminPayrollNew() {
           return
         }
         if (xeroResult) {
-          const parts = [`${xeroResult.pushed} adjustment(s) pushed to Xero (${xeroResult.api} API)`]
+          const parts: string[] = []
+          if (xeroResult.pushed > 0) parts.push(`${xeroResult.pushed} overtime timesheet(s) pushed to Xero`)
+          if (xeroResult.manual_items && xeroResult.manual_items.length > 0) parts.push(`${xeroResult.manual_items.length} item(s) flagged for manual entry`)
           if (xeroResult.failed > 0) parts.push(`${xeroResult.failed} failed`)
           if (xeroResult.skipped > 0) parts.push(`${xeroResult.skipped} skipped`)
           showSuccess(parts.join(', '))
@@ -1991,7 +1999,10 @@ export default function AdminPayrollNew() {
                 <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #1565c0' }}>
                   <strong style={{ color: '#1565c0', fontSize: 14 }}>Connected to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</strong>
                   <p style={{ fontSize: 12, color: '#1565c0', margin: '4px 0 0' }}>
-                    InflowHR will push adjustment lines only — overtime, benefit changes, and unpaid leave deductions. TOIL hours are credited internally as lieu days. Your provider calculates tax, NI, pension, and net pay.
+                    {connectedProvider === 'xero'
+                      ? 'Overtime hours are pushed to Xero as timesheets. Unpaid leave and benefit changes are flagged for manual entry in Xero. TOIL hours are credited internally as lieu days.'
+                      : 'InflowHR will push adjustment lines only — overtime, benefit changes, and unpaid leave deductions. TOIL hours are credited internally as lieu days.'
+                    } Your provider calculates tax, NI, pension, and net pay.
                   </p>
                 </div>
               )}
@@ -2201,19 +2212,25 @@ export default function AdminPayrollNew() {
                 !wizGenerated ? (
                   <>
                     <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                      This will push the adjustment lines (overtime, benefit changes, unpaid leave) to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. TOIL hours are credited as lieu days internally and are not sent to the provider.
+                      {connectedProvider === 'xero'
+                        ? 'Overtime hours will be pushed to Xero as timesheets. Unpaid leave and benefit changes will be listed for you to enter manually in Xero.'
+                        : 'This will export adjustment lines to Sage as a CSV file.'
+                      } TOIL hours are credited as lieu days internally and are not sent to the provider.
                     </p>
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                         <div className="pn-worker-metric">
                           <span className="pn-worker-metric-value">{(() => {
-                            const otCount = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+                            return Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
                               const emp = employees.find(e => e.id === empId)
                               return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
                             }).length
-                            return otCount + wizUnpaidLeave.length + wizBenefitChanges.length
                           })()}</span>
-                          <span className="pn-worker-metric-label">Adjustment lines</span>
+                          <span className="pn-worker-metric-label">{connectedProvider === 'xero' ? 'Timesheets to push' : 'Overtime entries'}</span>
+                        </div>
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value">{wizUnpaidLeave.length + wizBenefitChanges.length}</span>
+                          <span className="pn-worker-metric-label">{connectedProvider === 'xero' ? 'Manual Xero items' : 'Other adjustments'}</span>
                         </div>
                         <div className="pn-worker-metric">
                           <span className="pn-worker-metric-value" style={{ textTransform: 'capitalize' }}>{connectedProvider}</span>
@@ -2261,45 +2278,183 @@ export default function AdminPayrollNew() {
                   </>
                 ) : (
                   <>
-                    <div style={{ background: wizPushResult && wizPushResult.pushed === 0 ? '#fff3e0' : '#e8f5e9', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={wizPushResult && wizPushResult.pushed === 0 ? '#e65100' : '#2e7d32'} strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                      <div>
-                        <strong style={{ color: wizPushResult && wizPushResult.pushed === 0 ? '#e65100' : '#2e7d32' }}>
+                    {/* Summary banner */}
+                    <div style={{ background: wizPushResult && wizPushResult.pushed === 0 && (!wizPushResult.manual_items || wizPushResult.manual_items.length === 0) ? '#fff3e0' : '#e8f5e9', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={wizPushResult && wizPushResult.pushed === 0 && (!wizPushResult.manual_items || wizPushResult.manual_items.length === 0) ? '#e65100' : '#2e7d32'} strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <div style={{ flex: 1 }}>
+                        <strong style={{ color: wizPushResult && wizPushResult.pushed > 0 ? '#2e7d32' : '#e65100' }}>
                           {wizPushResult
-                            ? `${wizPushResult.pushed} pushed, ${wizPushResult.failed || 0} failed, ${wizPushResult.skipped || 0} skipped (${wizPushResult.api} API)`
-                            : 'Adjustments pushed successfully'}
+                            ? (() => {
+                                const parts: string[] = []
+                                if (wizPushResult.pushed > 0) parts.push(`${wizPushResult.pushed} overtime timesheet${wizPushResult.pushed !== 1 ? 's' : ''} pushed`)
+                                if (wizPushResult.manual_items && wizPushResult.manual_items.length > 0) parts.push(`${wizPushResult.manual_items.length} manual item${wizPushResult.manual_items.length !== 1 ? 's' : ''} flagged`)
+                                if (wizPushResult.failed > 0) parts.push(`${wizPushResult.failed} failed`)
+                                if (wizPushResult.skipped > 0) parts.push(`${wizPushResult.skipped} skipped`)
+                                return parts.join(', ') || 'No adjustments to push'
+                              })()
+                            : 'Adjustments processed successfully'}
                         </strong>
-                        {wizPushResult && wizPushResult.results && wizPushResult.results.filter((r: any) => r.status === 'failed').length > 0 && (
-                          <ul style={{ fontSize: 12, margin: '6px 0 0', color: '#c62828', paddingLeft: 16 }}>
-                            {wizPushResult.results.filter((r: any) => r.status === 'failed').map((r: any, i: number) => (
-                              <li key={i}><strong>{r.employee}</strong>: {r.error || 'Unknown error'}</li>
+                        <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
+                          {wizPushResult && wizPushResult.pushed > 0
+                            ? `Run your pay run in Xero, then come back to sync the real payslips.`
+                            : wizPushResult && wizPushResult.manual_items && wizPushResult.manual_items.length > 0
+                            ? 'Review the manual items below and enter them in Xero before running your pay run.'
+                            : 'No adjustments reached Xero. Check the details below.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Overtime timesheets pushed */}
+                    {wizPushResult && wizPushResult.timesheet_results && wizPushResult.timesheet_results.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                          Overtime Timesheets
+                        </h4>
+                        <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, overflow: 'hidden' }}>
+                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ background: 'var(--bg-muted, #f0f1f3)', textAlign: 'left' }}>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Employee</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Hours</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Rate</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'center' }}>Multiplier</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'center' }}>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {wizPushResult.timesheet_results.map((r, i) => (
+                                <tr key={i} style={{ borderTop: '1px solid var(--border, #e5e7eb)' }}>
+                                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>{r.employee}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>{r.hours}h</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>£{r.rate.toFixed(2)}/hr</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'center' }}>{r.multiplier}x</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>£{r.amount.toFixed(2)}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                    {r.status === 'pushed' ? (
+                                      <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>Pushed</span>
+                                    ) : (
+                                      <span style={{ fontSize: 11, background: '#ffebee', color: '#c62828', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }} title={r.error || ''}>Failed</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            {wizPushResult.timesheet_results.filter(r => r.status === 'pushed').length > 0 && (
+                              <tfoot>
+                                <tr style={{ borderTop: '2px solid var(--border, #d1d5db)', background: 'var(--bg-muted, #f0f1f3)' }}>
+                                  <td style={{ padding: '8px 12px', fontWeight: 700 }}>Total pushed</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
+                                    {wizPushResult.timesheet_results.filter(r => r.status === 'pushed').reduce((s, r) => s + r.hours, 0)}h
+                                  </td>
+                                  <td style={{ padding: '8px 12px' }}></td>
+                                  <td style={{ padding: '8px 12px' }}></td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
+                                    £{wizPushResult.timesheet_results.filter(r => r.status === 'pushed').reduce((s, r) => s + r.amount, 0).toFixed(2)}
+                                  </td>
+                                  <td style={{ padding: '8px 12px' }}></td>
+                                </tr>
+                              </tfoot>
+                            )}
+                          </table>
+                        </div>
+                        {wizPushResult.timesheet_results.some(r => r.status === 'failed') && (
+                          <div style={{ marginTop: 8 }}>
+                            {wizPushResult.timesheet_results.filter(r => r.status === 'failed').map((r, i) => (
+                              <p key={i} style={{ fontSize: 12, color: '#c62828', margin: '4px 0' }}>
+                                <strong>{r.employee}</strong>: {r.error || 'Unknown error'}
+                              </p>
                             ))}
-                          </ul>
+                          </div>
                         )}
-                        {wizPushResult && wizPushResult.skipped_details && wizPushResult.skipped_details.length > 0 && (
-                          <ul style={{ fontSize: 12, margin: '6px 0 0', color: '#795548', paddingLeft: 16 }}>
-                            {wizPushResult.skipped_details.map((s: any, i: number) => (
+                      </div>
+                    )}
+
+                    {/* Manual Xero items */}
+                    {wizPushResult && wizPushResult.manual_items && wizPushResult.manual_items.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#e65100', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                          Manual Xero Entry Required
+                        </h4>
+                        <p style={{ fontSize: 12, color: '#bf360c', margin: '0 0 8px' }}>
+                          These items cannot be pushed automatically. Enter them directly in your Xero pay run before processing.
+                        </p>
+                        <div style={{ background: '#fff8e1', borderRadius: 8, border: '1px solid #ffe082', overflow: 'hidden' }}>
+                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ background: '#fff3e0', textAlign: 'left' }}>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, width: 28 }}></th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Employee</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Item</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Action in Xero</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {wizPushResult.manual_items.map((item, i) => (
+                                <tr key={i} style={{ borderTop: '1px solid #ffe082' }}>
+                                  <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                    {item.type === 'unpaid_leave' ? (
+                                      <span title="Unpaid leave deduction" style={{ fontSize: 14 }}>-</span>
+                                    ) : item.type === 'benefit_deduction' ? (
+                                      <span title="Benefit deduction" style={{ fontSize: 14 }}>-</span>
+                                    ) : (
+                                      <span title="Benefit addition" style={{ fontSize: 14 }}>+</span>
+                                    )}
+                                  </td>
+                                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>{item.employee}</td>
+                                  <td style={{ padding: '8px 12px' }}>{item.description}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>
+                                    {item.type === 'benefit_deduction' || item.type === 'unpaid_leave' ? '-' : '+'}£{item.amount.toFixed(2)}
+                                  </td>
+                                  <td style={{ padding: '8px 12px', fontSize: 12, color: '#795548' }}>
+                                    {item.type === 'unpaid_leave'
+                                      ? 'Add as deduction on payslip'
+                                      : item.type === 'benefit_deduction'
+                                      ? 'Add as deduction on payslip'
+                                      : 'Add as additional earning on payslip'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Skipped employees */}
+                    {wizPushResult && wizPushResult.skipped_details && wizPushResult.skipped_details.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <details>
+                          <summary style={{ fontSize: 13, color: '#795548', cursor: 'pointer', fontWeight: 500 }}>
+                            {wizPushResult.skipped_details.length} skipped employee{wizPushResult.skipped_details.length !== 1 ? 's' : ''}
+                          </summary>
+                          <ul style={{ fontSize: 12, margin: '6px 0 0', color: '#795548', paddingLeft: 20 }}>
+                            {wizPushResult.skipped_details.map((s, i) => (
                               <li key={i}><strong>{s.employee}</strong>: {s.reason}</li>
                             ))}
                           </ul>
-                        )}
-                        {wizPushResult && wizPushResult.pushed > 0 && (
-                          <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
-                            Run your pay run in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}, then come back to sync the real payslips.
-                          </p>
-                        )}
-                        {wizPushResult && wizPushResult.pushed === 0 && (
-                          <p style={{ fontSize: 12, margin: '4px 0 0', color: '#e65100' }}>
-                            No adjustments reached {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. Check the error details above.
-                          </p>
-                        )}
-                        {!wizPushResult && (
-                          <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
-                            Run your pay run in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}, then come back to sync the real payslips.
-                          </p>
-                        )}
+                        </details>
                       </div>
-                    </div>
+                    )}
+
+                    {/* Next steps guidance */}
+                    {wizPushResult && (wizPushResult.pushed > 0 || (wizPushResult.manual_items && wizPushResult.manual_items.length > 0)) && (
+                      <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #1565c0' }}>
+                        <strong style={{ color: '#1565c0', fontSize: 13 }}>Next Steps in Xero</strong>
+                        <ol style={{ fontSize: 12, color: '#1565c0', margin: '6px 0 0', paddingLeft: 20 }}>
+                          {wizPushResult.pushed > 0 && <li>Approve the overtime timesheet(s) in Xero Payroll → Timesheets</li>}
+                          {wizPushResult.manual_items && wizPushResult.manual_items.length > 0 && (
+                            <li>Open your draft pay run and add the {wizPushResult.manual_items.length} manual item{wizPushResult.manual_items.length !== 1 ? 's' : ''} listed above</li>
+                          )}
+                          <li>Process and post the pay run in Xero</li>
+                          <li>Come back here and click &ldquo;Next: Sync Back&rdquo; to pull the final payslips</li>
+                        </ol>
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                       <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
                         Next: Sync Back →
