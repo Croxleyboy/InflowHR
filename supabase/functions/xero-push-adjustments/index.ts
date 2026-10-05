@@ -387,8 +387,16 @@ Deno.serve(async (req) => {
         tsRes = await fetch(tsUrl, {
           method: 'POST',
           headers: xeroHeaders,
-          body: JSON.stringify(timesheetPayload),
+          body: JSON.stringify(isAU ? [timesheetPayload] : timesheetPayload),
         })
+
+        if (!tsRes.ok && isAU) {
+          tsRes = await fetch(tsUrl, {
+            method: 'POST',
+            headers: xeroHeaders,
+            body: JSON.stringify(timesheetPayload),
+          })
+        }
 
         if (!tsRes.ok && isAU) {
           const ukPayload = {

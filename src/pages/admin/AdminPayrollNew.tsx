@@ -794,17 +794,26 @@ export default function AdminPayrollNew() {
     setWizPayRunId(payRunId)
 
     try {
+      const isEmpInScope = (empId: string) => {
+        const emp = employees.find(e => e.id === empId)
+        if (!emp) return false
+        if (wizWorkerTypes.has('employed') && emp.employment_category !== 'shift_worker') return true
+        if (wizWorkerTypes.has('shift') && emp.employment_category === 'shift_worker' && emp.contract_type !== 'Zero hours shift worker') return true
+        if (wizWorkerTypes.has('zero_hours') && emp.employment_category === 'shift_worker' && emp.contract_type === 'Zero hours shift worker') return true
+        return false
+      }
+
       const adjustments = {
         overtime: Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
           const emp = employees.find(e => e.id === empId)
           if (!emp) return false
-          return hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
+          return hrs > 0 && isEmpInScope(empId) && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
         }).map(([empId, hrs]) => {
           const emp = employees.find(e => e.id === empId)
           return { employee_id: empId, hours: hrs, multiplier: emp?.overtime_rate_multiplier || 1.5 }
         }),
-        unpaid_leave: wizUnpaidLeave.map(u => ({ employee_id: u.employee_id, days: u.days })),
-        benefit_changes: wizBenefitChanges.map(b => ({ employee_id: b.employee_id, benefit: b.benefit, monthly_cost: b.monthly_cost })),
+        unpaid_leave: wizUnpaidLeave.filter(u => isEmpInScope(u.employee_id)).map(u => ({ employee_id: u.employee_id, days: u.days })),
+        benefit_changes: wizBenefitChanges.filter(b => isEmpInScope(b.employee_id)).map(b => ({ employee_id: b.employee_id, benefit: b.benefit, monthly_cost: b.monthly_cost })),
       }
 
       const toilEntries = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
