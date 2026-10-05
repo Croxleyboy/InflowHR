@@ -198,7 +198,7 @@ export default function AdminPayrollNew() {
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
   const [wizExported, setWizExported] = useState(false)
-  const [wizPushResult, setWizPushResult] = useState<{ pushed: number; failed: number; skipped: number; api: string; skipped_details?: { employee: string; reason: string }[] } | null>(null)
+  const [wizPushResult, setWizPushResult] = useState<{ pushed: number; failed: number; skipped: number; api: string; results?: { employee: string; status: string; error?: string }[]; skipped_details?: { employee: string; reason: string }[] } | null>(null)
   const [wizReleasing, setWizReleasing] = useState(false)
   const [wizUnpaidLeave, setWizUnpaidLeave] = useState<{ employee_id: string; days: number; employee_name: string }[]>([])
   const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
@@ -2265,10 +2265,17 @@ export default function AdminPayrollNew() {
                             ? `${wizPushResult.pushed} pushed, ${wizPushResult.failed || 0} failed, ${wizPushResult.skipped || 0} skipped (${wizPushResult.api} API)`
                             : 'Adjustments pushed successfully'}
                         </strong>
+                        {wizPushResult && wizPushResult.results && wizPushResult.results.filter((r: any) => r.status === 'failed').length > 0 && (
+                          <ul style={{ fontSize: 12, margin: '6px 0 0', color: '#c62828', paddingLeft: 16 }}>
+                            {wizPushResult.results.filter((r: any) => r.status === 'failed').map((r: any, i: number) => (
+                              <li key={i}><strong>{r.employee}</strong>: {r.error || 'Unknown error'}</li>
+                            ))}
+                          </ul>
+                        )}
                         {wizPushResult && wizPushResult.skipped_details && wizPushResult.skipped_details.length > 0 && (
                           <ul style={{ fontSize: 12, margin: '6px 0 0', color: '#795548', paddingLeft: 16 }}>
-                            {wizPushResult.skipped_details.map((s, i) => (
-                              <li key={i}>{s.employee}: {s.reason}</li>
+                            {wizPushResult.skipped_details.map((s: any, i: number) => (
+                              <li key={i}><strong>{s.employee}</strong>: {s.reason}</li>
                             ))}
                           </ul>
                         )}
@@ -2279,7 +2286,7 @@ export default function AdminPayrollNew() {
                         )}
                         {wizPushResult && wizPushResult.pushed === 0 && (
                           <p style={{ fontSize: 12, margin: '4px 0 0', color: '#e65100' }}>
-                            No adjustments reached {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. Check the skip reasons above.
+                            No adjustments reached {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. Check the error details above.
                           </p>
                         )}
                         {!wizPushResult && (
