@@ -1,6 +1,7 @@
 import { getSupabase, getValidXeroToken, corsHeaders, json } from '../_shared/xero.ts'
 
 const XERO_PAYROLL_UK = 'https://api.xero.com/payroll.xro/1.0'
+const XERO_PAYROLL_AU = 'https://api.xero.com/payroll.xro/2.0'
 
 function sanitise(raw: string): string {
   return raw.slice(0, 500).replace(/[<>"'&]/g, '')
@@ -53,6 +54,22 @@ Deno.serve(async (req) => {
       'Content-Type': 'application/json',
     }
 
+    // Detect UK vs AU API (same pattern as xero-push-timesheets)
+    let baseUrl = XERO_PAYROLL_UK
+    const testRes = await fetch(`${baseUrl}/PayRuns`, {
+      headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+    })
+    if (!testRes.ok) {
+      const errText = await testRes.text()
+      if (errText.includes('AU Customer') || errText.includes('ValidationException')) {
+        baseUrl = XERO_PAYROLL_AU
+      } else {
+        return json({ error: 'Failed to connect to Xero Payroll API', detail: sanitise(errText) }, 502)
+      }
+    }
+
+    const isAU = baseUrl === XERO_PAYROLL_AU
+
     // Collect all employee IDs from adjustments
     const allEmpIds = new Set<string>()
     for (const a of adjustments.overtime) allEmpIds.add(a.employee_id)
@@ -61,7 +78,7 @@ Deno.serve(async (req) => {
 
     if (allEmpIds.size === 0) return json({ error: 'No adjustments to push' }, 400)
 
-    // Load employees with xero_employee_id and hourly_rate
+    // Load employees with xero_employee_id and rates
     const { data: employees } = await sb
       .from('employees')
       .select('id, first_name, last_name, xero_employee_id, hourly_rate, annual_salary')
@@ -90,31 +107,28 @@ Deno.serve(async (req) => {
       .single()
     if (!payRun) return json({ error: 'Pay run not found' }, 404)
 
-    // Fetch earning rates and deduction types from Xero to map adjustments
-    const earningsRates = await fetchXeroRates(xeroHeaders, 'EarningsRates')
-    const deductionTypes = await fetchXeroRates(xeroHeaders, 'DeductionTypes')
+    // Fetch earning rates and deduction types from Xero
+    const earningsRates = await fetchXeroRates(baseUrl, xeroHeaders, 'EarningsRates')
+    const deductionTypes = await fetchXeroRates(baseUrl, xeroHeaders, 'DeductionTypes')
 
-    // Find or auto-detect the relevant Xero pay item IDs
     const overtimeRateId = findRateId(earningsRates, ['OVERTIME', 'OVERTIMEEARNINGS', 'OT'])
     const unpaidLeaveDeductionId = findRateId(deductionTypes, ['UNPAID', 'UNPAIDLEAVE', 'LEAVE WITHOUT PAY'])
     const defaultEarningsId = findRateId(earningsRates, ['ORDINARY', 'REGULAR', 'STANDARD', 'ORDINARYTIMEEARNINGS'])
 
-    // Get or create a draft pay run in Xero for this period
-    const payrollCalendarId = await getPayrollCalendarId(sb, company_id, xeroHeaders)
+    // Get payroll calendar
+    const payrollCalendarId = await getPayrollCalendarId(sb, company_id, baseUrl, xeroHeaders)
     if (!payrollCalendarId) {
       return json({ error: 'No payroll calendar found in Xero. Please set one up in Xero first.' }, 400)
     }
 
-    // Find an existing draft pay run in Xero for this period, or create one
-    const xeroPayRun = await findOrCreateXeroPayRun(
-      xeroHeaders, payrollCalendarId, payRun.period_start, payRun.period_end
-    )
+    // Find or create a draft pay run in Xero
+    const xeroPayRun = await findOrCreateXeroPayRun(baseUrl, xeroHeaders, payrollCalendarId, payRun.period_start, payRun.period_end, isAU)
     if (!xeroPayRun) {
       return json({ error: 'Could not find or create a pay run in Xero for this period. Create one manually in Xero first.' }, 400)
     }
 
-    // Get payslip stubs from the pay run — these map employees to PayslipIDs
-    const payslipStubs = await getPayslipStubs(xeroHeaders, xeroPayRun.PayRunID)
+    // Get payslip stubs
+    const payslipStubs = await getPayslipStubs(baseUrl, xeroHeaders, xeroPayRun.id)
 
     const results: { employee: string; status: string; lines: number; error?: string }[] = []
     const skipped: { employee: string; reason: string }[] = []
@@ -147,7 +161,6 @@ Deno.serve(async (req) => {
       if (!emp) { skipped.push({ employee: empId, reason: 'Employee not found' }); continue }
       if (!emp.xeroId) { skipped.push({ employee: emp.name, reason: 'No Xero employee mapping — sync employees first' }); continue }
 
-      // Find this employee's payslip stub in the Xero pay run
       const stub = payslipStubs.find(s =>
         (s.EmployeeID || s.employeeID) === emp.xeroId
       )
@@ -166,59 +179,62 @@ Deno.serve(async (req) => {
       const earningsLines: Record<string, unknown>[] = []
       const deductionLines: Record<string, unknown>[] = []
 
-      // Overtime: hours × rate × multiplier as an earnings line
       if (adj.overtimeHours > 0) {
         const rateId = overtimeRateId || defaultEarningsId
         if (rateId) {
-          earningsLines.push({
-            EarningsRateID: rateId,
-            RatePerUnit: emp.hourlyRate > 0
-              ? Math.round(emp.hourlyRate * adj.overtimeMultiplier * 100) / 100
-              : undefined,
-            NumberOfUnits: adj.overtimeHours,
-          })
+          if (isAU) {
+            earningsLines.push({
+              earningsRateID: rateId,
+              ratePerUnit: emp.hourlyRate > 0 ? Math.round(emp.hourlyRate * adj.overtimeMultiplier * 100) / 100 : undefined,
+              numberOfUnits: adj.overtimeHours,
+            })
+          } else {
+            earningsLines.push({
+              EarningsRateID: rateId,
+              RatePerUnit: emp.hourlyRate > 0 ? Math.round(emp.hourlyRate * adj.overtimeMultiplier * 100) / 100 : undefined,
+              NumberOfUnits: adj.overtimeHours,
+            })
+          }
         } else {
           skipped.push({ employee: emp.name, reason: 'No overtime or default earnings rate found in Xero' })
           continue
         }
       }
 
-      // Unpaid leave: deduction of daily rate × days
       if (adj.unpaidLeaveDays > 0) {
         const dailyRate = emp.annualSalary > 0 ? Math.round(emp.annualSalary / 260 * 100) / 100 : 0
         const amount = Math.round(dailyRate * adj.unpaidLeaveDays * 100) / 100
         if (unpaidLeaveDeductionId && amount > 0) {
-          deductionLines.push({
-            DeductionTypeID: unpaidLeaveDeductionId,
-            Amount: amount,
-          })
-        } else if (amount > 0) {
-          earningsLines.push({
-            EarningsRateID: defaultEarningsId,
-            RatePerUnit: -dailyRate,
-            NumberOfUnits: adj.unpaidLeaveDays,
-          })
+          if (isAU) {
+            deductionLines.push({ deductionTypeID: unpaidLeaveDeductionId, amount })
+          } else {
+            deductionLines.push({ DeductionTypeID: unpaidLeaveDeductionId, Amount: amount })
+          }
+        } else if (amount > 0 && defaultEarningsId) {
+          if (isAU) {
+            earningsLines.push({ earningsRateID: defaultEarningsId, ratePerUnit: -dailyRate, numberOfUnits: adj.unpaidLeaveDays })
+          } else {
+            earningsLines.push({ EarningsRateID: defaultEarningsId, RatePerUnit: -dailyRate, NumberOfUnits: adj.unpaidLeaveDays })
+          }
         }
       }
 
-      // Benefit changes: add or deduct based on monthly cost
       for (const bc of adj.benefitChanges) {
-        if (bc.monthlyCost > 0) {
-          if (defaultEarningsId) {
-            earningsLines.push({
-              EarningsRateID: defaultEarningsId,
-              RatePerUnit: bc.monthlyCost,
-              NumberOfUnits: 1,
-            })
+        if (bc.monthlyCost > 0 && defaultEarningsId) {
+          if (isAU) {
+            earningsLines.push({ earningsRateID: defaultEarningsId, ratePerUnit: bc.monthlyCost, numberOfUnits: 1 })
+          } else {
+            earningsLines.push({ EarningsRateID: defaultEarningsId, RatePerUnit: bc.monthlyCost, NumberOfUnits: 1 })
           }
         } else if (bc.monthlyCost < 0) {
           const firstDeduction = deductionTypes[0]
-          const dedId = firstDeduction ? (firstDeduction.DeductionTypeID || firstDeduction.deductionTypeID) : null
+          const dedId = firstDeduction ? (firstDeduction.DeductionTypeID || firstDeduction.deductionTypeID) as string : null
           if (dedId) {
-            deductionLines.push({
-              DeductionTypeID: dedId,
-              Amount: Math.abs(bc.monthlyCost),
-            })
+            if (isAU) {
+              deductionLines.push({ deductionTypeID: dedId, amount: Math.abs(bc.monthlyCost) })
+            } else {
+              deductionLines.push({ DeductionTypeID: dedId, Amount: Math.abs(bc.monthlyCost) })
+            }
           }
         }
       }
@@ -228,12 +244,19 @@ Deno.serve(async (req) => {
         continue
       }
 
-      // Update the payslip with adjustment lines
-      const payslipPayload: Record<string, unknown> = { PayslipID: payslipId }
-      if (earningsLines.length > 0) payslipPayload.EarningsLines = earningsLines
-      if (deductionLines.length > 0) payslipPayload.DeductionLines = deductionLines
+      // Update the payslip
+      let payslipPayload: Record<string, unknown>
+      if (isAU) {
+        payslipPayload = { payslipID: payslipId }
+        if (earningsLines.length > 0) payslipPayload.earningsLines = earningsLines
+        if (deductionLines.length > 0) payslipPayload.deductionLines = deductionLines
+      } else {
+        payslipPayload = { PayslipID: payslipId }
+        if (earningsLines.length > 0) payslipPayload.EarningsLines = earningsLines
+        if (deductionLines.length > 0) payslipPayload.DeductionLines = deductionLines
+      }
 
-      const psRes = await fetch(`${XERO_PAYROLL_UK}/Payslips/${payslipId}`, {
+      const psRes = await fetch(`${baseUrl}/Payslips/${payslipId}`, {
         method: 'POST',
         headers: xeroHeaders,
         body: JSON.stringify(payslipPayload),
@@ -255,8 +278,7 @@ Deno.serve(async (req) => {
     const successCount = results.filter(r => r.status === 'updated').length
     const failedCount = results.filter(r => r.status === 'failed').length
 
-    // GDPR audit log
-    const auditDetail = `Xero payslip adjustment push — Pay run: ${pay_run_id}. ` +
+    const auditDetail = `Xero payslip adjustment push (${isAU ? 'AU' : 'UK'}) — Pay run: ${pay_run_id}. ` +
       `Updated: ${successCount}, Failed: ${failedCount}, Skipped: ${skipped.length}. ` +
       `Data sent: overtime hours/rates, unpaid leave deductions, benefit adjustment amounts.`
     await sb.from('payroll_audit_log').insert({
@@ -268,7 +290,8 @@ Deno.serve(async (req) => {
     })
 
     return json({
-      xero_pay_run_id: xeroPayRun.PayRunID,
+      xero_pay_run_id: xeroPayRun.id,
+      api: isAU ? 'AU' : 'UK',
       pushed: successCount,
       failed: failedCount,
       skipped: skipped.length,
@@ -280,19 +303,17 @@ Deno.serve(async (req) => {
   }
 })
 
-// Helper: fetch Xero pay item rates (EarningsRates or DeductionTypes)
 async function fetchXeroRates(
+  baseUrl: string,
   headers: Record<string, string>,
   endpoint: string
 ): Promise<Record<string, unknown>[]> {
-  // Try direct endpoint first
-  const res = await fetch(`${XERO_PAYROLL_UK}/${endpoint}`, { headers })
+  const res = await fetch(`${baseUrl}/${endpoint}`, { headers })
   if (res.ok) {
     const body = await res.json()
     return body[endpoint] || body[endpoint.charAt(0).toLowerCase() + endpoint.slice(1)] || []
   }
-  // Fallback: PayItems wrapper (some Xero setups)
-  const piRes = await fetch(`${XERO_PAYROLL_UK}/PayItems`, { headers })
+  const piRes = await fetch(`${baseUrl}/PayItems`, { headers })
   if (piRes.ok) {
     const piBody = await piRes.json()
     const payItems = piBody.PayItems || piBody.payItems || {}
@@ -301,7 +322,6 @@ async function fetchXeroRates(
   return []
 }
 
-// Helper: find a rate ID by keyword matching on name/type
 function findRateId(
   rates: Record<string, unknown>[],
   keywords: string[]
@@ -318,10 +338,10 @@ function findRateId(
   return undefined
 }
 
-// Helper: get or fetch the payroll calendar ID
 async function getPayrollCalendarId(
   sb: ReturnType<typeof getSupabase>,
   companyId: string,
+  baseUrl: string,
   headers: Record<string, string>
 ): Promise<string | null> {
   const { data } = await sb
@@ -332,56 +352,68 @@ async function getPayrollCalendarId(
 
   if (data?.payroll_calendar_id) return data.payroll_calendar_id
 
-  const calRes = await fetch(`${XERO_PAYROLL_UK}/PayrollCalendars`, { headers })
+  const calRes = await fetch(`${baseUrl}/PayrollCalendars`, { headers })
   if (!calRes.ok) return null
   const calBody = await calRes.json()
-  const calendars = calBody.PayrollCalendars || calBody.payrollCalendars || []
+  const calendars = calBody.PayrollCalendars || calBody.payrollCalendars
+    || calBody.PayCalendars || calBody.payCalendars || []
   if (!calendars.length) return null
 
   const calId = calendars[0].PayrollCalendarID || calendars[0].payrollCalendarID
+    || calendars[0].PayCalendarID || calendars[0].payCalendarID
   if (calId) {
     await sb.from('xero_integrations').update({ payroll_calendar_id: calId }).eq('company_id', companyId)
   }
   return calId || null
 }
 
-// Helper: find an existing draft pay run or create one
 async function findOrCreateXeroPayRun(
+  baseUrl: string,
   headers: Record<string, string>,
   payrollCalendarId: string,
   periodStart: string,
-  periodEnd: string
-): Promise<{ PayRunID: string; PayRunStatus: string } | null> {
-  // List pay runs and look for a Draft one covering this period
-  const listRes = await fetch(`${XERO_PAYROLL_UK}/PayRuns`, { headers })
+  periodEnd: string,
+  isAU: boolean
+): Promise<{ id: string } | null> {
+  const listRes = await fetch(`${baseUrl}/PayRuns`, { headers })
   if (!listRes.ok) return null
 
   const listBody = await listRes.json()
   const payRuns = listBody.PayRuns || listBody.payRuns || []
 
-  // Xero dates come as /Date(epoch)/ strings — parse them
   for (const pr of payRuns) {
-    const status = pr.PayRunStatus || pr.payRunStatus || ''
-    if (status !== 'Draft' && status !== 'DRAFT') continue
+    const status = (pr.PayRunStatus || pr.payRunStatus || '').toUpperCase()
+    if (status !== 'DRAFT') continue
 
     const prStart = parseXeroDate(pr.PeriodStartDate || pr.periodStartDate)
     const prEnd = parseXeroDate(pr.PeriodEndDate || pr.periodEndDate)
     if (!prStart || !prEnd) continue
 
     if (prStart <= periodStart && prEnd >= periodEnd) {
-      return { PayRunID: pr.PayRunID || pr.payRunID, PayRunStatus: status }
+      return { id: pr.PayRunID || pr.payRunID }
     }
   }
 
-  // No existing draft — create one
-  const createRes = await fetch(`${XERO_PAYROLL_UK}/PayRuns`, {
-    method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  // Create a new draft pay run
+  let createPayload: Record<string, unknown>
+  if (isAU) {
+    createPayload = {
+      payrollCalendarID: payrollCalendarId,
+      payRunPeriodStartDate: periodStart,
+      payRunPeriodEndDate: periodEnd,
+    }
+  } else {
+    createPayload = {
       PayrollCalendarID: payrollCalendarId,
       PayRunPeriodStartDate: periodStart,
       PayRunPeriodEndDate: periodEnd,
-    }),
+    }
+  }
+
+  const createRes = await fetch(`${baseUrl}/PayRuns`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(createPayload),
   })
 
   if (!createRes.ok) return null
@@ -389,15 +421,15 @@ async function findOrCreateXeroPayRun(
   const createBody = await createRes.json()
   const created = createBody.PayRuns?.[0] || createBody.payRuns?.[0] || createBody.PayRun || createBody.payRun
   if (!created) return null
-  return { PayRunID: created.PayRunID || created.payRunID, PayRunStatus: 'Draft' }
+  return { id: created.PayRunID || created.payRunID }
 }
 
-// Helper: get payslip stubs from a Xero pay run
 async function getPayslipStubs(
+  baseUrl: string,
   headers: Record<string, string>,
   payRunId: string
 ): Promise<Record<string, unknown>[]> {
-  const res = await fetch(`${XERO_PAYROLL_UK}/PayRuns/${payRunId}`, { headers })
+  const res = await fetch(`${baseUrl}/PayRuns/${payRunId}`, { headers })
   if (!res.ok) return []
   const body = await res.json()
   const payRun = body.PayRuns?.[0] || body.payRuns?.[0] || body.PayRun || body.payRun
@@ -405,7 +437,6 @@ async function getPayslipStubs(
   return payRun.Payslips || payRun.payslips || []
 }
 
-// Parse Xero's /Date(epoch)/ format to YYYY-MM-DD
 function parseXeroDate(val: unknown): string | null {
   if (!val) return null
   const s = String(val)
