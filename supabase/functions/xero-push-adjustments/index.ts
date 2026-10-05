@@ -92,6 +92,17 @@ function sanitise(raw: string): string {
   return raw.slice(0, 500).replace(/[<>"'&]/g, '')
 }
 
+function parseXeroDate(val: unknown): string | null {
+  if (!val) return null
+  const s = String(val)
+  const msMatch = s.match(/\/Date\((\d+)/)
+  if (msMatch) {
+    return new Date(parseInt(msMatch[1], 10)).toISOString().slice(0, 10)
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  return null
+}
+
 interface Adjustment {
   overtime: { employee_id: string; hours: number; multiplier: number }[]
   unpaid_leave: { employee_id: string; days: number }[]
@@ -198,20 +209,96 @@ Deno.serve(async (req) => {
       .single()
 
     let payrollCalendarId = xeroIntegration?.payroll_calendar_id
+    let calendarType = 'UNKNOWN'
+    let calendarStartDate: string | null = null
+    let calendarName = ''
 
-    if (!payrollCalendarId) {
-      const calRes = await fetch(`${baseUrl}/PayrollCalendars`, {
-        headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
-      })
-      if (calRes.ok) {
+    async function fetchCalendarDetails(): Promise<void> {
+      for (const calEndpoint of [`${baseUrl}/PayrollCalendars`, `${XERO_PAYROLL_AU}/PayrollCalendars`, `${XERO_PAYROLL_UK}/PayrollCalendars`]) {
+        const calRes = await fetch(calEndpoint, {
+          headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+        })
+        if (!calRes.ok) continue
         const calBody = await calRes.json()
         const calendars = calBody.PayrollCalendars || calBody.payrollCalendars
           || calBody.PayCalendars || calBody.payCalendars || []
-        if (calendars.length) {
-          payrollCalendarId = calendars[0].PayrollCalendarID || calendars[0].payrollCalendarID
-            || calendars[0].PayCalendarID || calendars[0].payCalendarID
-          await sb.from('xero_integrations').update({ payroll_calendar_id: payrollCalendarId }).eq('company_id', company_id)
+        if (!calendars.length) continue
+
+        if (!payrollCalendarId) {
+          const cal = calendars[0]
+          payrollCalendarId = cal.PayrollCalendarID || cal.payrollCalendarID
+            || cal.PayCalendarID || cal.payCalendarID
+          calendarType = (cal.CalendarType || cal.calendarType || 'UNKNOWN').toUpperCase()
+          calendarStartDate = parseXeroDate(cal.StartDate || cal.startDate)
+          calendarName = cal.Name || cal.name || ''
+          if (payrollCalendarId) {
+            await sb.from('xero_integrations').update({ payroll_calendar_id: payrollCalendarId }).eq('company_id', company_id)
+          }
+        } else {
+          const match = calendars.find((c: Record<string, unknown>) =>
+            (c.PayrollCalendarID || c.payrollCalendarID || c.PayCalendarID || c.payCalendarID) === payrollCalendarId)
+          if (match) {
+            calendarType = ((match as Record<string, unknown>).CalendarType as string || (match as Record<string, unknown>).calendarType as string || 'UNKNOWN').toUpperCase()
+            calendarStartDate = parseXeroDate((match as Record<string, unknown>).StartDate || (match as Record<string, unknown>).startDate)
+            calendarName = (match as Record<string, unknown>).Name as string || (match as Record<string, unknown>).name as string || ''
+          }
         }
+        if (payrollCalendarId) break
+      }
+    }
+    await fetchCalendarDetails()
+
+    function getCalendarPeriodDays(calType: string): number {
+      switch (calType) {
+        case 'WEEKLY': return 7
+        case 'FORTNIGHTLY': return 14
+        case 'FOURWEEKLY': return 28
+        default: return 0
+      }
+    }
+
+    function getAlignedTimesheetPeriod(payRunStart: string, payRunEnd: string, calType: string, calStart: string | null): {
+      start: string; end: string; days: number; aligned: boolean; guidance?: string
+    } {
+      const calPeriodDays = getCalendarPeriodDays(calType)
+      if (calPeriodDays === 0) {
+        const s = new Date(payRunStart)
+        const e = new Date(payRunEnd)
+        const days = Math.max(1, Math.round((e.getTime() - s.getTime()) / 86400000) + 1)
+        return { start: payRunStart, end: payRunEnd, days, aligned: true }
+      }
+
+      if (calStart) {
+        const ref = new Date(calStart)
+        const target = new Date(payRunStart)
+        const diffMs = target.getTime() - ref.getTime()
+        const diffDays = Math.floor(diffMs / 86400000)
+        const offset = ((diffDays % calPeriodDays) + calPeriodDays) % calPeriodDays
+        const alignedStart = new Date(target)
+        alignedStart.setDate(alignedStart.getDate() - offset)
+        const alignedEnd = new Date(alignedStart)
+        alignedEnd.setDate(alignedEnd.getDate() + calPeriodDays - 1)
+        return {
+          start: alignedStart.toISOString().slice(0, 10),
+          end: alignedEnd.toISOString().slice(0, 10),
+          days: calPeriodDays,
+          aligned: true,
+        }
+      }
+
+      const target = new Date(payRunStart)
+      const dow = target.getDay()
+      const mondayOffset = dow === 0 ? -6 : 1 - dow
+      const monday = new Date(target)
+      monday.setDate(monday.getDate() + mondayOffset)
+      const end = new Date(monday)
+      end.setDate(end.getDate() + calPeriodDays - 1)
+      return {
+        start: monday.toISOString().slice(0, 10),
+        end: end.toISOString().slice(0, 10),
+        days: calPeriodDays,
+        aligned: true,
+        guidance: `No calendar reference date found — used Monday-aligned ${calType.toLowerCase()} period`,
       }
     }
 
@@ -274,11 +361,34 @@ Deno.serve(async (req) => {
         const empBody = await empRes.json()
         const employee = empBody.Employee || empBody.employee || (empBody.Employees && empBody.Employees[0]) || (empBody.employees && empBody.employees[0])
         const calId = employee?.PayrollCalendarID || employee?.payrollCalendarID || employee?.payCalendarID || null
-        empCalendarCache[xeroEmployeeId] = calId
-        return calId
+        if (calId) {
+          empCalendarCache[xeroEmployeeId] = calId
+          if (!payrollCalendarId) {
+            payrollCalendarId = calId
+            await sb.from('xero_integrations').update({ payroll_calendar_id: calId }).eq('company_id', company_id)
+          }
+          return calId
+        }
       }
-      empCalendarCache[xeroEmployeeId] = null
-      return null
+      if (!payrollCalendarId) {
+        const allEmpRes = await fetch(`${baseUrl}/Employees`, {
+          headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+        })
+        if (allEmpRes.ok) {
+          const allEmpBody = await allEmpRes.json()
+          const allEmps = allEmpBody.Employees || allEmpBody.employees || []
+          for (const e of allEmps) {
+            const cal = e.PayrollCalendarID || e.payrollCalendarID || e.payCalendarID
+            if (cal) {
+              payrollCalendarId = cal
+              await sb.from('xero_integrations').update({ payroll_calendar_id: cal }).eq('company_id', company_id)
+              break
+            }
+          }
+        }
+      }
+      empCalendarCache[xeroEmployeeId] = payrollCalendarId || null
+      return payrollCalendarId || null
     }
 
     const timesheetResults: {
@@ -327,17 +437,14 @@ Deno.serve(async (req) => {
         const existingBody = await existingTsRes.json()
         const timesheets = existingBody.Timesheets || existingBody.timesheets || []
         for (const ts of timesheets) {
-          const tsStart = String(ts.StartDate || ts.startDate || '').slice(0, 10)
-          const tsEnd = String(ts.EndDate || ts.endDate || '').slice(0, 10)
+          const tsStart = parseXeroDate(ts.StartDate || ts.startDate) || ''
+          const tsEnd = parseXeroDate(ts.EndDate || ts.endDate) || ''
           if (tsStart === periodStart || tsEnd === periodEnd) {
             existingTimesheetId = ts.TimesheetID || ts.timesheetID
             break
           }
         }
       }
-
-      const empCalForDebug = isAU ? (empCalendarCache[emp.xeroId!] || payrollCalendarId || 'none') : (payrollCalendarId || 'none')
-      const debugInfo = `API: ${isAU ? 'AU-v2' : 'UK-v1'}, Calendar: ${empCalForDebug}, EarningsRate: ${defaultEarningsRateId}, Period: ${periodStart} to ${periodEnd}, Hours: ${ot.hours}, ExistingTS: ${existingTimesheetId || 'none'}`
 
       let tsRes: Response
 
@@ -358,9 +465,9 @@ Deno.serve(async (req) => {
         let timesheetPayload: Record<string, unknown>
         if (isAU) {
           const empCalId = await getEmployeeCalendarId(emp.xeroId)
-          const start = new Date(periodStart)
-          const end = new Date(periodEnd)
-          const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+          const tsPeriod = getAlignedTimesheetPeriod(periodStart, periodEnd, calendarType, calendarStartDate)
+          const start = new Date(tsPeriod.start)
+          const days = tsPeriod.days
           const dailyHours = new Array(days).fill(0)
           let weekdays = 0
           for (let i = 0; i < days; i++) {
@@ -377,8 +484,8 @@ Deno.serve(async (req) => {
           timesheetPayload = {
             payrollCalendarID: empCalId || undefined,
             employeeID: emp.xeroId,
-            startDate: periodStart,
-            endDate: periodEnd,
+            startDate: tsPeriod.start,
+            endDate: tsPeriod.end,
             timesheetLines: [{
               earningsRateID: defaultEarningsRateId,
               numberOfUnits: dailyHours,
@@ -386,7 +493,6 @@ Deno.serve(async (req) => {
           }
         } else {
           timesheetPayload = {
-            PayrollCalendarID: payrollCalendarId,
             EmployeeID: emp.xeroId,
             StartDate: periodStart,
             EndDate: periodEnd,
@@ -399,6 +505,7 @@ Deno.serve(async (req) => {
         }
 
         const tsUrl = `${baseUrl}/Timesheets`
+
         tsRes = await fetch(tsUrl, {
           method: 'POST',
           headers: xeroHeaders,
@@ -414,8 +521,23 @@ Deno.serve(async (req) => {
         }
       }
 
+      const empCalForDebug = empCalendarCache[emp.xeroId!] || payrollCalendarId || 'none'
+      const tsPeriodForDebug = isAU ? getAlignedTimesheetPeriod(periodStart, periodEnd, calendarType, calendarStartDate) : { start: periodStart, end: periodEnd }
+      const debugInfo = `API: ${isAU ? 'AU-v2' : 'UK-v1'}, Calendar: ${empCalForDebug}, CalType: ${calendarType}, CalName: ${calendarName || 'unknown'}, CalStart: ${calendarStartDate || 'unknown'}, EarningsRate: ${defaultEarningsRateId}, PayRunPeriod: ${periodStart} to ${periodEnd}, TsPeriod: ${tsPeriodForDebug.start} to ${tsPeriodForDebug.end}, Hours: ${ot.hours}, ExistingTS: ${existingTimesheetId || 'none'}`
+
       if (!tsRes.ok) {
         const errText = await tsRes.text()
+        let guidance = ''
+        if (isAU && calendarType !== 'UNKNOWN') {
+          const payRunDays = Math.round((new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86400000) + 1
+          const calDays = getCalendarPeriodDays(calendarType)
+          if (calDays > 0 && payRunDays !== calDays) {
+            guidance = ` | MISMATCH: Your InflowHR pay run is ${payRunDays} days (${periodStart} to ${periodEnd}) but your Xero payroll calendar "${calendarName}" is ${calendarType} (${calDays}-day periods). To fix: either change the Xero payroll calendar to MONTHLY in Xero Settings > Payroll > Payroll Calendars, or set up ${calendarType.toLowerCase()} pay runs in InflowHR to match.`
+          }
+        }
+        if (!guidance && isAU) {
+          guidance = ' | Check that this employee has a payroll calendar assigned in Xero (Payroll > Employees > Pay Template) and that the timesheet period aligns with the calendar.'
+        }
         timesheetResults.push({
           employee: emp.name,
           status: 'failed',
@@ -423,7 +545,7 @@ Deno.serve(async (req) => {
           multiplier: ot.multiplier,
           rate: emp.hourlyRate,
           amount: overtimeAmount,
-          error: `${sanitise(errText)} [${debugInfo}]`,
+          error: `${sanitise(errText)}${guidance} [${debugInfo}]`,
         })
         continue
       }
@@ -487,6 +609,27 @@ Deno.serve(async (req) => {
       status: failedCount > 0 && pushedCount === 0 ? 'error' : 'success',
     })
 
+    const xeroConfig = {
+      api: isAU ? 'AU' : 'UK',
+      calendarId: payrollCalendarId || null,
+      calendarType: calendarType,
+      calendarName: calendarName || null,
+      calendarStartDate: calendarStartDate || null,
+      payRunPeriod: { start: periodStart, end: periodEnd },
+    }
+
+    let configGuidance: string | null = null
+    if (isAU && calendarType !== 'UNKNOWN' && calendarType !== 'MONTHLY') {
+      const payRunDays = Math.round((new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86400000) + 1
+      const calDays = getCalendarPeriodDays(calendarType)
+      if (calDays > 0 && payRunDays !== calDays) {
+        configGuidance = `Your Xero payroll calendar "${calendarName}" is set to ${calendarType} (${calDays}-day periods) but your InflowHR pay run covers ${payRunDays} days. The timesheet period was auto-aligned to match the calendar. If adjustments fail, either change the Xero payroll calendar to MONTHLY in Xero > Settings > Payroll Settings > Payroll Calendars, or configure ${calendarType.toLowerCase()} pay runs in InflowHR Admin > Employees > Payroll Settings.`
+      }
+    }
+    if (!payrollCalendarId) {
+      configGuidance = 'No payroll calendar found in Xero. Please create one in Xero > Settings > Payroll Settings > Payroll Calendars and assign it to your employees.'
+    }
+
     return json({
       api: isAU ? 'AU' : 'UK',
       pushed: pushedCount,
@@ -495,6 +638,8 @@ Deno.serve(async (req) => {
       timesheet_results: timesheetResults,
       manual_items: manualItems,
       skipped_details: skipped,
+      xero_config: xeroConfig,
+      config_guidance: configGuidance,
     })
   } catch (err) {
     return json({ error: (err as Error).message }, 500)
