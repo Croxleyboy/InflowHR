@@ -491,7 +491,6 @@ export default function AdminPayrollNew() {
     setWizUnpaidLeave(unpaid)
 
     const periodStart = new Date(nextYear, nextMonth, 1)
-    const periodEnd = new Date(nextYear, nextMonth + 1, 0)
     const recentStart = new Date(periodStart)
     recentStart.setDate(recentStart.getDate() - 30)
     const { data: enrollData } = await supabase.from('benefit_enrollments')
