@@ -358,15 +358,30 @@ Deno.serve(async (req) => {
         let timesheetPayload: Record<string, unknown>
         if (isAU) {
           const empCalId = await getEmployeeCalendarId(emp.xeroId)
+          const start = new Date(periodStart)
+          const end = new Date(periodEnd)
+          const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+          const dailyHours = new Array(days).fill(0)
+          let weekdays = 0
+          for (let i = 0; i < days; i++) {
+            const d = new Date(start)
+            d.setDate(d.getDate() + i)
+            if (d.getDay() !== 0 && d.getDay() !== 6) weekdays++
+          }
+          const hoursPerDay = weekdays > 0 ? Math.round((ot.hours / weekdays) * 100) / 100 : ot.hours
+          for (let i = 0; i < days; i++) {
+            const d = new Date(start)
+            d.setDate(d.getDate() + i)
+            if (d.getDay() !== 0 && d.getDay() !== 6) dailyHours[i] = hoursPerDay
+          }
           timesheetPayload = {
-            payrollCalendarID: empCalId || payrollCalendarId,
+            payrollCalendarID: empCalId || undefined,
             employeeID: emp.xeroId,
             startDate: periodStart,
             endDate: periodEnd,
             timesheetLines: [{
-              date: periodStart,
               earningsRateID: defaultEarningsRateId,
-              numberOfUnits: ot.hours,
+              numberOfUnits: dailyHours,
             }],
           }
         } else {
@@ -387,33 +402,14 @@ Deno.serve(async (req) => {
         tsRes = await fetch(tsUrl, {
           method: 'POST',
           headers: xeroHeaders,
-          body: JSON.stringify(isAU ? [timesheetPayload] : timesheetPayload),
+          body: JSON.stringify(timesheetPayload),
         })
 
         if (!tsRes.ok && isAU) {
           tsRes = await fetch(tsUrl, {
             method: 'POST',
             headers: xeroHeaders,
-            body: JSON.stringify(timesheetPayload),
-          })
-        }
-
-        if (!tsRes.ok && isAU) {
-          const ukPayload = {
-            PayrollCalendarID: payrollCalendarId,
-            EmployeeID: emp.xeroId,
-            StartDate: periodStart,
-            EndDate: periodEnd,
-            TimesheetLines: [{
-              Date: periodStart,
-              EarningsRateID: defaultEarningsRateId,
-              NumberOfUnits: ot.hours,
-            }],
-          }
-          tsRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
-            method: 'POST',
-            headers: xeroHeaders,
-            body: JSON.stringify(ukPayload),
+            body: JSON.stringify([timesheetPayload]),
           })
         }
       }
