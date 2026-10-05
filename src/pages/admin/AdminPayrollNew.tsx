@@ -812,7 +812,10 @@ export default function AdminPayrollNew() {
           headers: { Authorization: `Bearer ${session.access_token}` },
           body: { company_id: selectedCompanyId, pay_run_id: payRunId, adjustments },
         })
-        if (error) throw error
+        if (error) {
+          const msg = typeof data === 'object' && data?.error ? data.error : error.message || 'Edge function error'
+          throw new Error(msg)
+        }
         if (data?.error) throw new Error(data.error)
       } else if (hasAdjustments && connectedProvider === 'sage') {
         const targetEmployees = employees.filter(e => {
