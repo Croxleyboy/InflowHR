@@ -199,6 +199,11 @@ export default function AdminPayrollNew() {
   const [wizExporting, setWizExporting] = useState(false)
   const [wizExported, setWizExported] = useState(false)
   const [wizReleasing, setWizReleasing] = useState(false)
+  const [wizUnpaidLeave, setWizUnpaidLeave] = useState<{ employee_id: string; days: number; employee_name: string }[]>([])
+  const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
+
+  const providerConnected = xeroConnected || sageConnected
+  const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
 
   // FY
   const fyStartMonth = selectedCompany?.fy_start_month || 4
@@ -457,6 +462,59 @@ export default function AdminPayrollNew() {
     setWizOvertimeHours(autoOvertime)
   }
 
+  async function loadWizAdjustments() {
+    if (!selectedCompanyId) return
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextMonth = nextDate.getMonth()
+    const nextYear = nextDate.getFullYear()
+    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
+    const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
+
+    const { data: leaveData } = await supabase.from('leave_requests')
+      .select('employee_id, days_requested, employees!leave_requests_employee_id_fkey(first_name, last_name)')
+      .eq('company_id', selectedCompanyId)
+      .eq('status', 'approved')
+      .eq('leave_type', 'Unpaid Leave')
+      .gte('start_date', monthStart)
+      .lte('start_date', monthEnd)
+    const unpaid: { employee_id: string; days: number; employee_name: string }[] = []
+    if (leaveData) {
+      for (const r of leaveData as any[]) {
+        const emp = r.employees
+        unpaid.push({
+          employee_id: r.employee_id,
+          days: Number(r.days_requested) || 1,
+          employee_name: emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown',
+        })
+      }
+    }
+    setWizUnpaidLeave(unpaid)
+
+    const periodStart = new Date(nextYear, nextMonth, 1)
+    const periodEnd = new Date(nextYear, nextMonth + 1, 0)
+    const recentStart = new Date(periodStart)
+    recentStart.setDate(recentStart.getDate() - 30)
+    const { data: enrollData } = await supabase.from('benefit_enrollments')
+      .select('employee_id, enrolled_at, benefit_type:benefit_types(title, monthly_cost)')
+      .eq('company_id', selectedCompanyId)
+      .gte('enrolled_at', localDateStr(recentStart))
+      .lte('enrolled_at', monthEnd)
+    const changes: { employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[] = []
+    if (enrollData) {
+      for (const r of enrollData as any[]) {
+        const emp = employees.find(e => e.id === r.employee_id)
+        changes.push({
+          employee_id: r.employee_id,
+          employee_name: emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown',
+          benefit: r.benefit_type?.title || 'Benefit',
+          action: 'New enrolment',
+          monthly_cost: r.benefit_type?.monthly_cost || 0,
+        })
+      }
+    }
+    setWizBenefitChanges(changes)
+  }
+
   // Wizard: generate payslips for selected worker types
   async function wizGenerate() {
     setWizGenerating(true)
@@ -674,6 +732,105 @@ export default function AdminPayrollNew() {
     }
   }
 
+  async function wizPushAdjustments() {
+    if (!selectedCompanyId || !session) return
+    setWizGenerating(true)
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextYear = nextDate.getFullYear()
+    const nextMonth = nextDate.getMonth()
+    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
+    const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
+
+    const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
+    const { data: payRunData, error: payRunError } = await supabase.from('pay_runs').insert({
+      company_id: selectedCompanyId,
+      frequency: 'monthly',
+      period_start: monthStart,
+      period_end: monthEnd,
+      status: 'generating',
+      payment_method: connectedProvider || 'external',
+      worker_types: workerTypeArr,
+      created_by: session?.user?.id || null,
+    }).select('id').single()
+
+    if (payRunError) {
+      showError('Failed to create pay run: ' + payRunError.message)
+      setWizGenerating(false)
+      return
+    }
+    const payRunId = payRunData.id
+    setWizPayRunId(payRunId)
+
+    try {
+      const adjustments = {
+        overtime: Object.entries(wizOvertimeHours).filter(([, hrs]) => hrs > 0).map(([empId, hrs]) => {
+          const emp = employees.find(e => e.id === empId)
+          return { employee_id: empId, hours: hrs, multiplier: emp?.overtime_rate_multiplier || 1.5 }
+        }),
+        unpaid_leave: wizUnpaidLeave.map(u => ({ employee_id: u.employee_id, days: u.days })),
+        benefit_changes: wizBenefitChanges.map(b => ({ employee_id: b.employee_id, benefit: b.benefit, monthly_cost: b.monthly_cost })),
+        toil: Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+          const emp = employees.find(e => e.id === empId)
+          if (!emp) return false
+          return hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
+        }).map(([empId, hrs]) => ({ employee_id: empId, hours: hrs })),
+      }
+
+      if (connectedProvider === 'xero') {
+        const { data, error } = await supabase.functions.invoke('xero-push-timesheets', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: { company_id: selectedCompanyId, pay_run_id: payRunId, adjustments },
+        })
+        if (error) throw error
+        if (data?.error) throw new Error(data.error)
+      } else if (connectedProvider === 'sage') {
+        const targetEmployees = employees.filter(e => {
+          if (wizWorkerTypes.has('employed') && e.employment_category !== 'shift_worker') return true
+          if (wizWorkerTypes.has('shift') && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker') return true
+          if (wizWorkerTypes.has('zero_hours') && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker') return true
+          return false
+        })
+        const header = 'Employee ID,Name,Overtime Hours,Overtime Multiplier,Unpaid Leave Days,Benefit Changes'
+        const rows = targetEmployees.map(emp => {
+          const ot = wizOvertimeHours[emp.id] || 0
+          const mul = emp.overtime_rate_multiplier || 1.5
+          const unpaid = wizUnpaidLeave.filter(u => u.employee_id === emp.id).reduce((s, u) => s + u.days, 0)
+          const bens = wizBenefitChanges.filter(b => b.employee_id === emp.id).map(b => b.benefit).join('; ')
+          const safeName = `${emp.first_name} ${emp.last_name}`.replace(/[=+\-@\t\r]/g, "'$&")
+          return `${emp.payroll_id || ''},${safeName},${ot},${mul},${unpaid},${bens.replace(/[=+\-@\t\r]/g, "'$&")}`
+        })
+        const csv = [header, ...rows].join('\n')
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `Sage_Adjustments_${localDateStr(new Date())}.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+
+      for (const toilEntry of adjustments.toil) {
+        const emp = employees.find(e => e.id === toilEntry.employee_id)
+        const dailyHours = ((emp?.weekly_hours || 37.5) / 5)
+        const toilDays = Math.round(toilEntry.hours / dailyHours * 100) / 100
+        try {
+          const { data: lb } = await supabase.from('leave_balances').select('lieu_days').eq('employee_id', toilEntry.employee_id).maybeSingle()
+          await supabase.from('leave_balances').update({ lieu_days: (lb?.lieu_days || 0) + toilDays }).eq('employee_id', toilEntry.employee_id)
+        } catch { /* non-blocking */ }
+      }
+
+      await supabase.from('pay_runs').update({ status: 'exported' }).eq('id', payRunId)
+      setWizGenerated(true)
+      setWizExported(true)
+      showSuccess(`Adjustments pushed to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'} — run your pay run in the provider, then sync back`)
+      await loadAll()
+    } catch (err: any) {
+      showError('Push failed: ' + (err?.message || 'Unknown error'))
+      await supabase.from('pay_runs').update({ status: 'draft' }).eq('id', payRunId)
+    }
+    setWizGenerating(false)
+  }
+
   // Phase 4: Export functions
   async function wizExport() {
     if (!wizPayRunId || !selectedCompanyId) return
@@ -884,6 +1041,7 @@ export default function AdminPayrollNew() {
       loadWizPeriodReviews()
     }
     loadWizTimesheets()
+    if (providerConnected) loadWizAdjustments()
     setWizStep(2)
   }
 
@@ -1654,7 +1812,10 @@ export default function AdminPayrollNew() {
         <div className="pn-wizard">
           {/* Progress steps */}
           <div className="pn-wizard-steps">
-            {['Select Workers', 'Review', 'Generate', 'Export', 'Sync & Release'].map((label, i) => {
+            {(providerConnected
+              ? ['Select Workers', 'Review Adjustments', 'Push to Provider', 'Sync Back', 'Release']
+              : ['Select Workers', 'Review', 'Generate Estimates', 'Export', 'Sync & Release']
+            ).map((label, i) => {
               const step = i + 1
               const isActive = wizStep === step
               const isDone = wizStep > step || wizComplete
@@ -1754,10 +1915,23 @@ export default function AdminPayrollNew() {
 
             return (
             <div className="admin-settings-group" style={{ marginTop: 20 }}>
-              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Review Before Generating</h3>
+              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
+                {providerConnected ? 'Review Adjustments' : 'Review Before Generating'}
+              </h3>
               <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                Review the employees and their pay details before generating payslips for the next period.
+                {providerConnected
+                  ? `Review the adjustments that will be pushed to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}. Your provider handles salary, tax, and NI calculations — InflowHR sends only the changes.`
+                  : 'Review the employees and their pay details before generating payslips for the next period.'}
               </p>
+
+              {providerConnected && (
+                <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #1565c0' }}>
+                  <strong style={{ color: '#1565c0', fontSize: 14 }}>Connected to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</strong>
+                  <p style={{ fontSize: 12, color: '#1565c0', margin: '4px 0 0' }}>
+                    InflowHR will push adjustment lines only — overtime, TOIL, benefit changes, and unpaid leave deductions. Your provider calculates tax, NI, pension, and net pay.
+                  </p>
+                </div>
+              )}
 
               {wizWorkerTypes.has('employed') && employedEmployees.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
@@ -1889,177 +2063,319 @@ export default function AdminPayrollNew() {
                 </div>
               )}
 
+              {providerConnected && (
+                <div style={{ marginBottom: 16 }}>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#1565c0' }}>Adjustments Summary</h4>
+                  <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 12 }}>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">{Object.values(wizOvertimeHours).filter(h => h > 0).length}</span>
+                        <span className="pn-worker-metric-label">Employees with overtime</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">{Object.values(wizOvertimeHours).reduce((s, h) => s + h, 0).toFixed(1)}h</span>
+                        <span className="pn-worker-metric-label">Total overtime hours</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">{wizUnpaidLeave.length}</span>
+                        <span className="pn-worker-metric-label">Unpaid leave deductions</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">{wizBenefitChanges.length}</span>
+                        <span className="pn-worker-metric-label">Benefit changes</span>
+                      </div>
+                    </div>
+
+                    {wizUnpaidLeave.length > 0 && (
+                      <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 8, marginTop: 4, marginBottom: 8 }}>
+                        <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px', color: '#e65100' }}>Unpaid Leave Deductions</p>
+                        {wizUnpaidLeave.map((u, i) => (
+                          <div key={i} style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 2 }}>
+                            {u.employee_name}: {u.days} day{u.days !== 1 ? 's' : ''}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {wizBenefitChanges.length > 0 && (
+                      <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 8, marginTop: 4 }}>
+                        <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px', color: '#7e57c2' }}>Benefit Enrolment Changes</p>
+                        {wizBenefitChanges.map((b, i) => (
+                          <div key={i} style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 2 }}>
+                            {b.employee_name}: {b.action} — {b.benefit} (£{b.monthly_cost}/mo)
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {Object.values(wizOvertimeHours).every(h => h === 0) && wizUnpaidLeave.length === 0 && wizBenefitChanges.length === 0 && (
+                      <p style={{ fontSize: 12, color: '#558b2f', margin: 0, fontStyle: 'italic' }}>
+                        No adjustments detected — a clean pay run. Your provider will process standard salaries.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
                 <button className="admin-btn" onClick={() => setWizStep(1)}>← Back</button>
                 <button className="admin-btn admin-btn-primary" disabled={!canProceed} onClick={() => setWizStep(3)}>
-                  Next: Generate Payslips →
+                  {providerConnected ? 'Next: Push to Provider →' : 'Next: Generate Payslips →'}
                 </button>
               </div>
             </div>
             )
           })()}
 
-          {/* Step 3: Generate */}
+          {/* Step 3: Generate / Push */}
           {wizStep === 3 && (
             <div className="admin-settings-group" style={{ marginTop: 20 }}>
-              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Generate Payslips</h3>
-              {!wizGenerated ? (
-                <>
-                  <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                    This will create draft payslips for the next calendar month for the selected worker types. Payslips are generated in draft status — you can review and edit them before submitting.
-                  </p>
-                  <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
-                      <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">
-                          {(() => {
-                            let count = 0
-                            if (wizWorkerTypes.has('employed')) count += employedEmployees.length
-                            if (wizWorkerTypes.has('shift')) count += shiftEmployees.length
-                            if (wizWorkerTypes.has('zero_hours')) count += zeroHoursEmployees.length
-                            return count
-                          })()}
-                        </span>
-                        <span className="pn-worker-metric-label">Payslips to generate</span>
-                      </div>
-                      <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{[...wizWorkerTypes].length}</span>
-                        <span className="pn-worker-metric-label">Worker types</span>
-                      </div>
-                      <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">
-                          {(() => {
-                            const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-                            return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
-                          })()}
-                        </span>
-                        <span className="pn-worker-metric-label">Target period</span>
+              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
+                {providerConnected ? 'Push Adjustments to Provider' : 'Generate Estimate Payslips'}
+              </h3>
+
+              {providerConnected ? (
+                !wizGenerated ? (
+                  <>
+                    <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
+                      This will push the adjustment lines (overtime, TOIL, benefit changes, unpaid leave) to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. Your provider handles the payroll calculations — InflowHR sends only the changes.
+                    </p>
+                    <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value">{Object.values(wizOvertimeHours).filter(h => h > 0).length + wizUnpaidLeave.length + wizBenefitChanges.length}</span>
+                          <span className="pn-worker-metric-label">Adjustment lines</span>
+                        </div>
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value" style={{ textTransform: 'capitalize' }}>{connectedProvider}</span>
+                          <span className="pn-worker-metric-label">Provider</span>
+                        </div>
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value">
+                            {(() => {
+                              const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+                              return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
+                            })()}
+                          </span>
+                          <span className="pn-worker-metric-label">Target period</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                    <button className="admin-btn" onClick={() => setWizStep(2)}>← Back</button>
-                    <button className="admin-btn admin-btn-primary" disabled={wizGenerating} onClick={wizGenerate}>
-                      {wizGenerating ? 'Generating…' : 'Generate Payslips'}
-                    </button>
-                  </div>
-                </>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" onClick={() => setWizStep(2)}>← Back</button>
+                      <button className="admin-btn admin-btn-primary" disabled={wizGenerating} onClick={wizPushAdjustments}>
+                        {wizGenerating ? 'Pushing…' : `Push to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}`}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <div>
+                        <strong style={{ color: '#2e7d32' }}>Adjustments pushed successfully</strong>
+                        <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
+                          Run your pay run in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}, then come back to sync the real payslips.
+                        </p>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
+                        Next: Sync Back →
+                      </button>
+                    </div>
+                  </>
+                )
               ) : (
-                <>
-                  <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    <div>
-                      <strong style={{ color: '#2e7d32' }}>Payslips generated successfully</strong>
-                      <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>Draft payslips have been created. You can review them in the Payslips view before proceeding to payment.</p>
+                !wizGenerated ? (
+                  <>
+                    <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
+                      This will create draft payslips for the next calendar month with estimated tax and NI. Payslips are generated in draft status — you can review and edit them before submitting.
+                    </p>
+                    <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
+                      <strong style={{ color: '#e65100', fontSize: 13 }}>Standalone Mode — Estimates Only</strong>
+                      <p style={{ fontSize: 12, color: '#bf360c', margin: '4px 0 0' }}>
+                        These payslips use estimated UK tax and NI figures. For accurate calculations, connect Xero or Sage via Integrations. The estimates shown are for reference only and should not be treated as official payslips.
+                      </p>
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                    <button className="admin-btn" onClick={() => { setView('payslips') }}>Review Payslips</button>
-                    <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
-                      Next: Submit & Pay →
-                    </button>
-                  </div>
-                </>
+                    <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value">
+                            {(() => {
+                              let count = 0
+                              if (wizWorkerTypes.has('employed')) count += employedEmployees.length
+                              if (wizWorkerTypes.has('shift')) count += shiftEmployees.length
+                              if (wizWorkerTypes.has('zero_hours')) count += zeroHoursEmployees.length
+                              return count
+                            })()}
+                          </span>
+                          <span className="pn-worker-metric-label">Payslips to generate</span>
+                        </div>
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value">{[...wizWorkerTypes].length}</span>
+                          <span className="pn-worker-metric-label">Worker types</span>
+                        </div>
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value">
+                            {(() => {
+                              const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+                              return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
+                            })()}
+                          </span>
+                          <span className="pn-worker-metric-label">Target period</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" onClick={() => setWizStep(2)}>← Back</button>
+                      <button className="admin-btn admin-btn-primary" disabled={wizGenerating} onClick={wizGenerate}>
+                        {wizGenerating ? 'Generating…' : 'Generate Estimate Payslips'}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <div>
+                        <strong style={{ color: '#2e7d32' }}>Estimate payslips generated</strong>
+                        <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>Draft payslips with estimated figures have been created. Review them before proceeding to payment.</p>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" onClick={() => { setView('payslips') }}>Review Payslips</button>
+                      <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
+                        Next: Export & Pay →
+                      </button>
+                    </div>
+                  </>
+                )
               )}
             </div>
           )}
 
-          {/* Step 4: Submit & Pay */}
+          {/* Step 4: Sync Back (connected) / Export (standalone) */}
           {wizStep === 4 && (
             <div className="admin-settings-group" style={{ marginTop: 20 }}>
-              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Export Payroll</h3>
-              <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                Choose how to export this payroll run to your accounting system or bank.
-              </p>
-
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-                <label className={`pn-wiz-type-card ${wizPayMethod === 'external' ? 'pn-wiz-type-selected' : ''}`}>
-                  <input type="radio" name="paymethod" checked={wizPayMethod === 'external'} onChange={() => setWizPayMethod('external')} style={{ display: 'none' }} />
-                  <div className="pn-wiz-type-icon" style={{ background: '#78909c' }}>
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                  </div>
-                  <strong>Pay Externally</strong>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Mark as paid via your bank</span>
-                </label>
-
-                {features.modulr_integration && modulrConnected && (
-                  <label className={`pn-wiz-type-card ${wizPayMethod === 'modulr' ? 'pn-wiz-type-selected' : ''}`}>
-                    <input type="radio" name="paymethod" checked={wizPayMethod === 'modulr'} onChange={() => setWizPayMethod('modulr')} style={{ display: 'none' }} />
-                    <div className="pn-wiz-type-icon" style={{ background: '#1a1a2e' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-                    </div>
-                    <strong>Modulr Payouts</strong>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Direct BACS payments</span>
-                  </label>
-                )}
-
-                {features.modulr_integration && (
-                  <label className={`pn-wiz-type-card ${wizPayMethod === 'bacs' ? 'pn-wiz-type-selected' : ''}`}>
-                    <input type="radio" name="paymethod" checked={wizPayMethod === 'bacs'} onChange={() => setWizPayMethod('bacs')} style={{ display: 'none' }} />
-                    <div className="pn-wiz-type-icon" style={{ background: '#455a64' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    </div>
-                    <strong>BACS Export</strong>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Download BACS file</span>
-                  </label>
-                )}
-
-                {xeroConnected && (
-                  <label className={`pn-wiz-type-card ${wizPayMethod === 'xero' ? 'pn-wiz-type-selected' : ''}`}>
-                    <input type="radio" name="paymethod" checked={wizPayMethod === 'xero'} onChange={() => setWizPayMethod('xero')} style={{ display: 'none' }} />
-                    <div className="pn-wiz-type-icon" style={{ background: '#13b5ea' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                    </div>
-                    <strong>Export to Xero</strong>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Sync with Xero payroll</span>
-                  </label>
-                )}
-
-                {sageConnected && (
-                  <label className={`pn-wiz-type-card ${wizPayMethod === 'sage' ? 'pn-wiz-type-selected' : ''}`}>
-                    <input type="radio" name="paymethod" checked={wizPayMethod === 'sage'} onChange={() => setWizPayMethod('sage')} style={{ display: 'none' }} />
-                    <div className="pn-wiz-type-icon" style={{ background: '#00d639' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    </div>
-                    <strong>Export to Sage</strong>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Upload payslip PDFs</span>
-                  </label>
-                )}
-              </div>
-
-              <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16 }}>
-                <p style={{ fontSize: 13, margin: 0, color: '#1565c0' }}>
-                  <strong>Note:</strong> InflowHR captures time and calculates gross pay. Your Sage or Xero account handles the tax engine. The payslips generated here use estimated tax/NI for reference only.
-                </p>
-              </div>
-
-              {!wizExported ? (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                  <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
-                  <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={wizExport}>
-                    {wizExporting ? 'Exporting…' : wizPayMethod === 'external' ? 'Mark as Externally Managed' : `Export via ${wizPayMethod.toUpperCase()}`}
-                  </button>
-                </div>
-              ) : (
+              {providerConnected ? (
                 <>
-                  <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 14, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    <div>
-                      <strong style={{ color: '#2e7d32' }}>Exported successfully</strong>
-                      <p style={{ fontSize: 12, margin: '2px 0 0', color: '#558b2f' }}>
-                        {wizPayMethod === 'xero' ? 'Data sent to Xero. Run your pay run in Xero, then sync back.' :
-                         wizPayMethod === 'sage' ? 'CSV downloaded. Import into Sage, then upload the PDF payslips.' :
-                         wizPayMethod === 'bacs' ? 'BACS file downloaded. Upload to your bank.' :
-                         wizPayMethod === 'modulr' ? 'Payments submitted via Modulr.' :
-                         'Marked as externally managed.'}
-                      </p>
+                  <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Sync Back from {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
+                    After running your pay run in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}, sync the actual payslips back to InflowHR so employees can view their real pay details.
+                  </p>
+
+                  {connectedProvider === 'xero' && (
+                    <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <strong style={{ fontSize: 14 }}>Fetch Payslips from Xero</strong>
+                          <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0' }}>
+                            This pulls actual tax, NI, deductions, and net pay from your Xero pay run and creates payslips in InflowHR with the real figures.
+                          </p>
+                        </div>
+                        <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={async () => {
+                          await wizSyncXero()
+                          setWizExported(true)
+                        }} style={{ fontSize: 13 }}>
+                          {wizExporting ? 'Syncing…' : 'Fetch Pay Run'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                  )}
+
+                  {connectedProvider === 'sage' && (
+                    <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+                      <strong style={{ fontSize: 14 }}>Import Payslips from Sage</strong>
+                      <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0' }}>
+                        After running payroll in Sage, upload the PDF payslips from the Payslips view. Sage will parse and create employee payslips with the actual figures.
+                      </p>
+                      <button className="admin-btn" style={{ marginTop: 8, fontSize: 13 }} onClick={() => setView('payslips')}>
+                        Go to Payslips to Upload
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+                    <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
                     <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(5)}>
-                      Next: Sync & Release →
+                      Next: Release →
                     </button>
                   </div>
+                </>
+              ) : (
+                <>
+                  <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Export Payroll</h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
+                    Choose how to export this payroll run for payment processing.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+                    <label className={`pn-wiz-type-card ${wizPayMethod === 'external' ? 'pn-wiz-type-selected' : ''}`}>
+                      <input type="radio" name="paymethod" checked={wizPayMethod === 'external'} onChange={() => setWizPayMethod('external')} style={{ display: 'none' }} />
+                      <div className="pn-wiz-type-icon" style={{ background: '#78909c' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                      </div>
+                      <strong>Pay Externally</strong>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Mark as paid via your bank</span>
+                    </label>
+
+                    {features.modulr_integration && modulrConnected && (
+                      <label className={`pn-wiz-type-card ${wizPayMethod === 'modulr' ? 'pn-wiz-type-selected' : ''}`}>
+                        <input type="radio" name="paymethod" checked={wizPayMethod === 'modulr'} onChange={() => setWizPayMethod('modulr')} style={{ display: 'none' }} />
+                        <div className="pn-wiz-type-icon" style={{ background: '#1a1a2e' }}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                        </div>
+                        <strong>Modulr Payouts</strong>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Direct BACS payments</span>
+                      </label>
+                    )}
+
+                    {features.modulr_integration && (
+                      <label className={`pn-wiz-type-card ${wizPayMethod === 'bacs' ? 'pn-wiz-type-selected' : ''}`}>
+                        <input type="radio" name="paymethod" checked={wizPayMethod === 'bacs'} onChange={() => setWizPayMethod('bacs')} style={{ display: 'none' }} />
+                        <div className="pn-wiz-type-icon" style={{ background: '#455a64' }}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        </div>
+                        <strong>BACS Export</strong>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Download BACS file</span>
+                      </label>
+                    )}
+                  </div>
+
+                  <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
+                    <p style={{ fontSize: 13, margin: 0, color: '#e65100' }}>
+                      <strong>Estimates only:</strong> The payslips use estimated tax/NI. For accurate payroll, connect Xero or Sage via the Integrations page.
+                    </p>
+                  </div>
+
+                  {!wizExported ? (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
+                      <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={wizExport}>
+                        {wizExporting ? 'Exporting…' : wizPayMethod === 'external' ? 'Mark as Externally Managed' : `Export via ${wizPayMethod.toUpperCase()}`}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 14, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        <div>
+                          <strong style={{ color: '#2e7d32' }}>Exported successfully</strong>
+                          <p style={{ fontSize: 12, margin: '2px 0 0', color: '#558b2f' }}>
+                            {wizPayMethod === 'bacs' ? 'BACS file downloaded. Upload to your bank.' :
+                             wizPayMethod === 'modulr' ? 'Payments submitted via Modulr.' :
+                             'Marked as externally managed.'}
+                          </p>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                        <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(5)}>
+                          Next: Release →
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -2081,38 +2397,16 @@ export default function AdminPayrollNew() {
               </div>
             ) : (
               <div className="admin-settings-group" style={{ marginTop: 20 }}>
-                <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Sync & Release</h3>
+                <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
+                  {providerConnected ? 'Release Payslips' : 'Sync & Release'}
+                </h3>
                 <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                  Sync actual pay run data from your accounting system, then release payslips to employees.
+                  {providerConnected
+                    ? 'Payslips have been synced from your provider. Release them to make them visible to employees.'
+                    : 'Release the estimate payslips to employees. They will see them on their next login.'}
                 </p>
 
-                {/* Sync options */}
-                {wizPayMethod === 'xero' && xeroConnected && (
-                  <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <strong style={{ fontSize: 14 }}>Sync from Xero</strong>
-                        <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0' }}>
-                          Fetch actual tax/NI/deductions from your Xero pay run to update payslips with final figures.
-                        </p>
-                      </div>
-                      <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={wizSyncXero} style={{ fontSize: 13 }}>
-                        {wizExporting ? 'Syncing…' : 'Fetch Pay Run'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {wizPayMethod === 'sage' && (
-                  <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
-                    <strong style={{ fontSize: 14 }}>Import from Sage</strong>
-                    <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0' }}>
-                      After running payroll in Sage, upload the PDF payslips from the Payslips view (Sage will parse and update figures).
-                    </p>
-                  </div>
-                )}
-
-                {wizPayMethod === 'external' && (
+                {!providerConnected && wizPayMethod === 'external' && (
                   <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 12 }}>
                     <p style={{ fontSize: 13, margin: 0, color: '#1565c0' }}>
                       When your external payroll is complete, release the payslips below so employees can view them.
@@ -2120,7 +2414,14 @@ export default function AdminPayrollNew() {
                   </div>
                 )}
 
-                {/* Release gate */}
+                {!providerConnected && (
+                  <div style={{ background: '#fff3e0', borderRadius: 8, padding: 14, marginBottom: 12, borderLeft: '4px solid #ffa000' }}>
+                    <p style={{ fontSize: 12, margin: 0, color: '#e65100' }}>
+                      <strong>Reminder:</strong> These are estimate payslips with approximate tax/NI. For accurate figures, connect a payroll provider.
+                    </p>
+                  </div>
+                )}
+
                 <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
                   <strong style={{ color: '#e65100', fontSize: 14 }}>Release to Employees</strong>
                   <p style={{ fontSize: 12, color: '#bf360c', margin: '4px 0 0' }}>
