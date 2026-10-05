@@ -24,6 +24,7 @@ interface XeroIntegration {
   sync_error: string | null
   last_sync_at: string | null
   payslip_source: 'inflowhr' | 'xero'
+  sync_benefits_to_xero: boolean
 }
 
 interface SageIntegration {
@@ -166,7 +167,7 @@ export default function AdminIntegrations() {
     const [teamsRes, teamsBotRes, xeroRes, sageRes, modulrRes, featuresRes] = await Promise.all([
       supabase.from('company_teams_config').select('*').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_teams_bot_conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
-      supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source').eq('company_id', companyId).maybeSingle(),
+      supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, sync_benefits_to_xero').eq('company_id', companyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
@@ -348,6 +349,15 @@ export default function AdminIntegrations() {
     setXeroIntegration(null)
     showSuccess('Xero disconnected')
     loadAll()
+  }
+
+  async function toggleSyncBenefits() {
+    if (!companyId || !xeroIntegration) return
+    const newVal = !xeroIntegration.sync_benefits_to_xero
+    const { error } = await supabase.from('xero_integrations').update({ sync_benefits_to_xero: newVal }).eq('company_id', companyId)
+    if (error) { showError('Failed to update setting: ' + error.message); return }
+    setXeroIntegration({ ...xeroIntegration, sync_benefits_to_xero: newVal })
+    showSuccess(newVal ? 'Benefit sync to Xero enabled' : 'Benefit sync to Xero disabled')
   }
 
   // ── Sage handlers ─────────────────────────────────────────────────────────
@@ -647,6 +657,21 @@ export default function AdminIntegrations() {
                       </div>
                     </div>
                   )}
+
+                  <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <div>
+                        <strong style={{ fontSize: 13, color: 'var(--text, #333)' }}>Sync Benefits to Xero</strong>
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>
+                          When enabled, benefit enrollment changes are included as adjustment lines when pushing payroll to Xero.
+                        </p>
+                      </div>
+                      <label className="admin-toggle">
+                        <input type="checkbox" checked={xeroIntegration?.sync_benefits_to_xero ?? false} onChange={toggleSyncBenefits} />
+                        <span className="admin-toggle-slider" />
+                      </label>
+                    </div>
+                  </div>
                 </>
               )}
 

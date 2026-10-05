@@ -762,27 +762,34 @@ export default function AdminPayrollNew() {
 
     try {
       const adjustments = {
-        overtime: Object.entries(wizOvertimeHours).filter(([, hrs]) => hrs > 0).map(([empId, hrs]) => {
+        overtime: Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+          const emp = employees.find(e => e.id === empId)
+          if (!emp) return false
+          return hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
+        }).map(([empId, hrs]) => {
           const emp = employees.find(e => e.id === empId)
           return { employee_id: empId, hours: hrs, multiplier: emp?.overtime_rate_multiplier || 1.5 }
         }),
         unpaid_leave: wizUnpaidLeave.map(u => ({ employee_id: u.employee_id, days: u.days })),
         benefit_changes: wizBenefitChanges.map(b => ({ employee_id: b.employee_id, benefit: b.benefit, monthly_cost: b.monthly_cost })),
-        toil: Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
-          const emp = employees.find(e => e.id === empId)
-          if (!emp) return false
-          return hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
-        }).map(([empId, hrs]) => ({ employee_id: empId, hours: hrs })),
       }
 
-      if (connectedProvider === 'xero') {
+      const toilEntries = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+        const emp = employees.find(e => e.id === empId)
+        if (!emp) return false
+        return hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
+      }).map(([empId, hrs]) => ({ employee_id: empId, hours: hrs }))
+
+      const hasAdjustments = adjustments.overtime.length > 0 || adjustments.unpaid_leave.length > 0 || adjustments.benefit_changes.length > 0
+
+      if (hasAdjustments && connectedProvider === 'xero') {
         const { data, error } = await supabase.functions.invoke('xero-push-timesheets', {
           headers: { Authorization: `Bearer ${session.access_token}` },
           body: { company_id: selectedCompanyId, pay_run_id: payRunId, adjustments },
         })
         if (error) throw error
         if (data?.error) throw new Error(data.error)
-      } else if (connectedProvider === 'sage') {
+      } else if (hasAdjustments && connectedProvider === 'sage') {
         const targetEmployees = employees.filter(e => {
           if (wizWorkerTypes.has('employed') && e.employment_category !== 'shift_worker') return true
           if (wizWorkerTypes.has('shift') && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker') return true
@@ -808,7 +815,7 @@ export default function AdminPayrollNew() {
         URL.revokeObjectURL(url)
       }
 
-      for (const toilEntry of adjustments.toil) {
+      for (const toilEntry of toilEntries) {
         const emp = employees.find(e => e.id === toilEntry.employee_id)
         const dailyHours = ((emp?.weekly_hours || 37.5) / 5)
         const toilDays = Math.round(toilEntry.hours / dailyHours * 100) / 100
@@ -821,7 +828,11 @@ export default function AdminPayrollNew() {
       await supabase.from('pay_runs').update({ status: 'exported' }).eq('id', payRunId)
       setWizGenerated(true)
       setWizExported(true)
-      showSuccess(`Adjustments pushed to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'} — run your pay run in the provider, then sync back`)
+      if (hasAdjustments) {
+        showSuccess(`Adjustments pushed to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'} — run your pay run in the provider, then sync back`)
+      } else {
+        showSuccess('TOIL lieu days credited — no adjustment lines were pushed to the provider')
+      }
       await loadAll()
     } catch (err: any) {
       showError('Push failed: ' + (err?.message || 'Unknown error'))
@@ -1927,7 +1938,7 @@ export default function AdminPayrollNew() {
                 <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #1565c0' }}>
                   <strong style={{ color: '#1565c0', fontSize: 14 }}>Connected to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</strong>
                   <p style={{ fontSize: 12, color: '#1565c0', margin: '4px 0 0' }}>
-                    InflowHR will push adjustment lines only — overtime, TOIL, benefit changes, and unpaid leave deductions. Your provider calculates tax, NI, pension, and net pay.
+                    InflowHR will push adjustment lines only — overtime, benefit changes, and unpaid leave deductions. TOIL hours are credited internally as lieu days. Your provider calculates tax, NI, pension, and net pay.
                   </p>
                 </div>
               )}
@@ -2137,12 +2148,18 @@ export default function AdminPayrollNew() {
                 !wizGenerated ? (
                   <>
                     <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                      This will push the adjustment lines (overtime, TOIL, benefit changes, unpaid leave) to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. Your provider handles the payroll calculations — InflowHR sends only the changes.
+                      This will push the adjustment lines (overtime, benefit changes, unpaid leave) to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. TOIL hours are credited as lieu days internally and are not sent to the provider.
                     </p>
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                         <div className="pn-worker-metric">
-                          <span className="pn-worker-metric-value">{Object.values(wizOvertimeHours).filter(h => h > 0).length + wizUnpaidLeave.length + wizBenefitChanges.length}</span>
+                          <span className="pn-worker-metric-value">{(() => {
+                            const otCount = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+                              const emp = employees.find(e => e.id === empId)
+                              return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
+                            }).length
+                            return otCount + wizUnpaidLeave.length + wizBenefitChanges.length
+                          })()}</span>
                           <span className="pn-worker-metric-label">Adjustment lines</span>
                         </div>
                         <div className="pn-worker-metric">
@@ -2162,9 +2179,31 @@ export default function AdminPayrollNew() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                       <button className="admin-btn" onClick={() => setWizStep(2)}>← Back</button>
-                      <button className="admin-btn admin-btn-primary" disabled={wizGenerating} onClick={wizPushAdjustments}>
-                        {wizGenerating ? 'Pushing…' : `Push to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}`}
-                      </button>
+                      {(() => {
+                        const otCount = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+                          const emp = employees.find(e => e.id === empId)
+                          return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
+                        }).length
+                        const toilCount = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+                          const emp = employees.find(e => e.id === empId)
+                          return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
+                        }).length
+                        const pushCount = otCount + wizUnpaidLeave.length + wizBenefitChanges.length
+                        const totalCount = pushCount + toilCount
+                        return (
+                          <>
+                            <button className="admin-btn admin-btn-primary" disabled={wizGenerating || totalCount === 0} onClick={wizPushAdjustments}>
+                              {wizGenerating ? 'Pushing…' : pushCount > 0 ? `Push to ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}` : 'Credit TOIL Lieu Days'}
+                            </button>
+                            {pushCount === 0 && toilCount > 0 && (
+                              <p style={{ fontSize: 12, color: '#7e57c2', marginTop: 8, textAlign: 'right' }}>No adjustment lines to push — TOIL hours will be credited as lieu days only.</p>
+                            )}
+                            {totalCount === 0 && (
+                              <p style={{ fontSize: 12, color: '#e53935', marginTop: 8, textAlign: 'right' }}>No adjustments found for this period.</p>
+                            )}
+                          </>
+                        )
+                      })()}
                     </div>
                   </>
                 ) : (

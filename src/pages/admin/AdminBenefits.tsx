@@ -15,6 +15,13 @@ interface BenefitOption {
   sort_order: number
 }
 
+type BenefitCategory = 'reimbursement' | 'allowance' | 'deduction' | 'salary_sacrifice' | 'bik'
+type PayImpact = 'add_to_gross' | 'add_to_net' | 'reduce_gross' | 'reduce_net' | 'no_impact'
+type TaxTreatment = 'taxable' | 'non_taxable' | 'pre_tax' | 'post_tax'
+type NITreatment = 'subject_to_ni' | 'exempt_ni' | 'class_1a_employer'
+type PensionTreatment = 'pensionable' | 'non_pensionable'
+type XeroPayItemCategory = 'Earning' | 'Deduction' | 'Benefit' | 'Reimbursement'
+
 interface BenefitType {
   id: number
   benefit_key: string
@@ -29,6 +36,13 @@ interface BenefitType {
   lock_period: 'none' | 'month' | 'year'
   is_enabled: boolean
   sort_order: number
+  benefit_category: BenefitCategory
+  pay_impact: PayImpact
+  tax_treatment: TaxTreatment
+  ni_treatment: NITreatment
+  pension_treatment: PensionTreatment
+  xero_pay_item_id: string | null
+  xero_pay_item_category: XeroPayItemCategory | null
   options: BenefitOption[]
 }
 
@@ -64,7 +78,7 @@ export default function AdminBenefits() {
   const [editingOptionId, setEditingOptionId] = useState<number | null>(null)
   const [optionForm, setOptionForm] = useState<Record<string, any>>({})
   const [showNewBenefit, setShowNewBenefit] = useState(false)
-  const [newBenefit, setNewBenefit] = useState({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: '£0', monthly_cost: 0, lock_period: 'none' as 'none' | 'month' | 'year' })
+  const [newBenefit, setNewBenefit] = useState({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: '£0', monthly_cost: 0, lock_period: 'none' as 'none' | 'month' | 'year', benefit_category: 'allowance' as BenefitCategory, pay_impact: 'no_impact' as PayImpact, tax_treatment: 'taxable' as TaxTreatment, ni_treatment: 'subject_to_ni' as NITreatment, pension_treatment: 'non_pensionable' as PensionTreatment, xero_pay_item_id: '', xero_pay_item_category: '' as string })
   const [showNewOption, setShowNewOption] = useState<number | null>(null)
   const [newOption, setNewOption] = useState({ icon: '✨', title: '', description: '' })
   const [tab, setTab] = useState<'types' | 'subscriptions' | 'documents'>('types')
@@ -191,7 +205,7 @@ export default function AdminBenefits() {
   function startEditBenefit(b: BenefitType) {
     setEditingId(b.id)
     setExpandedId(b.id)
-    setEditForm({ title: b.title, description: b.description, icon: b.icon, color: b.color, intro: b.intro, eligibility: b.eligibility, cost_description: b.cost_description, monthly_cost: b.monthly_cost ?? 0, lock_period: b.lock_period ?? 'none' })
+    setEditForm({ title: b.title, description: b.description, icon: b.icon, color: b.color, intro: b.intro, eligibility: b.eligibility, cost_description: b.cost_description, monthly_cost: b.monthly_cost ?? 0, lock_period: b.lock_period ?? 'none', benefit_category: b.benefit_category ?? 'allowance', pay_impact: b.pay_impact ?? 'no_impact', tax_treatment: b.tax_treatment ?? 'taxable', ni_treatment: b.ni_treatment ?? 'subject_to_ni', pension_treatment: b.pension_treatment ?? 'non_pensionable', xero_pay_item_id: b.xero_pay_item_id ?? '', xero_pay_item_category: b.xero_pay_item_category ?? '' })
   }
 
   async function saveEditBenefit(id: number) {
@@ -205,6 +219,13 @@ export default function AdminBenefits() {
       cost_description: editForm.cost_description,
       monthly_cost: editForm.monthly_cost,
       lock_period: editForm.lock_period,
+      benefit_category: editForm.benefit_category,
+      pay_impact: editForm.pay_impact,
+      tax_treatment: editForm.tax_treatment,
+      ni_treatment: editForm.ni_treatment,
+      pension_treatment: editForm.pension_treatment,
+      xero_pay_item_id: editForm.xero_pay_item_id || null,
+      xero_pay_item_category: editForm.xero_pay_item_category || null,
     }).eq('id', id)
     if (error) { showError('Failed to save benefit: ' + error.message); return }
     setBenefits(prev => prev.map(b => b.id === id ? { ...b, ...editForm } : b))
@@ -268,6 +289,13 @@ export default function AdminBenefits() {
       cost_description: newBenefit.cost_description,
       monthly_cost: newBenefit.monthly_cost,
       lock_period: newBenefit.lock_period,
+      benefit_category: newBenefit.benefit_category,
+      pay_impact: newBenefit.pay_impact,
+      tax_treatment: newBenefit.tax_treatment,
+      ni_treatment: newBenefit.ni_treatment,
+      pension_treatment: newBenefit.pension_treatment,
+      xero_pay_item_id: newBenefit.xero_pay_item_id || null,
+      xero_pay_item_category: newBenefit.xero_pay_item_category || null,
       is_enabled: true,
       sort_order: nextSort,
     }).select('*').single()
@@ -276,7 +304,7 @@ export default function AdminBenefits() {
     if (inserted) {
       setBenefits(prev => [...prev, { ...inserted, options: [] } as BenefitType])
     }
-    setNewBenefit({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: '£0', monthly_cost: 0, lock_period: 'none' })
+    setNewBenefit({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: '£0', monthly_cost: 0, lock_period: 'none', benefit_category: 'allowance', pay_impact: 'no_impact', tax_treatment: 'taxable', ni_treatment: 'subject_to_ni', pension_treatment: 'non_pensionable', xero_pay_item_id: '', xero_pay_item_category: '' })
     setShowNewBenefit(false)
   }
 
@@ -431,6 +459,61 @@ export default function AdminBenefits() {
                   </select>
                 </div>
               </div>
+              {payrollEnabled && (
+                <>
+                  <h4 style={{margin:'16px 0 8px', fontSize:'13px', fontWeight:600, color:'#555', textTransform:'uppercase', letterSpacing:'0.5px'}}>Payroll Settings</h4>
+                  <div className="admin-form-grid">
+                    <div className="admin-form-field"><label>Benefit Category</label>
+                      <select className="admin-input" value={newBenefit.benefit_category} onChange={e => setNewBenefit(p => ({...p, benefit_category: e.target.value as BenefitCategory}))}>
+                        <option value="allowance">Allowance (taxable cash addition)</option>
+                        <option value="reimbursement">Reimbursement (tax-free expense payout)</option>
+                        <option value="deduction">Deduction (post-tax employee charge)</option>
+                        <option value="salary_sacrifice">Salary Sacrifice (pre-tax reduction)</option>
+                        <option value="bik">Benefit in Kind (company car, health insurance)</option>
+                      </select>
+                    </div>
+                    <div className="admin-form-field"><label>Pay Impact</label>
+                      <select className="admin-input" value={newBenefit.pay_impact} onChange={e => setNewBenefit(p => ({...p, pay_impact: e.target.value as PayImpact}))}>
+                        <option value="no_impact">No Pay Impact</option>
+                        <option value="add_to_gross">Add to Gross Pay</option>
+                        <option value="add_to_net">Add to Net Pay</option>
+                        <option value="reduce_gross">Reduce Gross Pay</option>
+                        <option value="reduce_net">Reduce Net Pay</option>
+                      </select>
+                    </div>
+                    <div className="admin-form-field"><label>Tax Treatment (PAYE)</label>
+                      <select className="admin-input" value={newBenefit.tax_treatment} onChange={e => setNewBenefit(p => ({...p, tax_treatment: e.target.value as TaxTreatment}))}>
+                        <option value="taxable">Taxable</option>
+                        <option value="non_taxable">Non-Taxable</option>
+                        <option value="pre_tax">Pre-Tax Deduction</option>
+                        <option value="post_tax">Post-Tax Deduction</option>
+                      </select>
+                    </div>
+                    <div className="admin-form-field"><label>NI Treatment</label>
+                      <select className="admin-input" value={newBenefit.ni_treatment} onChange={e => setNewBenefit(p => ({...p, ni_treatment: e.target.value as NITreatment}))}>
+                        <option value="subject_to_ni">Subject to NI</option>
+                        <option value="exempt_ni">Exempt from NI</option>
+                        <option value="class_1a_employer">Class 1A (employer only)</option>
+                      </select>
+                    </div>
+                    <div className="admin-form-field"><label>Pension Treatment</label>
+                      <select className="admin-input" value={newBenefit.pension_treatment} onChange={e => setNewBenefit(p => ({...p, pension_treatment: e.target.value as PensionTreatment}))}>
+                        <option value="pensionable">Pensionable Earnings</option>
+                        <option value="non_pensionable">Non-Pensionable</option>
+                      </select>
+                    </div>
+                    <div className="admin-form-field"><label>Xero Pay Item Category</label>
+                      <select className="admin-input" value={newBenefit.xero_pay_item_category} onChange={e => setNewBenefit(p => ({...p, xero_pay_item_category: e.target.value}))}>
+                        <option value="">Not mapped</option>
+                        <option value="Earning">Earning</option>
+                        <option value="Deduction">Deduction</option>
+                        <option value="Benefit">Benefit</option>
+                        <option value="Reimbursement">Reimbursement</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
               <div style={{display:'flex', gap:'8px', marginTop:'12px'}}>
                 <button className="admin-btn admin-btn-primary" onClick={addNewBenefit}>Create Benefit</button>
                 <button className="admin-btn admin-btn-cancel" onClick={() => setShowNewBenefit(false)}>Cancel</button>
@@ -507,6 +590,61 @@ export default function AdminBenefits() {
                                     </select>
                                   </div>
                                 </div>
+                                {payrollEnabled && (
+                                  <>
+                                    <h4 style={{margin:'16px 0 8px', fontSize:'13px', fontWeight:600, color:'#555', textTransform:'uppercase', letterSpacing:'0.5px'}}>Payroll Settings</h4>
+                                    <div className="admin-form-grid">
+                                      <div className="admin-form-field"><label>Benefit Category</label>
+                                        <select className="admin-input" value={editForm.benefit_category ?? 'allowance'} onChange={e => setEditForm(f => ({...f, benefit_category: e.target.value}))}>
+                                          <option value="allowance">Allowance (taxable cash addition)</option>
+                                          <option value="reimbursement">Reimbursement (tax-free expense payout)</option>
+                                          <option value="deduction">Deduction (post-tax employee charge)</option>
+                                          <option value="salary_sacrifice">Salary Sacrifice (pre-tax reduction)</option>
+                                          <option value="bik">Benefit in Kind (company car, health insurance)</option>
+                                        </select>
+                                      </div>
+                                      <div className="admin-form-field"><label>Pay Impact</label>
+                                        <select className="admin-input" value={editForm.pay_impact ?? 'no_impact'} onChange={e => setEditForm(f => ({...f, pay_impact: e.target.value}))}>
+                                          <option value="no_impact">No Pay Impact</option>
+                                          <option value="add_to_gross">Add to Gross Pay</option>
+                                          <option value="add_to_net">Add to Net Pay</option>
+                                          <option value="reduce_gross">Reduce Gross Pay</option>
+                                          <option value="reduce_net">Reduce Net Pay</option>
+                                        </select>
+                                      </div>
+                                      <div className="admin-form-field"><label>Tax Treatment (PAYE)</label>
+                                        <select className="admin-input" value={editForm.tax_treatment ?? 'taxable'} onChange={e => setEditForm(f => ({...f, tax_treatment: e.target.value}))}>
+                                          <option value="taxable">Taxable</option>
+                                          <option value="non_taxable">Non-Taxable</option>
+                                          <option value="pre_tax">Pre-Tax Deduction</option>
+                                          <option value="post_tax">Post-Tax Deduction</option>
+                                        </select>
+                                      </div>
+                                      <div className="admin-form-field"><label>NI Treatment</label>
+                                        <select className="admin-input" value={editForm.ni_treatment ?? 'subject_to_ni'} onChange={e => setEditForm(f => ({...f, ni_treatment: e.target.value}))}>
+                                          <option value="subject_to_ni">Subject to NI</option>
+                                          <option value="exempt_ni">Exempt from NI</option>
+                                          <option value="class_1a_employer">Class 1A (employer only)</option>
+                                        </select>
+                                      </div>
+                                      <div className="admin-form-field"><label>Pension Treatment</label>
+                                        <select className="admin-input" value={editForm.pension_treatment ?? 'non_pensionable'} onChange={e => setEditForm(f => ({...f, pension_treatment: e.target.value}))}>
+                                          <option value="pensionable">Pensionable Earnings</option>
+                                          <option value="non_pensionable">Non-Pensionable</option>
+                                        </select>
+                                      </div>
+                                      <div className="admin-form-field"><label>Xero Pay Item Category</label>
+                                        <select className="admin-input" value={editForm.xero_pay_item_category ?? ''} onChange={e => setEditForm(f => ({...f, xero_pay_item_category: e.target.value}))}>
+                                          <option value="">Not mapped</option>
+                                          <option value="Earning">Earning</option>
+                                          <option value="Deduction">Deduction</option>
+                                          <option value="Benefit">Benefit</option>
+                                          <option value="Reimbursement">Reimbursement</option>
+                                        </select>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
                                 {!payrollEnabled && <p style={{color:'#e53935', fontSize:'12px', margin:'8px 0 0'}}>Payroll feature is disabled — cost fields are read-only</p>}
                               </div>
                             ) : (
@@ -515,6 +653,16 @@ export default function AdminBenefits() {
                                 <div><strong>Cost:</strong> {b.cost_description}</div>
                                 <div><strong>Monthly Cost:</strong> £{(b.monthly_cost ?? 0).toFixed(2)}</div>
                                 <div><strong>Lock Period:</strong> {(b.lock_period ?? 'none') === 'none' ? 'None' : b.lock_period === 'month' ? 'Monthly' : 'Financial Year'}</div>
+                                {payrollEnabled && (
+                                  <div style={{marginTop:'8px', paddingTop:'8px', borderTop:'1px solid #eee'}}>
+                                    <div><strong>Category:</strong> {(b.benefit_category ?? 'allowance').replace(/_/g, ' ')}</div>
+                                    <div><strong>Pay Impact:</strong> {(b.pay_impact ?? 'no_impact').replace(/_/g, ' ')}</div>
+                                    <div><strong>Tax:</strong> {(b.tax_treatment ?? 'taxable').replace(/_/g, ' ')}</div>
+                                    <div><strong>NI:</strong> {(b.ni_treatment ?? 'subject_to_ni').replace(/_/g, ' ')}</div>
+                                    <div><strong>Pension:</strong> {(b.pension_treatment ?? 'non_pensionable').replace(/_/g, ' ')}</div>
+                                    {b.xero_pay_item_category && <div><strong>Xero Category:</strong> {b.xero_pay_item_category}</div>}
+                                  </div>
+                                )}
                               </div>
                             )}
 
