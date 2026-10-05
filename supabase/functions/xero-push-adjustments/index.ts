@@ -188,6 +188,9 @@ Deno.serve(async (req) => {
       .single()
     if (!payRun) return json({ error: 'Pay run not found' }, 404)
 
+    const periodStart = String(payRun.period_start).slice(0, 10)
+    const periodEnd = String(payRun.period_end).slice(0, 10)
+
     const { data: xeroIntegration } = await sb
       .from('xero_integrations')
       .select('payroll_calendar_id')
@@ -316,86 +319,95 @@ Deno.serve(async (req) => {
       const overtimeRate = emp.hourlyRate > 0 ? Math.round(emp.hourlyRate * ot.multiplier * 100) / 100 : 0
       const overtimeAmount = Math.round(overtimeRate * ot.hours * 100) / 100
 
-      let timesheetPayload: Record<string, unknown>
-      if (!isAU) {
-        timesheetPayload = {
-          PayrollCalendarID: payrollCalendarId,
-          EmployeeID: emp.xeroId,
-          StartDate: payRun.period_start,
-          EndDate: payRun.period_end,
-          TimesheetLines: [{
-            Date: payRun.period_start,
-            EarningsRateID: defaultEarningsRateId,
-            NumberOfUnits: ot.hours,
-          }],
-        }
-      } else {
-        const empCalId = await getEmployeeCalendarId(emp.xeroId)
-        const start = new Date(payRun.period_start)
-        const end = new Date(payRun.period_end)
-        const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
-        const dailyHours = new Array(days).fill(0)
-        let weekdays = 0
-        for (let i = 0; i < days; i++) {
-          const d = new Date(start)
-          d.setDate(d.getDate() + i)
-          if (d.getDay() !== 0 && d.getDay() !== 6) weekdays++
-        }
-        const hoursPerDay = weekdays > 0 ? Math.round((ot.hours / weekdays) * 100) / 100 : ot.hours
-        for (let i = 0; i < days; i++) {
-          const d = new Date(start)
-          d.setDate(d.getDate() + i)
-          if (d.getDay() !== 0 && d.getDay() !== 6) dailyHours[i] = hoursPerDay
-        }
-
-        timesheetPayload = {
-          payrollCalendarID: empCalId || undefined,
-          employeeID: emp.xeroId,
-          startDate: payRun.period_start,
-          endDate: payRun.period_end,
-          timesheetLines: [{
-            earningsRateID: defaultEarningsRateId,
-            numberOfUnits: dailyHours,
-          }],
+      const existingTsRes = await fetch(`${baseUrl}/Timesheets?where=EmployeeID=guid("${emp.xeroId}")`, {
+        headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+      })
+      let existingTimesheetId: string | null = null
+      if (existingTsRes.ok) {
+        const existingBody = await existingTsRes.json()
+        const timesheets = existingBody.Timesheets || existingBody.timesheets || []
+        for (const ts of timesheets) {
+          const tsStart = String(ts.StartDate || ts.startDate || '').slice(0, 10)
+          const tsEnd = String(ts.EndDate || ts.endDate || '').slice(0, 10)
+          if (tsStart === periodStart || tsEnd === periodEnd) {
+            existingTimesheetId = ts.TimesheetID || ts.timesheetID
+            break
+          }
         }
       }
 
       const empCalForDebug = isAU ? (empCalendarCache[emp.xeroId!] || payrollCalendarId || 'none') : (payrollCalendarId || 'none')
-      const debugInfo = `API: ${isAU ? 'AU-v2' : 'UK-v1'}, Calendar: ${empCalForDebug}, EarningsRate: ${defaultEarningsRateId}, Period: ${payRun.period_start} to ${payRun.period_end}, Hours: ${ot.hours}`
+      const debugInfo = `API: ${isAU ? 'AU-v2' : 'UK-v1'}, Calendar: ${empCalForDebug}, EarningsRate: ${defaultEarningsRateId}, Period: ${periodStart} to ${periodEnd}, Hours: ${ot.hours}, ExistingTS: ${existingTimesheetId || 'none'}`
 
-      const tsUrl = `${baseUrl}/Timesheets`
-      let tsRes = await fetch(tsUrl, {
-        method: 'POST',
-        headers: xeroHeaders,
-        body: JSON.stringify(timesheetPayload),
-      })
+      let tsRes: Response
 
-      if (!tsRes.ok && isAU) {
+      if (existingTimesheetId) {
+        const revertUrl = `${baseUrl}/Timesheets/${existingTimesheetId}/RevertToDraft`
+        await fetch(revertUrl, { method: 'POST', headers: xeroHeaders })
+
+        const linePayload = isAU
+          ? { date: periodStart, earningsRateID: defaultEarningsRateId, numberOfUnits: ot.hours }
+          : { Date: periodStart, EarningsRateID: defaultEarningsRateId, NumberOfUnits: ot.hours }
+
+        tsRes = await fetch(`${baseUrl}/Timesheets/${existingTimesheetId}/lines`, {
+          method: 'POST',
+          headers: xeroHeaders,
+          body: JSON.stringify(linePayload),
+        })
+      } else {
+        let timesheetPayload: Record<string, unknown>
+        if (isAU) {
+          const empCalId = await getEmployeeCalendarId(emp.xeroId)
+          timesheetPayload = {
+            payrollCalendarID: empCalId || payrollCalendarId,
+            employeeID: emp.xeroId,
+            startDate: periodStart,
+            endDate: periodEnd,
+            timesheetLines: [{
+              date: periodStart,
+              earningsRateID: defaultEarningsRateId,
+              numberOfUnits: ot.hours,
+            }],
+          }
+        } else {
+          timesheetPayload = {
+            PayrollCalendarID: payrollCalendarId,
+            EmployeeID: emp.xeroId,
+            StartDate: periodStart,
+            EndDate: periodEnd,
+            TimesheetLines: [{
+              Date: periodStart,
+              EarningsRateID: defaultEarningsRateId,
+              NumberOfUnits: ot.hours,
+            }],
+          }
+        }
+
+        const tsUrl = `${baseUrl}/Timesheets`
         tsRes = await fetch(tsUrl, {
           method: 'POST',
           headers: xeroHeaders,
-          body: JSON.stringify([timesheetPayload]),
+          body: JSON.stringify(timesheetPayload),
         })
-      }
 
-      if (!tsRes.ok && isAU) {
-        const ukPayload = {
-          PayrollCalendarID: payrollCalendarId,
-          EmployeeID: emp.xeroId,
-          StartDate: payRun.period_start,
-          EndDate: payRun.period_end,
-          TimesheetLines: [{
-            Date: payRun.period_start,
-            EarningsRateID: defaultEarningsRateId,
-            NumberOfUnits: ot.hours,
-          }],
+        if (!tsRes.ok && isAU) {
+          const ukPayload = {
+            PayrollCalendarID: payrollCalendarId,
+            EmployeeID: emp.xeroId,
+            StartDate: periodStart,
+            EndDate: periodEnd,
+            TimesheetLines: [{
+              Date: periodStart,
+              EarningsRateID: defaultEarningsRateId,
+              NumberOfUnits: ot.hours,
+            }],
+          }
+          tsRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
+            method: 'POST',
+            headers: xeroHeaders,
+            body: JSON.stringify(ukPayload),
+          })
         }
-        const ukRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
-          method: 'POST',
-          headers: xeroHeaders,
-          body: JSON.stringify(ukPayload),
-        })
-        if (ukRes.ok) tsRes = ukRes
       }
 
       if (!tsRes.ok) {
