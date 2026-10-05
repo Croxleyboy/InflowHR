@@ -195,7 +195,6 @@ export default function AdminPayrollNew() {
   const [workerSettings, setWorkerSettings] = useState<WorkerTypeSetting[]>([])
   const [wizPeriodReviews, setWizPeriodReviews] = useState<PeriodReview[]>([])
   const [wizOvertimeHours, setWizOvertimeHours] = useState<Record<string, number>>({})
-  const [wizApprovedTimesheets, setWizApprovedTimesheets] = useState<{ employee_id: string; hours: number }[]>([])
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
   const [wizExported, setWizExported] = useState(false)
