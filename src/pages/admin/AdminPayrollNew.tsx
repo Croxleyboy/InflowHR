@@ -813,7 +813,12 @@ export default function AdminPayrollNew() {
           body: { company_id: selectedCompanyId, pay_run_id: payRunId, adjustments },
         })
         if (error) {
-          const msg = typeof data === 'object' && data?.error ? data.error : error.message || 'Edge function error'
+          let msg = error.message || 'Edge function error'
+          try {
+            const errBody = await (error as any).context?.json()
+            if (errBody?.error) msg = errBody.error
+            if (errBody?.detail) msg += ' — ' + errBody.detail
+          } catch { /* context not available */ }
           throw new Error(msg)
         }
         if (data?.error) throw new Error(data.error)
