@@ -808,7 +808,7 @@ export default function AdminPayrollNew() {
       const hasAdjustments = adjustments.overtime.length > 0 || adjustments.unpaid_leave.length > 0 || adjustments.benefit_changes.length > 0
 
       if (hasAdjustments && connectedProvider === 'xero') {
-        const { data, error } = await supabase.functions.invoke('xero-push-timesheets', {
+        const { data, error } = await supabase.functions.invoke('xero-push-adjustments', {
           headers: { Authorization: `Bearer ${session.access_token}` },
           body: { company_id: selectedCompanyId, pay_run_id: payRunId, adjustments },
         })
