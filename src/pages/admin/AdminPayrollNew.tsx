@@ -198,6 +198,7 @@ export default function AdminPayrollNew() {
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
   const [wizExported, setWizExported] = useState(false)
+  const [wizPushResult, setWizPushResult] = useState<{ pushed: number; failed: number; skipped: number; api: string; skipped_details?: { employee: string; reason: string }[] } | null>(null)
   const [wizReleasing, setWizReleasing] = useState(false)
   const [wizUnpaidLeave, setWizUnpaidLeave] = useState<{ employee_id: string; days: number; employee_name: string }[]>([])
   const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
@@ -822,6 +823,7 @@ export default function AdminPayrollNew() {
           throw new Error(msg)
         }
         if (xeroResult?.error) throw new Error(xeroResult.error)
+        setWizPushResult(xeroResult)
         if (xeroResult?.pushed === 0 && xeroResult?.skipped > 0) {
           const reasons = (xeroResult.skipped_details || []).map((s: any) => `${s.employee}: ${s.reason}`).join('; ')
           showError(`0 adjustments pushed — all ${xeroResult.skipped} employees skipped. ${reasons}`)
@@ -1089,6 +1091,7 @@ export default function AdminPayrollNew() {
     setWizPayRunId(null)
     setWizExporting(false)
     setWizExported(false)
+    setWizPushResult(null)
     setWizReleasing(false)
   }
 
@@ -2254,13 +2257,36 @@ export default function AdminPayrollNew() {
                   </>
                 ) : (
                   <>
-                    <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <div style={{ background: wizPushResult && wizPushResult.pushed === 0 ? '#fff3e0' : '#e8f5e9', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={wizPushResult && wizPushResult.pushed === 0 ? '#e65100' : '#2e7d32'} strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                       <div>
-                        <strong style={{ color: '#2e7d32' }}>Adjustments pushed successfully</strong>
-                        <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
-                          Run your pay run in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}, then come back to sync the real payslips.
-                        </p>
+                        <strong style={{ color: wizPushResult && wizPushResult.pushed === 0 ? '#e65100' : '#2e7d32' }}>
+                          {wizPushResult
+                            ? `${wizPushResult.pushed} pushed, ${wizPushResult.failed || 0} failed, ${wizPushResult.skipped || 0} skipped (${wizPushResult.api} API)`
+                            : 'Adjustments pushed successfully'}
+                        </strong>
+                        {wizPushResult && wizPushResult.skipped_details && wizPushResult.skipped_details.length > 0 && (
+                          <ul style={{ fontSize: 12, margin: '6px 0 0', color: '#795548', paddingLeft: 16 }}>
+                            {wizPushResult.skipped_details.map((s, i) => (
+                              <li key={i}>{s.employee}: {s.reason}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {wizPushResult && wizPushResult.pushed > 0 && (
+                          <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
+                            Run your pay run in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}, then come back to sync the real payslips.
+                          </p>
+                        )}
+                        {wizPushResult && wizPushResult.pushed === 0 && (
+                          <p style={{ fontSize: 12, margin: '4px 0 0', color: '#e65100' }}>
+                            No adjustments reached {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. Check the skip reasons above.
+                          </p>
+                        )}
+                        {!wizPushResult && (
+                          <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
+                            Run your pay run in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}, then come back to sync the real payslips.
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>

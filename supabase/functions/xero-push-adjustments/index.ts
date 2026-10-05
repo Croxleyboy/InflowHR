@@ -1,4 +1,93 @@
-import { getSupabase, getValidXeroToken, corsHeaders, json } from '../_shared/xero.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+// ── Inlined shared utilities (dashboard deploy can't reference _shared/) ──
+
+const XERO_TOKEN_URL = 'https://identity.xero.com/connect/token'
+
+function getSupabase() {
+  return createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  )
+}
+
+function getXeroEnv() {
+  const clientId = Deno.env.get('XERO_CLIENT_ID')
+  const clientSecret = Deno.env.get('XERO_CLIENT_SECRET')
+  const redirectUri = Deno.env.get('XERO_REDIRECT_URI')
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error('Missing XERO_CLIENT_ID, XERO_CLIENT_SECRET, or XERO_REDIRECT_URI env vars')
+  }
+  return { clientId, clientSecret, redirectUri }
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://app.inflowhr.com',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+async function getValidXeroToken(companyId: string): Promise<{
+  accessToken: string
+  tenantId: string
+} | null> {
+  const sb = getSupabase()
+  const { data: row } = await sb
+    .from('xero_integrations')
+    .select('access_token, refresh_token, expires_at, tenant_id')
+    .eq('company_id', companyId)
+    .single()
+
+  if (!row?.access_token || !row?.tenant_id) return null
+
+  if (row.expires_at && new Date(row.expires_at) > new Date(Date.now() + 60_000)) {
+    return { accessToken: row.access_token, tenantId: row.tenant_id }
+  }
+
+  if (!row.refresh_token) return null
+  const { clientId, clientSecret } = getXeroEnv()
+
+  const res = await fetch(XERO_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: 'Basic ' + btoa(`${clientId}:${clientSecret}`),
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: row.refresh_token,
+    }),
+  })
+
+  if (!res.ok) {
+    await sb.from('xero_integrations').update({
+      sync_status: 'error',
+      sync_error: 'Token refresh failed — reconnect to Xero',
+      updated_at: new Date().toISOString(),
+    }).eq('company_id', companyId)
+    return null
+  }
+
+  const tokens = await res.json()
+  const expiresAt = new Date(Date.now() + (tokens.expires_in || 1800) * 1000).toISOString()
+
+  await sb.from('xero_integrations').update({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token || row.refresh_token,
+    expires_at: expiresAt,
+    updated_at: new Date().toISOString(),
+  }).eq('company_id', companyId)
+
+  return { accessToken: tokens.access_token, tenantId: row.tenant_id }
+}
+
+// ── Edge function ──
 
 const XERO_PAYROLL_UK = 'https://api.xero.com/payroll.xro/1.0'
 const XERO_PAYROLL_AU = 'https://api.xero.com/payroll.xro/2.0'
@@ -54,7 +143,6 @@ Deno.serve(async (req) => {
       'Content-Type': 'application/json',
     }
 
-    // Detect UK vs AU API (same pattern as xero-push-timesheets)
     let baseUrl = XERO_PAYROLL_UK
     const testRes = await fetch(`${baseUrl}/PayRuns`, {
       headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
@@ -70,7 +158,6 @@ Deno.serve(async (req) => {
 
     const isAU = baseUrl === XERO_PAYROLL_AU
 
-    // Collect all employee IDs from adjustments
     const allEmpIds = new Set<string>()
     for (const a of adjustments.overtime) allEmpIds.add(a.employee_id)
     for (const a of adjustments.unpaid_leave) allEmpIds.add(a.employee_id)
@@ -78,7 +165,6 @@ Deno.serve(async (req) => {
 
     if (allEmpIds.size === 0) return json({ error: 'No adjustments to push' }, 400)
 
-    // Load employees with xero_employee_id and rates
     const { data: employees } = await sb
       .from('employees')
       .select('id, first_name, last_name, xero_employee_id, hourly_rate, annual_salary')
@@ -99,7 +185,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Get the pay run period from our DB
     const { data: payRun } = await sb
       .from('pay_runs')
       .select('period_start, period_end')
@@ -107,7 +192,6 @@ Deno.serve(async (req) => {
       .single()
     if (!payRun) return json({ error: 'Pay run not found' }, 404)
 
-    // Fetch earning rates and deduction types from Xero
     const earningsRates = await fetchXeroRates(baseUrl, xeroHeaders, 'EarningsRates')
     const deductionTypes = await fetchXeroRates(baseUrl, xeroHeaders, 'DeductionTypes')
 
@@ -115,8 +199,7 @@ Deno.serve(async (req) => {
     const unpaidLeaveDeductionId = findRateId(deductionTypes, ['UNPAID', 'UNPAIDLEAVE', 'LEAVE WITHOUT PAY'])
     const defaultEarningsId = findRateId(earningsRates, ['ORDINARY', 'REGULAR', 'STANDARD', 'ORDINARYTIMEEARNINGS'])
 
-    // Find an existing draft pay run, or create one if a payroll calendar exists
-    let xeroPayRun = await findExistingDraftPayRun(baseUrl, xeroHeaders, payRun.period_start, payRun.period_end)
+    let xeroPayRun = await findExistingDraftPayRun(baseUrl, xeroHeaders)
     if (!xeroPayRun) {
       const payrollCalendarId = await getPayrollCalendarId(sb, company_id, baseUrl, xeroHeaders)
       if (!payrollCalendarId) {
@@ -128,13 +211,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Get payslip stubs
     const payslipStubs = await getPayslipStubs(baseUrl, xeroHeaders, xeroPayRun.id)
 
     const results: { employee: string; status: string; lines: number; error?: string }[] = []
     const skipped: { employee: string; reason: string }[] = []
 
-    // Group adjustments by employee
     const empAdjustments: Record<string, {
       overtimeHours: number
       overtimeMultiplier: number
@@ -156,7 +237,6 @@ Deno.serve(async (req) => {
       empAdjustments[bc.employee_id].benefitChanges.push({ benefit: bc.benefit, monthlyCost: bc.monthly_cost })
     }
 
-    // Push adjustment lines to each employee's payslip
     for (const [empId, adj] of Object.entries(empAdjustments)) {
       const emp = empMap[empId]
       if (!emp) { skipped.push({ employee: empId, reason: 'Employee not found' }); continue }
@@ -176,7 +256,6 @@ Deno.serve(async (req) => {
         continue
       }
 
-      // Build earnings and deduction lines
       const earningsLines: Record<string, unknown>[] = []
       const deductionLines: Record<string, unknown>[] = []
 
@@ -245,7 +324,6 @@ Deno.serve(async (req) => {
         continue
       }
 
-      // Update the payslip
       let payslipPayload: Record<string, unknown>
       if (isAU) {
         payslipPayload = { payslipID: payslipId }
@@ -303,6 +381,8 @@ Deno.serve(async (req) => {
     return json({ error: (err as Error).message }, 500)
   }
 })
+
+// ── Helper functions ──
 
 async function fetchXeroRates(
   baseUrl: string,
@@ -370,9 +450,7 @@ async function getPayrollCalendarId(
 
 async function findExistingDraftPayRun(
   baseUrl: string,
-  headers: Record<string, string>,
-  _periodStart: string,
-  _periodEnd: string
+  headers: Record<string, string>
 ): Promise<{ id: string } | null> {
   const listRes = await fetch(`${baseUrl}/PayRuns`, { headers })
   if (!listRes.ok) return null
@@ -380,8 +458,6 @@ async function findExistingDraftPayRun(
   const listBody = await listRes.json()
   const payRuns = listBody.PayRuns || listBody.payRuns || []
 
-  // Find the most recent draft pay run — Xero payroll calendar periods
-  // may not align with calendar months, so use any available draft
   let bestDraft: { id: string; end: string } | null = null
   for (const pr of payRuns) {
     const status = (pr.PayRunStatus || pr.payRunStatus || '').toUpperCase()
