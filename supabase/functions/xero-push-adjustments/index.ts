@@ -371,8 +371,8 @@ async function getPayrollCalendarId(
 async function findExistingDraftPayRun(
   baseUrl: string,
   headers: Record<string, string>,
-  periodStart: string,
-  periodEnd: string
+  _periodStart: string,
+  _periodEnd: string
 ): Promise<{ id: string } | null> {
   const listRes = await fetch(`${baseUrl}/PayRuns`, { headers })
   if (!listRes.ok) return null
@@ -380,19 +380,22 @@ async function findExistingDraftPayRun(
   const listBody = await listRes.json()
   const payRuns = listBody.PayRuns || listBody.payRuns || []
 
+  // Find the most recent draft pay run — Xero payroll calendar periods
+  // may not align with calendar months, so use any available draft
+  let bestDraft: { id: string; end: string } | null = null
   for (const pr of payRuns) {
     const status = (pr.PayRunStatus || pr.payRunStatus || '').toUpperCase()
     if (status !== 'DRAFT') continue
 
-    const prStart = parseXeroDate(pr.PeriodStartDate || pr.periodStartDate)
+    const prId = pr.PayRunID || pr.payRunID
     const prEnd = parseXeroDate(pr.PeriodEndDate || pr.periodEndDate)
-    if (!prStart || !prEnd) continue
+    if (!prId) continue
 
-    if (prStart <= periodStart && prEnd >= periodEnd) {
-      return { id: pr.PayRunID || pr.payRunID }
+    if (!bestDraft || (prEnd && (!bestDraft.end || prEnd > bestDraft.end))) {
+      bestDraft = { id: prId, end: prEnd || '' }
     }
   }
-  return null
+  return bestDraft ? { id: bestDraft.id } : null
 }
 
 async function createXeroPayRun(
