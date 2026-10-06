@@ -14,6 +14,7 @@ export default function AdminXeroTest() {
   const [payslipResult, setPayslipResult] = useState<any>(null)
   const [updatePayload, setUpdatePayload] = useState('')
   const [updatePayslipId, setUpdatePayslipId] = useState('')
+  const [updatePayRunId, setUpdatePayRunId] = useState('')
   const [updateResult, setUpdateResult] = useState<any>(null)
 
   async function callXeroTest(action: string, extra: Record<string, any> = {}) {
@@ -81,6 +82,7 @@ export default function AdminXeroTest() {
     }
     const result = await callXeroTest('update_payslip', {
       payslip_id: updatePayslipId.trim(),
+      pay_run_id: updatePayRunId.trim() || undefined,
       payload: parsed,
     })
     if (result) setUpdateResult(result)
@@ -315,7 +317,7 @@ export default function AdminXeroTest() {
                         {pr.paySlips.map((ps: any) => (
                           <button
                             key={ps.paySlipID}
-                            onClick={() => { setPayslipId(ps.paySlipID) }}
+                            onClick={() => { setPayslipId(ps.paySlipID); setUpdatePayRunId(pr.payRunID) }}
                             style={{
                               display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', marginBottom: 3,
                               background: payslipId === ps.paySlipID ? '#e0e7ff' : '#fff',
@@ -392,9 +394,10 @@ export default function AdminXeroTest() {
 
       {/* ── 3. Update Payslip ─────────────────────────────────────────────── */}
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>3. Update Payslip (POST)</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>3. Update Payslip</h2>
         <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 12 }}>
-          POST /payroll.xro/2.0/Payslip/&#123;PayslipID&#125; — update a draft payslip with earnings/deduction lines.
+          Tries multiple endpoint/method combinations to update a draft payslip.
+          If PayRunID is provided, also tries updating via the PayRun endpoint.
           The payload auto-populates from a fetched payslip above, or edit the JSON directly.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
@@ -408,6 +411,15 @@ export default function AdminXeroTest() {
             />
           </div>
           <div>
+            <label style={labelStyle}>PayRunID <span style={{ fontWeight: 400, color: '#9ca3af' }}>(auto-filled from section 1)</span></label>
+            <input
+              style={inputStyle}
+              placeholder="e.g. ba97000d-dec5-... (needed for PayRun-based update)"
+              value={updatePayRunId}
+              onChange={(e) => setUpdatePayRunId(e.target.value)}
+            />
+          </div>
+          <div>
             <label style={labelStyle}>JSON Payload</label>
             <textarea
               style={{
@@ -416,7 +428,7 @@ export default function AdminXeroTest() {
                 minHeight: 200,
                 resize: 'vertical',
               }}
-              placeholder='{"Payslips": [{"PayslipID": "...", "EarningsLines": [...], "DeductionLines": [...]}]}'
+              placeholder='{"PaySlip": {"PaySlipID": "...", "EarningsLines": [...]}}'
               value={updatePayload}
               onChange={(e) => setUpdatePayload(e.target.value)}
             />
@@ -427,20 +439,54 @@ export default function AdminXeroTest() {
           disabled={!!loading}
           onClick={updatePayslip}
         >
-          {loading === 'update_payslip' ? 'Posting…' : 'POST Payslip Update'}
+          {loading === 'update_payslip' ? 'Trying endpoints…' : 'Update Payslip'}
         </button>
 
         {updateResult && (
           <div>
-            <div style={{ marginTop: 12, fontSize: 13 }}>
-              <strong>Status:</strong>{' '}
-              <span style={{ color: updateResult.status === 200 ? '#16a34a' : '#dc2626' }}>
-                {updateResult.status}
-              </span>
-              {' · '}
-              <strong>URL:</strong> {updateResult.url}
-            </div>
-            <pre style={preStyle}>{JSON.stringify(updateResult.data, null, 2)}</pre>
+            {updateResult.note ? (
+              <div style={{ marginTop: 12, padding: 12, background: '#ecfdf5', border: '1px solid #86efac', borderRadius: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#16a34a', marginBottom: 4 }}>Success</div>
+                <div style={{ fontSize: 13 }}>
+                  <strong>Method:</strong> {updateResult.method} · <strong>URL:</strong> {updateResult.url} · <strong>Status:</strong> {updateResult.status}
+                </div>
+                <pre style={preStyle}>{JSON.stringify(updateResult.data, null, 2)}</pre>
+              </div>
+            ) : updateResult.attempts ? (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', marginBottom: 8 }}>All attempts failed</div>
+                {updateResult.hint && (
+                  <div style={{ fontSize: 12, color: '#d97706', marginBottom: 8, padding: '6px 10px', background: '#fffbeb', borderRadius: 6 }}>
+                    {updateResult.hint}
+                  </div>
+                )}
+                {updateResult.attempts.map((a: any, i: number) => (
+                  <div key={i} style={{ border: '1px solid #fecaca', borderRadius: 6, padding: 10, marginBottom: 6, background: '#fef2f2' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                      {a.label || `${a.method} ${a.url}`}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>
+                      <strong>Status:</strong> <span style={{ color: '#dc2626' }}>{a.status}</span> · <strong>URL:</strong> {a.url}
+                    </div>
+                    <details style={{ marginTop: 4 }}>
+                      <summary style={{ fontSize: 11, color: '#9ca3af', cursor: 'pointer' }}>Response</summary>
+                      <pre style={{ ...preStyle, maxHeight: 200, fontSize: 11 }}>{JSON.stringify(a.data, null, 2)}</pre>
+                    </details>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div>
+                <div style={{ marginTop: 12, fontSize: 13 }}>
+                  <strong>Status:</strong>{' '}
+                  <span style={{ color: updateResult.status === 200 ? '#16a34a' : '#dc2626' }}>
+                    {updateResult.status}
+                  </span>
+                  {updateResult.url && <>{' · '}<strong>URL:</strong> {updateResult.url}</>}
+                </div>
+                <pre style={preStyle}>{JSON.stringify(updateResult.data || updateResult, null, 2)}</pre>
+              </div>
+            )}
           </div>
         )}
       </div>
