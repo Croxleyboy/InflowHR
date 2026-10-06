@@ -57,11 +57,32 @@ export default function AdminXeroTest() {
       if (payslipData) {
         const id = payslipData.paySlipID || payslipData.PayslipID || payslipId.trim()
         setUpdatePayslipId(id)
+        if (payslipData.payRunID) setUpdatePayRunId(payslipData.payRunID)
+
+        const existingEarnings = payslipData.earningsLines || payslipData.EarningsLines || []
+        const existingDeductions = payslipData.deductionLines || payslipData.DeductionLines || []
+
+        const earningsLines = existingEarnings.length > 0
+          ? existingEarnings.map((line: any) => ({
+              EarningsRateID: line.earningsRateID || line.EarningsRateID,
+              NumberOfUnits: line.numberOfUnits ?? line.NumberOfUnits ?? 0,
+              ...(line.ratePerUnit != null || line.RatePerUnit != null
+                ? { RatePerUnit: line.ratePerUnit ?? line.RatePerUnit }
+                : {}),
+            }))
+          : [{ EarningsRateID: 'aa5a01de-14de-4bb3-8a91-e7bda9539820', NumberOfUnits: 160, RatePerUnit: 15.00 }]
+
+        const knownOvertimeId = '0cd90943-c327-477f-be98-184121803d4a'
+        const hasOvertime = earningsLines.some((l: any) => l.EarningsRateID === knownOvertimeId)
+        if (!hasOvertime) {
+          earningsLines.push({ EarningsRateID: knownOvertimeId, NumberOfUnits: 10 })
+        }
+
         setUpdatePayload(JSON.stringify({
           PaySlip: {
             PaySlipID: id,
-            EarningsLines: payslipData.earningsLines || payslipData.EarningsLines || [],
-            DeductionLines: payslipData.deductionLines || payslipData.DeductionLines || [],
+            EarningsLines: earningsLines,
+            ...(existingDeductions.length > 0 ? { DeductionLines: existingDeductions } : {}),
           }
         }, null, 2))
       }
