@@ -131,6 +131,21 @@ Deno.serve(async (req) => {
       'Content-Type': 'application/json',
     }
 
+    // ── Action 0: Fetch pay items (earnings rates, deduction types, etc.) ──
+    if (action === 'fetch_payitems') {
+      const url = `${XERO_PAYROLL_AU}/PayItems`
+      const res = await fetch(url, { headers: xeroHeaders })
+      const text = await res.text()
+      let data: any
+      try { data = JSON.parse(text) } catch { data = text }
+      return json({
+        action: 'fetch_payitems',
+        status: res.status,
+        url,
+        data,
+      })
+    }
+
     // ── Action 1: Fetch all pay runs with payslip IDs ───────────────────
     if (action === 'fetch_payruns') {
       const url = `${XERO_PAYROLL_AU}/PayRuns`
@@ -161,10 +176,9 @@ Deno.serve(async (req) => {
 
     // ── Action 2: Get a specific payslip ──────────────────────────────────
     if (action === 'get_payslip') {
-      if (!pay_run_id) return json({ error: 'pay_run_id required for get_payslip' }, 400)
       if (!payslip_id) return json({ error: 'payslip_id required for get_payslip' }, 400)
 
-      const url = `${XERO_PAYROLL_AU}/PayRuns/${pay_run_id}/Payslips/${payslip_id}`
+      const url = `${XERO_PAYROLL_AU}/Payslips/${payslip_id}`
       const res = await fetch(url, { headers: xeroHeaders })
       const text = await res.text()
       let data
