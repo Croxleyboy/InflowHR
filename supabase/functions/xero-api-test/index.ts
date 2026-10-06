@@ -133,16 +133,34 @@ Deno.serve(async (req) => {
 
     // ── Action 0: Fetch pay items (earnings rates, deduction types, etc.) ──
     if (action === 'fetch_payitems') {
-      const url = `${XERO_PAYROLL_AU}/PayItems`
-      const res = await fetch(url, { headers: xeroHeaders })
-      const text = await res.text()
-      let data: any
-      try { data = JSON.parse(text) } catch { data = text }
+      const endpoints = [
+        { key: 'earningsRates', path: 'EarningsRates' },
+        { key: 'deductionTypes', path: 'DeductionTypes' },
+        { key: 'benefitTypes', path: 'BenefitTypes' },
+        { key: 'reimbursementTypes', path: 'ReimbursementTypes' },
+        { key: 'leaveTypes', path: 'LeaveTypes' },
+      ]
+      const payItems: Record<string, any> = {}
+      const errors: Record<string, number> = {}
+
+      for (const ep of endpoints) {
+        try {
+          const res = await fetch(`${XERO_PAYROLL_AU}/${ep.path}`, { headers: xeroHeaders })
+          if (res.ok) {
+            const d = await res.json()
+            payItems[ep.key] = d[ep.key] || d[ep.path] || d
+          } else {
+            errors[ep.key] = res.status
+          }
+        } catch { errors[ep.key] = 0 }
+      }
+
       return json({
         action: 'fetch_payitems',
-        status: res.status,
-        url,
-        data,
+        status: 200,
+        urls: endpoints.map(e => `${XERO_PAYROLL_AU}/${e.path}`),
+        data: { payItems },
+        errors: Object.keys(errors).length ? errors : undefined,
       })
     }
 
@@ -191,25 +209,50 @@ Deno.serve(async (req) => {
       })
     }
 
-    // ── Action 3: Update/post a payslip ───────────────────────────────────
+    // ── Action 3: Update a payslip (tries multiple methods/URLs) ─────────
     if (action === 'update_payslip') {
       if (!payslip_id) return json({ error: 'payslip_id required for update_payslip' }, 400)
       if (!payload) return json({ error: 'payload required for update_payslip' }, 400)
 
-      const url = `${XERO_PAYROLL_AU}/Payslip/${payslip_id}`
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: xeroHeaders,
-        body: JSON.stringify(payload),
-      })
-      const text = await res.text()
-      let data
-      try { data = JSON.parse(text) } catch { data = text }
+      const attempts = [
+        { method: 'PUT', url: `${XERO_PAYROLL_AU}/Payslips/${payslip_id}` },
+        { method: 'POST', url: `${XERO_PAYROLL_AU}/Payslips/${payslip_id}` },
+        { method: 'POST', url: `${XERO_PAYROLL_AU}/Payslips` },
+        { method: 'PUT', url: `${XERO_PAYROLL_AU}/Payslips` },
+      ]
+
+      const results = []
+      for (const attempt of attempts) {
+        const res = await fetch(attempt.url, {
+          method: attempt.method,
+          headers: xeroHeaders,
+          body: JSON.stringify(payload),
+        })
+        const text = await res.text()
+        let data
+        try { data = JSON.parse(text) } catch { data = text }
+        results.push({
+          method: attempt.method,
+          url: attempt.url,
+          status: res.status,
+          data,
+        })
+        if (res.ok) {
+          return json({
+            action: 'update_payslip',
+            status: res.status,
+            method: attempt.method,
+            url: attempt.url,
+            data,
+            note: `Success with ${attempt.method} ${attempt.url}`,
+          })
+        }
+      }
+
       return json({
         action: 'update_payslip',
-        status: res.status,
-        url,
-        data,
+        error: 'All endpoint attempts failed',
+        attempts: results,
       })
     }
 
