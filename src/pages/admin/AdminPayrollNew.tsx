@@ -235,6 +235,8 @@ export default function AdminPayrollNew() {
   const [lastPayRuns, setLastPayRuns] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }>>({})
   const [wizPeriodByType, setWizPeriodByType] = useState<Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }>>({})
   const [wizGeneratingReviews, setWizGeneratingReviews] = useState(false)
+  const [wizShiftDetails, setWizShiftDetails] = useState<Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number }[]>>({})
+  const [wizExpandedEmps, setWizExpandedEmps] = useState<Set<string>>(new Set())
 
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
@@ -1392,17 +1394,23 @@ export default function AdminPayrollNew() {
       .in('status', ['checked_out', 'auto_closed'])
       .gte('check_in_at', period.start + 'T00:00:00')
       .lte('check_in_at', period.end + 'T23:59:59')
+      .order('check_in_at', { ascending: true })
 
     const hoursByEmp: Record<string, number> = {}
+    const detailsByEmp: Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number }[]> = {}
     if (checkins) {
       for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null }[]) {
         if (!c.check_out_at) continue
         const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
         if (hrs > 0 && hrs < 24) {
-          hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + Math.round(hrs * 100) / 100
+          const rounded = Math.round(hrs * 100) / 100
+          hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + rounded
+          if (!detailsByEmp[c.employee_id]) detailsByEmp[c.employee_id] = []
+          detailsByEmp[c.employee_id].push({ employee_id: c.employee_id, check_in_at: c.check_in_at, check_out_at: c.check_out_at, hours: rounded })
         }
       }
     }
+    setWizShiftDetails(detailsByEmp)
 
     const errors: string[] = []
     for (const emp of targetEmps) {
@@ -1433,7 +1441,8 @@ export default function AdminPayrollNew() {
     if (errors.length > 0) {
       showError(`Failed for ${errors.length} employee(s): ${errors[0]}`)
     } else {
-      showSuccess(`Hours summary generated for ${targetEmps.length} ${workerType === 'shift' ? 'shift worker' : 'zero hours worker'}${targetEmps.length !== 1 ? 's' : ''}`)
+      const shiftCount = Object.values(detailsByEmp).reduce((s, arr) => s + arr.length, 0)
+      showSuccess(`Found ${shiftCount} shift${shiftCount !== 1 ? 's' : ''} across ${targetEmps.length} ${workerType === 'shift' ? 'shift worker' : 'zero hours worker'}${targetEmps.length !== 1 ? 's' : ''}`)
     }
 
     await loadWizPeriodReviews()
@@ -2320,79 +2329,85 @@ export default function AdminPayrollNew() {
           {/* Step 1: Select Worker Types */}
           {wizStep === 1 && (
             <div className="admin-settings-group" style={{ marginTop: 20 }}>
-              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Select Worker Types</h3>
+              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Start a Pay Run</h3>
               <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                Choose which worker types to include in this payroll run. You can run payroll for all types together or process them separately.
+                Each worker type is processed as its own independent pay run. Select one to begin.
               </p>
 
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-                {employedEmployees.length > 0 && (
-                  <label className={`pn-wiz-type-card ${wizWorkerTypes.has('employed') ? 'pn-wiz-type-selected' : ''}`} style={{ borderColor: wizWorkerTypes.has('employed') ? '#5c6bc0' : undefined }}>
-                    <input type="checkbox" checked={wizWorkerTypes.has('employed')} onChange={() => toggleWizWorkerType('employed')} style={{ display: 'none' }} />
-                    <div className="pn-wiz-type-icon" style={{ background: '#5c6bc0' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
+                {employedEmployees.length > 0 && (() => {
+                  const ws = workerSettings.find(s => s.worker_type === 'employed')
+                  const f = ws?.pay_pattern || 'monthly'
+                  const ot = ws?.overtime_handling || 'none'
+                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth)
+                  return (
+                    <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
+                      <div className="pn-wiz-type-icon" style={{ background: '#5c6bc0' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></svg>
+                      </div>
+                      <strong>Employed Staff</strong>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{employedEmployees.length} employee{employedEmployees.length !== 1 ? 's' : ''}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
+                        {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} salary{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
+                      </span>
+                      <span style={{ fontSize: 11, color: '#5c6bc0', fontWeight: 500 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
+                      <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%' }}
+                        onClick={() => { setWizWorkerTypes(new Set(['employed'])); setTimeout(advanceToStep2, 0) }}>
+                        Start Pay Run →
+                      </button>
                     </div>
-                    <strong>Employed Staff</strong>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{employedEmployees.length} employee{employedEmployees.length !== 1 ? 's' : ''}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>{(() => {
-                      const ws = workerSettings.find(s => s.worker_type === 'employed')
-                      const f = ws?.pay_pattern || 'monthly'
-                      const ot = ws?.overtime_handling || 'none'
-                      return `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} salary${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}`
-                    })()}</span>
-                  </label>
-                )}
-                {shiftEmployees.length > 0 && (
-                  <label className={`pn-wiz-type-card ${wizWorkerTypes.has('shift') ? 'pn-wiz-type-selected' : ''}`} style={{ borderColor: wizWorkerTypes.has('shift') ? '#7e57c2' : undefined }}>
-                    <input type="checkbox" checked={wizWorkerTypes.has('shift')} onChange={() => toggleWizWorkerType('shift')} style={{ display: 'none' }} />
-                    <div className="pn-wiz-type-icon" style={{ background: '#7e57c2' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  )
+                })()}
+                {shiftEmployees.length > 0 && (() => {
+                  const ws = workerSettings.find(s => s.worker_type === 'shift_worker')
+                  const f = ws?.pay_pattern || 'weekly'
+                  const ot = ws?.overtime_handling || 'none'
+                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth)
+                  return (
+                    <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
+                      <div className="pn-wiz-type-icon" style={{ background: '#7e57c2' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      </div>
+                      <strong>Shift Workers</strong>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{shiftEmployees.length} employee{shiftEmployees.length !== 1 ? 's' : ''}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
+                        {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
+                      </span>
+                      <span style={{ fontSize: 11, color: '#7e57c2', fontWeight: 500 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
+                      <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: '#7e57c2' }}
+                        onClick={() => { setWizWorkerTypes(new Set(['shift'])); setTimeout(advanceToStep2, 0) }}>
+                        Start Pay Run →
+                      </button>
                     </div>
-                    <strong>Shift Workers</strong>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{shiftEmployees.length} employee{shiftEmployees.length !== 1 ? 's' : ''}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>{(() => {
-                      const ws = workerSettings.find(s => s.worker_type === 'shift_worker')
-                      const f = ws?.pay_pattern || 'weekly'
-                      const ot = ws?.overtime_handling || 'none'
-                      return `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}`
-                    })()}</span>
-                  </label>
-                )}
-                {zeroHoursEmployees.length > 0 && (
-                  <label className={`pn-wiz-type-card ${wizWorkerTypes.has('zero_hours') ? 'pn-wiz-type-selected' : ''}`} style={{ borderColor: wizWorkerTypes.has('zero_hours') ? '#ef6c00' : undefined }}>
-                    <input type="checkbox" checked={wizWorkerTypes.has('zero_hours')} onChange={() => toggleWizWorkerType('zero_hours')} style={{ display: 'none' }} />
-                    <div className="pn-wiz-type-icon" style={{ background: '#ef6c00' }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  )
+                })()}
+                {zeroHoursEmployees.length > 0 && (() => {
+                  const ws = workerSettings.find(s => s.worker_type === 'zero_hours')
+                  const f = ws?.pay_pattern || 'weekly'
+                  const ot = ws?.overtime_handling || 'none'
+                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth)
+                  return (
+                    <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
+                      <div className="pn-wiz-type-icon" style={{ background: '#ef6c00' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      </div>
+                      <strong>Zero Hours</strong>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{zeroHoursEmployees.length} employee{zeroHoursEmployees.length !== 1 ? 's' : ''}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>
+                        {f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate{ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}
+                      </span>
+                      <span style={{ fontSize: 11, color: '#ef6c00', fontWeight: 500 }}>{formatDate(period.start)} – {formatDate(period.end)}</span>
+                      <button className="admin-btn admin-btn-primary" style={{ marginTop: 8, fontSize: 12, width: '100%', background: '#ef6c00' }}
+                        onClick={() => { setWizWorkerTypes(new Set(['zero_hours'])); setTimeout(advanceToStep2, 0) }}>
+                        Start Pay Run →
+                      </button>
                     </div>
-                    <strong>Zero Hours</strong>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{zeroHoursEmployees.length} employee{zeroHoursEmployees.length !== 1 ? 's' : ''}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>{(() => {
-                      const ws = workerSettings.find(s => s.worker_type === 'zero_hours')
-                      const f = ws?.pay_pattern || 'weekly'
-                      const ot = ws?.overtime_handling || 'none'
-                      return `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}`
-                    })()}</span>
-                  </label>
-                )}
+                  )
+                })()}
               </div>
 
-              {workerTypeStats.length > 1 && (
-                <button className="admin-btn" style={{ fontSize: 12, marginBottom: 16 }} onClick={() => {
-                  const all = new Set<'employed' | 'shift' | 'zero_hours'>()
-                  if (employedEmployees.length > 0) all.add('employed')
-                  if (shiftEmployees.length > 0) all.add('shift')
-                  if (zeroHoursEmployees.length > 0) all.add('zero_hours')
-                  setWizWorkerTypes(all)
-                }}>
-                  Select All Types
-                </button>
-              )}
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button className="admin-btn" onClick={() => setView('dashboard')}>Cancel</button>
-                <button className="admin-btn admin-btn-primary" disabled={wizWorkerTypes.size === 0} onClick={advanceToStep2}>
-                  Next: Review →
-                </button>
+                <button className="admin-btn" onClick={() => setView('dashboard')}>← Back to Dashboard</button>
               </div>
             </div>
           )}
@@ -2556,20 +2571,37 @@ export default function AdminPayrollNew() {
                           <tbody>
                             {[...shiftReviewsApproved, ...shiftReviewsPending].map(r => {
                               const emp = shiftEmployees.find(e => e.id === r.employee_id)
+                              const empShifts = wizShiftDetails[r.employee_id] || []
+                              const isExpanded = wizExpandedEmps.has(r.employee_id)
                               return (
-                                <tr key={r.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
-                                  <td style={{ padding: '6px 8px' }}>{emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'}</td>
+                                <React.Fragment key={r.id}>
+                                <tr style={{ borderBottom: '1px solid var(--border, #f0f0f0)', cursor: empShifts.length > 0 ? 'pointer' : undefined }}
+                                  onClick={() => {
+                                    if (empShifts.length === 0) return
+                                    setWizExpandedEmps(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(r.employee_id)) next.delete(r.employee_id); else next.add(r.employee_id)
+                                      return next
+                                    })
+                                  }}>
+                                  <td style={{ padding: '6px 8px' }}>
+                                    {empShifts.length > 0 && <span style={{ display: 'inline-block', width: 14, fontSize: 10, color: '#7e57c2' }}>{isExpanded ? '▼' : '▶'}</span>}
+                                    {emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'}
+                                    {empShifts.length > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted, #999)', marginLeft: 6 }}>{empShifts.length} shift{empShifts.length !== 1 ? 's' : ''}</span>}
+                                  </td>
                                   <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                                     <input type="number" min="0" step="0.25" style={{ width: 60, padding: '2px 4px', fontSize: 12, borderRadius: 3, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
                                       value={Number(r.adjusted_hours) || 0}
-                                      onChange={e => updateReviewHours(r.id, 'adjusted_hours', Number(e.target.value))}
+                                      onChange={e => { e.stopPropagation(); updateReviewHours(r.id, 'adjusted_hours', Number(e.target.value)) }}
+                                      onClick={e => e.stopPropagation()}
                                       disabled={r.status === 'approved'}
                                     />
                                   </td>
                                   <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                                     <input type="number" min="0" step="0.25" style={{ width: 60, padding: '2px 4px', fontSize: 12, borderRadius: 3, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
                                       value={Number(r.overtime_hours) || 0}
-                                      onChange={e => updateReviewHours(r.id, 'overtime_hours', Number(e.target.value))}
+                                      onChange={e => { e.stopPropagation(); updateReviewHours(r.id, 'overtime_hours', Number(e.target.value)) }}
+                                      onClick={e => e.stopPropagation()}
                                       disabled={r.status === 'approved'}
                                     />
                                   </td>
@@ -2585,6 +2617,37 @@ export default function AdminPayrollNew() {
                                     </span>
                                   </td>
                                 </tr>
+                                {isExpanded && empShifts.length > 0 && (
+                                  <tr>
+                                    <td colSpan={6} style={{ padding: '0 8px 8px 28px', background: 'var(--bg-muted, #fafafa)' }}>
+                                      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                                        <thead>
+                                          <tr style={{ color: 'var(--text-muted, #888)' }}>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Date</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Check In</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Check Out</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'right' }}>Hours</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {empShifts.map((s, si) => {
+                                            const cin = new Date(s.check_in_at)
+                                            const cout = s.check_out_at ? new Date(s.check_out_at) : null
+                                            return (
+                                              <tr key={si} style={{ borderTop: si > 0 ? '1px solid var(--border, #eee)' : undefined }}>
+                                                <td style={{ padding: '3px 6px' }}>{cin.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                <td style={{ padding: '3px 6px' }}>{cin.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+                                                <td style={{ padding: '3px 6px' }}>{cout ? cout.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                                                <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 500 }}>{s.hours.toFixed(2)}</td>
+                                              </tr>
+                                            )
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                )}
+                                </React.Fragment>
                               )
                             })}
                           </tbody>
@@ -2681,20 +2744,37 @@ export default function AdminPayrollNew() {
                           <tbody>
                             {[...zeroReviewsApproved, ...zeroReviewsPending].map(r => {
                               const emp = zeroHoursEmployees.find(e => e.id === r.employee_id)
+                              const empShifts = wizShiftDetails[r.employee_id] || []
+                              const isExpanded = wizExpandedEmps.has(r.employee_id)
                               return (
-                                <tr key={r.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
-                                  <td style={{ padding: '6px 8px' }}>{emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'}</td>
+                                <React.Fragment key={r.id}>
+                                <tr style={{ borderBottom: '1px solid var(--border, #f0f0f0)', cursor: empShifts.length > 0 ? 'pointer' : undefined }}
+                                  onClick={() => {
+                                    if (empShifts.length === 0) return
+                                    setWizExpandedEmps(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(r.employee_id)) next.delete(r.employee_id); else next.add(r.employee_id)
+                                      return next
+                                    })
+                                  }}>
+                                  <td style={{ padding: '6px 8px' }}>
+                                    {empShifts.length > 0 && <span style={{ display: 'inline-block', width: 14, fontSize: 10, color: '#ef6c00' }}>{isExpanded ? '▼' : '▶'}</span>}
+                                    {emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'}
+                                    {empShifts.length > 0 && <span style={{ fontSize: 10, color: 'var(--text-muted, #999)', marginLeft: 6 }}>{empShifts.length} shift{empShifts.length !== 1 ? 's' : ''}</span>}
+                                  </td>
                                   <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                                     <input type="number" min="0" step="0.25" style={{ width: 60, padding: '2px 4px', fontSize: 12, borderRadius: 3, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
                                       value={Number(r.adjusted_hours) || 0}
-                                      onChange={e => updateReviewHours(r.id, 'adjusted_hours', Number(e.target.value))}
+                                      onChange={e => { e.stopPropagation(); updateReviewHours(r.id, 'adjusted_hours', Number(e.target.value)) }}
+                                      onClick={e => e.stopPropagation()}
                                       disabled={r.status === 'approved'}
                                     />
                                   </td>
                                   <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                                     <input type="number" min="0" step="0.25" style={{ width: 60, padding: '2px 4px', fontSize: 12, borderRadius: 3, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
                                       value={Number(r.overtime_hours) || 0}
-                                      onChange={e => updateReviewHours(r.id, 'overtime_hours', Number(e.target.value))}
+                                      onChange={e => { e.stopPropagation(); updateReviewHours(r.id, 'overtime_hours', Number(e.target.value)) }}
+                                      onClick={e => e.stopPropagation()}
                                       disabled={r.status === 'approved'}
                                     />
                                   </td>
@@ -2710,6 +2790,37 @@ export default function AdminPayrollNew() {
                                     </span>
                                   </td>
                                 </tr>
+                                {isExpanded && empShifts.length > 0 && (
+                                  <tr>
+                                    <td colSpan={6} style={{ padding: '0 8px 8px 28px', background: 'var(--bg-muted, #fafafa)' }}>
+                                      <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                                        <thead>
+                                          <tr style={{ color: 'var(--text-muted, #888)' }}>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Date</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Check In</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Check Out</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'right' }}>Hours</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {empShifts.map((s, si) => {
+                                            const cin = new Date(s.check_in_at)
+                                            const cout = s.check_out_at ? new Date(s.check_out_at) : null
+                                            return (
+                                              <tr key={si} style={{ borderTop: si > 0 ? '1px solid var(--border, #eee)' : undefined }}>
+                                                <td style={{ padding: '3px 6px' }}>{cin.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                <td style={{ padding: '3px 6px' }}>{cin.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+                                                <td style={{ padding: '3px 6px' }}>{cout ? cout.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                                                <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 500 }}>{s.hours.toFixed(2)}</td>
+                                              </tr>
+                                            )
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </td>
+                                  </tr>
+                                )}
+                                </React.Fragment>
                               )
                             })}
                           </tbody>
