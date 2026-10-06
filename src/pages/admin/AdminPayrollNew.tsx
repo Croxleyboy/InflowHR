@@ -205,6 +205,9 @@ export default function AdminPayrollNew() {
     skipped_details?: { employee: string; reason: string }[];
     results?: { employee: string; status: string; error?: string }[];
     failed_summary?: string;
+    csv_exported?: number;
+    csv_items?: { employee: string; type: string; description: string; hours?: number; rate?: number; multiplier?: number; days?: number; amount: number }[];
+    provider?: string;
   } | null>(null)
   const [wizReleasing, setWizReleasing] = useState(false)
   const [wizUnpaidLeave, setWizUnpaidLeave] = useState<{ employee_id: string; days: number; employee_name: string }[]>([])
@@ -784,7 +787,7 @@ export default function AdminPayrollNew() {
     wizUnpaidLeave.filter(u => isEmpInScope(u.employee_id)).forEach(u => {
       const emp = employees.find(e => e.id === u.employee_id)
       if (!emp) return
-      const dailyRate = emp.annual_salary > 0 ? Math.round(emp.annual_salary / 260 * 100) / 100 : 0
+      const dailyRate = (emp.annual_salary || 0) > 0 ? Math.round((emp.annual_salary || 0) / 260 * 100) / 100 : 0
       items.push({
         employee: `${emp.first_name} ${emp.last_name}`,
         type: 'Unpaid Leave Deduction',

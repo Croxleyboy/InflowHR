@@ -4,8 +4,8 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 
 export default function AdminXeroTest() {
-  const { companyId } = useAdminCompany()
-  const { addToast } = useToast()
+  const { selectedCompanyId: companyId } = useAdminCompany()
+  const { showToast } = useToast()
 
   const [loading, setLoading] = useState<string | null>(null)
   const [payRunsResult, setPayRunsResult] = useState<any>(null)
@@ -25,7 +25,7 @@ export default function AdminXeroTest() {
       if (error) throw error
       return data
     } catch (err: any) {
-      addToast(err.message || 'Edge function call failed', 'error')
+      showToast(err.message || 'Edge function call failed', 'error')
       return null
     } finally {
       setLoading(null)
@@ -39,7 +39,7 @@ export default function AdminXeroTest() {
 
   async function getPayslip() {
     if (!payRunId.trim() || !payslipId.trim()) {
-      addToast('Both PayRunID and PayslipID are required', 'error')
+      showToast('Both PayRunID and PayslipID are required', 'error')
       return
     }
     const result = await callXeroTest('get_payslip', {
@@ -66,14 +66,14 @@ export default function AdminXeroTest() {
 
   async function updatePayslip() {
     if (!updatePayslipId.trim()) {
-      addToast('PayslipID is required', 'error')
+      showToast('PayslipID is required', 'error')
       return
     }
     let parsed
     try {
       parsed = JSON.parse(updatePayload)
     } catch {
-      addToast('Invalid JSON payload', 'error')
+      showToast('Invalid JSON payload', 'error')
       return
     }
     const result = await callXeroTest('update_payslip', {
