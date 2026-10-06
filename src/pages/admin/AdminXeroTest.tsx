@@ -413,17 +413,17 @@ export default function AdminXeroTest() {
         )}
       </div>
 
-      {/* ── 3. Update Payslip ─────────────────────────────────────────────── */}
+      {/* ── 3. Push Timesheet Lines ─────────────────────────────────────── */}
       <div style={sectionStyle}>
-        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>3. Update Payslip</h2>
+        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>3. Push Timesheet Lines</h2>
         <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 12 }}>
-          Tries multiple endpoint/method combinations to update a draft payslip.
-          If PayRunID is provided, also tries updating via the PayRun endpoint.
-          The payload auto-populates from a fetched payslip above, or edit the JSON directly.
+          POST /payroll.xro/2.0/Timesheets/&#123;id&#125;/Lines — adds earnings lines to the employee's
+          existing draft timesheet. Xero auto-creates timesheets per pay period; this pushes hours/overtime
+          into them. Hours are spread across weekdays (max 8hrs/day per line).
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
           <div>
-            <label style={labelStyle}>PayslipID</label>
+            <label style={labelStyle}>PayslipID <span style={{ fontWeight: 400, color: '#9ca3af' }}>(used to find employee's timesheet)</span></label>
             <input
               style={inputStyle}
               placeholder="e.g. e061a3ee-2f13-..."
@@ -435,7 +435,7 @@ export default function AdminXeroTest() {
             <label style={labelStyle}>PayRunID <span style={{ fontWeight: 400, color: '#9ca3af' }}>(auto-filled from section 1)</span></label>
             <input
               style={inputStyle}
-              placeholder="e.g. ba97000d-dec5-... (needed for PayRun-based update)"
+              placeholder="e.g. ba97000d-dec5-..."
               value={updatePayRunId}
               onChange={(e) => setUpdatePayRunId(e.target.value)}
             />
@@ -460,53 +460,86 @@ export default function AdminXeroTest() {
           disabled={!!loading}
           onClick={updatePayslip}
         >
-          {loading === 'update_payslip' ? 'Trying endpoints…' : 'Update Payslip'}
+          {loading === 'update_payslip' ? 'Pushing lines…' : 'Update Payslip'}
         </button>
 
         {updateResult && (
           <div>
-            {updateResult.note ? (
-              <div style={{ marginTop: 12, padding: 12, background: '#ecfdf5', border: '1px solid #86efac', borderRadius: 8 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#16a34a', marginBottom: 4 }}>Success</div>
-                <div style={{ fontSize: 13 }}>
-                  <strong>Method:</strong> {updateResult.method} · <strong>URL:</strong> {updateResult.url} · <strong>Status:</strong> {updateResult.status}
+            {/* Summary banner */}
+            {updateResult.note && (
+              <div style={{
+                marginTop: 12, padding: 12, borderRadius: 8,
+                background: updateResult.failures === 0 ? '#ecfdf5' : '#fffbeb',
+                border: `1px solid ${updateResult.failures === 0 ? '#86efac' : '#fcd34d'}`,
+              }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: updateResult.failures === 0 ? '#16a34a' : '#d97706', marginBottom: 4 }}>
+                  {updateResult.failures === 0 ? 'Success' : 'Partial Success'}
                 </div>
-                <pre style={preStyle}>{JSON.stringify(updateResult.data, null, 2)}</pre>
-              </div>
-            ) : updateResult.attempts ? (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', marginBottom: 8 }}>All attempts failed</div>
-                {updateResult.hint && (
-                  <div style={{ fontSize: 12, color: '#d97706', marginBottom: 8, padding: '6px 10px', background: '#fffbeb', borderRadius: 6 }}>
-                    {updateResult.hint}
+                <div style={{ fontSize: 13 }}>{updateResult.note}</div>
+                {updateResult.timesheetID && (
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                    <strong>Timesheet:</strong> <code style={{ fontSize: 11 }}>{updateResult.timesheetID}</code>
+                    {' · '}<strong>Period:</strong> {updateResult.timesheetPeriod}
+                    {' · '}<strong>Weekdays:</strong> {updateResult.weekdaysAvailable}
                   </div>
                 )}
-                {updateResult.attempts.map((a: any, i: number) => (
-                  <div key={i} style={{ border: '1px solid #fecaca', borderRadius: 6, padding: 10, marginBottom: 6, background: '#fef2f2' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-                      {a.label || `${a.method} ${a.url}`}
+              </div>
+            )}
+
+            {/* Individual line results */}
+            {updateResult.lineResults?.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+                  Timesheet Lines ({updateResult.lineResults.length})
+                </div>
+                {updateResult.lineResults.map((lr: any, i: number) => (
+                  <div key={i} style={{
+                    border: `1px solid ${lr.success ? '#86efac' : '#fecaca'}`,
+                    borderRadius: 6, padding: 10, marginBottom: 6,
+                    background: lr.success ? '#f0fdf4' : '#fef2f2',
+                  }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>
+                      <span style={{ color: lr.success ? '#16a34a' : '#dc2626', marginRight: 6 }}>
+                        {lr.success ? '✓' : '✗'}
+                      </span>
+                      {lr.numberOfUnits}hrs on {new Date(lr.date).toLocaleDateString('en-GB')}
+                      <span style={{ color: '#6b7280', fontWeight: 400, marginLeft: 8, fontSize: 12 }}>
+                        Rate: <code style={{ fontSize: 11 }}>{lr.earningsRateID?.substring(0, 8)}…</code>
+                      </span>
                     </div>
                     <div style={{ fontSize: 12, color: '#6b7280' }}>
-                      <strong>Status:</strong> <span style={{ color: '#dc2626' }}>{a.status}</span> · <strong>URL:</strong> {a.url}
+                      <strong>Status:</strong>{' '}
+                      <span style={{ color: lr.success ? '#16a34a' : '#dc2626' }}>{lr.status}</span>
                     </div>
+                    {lr.data?.timesheetLine && (
+                      <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+                        <strong>Line ID:</strong> <code style={{ fontSize: 11 }}>{lr.data.timesheetLine.timesheetLineID}</code>
+                      </div>
+                    )}
                     <details style={{ marginTop: 4 }}>
                       <summary style={{ fontSize: 11, color: '#9ca3af', cursor: 'pointer' }}>Response</summary>
-                      <pre style={{ ...preStyle, maxHeight: 200, fontSize: 11 }}>{JSON.stringify(a.data, null, 2)}</pre>
+                      <pre style={{ ...preStyle, maxHeight: 200, fontSize: 11 }}>{JSON.stringify(lr.data, null, 2)}</pre>
                     </details>
                   </div>
                 ))}
               </div>
-            ) : (
-              <div>
-                <div style={{ marginTop: 12, fontSize: 13 }}>
-                  <strong>Status:</strong>{' '}
-                  <span style={{ color: updateResult.status === 200 ? '#16a34a' : '#dc2626' }}>
-                    {updateResult.status}
-                  </span>
-                  {updateResult.url && <>{' · '}<strong>URL:</strong> {updateResult.url}</>}
-                </div>
-                <pre style={preStyle}>{JSON.stringify(updateResult.data || updateResult, null, 2)}</pre>
+            )}
+
+            {/* Error fallback */}
+            {updateResult.error && !updateResult.lineResults && (
+              <div style={{ marginTop: 12, padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#dc2626', marginBottom: 4 }}>Error</div>
+                <div style={{ fontSize: 13 }}>{updateResult.error}</div>
+                <pre style={preStyle}>{JSON.stringify(updateResult, null, 2)}</pre>
               </div>
+            )}
+
+            {/* Timesheet detail */}
+            {updateResult.timesheetDetail && (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>Timesheet Detail (before update)</summary>
+                <pre style={preStyle}>{JSON.stringify(updateResult.timesheetDetail, null, 2)}</pre>
+              </details>
             )}
           </div>
         )}

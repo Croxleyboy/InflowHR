@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const XERO_TOKEN_URL = 'https://identity.xero.com/connect/token'
-const XERO_PAYROLL_AU = 'https://api.xero.com/payroll.xro/2.0'
+const XERO_PAYROLL_V2 = 'https://api.xero.com/payroll.xro/2.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': 'https://app.inflowhr.com',
@@ -85,7 +85,6 @@ async function getValidXeroToken(companyId: string): Promise<{
   return { accessToken: tokens.access_token, tenantId: row.tenant_id }
 }
 
-// ── Super-admin auth check ──────────────────────────────────────────────────
 async function verifySuperAdmin(req: Request) {
   const sb = getSupabase()
   const authHeader = req.headers.get('Authorization')
@@ -104,6 +103,21 @@ async function verifySuperAdmin(req: Request) {
   if (!sa) return { error: 'Super admin access required', status: 403 }
 
   return { user }
+}
+
+function getWeekdaysInRange(startDate: string, endDate: string): string[] {
+  const days: string[] = []
+  const start = new Date(startDate.split('T')[0])
+  const end = new Date(endDate.split('T')[0])
+  const current = new Date(start)
+  while (current < end) {
+    const dow = current.getDay()
+    if (dow >= 1 && dow <= 5) {
+      days.push(current.toISOString().split('T')[0])
+    }
+    current.setDate(current.getDate() + 1)
+  }
+  return days
 }
 
 Deno.serve(async (req) => {
@@ -131,7 +145,7 @@ Deno.serve(async (req) => {
       'Content-Type': 'application/json',
     }
 
-    // ── Action 0: Fetch pay items (earnings rates, deduction types, etc.) ──
+    // ── Fetch pay items (earnings rates, deduction types, etc.) ──
     if (action === 'fetch_payitems') {
       const endpoints = [
         { key: 'earningsRates', path: 'EarningsRates' },
@@ -145,7 +159,7 @@ Deno.serve(async (req) => {
 
       for (const ep of endpoints) {
         try {
-          const res = await fetch(`${XERO_PAYROLL_AU}/${ep.path}`, { headers: xeroHeaders })
+          const res = await fetch(`${XERO_PAYROLL_V2}/${ep.path}`, { headers: xeroHeaders })
           if (res.ok) {
             const d = await res.json()
             payItems[ep.key] = d[ep.key] || d[ep.path] || d
@@ -158,15 +172,15 @@ Deno.serve(async (req) => {
       return json({
         action: 'fetch_payitems',
         status: 200,
-        urls: endpoints.map(e => `${XERO_PAYROLL_AU}/${e.path}`),
+        urls: endpoints.map(e => `${XERO_PAYROLL_V2}/${e.path}`),
         data: { payItems },
         errors: Object.keys(errors).length ? errors : undefined,
       })
     }
 
-    // ── Action 1: Fetch all pay runs with payslip IDs ───────────────────
+    // ── Fetch all pay runs with payslip IDs ──
     if (action === 'fetch_payruns') {
-      const url = `${XERO_PAYROLL_AU}/PayRuns`
+      const url = `${XERO_PAYROLL_V2}/PayRuns`
       const res = await fetch(url, { headers: xeroHeaders })
       const text = await res.text()
       let data: any
@@ -175,7 +189,7 @@ Deno.serve(async (req) => {
       if (res.ok && data?.payRuns?.length) {
         for (const pr of data.payRuns) {
           try {
-            const detailRes = await fetch(`${XERO_PAYROLL_AU}/PayRuns/${pr.payRunID}`, { headers: xeroHeaders })
+            const detailRes = await fetch(`${XERO_PAYROLL_V2}/PayRuns/${pr.payRunID}`, { headers: xeroHeaders })
             if (detailRes.ok) {
               const detail = await detailRes.json()
               pr.paySlips = detail?.payRun?.paySlips || []
@@ -192,11 +206,11 @@ Deno.serve(async (req) => {
       })
     }
 
-    // ── Action 2: Get a specific payslip ──────────────────────────────────
+    // ── Get a specific payslip ──
     if (action === 'get_payslip') {
       if (!payslip_id) return json({ error: 'payslip_id required for get_payslip' }, 400)
 
-      const url = `${XERO_PAYROLL_AU}/Payslips/${payslip_id}`
+      const url = `${XERO_PAYROLL_V2}/Payslips/${payslip_id}`
       const res = await fetch(url, { headers: xeroHeaders })
       const text = await res.text()
       let data
@@ -209,50 +223,108 @@ Deno.serve(async (req) => {
       })
     }
 
-    // ── Action 3: Update a payslip (tries multiple methods/URLs) ─────────
+    // ── Update payslip via Timesheets/Lines (confirmed working endpoint) ──
     if (action === 'update_payslip') {
       if (!payslip_id) return json({ error: 'payslip_id required for update_payslip' }, 400)
       if (!payload) return json({ error: 'payload required for update_payslip' }, 400)
 
-      const attempts = [
-        { method: 'PUT', url: `${XERO_PAYROLL_AU}/Payslips/${payslip_id}` },
-        { method: 'POST', url: `${XERO_PAYROLL_AU}/Payslips/${payslip_id}` },
-        { method: 'POST', url: `${XERO_PAYROLL_AU}/Payslips` },
-        { method: 'PUT', url: `${XERO_PAYROLL_AU}/Payslips` },
-      ]
+      const inner = payload.PaySlip || payload
+      const earningsLines = inner.EarningsLines || inner.earningsLines || []
+      const employeeID = inner.EmployeeID || inner.employeeID || '2424fa8a-c41f-4f22-b655-46c6e1262945'
 
-      const results = []
-      for (const attempt of attempts) {
-        const res = await fetch(attempt.url, {
-          method: attempt.method,
-          headers: xeroHeaders,
-          body: JSON.stringify(payload),
-        })
-        const text = await res.text()
-        let data
-        try { data = JSON.parse(text) } catch { data = text }
-        results.push({
-          method: attempt.method,
-          url: attempt.url,
-          status: res.status,
-          data,
-        })
-        if (res.ok) {
-          return json({
-            action: 'update_payslip',
-            status: res.status,
-            method: attempt.method,
-            url: attempt.url,
-            data,
-            note: `Success with ${attempt.method} ${attempt.url}`,
-          })
-        }
+      // Step 1: Find the employee's timesheets
+      const tsListRes = await fetch(`${XERO_PAYROLL_V2}/Timesheets`, { headers: xeroHeaders })
+      let tsListData: any = null
+      if (tsListRes.ok) {
+        tsListData = await tsListRes.json()
       }
+
+      const employeeTimesheets = (tsListData?.timesheets || []).filter(
+        (ts: any) => ts.employeeID === employeeID
+      )
+
+      if (!employeeTimesheets.length) {
+        return json({
+          action: 'update_payslip',
+          error: 'No timesheets found for this employee',
+          allTimesheets: tsListData?.timesheets,
+        })
+      }
+
+      // Use the first (current period) timesheet
+      const ts = employeeTimesheets[0]
+      const timesheetID = ts.timesheetID
+      const weekdays = getWeekdaysInRange(ts.startDate, ts.endDate)
+
+      // Step 2: GET the timesheet detail to see existing lines
+      const detailRes = await fetch(`${XERO_PAYROLL_V2}/Timesheets/${timesheetID}`, { headers: xeroHeaders })
+      let timesheetDetail: any = null
+      if (detailRes.ok) {
+        timesheetDetail = await detailRes.json()
+      }
+
+      // Step 3: POST each earnings line to /Timesheets/{id}/Lines
+      // Spread hours across weekdays (max 24hrs per day)
+      const lineResults: any[] = []
+      let dayIndex = 0
+
+      for (const line of earningsLines) {
+        const earningsRateID = line.EarningsRateID || line.earningsRateID
+        const totalUnits = line.NumberOfUnits ?? line.numberOfUnits ?? 0
+        if (!earningsRateID || totalUnits <= 0) continue
+
+        // Spread hours across weekdays, max 8hrs per day per line
+        let remaining = totalUnits
+        while (remaining > 0 && dayIndex < weekdays.length) {
+          const units = Math.min(remaining, 8)
+          const lineBody = {
+            date: weekdays[dayIndex],
+            earningsRateID,
+            numberOfUnits: units,
+          }
+
+          const res = await fetch(
+            `${XERO_PAYROLL_V2}/Timesheets/${timesheetID}/Lines`,
+            {
+              method: 'POST',
+              headers: xeroHeaders,
+              body: JSON.stringify(lineBody),
+            }
+          )
+          const text = await res.text()
+          let data
+          try { data = JSON.parse(text) } catch { data = text }
+          lineResults.push({
+            earningsRateID,
+            date: weekdays[dayIndex],
+            numberOfUnits: units,
+            status: res.status,
+            success: res.ok,
+            data,
+          })
+
+          remaining -= units
+          if (remaining > 0) dayIndex++
+        }
+        dayIndex++
+      }
+
+      const successes = lineResults.filter(r => r.success)
+      const failures = lineResults.filter(r => !r.success)
 
       return json({
         action: 'update_payslip',
-        error: 'All endpoint attempts failed',
-        attempts: results,
+        timesheetID,
+        timesheetPeriod: `${ts.startDate} to ${ts.endDate}`,
+        weekdaysAvailable: weekdays.length,
+        totalLinesPosted: lineResults.length,
+        successes: successes.length,
+        failures: failures.length,
+        note: failures.length === 0
+          ? `All ${successes.length} timesheet lines added successfully via POST /Timesheets/{id}/Lines`
+          : `${successes.length} succeeded, ${failures.length} failed`,
+        lineResults,
+        timesheetDetail,
       })
     }
 
