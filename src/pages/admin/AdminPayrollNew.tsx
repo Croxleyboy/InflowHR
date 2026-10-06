@@ -73,6 +73,24 @@ function getPeriodBoundaries(year: number, month: number, freq: PayFrequency, fy
   return periods.length > 0 ? periods : [{ start: monthStart, end: monthEnd }]
 }
 
+function getNextPeriodForFreq(freq: PayFrequency, fyStartMonth: number): { start: string; end: string } {
+  const today = new Date()
+  if (freq === 'monthly') {
+    const nextDate = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+    const end = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0)
+    return { start: localDateStr(nextDate), end: localDateStr(end) }
+  }
+  const daysPerPeriod = freq === 'weekly' ? 7 : 14
+  const fyStart = new Date(today.getMonth() + 1 >= fyStartMonth ? today.getFullYear() : today.getFullYear() - 1, fyStartMonth - 1, 1)
+  const daysSinceFyStart = Math.floor((today.getTime() - fyStart.getTime()) / 86400000)
+  const currentPeriodIndex = Math.floor(daysSinceFyStart / daysPerPeriod)
+  const nextPeriodStart = new Date(fyStart)
+  nextPeriodStart.setDate(nextPeriodStart.getDate() + (currentPeriodIndex + 1) * daysPerPeriod)
+  const nextPeriodEnd = new Date(nextPeriodStart)
+  nextPeriodEnd.setDate(nextPeriodEnd.getDate() + daysPerPeriod - 1)
+  return { start: localDateStr(nextPeriodStart), end: localDateStr(nextPeriodEnd) }
+}
+
 interface WorkerTypeSetting {
   id: number; company_id: string; worker_type: string
   pay_pattern: PayFrequency; overtime_handling: string; time_recording: string
@@ -215,6 +233,8 @@ export default function AdminPayrollNew() {
   const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
   const [wizBonusEntries, setWizBonusEntries] = useState<{ employee_id: string; employee_name: string; amount: number; description: string; type: 'bonus' | 'deduction' }[]>([])
   const [lastPayRuns, setLastPayRuns] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }>>({})
+  const [wizPeriodByType, setWizPeriodByType] = useState<Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }>>({})
+  const [wizGeneratingReviews, setWizGeneratingReviews] = useState(false)
 
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
@@ -449,28 +469,28 @@ export default function AdminPayrollNew() {
     }
   }, [groupedByMonth.length])
 
-  async function loadWizPeriodReviews() {
+  async function loadWizPeriodReviews(periodMap?: Record<string, { start: string; end: string }>) {
     if (!selectedCompanyId) return
-    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const nextMonth = nextDate.getMonth()
-    const nextYear = nextDate.getFullYear()
-    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
-    const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
+    const pm = periodMap || wizPeriodByType
+    const allStarts = Object.values(pm).map(p => p.start)
+    const allEnds = Object.values(pm).map(p => p.end)
+    const minStart = allStarts.sort()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
+    const maxEnd = allEnds.sort().reverse()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
     const { data } = await supabase.from('pay_period_reviews')
       .select('id, employee_id, period_start, period_end, total_hours, adjusted_hours, overtime_hours, hourly_rate, gross_pay, status')
       .eq('company_id', selectedCompanyId)
-      .gte('period_start', monthStart)
-      .lte('period_end', monthEnd)
+      .gte('period_start', minStart)
+      .lte('period_end', maxEnd)
     setWizPeriodReviews((data as PeriodReview[]) || [])
   }
 
-  async function loadWizTimesheets() {
+  async function loadWizTimesheets(periodMap?: Record<string, { start: string; end: string }>) {
     if (!selectedCompanyId) return
-    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const nextMonth = nextDate.getMonth()
-    const nextYear = nextDate.getFullYear()
-    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
-    const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
+    const pm = periodMap || wizPeriodByType
+    const allStarts = Object.values(pm).map(p => p.start)
+    const allEnds = Object.values(pm).map(p => p.end)
+    const monthStart = allStarts.sort()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
+    const monthEnd = allEnds.sort().reverse()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
     const { data } = await supabase.from('timesheets')
       .select('employee_id, hours')
       .eq('company_id', selectedCompanyId)
@@ -500,13 +520,13 @@ export default function AdminPayrollNew() {
     setWizOvertimeHours(autoOvertime)
   }
 
-  async function loadWizAdjustments() {
+  async function loadWizAdjustments(periodMap?: Record<string, { start: string; end: string }>) {
     if (!selectedCompanyId) return
-    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const nextMonth = nextDate.getMonth()
-    const nextYear = nextDate.getFullYear()
-    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
-    const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
+    const pm = periodMap || wizPeriodByType
+    const allStarts = Object.values(pm).map(p => p.start)
+    const allEnds = Object.values(pm).map(p => p.end)
+    const monthStart = allStarts.sort()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
+    const monthEnd = allEnds.sort().reverse()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
 
     const { data: leaveData } = await supabase.from('leave_requests')
       .select('employee_id, days_requested, employees!leave_requests_employee_id_fkey(first_name, last_name)')
@@ -555,14 +575,15 @@ export default function AdminPayrollNew() {
   // Wizard: generate payslips for selected worker types
   async function wizGenerate() {
     setWizGenerating(true)
-    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const nextYear = nextDate.getFullYear()
-    const nextMonth = nextDate.getMonth()
-    const nextKey = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}`
+    const allStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
+    const allEnds = Object.values(wizPeriodByType).map(p => p.end).sort().reverse()
+    const periodStart = allStarts[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
+    const periodEnd = allEnds[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
+    const nextKey = periodStart.slice(0, 7)
 
-    const existingNext = payslips.filter(p => p.pay_period_start.startsWith(nextKey))
+    const existingNext = payslips.filter(p => p.pay_period_start >= periodStart && p.pay_period_start <= periodEnd)
     if (existingNext.length > 0) {
-      showError(`Payslips for ${MONTH_NAMES[nextMonth]} ${nextYear} already exist`)
+      showError(`Payslips for the period ${formatDate(periodStart)} – ${formatDate(periodEnd)} already exist`)
       setWizGenerating(false)
       return
     }
@@ -580,15 +601,12 @@ export default function AdminPayrollNew() {
       return
     }
 
-    const endOfMonth = new Date(nextYear, nextMonth + 1, 0)
     const batch = Date.now().toString(36).slice(-4)
-    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
-    const monthEnd = localDateStr(endOfMonth)
 
     const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
     const { data: existingRun } = await supabase.from('pay_runs')
-      .select('id').eq('company_id', selectedCompanyId).eq('frequency', 'monthly')
-      .eq('period_start', monthStart).eq('period_end', monthEnd).maybeSingle()
+      .select('id').eq('company_id', selectedCompanyId)
+      .eq('period_start', periodStart).eq('period_end', periodEnd).maybeSingle()
 
     let payRunData: { id: string } | null = null
     let payRunError: any = null
@@ -601,8 +619,8 @@ export default function AdminPayrollNew() {
       payRunError = res.error
     } else {
       const res = await supabase.from('pay_runs').insert({
-        company_id: selectedCompanyId, frequency: 'monthly', period_start: monthStart,
-        period_end: monthEnd, status: 'generating', worker_types: workerTypeArr,
+        company_id: selectedCompanyId, frequency: 'monthly', period_start: periodStart,
+        period_end: periodEnd, status: 'generating', worker_types: workerTypeArr,
         created_by: session?.user?.id || null,
       }).select('id').single()
       payRunData = res.data
@@ -627,7 +645,7 @@ export default function AdminPayrollNew() {
       for (const row of allEnrollments as any[]) {
         const bt = row.benefit_type
         if (!bt?.is_enabled || !bt.monthly_cost) continue
-        if (new Date(row.enrolled_at) > endOfMonth) continue
+        if (new Date(row.enrolled_at) > new Date(periodEnd)) continue
         benefitCostMapMonthly[row.employee_id] = (benefitCostMapMonthly[row.employee_id] || 0) + (bt.monthly_cost || 0)
       }
     }
@@ -653,7 +671,10 @@ export default function AdminPayrollNew() {
       const isShiftOrZero = emp.employment_category === 'shift_worker'
       const freq = getEffectiveSetting(emp, workerSettings, 'pay_pattern') as PayFrequency
       const overtimeHandling = getEffectiveSetting(emp, workerSettings, 'overtime_handling')
-      const periods = getPeriodBoundaries(nextYear, nextMonth, freq, fyStartMonth)
+      const wtKey = isShiftOrZero ? (emp.contract_type === 'Zero hours shift worker' ? 'zero_hours' : 'shift') : 'employed'
+      const wtPeriod = wizPeriodByType[wtKey]
+      const pDate = wtPeriod ? new Date(wtPeriod.start) : new Date(periodStart)
+      const periods = getPeriodBoundaries(pDate.getFullYear(), pDate.getMonth(), freq, fyStartMonth)
 
       if (isShiftOrZero) {
         const empReview = wizPeriodReviews.find(r => r.employee_id === emp.id && r.status === 'approved')
@@ -775,7 +796,7 @@ export default function AdminPayrollNew() {
     if (errors.length > 0) {
       showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
     } else {
-      showSuccess(`Generated payslips for ${MONTH_NAMES[nextDate.getMonth()]} ${nextDate.getFullYear()}`)
+      showSuccess(`Generated payslips for ${formatDate(periodStart)} – ${formatDate(periodEnd)}`)
       setWizGenerated(true)
       await loadAll()
     }
@@ -866,16 +887,15 @@ export default function AdminPayrollNew() {
   async function wizPushAdjustments() {
     if (!selectedCompanyId || !session) return
     setWizGenerating(true)
-    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const nextYear = nextDate.getFullYear()
-    const nextMonth = nextDate.getMonth()
-    const monthStart = `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}-01`
-    const monthEnd = localDateStr(new Date(nextYear, nextMonth + 1, 0))
+    const pAllStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
+    const pAllEnds = Object.values(wizPeriodByType).map(p => p.end).sort().reverse()
+    const pStart = pAllStarts[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
+    const pEnd = pAllEnds[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
 
     const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
     const { data: existingRun } = await supabase.from('pay_runs')
-      .select('id').eq('company_id', selectedCompanyId).eq('frequency', 'monthly')
-      .eq('period_start', monthStart).eq('period_end', monthEnd).maybeSingle()
+      .select('id').eq('company_id', selectedCompanyId)
+      .eq('period_start', pStart).eq('period_end', pEnd).maybeSingle()
 
     let payRunData: { id: string } | null = null
     let payRunError: any = null
@@ -889,8 +909,8 @@ export default function AdminPayrollNew() {
       payRunError = res.error
     } else {
       const res = await supabase.from('pay_runs').insert({
-        company_id: selectedCompanyId, frequency: 'monthly', period_start: monthStart,
-        period_end: monthEnd, status: 'generating', payment_method: connectedProvider || 'external',
+        company_id: selectedCompanyId, frequency: 'monthly', period_start: pStart,
+        period_end: pEnd, status: 'generating', payment_method: connectedProvider || 'external',
         worker_types: workerTypeArr, created_by: session?.user?.id || null,
       }).select('id').single()
       payRunData = res.data
@@ -942,8 +962,8 @@ export default function AdminPayrollNew() {
           body: {
             company_id: selectedCompanyId,
             pay_run_id: payRunId,
-            period_start: monthStart,
-            period_end: monthEnd,
+            period_start: pStart,
+            period_end: pEnd,
             overtime: overtimeEntries,
             unpaid_leave: unpaidLeaveEntries.map(u => ({ employee_id: u.employee_id, days: u.days })),
             benefit_changes: benefitChangeEntries.map(b => ({ employee_id: b.employee_id, benefit: b.benefit, monthly_cost: b.monthly_cost })),
@@ -1267,11 +1287,23 @@ export default function AdminPayrollNew() {
   }
 
   function advanceToStep2() {
-    if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) {
-      loadWizPeriodReviews()
+    const periodMap: Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }> = {}
+    for (const wt of Array.from(wizWorkerTypes)) {
+      const wtSettingKey = wt === 'shift' ? 'shift_worker' : wt
+      const wtSetting = workerSettings.find(s => s.worker_type === wtSettingKey)
+      const freq = (wtSetting?.pay_pattern || 'monthly') as PayFrequency
+      const freqLabel = freq === 'weekly' ? 'Weekly' : freq === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'
+      const overtimeLabel = (wtSetting?.overtime_handling || 'none') === 'overtime' ? 'Overtime' : (wtSetting?.overtime_handling || 'none') === 'toil' ? 'TOIL' : 'None'
+      const period = getNextPeriodForFreq(freq, fyStartMonth)
+      periodMap[wt] = { ...period, freq, freqLabel, overtimeLabel }
     }
-    loadWizTimesheets()
-    if (providerConnected) loadWizAdjustments()
+    setWizPeriodByType(periodMap)
+
+    if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) {
+      loadWizPeriodReviews(periodMap)
+    }
+    loadWizTimesheets(periodMap)
+    if (providerConnected) loadWizAdjustments(periodMap)
     loadWizBonuses()
     setWizStep(2)
   }
@@ -1345,6 +1377,101 @@ export default function AdminPayrollNew() {
       }
     })
     setWizBonusEntries(bonusEntries)
+  }
+
+  async function generateHoursSummary(workerType: 'shift' | 'zero_hours') {
+    if (!selectedCompanyId || !session) return
+    const period = wizPeriodByType[workerType]
+    if (!period) return
+    setWizGeneratingReviews(true)
+
+    const targetEmps = workerType === 'shift' ? shiftEmployees : zeroHoursEmployees
+    const { data: checkins } = await supabase.from('checkin_records')
+      .select('employee_id, check_in_at, check_out_at, status')
+      .eq('company_id', selectedCompanyId)
+      .in('status', ['checked_out', 'auto_closed'])
+      .gte('check_in_at', period.start + 'T00:00:00')
+      .lte('check_in_at', period.end + 'T23:59:59')
+
+    const hoursByEmp: Record<string, number> = {}
+    if (checkins) {
+      for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null }[]) {
+        if (!c.check_out_at) continue
+        const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
+        if (hrs > 0 && hrs < 24) {
+          hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + Math.round(hrs * 100) / 100
+        }
+      }
+    }
+
+    const errors: string[] = []
+    for (const emp of targetEmps) {
+      const totalHours = hoursByEmp[emp.id] || 0
+      const rate = emp.hourly_rate || 0
+      const weeklyHours = emp.weekly_hours || 0
+      const weeksInPeriod = period.freq === 'weekly' ? 1 : period.freq === 'bi_weekly' ? 2 : 52 / 12
+      const contracted = weeklyHours * weeksInPeriod
+      const overtime = contracted > 0 ? Math.max(0, totalHours - contracted) : 0
+      const grossPay = Math.round(totalHours * rate * 100) / 100
+
+      const { error } = await supabase.from('pay_period_reviews').upsert({
+        company_id: selectedCompanyId,
+        employee_id: emp.id,
+        period_start: period.start,
+        period_end: period.end,
+        total_hours: Math.round(totalHours * 100) / 100,
+        adjusted_hours: Math.round(totalHours * 100) / 100,
+        overtime_hours: Math.round(overtime * 100) / 100,
+        hourly_rate: rate,
+        gross_pay: grossPay,
+        status: 'draft',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'company_id,employee_id,period_start' })
+      if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
+    }
+
+    if (errors.length > 0) {
+      showError(`Failed for ${errors.length} employee(s): ${errors[0]}`)
+    } else {
+      showSuccess(`Hours summary generated for ${targetEmps.length} ${workerType === 'shift' ? 'shift worker' : 'zero hours worker'}${targetEmps.length !== 1 ? 's' : ''}`)
+    }
+
+    await loadWizPeriodReviews()
+    setWizGeneratingReviews(false)
+  }
+
+  async function approveAllReviews(workerType: 'shift' | 'zero_hours') {
+    if (!selectedCompanyId || !session) return
+    const targetEmps = workerType === 'shift' ? shiftEmployees : zeroHoursEmployees
+    const targetIds = new Set(targetEmps.map(e => e.id))
+    const toApprove = wizPeriodReviews.filter(r => r.status !== 'approved' && targetIds.has(r.employee_id))
+    if (toApprove.length === 0) return
+
+    for (const review of toApprove) {
+      await supabase.from('pay_period_reviews').update({
+        status: 'approved',
+        approved_by: session.user?.id,
+        approved_at: new Date().toISOString(),
+      }).eq('id', review.id)
+    }
+    showSuccess(`Approved ${toApprove.length} period review${toApprove.length !== 1 ? 's' : ''}`)
+    await loadWizPeriodReviews()
+  }
+
+  async function updateReviewHours(reviewId: string, field: 'adjusted_hours' | 'overtime_hours', value: number) {
+    const review = wizPeriodReviews.find(r => r.id === reviewId)
+    if (!review) return
+    const adjustedHours = field === 'adjusted_hours' ? value : Number(review.adjusted_hours)
+    const overtimeHours = field === 'overtime_hours' ? value : Number(review.overtime_hours)
+    const grossPay = Math.round(adjustedHours * Number(review.hourly_rate) * 100) / 100
+    await supabase.from('pay_period_reviews').update({
+      [field]: value,
+      gross_pay: grossPay,
+      updated_at: new Date().toISOString(),
+    }).eq('id', reviewId)
+    setWizPeriodReviews(prev => prev.map(r =>
+      r.id === reviewId ? { ...r, [field]: value, gross_pay: grossPay } : r
+    ))
   }
 
   function toggleWizWorkerType(t: 'employed' | 'shift' | 'zero_hours') {
@@ -2145,6 +2272,34 @@ export default function AdminPayrollNew() {
       {/* ── RUN PAYROLL WIZARD ─────────────────────────────────── */}
       {view === 'run_payroll' && (
         <div className="pn-wizard">
+          {/* Period Banner */}
+          {Object.keys(wizPeriodByType).length > 0 && wizStep >= 2 && (
+            <div style={{ background: 'linear-gradient(135deg, #1a237e 0%, #283593 100%)', borderRadius: 10, padding: '14px 20px', marginBottom: 16, color: '#fff', display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <strong style={{ fontSize: 14 }}>Pay Run</strong>
+              </div>
+              {Object.entries(wizPeriodByType).map(([wt, p]) => {
+                const label = wt === 'employed' ? 'Employed' : wt === 'shift' ? 'Shift Workers' : 'Zero Hours'
+                const colour = wt === 'employed' ? '#7986cb' : wt === 'shift' ? '#b39ddb' : '#ffb74d'
+                return (
+                  <div key={wt} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '4px 10px' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: colour, flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{label}</span>
+                    <span style={{ fontSize: 12, opacity: 0.85 }}>{formatDate(p.start)} – {formatDate(p.end)}</span>
+                    <span style={{ fontSize: 10, opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 6px', borderRadius: 3 }}>{p.freqLabel}</span>
+                    {p.overtimeLabel !== 'None' && (
+                      <span style={{ fontSize: 10, opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 6px', borderRadius: 3 }}>{p.overtimeLabel}</span>
+                    )}
+                  </div>
+                )
+              })}
+              {providerConnected && (
+                <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 'auto' }}>Connected to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</span>
+              )}
+            </div>
+          )}
+
           {/* Progress steps */}
           <div className="pn-wizard-steps">
             {(providerConnected
@@ -2180,7 +2335,12 @@ export default function AdminPayrollNew() {
                     </div>
                     <strong>Employed Staff</strong>
                     <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{employedEmployees.length} employee{employedEmployees.length !== 1 ? 's' : ''}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Monthly salary, fixed gross pay</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>{(() => {
+                      const ws = workerSettings.find(s => s.worker_type === 'employed')
+                      const f = ws?.pay_pattern || 'monthly'
+                      const ot = ws?.overtime_handling || 'none'
+                      return `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} salary${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}`
+                    })()}</span>
                   </label>
                 )}
                 {shiftEmployees.length > 0 && (
@@ -2191,7 +2351,12 @@ export default function AdminPayrollNew() {
                     </div>
                     <strong>Shift Workers</strong>
                     <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{shiftEmployees.length} employee{shiftEmployees.length !== 1 ? 's' : ''}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Hourly rate × hours worked</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>{(() => {
+                      const ws = workerSettings.find(s => s.worker_type === 'shift_worker')
+                      const f = ws?.pay_pattern || 'weekly'
+                      const ot = ws?.overtime_handling || 'none'
+                      return `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}`
+                    })()}</span>
                   </label>
                 )}
                 {zeroHoursEmployees.length > 0 && (
@@ -2202,7 +2367,12 @@ export default function AdminPayrollNew() {
                     </div>
                     <strong>Zero Hours</strong>
                     <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{zeroHoursEmployees.length} employee{zeroHoursEmployees.length !== 1 ? 's' : ''}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>Variable hours, weekly/fortnightly pay</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>{(() => {
+                      const ws = workerSettings.find(s => s.worker_type === 'zero_hours')
+                      const f = ws?.pay_pattern || 'weekly'
+                      const ot = ws?.overtime_handling || 'none'
+                      return `${f === 'weekly' ? 'Weekly' : f === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'} · hours × rate${ot !== 'none' ? ` · ${ot === 'toil' ? 'TOIL' : 'Overtime'}` : ''}`
+                    })()}</span>
                   </label>
                 )}
               </div>
@@ -2322,35 +2492,122 @@ export default function AdminPayrollNew() {
 
               {wizWorkerTypes.has('shift') && shiftEmployees.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#7e57c2' }}>Shift Workers ({shiftEmployees.length})</h4>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#7e57c2', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    Shift Workers ({shiftEmployees.length})
+                    {wizPeriodByType.shift && (
+                      <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted, #6b7280)' }}>
+                        {formatDate(wizPeriodByType.shift.start)} – {formatDate(wizPeriodByType.shift.end)} · {wizPeriodByType.shift.freqLabel}
+                      </span>
+                    )}
+                  </h4>
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
                     <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '0 0 8px' }}>
-                      Shift worker pay is calculated from check-in records (hours worked × hourly rate). Hours are aggregated automatically for this pay period.
+                      Shift worker pay is calculated from check-in records (hours worked × hourly rate). Generate a summary to aggregate hours for this period, then review and approve before proceeding.
                     </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
+
+                    {/* Generate / Approve buttons */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      <button className="admin-btn admin-btn-primary" style={{ fontSize: 12, padding: '6px 14px' }}
+                        disabled={wizGeneratingReviews}
+                        onClick={() => generateHoursSummary('shift')}>
+                        {wizGeneratingReviews ? 'Generating…' : shiftReviewsPending.length > 0 || shiftReviewsApproved.length > 0 ? '↻ Regenerate Hours' : '⚡ Generate Hours Summary'}
+                      </button>
+                      {shiftReviewsPending.length > 0 && (
+                        <button className="admin-btn" style={{ fontSize: 12, padding: '6px 14px', background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7' }}
+                          onClick={() => approveAllReviews('shift')}>
+                          ✓ Approve All ({shiftReviewsPending.length})
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Summary metrics */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8, marginBottom: 10 }}>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value" style={{ color: '#2e7d32' }}>{shiftReviewsApproved.length}</span>
-                        <span className="pn-worker-metric-label">Hours confirmed</span>
+                        <span className="pn-worker-metric-label">Approved</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value" style={{ color: shiftReviewsPending.length > 0 ? '#e65100' : undefined }}>{shiftReviewsPending.length}</span>
-                        <span className="pn-worker-metric-label">Pending confirmation</span>
+                        <span className="pn-worker-metric-label">Draft / Pending</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">£{shiftReviewsApproved.reduce((s, r) => s + Number(r.gross_pay), 0).toFixed(2)}</span>
-                        <span className="pn-worker-metric-label">Total confirmed gross</span>
+                        <span className="pn-worker-metric-value">{[...shiftReviewsApproved, ...shiftReviewsPending].reduce((s, r) => s + Number(r.adjusted_hours || 0), 0).toFixed(1)}</span>
+                        <span className="pn-worker-metric-label">Total hours</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{shiftReviewsApproved.reduce((s, r) => s + Number(r.adjusted_hours), 0).toFixed(1)}</span>
-                        <span className="pn-worker-metric-label">Total confirmed hours</span>
+                        <span className="pn-worker-metric-value">£{[...shiftReviewsApproved, ...shiftReviewsPending].reduce((s, r) => s + Number(r.gross_pay || 0), 0).toFixed(2)}</span>
+                        <span className="pn-worker-metric-label">Total gross</span>
                       </div>
                     </div>
-                    {hasShiftBlocker && (
-                      <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 13 }}>
-                        <strong style={{ color: '#e65100' }}>Cannot generate payslips</strong>
-                        <p style={{ margin: '4px 0 0', color: '#bf360c', fontSize: 12 }}>
-                          {shiftMissingReview.length > 0 && `${shiftMissingReview.length} employee(s) have no check-in records for this period. Ensure they have completed shifts logged via Check-In. `}
-                          {shiftReviewsPending.length > 0 && `${shiftReviewsPending.length} employee(s) have unconfirmed hours — review and approve their check-in records on the Timesheets page before proceeding. `}
+
+                    {/* Inline review table */}
+                    {(shiftReviewsApproved.length > 0 || shiftReviewsPending.length > 0) && (
+                      <div style={{ overflowX: 'auto', marginBottom: 8 }}>
+                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid var(--border, #e5e7eb)', textAlign: 'left' }}>
+                              <th style={{ padding: '6px 8px', fontWeight: 600 }}>Employee</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>Total Hrs</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>Overtime</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>Rate</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>Gross Pay</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...shiftReviewsApproved, ...shiftReviewsPending].map(r => {
+                              const emp = shiftEmployees.find(e => e.id === r.employee_id)
+                              return (
+                                <tr key={r.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
+                                  <td style={{ padding: '6px 8px' }}>{emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                    <input type="number" min="0" step="0.25" style={{ width: 60, padding: '2px 4px', fontSize: 12, borderRadius: 3, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
+                                      value={Number(r.adjusted_hours) || 0}
+                                      onChange={e => updateReviewHours(r.id, 'adjusted_hours', Number(e.target.value))}
+                                      disabled={r.status === 'approved'}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                    <input type="number" min="0" step="0.25" style={{ width: 60, padding: '2px 4px', fontSize: 12, borderRadius: 3, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
+                                      value={Number(r.overtime_hours) || 0}
+                                      onChange={e => updateReviewHours(r.id, 'overtime_hours', Number(e.target.value))}
+                                      disabled={r.status === 'approved'}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>£{Number(r.hourly_rate).toFixed(2)}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>£{Number(r.gross_pay).toFixed(2)}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                    <span style={{
+                                      fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                                      background: r.status === 'approved' ? '#e8f5e9' : '#fff3e0',
+                                      color: r.status === 'approved' ? '#2e7d32' : '#e65100'
+                                    }}>
+                                      {r.status === 'approved' ? 'Approved' : 'Draft'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Missing employees warning */}
+                    {shiftMissingReview.length > 0 && (
+                      <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 12 }}>
+                        <strong style={{ color: '#e65100' }}>{shiftMissingReview.length} employee(s) with no hours</strong>
+                        <p style={{ margin: '4px 0 0', color: '#bf360c' }}>
+                          {shiftMissingReview.map(e => `${e.first_name} ${e.last_name}`).join(', ')} — no check-in records found for this period. Click "Generate Hours Summary" to create entries, or check their shifts are logged.
+                        </p>
+                      </div>
+                    )}
+
+                    {hasShiftBlocker && !shiftMissingReview.length && (
+                      <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 12 }}>
+                        <strong style={{ color: '#e65100' }}>Hours not yet approved</strong>
+                        <p style={{ margin: '4px 0 0', color: '#bf360c' }}>
+                          {shiftReviewsPending.length} employee(s) have draft hours. Review the table above, adjust if needed, then click "Approve All" to proceed.
                         </p>
                       </div>
                     )}
@@ -2360,35 +2617,122 @@ export default function AdminPayrollNew() {
 
               {wizWorkerTypes.has('zero_hours') && zeroHoursEmployees.length > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#ef6c00' }}>Zero Hours Workers ({zeroHoursEmployees.length})</h4>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#ef6c00', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    Zero Hours Workers ({zeroHoursEmployees.length})
+                    {wizPeriodByType.zero_hours && (
+                      <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted, #6b7280)' }}>
+                        {formatDate(wizPeriodByType.zero_hours.start)} – {formatDate(wizPeriodByType.zero_hours.end)} · {wizPeriodByType.zero_hours.freqLabel}
+                      </span>
+                    )}
+                  </h4>
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
                     <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '0 0 8px' }}>
-                      Zero hours pay is based entirely on hours actually worked, calculated from check-in records.
+                      Zero hours pay is based entirely on hours actually worked, calculated from check-in records. Generate a summary then review and approve.
                     </p>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
+
+                    {/* Generate / Approve buttons */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      <button className="admin-btn admin-btn-primary" style={{ fontSize: 12, padding: '6px 14px' }}
+                        disabled={wizGeneratingReviews}
+                        onClick={() => generateHoursSummary('zero_hours')}>
+                        {wizGeneratingReviews ? 'Generating…' : zeroReviewsPending.length > 0 || zeroReviewsApproved.length > 0 ? '↻ Regenerate Hours' : '⚡ Generate Hours Summary'}
+                      </button>
+                      {zeroReviewsPending.length > 0 && (
+                        <button className="admin-btn" style={{ fontSize: 12, padding: '6px 14px', background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7' }}
+                          onClick={() => approveAllReviews('zero_hours')}>
+                          ✓ Approve All ({zeroReviewsPending.length})
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Summary metrics */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8, marginBottom: 10 }}>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value" style={{ color: '#2e7d32' }}>{zeroReviewsApproved.length}</span>
-                        <span className="pn-worker-metric-label">Hours confirmed</span>
+                        <span className="pn-worker-metric-label">Approved</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value" style={{ color: zeroReviewsPending.length > 0 ? '#e65100' : undefined }}>{zeroReviewsPending.length}</span>
-                        <span className="pn-worker-metric-label">Pending confirmation</span>
+                        <span className="pn-worker-metric-label">Draft / Pending</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">£{zeroReviewsApproved.reduce((s, r) => s + Number(r.gross_pay), 0).toFixed(2)}</span>
-                        <span className="pn-worker-metric-label">Total confirmed gross</span>
+                        <span className="pn-worker-metric-value">{[...zeroReviewsApproved, ...zeroReviewsPending].reduce((s, r) => s + Number(r.adjusted_hours || 0), 0).toFixed(1)}</span>
+                        <span className="pn-worker-metric-label">Total hours</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{zeroReviewsApproved.reduce((s, r) => s + Number(r.adjusted_hours), 0).toFixed(1)}</span>
-                        <span className="pn-worker-metric-label">Total confirmed hours</span>
+                        <span className="pn-worker-metric-value">£{[...zeroReviewsApproved, ...zeroReviewsPending].reduce((s, r) => s + Number(r.gross_pay || 0), 0).toFixed(2)}</span>
+                        <span className="pn-worker-metric-label">Total gross</span>
                       </div>
                     </div>
-                    {hasZeroBlocker && (
-                      <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 13 }}>
-                        <strong style={{ color: '#e65100' }}>Cannot generate payslips</strong>
-                        <p style={{ margin: '4px 0 0', color: '#bf360c', fontSize: 12 }}>
-                          {zeroMissingReview.length > 0 && `${zeroMissingReview.length} employee(s) have no check-in records for this period. Ensure they have completed shifts logged via Check-In. `}
-                          {zeroReviewsPending.length > 0 && `${zeroReviewsPending.length} employee(s) have unconfirmed hours — review and approve their check-in records on the Timesheets page before proceeding. `}
+
+                    {/* Inline review table */}
+                    {(zeroReviewsApproved.length > 0 || zeroReviewsPending.length > 0) && (
+                      <div style={{ overflowX: 'auto', marginBottom: 8 }}>
+                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '2px solid var(--border, #e5e7eb)', textAlign: 'left' }}>
+                              <th style={{ padding: '6px 8px', fontWeight: 600 }}>Employee</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>Total Hrs</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>Overtime</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>Rate</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'right' }}>Gross Pay</th>
+                              <th style={{ padding: '6px 8px', fontWeight: 600, textAlign: 'center' }}>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...zeroReviewsApproved, ...zeroReviewsPending].map(r => {
+                              const emp = zeroHoursEmployees.find(e => e.id === r.employee_id)
+                              return (
+                                <tr key={r.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
+                                  <td style={{ padding: '6px 8px' }}>{emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                    <input type="number" min="0" step="0.25" style={{ width: 60, padding: '2px 4px', fontSize: 12, borderRadius: 3, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
+                                      value={Number(r.adjusted_hours) || 0}
+                                      onChange={e => updateReviewHours(r.id, 'adjusted_hours', Number(e.target.value))}
+                                      disabled={r.status === 'approved'}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                    <input type="number" min="0" step="0.25" style={{ width: 60, padding: '2px 4px', fontSize: 12, borderRadius: 3, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
+                                      value={Number(r.overtime_hours) || 0}
+                                      onChange={e => updateReviewHours(r.id, 'overtime_hours', Number(e.target.value))}
+                                      disabled={r.status === 'approved'}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>£{Number(r.hourly_rate).toFixed(2)}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>£{Number(r.gross_pay).toFixed(2)}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                                    <span style={{
+                                      fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                                      background: r.status === 'approved' ? '#e8f5e9' : '#fff3e0',
+                                      color: r.status === 'approved' ? '#2e7d32' : '#e65100'
+                                    }}>
+                                      {r.status === 'approved' ? 'Approved' : 'Draft'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Missing employees warning */}
+                    {zeroMissingReview.length > 0 && (
+                      <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 12 }}>
+                        <strong style={{ color: '#e65100' }}>{zeroMissingReview.length} employee(s) with no hours</strong>
+                        <p style={{ margin: '4px 0 0', color: '#bf360c' }}>
+                          {zeroMissingReview.map(e => `${e.first_name} ${e.last_name}`).join(', ')} — no check-in records found for this period. Click "Generate Hours Summary" to create entries, or check their shifts are logged.
+                        </p>
+                      </div>
+                    )}
+
+                    {hasZeroBlocker && !zeroMissingReview.length && (
+                      <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 12 }}>
+                        <strong style={{ color: '#e65100' }}>Hours not yet approved</strong>
+                        <p style={{ margin: '4px 0 0', color: '#bf360c' }}>
+                          {zeroReviewsPending.length} employee(s) have draft hours. Review the table above, adjust if needed, then click "Approve All" to proceed.
                         </p>
                       </div>
                     )}
