@@ -8,8 +8,8 @@ export default function AdminXeroTest() {
   const { showToast } = useToast()
 
   const [loading, setLoading] = useState<string | null>(null)
+  const [payItemsResult, setPayItemsResult] = useState<any>(null)
   const [payRunsResult, setPayRunsResult] = useState<any>(null)
-  const [payRunId, setPayRunId] = useState('')
   const [payslipId, setPayslipId] = useState('')
   const [payslipResult, setPayslipResult] = useState<any>(null)
   const [updatePayload, setUpdatePayload] = useState('')
@@ -32,34 +32,37 @@ export default function AdminXeroTest() {
     }
   }
 
+  async function fetchPayItems() {
+    const result = await callXeroTest('fetch_payitems')
+    if (result) setPayItemsResult(result)
+  }
+
   async function fetchPayRuns() {
     const result = await callXeroTest('fetch_payruns')
     if (result) setPayRunsResult(result)
   }
 
   async function getPayslip() {
-    if (!payRunId.trim() || !payslipId.trim()) {
-      showToast('Both PayRunID and PayslipID are required', 'error')
+    if (!payslipId.trim()) {
+      showToast('PayslipID is required', 'error')
       return
     }
     const result = await callXeroTest('get_payslip', {
-      pay_run_id: payRunId.trim(),
       payslip_id: payslipId.trim(),
     })
     if (result) {
       setPayslipResult(result)
-      if (result.data?.Payslip || result.data?.Payslips) {
-        const payslipData = result.data.Payslip || result.data.Payslips?.[0]
-        if (payslipData) {
-          setUpdatePayslipId(payslipData.PayslipID || payslipId.trim())
-          setUpdatePayload(JSON.stringify({
-            Payslips: [{
-              PayslipID: payslipData.PayslipID || payslipId.trim(),
-              DeductionLines: payslipData.DeductionLines || [],
-              EarningsLines: payslipData.EarningsLines || [],
-            }]
-          }, null, 2))
-        }
+      const payslipData = result.data?.paySlip || result.data?.Payslip || result.data?.Payslips?.[0]
+      if (payslipData) {
+        const id = payslipData.paySlipID || payslipData.PayslipID || payslipId.trim()
+        setUpdatePayslipId(id)
+        setUpdatePayload(JSON.stringify({
+          PaySlip: {
+            PaySlipID: id,
+            EarningsLines: payslipData.earningsLines || payslipData.EarningsLines || [],
+            DeductionLines: payslipData.deductionLines || payslipData.DeductionLines || [],
+          }
+        }, null, 2))
       }
     }
   }
@@ -143,6 +146,119 @@ export default function AdminXeroTest() {
         Company: <strong>{companyId}</strong>
       </p>
 
+      {/* ── 0. Fetch Pay Items ────────────────────────────────────────────── */}
+      <div style={sectionStyle}>
+        <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>0. Fetch Pay Items</h2>
+        <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 12 }}>
+          GET /payroll.xro/2.0/PayItems — returns all earnings rates, deduction types, reimbursement types
+          and benefit types configured in Xero. Use these IDs when building update payloads in section 3.
+        </p>
+        <button
+          style={btnStyle}
+          disabled={!!loading}
+          onClick={fetchPayItems}
+        >
+          {loading === 'fetch_payitems' ? 'Fetching…' : 'Fetch Pay Items'}
+        </button>
+
+        {payItemsResult && (
+          <div>
+            <div style={{ marginTop: 12, fontSize: 13 }}>
+              <strong>Status:</strong>{' '}
+              <span style={{ color: payItemsResult.status === 200 ? '#16a34a' : '#dc2626' }}>
+                {payItemsResult.status}
+              </span>
+              {' · '}
+              <strong>URL:</strong> {payItemsResult.url}
+            </div>
+
+            {payItemsResult.data?.payItems && (
+              <div style={{ marginTop: 12 }}>
+                {payItemsResult.data.payItems.earningsRates?.length > 0 && (
+                  <details open style={{ marginBottom: 8 }}>
+                    <summary style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
+                      Earnings Rates ({payItemsResult.data.payItems.earningsRates.length})
+                    </summary>
+                    <div style={{ marginTop: 6 }}>
+                      {payItemsResult.data.payItems.earningsRates.map((er: any) => (
+                        <div key={er.earningsRateID} style={{ fontSize: 12, padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>
+                          <strong>{er.name}</strong>
+                          <span style={{ color: '#6b7280', marginLeft: 8 }}>
+                            ID: <code style={{ fontSize: 11, background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>{er.earningsRateID}</code>
+                          </span>
+                          {er.ratePerUnit != null && <span style={{ color: '#6b7280', marginLeft: 8 }}>Rate: £{er.ratePerUnit}</span>}
+                          {er.earningsType && <span style={{ color: '#9ca3af', marginLeft: 8 }}>({er.earningsType})</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                {payItemsResult.data.payItems.deductionTypes?.length > 0 && (
+                  <details open style={{ marginBottom: 8 }}>
+                    <summary style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
+                      Deduction Types ({payItemsResult.data.payItems.deductionTypes.length})
+                    </summary>
+                    <div style={{ marginTop: 6 }}>
+                      {payItemsResult.data.payItems.deductionTypes.map((dt: any) => (
+                        <div key={dt.deductionTypeID} style={{ fontSize: 12, padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>
+                          <strong>{dt.name}</strong>
+                          <span style={{ color: '#6b7280', marginLeft: 8 }}>
+                            ID: <code style={{ fontSize: 11, background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>{dt.deductionTypeID}</code>
+                          </span>
+                          {dt.deductionCategory && <span style={{ color: '#9ca3af', marginLeft: 8 }}>({dt.deductionCategory})</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                {payItemsResult.data.payItems.benefitTypes?.length > 0 && (
+                  <details open style={{ marginBottom: 8 }}>
+                    <summary style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
+                      Benefit Types ({payItemsResult.data.payItems.benefitTypes.length})
+                    </summary>
+                    <div style={{ marginTop: 6 }}>
+                      {payItemsResult.data.payItems.benefitTypes.map((bt: any) => (
+                        <div key={bt.benefitTypeID} style={{ fontSize: 12, padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>
+                          <strong>{bt.name}</strong>
+                          <span style={{ color: '#6b7280', marginLeft: 8 }}>
+                            ID: <code style={{ fontSize: 11, background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>{bt.benefitTypeID}</code>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                {payItemsResult.data.payItems.reimbursementTypes?.length > 0 && (
+                  <details style={{ marginBottom: 8 }}>
+                    <summary style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151' }}>
+                      Reimbursement Types ({payItemsResult.data.payItems.reimbursementTypes.length})
+                    </summary>
+                    <div style={{ marginTop: 6 }}>
+                      {payItemsResult.data.payItems.reimbursementTypes.map((rt: any) => (
+                        <div key={rt.reimbursementTypeID} style={{ fontSize: 12, padding: '4px 8px', borderBottom: '1px solid #f3f4f6' }}>
+                          <strong>{rt.name}</strong>
+                          <span style={{ color: '#6b7280', marginLeft: 8 }}>
+                            ID: <code style={{ fontSize: 11, background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>{rt.reimbursementTypeID}</code>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>Raw JSON</summary>
+              <pre style={preStyle}>{JSON.stringify(payItemsResult.data, null, 2)}</pre>
+            </details>
+          </div>
+        )}
+      </div>
+
       {/* ── 1. Fetch Pay Runs ─────────────────────────────────────────────── */}
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>1. Fetch All Pay Runs</h2>
@@ -199,7 +315,7 @@ export default function AdminXeroTest() {
                         {pr.paySlips.map((ps: any) => (
                           <button
                             key={ps.paySlipID}
-                            onClick={() => { setPayRunId(pr.payRunID); setPayslipId(ps.paySlipID) }}
+                            onClick={() => { setPayslipId(ps.paySlipID) }}
                             style={{
                               display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', marginBottom: 3,
                               background: payslipId === ps.paySlipID ? '#e0e7ff' : '#fff',
@@ -238,18 +354,9 @@ export default function AdminXeroTest() {
       <div style={sectionStyle}>
         <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>2. Get Payslip Detail</h2>
         <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 12 }}>
-          GET /payroll.xro/2.0/PayRuns/&#123;PayRunID&#125;/Payslips/&#123;PayslipID&#125; — retrieves an employee's draft payslip.
+          GET /payroll.xro/2.0/Payslips/&#123;PayslipID&#125; — retrieves an employee's draft payslip.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-          <div>
-            <label style={labelStyle}>PayRunID</label>
-            <input
-              style={inputStyle}
-              placeholder="e.g. a1b2c3d4-5678-..."
-              value={payRunId}
-              onChange={(e) => setPayRunId(e.target.value)}
-            />
-          </div>
           <div>
             <label style={labelStyle}>PayslipID</label>
             <input
