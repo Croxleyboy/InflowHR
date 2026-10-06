@@ -1,6 +1,90 @@
-import { getSupabase, getValidXeroToken, corsHeaders, json } from '../_shared/xero.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+const XERO_TOKEN_URL = 'https://identity.xero.com/connect/token'
 const XERO_PAYROLL_V2 = 'https://api.xero.com/payroll.xro/2.0'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': 'https://app.inflowhr.com',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+function getSupabase() {
+  return createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  )
+}
+
+function getXeroEnv() {
+  const clientId = Deno.env.get('XERO_CLIENT_ID')
+  const clientSecret = Deno.env.get('XERO_CLIENT_SECRET')
+  const redirectUri = Deno.env.get('XERO_REDIRECT_URI')
+  if (!clientId || !clientSecret || !redirectUri) {
+    throw new Error('Missing XERO_CLIENT_ID, XERO_CLIENT_SECRET, or XERO_REDIRECT_URI env vars')
+  }
+  return { clientId, clientSecret, redirectUri }
+}
+
+async function getValidXeroToken(companyId: string): Promise<{
+  accessToken: string
+  tenantId: string
+} | null> {
+  const sb = getSupabase()
+  const { data: row } = await sb
+    .from('xero_integrations')
+    .select('access_token, refresh_token, expires_at, tenant_id')
+    .eq('company_id', companyId)
+    .single()
+
+  if (!row?.access_token || !row?.tenant_id) return null
+
+  if (row.expires_at && new Date(row.expires_at) > new Date(Date.now() + 60_000)) {
+    return { accessToken: row.access_token, tenantId: row.tenant_id }
+  }
+
+  if (!row.refresh_token) return null
+  const { clientId, clientSecret } = getXeroEnv()
+
+  const res = await fetch(XERO_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: 'Basic ' + btoa(`${clientId}:${clientSecret}`),
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: row.refresh_token,
+    }),
+  })
+
+  if (!res.ok) {
+    await sb.from('xero_integrations').update({
+      sync_status: 'error',
+      sync_error: 'Token refresh failed — reconnect to Xero',
+      updated_at: new Date().toISOString(),
+    }).eq('company_id', companyId)
+    return null
+  }
+
+  const tokens = await res.json()
+  const expiresAt = new Date(Date.now() + (tokens.expires_in || 1800) * 1000).toISOString()
+
+  await sb.from('xero_integrations').update({
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token || row.refresh_token,
+    expires_at: expiresAt,
+    updated_at: new Date().toISOString(),
+  }).eq('company_id', companyId)
+
+  return { accessToken: tokens.access_token, tenantId: row.tenant_id }
+}
 
 function sanitise(raw: string): string {
   return raw.slice(0, 500).replace(/[<>"'&]/g, '')
