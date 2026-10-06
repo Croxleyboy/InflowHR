@@ -92,17 +92,6 @@ function sanitise(raw: string): string {
   return raw.slice(0, 500).replace(/[<>"'&]/g, '')
 }
 
-function parseXeroDate(val: unknown): string | null {
-  if (!val) return null
-  const s = String(val)
-  const msMatch = s.match(/\/Date\((\d+)/)
-  if (msMatch) {
-    return new Date(parseInt(msMatch[1], 10)).toISOString().slice(0, 10)
-  }
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
-  return null
-}
-
 interface Adjustment {
   overtime: { employee_id: string; hours: number; multiplier: number }[]
   unpaid_leave: { employee_id: string; days: number }[]
@@ -202,127 +191,37 @@ Deno.serve(async (req) => {
     const periodStart = String(payRun.period_start).slice(0, 10)
     const periodEnd = String(payRun.period_end).slice(0, 10)
 
-    const { data: xeroIntegration } = await sb
-      .from('xero_integrations')
-      .select('payroll_calendar_id')
-      .eq('company_id', company_id)
-      .single()
-
-    let payrollCalendarId = xeroIntegration?.payroll_calendar_id
-    let calendarType = 'UNKNOWN'
-    let calendarStartDate: string | null = null
-    let calendarName = ''
-
-    let calendarDebugRaw = ''
-
-    function extractCalendarFields(cal: Record<string, unknown>): void {
-      const ct = String(cal.CalendarType || cal.calendarType || cal.Type || cal.type || '')
-      if (ct) calendarType = ct.toUpperCase()
-      calendarStartDate = parseXeroDate(cal.StartDate || cal.startDate || cal.ReferenceDate || cal.referenceDate || cal.PaymentDate || cal.paymentDate)
-      calendarName = String(cal.Name || cal.name || '')
+    // Use a 7-day period within the pay run for AU timesheets
+    // This matches how xero-push-timesheets works — weekly periods succeed on AU v2
+    let tsStart = periodStart
+    let tsEnd = periodEnd
+    if (isAU) {
+      const start = new Date(periodStart)
+      const end = new Date(start)
+      end.setDate(end.getDate() + 6)
+      tsStart = start.toISOString().slice(0, 10)
+      tsEnd = end.toISOString().slice(0, 10)
     }
 
-    async function fetchCalendarDetails(): Promise<void> {
-      const authHdrs = { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' }
-
-      if (payrollCalendarId) {
-        for (const base of [baseUrl, XERO_PAYROLL_AU, XERO_PAYROLL_UK]) {
-          const res = await fetch(`${base}/PayrollCalendars/${payrollCalendarId}`, { headers: authHdrs })
-          if (!res.ok) { calendarDebugRaw += `GET ${base}/PayrollCalendars/${payrollCalendarId} => ${res.status}; `; continue }
-          const body = await res.json()
-          calendarDebugRaw += `GET ${base}/PayrollCalendars/${payrollCalendarId} => ${JSON.stringify(body).slice(0, 300)}; `
-          const cal = body.PayrollCalendar || body.payrollCalendar
-            || (body.PayrollCalendars && body.PayrollCalendars[0])
-            || (body.payrollCalendars && body.payrollCalendars[0])
-            || body
-          if (cal) { extractCalendarFields(cal as Record<string, unknown>); if (calendarType !== 'UNKNOWN') return }
-        }
+    // Get employee's payroll calendar from their Xero record (same as xero-push-timesheets)
+    const empCalendarCache: Record<string, string | null> = {}
+    async function getEmployeeCalendarId(xeroEmployeeId: string): Promise<string | null> {
+      if (empCalendarCache[xeroEmployeeId] !== undefined) return empCalendarCache[xeroEmployeeId]
+      const empRes = await fetch(`${baseUrl}/Employees/${xeroEmployeeId}`, {
+        headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
+      })
+      if (empRes.ok) {
+        const empBody = await empRes.json()
+        const employee = empBody.Employee || empBody.employee || (empBody.Employees && empBody.Employees[0]) || (empBody.employees && empBody.employees[0])
+        const calId = employee?.PayrollCalendarID || employee?.payrollCalendarID || employee?.payCalendarID || null
+        empCalendarCache[xeroEmployeeId] = calId
+        return calId
       }
-
-      for (const base of [baseUrl, XERO_PAYROLL_AU, XERO_PAYROLL_UK]) {
-        const res = await fetch(`${base}/PayrollCalendars`, { headers: authHdrs })
-        if (!res.ok) { calendarDebugRaw += `GET ${base}/PayrollCalendars => ${res.status}; `; continue }
-        const body = await res.json()
-        calendarDebugRaw += `GET ${base}/PayrollCalendars => keys:${Object.keys(body).join(',')}, ${JSON.stringify(body).slice(0, 300)}; `
-        const calendars = body.PayrollCalendars || body.payrollCalendars
-          || body.PayCalendars || body.payCalendars || []
-        if (!Array.isArray(calendars) || !calendars.length) continue
-
-        const cal = payrollCalendarId
-          ? calendars.find((c: Record<string, unknown>) =>
-              String(c.PayrollCalendarID || c.payrollCalendarID || c.PayCalendarID || c.payCalendarID) === payrollCalendarId)
-            || calendars[0]
-          : calendars[0]
-
-        if (!payrollCalendarId) {
-          payrollCalendarId = (cal as Record<string, unknown>).PayrollCalendarID as string
-            || (cal as Record<string, unknown>).payrollCalendarID as string
-            || (cal as Record<string, unknown>).PayCalendarID as string
-            || (cal as Record<string, unknown>).payCalendarID as string
-          if (payrollCalendarId) {
-            await sb.from('xero_integrations').update({ payroll_calendar_id: payrollCalendarId }).eq('company_id', company_id)
-          }
-        }
-        extractCalendarFields(cal as Record<string, unknown>)
-        if (calendarType !== 'UNKNOWN') return
-      }
-    }
-    await fetchCalendarDetails()
-
-    function getCalendarPeriodDays(calType: string): number {
-      switch (calType) {
-        case 'WEEKLY': return 7
-        case 'FORTNIGHTLY': return 14
-        case 'FOURWEEKLY': return 28
-        default: return 0
-      }
+      empCalendarCache[xeroEmployeeId] = null
+      return null
     }
 
-    function getAlignedTimesheetPeriod(payRunStart: string, payRunEnd: string, calType: string, calStart: string | null): {
-      start: string; end: string; days: number; aligned: boolean; guidance?: string
-    } {
-      const calPeriodDays = getCalendarPeriodDays(calType)
-      if (calPeriodDays === 0) {
-        const s = new Date(payRunStart)
-        const e = new Date(payRunEnd)
-        const days = Math.max(1, Math.round((e.getTime() - s.getTime()) / 86400000) + 1)
-        return { start: payRunStart, end: payRunEnd, days, aligned: true }
-      }
-
-      if (calStart) {
-        const ref = new Date(calStart)
-        const target = new Date(payRunStart)
-        const diffMs = target.getTime() - ref.getTime()
-        const diffDays = Math.floor(diffMs / 86400000)
-        const offset = ((diffDays % calPeriodDays) + calPeriodDays) % calPeriodDays
-        const alignedStart = new Date(target)
-        alignedStart.setDate(alignedStart.getDate() - offset)
-        const alignedEnd = new Date(alignedStart)
-        alignedEnd.setDate(alignedEnd.getDate() + calPeriodDays - 1)
-        return {
-          start: alignedStart.toISOString().slice(0, 10),
-          end: alignedEnd.toISOString().slice(0, 10),
-          days: calPeriodDays,
-          aligned: true,
-        }
-      }
-
-      const target = new Date(payRunStart)
-      const dow = target.getDay()
-      const mondayOffset = dow === 0 ? -6 : 1 - dow
-      const monday = new Date(target)
-      monday.setDate(monday.getDate() + mondayOffset)
-      const end = new Date(monday)
-      end.setDate(end.getDate() + calPeriodDays - 1)
-      return {
-        start: monday.toISOString().slice(0, 10),
-        end: end.toISOString().slice(0, 10),
-        days: calPeriodDays,
-        aligned: true,
-        guidance: `No calendar reference date found — used Monday-aligned ${calType.toLowerCase()} period`,
-      }
-    }
-
+    // Get or auto-detect earning rate (same as xero-push-timesheets)
     const { data: rateMappings } = await sb
       .from('xero_earning_rate_mappings')
       .select('inflow_rate_name, xero_earnings_rate_id')
@@ -369,47 +268,9 @@ Deno.serve(async (req) => {
           }, { onConflict: 'company_id,inflow_rate_name' })
         }
       }
-    }
-
-    const empCalendarCache: Record<string, string | null> = {}
-    async function getEmployeeCalendarId(xeroEmployeeId: string): Promise<string | null> {
-      if (empCalendarCache[xeroEmployeeId] !== undefined) return empCalendarCache[xeroEmployeeId]
-      if (payrollCalendarId) { empCalendarCache[xeroEmployeeId] = payrollCalendarId; return payrollCalendarId }
-      const empRes = await fetch(`${baseUrl}/Employees/${xeroEmployeeId}`, {
-        headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
-      })
-      if (empRes.ok) {
-        const empBody = await empRes.json()
-        const employee = empBody.Employee || empBody.employee || (empBody.Employees && empBody.Employees[0]) || (empBody.employees && empBody.employees[0])
-        const calId = employee?.PayrollCalendarID || employee?.payrollCalendarID || employee?.payCalendarID || null
-        if (calId) {
-          empCalendarCache[xeroEmployeeId] = calId
-          if (!payrollCalendarId) {
-            payrollCalendarId = calId
-            await sb.from('xero_integrations').update({ payroll_calendar_id: calId }).eq('company_id', company_id)
-          }
-          return calId
-        }
+      if (!defaultEarningsRateId) {
+        return json({ error: 'No earning rates found in Xero. Please set up at least one earning rate.' }, 400)
       }
-      if (!payrollCalendarId) {
-        const allEmpRes = await fetch(`${baseUrl}/Employees`, {
-          headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
-        })
-        if (allEmpRes.ok) {
-          const allEmpBody = await allEmpRes.json()
-          const allEmps = allEmpBody.Employees || allEmpBody.employees || []
-          for (const e of allEmps) {
-            const cal = e.PayrollCalendarID || e.payrollCalendarID || e.payCalendarID
-            if (cal) {
-              payrollCalendarId = cal
-              await sb.from('xero_integrations').update({ payroll_calendar_id: cal }).eq('company_id', company_id)
-              break
-            }
-          }
-        }
-      }
-      empCalendarCache[xeroEmployeeId] = payrollCalendarId || null
-      return payrollCalendarId || null
     }
 
     const timesheetResults: {
@@ -442,125 +303,72 @@ Deno.serve(async (req) => {
         continue
       }
 
-      if (!defaultEarningsRateId) {
-        skipped.push({ employee: emp.name, reason: 'No earnings rate found in Xero — set up at least one earning rate' })
-        continue
-      }
-
       const overtimeRate = emp.hourlyRate > 0 ? Math.round(emp.hourlyRate * ot.multiplier * 100) / 100 : 0
       const overtimeAmount = Math.round(overtimeRate * ot.hours * 100) / 100
 
-      const existingTsRes = await fetch(`${baseUrl}/Timesheets?where=EmployeeID=guid("${emp.xeroId}")`, {
-        headers: { Authorization: xeroHeaders.Authorization, 'xero-tenant-id': xeroHeaders['xero-tenant-id'], Accept: 'application/json' },
-      })
-      let existingTimesheetId: string | null = null
-      if (existingTsRes.ok) {
-        const existingBody = await existingTsRes.json()
-        const timesheets = existingBody.Timesheets || existingBody.timesheets || []
-        for (const ts of timesheets) {
-          const tsStart = parseXeroDate(ts.StartDate || ts.startDate) || ''
-          const tsEnd = parseXeroDate(ts.EndDate || ts.endDate) || ''
-          if (tsStart === periodStart || tsEnd === periodEnd) {
-            existingTimesheetId = ts.TimesheetID || ts.timesheetID
-            break
-          }
+      let timesheetPayload: Record<string, unknown>
+      if (isAU) {
+        const empCalId = await getEmployeeCalendarId(emp.xeroId)
+
+        const start = new Date(tsStart)
+        const days = 7
+        const dailyHours = new Array(days).fill(0)
+        let weekdays = 0
+        for (let i = 0; i < days; i++) {
+          const d = new Date(start)
+          d.setDate(d.getDate() + i)
+          if (d.getDay() !== 0 && d.getDay() !== 6) weekdays++
+        }
+        const hoursPerDay = weekdays > 0 ? Math.round((ot.hours / weekdays) * 100) / 100 : ot.hours
+        for (let i = 0; i < days; i++) {
+          const d = new Date(start)
+          d.setDate(d.getDate() + i)
+          if (d.getDay() !== 0 && d.getDay() !== 6) dailyHours[i] = hoursPerDay
+        }
+
+        timesheetPayload = {
+          payrollCalendarID: empCalId || undefined,
+          employeeID: emp.xeroId,
+          startDate: tsStart,
+          endDate: tsEnd,
+          timesheetLines: [{
+            earningsRateID: defaultEarningsRateId,
+            numberOfUnits: dailyHours,
+          }],
+        }
+      } else {
+        timesheetPayload = {
+          EmployeeID: emp.xeroId,
+          StartDate: periodStart,
+          EndDate: periodEnd,
+          TimesheetLines: [{
+            Date: periodStart,
+            EarningsRateID: defaultEarningsRateId,
+            NumberOfUnits: ot.hours,
+          }],
         }
       }
 
-      let tsRes: Response
+      const tsUrl = `${baseUrl}/Timesheets`
+      let tsRes = await fetch(tsUrl, {
+        method: 'POST',
+        headers: xeroHeaders,
+        body: JSON.stringify(timesheetPayload),
+      })
 
-      if (existingTimesheetId) {
-        const revertUrl = `${baseUrl}/Timesheets/${existingTimesheetId}/RevertToDraft`
-        await fetch(revertUrl, { method: 'POST', headers: xeroHeaders })
-
-        const linePayload = isAU
-          ? { date: periodStart, earningsRateID: defaultEarningsRateId, numberOfUnits: ot.hours }
-          : { Date: periodStart, EarningsRateID: defaultEarningsRateId, NumberOfUnits: ot.hours }
-
-        tsRes = await fetch(`${baseUrl}/Timesheets/${existingTimesheetId}/lines`, {
-          method: 'POST',
-          headers: xeroHeaders,
-          body: JSON.stringify(linePayload),
-        })
-      } else {
-        let timesheetPayload: Record<string, unknown>
-        if (isAU) {
-          const empCalId = await getEmployeeCalendarId(emp.xeroId)
-          const tsPeriod = getAlignedTimesheetPeriod(periodStart, periodEnd, calendarType, calendarStartDate)
-          const start = new Date(tsPeriod.start)
-          const days = tsPeriod.days
-          const dailyHours = new Array(days).fill(0)
-          let weekdays = 0
-          for (let i = 0; i < days; i++) {
-            const d = new Date(start)
-            d.setDate(d.getDate() + i)
-            if (d.getDay() !== 0 && d.getDay() !== 6) weekdays++
-          }
-          const hoursPerDay = weekdays > 0 ? Math.round((ot.hours / weekdays) * 100) / 100 : ot.hours
-          for (let i = 0; i < days; i++) {
-            const d = new Date(start)
-            d.setDate(d.getDate() + i)
-            if (d.getDay() !== 0 && d.getDay() !== 6) dailyHours[i] = hoursPerDay
-          }
-          timesheetPayload = {
-            payrollCalendarID: empCalId || undefined,
-            employeeID: emp.xeroId,
-            startDate: tsPeriod.start,
-            endDate: tsPeriod.end,
-            timesheetLines: [{
-              earningsRateID: defaultEarningsRateId,
-              numberOfUnits: dailyHours,
-            }],
-          }
-        } else {
-          timesheetPayload = {
-            EmployeeID: emp.xeroId,
-            StartDate: periodStart,
-            EndDate: periodEnd,
-            TimesheetLines: [{
-              Date: periodStart,
-              EarningsRateID: defaultEarningsRateId,
-              NumberOfUnits: ot.hours,
-            }],
-          }
-        }
-
-        const tsUrl = `${baseUrl}/Timesheets`
-
+      if (!tsRes.ok && isAU) {
         tsRes = await fetch(tsUrl, {
           method: 'POST',
           headers: xeroHeaders,
-          body: JSON.stringify(timesheetPayload),
+          body: JSON.stringify([timesheetPayload]),
         })
-
-        if (!tsRes.ok && isAU) {
-          tsRes = await fetch(tsUrl, {
-            method: 'POST',
-            headers: xeroHeaders,
-            body: JSON.stringify([timesheetPayload]),
-          })
-        }
       }
 
-      const empCalForDebug = empCalendarCache[emp.xeroId!] || payrollCalendarId || 'none'
-      const tsPeriodForDebug = isAU ? getAlignedTimesheetPeriod(periodStart, periodEnd, calendarType, calendarStartDate) : { start: periodStart, end: periodEnd }
-      const debugInfo = `API: ${isAU ? 'AU-v2' : 'UK-v1'}, Calendar: ${empCalForDebug}, CalType: ${calendarType}, CalName: ${calendarName || 'unknown'}, CalStart: ${calendarStartDate || 'unknown'}, EarningsRate: ${defaultEarningsRateId}, PayRunPeriod: ${periodStart} to ${periodEnd}, TsPeriod: ${tsPeriodForDebug.start} to ${tsPeriodForDebug.end}, Hours: ${ot.hours}, ExistingTS: ${existingTimesheetId || 'none'}, CalendarAPI: ${calendarDebugRaw.slice(0, 500)}`
+      const empCal = isAU ? (empCalendarCache[emp.xeroId!] || 'none') : 'n/a'
+      const debugInfo = `API: ${isAU ? 'AU-v2' : 'UK-v1'}, Calendar: ${empCal}, EarningsRate: ${defaultEarningsRateId}, PayRunPeriod: ${periodStart} to ${periodEnd}, TsPeriod: ${tsStart} to ${tsEnd}, Hours: ${ot.hours}`
 
       if (!tsRes.ok) {
         const errText = await tsRes.text()
-        let guidance = ''
-        if (isAU && calendarType !== 'UNKNOWN') {
-          const payRunDays = Math.round((new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86400000) + 1
-          const calDays = getCalendarPeriodDays(calendarType)
-          if (calDays > 0 && payRunDays !== calDays) {
-            guidance = ` | MISMATCH: Your InflowHR pay run is ${payRunDays} days (${periodStart} to ${periodEnd}) but your Xero payroll calendar "${calendarName}" is ${calendarType} (${calDays}-day periods). To fix this, choose one option: OPTION A — Change Xero to Monthly: (1) Log in to Xero. (2) Go to Settings > Payroll Settings > Payroll Calendars. (3) Edit "${calendarName}" and change type to Monthly. (4) Save and retry. OR OPTION B — Match InflowHR to ${calendarType}: (1) In InflowHR Admin > Employees > Payroll Settings, change the pay frequency to ${calendarType.toLowerCase()}. (2) Create a new ${calendarType.toLowerCase()} pay run. (3) Retry the push.`
-          }
-        }
-        if (!guidance && isAU && calendarType === 'UNKNOWN') {
-          guidance = ' | Could not read your Xero payroll calendar settings. Please check: (1) Open Xero > Settings > Payroll Settings > Payroll Calendars and ensure a calendar exists. (2) Open Xero > Payroll > Employees > select the employee > Pay Template and ensure a payroll calendar is assigned. (3) If using a WEEKLY calendar, your InflowHR pay run period must also be weekly — go to InflowHR Admin > Employees > Payroll Settings to match.'
-        } else if (!guidance && isAU) {
-          guidance = ' | Xero rejected the timesheet. Please check: (1) The employee has a payroll calendar assigned in Xero > Payroll > Employees > Pay Template. (2) The timesheet period aligns with the calendar — a WEEKLY calendar requires 7-day periods. (3) No draft or approved timesheet already exists for this employee in this period.'
-        }
         timesheetResults.push({
           employee: emp.name,
           status: 'failed',
@@ -568,7 +376,7 @@ Deno.serve(async (req) => {
           multiplier: ot.multiplier,
           rate: emp.hourlyRate,
           amount: overtimeAmount,
-          error: `${sanitise(errText)}${guidance} [${debugInfo}]`,
+          error: `${sanitise(errText)} [${debugInfo}]`,
         })
         continue
       }
@@ -632,29 +440,6 @@ Deno.serve(async (req) => {
       status: failedCount > 0 && pushedCount === 0 ? 'error' : 'success',
     })
 
-    const xeroConfig = {
-      api: isAU ? 'AU' : 'UK',
-      calendarId: payrollCalendarId || null,
-      calendarType: calendarType,
-      calendarName: calendarName || null,
-      calendarStartDate: calendarStartDate || null,
-      payRunPeriod: { start: periodStart, end: periodEnd },
-    }
-
-    let configGuidance: string | null = null
-    if (isAU && calendarType !== 'UNKNOWN' && calendarType !== 'MONTHLY') {
-      const payRunDays = Math.round((new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86400000) + 1
-      const calDays = getCalendarPeriodDays(calendarType)
-      if (calDays > 0 && payRunDays !== calDays) {
-        configGuidance = `Your Xero payroll calendar "${calendarName}" is set to ${calendarType} (${calDays}-day periods) but your InflowHR pay run covers ${payRunDays} days. The timesheet period was auto-aligned to match the calendar. If adjustments fail, either change the Xero payroll calendar to MONTHLY in Xero > Settings > Payroll Settings > Payroll Calendars, or configure ${calendarType.toLowerCase()} pay runs in InflowHR Admin > Employees > Payroll Settings.`
-      }
-    }
-    if (!payrollCalendarId) {
-      configGuidance = 'No payroll calendar found in Xero. To set one up: (1) Log in to Xero. (2) Go to Settings > Payroll Settings > Payroll Calendars. (3) Click Add Calendar, choose a name and calendar type (e.g. Monthly). (4) Set the period end date and payment date. (5) Click Save. (6) Go to Payroll > Employees, select each employee, click Pay Template, and assign the calendar. (7) Return to InflowHR and retry the push.'
-    } else if (calendarType === 'UNKNOWN') {
-      configGuidance = 'Could not read your Xero payroll calendar details. To fix: (1) Log in to Xero. (2) Go to Settings > Payroll Settings > Payroll Calendars. (3) Ensure at least one calendar exists and note its type (Weekly/Monthly). (4) Go to Payroll > Employees, select each employee, click Pay Template, and ensure a calendar is assigned. (5) If the calendar is Weekly but your InflowHR pay runs are Monthly, either change the Xero calendar to Monthly or set up weekly pay runs in InflowHR. (6) Return to InflowHR and retry.'
-    }
-
     return json({
       api: isAU ? 'AU' : 'UK',
       pushed: pushedCount,
@@ -663,8 +448,6 @@ Deno.serve(async (req) => {
       timesheet_results: timesheetResults,
       manual_items: manualItems,
       skipped_details: skipped,
-      xero_config: xeroConfig,
-      config_guidance: configGuidance,
     })
   } catch (err) {
     return json({ error: (err as Error).message }, 500)
