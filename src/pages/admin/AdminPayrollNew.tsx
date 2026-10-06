@@ -888,9 +888,10 @@ export default function AdminPayrollNew() {
           pushed: 0,
           failed: 0,
           skipped: 0,
+          api: 'csv',
           csv_exported: rowCount,
           csv_items: items,
-          provider: connectedProvider,
+          provider: connectedProvider || undefined,
           timesheet_results: [],
           manual_items: [],
           skipped_details: [],
@@ -900,9 +901,10 @@ export default function AdminPayrollNew() {
           pushed: 0,
           failed: 0,
           skipped: 0,
+          api: 'csv',
           csv_exported: 0,
           csv_items: [],
-          provider: connectedProvider,
+          provider: connectedProvider || undefined,
           timesheet_results: [],
           manual_items: [],
           skipped_details: [],
@@ -2320,17 +2322,17 @@ export default function AdminPayrollNew() {
                 ) : (
                   <>
                     {/* Summary banner */}
-                    <div style={{ background: wizPushResult?.csv_exported > 0 ? '#e8f5e9' : '#fff3e0', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={wizPushResult?.csv_exported > 0 ? '#2e7d32' : '#e65100'} strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <div style={{ background: (wizPushResult?.csv_exported || 0) > 0 ? '#e8f5e9' : '#fff3e0', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={(wizPushResult?.csv_exported || 0) > 0 ? '#2e7d32' : '#e65100'} strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                       <div style={{ flex: 1 }}>
-                        <strong style={{ color: wizPushResult?.csv_exported > 0 ? '#2e7d32' : '#e65100' }}>
-                          {wizPushResult?.csv_exported > 0
-                            ? `${wizPushResult.csv_exported} adjustment${wizPushResult.csv_exported !== 1 ? 's' : ''} exported to CSV`
+                        <strong style={{ color: (wizPushResult?.csv_exported || 0) > 0 ? '#2e7d32' : '#e65100' }}>
+                          {(wizPushResult?.csv_exported || 0) > 0
+                            ? `${wizPushResult!.csv_exported} adjustment${wizPushResult!.csv_exported !== 1 ? 's' : ''} exported to CSV`
                             : 'No adjustments to export'}
                         </strong>
                         <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
-                          {wizPushResult?.csv_exported > 0
-                            ? `The CSV file has been downloaded. Import it into ${wizPushResult.provider === 'xero' ? 'Xero' : wizPushResult.provider === 'sage' ? 'Sage' : 'your payroll provider'}, then come back to sync the final payslips.`
+                          {(wizPushResult?.csv_exported || 0) > 0
+                            ? `The CSV file has been downloaded. Import it into ${wizPushResult!.provider === 'xero' ? 'Xero' : wizPushResult!.provider === 'sage' ? 'Sage' : 'your payroll provider'}, then come back to sync the final payslips.`
                             : 'No adjustments were found for this period.'}
                         </p>
                       </div>
@@ -2401,12 +2403,12 @@ export default function AdminPayrollNew() {
                     )}
 
                     {/* Import instructions */}
-                    {wizPushResult?.csv_exported > 0 && (
+                    {(wizPushResult?.csv_exported || 0) > 0 && (
                       <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #1565c0' }}>
                         <strong style={{ color: '#1565c0', fontSize: 13 }}>
-                          How to Import into {wizPushResult.provider === 'xero' ? 'Xero' : wizPushResult.provider === 'sage' ? 'Sage' : 'Your Provider'}
+                          How to Import into {wizPushResult!.provider === 'xero' ? 'Xero' : wizPushResult!.provider === 'sage' ? 'Sage' : 'Your Provider'}
                         </strong>
-                        {wizPushResult.provider === 'sage' ? (
+                        {wizPushResult!.provider === 'sage' ? (
                           <ol style={{ fontSize: 12, color: '#1565c0', margin: '6px 0 0', paddingLeft: 20 }}>
                             <li>Open Sage 50 Payroll</li>
                             <li>Go to <strong>File &gt; Import</strong> and select <strong>Advanced Data Import</strong></li>
