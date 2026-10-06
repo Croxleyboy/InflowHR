@@ -658,7 +658,7 @@ export default function AdminPayrollNew() {
       if (isShiftOrZero) {
         const empReview = wizPeriodReviews.find(r => r.employee_id === emp.id && r.status === 'approved')
         if (!empReview) {
-          errors.push(`${emp.first_name} ${emp.last_name}: No approved period review`)
+          errors.push(`${emp.first_name} ${emp.last_name}: No confirmed check-in hours for this period`)
           continue
         }
 
@@ -2325,33 +2325,32 @@ export default function AdminPayrollNew() {
                   <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#7e57c2' }}>Shift Workers ({shiftEmployees.length})</h4>
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
                     <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '0 0 8px' }}>
-                      Shift worker payslips are generated from approved period reviews (hours worked × hourly rate).
+                      Shift worker pay is calculated from check-in records (hours worked × hourly rate). Hours are aggregated automatically for this pay period.
                     </p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value" style={{ color: '#2e7d32' }}>{shiftReviewsApproved.length}</span>
-                        <span className="pn-worker-metric-label">Approved reviews</span>
+                        <span className="pn-worker-metric-label">Hours confirmed</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value" style={{ color: shiftReviewsPending.length > 0 ? '#e65100' : undefined }}>{shiftReviewsPending.length}</span>
-                        <span className="pn-worker-metric-label">Pending reviews</span>
+                        <span className="pn-worker-metric-label">Pending confirmation</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">£{shiftReviewsApproved.reduce((s, r) => s + Number(r.gross_pay), 0).toFixed(2)}</span>
-                        <span className="pn-worker-metric-label">Total approved gross</span>
+                        <span className="pn-worker-metric-label">Total confirmed gross</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">{shiftReviewsApproved.reduce((s, r) => s + Number(r.adjusted_hours), 0).toFixed(1)}</span>
-                        <span className="pn-worker-metric-label">Total approved hours</span>
+                        <span className="pn-worker-metric-label">Total confirmed hours</span>
                       </div>
                     </div>
                     {hasShiftBlocker && (
                       <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 13 }}>
                         <strong style={{ color: '#e65100' }}>Cannot generate payslips</strong>
                         <p style={{ margin: '4px 0 0', color: '#bf360c', fontSize: 12 }}>
-                          {shiftMissingReview.length > 0 && `${shiftMissingReview.length} employee(s) have no period review. `}
-                          {shiftReviewsPending.length > 0 && `${shiftReviewsPending.length} review(s) are not yet approved. `}
-                          Go to Payroll → Period Review to generate and approve reviews first.
+                          {shiftMissingReview.length > 0 && `${shiftMissingReview.length} employee(s) have no check-in records for this period. Ensure they have completed shifts logged via Check-In. `}
+                          {shiftReviewsPending.length > 0 && `${shiftReviewsPending.length} employee(s) have unconfirmed hours — review and approve their check-in records on the Timesheets page before proceeding. `}
                         </p>
                       </div>
                     )}
@@ -2364,33 +2363,32 @@ export default function AdminPayrollNew() {
                   <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#ef6c00' }}>Zero Hours Workers ({zeroHoursEmployees.length})</h4>
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
                     <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '0 0 8px' }}>
-                      Zero hours pay is based entirely on hours actually worked. Approved period reviews required.
+                      Zero hours pay is based entirely on hours actually worked, calculated from check-in records.
                     </p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 8 }}>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value" style={{ color: '#2e7d32' }}>{zeroReviewsApproved.length}</span>
-                        <span className="pn-worker-metric-label">Approved reviews</span>
+                        <span className="pn-worker-metric-label">Hours confirmed</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value" style={{ color: zeroReviewsPending.length > 0 ? '#e65100' : undefined }}>{zeroReviewsPending.length}</span>
-                        <span className="pn-worker-metric-label">Pending reviews</span>
+                        <span className="pn-worker-metric-label">Pending confirmation</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">£{zeroReviewsApproved.reduce((s, r) => s + Number(r.gross_pay), 0).toFixed(2)}</span>
-                        <span className="pn-worker-metric-label">Total approved gross</span>
+                        <span className="pn-worker-metric-label">Total confirmed gross</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">{zeroReviewsApproved.reduce((s, r) => s + Number(r.adjusted_hours), 0).toFixed(1)}</span>
-                        <span className="pn-worker-metric-label">Total approved hours</span>
+                        <span className="pn-worker-metric-label">Total confirmed hours</span>
                       </div>
                     </div>
                     {hasZeroBlocker && (
                       <div style={{ background: '#fff3e0', borderRadius: 6, padding: 10, fontSize: 13 }}>
                         <strong style={{ color: '#e65100' }}>Cannot generate payslips</strong>
                         <p style={{ margin: '4px 0 0', color: '#bf360c', fontSize: 12 }}>
-                          {zeroMissingReview.length > 0 && `${zeroMissingReview.length} employee(s) have no period review. `}
-                          {zeroReviewsPending.length > 0 && `${zeroReviewsPending.length} review(s) are not yet approved. `}
-                          Go to Payroll → Period Review to generate and approve reviews first.
+                          {zeroMissingReview.length > 0 && `${zeroMissingReview.length} employee(s) have no check-in records for this period. Ensure they have completed shifts logged via Check-In. `}
+                          {zeroReviewsPending.length > 0 && `${zeroReviewsPending.length} employee(s) have unconfirmed hours — review and approve their check-in records on the Timesheets page before proceeding. `}
                         </p>
                       </div>
                     )}
