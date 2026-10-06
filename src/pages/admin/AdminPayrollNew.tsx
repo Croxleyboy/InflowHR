@@ -140,6 +140,7 @@ interface Employee {
   pay_pattern_override: string | null; overtime_handling_override: string | null
   time_recording_override: string | null; is_payroll_exception: boolean | null
   weekly_hours: number | null
+  bonus_amount: number | null; bonus_frequency: string | null
 }
 
 interface AuditLogEntry {
@@ -212,6 +213,8 @@ export default function AdminPayrollNew() {
   const [wizReleasing, setWizReleasing] = useState(false)
   const [wizUnpaidLeave, setWizUnpaidLeave] = useState<{ employee_id: string; days: number; employee_name: string }[]>([])
   const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
+  const [wizBonusEntries, setWizBonusEntries] = useState<{ employee_id: string; employee_name: string; amount: number; description: string; type: 'bonus' | 'deduction' }[]>([])
+  const [lastPayRuns, setLastPayRuns] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }>>({})
 
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
@@ -325,7 +328,7 @@ export default function AdminPayrollNew() {
     const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes, sRes, mRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception, weekly_hours').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception, weekly_hours, bonus_amount, bonus_frequency').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, status').eq('company_id', selectedCompanyId).maybeSingle(),
@@ -353,6 +356,30 @@ export default function AdminPayrollNew() {
     // Load recent audit logs
     const { data: logData } = await supabase.from('payroll_audit_log').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false }).limit(5)
     setRecentLogs((logData as AuditLogEntry[]) || [])
+
+    // Load last completed pay run per worker type
+    const runMap: Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }> = {}
+    for (const wt of ['employed', 'shift_worker', 'zero_hours']) {
+      const { data: runs } = await supabase.from('pay_runs')
+        .select('id, period_start, period_end, status, completed_at')
+        .eq('company_id', selectedCompanyId!)
+        .contains('worker_types', [wt])
+        .in('status', ['released', 'synced', 'exported'])
+        .order('completed_at', { ascending: false })
+        .limit(1)
+      if (runs && runs.length > 0) {
+        const run = runs[0]
+        const { data: runPayslips } = await supabase.from('payslips')
+          .select('gross_pay')
+          .eq('company_id', selectedCompanyId!)
+          .gte('pay_period_start', run.period_start)
+          .lte('pay_period_end', run.period_end)
+        const totalGross = (runPayslips || []).reduce((s, p) => s + Number(p.gross_pay), 0)
+        const key = wt === 'shift_worker' ? 'shift' : wt
+        runMap[key] = { ...run, total_gross: totalGross }
+      }
+    }
+    setLastPayRuns(runMap)
 
     setLoading(false)
   }, [selectedCompanyId, fyRange])
@@ -815,6 +842,19 @@ export default function AdminPayrollNew() {
       })
     })
 
+    wizBonusEntries.filter(b => isEmpInScope(b.employee_id)).forEach(b => {
+      items.push({
+        employee: b.employee_name,
+        type: b.type === 'bonus' ? 'Bonus' : 'Deduction',
+        description: b.description,
+        hours: 0,
+        rate: 0,
+        multiplier: 0,
+        days: 0,
+        amount: b.type === 'bonus' ? b.amount : -b.amount,
+      })
+    })
+
     const sanitise = (s: string) => s.replace(/[=+\-@\t\r]/g, "'$&").replace(/"/g, '""')
     const header = 'Employee,Adjustment Type,Description,Hours,Hourly Rate,Multiplier,Days,Amount'
     const rows = items.map(i =>
@@ -913,13 +953,35 @@ export default function AdminPayrollNew() {
         if (error) throw error
         if (data?.error) throw new Error(data.error)
 
+        const bonusManualItems = wizBonusEntries.filter(b => isEmpInScope(b.employee_id)).map(b => ({
+          employee: b.employee_name,
+          type: b.type === 'bonus' ? 'bonus' as const : 'deduction' as const,
+          description: b.description,
+          amount: b.amount,
+        }))
+
+        // Save bonus entries to payroll_adjustments table
+        for (const b of wizBonusEntries.filter(be => isEmpInScope(be.employee_id))) {
+          await supabase.from('payroll_adjustments').insert({
+            company_id: selectedCompanyId,
+            employee_id: b.employee_id,
+            pay_run_id: payRunId,
+            type: b.type,
+            description: b.description,
+            amount: b.amount,
+            frequency: 'one_off',
+            status: 'pushed',
+            created_by: session?.user?.id || null,
+          })
+        }
+
         setWizPushResult({
           pushed: data.pushed || 0,
           failed: data.failed || 0,
           skipped: data.skipped || 0,
           api: 'xero',
           timesheet_results: data.timesheet_results || [],
-          manual_items: data.manual_items || [],
+          manual_items: [...(data.manual_items || []), ...bonusManualItems],
           skipped_details: data.skipped_details || [],
           provider: 'xero',
         })
@@ -935,6 +997,21 @@ export default function AdminPayrollNew() {
           a.download = `Sage_Adjustments_${localDateStr(new Date())}.csv`
           a.click()
           URL.revokeObjectURL(url)
+        }
+
+        // Save bonus entries to payroll_adjustments table
+        for (const b of wizBonusEntries.filter(be => isEmpInScope(be.employee_id))) {
+          await supabase.from('payroll_adjustments').insert({
+            company_id: selectedCompanyId,
+            employee_id: b.employee_id,
+            pay_run_id: payRunId,
+            type: b.type,
+            description: b.description,
+            amount: b.amount,
+            frequency: 'one_off',
+            status: 'pushed',
+            created_by: session?.user?.id || null,
+          })
         }
 
         setWizPushResult({
@@ -1195,7 +1272,80 @@ export default function AdminPayrollNew() {
     }
     loadWizTimesheets()
     if (providerConnected) loadWizAdjustments()
+    loadWizBonuses()
     setWizStep(2)
+  }
+
+  async function startPayrollForType(type: 'employed' | 'shift' | 'zero_hours') {
+    if (selectedCompanyId) {
+      const wtKey = type === 'shift' ? 'shift_worker' : type
+      const { data: activeRun } = await supabase.from('pay_runs')
+        .select('id, status, worker_types, payment_method')
+        .eq('company_id', selectedCompanyId)
+        .contains('worker_types', [wtKey])
+        .in('status', ['generating', 'exported', 'synced'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (activeRun && activeRun.length > 0) {
+        const run = activeRun[0]
+        setWizPayRunId(run.id)
+        setWizGenerated(true)
+        setWizComplete(false)
+        setWizReleasing(false)
+        setWizWorkerTypes(new Set([type]))
+        if (run.status === 'generating') { setWizStep(4); setWizExported(false); setWizPayMethod(run.payment_method || 'external') }
+        else { setWizStep(5); setWizExported(true); setWizPayMethod(run.payment_method || 'external') }
+        setWizExporting(false)
+        setWizOvertimeHours({})
+        setWizPeriodReviews([])
+        setWizBonusEntries([])
+        setView('run_payroll')
+        return
+      }
+    }
+    setView('run_payroll')
+    setWizStep(1)
+    setWizWorkerTypes(new Set([type]))
+    setWizGenerated(false)
+    setWizComplete(false)
+    setWizPayMethod('external')
+    setWizOvertimeHours({})
+    setWizPeriodReviews([])
+    setWizPayRunId(null)
+    setWizExporting(false)
+    setWizExported(false)
+    setWizPushResult(null)
+    setWizReleasing(false)
+    setWizBonusEntries([])
+  }
+
+  function loadWizBonuses() {
+    const bonusEntries: typeof wizBonusEntries = []
+    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const isWeekly = (emp: Employee) => {
+      const freq = getEffectiveSetting(emp, workerSettings, 'pay_pattern')
+      return freq === 'weekly' || freq === 'bi_weekly'
+    }
+    employees.forEach(emp => {
+      if (!emp.bonus_amount || emp.bonus_amount <= 0) return
+      const inScope = (
+        (wizWorkerTypes.has('employed') && emp.employment_category !== 'shift_worker') ||
+        (wizWorkerTypes.has('shift') && emp.employment_category === 'shift_worker' && emp.contract_type !== 'Zero hours shift worker') ||
+        (wizWorkerTypes.has('zero_hours') && emp.employment_category === 'shift_worker' && emp.contract_type === 'Zero hours shift worker')
+      )
+      if (!inScope) return
+      if (emp.bonus_frequency === 'monthly' || (emp.bonus_frequency === 'weekly' && !isWeekly(emp))) {
+        bonusEntries.push({
+          employee_id: emp.id,
+          employee_name: `${emp.first_name} ${emp.last_name}`,
+          amount: emp.bonus_amount,
+          description: `Recurring ${emp.bonus_frequency} bonus`,
+          type: 'bonus',
+        })
+      }
+    })
+    setWizBonusEntries(bonusEntries)
   }
 
   function toggleWizWorkerType(t: 'employed' | 'shift' | 'zero_hours') {
@@ -1362,10 +1512,10 @@ export default function AdminPayrollNew() {
             </div>
           </div>
 
-          {/* Current Month Status per Worker Type */}
+          {/* Per-Worker-Type Payroll Cards */}
           <h3 className="pn-section-title">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            {MONTH_NAMES[now.getMonth()]} {now.getFullYear()} — Payroll Status
+            Payroll Dashboard
           </h3>
 
           {workerTypeStats.length === 0 ? (
@@ -1374,57 +1524,90 @@ export default function AdminPayrollNew() {
             </div>
           ) : (
             <div className="pn-worker-cards">
-              {workerTypeStats.map(wt => (
-                <div key={wt.key} className="pn-worker-card" style={{ borderTop: `4px solid ${wt.colour}` }}>
-                  <div className="pn-worker-card-header">
-                    <div>
-                      <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{wt.label}</h4>
-                      <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{wt.employees.length} employee{wt.employees.length !== 1 ? 's' : ''}</span>
+              {workerTypeStats.map(wt => {
+                const wtSettingKey = wt.key === 'shift' ? 'shift_worker' : wt.key
+                const wtSetting = workerSettings.find(s => s.worker_type === wtSettingKey)
+                const payFreq = wtSetting?.pay_pattern || 'monthly'
+                const freqLabel = payFreq === 'weekly' ? 'Weekly' : payFreq === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'
+                const lastRun = lastPayRuns[wt.key]
+                const expectedRunDate = new Date(wt.nextPayDate)
+                expectedRunDate.setDate(expectedRunDate.getDate() - 5)
+                const bonusCount = wt.employees.filter(e => e.bonus_amount && e.bonus_amount > 0).length
+
+                return (
+                  <div key={wt.key} className="pn-worker-card" style={{ borderTop: `4px solid ${wt.colour}` }}>
+                    <div className="pn-worker-card-header">
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{wt.label}</h4>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{wt.employees.length} employee{wt.employees.length !== 1 ? 's' : ''}</span>
+                          <span className="pn-badge" style={{ background: wt.colour + '18', color: wt.colour, fontSize: 10, padding: '1px 6px' }}>{freqLabel}</span>
+                        </div>
+                      </div>
+                      {statusBadge(wt.status)}
                     </div>
-                    {statusBadge(wt.status)}
-                  </div>
-                  <div className="pn-worker-card-body">
-                    <div className="pn-worker-metric">
-                      <span className="pn-worker-metric-value">£{wt.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                      <span className="pn-worker-metric-label">Gross this month</span>
+                    <div className="pn-worker-card-body">
+                      {lastRun ? (
+                        <>
+                          <div className="pn-worker-metric">
+                            <span className="pn-worker-metric-value">£{lastRun.total_gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                            <span className="pn-worker-metric-label">Last run total</span>
+                          </div>
+                          <div className="pn-worker-metric">
+                            <span className="pn-worker-metric-value">{formatDate(lastRun.completed_at?.split('T')[0] || lastRun.period_end)}</span>
+                            <span className="pn-worker-metric-label">Last run date</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value" style={{ color: 'var(--text-muted, #888)', fontSize: 13 }}>No previous run</span>
+                          <span className="pn-worker-metric-label">Last run</span>
+                        </div>
+                      )}
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">{formatDate(wt.nextPayDate.toISOString().split('T')[0])}</span>
+                        <span className="pn-worker-metric-label">Next pay date</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value">{formatDate(expectedRunDate.toISOString().split('T')[0])}</span>
+                        <span className="pn-worker-metric-label">Expected run by</span>
+                      </div>
                     </div>
-                    <div className="pn-worker-metric">
-                      <span className="pn-worker-metric-value">£{wt.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                      <span className="pn-worker-metric-label">Net this month</span>
-                    </div>
-                    <div className="pn-worker-metric">
-                      <span className="pn-worker-metric-value">{wt.payslips.length}</span>
-                      <span className="pn-worker-metric-label">Payslips</span>
-                    </div>
-                    <div className="pn-worker-metric">
-                      <span className="pn-worker-metric-value">{formatDate(wt.nextPayDate.toISOString().split('T')[0])}</span>
-                      <span className="pn-worker-metric-label">Next pay date</span>
-                    </div>
-                  </div>
-                  <div className="pn-worker-card-footer">
-                    {wt.status === 'not_started' && (
-                      <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={startRunPayroll}>
-                        Run Payroll
-                      </button>
+                    {(bonusCount > 0 || wt.payslips.length > 0) && (
+                      <div style={{ padding: '0 16px 8px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {wt.payslips.length > 0 && (
+                          <span style={{ fontSize: 11, color: 'var(--text-muted, #6b7280)' }}>{wt.payslips.length} payslip{wt.payslips.length !== 1 ? 's' : ''} this period</span>
+                        )}
+                        {bonusCount > 0 && (
+                          <span style={{ fontSize: 11, color: '#ef6c00' }}>{bonusCount} with recurring bonus</span>
+                        )}
+                      </div>
                     )}
-                    {wt.status === 'in_progress' && (
-                      <>
-                        <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={startRunPayroll}>
-                          Continue Pay Run
+                    <div className="pn-worker-card-footer">
+                      {wt.status === 'not_started' && (
+                        <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => startPayrollForType(wt.key)}>
+                          Run Pre-Payroll
                         </button>
-                        <button className="admin-btn" style={{ fontSize: 13, marginLeft: 6 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
-                          Review Payslips
+                      )}
+                      {wt.status === 'in_progress' && (
+                        <>
+                          <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => startPayrollForType(wt.key)}>
+                            Continue Pay Run
+                          </button>
+                          <button className="admin-btn" style={{ fontSize: 13, marginLeft: 6 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
+                            Review Payslips
+                          </button>
+                        </>
+                      )}
+                      {(wt.status === 'submitted' || wt.status === 'paid') && (
+                        <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
+                          View Payslips
                         </button>
-                      </>
-                    )}
-                    {(wt.status === 'submitted' || wt.status === 'paid') && (
-                      <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
-                        View Payslips
-                      </button>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 
@@ -2216,6 +2399,94 @@ export default function AdminPayrollNew() {
                 </div>
               )}
 
+              {/* Bonuses & Deductions */}
+              {wizBonusEntries.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#ef6c00' }}>
+                    Bonuses &amp; Deductions ({wizBonusEntries.length})
+                  </h4>
+                  <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '0 0 8px' }}>
+                      Recurring bonuses from employee profiles. You can adjust amounts or remove entries before proceeding.
+                    </p>
+                    <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                      {wizBonusEntries.map((entry, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: '4px 0', borderBottom: '1px solid var(--border, #eee)' }}>
+                          <span style={{ fontSize: 13, minWidth: 140, fontWeight: 500 }}>{entry.employee_name}</span>
+                          <span className="pn-badge" style={{
+                            background: entry.type === 'bonus' ? '#e8f5e9' : '#fbe9e7',
+                            color: entry.type === 'bonus' ? '#2e7d32' : '#c62828',
+                            fontSize: 10, padding: '1px 6px'
+                          }}>
+                            {entry.type === 'bonus' ? 'Bonus' : 'Deduction'}
+                          </span>
+                          <span style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', flex: 1 }}>{entry.description}</span>
+                          <input type="number" step="0.01" min="0"
+                            style={{ width: 80, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: '1px solid var(--border, #d1d5db)', textAlign: 'right' }}
+                            value={entry.amount}
+                            onChange={e => {
+                              const updated = [...wizBonusEntries]
+                              updated[i] = { ...updated[i], amount: Number(e.target.value) || 0 }
+                              setWizBonusEntries(updated)
+                            }}
+                          />
+                          <button className="admin-btn" style={{ fontSize: 11, padding: '2px 6px', color: '#c62828' }}
+                            onClick={() => setWizBonusEntries(prev => prev.filter((_, j) => j !== i))}>
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border, #e5e7eb)' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>
+                        Total: £{wizBonusEntries.filter(e => e.type === 'bonus').reduce((s, e) => s + e.amount, 0).toFixed(2)} bonuses
+                        {wizBonusEntries.some(e => e.type === 'deduction') && `, £${wizBonusEntries.filter(e => e.type === 'deduction').reduce((s, e) => s + e.amount, 0).toFixed(2)} deductions`}
+                      </span>
+                      <details style={{ display: 'inline' }}>
+                        <summary className="admin-btn" style={{ fontSize: 12, cursor: 'pointer', display: 'inline-block' }}>+ Add One-Off</summary>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, alignItems: 'flex-end' }}>
+                          <select id="bonus-emp-select" style={{ padding: '4px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border, #d1d5db)' }}>
+                            <option value="">Select employee…</option>
+                            {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+                          </select>
+                          <select id="bonus-type-select" style={{ padding: '4px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border, #d1d5db)', width: 90 }}>
+                            <option value="bonus">Bonus</option>
+                            <option value="deduction">Deduction</option>
+                          </select>
+                          <input id="bonus-desc-input" placeholder="Description" style={{ padding: '4px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border, #d1d5db)', width: 140 }} />
+                          <input id="bonus-amt-input" type="number" step="0.01" min="0" placeholder="£ Amount" style={{ padding: '4px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border, #d1d5db)', width: 80 }} />
+                          <button className="admin-btn admin-btn-primary" style={{ fontSize: 11, padding: '4px 10px' }}
+                            onClick={() => {
+                              const sel = document.getElementById('bonus-emp-select') as HTMLSelectElement
+                              const empId = sel?.value
+                              const emp = employees.find(e => e.id === empId)
+                              if (!emp) return
+                              const desc = (document.getElementById('bonus-desc-input') as HTMLInputElement)?.value
+                              const amt = Number((document.getElementById('bonus-amt-input') as HTMLInputElement)?.value)
+                              const bonusType = (document.getElementById('bonus-type-select') as HTMLSelectElement)?.value as 'bonus' | 'deduction'
+                              if (!desc || !amt || amt <= 0) return
+                              setWizBonusEntries(prev => [...prev, {
+                                employee_id: emp.id,
+                                employee_name: `${emp.first_name} ${emp.last_name}`,
+                                amount: amt,
+                                description: desc,
+                                type: bonusType,
+                              }])
+                              if (sel) sel.value = ''
+                              const descInput = document.getElementById('bonus-desc-input') as HTMLInputElement
+                              const amtInput = document.getElementById('bonus-amt-input') as HTMLInputElement
+                              if (descInput) descInput.value = ''
+                              if (amtInput) amtInput.value = ''
+                            }}>
+                            Add
+                          </button>
+                        </div>
+                      </details>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {providerConnected && (
                 <div style={{ marginBottom: 16 }}>
                   <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#1565c0' }}>Adjustments Summary</h4>
@@ -2339,7 +2610,7 @@ export default function AdminPayrollNew() {
                           const emp = employees.find(e => e.id === empId)
                           return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
                         }).length
-                        const manualCount = wizUnpaidLeave.length + wizBenefitChanges.length
+                        const manualCount = wizUnpaidLeave.length + wizBenefitChanges.length + wizBonusEntries.length
                         const totalCount = otCount + manualCount + toilCount
                         return (
                           <>
