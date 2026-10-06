@@ -167,7 +167,69 @@ export default function AdminXeroTest() {
               {' · '}
               <strong>URL:</strong> {payRunsResult.url}
             </div>
-            <pre style={preStyle}>{JSON.stringify(payRunsResult.data, null, 2)}</pre>
+
+            {payRunsResult.data?.payRuns?.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                {payRunsResult.data.payRuns.map((pr: any) => (
+                  <div key={pr.payRunID} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12, marginBottom: 10, background: '#fafafa' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div>
+                        <strong style={{ fontSize: 13 }}>{pr.calendarType} Pay Run</strong>
+                        <span style={{
+                          marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+                          background: pr.payRunStatus === 'Draft' ? '#fff3e0' : '#e8f5e9',
+                          color: pr.payRunStatus === 'Draft' ? '#e65100' : '#2e7d32',
+                        }}>{pr.payRunStatus}</span>
+                      </div>
+                      <span style={{ fontSize: 12, color: '#6b7280' }}>
+                        {new Date(pr.periodStartDate).toLocaleDateString('en-GB')} – {new Date(pr.periodEndDate).toLocaleDateString('en-GB')}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
+                      <strong>PayRunID:</strong> <code style={{ fontSize: 11 }}>{pr.payRunID}</code>
+                      {' · '}<strong>Total Pay:</strong> £{pr.totalPay?.toFixed(2)}
+                      {' · '}<strong>Payment:</strong> {new Date(pr.paymentDate).toLocaleDateString('en-GB')}
+                    </div>
+
+                    {pr.paySlips?.length > 0 ? (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 4 }}>
+                          Payslips ({pr.paySlips.length}) — click to load in section 2:
+                        </div>
+                        {pr.paySlips.map((ps: any) => (
+                          <button
+                            key={ps.paySlipID}
+                            onClick={() => { setPayRunId(pr.payRunID); setPayslipId(ps.paySlipID) }}
+                            style={{
+                              display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', marginBottom: 3,
+                              background: payslipId === ps.paySlipID ? '#e0e7ff' : '#fff',
+                              border: '1px solid #d1d5db', borderRadius: 6, cursor: 'pointer', fontSize: 12,
+                            }}
+                          >
+                            <strong>{ps.firstName} {ps.lastName}</strong>
+                            <span style={{ color: '#6b7280', marginLeft: 8 }}>
+                              PayslipID: <code style={{ fontSize: 11 }}>{ps.paySlipID}</code>
+                            </span>
+                            {ps.netPay != null && (
+                              <span style={{ float: 'right', fontWeight: 600, color: '#2e7d32' }}>£{ps.netPay?.toFixed(2)}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic', marginTop: 4 }}>
+                        No payslip details returned for this pay run
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ fontSize: 12, color: '#6b7280', cursor: 'pointer' }}>Raw JSON</summary>
+              <pre style={preStyle}>{JSON.stringify(payRunsResult.data, null, 2)}</pre>
+            </details>
           </div>
         )}
       </div>

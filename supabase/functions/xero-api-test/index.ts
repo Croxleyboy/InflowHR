@@ -131,13 +131,26 @@ Deno.serve(async (req) => {
       'Content-Type': 'application/json',
     }
 
-    // ── Action 1: Fetch all pay runs ──────────────────────────────────────
+    // ── Action 1: Fetch all pay runs with payslip IDs ───────────────────
     if (action === 'fetch_payruns') {
       const url = `${XERO_PAYROLL_AU}/PayRuns`
       const res = await fetch(url, { headers: xeroHeaders })
       const text = await res.text()
-      let data
+      let data: any
       try { data = JSON.parse(text) } catch { data = text }
+
+      if (res.ok && data?.payRuns?.length) {
+        for (const pr of data.payRuns) {
+          try {
+            const detailRes = await fetch(`${XERO_PAYROLL_AU}/PayRuns/${pr.payRunID}`, { headers: xeroHeaders })
+            if (detailRes.ok) {
+              const detail = await detailRes.json()
+              pr.paySlips = detail?.payRun?.paySlips || []
+            }
+          } catch { /* skip detail fetch errors */ }
+        }
+      }
+
       return json({
         action: 'fetch_payruns',
         status: res.status,
