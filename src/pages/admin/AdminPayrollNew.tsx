@@ -1322,7 +1322,6 @@ export default function AdminPayrollNew() {
 
   function loadWizBonuses() {
     const bonusEntries: typeof wizBonusEntries = []
-    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     const isWeekly = (emp: Employee) => {
       const freq = getEffectiveSetting(emp, workerSettings, 'pay_pattern')
       return freq === 'weekly' || freq === 'bi_weekly'
