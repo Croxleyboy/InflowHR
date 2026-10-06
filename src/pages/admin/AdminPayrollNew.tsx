@@ -866,7 +866,14 @@ export default function AdminPayrollNew() {
     setWizPayRunId(payRunId)
 
     try {
-      const { csv, rowCount, items } = generateAdjustmentsCsv()
+      const isEmpInScope = (empId: string) => {
+        const emp = employees.find(e => e.id === empId)
+        if (!emp) return false
+        if (wizWorkerTypes.has('employed') && emp.employment_category !== 'shift_worker') return true
+        if (wizWorkerTypes.has('shift') && emp.employment_category === 'shift_worker' && emp.contract_type !== 'Zero hours shift worker') return true
+        if (wizWorkerTypes.has('zero_hours') && emp.employment_category === 'shift_worker' && emp.contract_type === 'Zero hours shift worker') return true
+        return false
+      }
 
       const toilEntries = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
         const emp = employees.find(e => e.id === empId)
@@ -874,43 +881,71 @@ export default function AdminPayrollNew() {
         return hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
       }).map(([empId, hrs]) => ({ employee_id: empId, hours: hrs }))
 
-      if (rowCount > 0) {
-        const providerName = connectedProvider === 'xero' ? 'Xero' : connectedProvider === 'sage' ? 'Sage' : 'Payroll'
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${providerName}_Adjustments_${localDateStr(new Date())}.csv`
-        a.click()
-        URL.revokeObjectURL(url)
+      // Build overtime entries (excluding TOIL)
+      const overtimeEntries = Object.entries(wizOvertimeHours)
+        .filter(([empId, hrs]) => {
+          const emp = employees.find(e => e.id === empId)
+          return emp && hrs > 0 && isEmpInScope(empId) && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
+        })
+        .map(([empId, hrs]) => {
+          const emp = employees.find(e => e.id === empId)!
+          return { employee_id: empId, hours: hrs, multiplier: emp.overtime_rate_multiplier || 1.5 }
+        })
+
+      const unpaidLeaveEntries = wizUnpaidLeave.filter(u => isEmpInScope(u.employee_id))
+      const benefitChangeEntries = wizBenefitChanges.filter(b => isEmpInScope(b.employee_id))
+
+      if (connectedProvider === 'xero') {
+        // Xero: push overtime via API, flag unpaid leave + benefits as manual
+        const { data, error } = await supabase.functions.invoke('xero-push-payroll', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: {
+            company_id: selectedCompanyId,
+            pay_run_id: payRunId,
+            period_start: monthStart,
+            period_end: monthEnd,
+            overtime: overtimeEntries,
+            unpaid_leave: unpaidLeaveEntries.map(u => ({ employee_id: u.employee_id, days: u.days })),
+            benefit_changes: benefitChangeEntries.map(b => ({ employee_id: b.employee_id, benefit: b.benefit, monthly_cost: b.monthly_cost })),
+          },
+        })
+
+        if (error) throw error
+        if (data?.error) throw new Error(data.error)
 
         setWizPushResult({
-          pushed: 0,
-          failed: 0,
-          skipped: 0,
-          api: 'csv',
-          csv_exported: rowCount,
-          csv_items: items,
-          provider: connectedProvider || undefined,
-          timesheet_results: [],
-          manual_items: [],
-          skipped_details: [],
+          pushed: data.pushed || 0,
+          failed: data.failed || 0,
+          skipped: data.skipped || 0,
+          api: 'xero',
+          timesheet_results: data.timesheet_results || [],
+          manual_items: data.manual_items || [],
+          skipped_details: data.skipped_details || [],
+          provider: 'xero',
         })
       } else {
+        // Sage: CSV export (unchanged)
+        const { csv, rowCount, items } = generateAdjustmentsCsv()
+
+        if (rowCount > 0) {
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `Sage_Adjustments_${localDateStr(new Date())}.csv`
+          a.click()
+          URL.revokeObjectURL(url)
+        }
+
         setWizPushResult({
-          pushed: 0,
-          failed: 0,
-          skipped: 0,
-          api: 'csv',
-          csv_exported: 0,
-          csv_items: [],
-          provider: connectedProvider || undefined,
-          timesheet_results: [],
-          manual_items: [],
-          skipped_details: [],
+          pushed: 0, failed: 0, skipped: 0, api: 'csv',
+          csv_exported: rowCount, csv_items: items,
+          provider: 'sage',
+          timesheet_results: [], manual_items: [], skipped_details: [],
         })
       }
 
+      // Credit TOIL lieu days
       for (const toilEntry of toilEntries) {
         const emp = employees.find(e => e.id === toilEntry.employee_id)
         const dailyHours = ((emp?.weekly_hours || 37.5) / 5)
@@ -921,27 +956,28 @@ export default function AdminPayrollNew() {
         } catch { /* non-blocking */ }
       }
 
-      await supabase.from('payroll_audit_log').insert({
-        company_id: selectedCompanyId,
-        user_id: session.user.id,
-        action: 'Adjustment CSV Export',
-        detail: `Exported ${rowCount} adjustment(s) for ${connectedProvider || 'external'} import. TOIL entries: ${toilEntries.length}.`,
-        status: 'success',
-      })
-
       await supabase.from('pay_runs').update({ status: 'exported' }).eq('id', payRunId)
       setWizGenerated(true)
       setWizExported(true)
-      if (rowCount > 0) {
-        showSuccess(`${rowCount} adjustment(s) exported to CSV — import into ${connectedProvider === 'xero' ? 'Xero' : connectedProvider === 'sage' ? 'Sage' : 'your payroll provider'}`)
-      } else if (toilEntries.length > 0) {
-        showSuccess('TOIL lieu days credited — no adjustment lines to export')
+
+      if (connectedProvider === 'xero') {
+        const pushed = wizPushResult?.pushed || 0
+        showSuccess(pushed > 0
+          ? `Overtime pushed to Xero (${pushed} employee${pushed !== 1 ? 's' : ''}). Check the manual items below for anything to enter in Xero yourself.`
+          : 'No overtime to push — check the manual items below for anything to enter in Xero.')
       } else {
-        showSuccess('No adjustments for this period')
+        const { rowCount } = generateAdjustmentsCsv()
+        if (rowCount > 0) {
+          showSuccess(`${rowCount} adjustment(s) exported to CSV — import into Sage`)
+        } else if (toilEntries.length > 0) {
+          showSuccess('TOIL lieu days credited — no adjustment lines to export')
+        } else {
+          showSuccess('No adjustments for this period')
+        }
       }
       await loadAll()
     } catch (err: any) {
-      showError('Export failed: ' + (err?.message || 'Unknown error'))
+      showError('Push failed: ' + (err?.message || 'Unknown error'))
       await supabase.from('pay_runs').update({ status: 'draft' }).eq('id', payRunId)
     }
     setWizGenerating(false)
@@ -2248,7 +2284,9 @@ export default function AdminPayrollNew() {
           {wizStep === 3 && (
             <div className="admin-settings-group" style={{ marginTop: 20 }}>
               <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
-                {providerConnected ? 'Push Adjustments to Provider' : 'Generate Estimate Payslips'}
+                {providerConnected
+                  ? connectedProvider === 'xero' ? 'Push to Xero' : 'Export to Sage'
+                  : 'Generate Estimate Payslips'}
               </h3>
 
               {providerConnected ? (
@@ -2256,8 +2294,8 @@ export default function AdminPayrollNew() {
                   <>
                     <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
                       {connectedProvider === 'xero'
-                        ? 'Overtime hours will be pushed to Xero as timesheets. Unpaid leave and benefit changes will be listed for you to enter manually in Xero.'
-                        : 'This will export adjustment lines to Sage as a CSV file.'
+                        ? 'Overtime hours will be pushed directly to Xero via the Timesheets API. Unpaid leave and benefit changes will be listed for you to enter manually in Xero.'
+                        : 'This will export adjustment lines as a CSV file for Sage import.'
                       } TOIL hours are credited as lieu days internally and are not sent to the provider.
                     </p>
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
@@ -2273,7 +2311,7 @@ export default function AdminPayrollNew() {
                         </div>
                         <div className="pn-worker-metric">
                           <span className="pn-worker-metric-value">{wizUnpaidLeave.length + wizBenefitChanges.length}</span>
-                          <span className="pn-worker-metric-label">Other adjustments</span>
+                          <span className="pn-worker-metric-label">{connectedProvider === 'xero' ? 'Manual items' : 'Other adjustments'}</span>
                         </div>
                         <div className="pn-worker-metric">
                           <span className="pn-worker-metric-value" style={{ textTransform: 'capitalize' }}>{connectedProvider}</span>
@@ -2301,16 +2339,18 @@ export default function AdminPayrollNew() {
                           const emp = employees.find(e => e.id === empId)
                           return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
                         }).length
-                        const pushCount = otCount + wizUnpaidLeave.length + wizBenefitChanges.length
-                        const totalCount = pushCount + toilCount
+                        const manualCount = wizUnpaidLeave.length + wizBenefitChanges.length
+                        const totalCount = otCount + manualCount + toilCount
                         return (
                           <>
                             <button className="admin-btn admin-btn-primary" disabled={wizGenerating || totalCount === 0} onClick={wizPushAdjustments}>
-                              {wizGenerating ? 'Exporting…' : pushCount > 0 ? `Export Adjustments CSV` : 'Credit TOIL Lieu Days'}
+                              {wizGenerating
+                                ? (connectedProvider === 'xero' ? 'Pushing to Xero…' : 'Exporting…')
+                                : connectedProvider === 'xero'
+                                  ? otCount > 0 ? `Push ${otCount} Timesheet${otCount !== 1 ? 's' : ''} to Xero` : manualCount > 0 ? 'Process Adjustments' : 'Credit TOIL Lieu Days'
+                                  : otCount > 0 || manualCount > 0 ? 'Export Adjustments CSV' : 'Credit TOIL Lieu Days'
+                              }
                             </button>
-                            {pushCount === 0 && toilCount > 0 && (
-                              <p style={{ fontSize: 12, color: '#7e57c2', marginTop: 8, textAlign: 'right' }}>No adjustment lines to export — TOIL hours will be credited as lieu days only.</p>
-                            )}
                             {totalCount === 0 && (
                               <p style={{ fontSize: 12, color: '#e53935', marginTop: 8, textAlign: 'right' }}>No adjustments found for this period.</p>
                             )}
@@ -2319,9 +2359,147 @@ export default function AdminPayrollNew() {
                       })()}
                     </div>
                   </>
+                ) : wizPushResult?.api === 'xero' ? (
+                  <>
+                    {/* Xero push results */}
+                    <div style={{ background: (wizPushResult.pushed || 0) > 0 ? '#e8f5e9' : (wizPushResult.failed || 0) > 0 ? '#ffebee' : '#fff3e0', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={(wizPushResult.pushed || 0) > 0 ? '#2e7d32' : '#e65100'} strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}>
+                        {(wizPushResult.pushed || 0) > 0
+                          ? <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>
+                          : <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>
+                        }
+                      </svg>
+                      <div style={{ flex: 1 }}>
+                        <strong style={{ color: (wizPushResult.pushed || 0) > 0 ? '#2e7d32' : '#e65100' }}>
+                          {(wizPushResult.pushed || 0) > 0
+                            ? `${wizPushResult.pushed} overtime timesheet${wizPushResult.pushed !== 1 ? 's' : ''} pushed to Xero`
+                            : (wizPushResult.failed || 0) > 0 ? 'Push failed — check errors below' : 'No overtime to push'}
+                        </strong>
+                        <p style={{ fontSize: 12, margin: '4px 0 0', color: 'var(--text-muted, #6b7280)' }}>
+                          {(wizPushResult.pushed || 0) > 0
+                            ? 'Overtime hours have been added as timesheet lines in Xero. Review them in Xero before processing the pay run.'
+                            : (wizPushResult.manual_items?.length || 0) > 0 ? 'Check the manual action items below.' : 'No adjustments for this period.'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Auto-pushed overtime results */}
+                    {wizPushResult.timesheet_results && wizPushResult.timesheet_results.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+                          Auto-pushed to Xero
+                        </h4>
+                        <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, overflow: 'hidden' }}>
+                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ background: 'var(--bg-muted, #f0f1f3)', textAlign: 'left' }}>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Employee</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Hours</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Rate</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'center' }}>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {wizPushResult.timesheet_results.map((r: any, i: number) => (
+                                <tr key={i} style={{ borderTop: '1px solid var(--border, #e5e7eb)' }}>
+                                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>{r.employee}</td>
+                                  <td style={{ padding: '8px 12px' }}>{r.hours}h × {r.multiplier}x</td>
+                                  <td style={{ padding: '8px 12px' }}>£{(r.rate || 0).toFixed(2)}/hr</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>£{(r.amount || 0).toFixed(2)}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                                    {r.status === 'pushed' ? (
+                                      <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 10px', borderRadius: 10, fontWeight: 600 }}>Pushed</span>
+                                    ) : (
+                                      <span title={r.error || ''} style={{ fontSize: 11, background: '#ffebee', color: '#c62828', padding: '2px 10px', borderRadius: 10, fontWeight: 600, cursor: r.error ? 'help' : undefined }}>Failed</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                            {wizPushResult.timesheet_results.filter((r: any) => r.status === 'pushed').length > 0 && (
+                              <tfoot>
+                                <tr style={{ borderTop: '2px solid var(--border, #d1d5db)', background: 'var(--bg-muted, #f0f1f3)' }}>
+                                  <td colSpan={3} style={{ padding: '8px 12px', fontWeight: 700 }}>Total overtime pushed</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
+                                    £{wizPushResult.timesheet_results.filter((r: any) => r.status === 'pushed').reduce((s: number, r: any) => s + (r.amount || 0), 0).toFixed(2)}
+                                  </td>
+                                  <td />
+                                </tr>
+                              </tfoot>
+                            )}
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Skipped employees */}
+                    {wizPushResult.skipped_details && wizPushResult.skipped_details.length > 0 && (
+                      <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
+                        <strong style={{ color: '#e65100', fontSize: 13 }}>Skipped ({wizPushResult.skipped_details.length})</strong>
+                        <ul style={{ fontSize: 12, color: '#bf360c', margin: '6px 0 0', paddingLeft: 20 }}>
+                          {wizPushResult.skipped_details.map((s: any, i: number) => (
+                            <li key={i}><strong>{s.employee}</strong>: {s.reason}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Manual action items for Xero */}
+                    {wizPushResult.manual_items && wizPushResult.manual_items.length > 0 && (
+                      <div style={{ marginBottom: 16 }}>
+                        <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#e65100', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2"><path d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 0 0 1.73-3L13.73 4a2 2 0 0 0-3.46 0L3.34 16a2 2 0 0 0 1.73 3z"/></svg>
+                          Manual action needed in Xero
+                        </h4>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 8 }}>
+                          These items cannot be pushed via the Xero API. Please enter them manually in your Xero pay run.
+                        </p>
+                        <div style={{ background: '#fff3e0', borderRadius: 8, overflow: 'hidden' }}>
+                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ background: '#ffe0b2', textAlign: 'left' }}>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Employee</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Type</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Description</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Where in Xero</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {wizPushResult.manual_items.map((item: any, i: number) => (
+                                <tr key={i} style={{ borderTop: '1px solid #ffcc80' }}>
+                                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>{item.employee}</td>
+                                  <td style={{ padding: '8px 12px' }}>
+                                    <span style={{ fontSize: 11, background: item.type === 'unpaid_leave' ? '#e3f2fd' : '#f3e5f5', color: item.type === 'unpaid_leave' ? '#1565c0' : '#7b1fa2', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
+                                      {item.type === 'unpaid_leave' ? 'Unpaid Leave' : item.type === 'benefit_addition' ? 'Benefit Add' : 'Benefit Remove'}
+                                    </span>
+                                  </td>
+                                  <td style={{ padding: '8px 12px' }}>{item.description}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>£{(item.amount || 0).toFixed(2)}</td>
+                                  <td style={{ padding: '8px 12px', fontSize: 11, color: '#6d4c41' }}>
+                                    {item.type === 'unpaid_leave'
+                                      ? 'Pay Run → Employee → Deductions'
+                                      : 'Pay Run → Employee → Benefits'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
+                        Next: Sync Back →
+                      </button>
+                    </div>
+                  </>
                 ) : (
                   <>
-                    {/* Summary banner */}
+                    {/* Sage CSV export results */}
                     <div style={{ background: (wizPushResult?.csv_exported || 0) > 0 ? '#e8f5e9' : '#fff3e0', borderRadius: 8, padding: 16, marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={(wizPushResult?.csv_exported || 0) > 0 ? '#2e7d32' : '#e65100'} strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                       <div style={{ flex: 1 }}>
@@ -2332,13 +2510,13 @@ export default function AdminPayrollNew() {
                         </strong>
                         <p style={{ fontSize: 12, margin: '4px 0 0', color: '#558b2f' }}>
                           {(wizPushResult?.csv_exported || 0) > 0
-                            ? `The CSV file has been downloaded. Import it into ${wizPushResult!.provider === 'xero' ? 'Xero' : wizPushResult!.provider === 'sage' ? 'Sage' : 'your payroll provider'}, then come back to sync the final payslips.`
+                            ? 'The CSV file has been downloaded. Import it into Sage, then come back to sync the final payslips.'
                             : 'No adjustments were found for this period.'}
                         </p>
                       </div>
                     </div>
 
-                    {/* Exported adjustments table */}
+                    {/* Sage exported adjustments table */}
                     {wizPushResult?.csv_items && wizPushResult.csv_items.length > 0 && (
                       <div style={{ marginBottom: 16 }}>
                         <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2387,12 +2565,11 @@ export default function AdminPayrollNew() {
                           style={{ marginTop: 10, fontSize: 12 }}
                           onClick={() => {
                             const { csv } = generateAdjustmentsCsv()
-                            const providerName = connectedProvider === 'xero' ? 'Xero' : connectedProvider === 'sage' ? 'Sage' : 'Payroll'
                             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
                             const url = URL.createObjectURL(blob)
                             const a = document.createElement('a')
                             a.href = url
-                            a.download = `${providerName}_Adjustments_${localDateStr(new Date())}.csv`
+                            a.download = `Sage_Adjustments_${localDateStr(new Date())}.csv`
                             a.click()
                             URL.revokeObjectURL(url)
                           }}
@@ -2402,36 +2579,18 @@ export default function AdminPayrollNew() {
                       </div>
                     )}
 
-                    {/* Import instructions */}
+                    {/* Sage import instructions */}
                     {(wizPushResult?.csv_exported || 0) > 0 && (
                       <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #1565c0' }}>
-                        <strong style={{ color: '#1565c0', fontSize: 13 }}>
-                          How to Import into {wizPushResult!.provider === 'xero' ? 'Xero' : wizPushResult!.provider === 'sage' ? 'Sage' : 'Your Provider'}
-                        </strong>
-                        {wizPushResult!.provider === 'sage' ? (
-                          <ol style={{ fontSize: 12, color: '#1565c0', margin: '6px 0 0', paddingLeft: 20 }}>
-                            <li>Open Sage 50 Payroll</li>
-                            <li>Go to <strong>File &gt; Import</strong> and select <strong>Advanced Data Import</strong></li>
-                            <li>Choose <strong>Employee Payments and Deductions</strong> as the import type</li>
-                            <li>Select the downloaded CSV file and map the columns</li>
-                            <li>Review the imported data and process your pay run</li>
-                            <li>Come back here and click <strong>Next: Sync Back</strong> to pull the final payslips</li>
-                          </ol>
-                        ) : (
-                          <ol style={{ fontSize: 12, color: '#1565c0', margin: '6px 0 0', paddingLeft: 20 }}>
-                            <li>Open the downloaded CSV to review the adjustments</li>
-                            <li>In Xero, go to <strong>Payroll &gt; Pay Runs</strong> and open your draft pay run</li>
-                            <li>For each employee listed, add the adjustment amounts:
-                              <ul style={{ margin: '4px 0', paddingLeft: 16 }}>
-                                <li><strong>Overtime</strong>: Add as an additional earning line (hours x rate x multiplier)</li>
-                                <li><strong>Unpaid leave</strong>: Add as a deduction on the payslip</li>
-                                <li><strong>Benefit changes</strong>: Add or update the benefit line as shown</li>
-                              </ul>
-                            </li>
-                            <li>Process and post the pay run in Xero</li>
-                            <li>Come back here and click <strong>Next: Sync Back</strong> to pull the final payslips</li>
-                          </ol>
-                        )}
+                        <strong style={{ color: '#1565c0', fontSize: 13 }}>How to Import into Sage</strong>
+                        <ol style={{ fontSize: 12, color: '#1565c0', margin: '6px 0 0', paddingLeft: 20 }}>
+                          <li>Open Sage 50 Payroll</li>
+                          <li>Go to <strong>File &gt; Import</strong> and select <strong>Advanced Data Import</strong></li>
+                          <li>Choose <strong>Employee Payments and Deductions</strong> as the import type</li>
+                          <li>Select the downloaded CSV file and map the columns</li>
+                          <li>Review the imported data and process your pay run</li>
+                          <li>Come back here and click <strong>Next: Sync Back</strong> to pull the final payslips</li>
+                        </ol>
                       </div>
                     )}
 
