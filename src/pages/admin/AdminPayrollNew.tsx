@@ -548,8 +548,8 @@ export default function AdminPayrollNew() {
     }
     setWizUnpaidLeave(unpaid)
 
-    const periodStart = new Date(nextYear, nextMonth, 1)
-    const recentStart = new Date(periodStart)
+    const adjPeriodStart = new Date(monthStart)
+    const recentStart = new Date(adjPeriodStart)
     recentStart.setDate(recentStart.getDate() - 30)
     const { data: enrollData } = await supabase.from('benefit_enrollments')
       .select('employee_id, enrolled_at, benefit_type:benefit_types(title, monthly_cost)')
@@ -1462,7 +1462,6 @@ export default function AdminPayrollNew() {
     const review = wizPeriodReviews.find(r => r.id === reviewId)
     if (!review) return
     const adjustedHours = field === 'adjusted_hours' ? value : Number(review.adjusted_hours)
-    const overtimeHours = field === 'overtime_hours' ? value : Number(review.overtime_hours)
     const grossPay = Math.round(adjustedHours * Number(review.hourly_rate) * 100) / 100
     await supabase.from('pay_period_reviews').update({
       [field]: value,
