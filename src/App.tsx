@@ -80,6 +80,7 @@ import AdminAccess from './pages/admin/AdminAccess'
 import AdminCancellations from './pages/admin/AdminCancellations'
 import AdminGettingSetup from './pages/admin/AdminGettingSetup'
 import AdminTeamsTest from './pages/admin/AdminTeamsTest'
+import AdminXeroTest from './pages/admin/AdminXeroTest'
 import AdminIntegrations from './pages/admin/AdminIntegrations'
 import AdminReports from './pages/admin/AdminReports'
 import AdminSurveys from './pages/admin/AdminSurveys'
@@ -253,6 +254,7 @@ function AuthGate() {
               <Route path="subscriptions" element={<AdminSubscriptions />} />
               <Route path="cancellations" element={<AdminCancellations />} />
               <Route path="teams-test" element={<AdminTeamsTest />} />
+              <Route path="xero-test" element={<AdminXeroTest />} />
             </Route>
           </Route>
         </Route>
@@ -306,6 +308,7 @@ function AuthGate() {
             <Route path="subscriptions" element={<AdminSubscriptions />} />
             <Route path="cancellations" element={<AdminCancellations />} />
             <Route path="teams-test" element={<AdminTeamsTest />} />
+            <Route path="xero-test" element={<AdminXeroTest />} />
           </Route>
         </Route>
       </Route>
