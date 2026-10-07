@@ -607,12 +607,13 @@ export default function AdminPayrollNew() {
         .gte('check_in_at', monthStart + 'T00:00:00')
         .lte('check_in_at', monthEnd + 'T23:59:59')
       if (checkins) {
-        const autoClosedAssignIds = (checkins as any[]).filter(c => c.status === 'auto_closed' && c.shift_assignment_id).map(c => c.shift_assignment_id)
+        const allAssignIds = [...new Set((checkins as any[]).filter(c => c.shift_assignment_id).map(c => c.shift_assignment_id))]
         const schedMap = new Map<string, number>()
-        if (autoClosedAssignIds.length > 0) {
+        const breakMap = new Map<string, number>()
+        if (allAssignIds.length > 0) {
           const { data: assigns } = await supabase.from('shift_assignments')
-            .select('id, shift_template:shift_templates(start_time, end_time)')
-            .in('id', autoClosedAssignIds)
+            .select('id, shift_template:shift_templates(start_time, end_time, break_minutes)')
+            .in('id', allAssignIds)
           if (assigns) {
             for (const a of assigns as any[]) {
               const tmpl = Array.isArray(a.shift_template) ? a.shift_template[0] : a.shift_template
@@ -623,9 +624,11 @@ export default function AdminPayrollNew() {
                 if (dur <= 0) dur += 24
                 schedMap.set(a.id, dur)
               }
+              breakMap.set(a.id, tmpl?.break_minutes ?? 30)
             }
           }
         }
+        const deductedAssignments = new Set<string>()
         for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null; status: string; shift_assignment_id: string | null }[]) {
           if (!c.check_out_at) continue
           let hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
@@ -633,6 +636,11 @@ export default function AdminPayrollNew() {
           if (c.status === 'auto_closed' && c.shift_assignment_id) {
             const sched = schedMap.get(c.shift_assignment_id)
             if (sched && hrs > sched) hrs = sched
+          }
+          if (c.shift_assignment_id && !deductedAssignments.has(c.shift_assignment_id)) {
+            const breakMins = breakMap.get(c.shift_assignment_id) ?? 30
+            hrs = Math.max(0, hrs - breakMins / 60)
+            deductedAssignments.add(c.shift_assignment_id)
           }
           hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + Math.round(hrs * 100) / 100
         }
@@ -1601,7 +1609,7 @@ export default function AdminPayrollNew() {
         .in('employee_id', targetEmpIds)
         .order('check_in_at', { ascending: true }),
       supabase.from('shift_assignments')
-        .select('id, employee_id, date, shift_template:shift_templates(name, start_time, end_time)')
+        .select('id, employee_id, date, shift_template:shift_templates(name, start_time, end_time, break_minutes)')
         .eq('company_id', selectedCompanyId)
         .gte('date', period.start)
         .lte('date', period.end)
@@ -1609,12 +1617,12 @@ export default function AdminPayrollNew() {
     ])
 
     const checkins = (checkinRes.data || []) as { employee_id: string; check_in_at: string; check_out_at: string | null; status: string; shift_assignment_id: string | null }[]
-    const assignments = (assignmentRes.data || []) as unknown as { id: string; employee_id: string; date: string; shift_template: { name: string; start_time: string; end_time: string } | null }[]
+    const assignments = (assignmentRes.data || []) as unknown as { id: string; employee_id: string; date: string; shift_template: { name: string; start_time: string; end_time: string; break_minutes: number } | null }[]
 
-    const assignmentMap = new Map<string, { name: string; start_time: string; end_time: string; date: string }>()
+    const assignmentMap = new Map<string, { name: string; start_time: string; end_time: string; break_minutes: number; date: string }>()
     for (const a of assignments) {
       if (a.shift_template) {
-        assignmentMap.set(a.id, { name: a.shift_template.name, start_time: a.shift_template.start_time, end_time: a.shift_template.end_time, date: a.date })
+        assignmentMap.set(a.id, { name: a.shift_template.name, start_time: a.shift_template.start_time, end_time: a.shift_template.end_time, break_minutes: a.shift_template.break_minutes ?? 30, date: a.date })
       }
     }
 
@@ -1653,7 +1661,9 @@ export default function AdminPayrollNew() {
     for (const [, rows] of shiftGroups) {
       const firstRow = rows[0]
       const assignment = firstRow.shift_assignment_id ? assignmentMap.get(firstRow.shift_assignment_id) : undefined
-      const totalHrsForShift = rows.reduce((s, r) => s + r.hours, 0)
+      const rawHrsForShift = rows.reduce((s, r) => s + r.hours, 0)
+      const breakHrs = assignment ? (assignment.break_minutes ?? 30) / 60 : 0.5
+      const totalHrsForShift = Math.max(0, rawHrsForShift - breakHrs)
       let shiftOT = 0
 
       if (assignment) {

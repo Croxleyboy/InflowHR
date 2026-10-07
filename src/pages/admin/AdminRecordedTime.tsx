@@ -25,7 +25,7 @@ interface ShiftAssignmentRow {
   shift_template_id: string
   employee_id: string
   date: string
-  shift_template?: { name: string; start_time: string; end_time: string } | { name: string; start_time: string; end_time: string }[]
+  shift_template?: { name: string; start_time: string; end_time: string; break_minutes: number } | { name: string; start_time: string; end_time: string; break_minutes: number }[]
 }
 
 interface CorrectionRow {
@@ -41,8 +41,10 @@ interface RecordedEntry {
   shiftName: string
   scheduledStart: string
   scheduledEnd: string
+  breakMinutes: number
   checkins: { checkIn: string; checkOut: string | null; hours: number; status: string }[]
   totalHours: number
+  payableHours: number
   hasCorrectionRaised: boolean
   correctionStatus: string | null
 }
@@ -122,7 +124,7 @@ export default function AdminRecordedTime() {
     const [assignRes, checkinRes, corrRes] = await Promise.all([
       supabase
         .from('shift_assignments')
-        .select('id, shift_template_id, employee_id, date, shift_template:shift_templates(name, start_time, end_time)')
+        .select('id, shift_template_id, employee_id, date, shift_template:shift_templates(name, start_time, end_time, break_minutes)')
         .eq('company_id', companyId)
         .in('employee_id', empIds)
         .order('date', { ascending: false }),
@@ -198,6 +200,9 @@ export default function AdminRecordedTime() {
       })
 
       const totalHours = checkinDetails.reduce((s, c) => s + c.hours, 0)
+      const breakMins = tmpl?.break_minutes ?? 30
+      const breakHrs = breakMins / 60
+      const payable = Math.max(0, totalHours - breakHrs)
       const hasCorrectionRaised = shiftCorrs.length > 0
       const latestCorr = shiftCorrs.sort((a, b) => a.status.localeCompare(b.status))[0]
       result[a.employee_id].push({
@@ -206,8 +211,10 @@ export default function AdminRecordedTime() {
         shiftName: tmpl?.name || 'Shift',
         scheduledStart: tmpl?.start_time || '',
         scheduledEnd: tmpl?.end_time || '',
+        breakMinutes: breakMins,
         checkins: checkinDetails,
         totalHours: Math.round(totalHours * 100) / 100,
+        payableHours: Math.round(payable * 100) / 100,
         hasCorrectionRaised,
         correctionStatus: hasCorrectionRaised ? latestCorr?.status || null : null,
       })
@@ -274,6 +281,7 @@ export default function AdminRecordedTime() {
             const isExpanded = expandedEmp === emp.id
             const totalShifts = entries.length
             const totalHrs = entries.reduce((s, e) => s + e.totalHours, 0)
+            const totalPayable = entries.reduce((s, e) => s + e.payableHours, 0)
             const corrCount = entries.filter(e => e.hasCorrectionRaised).length
 
             const weekGroups = new Map<string, RecordedEntry[]>()
@@ -299,7 +307,8 @@ export default function AdminRecordedTime() {
                   </div>
                   <div style={{ display: 'flex', gap: 16, alignItems: 'center', fontSize: 12 }}>
                     <span>{totalShifts} shift{totalShifts !== 1 ? 's' : ''}</span>
-                    <span style={{ fontWeight: 600 }}>{Math.round(totalHrs * 100) / 100} hrs</span>
+                    <span>{Math.round(totalHrs * 100) / 100} hrs recorded</span>
+                    <span style={{ fontWeight: 600 }}>{Math.round(totalPayable * 100) / 100} hrs payable</span>
                     {corrCount > 0 && (
                       <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: '#fff3e0', color: '#e65100' }}>
                         {corrCount} correction{corrCount !== 1 ? 's' : ''}
@@ -320,6 +329,7 @@ export default function AdminRecordedTime() {
                         const weekEntries = weekGroups.get(weekKey)!
                         const weekOpen = expandedWeeks.has(weekKey)
                         const weekHrs = weekEntries.reduce((s, e) => s + e.totalHours, 0)
+                        const weekPayable = weekEntries.reduce((s, e) => s + e.payableHours, 0)
 
                         return (
                           <div key={weekKey}>
@@ -336,6 +346,7 @@ export default function AdminRecordedTime() {
                               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                                 <span>{weekEntries.length} shift{weekEntries.length !== 1 ? 's' : ''}</span>
                                 <span>{Math.round(weekHrs * 100) / 100} hrs</span>
+                                <span style={{ fontWeight: 700 }}>{Math.round(weekPayable * 100) / 100} payable</span>
                                 <span style={{ fontSize: 14, transform: weekOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
                                   &#9662;
                                 </span>
@@ -353,6 +364,8 @@ export default function AdminRecordedTime() {
                                       <th>Check-in</th>
                                       <th>Check-out</th>
                                       <th>Hours</th>
+                                      <th>Break</th>
+                                      <th>Payable</th>
                                       <th>Correction</th>
                                     </tr>
                                   </thead>
@@ -368,6 +381,8 @@ export default function AdminRecordedTime() {
                                               <td>{entry.scheduledStart} – {entry.scheduledEnd}</td>
                                               <td style={{ color: '#999' }}>—</td>
                                               <td style={{ color: '#999' }}>—</td>
+                                              <td style={{ color: '#999' }}>0</td>
+                                              <td>{entry.breakMinutes} mins</td>
                                               <td style={{ color: '#999' }}>0</td>
                                               <td>
                                                 {entry.hasCorrectionRaised && entry.correctionStatus && (() => {
@@ -396,6 +411,12 @@ export default function AdminRecordedTime() {
                                             <td>{fmtTime(ci.checkIn)}</td>
                                             <td>{ci.checkOut ? fmtTime(ci.checkOut) : <span style={{ color: '#e65100' }}>In progress</span>}</td>
                                             <td>{ci.hours > 0 ? ci.hours : '—'}</td>
+                                            {idx === 0 && (
+                                              <>
+                                                <td rowSpan={entry.checkins.length}>{entry.breakMinutes} mins</td>
+                                                <td rowSpan={entry.checkins.length} style={{ fontWeight: 600 }}>{entry.payableHours > 0 ? entry.payableHours : '—'}</td>
+                                              </>
+                                            )}
                                             {idx === 0 && (
                                               <td rowSpan={entry.checkins.length}>
                                                 {entry.hasCorrectionRaised && entry.correctionStatus && (() => {
