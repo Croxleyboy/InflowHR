@@ -565,17 +565,48 @@ export default function AdminPayrollNew() {
     const allEnds = Object.values(pm).map(p => p.end)
     const monthStart = allStarts.sort()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
     const monthEnd = allEnds.sort().reverse()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
-    const { data } = await supabase.from('timesheets')
-      .select('employee_id, hours, date, end_date')
-      .eq('company_id', selectedCompanyId)
-      .eq('status', 'approved')
-      .or(`and(date.gte.${monthStart},date.lte.${monthEnd}),and(end_date.gte.${monthStart},end_date.lte.${monthEnd}),and(date.lte.${monthStart},end_date.gte.${monthEnd})`)
+
+    const checkinEmpIds = employedEmployees
+      .filter(e => getEffectiveSetting(e, workerSettings, 'time_recording') === 'checkin')
+      .map(e => e.id)
+    const timesheetEmpIds = employedEmployees
+      .filter(e => getEffectiveSetting(e, workerSettings, 'time_recording') !== 'checkin')
+      .map(e => e.id)
+
     const hoursByEmp: Record<string, number> = {}
-    if (data) {
-      for (const t of data as { employee_id: string; hours: number }[]) {
-        hoursByEmp[t.employee_id] = (hoursByEmp[t.employee_id] || 0) + Number(t.hours)
+
+    if (timesheetEmpIds.length > 0) {
+      const { data } = await supabase.from('timesheets')
+        .select('employee_id, hours, date, end_date')
+        .eq('company_id', selectedCompanyId)
+        .eq('status', 'approved')
+        .in('employee_id', timesheetEmpIds)
+        .or(`and(date.gte.${monthStart},date.lte.${monthEnd}),and(end_date.gte.${monthStart},end_date.lte.${monthEnd}),and(date.lte.${monthStart},end_date.gte.${monthEnd})`)
+      if (data) {
+        for (const t of data as { employee_id: string; hours: number }[]) {
+          hoursByEmp[t.employee_id] = (hoursByEmp[t.employee_id] || 0) + Number(t.hours)
+        }
       }
     }
+
+    if (checkinEmpIds.length > 0) {
+      const { data: checkins } = await supabase.from('checkin_records')
+        .select('employee_id, check_in_at, check_out_at')
+        .eq('company_id', selectedCompanyId)
+        .in('status', ['checked_out', 'auto_closed'])
+        .in('employee_id', checkinEmpIds)
+        .gte('check_in_at', monthStart + 'T00:00:00')
+        .lte('check_in_at', monthEnd + 'T23:59:59')
+      if (checkins) {
+        for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null }[]) {
+          if (!c.check_out_at) continue
+          const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
+          if (hrs <= 0 || hrs >= 24) continue
+          hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + Math.round(hrs * 100) / 100
+        }
+      }
+    }
+
     setWizTimesheetHoursByEmp(hoursByEmp)
 
     const autoOvertime: Record<string, number> = {}
@@ -1545,7 +1576,7 @@ export default function AdminPayrollNew() {
         .in('employee_id', targetEmpIds),
     ])
 
-    const checkins = checkinRes.data || []
+    const checkins = (checkinRes.data || []) as { employee_id: string; check_in_at: string; check_out_at: string | null; shift_assignment_id: string | null }[]
     const assignments = (assignmentRes.data || []) as unknown as { id: string; employee_id: string; date: string; shift_template: { name: string; start_time: string; end_time: string } | null }[]
 
     const assignmentMap = new Map<string, { name: string; start_time: string; end_time: string; date: string }>()
@@ -1559,47 +1590,64 @@ export default function AdminPayrollNew() {
     const overtimeByEmp: Record<string, number> = {}
     const detailsByEmp: Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number; scheduled_start?: string; scheduled_end?: string; shift_name?: string; overtime_hours?: number }[]> = {}
 
-    for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null; shift_assignment_id: string | null }[]) {
-      if (!c.check_out_at) continue
-      const checkIn = new Date(c.check_in_at)
-      const checkOut = new Date(c.check_out_at)
-      const hrs = (checkOut.getTime() - checkIn.getTime()) / 3600000
-      if (hrs <= 0 || hrs >= 24) continue
-      const rounded = Math.round(hrs * 100) / 100
-      hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + rounded
-      if (!detailsByEmp[c.employee_id]) detailsByEmp[c.employee_id] = []
+    type CheckinRow = { employee_id: string; check_in_at: string; check_out_at: string; hours: number; shift_assignment_id: string | null }
+    const shiftGroups = new Map<string, CheckinRow[]>()
+    const ungrouped: CheckinRow[] = []
 
-      let scheduledStart: string | undefined
-      let scheduledEnd: string | undefined
-      let shiftName: string | undefined
+    for (const c of checkins) {
+      if (!c.check_out_at) continue
+      const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
+      if (hrs <= 0 || hrs >= 24) continue
+      const row: CheckinRow = { employee_id: c.employee_id, check_in_at: c.check_in_at, check_out_at: c.check_out_at, hours: Math.round(hrs * 100) / 100, shift_assignment_id: c.shift_assignment_id }
+      if (c.shift_assignment_id) {
+        const key = `${c.employee_id}_${c.shift_assignment_id}`
+        if (!shiftGroups.has(key)) shiftGroups.set(key, [])
+        shiftGroups.get(key)!.push(row)
+      } else {
+        ungrouped.push(row)
+      }
+    }
+
+    for (const [, rows] of shiftGroups) {
+      const firstRow = rows[0]
+      const assignment = firstRow.shift_assignment_id ? assignmentMap.get(firstRow.shift_assignment_id) : undefined
+      const totalHrsForShift = rows.reduce((s, r) => s + r.hours, 0)
       let shiftOT = 0
 
-      const assignment = c.shift_assignment_id ? assignmentMap.get(c.shift_assignment_id) : undefined
       if (assignment) {
-        shiftName = assignment.name
-        const dateStr = assignment.date
-        const schedStart = new Date(`${dateStr}T${assignment.start_time}`)
-        const schedEnd = new Date(`${dateStr}T${assignment.end_time}`)
-        if (schedEnd <= schedStart) schedEnd.setDate(schedEnd.getDate() + 1)
-        scheduledStart = assignment.start_time
-        scheduledEnd = assignment.end_time
-
-        const emp = targetEmps.find(e => e.id === c.employee_id)
+        const emp = targetEmps.find(e => e.id === firstRow.employee_id)
         const otHandling = emp ? getEffectiveSetting(emp, workerSettings, 'overtime_handling') : 'none'
         if (otHandling === 'overtime') {
-          const earlyMins = Math.max(0, (schedStart.getTime() - checkIn.getTime()) / 60000)
-          const lateMins = Math.max(0, (checkOut.getTime() - schedEnd.getTime()) / 60000)
-          shiftOT = Math.round((earlyMins + lateMins) / 60 * 100) / 100
+          const schedStart = new Date(`${assignment.date}T${assignment.start_time}`)
+          const schedEnd = new Date(`${assignment.date}T${assignment.end_time}`)
+          if (schedEnd <= schedStart) schedEnd.setDate(schedEnd.getDate() + 1)
+          const scheduledHrs = (schedEnd.getTime() - schedStart.getTime()) / 3600000
+          shiftOT = Math.round(Math.max(0, totalHrsForShift - scheduledHrs) * 100) / 100
         }
-      } else if (workerType === 'zero_hours') {
-        shiftOT = 0
       }
 
-      overtimeByEmp[c.employee_id] = (overtimeByEmp[c.employee_id] || 0) + shiftOT
-      detailsByEmp[c.employee_id].push({
-        employee_id: c.employee_id, check_in_at: c.check_in_at, check_out_at: c.check_out_at,
-        hours: rounded, scheduled_start: scheduledStart, scheduled_end: scheduledEnd,
-        shift_name: shiftName, overtime_hours: shiftOT,
+      hoursByEmp[firstRow.employee_id] = (hoursByEmp[firstRow.employee_id] || 0) + totalHrsForShift
+      overtimeByEmp[firstRow.employee_id] = (overtimeByEmp[firstRow.employee_id] || 0) + shiftOT
+      if (!detailsByEmp[firstRow.employee_id]) detailsByEmp[firstRow.employee_id] = []
+
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i]
+        detailsByEmp[firstRow.employee_id].push({
+          employee_id: r.employee_id, check_in_at: r.check_in_at, check_out_at: r.check_out_at,
+          hours: r.hours,
+          scheduled_start: assignment?.start_time, scheduled_end: assignment?.end_time,
+          shift_name: assignment?.name,
+          overtime_hours: i === rows.length - 1 ? shiftOT : 0,
+        })
+      }
+    }
+
+    for (const r of ungrouped) {
+      hoursByEmp[r.employee_id] = (hoursByEmp[r.employee_id] || 0) + r.hours
+      if (!detailsByEmp[r.employee_id]) detailsByEmp[r.employee_id] = []
+      detailsByEmp[r.employee_id].push({
+        employee_id: r.employee_id, check_in_at: r.check_in_at, check_out_at: r.check_out_at,
+        hours: r.hours, overtime_hours: 0,
       })
     }
     setWizShiftDetails(prev => ({ ...prev, ...detailsByEmp }))
