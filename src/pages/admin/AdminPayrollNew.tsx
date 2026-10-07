@@ -1239,7 +1239,7 @@ export default function AdminPayrollNew() {
       if (wizWorkerTypes.has('zero_hours') && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker') return true
       return false
     }).map(e => e.id))
-    const toRelease = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && (p.status === 'draft' || p.status === 'processed') && runEmployeeIds.has(p.employee_id))
+    const toRelease = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && (p.status === 'draft' || p.status === 'processed') && p.employee?.id && runEmployeeIds.has(p.employee.id))
     for (const p of toRelease) {
       await supabase.from('payslips').update({ status: 'paid' }).eq('id', p.id)
     }
