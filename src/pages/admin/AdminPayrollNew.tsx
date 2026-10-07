@@ -1482,14 +1482,6 @@ export default function AdminPayrollNew() {
     ))
   }
 
-  function toggleWizWorkerType(t: 'employed' | 'shift' | 'zero_hours') {
-    setWizWorkerTypes(prev => {
-      const next = new Set(prev)
-      if (next.has(t)) next.delete(t); else next.add(t)
-      return next
-    })
-  }
-
   function startEdit(p: Payslip) {
     setEditingId(p.id)
     setEditForm({
