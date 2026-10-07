@@ -165,11 +165,25 @@ export default function AdminRecordedTime() {
       const shiftCheckins = checkinsByAssignment.get(a.id) || []
       const shiftCorrs = corrByAssignment.get(a.id) || []
 
+      const rawTmpl = a.shift_template
+      const tmpl = Array.isArray(rawTmpl) ? rawTmpl[0] : rawTmpl
+
+      let scheduledHrs = 0
+      if (tmpl?.start_time && tmpl?.end_time) {
+        const [sh, sm] = tmpl.start_time.split(':').map(Number)
+        const [eh, em] = tmpl.end_time.split(':').map(Number)
+        scheduledHrs = (eh * 60 + em - (sh * 60 + sm)) / 60
+        if (scheduledHrs <= 0) scheduledHrs += 24
+      }
+
       const checkinDetails = shiftCheckins.map(c => {
         let hrs = 0
         if (c.check_out_at) {
           hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
           if (hrs < 0 || hrs >= 24) hrs = 0
+        }
+        if (c.status === 'auto_closed' && scheduledHrs > 0 && hrs > scheduledHrs) {
+          hrs = scheduledHrs
         }
         return {
           checkIn: c.check_in_at,
@@ -182,9 +196,6 @@ export default function AdminRecordedTime() {
       const totalHours = checkinDetails.reduce((s, c) => s + c.hours, 0)
       const hasCorrectionRaised = shiftCorrs.length > 0
       const latestCorr = shiftCorrs.sort((a, b) => a.status.localeCompare(b.status))[0]
-
-      const rawTmpl = a.shift_template
-      const tmpl = Array.isArray(rawTmpl) ? rawTmpl[0] : rawTmpl
       result[a.employee_id].push({
         assignmentId: a.id,
         date: a.date,

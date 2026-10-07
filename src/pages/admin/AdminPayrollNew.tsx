@@ -600,17 +600,40 @@ export default function AdminPayrollNew() {
 
     if (checkinEmpIds.length > 0) {
       const { data: checkins } = await supabase.from('checkin_records')
-        .select('employee_id, check_in_at, check_out_at')
+        .select('employee_id, check_in_at, check_out_at, status, shift_assignment_id')
         .eq('company_id', selectedCompanyId)
         .in('status', ['checked_out', 'auto_closed'])
         .in('employee_id', checkinEmpIds)
         .gte('check_in_at', monthStart + 'T00:00:00')
         .lte('check_in_at', monthEnd + 'T23:59:59')
       if (checkins) {
-        for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null }[]) {
+        const autoClosedAssignIds = (checkins as any[]).filter(c => c.status === 'auto_closed' && c.shift_assignment_id).map(c => c.shift_assignment_id)
+        const schedMap = new Map<string, number>()
+        if (autoClosedAssignIds.length > 0) {
+          const { data: assigns } = await supabase.from('shift_assignments')
+            .select('id, shift_template:shift_templates(start_time, end_time)')
+            .in('id', autoClosedAssignIds)
+          if (assigns) {
+            for (const a of assigns as any[]) {
+              const tmpl = Array.isArray(a.shift_template) ? a.shift_template[0] : a.shift_template
+              if (tmpl?.start_time && tmpl?.end_time) {
+                const [sh, sm] = tmpl.start_time.split(':').map(Number)
+                const [eh, em] = tmpl.end_time.split(':').map(Number)
+                let dur = (eh * 60 + em - (sh * 60 + sm)) / 60
+                if (dur <= 0) dur += 24
+                schedMap.set(a.id, dur)
+              }
+            }
+          }
+        }
+        for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null; status: string; shift_assignment_id: string | null }[]) {
           if (!c.check_out_at) continue
-          const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
+          let hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
           if (hrs <= 0 || hrs >= 24) continue
+          if (c.status === 'auto_closed' && c.shift_assignment_id) {
+            const sched = schedMap.get(c.shift_assignment_id)
+            if (sched && hrs > sched) hrs = sched
+          }
           hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + Math.round(hrs * 100) / 100
         }
       }
@@ -1585,7 +1608,7 @@ export default function AdminPayrollNew() {
         .in('employee_id', targetEmpIds),
     ])
 
-    const checkins = (checkinRes.data || []) as { employee_id: string; check_in_at: string; check_out_at: string | null; shift_assignment_id: string | null }[]
+    const checkins = (checkinRes.data || []) as { employee_id: string; check_in_at: string; check_out_at: string | null; status: string; shift_assignment_id: string | null }[]
     const assignments = (assignmentRes.data || []) as unknown as { id: string; employee_id: string; date: string; shift_template: { name: string; start_time: string; end_time: string } | null }[]
 
     const assignmentMap = new Map<string, { name: string; start_time: string; end_time: string; date: string }>()
@@ -1605,8 +1628,18 @@ export default function AdminPayrollNew() {
 
     for (const c of checkins) {
       if (!c.check_out_at) continue
-      const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
+      let hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
       if (hrs <= 0 || hrs >= 24) continue
+      if (c.status === 'auto_closed' && c.shift_assignment_id) {
+        const assignment = assignmentMap.get(c.shift_assignment_id)
+        if (assignment) {
+          const schedStart = new Date(`${assignment.date}T${assignment.start_time}`)
+          const schedEnd = new Date(`${assignment.date}T${assignment.end_time}`)
+          if (schedEnd <= schedStart) schedEnd.setDate(schedEnd.getDate() + 1)
+          const scheduledHrs = (schedEnd.getTime() - schedStart.getTime()) / 3600000
+          if (hrs > scheduledHrs) hrs = scheduledHrs
+        }
+      }
       const row: CheckinRow = { employee_id: c.employee_id, check_in_at: c.check_in_at, check_out_at: c.check_out_at, hours: Math.round(hrs * 100) / 100, shift_assignment_id: c.shift_assignment_id }
       if (c.shift_assignment_id) {
         const key = `${c.employee_id}_${c.shift_assignment_id}`
