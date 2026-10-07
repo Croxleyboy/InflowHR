@@ -240,6 +240,7 @@ export default function AdminPayrollNew() {
   const [wizManualChecked, setWizManualChecked] = useState<Set<string>>(new Set())
   const [wizSageFiles, setWizSageFiles] = useState<File[]>([])
   const [wizSageUploading, setWizSageUploading] = useState(false)
+  const [wizRosterPage, setWizRosterPage] = useState(1)
 
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
@@ -254,6 +255,17 @@ export default function AdminPayrollNew() {
   const employedEmployees = useMemo(() => employees.filter(e => e.employment_category !== 'shift_worker'), [employees])
   const shiftEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker'), [employees])
   const zeroHoursEmployees = useMemo(() => employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker'), [employees])
+
+  const ROSTER_PAGE_SIZE = 10
+  const wizRunEmployees = useMemo(() => {
+    const filtered = employees.filter(e => {
+      if (wizWorkerTypes.has('employed') && e.employment_category !== 'shift_worker') return true
+      if (wizWorkerTypes.has('shift') && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker') return true
+      if (wizWorkerTypes.has('zero_hours') && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker') return true
+      return false
+    })
+    return filtered.sort((a, b) => (a.last_name || '').localeCompare(b.last_name || '') || (a.first_name || '').localeCompare(b.first_name || ''))
+  }, [employees, wizWorkerTypes])
 
   // Current month
   const now = new Date()
@@ -1198,9 +1210,10 @@ export default function AdminPayrollNew() {
     if (!session || !selectedCompanyId) return
     setWizExporting(true)
     try {
+      const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
       const { data, error } = await supabase.functions.invoke('xero-payslips', {
         headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { company_id: selectedCompanyId },
+        body: { company_id: selectedCompanyId, worker_types: workerTypeArr },
       })
       if (error) throw error
       if (data?.error) throw new Error(data.error)
@@ -1220,7 +1233,13 @@ export default function AdminPayrollNew() {
     setWizReleasing(true)
     const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
     const nextKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`
-    const toRelease = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && (p.status === 'draft' || p.status === 'processed'))
+    const runEmployeeIds = new Set(employees.filter(e => {
+      if (wizWorkerTypes.has('employed') && e.employment_category !== 'shift_worker') return true
+      if (wizWorkerTypes.has('shift') && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker') return true
+      if (wizWorkerTypes.has('zero_hours') && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker') return true
+      return false
+    }).map(e => e.id))
+    const toRelease = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && (p.status === 'draft' || p.status === 'processed') && runEmployeeIds.has(p.employee_id))
     for (const p of toRelease) {
       await supabase.from('payslips').update({ status: 'paid' }).eq('id', p.id)
     }
@@ -1292,6 +1311,7 @@ export default function AdminPayrollNew() {
     setWizManualChecked(new Set())
     setWizSageFiles([])
     setWizSageUploading(false)
+    setWizRosterPage(1)
   }
 
   function advanceToStep2() {
@@ -1361,6 +1381,7 @@ export default function AdminPayrollNew() {
     setWizManualChecked(new Set())
     setWizSageFiles([])
     setWizSageUploading(false)
+    setWizRosterPage(1)
   }
 
   function loadWizBonuses() {
@@ -3446,13 +3467,54 @@ export default function AdminPayrollNew() {
                     After running your pay run in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}, sync the actual payslips back to InflowHR so employees can view their real pay details.
                   </p>
 
+                  {(() => {
+                    const rosterTotal = wizRunEmployees.length
+                    const rosterPages = Math.ceil(rosterTotal / ROSTER_PAGE_SIZE)
+                    const rosterSlice = wizRunEmployees.slice((wizRosterPage - 1) * ROSTER_PAGE_SIZE, wizRosterPage * ROSTER_PAGE_SIZE)
+                    const workerTypeLabel = wizWorkerTypes.has('employed') ? 'Employed Staff' : wizWorkerTypes.has('shift') ? 'Shift Workers' : 'Zero Hours'
+                    return (
+                      <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                          <strong style={{ fontSize: 14 }}>Employees in this Pay Run — {workerTypeLabel} ({rosterTotal})</strong>
+                        </div>
+                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Name</th>
+                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Job Title</th>
+                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Department</th>
+                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Payroll ID</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rosterSlice.map(emp => (
+                              <tr key={emp.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
+                                <td style={{ padding: '6px 8px', fontWeight: 500 }}>{emp.last_name}, {emp.first_name}</td>
+                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #6b7280)' }}>{emp.job_title || '—'}</td>
+                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #6b7280)' }}>{emp.department || '—'}</td>
+                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #999)', fontFamily: 'monospace', fontSize: 11 }}>{emp.payroll_id || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {rosterPages > 1 && (
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12 }}>
+                            <button className="admin-btn" style={{ fontSize: 11, padding: '2px 8px' }} disabled={wizRosterPage <= 1} onClick={() => setWizRosterPage(p => p - 1)}>← Prev</button>
+                            <span style={{ color: 'var(--text-muted, #6b7280)' }}>Page {wizRosterPage} of {rosterPages}</span>
+                            <button className="admin-btn" style={{ fontSize: 11, padding: '2px 8px' }} disabled={wizRosterPage >= rosterPages} onClick={() => setWizRosterPage(p => p + 1)}>Next →</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
+
                   {connectedProvider === 'xero' && (
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <strong style={{ fontSize: 14 }}>Fetch Payslips from Xero</strong>
                           <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0' }}>
-                            This pulls actual tax, NI, deductions, and net pay from your Xero pay run and creates payslips in InflowHR with the real figures.
+                            Only payslips for the {wizRunEmployees.length} {wizWorkerTypes.has('employed') ? 'employed' : wizWorkerTypes.has('shift') ? 'shift worker' : 'zero hours'} employee{wizRunEmployees.length !== 1 ? 's' : ''} in this pay run will be synced.
                           </p>
                         </div>
                         <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={async () => {
@@ -3549,6 +3611,47 @@ export default function AdminPayrollNew() {
                   <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
                     Choose how to export this payroll run for payment processing.
                   </p>
+
+                  {(() => {
+                    const rosterTotal = wizRunEmployees.length
+                    const rosterPages = Math.ceil(rosterTotal / ROSTER_PAGE_SIZE)
+                    const rosterSlice = wizRunEmployees.slice((wizRosterPage - 1) * ROSTER_PAGE_SIZE, wizRosterPage * ROSTER_PAGE_SIZE)
+                    const workerTypeLabel = wizWorkerTypes.has('employed') ? 'Employed Staff' : wizWorkerTypes.has('shift') ? 'Shift Workers' : 'Zero Hours'
+                    return (
+                      <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                          <strong style={{ fontSize: 14 }}>Employees in this Pay Run — {workerTypeLabel} ({rosterTotal})</strong>
+                        </div>
+                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Name</th>
+                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Job Title</th>
+                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Department</th>
+                              <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Payroll ID</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rosterSlice.map(emp => (
+                              <tr key={emp.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
+                                <td style={{ padding: '6px 8px', fontWeight: 500 }}>{emp.last_name}, {emp.first_name}</td>
+                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #6b7280)' }}>{emp.job_title || '—'}</td>
+                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #6b7280)' }}>{emp.department || '—'}</td>
+                                <td style={{ padding: '6px 8px', color: 'var(--text-muted, #999)', fontFamily: 'monospace', fontSize: 11 }}>{emp.payroll_id || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {rosterPages > 1 && (
+                          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12 }}>
+                            <button className="admin-btn" style={{ fontSize: 11, padding: '2px 8px' }} disabled={wizRosterPage <= 1} onClick={() => setWizRosterPage(p => p - 1)}>← Prev</button>
+                            <span style={{ color: 'var(--text-muted, #6b7280)' }}>Page {wizRosterPage} of {rosterPages}</span>
+                            <button className="admin-btn" style={{ fontSize: 11, padding: '2px 8px' }} disabled={wizRosterPage >= rosterPages} onClick={() => setWizRosterPage(p => p + 1)}>Next →</button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })()}
 
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
                     <label className={`pn-wiz-type-card ${wizPayMethod === 'external' ? 'pn-wiz-type-selected' : ''}`}>
@@ -3662,6 +3765,47 @@ export default function AdminPayrollNew() {
                   </div>
                 )}
 
+                {(() => {
+                  const rosterTotal = wizRunEmployees.length
+                  const rosterPages = Math.ceil(rosterTotal / ROSTER_PAGE_SIZE)
+                  const rosterSlice = wizRunEmployees.slice((wizRosterPage - 1) * ROSTER_PAGE_SIZE, wizRosterPage * ROSTER_PAGE_SIZE)
+                  const workerTypeLabel = wizWorkerTypes.has('employed') ? 'Employed Staff' : wizWorkerTypes.has('shift') ? 'Shift Workers' : 'Zero Hours'
+                  return (
+                    <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <strong style={{ fontSize: 14 }}>Releasing Payslips for — {workerTypeLabel} ({rosterTotal})</strong>
+                      </div>
+                      <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Name</th>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Job Title</th>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Department</th>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--text-muted, #6b7280)' }}>Payroll ID</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rosterSlice.map(emp => (
+                            <tr key={emp.id} style={{ borderBottom: '1px solid var(--border, #f0f0f0)' }}>
+                              <td style={{ padding: '6px 8px', fontWeight: 500 }}>{emp.last_name}, {emp.first_name}</td>
+                              <td style={{ padding: '6px 8px', color: 'var(--text-muted, #6b7280)' }}>{emp.job_title || '—'}</td>
+                              <td style={{ padding: '6px 8px', color: 'var(--text-muted, #6b7280)' }}>{emp.department || '—'}</td>
+                              <td style={{ padding: '6px 8px', color: 'var(--text-muted, #999)', fontFamily: 'monospace', fontSize: 11 }}>{emp.payroll_id || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {rosterPages > 1 && (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12 }}>
+                          <button className="admin-btn" style={{ fontSize: 11, padding: '2px 8px' }} disabled={wizRosterPage <= 1} onClick={() => setWizRosterPage(p => p - 1)}>← Prev</button>
+                          <span style={{ color: 'var(--text-muted, #6b7280)' }}>Page {wizRosterPage} of {rosterPages}</span>
+                          <button className="admin-btn" style={{ fontSize: 11, padding: '2px 8px' }} disabled={wizRosterPage >= rosterPages} onClick={() => setWizRosterPage(p => p + 1)}>Next →</button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
                 <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
                   <strong style={{ color: '#e65100', fontSize: 14 }}>Release to Employees</strong>
                   <p style={{ fontSize: 12, color: '#bf360c', margin: '4px 0 0' }}>
@@ -3672,7 +3816,7 @@ export default function AdminPayrollNew() {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button className="admin-btn" onClick={() => setWizStep(4)}>← Back</button>
                   <button className="admin-btn admin-btn-primary" disabled={wizReleasing} onClick={wizRelease} style={{ background: '#2e7d32' }}>
-                    {wizReleasing ? 'Releasing…' : 'Release Payslips to Employees'}
+                    {wizReleasing ? 'Releasing…' : `Release ${wizRunEmployees.length} Payslip${wizRunEmployees.length !== 1 ? 's' : ''} to Employees`}
                   </button>
                 </div>
               </div>
