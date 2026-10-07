@@ -241,6 +241,13 @@ export default function AdminPayrollNew() {
   const [wizPeriodReviews, setWizPeriodReviews] = useState<PeriodReview[]>([])
   const [wizOvertimeHours, setWizOvertimeHours] = useState<Record<string, number>>({})
   const [wizOvertimeRates, setWizOvertimeRates] = useState<Record<string, number>>({})
+
+  const allOvertimeHours: Record<string, number> = { ...wizOvertimeHours }
+  for (const r of wizPeriodReviews) {
+    if (r.status === 'approved' && Number(r.overtime_hours) > 0 && !allOvertimeHours[r.employee_id]) {
+      allOvertimeHours[r.employee_id] = Number(r.overtime_hours)
+    }
+  }
   const [wizTimesheetHoursByEmp, setWizTimesheetHoursByEmp] = useState<Record<string, number>>({})
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
@@ -1086,7 +1093,7 @@ export default function AdminPayrollNew() {
         return hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
       }).map(([empId, hrs]) => ({ employee_id: empId, hours: hrs }))
 
-      // Build overtime entries (excluding TOIL)
+      // Build overtime entries (excluding TOIL) — employed staff from wizOvertimeHours
       const overtimeEntries = Object.entries(wizOvertimeHours)
         .filter(([empId, hrs]) => {
           const emp = employees.find(e => e.id === empId)
@@ -1096,6 +1103,23 @@ export default function AdminPayrollNew() {
           const emp = employees.find(e => e.id === empId)!
           return { employee_id: empId, hours: hrs, multiplier: emp.overtime_rate_multiplier || 1.5, hourly_rate_override: wizOvertimeRates[empId] || getDerivedHourlyRate(emp) }
         })
+
+      // Add shift/zero-hours overtime from approved period reviews
+      const empIdsWithOT = new Set(overtimeEntries.map(e => e.employee_id))
+      for (const r of wizPeriodReviews) {
+        if (r.status !== 'approved' || Number(r.overtime_hours) <= 0) continue
+        if (empIdsWithOT.has(r.employee_id)) continue
+        if (!isEmpInScope(r.employee_id)) continue
+        const emp = employees.find(e => e.id === r.employee_id)
+        if (!emp) continue
+        if (getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil') continue
+        overtimeEntries.push({
+          employee_id: r.employee_id,
+          hours: Number(r.overtime_hours),
+          multiplier: emp.overtime_rate_multiplier || 1.5,
+          hourly_rate_override: r.hourly_rate || getDerivedHourlyRate(emp),
+        })
+      }
 
       const unpaidLeaveEntries = wizUnpaidLeave.filter(u => isEmpInScope(u.employee_id))
       const benefitChangeEntries = wizBenefitChanges.filter(b => isEmpInScope(b.employee_id))
@@ -3442,11 +3466,11 @@ export default function AdminPayrollNew() {
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 12 }}>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{Object.values(wizOvertimeHours).filter(h => h > 0).length}</span>
+                        <span className="pn-worker-metric-value">{Object.values(allOvertimeHours).filter(h => h > 0).length}</span>
                         <span className="pn-worker-metric-label">Employees with overtime</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{Object.values(wizOvertimeHours).reduce((s, h) => s + h, 0).toFixed(1)}h</span>
+                        <span className="pn-worker-metric-value">{Object.values(allOvertimeHours).reduce((s, h) => s + h, 0).toFixed(1)}h</span>
                         <span className="pn-worker-metric-label">Total overtime hours</span>
                       </div>
                       <div className="pn-worker-metric">
@@ -3481,7 +3505,7 @@ export default function AdminPayrollNew() {
                       </div>
                     )}
 
-                    {Object.values(wizOvertimeHours).every(h => h === 0) && wizUnpaidLeave.length === 0 && wizBenefitChanges.length === 0 && (
+                    {Object.values(allOvertimeHours).every(h => h === 0) && wizUnpaidLeave.length === 0 && wizBenefitChanges.length === 0 && (
                       <p style={{ fontSize: 12, color: '#558b2f', margin: 0, fontStyle: 'italic' }}>
                         No adjustments detected — a clean pay run. You can skip the push step and go straight to syncing payslips from your provider.
                       </p>
@@ -3544,7 +3568,7 @@ export default function AdminPayrollNew() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
                         <div className="pn-worker-metric">
                           <span className="pn-worker-metric-value">{(() => {
-                            return Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+                            return Object.entries(allOvertimeHours).filter(([empId, hrs]) => {
                               const emp = employees.find(e => e.id === empId)
                               return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
                             }).length
@@ -3578,11 +3602,11 @@ export default function AdminPayrollNew() {
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                       <button className="admin-btn" onClick={() => setWizStep(2)}>← Back</button>
                       {(() => {
-                        const otCount = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+                        const otCount = Object.entries(allOvertimeHours).filter(([empId, hrs]) => {
                           const emp = employees.find(e => e.id === empId)
                           return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') !== 'toil'
                         }).length
-                        const toilCount = Object.entries(wizOvertimeHours).filter(([empId, hrs]) => {
+                        const toilCount = Object.entries(allOvertimeHours).filter(([empId, hrs]) => {
                           const emp = employees.find(e => e.id === empId)
                           return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
                         }).length
