@@ -159,7 +159,7 @@ function avatarColor(name: string): string {
 export default function MyShifts() {
   const navigate = useNavigate()
   const { t } = useLanguage()
-  const { employeeId, companyUser } = useAuth()
+  const { employeeId, companyUser, employmentCategory } = useAuth()
   const { features } = useFeatures()
   const { settings: ciSettings, activeCheckin, activeBreak, checkOut, startBreak, endBreak } = useCheckIn()
   const shiftsEnabled = features.shifts
@@ -180,6 +180,9 @@ export default function MyShifts() {
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
   const [groupPages, setGroupPages] = useState<Record<string, number>>({})
   const GROUP_PAGE_SIZE = 5
+  const [checkinRecords, setCheckinRecords] = useState<{ id: string; shift_assignment_id: string; check_in_at: string; check_out_at: string | null; status: string }[]>([])
+  const [contractType, setContractType] = useState<string | null>(null)
+  const [weeklyHours, setWeeklyHours] = useState<number | null>(null)
 
   const today = useMemo(() => new Date(), [])
   const weekDays = useMemo(() => getWeekDays(weekStart), [weekStart])
@@ -283,6 +286,7 @@ export default function MyShifts() {
         .eq('employee_id', employeeId),
     ])
     const checkins = (ciRes.data || []) as { id: string; shift_assignment_id: string; check_in_at: string; check_out_at: string | null; status: string }[]
+    setCheckinRecords(checkins)
     const ciMap: Record<string, typeof checkins[0]> = {}
     for (const c of checkins) {
       if (c.shift_assignment_id) ciMap[c.shift_assignment_id] = c
@@ -361,6 +365,62 @@ export default function MyShifts() {
   useEffect(() => {
     if (filter === 'everyone') fetchAllShifts()
   }, [filter, fetchAllShifts])
+
+  // Fetch employee contract_type and weekly_hours for weekly hours card
+  useEffect(() => {
+    if (!employeeId || !companyUser?.company_id) return
+    supabase
+      .from('employees')
+      .select('contract_type, weekly_hours')
+      .eq('id', employeeId)
+      .eq('company_id', companyUser.company_id)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setContractType(data.contract_type || null)
+          setWeeklyHours(data.weekly_hours ?? null)
+        }
+      })
+  }, [employeeId, companyUser?.company_id])
+
+  // Calculate weekly hours from checkin records
+  const weeklyHoursSummary = useMemo(() => {
+    if (employmentCategory !== 'shift_worker') return null
+
+    const isZeroHours = contractType === 'Zero hours shift worker'
+    const now = new Date()
+    const monday = getWeekStart(now)
+    const endOfRange = new Date(monday)
+    if (isZeroHours) {
+      // Mon-Sun for zero hours
+      endOfRange.setDate(endOfRange.getDate() + 6)
+      endOfRange.setHours(23, 59, 59, 999)
+    } else {
+      // Mon-Fri for contracted
+      endOfRange.setDate(endOfRange.getDate() + 4)
+      endOfRange.setHours(23, 59, 59, 999)
+    }
+
+    let totalMs = 0
+    let shiftCount = 0
+    for (const rec of checkinRecords) {
+      if (!rec.check_in_at || !rec.check_out_at) continue
+      const checkIn = new Date(rec.check_in_at)
+      if (checkIn < monday || checkIn > endOfRange) continue
+      const checkOut = new Date(rec.check_out_at)
+      totalMs += checkOut.getTime() - checkIn.getTime()
+      shiftCount++
+    }
+    const totalHours = totalMs / (1000 * 60 * 60)
+
+    return {
+      totalHours,
+      shiftCount,
+      isZeroHours,
+      contracted: weeklyHours,
+      percentage: weeklyHours && weeklyHours > 0 ? Math.min(100, (totalHours / weeklyHours) * 100) : 0,
+    }
+  }, [checkinRecords, employmentCategory, contractType, weeklyHours])
 
   const handleRefresh = useCallback(() => {
     fetchMyShifts()
@@ -586,6 +646,53 @@ export default function MyShifts() {
           </button>
         )
       })()}
+
+      {/* Weekly Hours Summary */}
+      {weeklyHoursSummary && (
+        <div style={{
+          margin: '8px 16px 0',
+          padding: '10px 14px',
+          borderRadius: 10,
+          background: '#f5f5f5',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontSize: 13,
+          color: '#333',
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, marginBottom: weeklyHoursSummary.isZeroHours ? 0 : 4, fontSize: 12, color: '#666' }}>
+              {weeklyHoursSummary.isZeroHours ? 'This Week (Mon–Sun)' : 'This Week (Mon–Fri)'}
+            </div>
+            {weeklyHoursSummary.isZeroHours ? (
+              <span style={{ fontWeight: 500 }}>
+                {weeklyHoursSummary.totalHours.toFixed(1)} hrs recorded across {weeklyHoursSummary.shiftCount} shift{weeklyHoursSummary.shiftCount !== 1 ? 's' : ''}
+              </span>
+            ) : (
+              <>
+                <span style={{ fontWeight: 500 }}>
+                  {weeklyHoursSummary.totalHours.toFixed(1)} hrs recorded / {weeklyHoursSummary.contracted != null ? `${weeklyHoursSummary.contracted} contracted hrs` : 'contracted hrs not set'}
+                </span>
+                <div style={{
+                  marginTop: 4,
+                  height: 6,
+                  borderRadius: 3,
+                  background: '#ddd',
+                  overflow: 'hidden',
+                }}>
+                  <div style={{
+                    height: '100%',
+                    width: `${weeklyHoursSummary.percentage}%`,
+                    borderRadius: 3,
+                    background: weeklyHoursSummary.percentage >= 100 ? '#43a047' : '#1e88e5',
+                    transition: 'width 0.3s ease',
+                  }} />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Shift List */}
       <div className="schedule-shift-list">

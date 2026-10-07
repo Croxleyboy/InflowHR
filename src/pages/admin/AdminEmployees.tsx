@@ -45,6 +45,7 @@ interface Employee {
   location: string | null
   contract_type: string | null
   annual_salary: number | null
+  hourly_rate: number | null
   tax_code: string | null
   payroll_id: string | null
   personal_email: string | null
@@ -221,7 +222,8 @@ export default function AdminEmployees() {
       employment_category: emp.employment_category || 'not_assigned',
       contracted_days: emp.contracted_days || [true,true,true,true,true,false,false], weekly_hours: emp.weekly_hours ?? '',
       location: emp.location || '', contract_type: emp.contract_type || '',
-      annual_salary: emp.annual_salary ?? '', tax_code: emp.tax_code || '',
+      annual_salary: emp.annual_salary ?? '', hourly_rate: emp.hourly_rate ?? '',
+      tax_code: emp.tax_code || '',
       payroll_id: emp.payroll_id || '', personal_email: emp.personal_email || '',
       manager_name: emp.manager_name || '', manager_email: emp.manager_email || '',
       leave_allowance: emp.leave_allowance ?? 15,
@@ -245,7 +247,7 @@ export default function AdminEmployees() {
     const acErr = validateAccountNumber(editForm.bank_account_number || '')
     if (acErr) { showError(acErr); return }
     const dateFields = ['date_of_birth', 'probation_end_date', 'start_date']
-    const numericFields = ['weekly_hours', 'annual_salary', 'leave_allowance']
+    const numericFields = ['weekly_hours', 'annual_salary', 'hourly_rate', 'leave_allowance']
     const payload: Record<string, any> = {}
     for (const [k, v] of Object.entries(editForm)) {
       if (dateFields.includes(k)) { payload[k] = v || null }
@@ -1464,6 +1466,12 @@ export default function AdminEmployees() {
                                         <input className="admin-inline-input" type={f.t || 'text'} value={editForm[f.k] ?? ''} onChange={e => setEditForm(p => ({...p, [f.k]: e.target.value}))} />
                                       </div>
                                     ))}
+                                    {editForm.employment_category === 'shift_worker' && (
+                                      <div className="admin-form-field">
+                                        <label style={{ fontSize: 12 }}>Hourly Rate (£)</label>
+                                        <input className="admin-inline-input" type="number" step="0.01" value={editForm.hourly_rate ?? ''} onChange={e => setEditForm(p => ({...p, hourly_rate: e.target.value}))} />
+                                      </div>
+                                    )}
                                   </div>
                                 </fieldset>
                                 <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16 }}>
@@ -1549,6 +1557,9 @@ export default function AdminEmployees() {
                                 )}
                                 <div className="admin-detail-grid admin-detail-grid-3">
                                   <div><strong>Salary:</strong> {emp.annual_salary ? `£${Number(emp.annual_salary).toLocaleString()}` : '—'}</div>
+                                  {emp.employment_category === 'shift_worker' && (
+                                    <div><strong>Hourly Rate:</strong> {emp.hourly_rate ? `£${Number(emp.hourly_rate).toFixed(2)}` : '—'}</div>
+                                  )}
                                   <div><strong>Tax Code:</strong> {emp.tax_code || '—'}</div>
                                   <div><strong>Payroll ID:</strong> {emp.payroll_id || '—'}</div>
                                 </div>

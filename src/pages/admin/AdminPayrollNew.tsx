@@ -235,7 +235,7 @@ export default function AdminPayrollNew() {
   const [lastPayRuns, setLastPayRuns] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }>>({})
   const [wizPeriodByType, setWizPeriodByType] = useState<Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }>>({})
   const [wizGeneratingReviews, setWizGeneratingReviews] = useState(false)
-  const [wizShiftDetails, setWizShiftDetails] = useState<Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number }[]>>({})
+  const [wizShiftDetails, setWizShiftDetails] = useState<Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number; scheduled_start?: string; scheduled_end?: string; shift_name?: string; overtime_hours?: number }[]>>({})
   const [wizExpandedEmps, setWizExpandedEmps] = useState<Set<string>>(new Set())
   const [wizManualChecked, setWizManualChecked] = useState<Set<string>>(new Set())
   const [wizSageFiles, setWizSageFiles] = useState<File[]>([])
@@ -1418,38 +1418,89 @@ export default function AdminPayrollNew() {
     setWizGeneratingReviews(true)
 
     const targetEmps = workerType === 'shift' ? shiftEmployees : zeroHoursEmployees
-    const { data: checkins } = await supabase.from('checkin_records')
-      .select('employee_id, check_in_at, check_out_at, status')
-      .eq('company_id', selectedCompanyId)
-      .in('status', ['checked_out', 'auto_closed'])
-      .gte('check_in_at', period.start + 'T00:00:00')
-      .lte('check_in_at', period.end + 'T23:59:59')
-      .order('check_in_at', { ascending: true })
+    const targetEmpIds = targetEmps.map(e => e.id)
 
-    const hoursByEmp: Record<string, number> = {}
-    const detailsByEmp: Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number }[]> = {}
-    if (checkins) {
-      for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null }[]) {
-        if (!c.check_out_at) continue
-        const hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
-        if (hrs > 0 && hrs < 24) {
-          const rounded = Math.round(hrs * 100) / 100
-          hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + rounded
-          if (!detailsByEmp[c.employee_id]) detailsByEmp[c.employee_id] = []
-          detailsByEmp[c.employee_id].push({ employee_id: c.employee_id, check_in_at: c.check_in_at, check_out_at: c.check_out_at, hours: rounded })
-        }
+    const [checkinRes, assignmentRes] = await Promise.all([
+      supabase.from('checkin_records')
+        .select('employee_id, check_in_at, check_out_at, status, shift_assignment_id')
+        .eq('company_id', selectedCompanyId)
+        .in('status', ['checked_out', 'auto_closed'])
+        .gte('check_in_at', period.start + 'T00:00:00')
+        .lte('check_in_at', period.end + 'T23:59:59')
+        .in('employee_id', targetEmpIds)
+        .order('check_in_at', { ascending: true }),
+      supabase.from('shift_assignments')
+        .select('id, employee_id, date, shift_template:shift_templates(name, start_time, end_time)')
+        .eq('company_id', selectedCompanyId)
+        .gte('date', period.start)
+        .lte('date', period.end)
+        .in('employee_id', targetEmpIds),
+    ])
+
+    const checkins = checkinRes.data || []
+    const assignments = (assignmentRes.data || []) as { id: string; employee_id: string; date: string; shift_template: { name: string; start_time: string; end_time: string } | null }[]
+
+    const assignmentMap = new Map<string, { name: string; start_time: string; end_time: string; date: string }>()
+    for (const a of assignments) {
+      if (a.shift_template) {
+        assignmentMap.set(a.id, { name: a.shift_template.name, start_time: a.shift_template.start_time, end_time: a.shift_template.end_time, date: a.date })
       }
     }
-    setWizShiftDetails(detailsByEmp)
+
+    const hoursByEmp: Record<string, number> = {}
+    const overtimeByEmp: Record<string, number> = {}
+    const detailsByEmp: Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number; scheduled_start?: string; scheduled_end?: string; shift_name?: string; overtime_hours?: number }[]> = {}
+
+    for (const c of checkins as { employee_id: string; check_in_at: string; check_out_at: string | null; shift_assignment_id: string | null }[]) {
+      if (!c.check_out_at) continue
+      const checkIn = new Date(c.check_in_at)
+      const checkOut = new Date(c.check_out_at)
+      const hrs = (checkOut.getTime() - checkIn.getTime()) / 3600000
+      if (hrs <= 0 || hrs >= 24) continue
+      const rounded = Math.round(hrs * 100) / 100
+      hoursByEmp[c.employee_id] = (hoursByEmp[c.employee_id] || 0) + rounded
+      if (!detailsByEmp[c.employee_id]) detailsByEmp[c.employee_id] = []
+
+      let scheduledStart: string | undefined
+      let scheduledEnd: string | undefined
+      let shiftName: string | undefined
+      let shiftOT = 0
+
+      const assignment = c.shift_assignment_id ? assignmentMap.get(c.shift_assignment_id) : undefined
+      if (assignment) {
+        shiftName = assignment.name
+        const dateStr = assignment.date
+        const schedStart = new Date(`${dateStr}T${assignment.start_time}`)
+        const schedEnd = new Date(`${dateStr}T${assignment.end_time}`)
+        if (schedEnd <= schedStart) schedEnd.setDate(schedEnd.getDate() + 1)
+        scheduledStart = assignment.start_time
+        scheduledEnd = assignment.end_time
+
+        const emp = targetEmps.find(e => e.id === c.employee_id)
+        const otHandling = emp ? getEffectiveSetting(emp, workerSettings, 'overtime_handling') : 'none'
+        if (otHandling === 'overtime') {
+          const earlyMins = Math.max(0, (schedStart.getTime() - checkIn.getTime()) / 60000)
+          const lateMins = Math.max(0, (checkOut.getTime() - schedEnd.getTime()) / 60000)
+          shiftOT = Math.round((earlyMins + lateMins) / 60 * 100) / 100
+        }
+      } else if (workerType === 'zero_hours') {
+        shiftOT = 0
+      }
+
+      overtimeByEmp[c.employee_id] = (overtimeByEmp[c.employee_id] || 0) + shiftOT
+      detailsByEmp[c.employee_id].push({
+        employee_id: c.employee_id, check_in_at: c.check_in_at, check_out_at: c.check_out_at,
+        hours: rounded, scheduled_start: scheduledStart, scheduled_end: scheduledEnd,
+        shift_name: shiftName, overtime_hours: shiftOT,
+      })
+    }
+    setWizShiftDetails(prev => ({ ...prev, ...detailsByEmp }))
 
     const errors: string[] = []
     for (const emp of targetEmps) {
       const totalHours = hoursByEmp[emp.id] || 0
       const rate = emp.hourly_rate || 0
-      const weeklyHours = emp.weekly_hours || 0
-      const weeksInPeriod = period.freq === 'weekly' ? 1 : period.freq === 'bi_weekly' ? 2 : 52 / 12
-      const contracted = weeklyHours * weeksInPeriod
-      const overtime = contracted > 0 ? Math.max(0, totalHours - contracted) : 0
+      const overtime = overtimeByEmp[emp.id] || 0
       const grossPay = Math.round(totalHours * rate * 100) / 100
 
       const { error } = await supabase.from('pay_period_reviews').upsert({
@@ -1472,7 +1523,8 @@ export default function AdminPayrollNew() {
       showError(`Failed for ${errors.length} employee(s): ${errors[0]}`)
     } else {
       const shiftCount = Object.values(detailsByEmp).reduce((s, arr) => s + arr.length, 0)
-      showSuccess(`Found ${shiftCount} shift${shiftCount !== 1 ? 's' : ''} across ${targetEmps.length} ${workerType === 'shift' ? 'shift worker' : 'zero hours worker'}${targetEmps.length !== 1 ? 's' : ''}`)
+      const otTotal = Object.values(overtimeByEmp).reduce((s, v) => s + v, 0)
+      showSuccess(`Found ${shiftCount} shift${shiftCount !== 1 ? 's' : ''} across ${targetEmps.length} ${workerType === 'shift' ? 'shift worker' : 'zero hours worker'}${targetEmps.length !== 1 ? 's' : ''}${otTotal > 0 ? ` (${otTotal.toFixed(1)}h overtime detected)` : ''}`)
     }
 
     await loadWizPeriodReviews()
@@ -1494,6 +1546,70 @@ export default function AdminPayrollNew() {
       }).eq('id', review.id)
     }
     showSuccess(`Approved ${toApprove.length} period review${toApprove.length !== 1 ? 's' : ''}`)
+    await loadWizPeriodReviews()
+  }
+
+  function countMatchedZeroHoursShifts(): number {
+    let matched = 0
+    const TOLERANCE_MS = 5 * 60000
+    for (const emp of zeroHoursEmployees) {
+      const shifts = wizShiftDetails[emp.id] || []
+      for (const s of shifts) {
+        if (s.scheduled_start && s.scheduled_end) {
+          const checkIn = new Date(s.check_in_at)
+          const checkOut = new Date(s.check_out_at)
+          const dateStr = s.check_in_at.split('T')[0]
+          const schedStart = new Date(`${dateStr}T${s.scheduled_start}`)
+          const schedEnd = new Date(`${dateStr}T${s.scheduled_end}`)
+          if (schedEnd <= schedStart) schedEnd.setDate(schedEnd.getDate() + 1)
+          if (Math.abs(checkIn.getTime() - schedStart.getTime()) <= TOLERANCE_MS &&
+              Math.abs(checkOut.getTime() - schedEnd.getTime()) <= TOLERANCE_MS) {
+            matched++
+          }
+        }
+      }
+    }
+    return matched
+  }
+
+  async function approveMatchedShifts() {
+    if (!selectedCompanyId || !session) return
+    const period = wizPeriodByType.zero_hours
+    if (!period) return
+    const TOLERANCE_MS = 5 * 60000
+    const matchedEmpIds = new Set<string>()
+
+    for (const emp of zeroHoursEmployees) {
+      const shifts = wizShiftDetails[emp.id] || []
+      const allMatched = shifts.length > 0 && shifts.every(s => {
+        if (!s.scheduled_start || !s.scheduled_end) return false
+        const checkIn = new Date(s.check_in_at)
+        const checkOut = new Date(s.check_out_at)
+        const dateStr = s.check_in_at.split('T')[0]
+        const schedStart = new Date(`${dateStr}T${s.scheduled_start}`)
+        const schedEnd = new Date(`${dateStr}T${s.scheduled_end}`)
+        if (schedEnd <= schedStart) schedEnd.setDate(schedEnd.getDate() + 1)
+        return Math.abs(checkIn.getTime() - schedStart.getTime()) <= TOLERANCE_MS &&
+               Math.abs(checkOut.getTime() - schedEnd.getTime()) <= TOLERANCE_MS
+      })
+      if (allMatched) matchedEmpIds.add(emp.id)
+    }
+
+    if (matchedEmpIds.size === 0) {
+      showError('No zero hours workers have all shifts matching their scheduled times (within 5 min tolerance)')
+      return
+    }
+
+    const toApprove = wizPeriodReviews.filter(r => r.status !== 'approved' && matchedEmpIds.has(r.employee_id))
+    for (const review of toApprove) {
+      await supabase.from('pay_period_reviews').update({
+        status: 'approved',
+        approved_by: session.user?.id,
+        approved_at: new Date().toISOString(),
+      }).eq('id', review.id)
+    }
+
+    showSuccess(`Auto-approved ${toApprove.length} zero hours worker${toApprove.length !== 1 ? 's' : ''} with matching shift times`)
     await loadWizPeriodReviews()
   }
 
@@ -2574,6 +2690,12 @@ export default function AdminPayrollNew() {
                         <span className="pn-worker-metric-label">Total hours</span>
                       </div>
                       <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value" style={{ color: [...shiftReviewsApproved, ...shiftReviewsPending].reduce((s, r) => s + Number(r.overtime_hours || 0), 0) > 0 ? '#c62828' : undefined }}>
+                          {[...shiftReviewsApproved, ...shiftReviewsPending].reduce((s, r) => s + Number(r.overtime_hours || 0), 0).toFixed(1)}
+                        </span>
+                        <span className="pn-worker-metric-label">Overtime hrs</span>
+                      </div>
+                      <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">£{[...shiftReviewsApproved, ...shiftReviewsPending].reduce((s, r) => s + Number(r.gross_pay || 0), 0).toFixed(2)}</span>
                         <span className="pn-worker-metric-label">Total gross</span>
                       </div>
@@ -2649,9 +2771,12 @@ export default function AdminPayrollNew() {
                                         <thead>
                                           <tr style={{ color: 'var(--text-muted, #888)' }}>
                                             <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Date</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Shift</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Scheduled</th>
                                             <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Check In</th>
                                             <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Check Out</th>
                                             <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'right' }}>Hours</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'right' }}>OT</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -2661,9 +2786,12 @@ export default function AdminPayrollNew() {
                                             return (
                                               <tr key={si} style={{ borderTop: si > 0 ? '1px solid var(--border, #eee)' : undefined }}>
                                                 <td style={{ padding: '3px 6px' }}>{cin.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                <td style={{ padding: '3px 6px', fontSize: 10, color: 'var(--text-muted, #888)' }}>{s.shift_name || '—'}</td>
+                                                <td style={{ padding: '3px 6px', fontSize: 10 }}>{s.scheduled_start && s.scheduled_end ? `${s.scheduled_start.slice(0,5)}–${s.scheduled_end.slice(0,5)}` : '—'}</td>
                                                 <td style={{ padding: '3px 6px' }}>{cin.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
                                                 <td style={{ padding: '3px 6px' }}>{cout ? cout.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                                                 <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 500 }}>{s.hours.toFixed(2)}</td>
+                                                <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 500, color: (s.overtime_hours || 0) > 0 ? '#c62828' : undefined }}>{(s.overtime_hours || 0) > 0 ? `+${s.overtime_hours!.toFixed(2)}` : '—'}</td>
                                               </tr>
                                             )
                                           })}
@@ -2730,6 +2858,15 @@ export default function AdminPayrollNew() {
                           ✓ Approve All ({zeroReviewsPending.length})
                         </button>
                       )}
+                      {zeroReviewsPending.length > 0 && (() => {
+                        const matchCount = countMatchedZeroHoursShifts()
+                        return matchCount > 0 ? (
+                          <button className="admin-btn" style={{ fontSize: 12, padding: '6px 14px', background: '#e3f2fd', color: '#1565c0', border: '1px solid #90caf9' }}
+                            onClick={approveMatchedShifts}>
+                            ✓ Approve Matched ({matchCount} shift{matchCount !== 1 ? 's' : ''})
+                          </button>
+                        ) : null
+                      })()}
                     </div>
 
                     {/* Summary metrics */}
@@ -2745,6 +2882,12 @@ export default function AdminPayrollNew() {
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">{[...zeroReviewsApproved, ...zeroReviewsPending].reduce((s, r) => s + Number(r.adjusted_hours || 0), 0).toFixed(1)}</span>
                         <span className="pn-worker-metric-label">Total hours</span>
+                      </div>
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value" style={{ color: [...zeroReviewsApproved, ...zeroReviewsPending].reduce((s, r) => s + Number(r.overtime_hours || 0), 0) > 0 ? '#c62828' : undefined }}>
+                          {[...zeroReviewsApproved, ...zeroReviewsPending].reduce((s, r) => s + Number(r.overtime_hours || 0), 0).toFixed(1)}
+                        </span>
+                        <span className="pn-worker-metric-label">Overtime hrs</span>
                       </div>
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">£{[...zeroReviewsApproved, ...zeroReviewsPending].reduce((s, r) => s + Number(r.gross_pay || 0), 0).toFixed(2)}</span>
@@ -2822,9 +2965,12 @@ export default function AdminPayrollNew() {
                                         <thead>
                                           <tr style={{ color: 'var(--text-muted, #888)' }}>
                                             <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Date</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Shift</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Scheduled</th>
                                             <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Check In</th>
                                             <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'left' }}>Check Out</th>
                                             <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'right' }}>Hours</th>
+                                            <th style={{ padding: '4px 6px', fontWeight: 500, textAlign: 'right' }}>OT</th>
                                           </tr>
                                         </thead>
                                         <tbody>
@@ -2834,9 +2980,12 @@ export default function AdminPayrollNew() {
                                             return (
                                               <tr key={si} style={{ borderTop: si > 0 ? '1px solid var(--border, #eee)' : undefined }}>
                                                 <td style={{ padding: '3px 6px' }}>{cin.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                                <td style={{ padding: '3px 6px', fontSize: 10, color: 'var(--text-muted, #888)' }}>{s.shift_name || '—'}</td>
+                                                <td style={{ padding: '3px 6px', fontSize: 10 }}>{s.scheduled_start && s.scheduled_end ? `${s.scheduled_start.slice(0,5)}–${s.scheduled_end.slice(0,5)}` : '—'}</td>
                                                 <td style={{ padding: '3px 6px' }}>{cin.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
                                                 <td style={{ padding: '3px 6px' }}>{cout ? cout.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                                                 <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 500 }}>{s.hours.toFixed(2)}</td>
+                                                <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 500, color: (s.overtime_hours || 0) > 0 ? '#c62828' : undefined }}>{(s.overtime_hours || 0) > 0 ? `+${s.overtime_hours!.toFixed(2)}` : '—'}</td>
                                               </tr>
                                             )
                                           })}
