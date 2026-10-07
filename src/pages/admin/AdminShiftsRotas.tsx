@@ -8,9 +8,10 @@ import CheckInDashboardPanel from './CheckInDashboard'
 import ShiftSettings from './ShiftSettings'
 import AdminShiftSkills from './AdminShiftSkills'
 import AdminShiftCorrections from './AdminShiftCorrections'
+import AdminRecordedTime from './AdminRecordedTime'
 
 export default function AdminShiftsRotas() {
-  const [tab, setTab] = useState<'rotas' | 'templates' | 'skills' | 'demand' | 'availability' | 'reports' | 'checkin' | 'corrections' | 'settings'>('rotas')
+  const [tab, setTab] = useState<'rotas' | 'templates' | 'skills' | 'demand' | 'availability' | 'reports' | 'checkin' | 'corrections' | 'recorded_time' | 'settings'>('rotas')
 
   return (
     <div className="admin-section">
@@ -28,6 +29,7 @@ export default function AdminShiftsRotas() {
         <button className={`admin-tab ${tab === 'reports' ? 'admin-tab-active' : ''}`} onClick={() => setTab('reports')}>Reports &amp; Analytics</button>
         <button className={`admin-tab ${tab === 'checkin' ? 'admin-tab-active' : ''}`} onClick={() => setTab('checkin')}>Check-In</button>
         <button className={`admin-tab ${tab === 'corrections' ? 'admin-tab-active' : ''}`} onClick={() => setTab('corrections')}>Corrections</button>
+        <button className={`admin-tab ${tab === 'recorded_time' ? 'admin-tab-active' : ''}`} onClick={() => setTab('recorded_time')}>Recorded Time</button>
         <button className={`admin-tab ${tab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
       </div>
 
@@ -39,6 +41,7 @@ export default function AdminShiftsRotas() {
       {tab === 'reports' && <AdminShiftReports />}
       {tab === 'checkin' && <CheckInDashboardPanel source="shifts" />}
       {tab === 'corrections' && <AdminShiftCorrections />}
+      {tab === 'recorded_time' && <AdminRecordedTime />}
       {tab === 'settings' && <ShiftSettings />}
     </div>
   )
