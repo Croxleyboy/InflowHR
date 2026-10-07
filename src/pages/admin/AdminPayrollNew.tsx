@@ -227,6 +227,7 @@ export default function AdminPayrollNew() {
   const [workerSettings, setWorkerSettings] = useState<WorkerTypeSetting[]>([])
   const [wizPeriodReviews, setWizPeriodReviews] = useState<PeriodReview[]>([])
   const [wizOvertimeHours, setWizOvertimeHours] = useState<Record<string, number>>({})
+  const [wizTimesheetHoursByEmp, setWizTimesheetHoursByEmp] = useState<Record<string, number>>({})
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
   const [wizExported, setWizExported] = useState(false)
@@ -543,17 +544,17 @@ export default function AdminPayrollNew() {
     const monthStart = allStarts.sort()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
     const monthEnd = allEnds.sort().reverse()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
     const { data } = await supabase.from('timesheets')
-      .select('employee_id, hours')
+      .select('employee_id, hours, date, end_date')
       .eq('company_id', selectedCompanyId)
       .eq('status', 'approved')
-      .gte('date', monthStart)
-      .lte('date', monthEnd)
+      .or(`and(date.gte.${monthStart},date.lte.${monthEnd}),and(end_date.gte.${monthStart},end_date.lte.${monthEnd}),and(date.lte.${monthStart},end_date.gte.${monthEnd})`)
     const hoursByEmp: Record<string, number> = {}
     if (data) {
       for (const t of data as { employee_id: string; hours: number }[]) {
         hoursByEmp[t.employee_id] = (hoursByEmp[t.employee_id] || 0) + Number(t.hours)
       }
     }
+    setWizTimesheetHoursByEmp(hoursByEmp)
 
     const autoOvertime: Record<string, number> = {}
     for (const emp of employees) {
@@ -2684,32 +2685,59 @@ export default function AdminPayrollNew() {
                         <span className="pn-worker-metric-label">Missing tax codes</span>
                       </div>
                     </div>
-                    {(employedOvertimeHandling === 'overtime' || employedOvertimeHandling === 'toil') && (
-                      <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 10, marginTop: 4 }}>
-                        <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px', color: '#5c6bc0' }}>
-                          {employedOvertimeHandling === 'toil' ? 'TOIL Hours (auto-calculated from timesheets, adjustable)' : 'Overtime Hours (auto-calculated from timesheets, adjustable)'}
-                        </p>
-                        {employedOvertimeHandling === 'toil' && (
-                          <p style={{ fontSize: 11, color: '#7e57c2', margin: '0 0 8px' }}>Hours will be credited as time off in lieu, not paid.</p>
-                        )}
-                        <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-                          {employedEmployees.map(emp => (
-                            <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                              <span style={{ fontSize: 13, minWidth: 160 }}>{emp.first_name} {emp.last_name}</span>
-                              <input type="number" min="0" step="0.5" style={{ width: 70, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: '1px solid var(--border, #d1d5db)' }}
-                                value={wizOvertimeHours[emp.id] || ''}
-                                onChange={e => setWizOvertimeHours(prev => ({ ...prev, [emp.id]: Number(e.target.value) || 0 }))}
-                                placeholder="0"
-                              />
-                              <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>hrs @ {emp.overtime_rate_multiplier || 1.5}x</span>
-                              {wizOvertimeHours[emp.id] > 0 && (
-                                <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Auto</span>
-                              )}
-                            </div>
-                          ))}
+                    {(() => {
+                      const hasTimesheetData = employedEmployees.some(e => (wizTimesheetHoursByEmp[e.id] || 0) > 0)
+                      const showOvertimeInputs = employedOvertimeHandling === 'overtime' || employedOvertimeHandling === 'toil'
+                      if (!hasTimesheetData && !showOvertimeInputs) return null
+                      return (
+                        <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 10, marginTop: 4 }}>
+                          <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px', color: '#5c6bc0' }}>
+                            {showOvertimeInputs
+                              ? (employedOvertimeHandling === 'toil' ? 'TOIL Hours (auto-calculated from timesheets, adjustable)' : 'Overtime Hours (auto-calculated from timesheets, adjustable)')
+                              : 'Approved Timesheet Hours'}
+                          </p>
+                          {employedOvertimeHandling === 'toil' && (
+                            <p style={{ fontSize: 11, color: '#7e57c2', margin: '0 0 8px' }}>Hours will be credited as time off in lieu, not paid.</p>
+                          )}
+                          {employedOvertimeHandling === 'none' && hasTimesheetData && (
+                            <p style={{ fontSize: 11, color: '#e65100', margin: '0 0 8px' }}>Overtime handling is set to "None" — hours exceeding contracted will not be paid or credited. Change this in People → Payroll Settings if overtime should be calculated.</p>
+                          )}
+                          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                            {employedEmployees.map(emp => {
+                              const approved = wizTimesheetHoursByEmp[emp.id] || 0
+                              const weeklyHrs = emp.weekly_hours || 37.5
+                              const weeksInPeriod = employedFreq === 'weekly' ? 1 : employedFreq === 'bi_weekly' ? 2 : 52 / 12
+                              const contracted = Math.round(weeklyHrs * weeksInPeriod * 10) / 10
+                              const diff = Math.round((approved - contracted) * 10) / 10
+                              if (!showOvertimeInputs && approved <= 0) return null
+                              return (
+                                <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: 13, minWidth: 160 }}>{emp.first_name} {emp.last_name}</span>
+                                  {approved > 0 && (
+                                    <span style={{ fontSize: 11, color: diff > 0 ? '#e65100' : '#2e7d32', background: diff > 0 ? '#fff3e0' : '#e8f5e9', padding: '1px 6px', borderRadius: 3, fontWeight: 500 }}>
+                                      {approved.toFixed(1)}h approved / {contracted}h contracted {diff > 0 ? `(+${diff}h)` : ''}
+                                    </span>
+                                  )}
+                                  {showOvertimeInputs && (
+                                    <>
+                                      <input type="number" min="0" step="0.5" style={{ width: 70, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: '1px solid var(--border, #d1d5db)' }}
+                                        value={wizOvertimeHours[emp.id] || ''}
+                                        onChange={e => setWizOvertimeHours(prev => ({ ...prev, [emp.id]: Number(e.target.value) || 0 }))}
+                                        placeholder="0"
+                                      />
+                                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>hrs @ {emp.overtime_rate_multiplier || 1.5}x</span>
+                                      {wizOvertimeHours[emp.id] > 0 && (
+                                        <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Auto</span>
+                                      )}
+                                    </>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )
+                    })()}
                   </div>
                 </div>
               )}
