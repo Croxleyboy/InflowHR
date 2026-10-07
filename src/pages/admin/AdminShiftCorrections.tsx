@@ -91,6 +91,18 @@ export default function AdminShiftCorrections() {
 
   useEffect(() => { fetchCorrections() }, [fetchCorrections])
 
+  const getScheduledEnd = async (shiftAssignmentId: string, shiftDate: string): Promise<string | null> => {
+    const { data } = await supabase
+      .from('shift_assignments')
+      .select('date, shift_template:shift_templates(end_time)')
+      .eq('id', shiftAssignmentId)
+      .single()
+    if (!data) return null
+    const tmpl = Array.isArray(data.shift_template) ? data.shift_template[0] : data.shift_template
+    if (!tmpl?.end_time) return null
+    return new Date(`${shiftDate}T${tmpl.end_time}`).toISOString()
+  }
+
   const handleApprove = async (c: Correction) => {
     if (!companyUser?.company_id || !adminEmpId) return
     const times = approveTimes[c.id]
@@ -106,6 +118,13 @@ export default function AdminShiftCorrections() {
       const updates: Record<string, any> = {}
       if (isCheckinType && times.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${times.checkIn}`).toISOString()
       if (isCheckoutType && times.checkOut) updates.check_out_at = new Date(`${c.shift_date}T${times.checkOut}`).toISOString()
+      if (isCheckinType && !isCheckoutType) {
+        const { data: existing } = await supabase.from('checkin_records').select('check_out_at').eq('id', c.checkin_record_id).single()
+        if (!existing?.check_out_at) {
+          const scheduledEnd = await getScheduledEnd(c.shift_assignment_id, c.shift_date)
+          if (scheduledEnd) updates.check_out_at = scheduledEnd
+        }
+      }
       updates.status = 'checked_out'
       await supabase.from('checkin_records').update(updates)
         .eq('id', c.checkin_record_id)
@@ -119,7 +138,12 @@ export default function AdminShiftCorrections() {
         status: 'checked_out',
       }
       if (times.checkIn) row.check_in_at = new Date(`${c.shift_date}T${times.checkIn}`).toISOString()
-      if (times.checkOut) row.check_out_at = new Date(`${c.shift_date}T${times.checkOut}`).toISOString()
+      if (times.checkOut) {
+        row.check_out_at = new Date(`${c.shift_date}T${times.checkOut}`).toISOString()
+      } else {
+        const scheduledEnd = await getScheduledEnd(c.shift_assignment_id, c.shift_date)
+        if (scheduledEnd) row.check_out_at = scheduledEnd
+      }
       const { data: newRec } = await supabase.from('checkin_records').insert(row).select('id').single()
       if (newRec) {
         resolvedCheckinId = newRec.id
@@ -184,7 +208,15 @@ export default function AdminShiftCorrections() {
     if (c.checkin_record_id) {
       const updates: Record<string, any> = {}
       if (editTimes.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${editTimes.checkIn}`).toISOString()
-      if (editTimes.checkOut) updates.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
+      if (editTimes.checkOut) {
+        updates.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
+      } else {
+        const { data: existing } = await supabase.from('checkin_records').select('check_out_at').eq('id', c.checkin_record_id).single()
+        if (!existing?.check_out_at) {
+          const scheduledEnd = await getScheduledEnd(c.shift_assignment_id, c.shift_date)
+          if (scheduledEnd) updates.check_out_at = scheduledEnd
+        }
+      }
       updates.status = 'checked_out'
       await supabase.from('checkin_records').update(updates)
         .eq('id', c.checkin_record_id)
@@ -198,7 +230,12 @@ export default function AdminShiftCorrections() {
         status: 'checked_out',
       }
       if (editTimes.checkIn) row.check_in_at = new Date(`${c.shift_date}T${editTimes.checkIn}`).toISOString()
-      if (editTimes.checkOut) row.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
+      if (editTimes.checkOut) {
+        row.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
+      } else {
+        const scheduledEnd = await getScheduledEnd(c.shift_assignment_id, c.shift_date)
+        if (scheduledEnd) row.check_out_at = scheduledEnd
+      }
       const { data: newRec } = await supabase.from('checkin_records').insert(row).select('id').single()
       if (newRec) {
         manualCheckinId = newRec.id

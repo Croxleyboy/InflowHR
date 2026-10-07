@@ -178,16 +178,20 @@ export default function AdminRecordedTime() {
 
       const checkinDetails = shiftCheckins.map(c => {
         let hrs = 0
+        let effectiveCheckOut = c.check_out_at
         if (c.check_out_at) {
           hrs = (new Date(c.check_out_at).getTime() - new Date(c.check_in_at).getTime()) / 3600000
           if (hrs < 0 || hrs >= 24) hrs = 0
+        } else if (c.status === 'checked_out' && scheduledHrs > 0 && tmpl?.end_time) {
+          hrs = scheduledHrs
+          effectiveCheckOut = `${a.date}T${tmpl.end_time}`
         }
         if (c.status === 'auto_closed' && scheduledHrs > 0 && hrs > scheduledHrs) {
           hrs = scheduledHrs
         }
         return {
           checkIn: c.check_in_at,
-          checkOut: c.check_out_at,
+          checkOut: effectiveCheckOut,
           hours: Math.round(hrs * 100) / 100,
           status: c.status,
         }
