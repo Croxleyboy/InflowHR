@@ -3343,7 +3343,12 @@ export default function AdminPayrollNew() {
                         <div className="pn-worker-metric">
                           <span className="pn-worker-metric-value">
                             {(() => {
-                              const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+                              const firstPeriod = Object.values(wizPeriodByType)[0]
+                              if (firstPeriod) {
+                                const d = new Date(firstPeriod.start + 'T00:00:00')
+                                return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
+                              }
+                              const d = new Date(now.getFullYear(), now.getMonth(), 1)
                               return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
                             })()}
                           </span>
@@ -3696,7 +3701,12 @@ export default function AdminPayrollNew() {
                         <div className="pn-worker-metric">
                           <span className="pn-worker-metric-value">
                             {(() => {
-                              const d = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+                              const firstPeriod = Object.values(wizPeriodByType)[0]
+                              if (firstPeriod) {
+                                const d = new Date(firstPeriod.start + 'T00:00:00')
+                                return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
+                              }
+                              const d = new Date(now.getFullYear(), now.getMonth(), 1)
                               return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`
                             })()}
                           </span>
