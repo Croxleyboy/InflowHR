@@ -109,6 +109,7 @@ interface OvertimeEntry {
   employee_id: string
   hours: number
   multiplier: number
+  hourly_rate_override?: number
 }
 
 interface UnpaidLeaveEntry {
@@ -296,7 +297,14 @@ Deno.serve(async (req) => {
         continue
       }
 
-      const overtimeRate = emp.hourlyRate > 0 ? Math.round(emp.hourlyRate * ot.multiplier * 100) / 100 : 0
+      const baseRate = ot.hourly_rate_override && ot.hourly_rate_override > 0
+        ? ot.hourly_rate_override
+        : emp.hourlyRate > 0
+          ? emp.hourlyRate
+          : emp.annualSalary > 0
+            ? Math.round(emp.annualSalary / (52 * 37.5) * 100) / 100
+            : 0
+      const overtimeRate = Math.round(baseRate * ot.multiplier * 100) / 100
       const overtimeAmount = Math.round(overtimeRate * ot.hours * 100) / 100
 
       // Spread hours across weekdays, max 8hrs per line per day
@@ -335,7 +343,7 @@ Deno.serve(async (req) => {
           status: 'pushed',
           hours: ot.hours,
           multiplier: ot.multiplier,
-          rate: emp.hourlyRate,
+          rate: baseRate,
           amount: overtimeAmount,
           earningsRateId: effectiveOtRateId,
           lines_posted: linesPosted,
@@ -346,7 +354,7 @@ Deno.serve(async (req) => {
           status: 'failed',
           hours: ot.hours,
           multiplier: ot.multiplier,
-          rate: emp.hourlyRate,
+          rate: baseRate,
           amount: overtimeAmount,
           error: lastError || 'All line posts failed',
         })

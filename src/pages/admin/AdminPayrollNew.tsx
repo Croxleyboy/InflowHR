@@ -122,6 +122,14 @@ function getEffectiveSetting(emp: Employee, settings: WorkerTypeSetting[], field
   return field === 'pay_pattern' ? 'monthly' : field === 'overtime_handling' ? 'none' : 'checkin'
 }
 
+function getDerivedHourlyRate(emp: Employee): number {
+  if (emp.hourly_rate && emp.hourly_rate > 0) return emp.hourly_rate
+  if (emp.annual_salary && emp.annual_salary > 0) {
+    return Math.round(emp.annual_salary / (52 * (emp.weekly_hours || 37.5)) * 100) / 100
+  }
+  return 0
+}
+
 interface PeriodReview {
   id: string; employee_id: string; period_start: string; period_end: string
   total_hours: number; adjusted_hours: number; overtime_hours: number
@@ -227,6 +235,7 @@ export default function AdminPayrollNew() {
   const [workerSettings, setWorkerSettings] = useState<WorkerTypeSetting[]>([])
   const [wizPeriodReviews, setWizPeriodReviews] = useState<PeriodReview[]>([])
   const [wizOvertimeHours, setWizOvertimeHours] = useState<Record<string, number>>({})
+  const [wizOvertimeRates, setWizOvertimeRates] = useState<Record<string, number>>({})
   const [wizTimesheetHoursByEmp, setWizTimesheetHoursByEmp] = useState<Record<string, number>>({})
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
@@ -252,6 +261,8 @@ export default function AdminPayrollNew() {
   const [wizShiftDetails, setWizShiftDetails] = useState<Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number; scheduled_start?: string; scheduled_end?: string; shift_name?: string; overtime_hours?: number }[]>>({})
   const [wizExpandedEmps, setWizExpandedEmps] = useState<Set<string>>(new Set())
   const [wizManualChecked, setWizManualChecked] = useState<Set<string>>(new Set())
+  const [wizBenefitChecked, setWizBenefitChecked] = useState<Set<string>>(new Set())
+  const [wizPriorRuns, setWizPriorRuns] = useState<{ id: string; worker_types: string[]; status: string; completed_at: string | null }[]>([])
   const [wizSageFiles, setWizSageFiles] = useState<File[]>([])
   const [wizSageUploading, setWizSageUploading] = useState(false)
   const [wizRosterPage, setWizRosterPage] = useState(1)
@@ -568,6 +579,11 @@ export default function AdminPayrollNew() {
       if (overtime > 0) autoOvertime[emp.id] = Math.round(overtime * 100) / 100
     }
     setWizOvertimeHours(autoOvertime)
+    const autoRates: Record<string, number> = {}
+    for (const emp of employees) {
+      autoRates[emp.id] = getDerivedHourlyRate(emp)
+    }
+    setWizOvertimeRates(autoRates)
   }
 
   async function loadWizAdjustments(periodMap?: Record<string, { start: string; end: string }>) {
@@ -631,19 +647,20 @@ export default function AdminPayrollNew() {
     const periodEnd = allEnds[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
     const nextKey = periodStart.slice(0, 7)
 
-    const existingNext = payslips.filter(p => p.pay_period_start >= periodStart && p.pay_period_start <= periodEnd)
-    if (existingNext.length > 0) {
-      showError(`Payslips for the period ${formatDate(periodStart)} – ${formatDate(periodEnd)} already exist`)
-      setWizGenerating(false)
-      return
-    }
-
     const targetEmployees = employees.filter(e => {
       if (wizWorkerTypes.has('employed') && e.employment_category !== 'shift_worker') return true
       if (wizWorkerTypes.has('shift') && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker') return true
       if (wizWorkerTypes.has('zero_hours') && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker') return true
       return false
     })
+
+    const targetEmpIds = new Set(targetEmployees.map(e => e.id))
+    const existingForTarget = payslips.filter(p => p.pay_period_start >= periodStart && p.pay_period_start <= periodEnd && targetEmpIds.has(p.employee_id))
+    if (existingForTarget.length > 0) {
+      showError(`Payslips for ${existingForTarget.length} of these employees already exist for ${formatDate(periodStart)} – ${formatDate(periodEnd)}. Run a different worker type or navigate to a different period.`)
+      setWizGenerating(false)
+      return
+    }
 
     if (targetEmployees.length === 0) {
       showError('No employees match the selected worker types')
@@ -793,7 +810,7 @@ export default function AdminPayrollNew() {
 
         const empOvertimeHrs = overtimeHandling === 'overtime' ? (wizOvertimeHours[emp.id] || 0) : 0
         const multiplier = emp.overtime_rate_multiplier || 1.5
-        const hourlyFromSalary = salary / (52 * (emp.weekly_hours || 37.5))
+        const hourlyFromSalary = wizOvertimeRates[emp.id] || getDerivedHourlyRate(emp) || salary / (52 * (emp.weekly_hours || 37.5))
         const overtimePay = empOvertimeHrs > 0 ? Math.round(empOvertimeHrs * hourlyFromSalary * multiplier * 100) / 100 : 0
 
         // TOIL: credit lieu_days for employed staff overtime
@@ -869,7 +886,7 @@ export default function AdminPayrollNew() {
       if (!emp || hrs <= 0 || !isEmpInScope(empId)) return
       if (getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil') return
       const mul = emp.overtime_rate_multiplier || 1.5
-      const rate = emp.hourly_rate || 0
+      const rate = wizOvertimeRates[empId] || getDerivedHourlyRate(emp)
       items.push({
         employee: `${emp.first_name} ${emp.last_name}`,
         type: 'Overtime',
@@ -999,7 +1016,7 @@ export default function AdminPayrollNew() {
         })
         .map(([empId, hrs]) => {
           const emp = employees.find(e => e.id === empId)!
-          return { employee_id: empId, hours: hrs, multiplier: emp.overtime_rate_multiplier || 1.5 }
+          return { employee_id: empId, hours: hrs, multiplier: emp.overtime_rate_multiplier || 1.5, hourly_rate_override: wizOvertimeRates[empId] || getDerivedHourlyRate(emp) }
         })
 
       const unpaidLeaveEntries = wizUnpaidLeave.filter(u => isEmpInScope(u.employee_id))
@@ -1348,7 +1365,7 @@ export default function AdminPayrollNew() {
     setWizPeriodEditType(null)
   }
 
-  function advanceToStep2() {
+  async function advanceToStep2() {
     const periodMap: Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }> = {}
     for (const wt of Array.from(wizWorkerTypes)) {
       const wtSettingKey = wt === 'shift' ? 'shift_worker' : wt
@@ -1361,6 +1378,22 @@ export default function AdminPayrollNew() {
       periodMap[wt] = { ...period, freq, freqLabel, overtimeLabel }
     }
     setWizPeriodByType(periodMap)
+
+    if (selectedCompanyId) {
+      const allStarts = Object.values(periodMap).map(p => p.start).sort()
+      const allEnds = Object.values(periodMap).map(p => p.end).sort().reverse()
+      const pStart = allStarts[0]
+      const pEnd = allEnds[0]
+      if (pStart && pEnd) {
+        const { data: priorRuns } = await supabase.from('pay_runs')
+          .select('id, worker_types, status, completed_at')
+          .eq('company_id', selectedCompanyId)
+          .gte('period_start', pStart)
+          .lte('period_end', pEnd)
+          .order('created_at', { ascending: false })
+        setWizPriorRuns(priorRuns || [])
+      }
+    }
 
     if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) {
       loadWizPeriodReviews(periodMap)
@@ -2681,6 +2714,26 @@ export default function AdminPayrollNew() {
                   : 'Review the employees and their pay details before generating payslips for the next period.'}
               </p>
 
+              {wizPriorRuns.length > 0 && (
+                <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 12, marginBottom: 12, borderLeft: '4px solid #1565c0' }}>
+                  <strong style={{ color: '#1565c0', fontSize: 13 }}>Previous pay runs found for this period</strong>
+                  <div style={{ fontSize: 12, color: '#1565c0', marginTop: 4 }}>
+                    {wizPriorRuns.map((r, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+                        <span style={{ fontSize: 11, background: r.status === 'completed' ? '#e8f5e9' : r.status === 'generating' ? '#fff3e0' : '#f3e5f5',
+                          color: r.status === 'completed' ? '#2e7d32' : r.status === 'generating' ? '#e65100' : '#7e57c2',
+                          padding: '1px 8px', borderRadius: 10, fontWeight: 600, textTransform: 'capitalize' }}>{r.status}</span>
+                        <span>{(r.worker_types || []).map((wt: string) => wt === 'shift_worker' ? 'Shift Workers' : wt === 'zero_hours' ? 'Zero Hours' : 'Employed').join(', ')}</span>
+                        {r.completed_at && <span style={{ color: '#90a4ae' }}>({formatDate(r.completed_at.split('T')[0])})</span>}
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{ fontSize: 11, color: '#1976d2', margin: '6px 0 0' }}>
+                    You can still run a pay run for different worker types in the same period.
+                  </p>
+                </div>
+              )}
+
               {providerConnected && (
                 <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #1565c0' }}>
                   <strong style={{ color: '#1565c0', fontSize: 14 }}>Connected to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</strong>
@@ -2723,7 +2776,7 @@ export default function AdminPayrollNew() {
                         <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 10, marginTop: 4 }}>
                           <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px', color: '#5c6bc0' }}>
                             {showOvertimeInputs
-                              ? (employedOvertimeHandling === 'toil' ? 'TOIL Hours (auto-calculated from timesheets, adjustable)' : 'Overtime Hours (auto-calculated from timesheets, adjustable)')
+                              ? (employedOvertimeHandling === 'toil' ? 'TOIL Hours (auto-calculated from timesheets, adjustable)' : 'Overtime Hours & Rates (auto-calculated, adjustable)')
                               : 'Approved Timesheet Hours'}
                           </p>
                           {employedOvertimeHandling === 'toil' && (
@@ -2748,19 +2801,48 @@ export default function AdminPayrollNew() {
                                       {approved.toFixed(1)}h approved / {contracted}h contracted {diff > 0 ? `(+${diff}h)` : ''}
                                     </span>
                                   )}
-                                  {showOvertimeInputs && (
-                                    <>
-                                      <input type="number" min="0" step="0.5" style={{ width: 70, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: '1px solid var(--border, #d1d5db)' }}
-                                        value={wizOvertimeHours[emp.id] || ''}
-                                        onChange={e => setWizOvertimeHours(prev => ({ ...prev, [emp.id]: Number(e.target.value) || 0 }))}
-                                        placeholder="0"
-                                      />
-                                      <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>hrs @ {emp.overtime_rate_multiplier || 1.5}x</span>
-                                      {wizOvertimeHours[emp.id] > 0 && (
-                                        <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Auto</span>
-                                      )}
-                                    </>
-                                  )}
+                                  {showOvertimeInputs && (() => {
+                                    const derivedRate = getDerivedHourlyRate(emp)
+                                    const currentRate = wizOvertimeRates[emp.id] ?? derivedRate
+                                    const mul = emp.overtime_rate_multiplier || 1.5
+                                    const hrs = wizOvertimeHours[emp.id] || 0
+                                    const amount = Math.round(currentRate * mul * hrs * 100) / 100
+                                    const isOverridden = wizOvertimeRates[emp.id] !== undefined && Math.abs(wizOvertimeRates[emp.id] - derivedRate) > 0.001
+                                    return (
+                                      <>
+                                        <input type="number" min="0" step="0.5" style={{ width: 70, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: '1px solid var(--border, #d1d5db)' }}
+                                          value={wizOvertimeHours[emp.id] || ''}
+                                          onChange={e => setWizOvertimeHours(prev => ({ ...prev, [emp.id]: Number(e.target.value) || 0 }))}
+                                          placeholder="0"
+                                        />
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>hrs @</span>
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>£</span>
+                                        <input type="number" min="0" step="0.01" style={{ width: 65, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: `1px solid ${isOverridden ? '#e65100' : 'var(--border, #d1d5db)'}`, background: isOverridden ? '#fff3e0' : undefined }}
+                                          value={currentRate || ''}
+                                          onChange={e => {
+                                            const val = Number(e.target.value) || 0
+                                            setWizOvertimeRates(prev => ({ ...prev, [emp.id]: val }))
+                                          }}
+                                          title={`Derived from ${emp.hourly_rate ? 'hourly rate' : 'annual salary ÷ (52 × weekly hours)'}`}
+                                          placeholder="0.00"
+                                        />
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>/hr × {mul}x</span>
+                                        {hrs > 0 && amount > 0 && (
+                                          <span style={{ fontSize: 12, fontWeight: 600, color: '#2e7d32' }}>= £{amount.toFixed(2)}</span>
+                                        )}
+                                        {isOverridden && (
+                                          <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 6px', borderRadius: 3, fontWeight: 600, cursor: 'pointer' }}
+                                            title="Click to reset to derived rate"
+                                            onClick={() => setWizOvertimeRates(prev => ({ ...prev, [emp.id]: derivedRate }))}>
+                                            Override
+                                          </span>
+                                        )}
+                                        {hrs > 0 && !isOverridden && (
+                                          <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '1px 6px', borderRadius: 3, fontWeight: 600 }}>Auto</span>
+                                        )}
+                                      </>
+                                    )
+                                  })()}
                                 </div>
                               )
                             })}
@@ -3295,7 +3377,29 @@ export default function AdminPayrollNew() {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
                 <button className="admin-btn" onClick={() => setWizStep(1)}>← Back</button>
-                <button className="admin-btn admin-btn-primary" disabled={!canProceed} onClick={() => setWizStep(3)}>
+                <button className="admin-btn admin-btn-primary" disabled={!canProceed} onClick={async () => {
+                  const overrides = Object.entries(wizOvertimeRates).filter(([empId, rate]) => {
+                    const emp = employees.find(e => e.id === empId)
+                    if (!emp) return false
+                    const derived = getDerivedHourlyRate(emp)
+                    return Math.abs(rate - derived) > 0.001
+                  })
+                  if (overrides.length > 0 && selectedCompanyId && session) {
+                    const details = overrides.map(([empId, rate]) => {
+                      const emp = employees.find(e => e.id === empId)
+                      const derived = getDerivedHourlyRate(emp!)
+                      return `${emp!.first_name} ${emp!.last_name}: £${derived.toFixed(2)} → £${rate.toFixed(2)}/hr`
+                    }).join('; ')
+                    await supabase.from('payroll_audit_log').insert({
+                      company_id: selectedCompanyId,
+                      user_id: session.user.id,
+                      action: 'Overtime Rate Override',
+                      detail: `Admin overrode overtime hourly rates for ${overrides.length} employee(s): ${details}`,
+                      status: 'success',
+                    })
+                  }
+                  setWizStep(3)
+                }}>
                   {providerConnected ? 'Next: Push to Provider →' : 'Next: Generate Payslips →'}
                 </button>
               </div>
@@ -3792,6 +3896,55 @@ export default function AdminPayrollNew() {
                       </div>
                     )
                   })()}
+
+                  {wizBenefitChanges.length > 0 && (
+                    <div style={{ background: '#f3e5f5', borderRadius: 8, padding: 14, marginBottom: 12, borderLeft: '4px solid #7e57c2' }}>
+                      <strong style={{ color: '#4a148c', fontSize: 14 }}>Manual Actions Required Before Syncing</strong>
+                      <p style={{ fontSize: 12, color: '#6a1b9a', margin: '4px 0 8px' }}>
+                        The following benefit adjustments need to be added manually in {connectedProvider === 'xero' ? 'Xero' : 'Sage'} before syncing payslips back.
+                      </p>
+                      <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: 6, overflow: 'hidden' }}>
+                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ background: 'rgba(126,87,194,0.1)', textAlign: 'left' }}>
+                              <th style={{ padding: '6px 10px', width: 28 }}></th>
+                              <th style={{ padding: '6px 10px', fontWeight: 600 }}>Employee</th>
+                              <th style={{ padding: '6px 10px', fontWeight: 600 }}>Benefit</th>
+                              <th style={{ padding: '6px 10px', fontWeight: 600, textAlign: 'right' }}>Monthly Cost</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {wizBenefitChanges.map((b, i) => (
+                              <tr key={i} style={{ borderTop: '1px solid rgba(126,87,194,0.15)' }}>
+                                <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                  <input type="checkbox" checked={wizBenefitChecked.has(`benefit-${i}`)}
+                                    onChange={e => {
+                                      const next = new Set(wizBenefitChecked)
+                                      e.target.checked ? next.add(`benefit-${i}`) : next.delete(`benefit-${i}`)
+                                      setWizBenefitChecked(next)
+                                    }}
+                                  />
+                                </td>
+                                <td style={{ padding: '6px 10px', fontWeight: 500, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{b.employee_name}</td>
+                                <td style={{ padding: '6px 10px', textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{b.benefit} ({b.action})</td>
+                                <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>£{b.monthly_cost.toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {wizBenefitChecked.size < wizBenefitChanges.length && (
+                        <p style={{ fontSize: 11, color: '#e65100', margin: '8px 0 0', fontStyle: 'italic' }}>
+                          Tick each item once added in {connectedProvider === 'xero' ? 'Xero' : 'Sage'} to confirm completion.
+                        </p>
+                      )}
+                      {wizBenefitChecked.size === wizBenefitChanges.length && (
+                        <p style={{ fontSize: 11, color: '#2e7d32', margin: '8px 0 0', fontWeight: 600 }}>
+                          All benefit adjustments confirmed — ready to sync payslips.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {connectedProvider === 'xero' && (
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
