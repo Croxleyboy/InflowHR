@@ -535,16 +535,27 @@ export default function AdminPayrollNew() {
   async function loadWizPeriodReviews(periodMap?: Record<string, { start: string; end: string }>) {
     if (!selectedCompanyId) return
     const pm = periodMap || wizPeriodByType
-    const allStarts = Object.values(pm).map(p => p.start)
-    const allEnds = Object.values(pm).map(p => p.end)
-    const minStart = allStarts.sort()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
-    const maxEnd = allEnds.sort().reverse()[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
-    const { data } = await supabase.from('pay_period_reviews')
-      .select('id, employee_id, period_start, period_end, total_hours, adjusted_hours, overtime_hours, hourly_rate, gross_pay, status')
-      .eq('company_id', selectedCompanyId)
-      .gte('period_start', minStart)
-      .lte('period_end', maxEnd)
-    setWizPeriodReviews((data as PeriodReview[]) || [])
+    const uniquePeriods = new Map<string, { start: string; end: string }>()
+    for (const p of Object.values(pm)) {
+      uniquePeriods.set(`${p.start}_${p.end}`, p)
+    }
+    const allReviews: PeriodReview[] = []
+    for (const p of uniquePeriods.values()) {
+      const { data } = await supabase.from('pay_period_reviews')
+        .select('id, employee_id, period_start, period_end, total_hours, adjusted_hours, overtime_hours, hourly_rate, gross_pay, status')
+        .eq('company_id', selectedCompanyId)
+        .eq('period_start', p.start)
+        .eq('period_end', p.end)
+      if (data) allReviews.push(...(data as PeriodReview[]))
+    }
+    const seen = new Set<string>()
+    const deduped = allReviews.filter(r => {
+      const key = `${r.employee_id}_${r.period_start}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    setWizPeriodReviews(deduped)
   }
 
   async function loadWizTimesheets(periodMap?: Record<string, { start: string; end: string }>) {
@@ -1592,6 +1603,14 @@ export default function AdminPayrollNew() {
       })
     }
     setWizShiftDetails(prev => ({ ...prev, ...detailsByEmp }))
+
+    await supabase.from('pay_period_reviews')
+      .delete()
+      .eq('company_id', selectedCompanyId)
+      .in('employee_id', targetEmpIds)
+      .neq('period_start', period.start)
+      .gte('period_start', period.start)
+      .lte('period_end', period.end)
 
     const errors: string[] = []
     for (const emp of targetEmps) {
