@@ -103,17 +103,13 @@ export default function AdminShiftCorrections() {
     let resolvedCheckinId = c.checkin_record_id || undefined
 
     if (c.checkin_record_id) {
-      const updates: Record<string, string> = {}
+      const updates: Record<string, any> = {}
       if (isCheckinType && times.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${times.checkIn}`).toISOString()
-      if (isCheckoutType && times.checkOut) {
-        updates.check_out_at = new Date(`${c.shift_date}T${times.checkOut}`).toISOString()
-        updates.status = 'checked_out'
-      }
-      if (Object.keys(updates).length > 0) {
-        await supabase.from('checkin_records').update(updates)
-          .eq('id', c.checkin_record_id)
-          .eq('company_id', companyUser.company_id)
-      }
+      if (isCheckoutType && times.checkOut) updates.check_out_at = new Date(`${c.shift_date}T${times.checkOut}`).toISOString()
+      updates.status = 'checked_out'
+      await supabase.from('checkin_records').update(updates)
+        .eq('id', c.checkin_record_id)
+        .eq('company_id', companyUser.company_id)
     } else {
       const row: Record<string, any> = {
         company_id: companyUser.company_id,
@@ -186,17 +182,13 @@ export default function AdminShiftCorrections() {
     let manualCheckinId = c.checkin_record_id || undefined
 
     if (c.checkin_record_id) {
-      const updates: Record<string, string> = {}
+      const updates: Record<string, any> = {}
       if (editTimes.checkIn) updates.check_in_at = new Date(`${c.shift_date}T${editTimes.checkIn}`).toISOString()
-      if (editTimes.checkOut) {
-        updates.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
-        updates.status = 'checked_out'
-      }
-      if (Object.keys(updates).length > 0) {
-        await supabase.from('checkin_records').update(updates)
-          .eq('id', c.checkin_record_id)
-          .eq('company_id', companyUser.company_id)
-      }
+      if (editTimes.checkOut) updates.check_out_at = new Date(`${c.shift_date}T${editTimes.checkOut}`).toISOString()
+      updates.status = 'checked_out'
+      await supabase.from('checkin_records').update(updates)
+        .eq('id', c.checkin_record_id)
+        .eq('company_id', companyUser.company_id)
     } else {
       const row: Record<string, any> = {
         company_id: companyUser.company_id,
