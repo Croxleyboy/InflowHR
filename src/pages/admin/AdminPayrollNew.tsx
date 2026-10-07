@@ -558,8 +558,6 @@ export default function AdminPayrollNew() {
 
     const autoOvertime: Record<string, number> = {}
     for (const emp of employees) {
-      const overtimeHandling = getEffectiveSetting(emp, workerSettings, 'overtime_handling')
-      if (overtimeHandling === 'none') continue
       const approvedHours = hoursByEmp[emp.id] || 0
       if (approvedHours <= 0) continue
       const weeklyHours = emp.weekly_hours || 37.5
@@ -1371,6 +1369,35 @@ export default function AdminPayrollNew() {
     if (providerConnected) loadWizAdjustments(periodMap)
     loadWizBonuses()
     setWizStep(2)
+  }
+
+  function navigateWizPeriod(direction: 'prev' | 'next') {
+    const updated = { ...wizPeriodByType }
+    for (const wt of Object.keys(updated)) {
+      const p = updated[wt]
+      const freq = p.freq || 'monthly'
+      const currentStart = new Date(p.start + 'T00:00:00')
+      let newStart: Date, newEnd: Date
+      if (freq === 'monthly') {
+        if (direction === 'prev') {
+          newStart = new Date(currentStart.getFullYear(), currentStart.getMonth() - 1, 1)
+        } else {
+          newStart = new Date(currentStart.getFullYear(), currentStart.getMonth() + 1, 1)
+        }
+        newEnd = new Date(newStart.getFullYear(), newStart.getMonth() + 1, 0)
+      } else {
+        const days = freq === 'weekly' ? 7 : 14
+        newStart = new Date(currentStart)
+        newStart.setDate(newStart.getDate() + (direction === 'prev' ? -days : days))
+        newEnd = new Date(newStart)
+        newEnd.setDate(newEnd.getDate() + days - 1)
+      }
+      updated[wt] = { ...p, start: localDateStr(newStart), end: localDateStr(newEnd) }
+    }
+    setWizPeriodByType(updated)
+    if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) loadWizPeriodReviews(updated)
+    loadWizTimesheets(updated)
+    if (providerConnected) loadWizAdjustments(updated)
   }
 
   async function startPayrollForType(type: 'employed' | 'shift' | 'zero_hours') {
@@ -2495,12 +2522,15 @@ export default function AdminPayrollNew() {
                         <input type="date" value={p.end} onChange={e => {
                           setWizPeriodByType(prev => ({ ...prev, [wt]: { ...prev[wt], end: e.target.value } }))
                         }} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.15)', color: '#fff' }} />
-                        <button onClick={() => { setWizPeriodEditType(null); if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) loadWizPeriodReviews(wizPeriodByType); loadWizTimesheets(wizPeriodByType) }} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.25)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apply</button>
+                        <button onClick={() => { setWizPeriodEditType(null); if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) loadWizPeriodReviews(wizPeriodByType); loadWizTimesheets(wizPeriodByType); if (providerConnected) loadWizAdjustments(wizPeriodByType) }} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.25)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apply</button>
+                        <button onClick={() => setWizPeriodEditType(null)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', cursor: 'pointer', opacity: 0.7 }}>Cancel</button>
                       </>
                     ) : (
                       <>
-                        <span style={{ fontSize: 12, opacity: 0.85 }}>{formatDate(p.start)} – {formatDate(p.end)}</span>
-                        <button onClick={() => setWizPeriodEditType(wt)} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', cursor: 'pointer', opacity: 0.7 }} title="Override period dates">✎</button>
+                        <button onClick={() => navigateWizPeriod('prev')} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12, fontWeight: 700, lineHeight: 1 }} title="Previous period">←</button>
+                        <span style={{ fontSize: 12, fontWeight: 500 }}>{formatDate(p.start)} – {formatDate(p.end)}</span>
+                        <button onClick={() => navigateWizPeriod('next')} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: '#fff', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12, fontWeight: 700, lineHeight: 1 }} title="Next period">→</button>
+                        <button onClick={() => setWizPeriodEditType(wt)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 500 }} title="Set custom date range">Custom</button>
                       </>
                     )}
                     <span style={{ fontSize: 10, opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 6px', borderRadius: 3 }}>{p.freqLabel}</span>
