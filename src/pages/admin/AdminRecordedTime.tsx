@@ -25,7 +25,7 @@ interface ShiftAssignmentRow {
   shift_template_id: string
   employee_id: string
   date: string
-  shift_template?: { name: string; start_time: string; end_time: string }
+  shift_template?: { name: string; start_time: string; end_time: string } | { name: string; start_time: string; end_time: string }[]
 }
 
 interface CorrectionRow {
@@ -183,7 +183,8 @@ export default function AdminRecordedTime() {
       const hasCorrectionRaised = shiftCorrs.length > 0
       const latestCorr = shiftCorrs.sort((a, b) => a.status.localeCompare(b.status))[0]
 
-      const tmpl = a.shift_template as any
+      const rawTmpl = a.shift_template
+      const tmpl = Array.isArray(rawTmpl) ? rawTmpl[0] : rawTmpl
       result[a.employee_id].push({
         assignmentId: a.id,
         date: a.date,
