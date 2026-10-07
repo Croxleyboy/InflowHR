@@ -237,6 +237,9 @@ export default function AdminPayrollNew() {
   const [wizGeneratingReviews, setWizGeneratingReviews] = useState(false)
   const [wizShiftDetails, setWizShiftDetails] = useState<Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number }[]>>({})
   const [wizExpandedEmps, setWizExpandedEmps] = useState<Set<string>>(new Set())
+  const [wizManualChecked, setWizManualChecked] = useState<Set<string>>(new Set())
+  const [wizSageFiles, setWizSageFiles] = useState<File[]>([])
+  const [wizSageUploading, setWizSageUploading] = useState(false)
 
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
@@ -1286,6 +1289,9 @@ export default function AdminPayrollNew() {
     setWizExported(false)
     setWizPushResult(null)
     setWizReleasing(false)
+    setWizManualChecked(new Set())
+    setWizSageFiles([])
+    setWizSageUploading(false)
   }
 
   function advanceToStep2() {
@@ -1352,6 +1358,9 @@ export default function AdminPayrollNew() {
     setWizPushResult(null)
     setWizReleasing(false)
     setWizBonusEntries([])
+    setWizManualChecked(new Set())
+    setWizSageFiles([])
+    setWizSageUploading(false)
   }
 
   function loadWizBonuses() {
@@ -2303,7 +2312,7 @@ export default function AdminPayrollNew() {
           {/* Progress steps */}
           <div className="pn-wizard-steps">
             {(providerConnected
-              ? ['Select Workers', 'Review Adjustments', 'Push to Provider', 'Sync Back', 'Release']
+              ? ['Select Workers', 'Review Adjustments', 'Push & Manual Actions', 'Sync Back', 'Release']
               : ['Select Workers', 'Review', 'Generate Estimates', 'Export', 'Sync & Release']
             ).map((label, i) => {
               const step = i + 1
@@ -2439,7 +2448,10 @@ export default function AdminPayrollNew() {
                 <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #1565c0' }}>
                   <strong style={{ color: '#1565c0', fontSize: 14 }}>Connected to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</strong>
                   <p style={{ fontSize: 12, color: '#1565c0', margin: '4px 0 0' }}>
-                    Adjustments (overtime, unpaid leave, benefit changes) will be exported as a CSV file for import into {connectedProvider === 'xero' ? 'Xero' : 'Sage'}. TOIL hours are credited internally as lieu days. Your provider calculates tax, NI, pension, and net pay.
+                    {connectedProvider === 'xero'
+                      ? 'Overtime hours are pushed directly to Xero via the Timesheets API. Unpaid leave, benefit changes, bonuses, and deductions must be entered manually in Xero — the wizard will list each item with full details for you to work through.'
+                      : 'Adjustments (overtime, unpaid leave, benefit changes) are exported as a CSV file for Sage import. Bonuses and deductions must be entered manually.'
+                    } TOIL hours are credited internally as lieu days. Your provider calculates tax, NI, pension, and net pay.
                   </p>
                 </div>
               )}
@@ -3160,53 +3172,93 @@ export default function AdminPayrollNew() {
                       </div>
                     )}
 
-                    {/* Manual action items for Xero */}
-                    {wizPushResult.manual_items && wizPushResult.manual_items.length > 0 && (
+                    {/* Manual action checklist for Xero */}
+                    {wizPushResult.manual_items && wizPushResult.manual_items.length > 0 && (() => {
+                      const allManualIds = wizPushResult.manual_items.map((_: any, i: number) => `manual-${i}`)
+                      const allChecked = allManualIds.every((id: string) => wizManualChecked.has(id))
+                      return (
                       <div style={{ marginBottom: 16 }}>
-                        <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#e65100', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: '#e65100', display: 'flex', alignItems: 'center', gap: 6 }}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2"><path d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 0 0 1.73-3L13.73 4a2 2 0 0 0-3.46 0L3.34 16a2 2 0 0 0 1.73 3z"/></svg>
-                          Manual action needed in Xero
+                          Manual actions — enter these in Xero ({wizManualChecked.size}/{wizPushResult.manual_items.length} done)
                         </h4>
-                        <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 8 }}>
-                          These items cannot be pushed via the Xero API. Please enter them manually in your Xero pay run.
+                        <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 10 }}>
+                          These items cannot be pushed via the Xero API. Work through each one in your Xero pay run, then tick it off. You cannot proceed until all items are confirmed.
                         </p>
-                        <div style={{ background: '#fff3e0', borderRadius: 8, overflow: 'hidden' }}>
-                          <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
-                            <thead>
-                              <tr style={{ background: '#ffe0b2', textAlign: 'left' }}>
-                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Employee</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Type</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Description</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Where in Xero</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {wizPushResult.manual_items.map((item: any, i: number) => (
-                                <tr key={i} style={{ borderTop: '1px solid #ffcc80' }}>
-                                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>{item.employee}</td>
-                                  <td style={{ padding: '8px 12px' }}>
-                                    <span style={{ fontSize: 11, background: item.type === 'unpaid_leave' ? '#e3f2fd' : '#f3e5f5', color: item.type === 'unpaid_leave' ? '#1565c0' : '#7b1fa2', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
-                                      {item.type === 'unpaid_leave' ? 'Unpaid Leave' : item.type === 'benefit_addition' ? 'Benefit Add' : 'Benefit Remove'}
-                                    </span>
-                                  </td>
-                                  <td style={{ padding: '8px 12px' }}>{item.description}</td>
-                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>£{(item.amount || 0).toFixed(2)}</td>
-                                  <td style={{ padding: '8px 12px', fontSize: 11, color: '#6d4c41' }}>
-                                    {item.type === 'unpaid_leave'
-                                      ? 'Pay Run → Employee → Deductions'
-                                      : 'Pay Run → Employee → Benefits'}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {wizPushResult.manual_items.map((item: any, i: number) => {
+                            const checkId = `manual-${i}`
+                            const checked = wizManualChecked.has(checkId)
+                            const typeLabel = item.type === 'unpaid_leave' ? 'Unpaid Leave'
+                              : item.type === 'benefit_addition' ? 'Benefit Addition'
+                              : item.type === 'benefit_deduction' ? 'Benefit Removal'
+                              : item.type === 'bonus' ? 'Bonus'
+                              : item.type === 'deduction' ? 'Deduction'
+                              : item.type === 'benefit_removal' ? 'Benefit Removal'
+                              : item.type
+                            const typeBg = item.type === 'unpaid_leave' ? '#e3f2fd'
+                              : item.type === 'bonus' ? '#e8f5e9'
+                              : item.type === 'deduction' ? '#ffebee'
+                              : '#f3e5f5'
+                            const typeColor = item.type === 'unpaid_leave' ? '#1565c0'
+                              : item.type === 'bonus' ? '#2e7d32'
+                              : item.type === 'deduction' ? '#c62828'
+                              : '#7b1fa2'
+                            const xeroPath = item.type === 'unpaid_leave'
+                              ? 'Payroll → Pay Runs → select employee → Leave tab → add Unpaid Leave for ' + (item.days || '') + ' day(s)'
+                              : item.type === 'bonus' || item.type === 'deduction'
+                              ? 'Payroll → Pay Runs → select employee → Earnings/Deductions → add line'
+                              : 'Payroll → Pay Runs → select employee → Benefits tab → add/remove benefit'
+                            return (
+                              <div key={i} style={{
+                                background: checked ? '#f1f8e9' : '#fff3e0', borderRadius: 8, padding: '10px 14px',
+                                border: `1px solid ${checked ? '#a5d6a7' : '#ffcc80'}`, opacity: checked ? 0.7 : 1,
+                                display: 'flex', gap: 10, alignItems: 'flex-start',
+                              }}>
+                                <input type="checkbox" checked={checked} onChange={() => {
+                                  setWizManualChecked(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(checkId)) next.delete(checkId); else next.add(checkId)
+                                    return next
+                                  })
+                                }} style={{ marginTop: 3, accentColor: '#2e7d32', width: 16, height: 16, flexShrink: 0 }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                                    <strong style={{ fontSize: 13 }}>{item.employee}</strong>
+                                    <span style={{ fontSize: 10, background: typeBg, color: typeColor, padding: '1px 8px', borderRadius: 10, fontWeight: 600 }}>{typeLabel}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, marginLeft: 'auto' }}>£{(item.amount || 0).toFixed(2)}{item.days ? ` (${item.days} day${item.days !== 1 ? 's' : ''})` : ''}</span>
+                                  </div>
+                                  <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{item.description}</div>
+                                  <div style={{ fontSize: 11, color: '#6d4c41', marginTop: 4, fontStyle: 'italic' }}>
+                                    Xero: {xeroPath}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
+
+                        {!allChecked && (
+                          <p style={{ fontSize: 12, color: '#e65100', marginTop: 8, fontWeight: 500 }}>
+                            Tick off each item above after entering it in Xero to continue.
+                          </p>
+                        )}
+                      </div>
+                      )
+                    })()}
+
+                    {/* No manual items */}
+                    {(!wizPushResult.manual_items || wizPushResult.manual_items.length === 0) && (
+                      <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#2e7d32' }}>
+                        No manual actions required — all adjustments were pushed automatically.
                       </div>
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                      <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
+                      <button className="admin-btn admin-btn-primary"
+                        disabled={wizPushResult.manual_items && wizPushResult.manual_items.length > 0 && !wizPushResult.manual_items.every((_: any, i: number) => wizManualChecked.has(`manual-${i}`))}
+                        onClick={() => setWizStep(4)}>
                         Next: Sync Back →
                       </button>
                     </div>
@@ -3416,12 +3468,71 @@ export default function AdminPayrollNew() {
                   {connectedProvider === 'sage' && (
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
                       <strong style={{ fontSize: 14 }}>Import Payslips from Sage</strong>
-                      <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0' }}>
-                        After running payroll in Sage, upload the PDF payslips from the Payslips view. Sage will parse and create employee payslips with the actual figures.
+                      <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 0 0' }}>
+                        After running payroll in Sage, export individual PDF payslips and upload them here. InflowHR will store them so employees can view their payslips.
                       </p>
-                      <button className="admin-btn" style={{ marginTop: 8, fontSize: 13 }} onClick={() => setView('payslips')}>
-                        Go to Payslips to Upload
-                      </button>
+
+                      <div style={{ marginTop: 12, border: '2px dashed var(--border, #d1d5db)', borderRadius: 8, padding: 16, textAlign: 'center', background: 'var(--bg, #fff)' }}>
+                        <input type="file" accept=".pdf" multiple id="sage-pdf-upload"
+                          style={{ display: 'none' }}
+                          onChange={e => {
+                            const files = Array.from(e.target.files || [])
+                            if (files.length > 0) setWizSageFiles(prev => [...prev, ...files])
+                            e.target.value = ''
+                          }}
+                        />
+                        <label htmlFor="sage-pdf-upload" style={{ cursor: 'pointer', display: 'block' }}>
+                          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #9ca3af)" strokeWidth="1.5" style={{ marginBottom: 6 }}>
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                          </svg>
+                          <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', margin: 0 }}>
+                            Click to select PDF payslips, or drag and drop
+                          </p>
+                          <p style={{ fontSize: 11, color: 'var(--text-muted, #999)', margin: '4px 0 0' }}>
+                            Upload one PDF per employee from your Sage payslip export
+                          </p>
+                        </label>
+                      </div>
+
+                      {wizSageFiles.length > 0 && (
+                        <div style={{ marginTop: 10 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>{wizSageFiles.length} file{wizSageFiles.length !== 1 ? 's' : ''} selected</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 200, overflowY: 'auto' }}>
+                            {wizSageFiles.map((f, i) => (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, background: 'var(--bg, #fff)', borderRadius: 4, padding: '4px 8px', border: '1px solid var(--border, #e5e7eb)' }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e53935" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                                <span style={{ color: 'var(--text-muted, #999)', fontSize: 11 }}>{(f.size / 1024).toFixed(0)} KB</span>
+                                <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53935', fontSize: 14, padding: 0 }}
+                                  onClick={() => setWizSageFiles(prev => prev.filter((_, j) => j !== i))}>×</button>
+                              </div>
+                            ))}
+                          </div>
+
+                          <button className="admin-btn admin-btn-primary" style={{ marginTop: 10, fontSize: 13 }}
+                            disabled={wizSageUploading}
+                            onClick={async () => {
+                              if (!selectedCompanyId || !session) return
+                              setWizSageUploading(true)
+                              let uploaded = 0
+                              for (const file of wizSageFiles) {
+                                const path = `${selectedCompanyId}/payslips/${Date.now()}_${file.name}`
+                                const { error } = await supabase.storage.from('receipts').upload(path, file, { contentType: 'application/pdf' })
+                                if (!error) uploaded++
+                              }
+                              showSuccess(`Uploaded ${uploaded} of ${wizSageFiles.length} payslip PDF${wizSageFiles.length !== 1 ? 's' : ''}`)
+                              setWizSageFiles([])
+                              setWizSageUploading(false)
+                              setWizExported(true)
+                            }}>
+                            {wizSageUploading ? 'Uploading…' : `Upload ${wizSageFiles.length} Payslip${wizSageFiles.length !== 1 ? 's' : ''}`}
+                          </button>
+                        </div>
+                      )}
+
+                      <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted, #999)' }}>
+                        Or go to the <button style={{ background: 'none', border: 'none', color: '#1565c0', cursor: 'pointer', fontSize: 11, textDecoration: 'underline', padding: 0 }} onClick={() => setView('payslips')}>Payslips page</button> to upload individually.
+                      </div>
                     </div>
                   )}
 
