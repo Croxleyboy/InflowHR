@@ -292,6 +292,21 @@ export default function AdminPayrollNew() {
       const d = new Date(p.pay_period_start + 'T00:00:00')
       monthsSet.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
     })
+
+    const empIds = new Set(employedEmployees.map(e => e.id))
+    const shiftIds = new Set(shiftEmployees.map(e => e.id))
+    const zeroIds = new Set(zeroHoursEmployees.map(e => e.id))
+
+    const byType = { employed: { gross: 0, net: 0, tax: 0 }, shift: { gross: 0, net: 0, tax: 0 }, zero_hours: { gross: 0, net: 0, tax: 0 } }
+    payslips.forEach(p => {
+      const eid = p.employee?.id
+      if (!eid) return
+      const g = Number(p.gross_pay); const n = Number(p.net_pay); const t = Number(p.tax)
+      if (empIds.has(eid)) { byType.employed.gross += g; byType.employed.net += n; byType.employed.tax += t }
+      else if (shiftIds.has(eid)) { byType.shift.gross += g; byType.shift.net += n; byType.shift.tax += t }
+      else if (zeroIds.has(eid)) { byType.zero_hours.gross += g; byType.zero_hours.net += n; byType.zero_hours.tax += t }
+    })
+
     return {
       total: payslips.length,
       flagged: payslips.filter(p => p.status === 'flagged').length,
@@ -303,8 +318,9 @@ export default function AdminPayrollNew() {
       totalTax: payslips.reduce((s, p) => s + Number(p.tax), 0),
       activeEmployees: employees.length,
       monthsProcessed: monthsSet.size,
+      byType,
     }
-  }, [payslips, employees])
+  }, [payslips, employees, employedEmployees, shiftEmployees, zeroHoursEmployees])
 
   // Per-worker-type current month stats
   const workerTypeStats = useMemo(() => {
@@ -1775,31 +1791,46 @@ export default function AdminPayrollNew() {
                 <span className="admin-stat-label">Active Employees</span>
               </div>
             </div>
-            <div className="admin-stat-card">
+            <div className="admin-stat-card" style={{ minWidth: 200 }}>
               <div className="admin-stat-icon" style={{ background: '#43a047' }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
               </div>
               <div className="admin-stat-info">
                 <span className="admin-stat-value">£{stats.totalGross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                 <span className="admin-stat-label">Total Gross ({fyLabel})</span>
+                <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
+                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: £{stats.byType.employed.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: £{stats.byType.shift.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: £{stats.byType.zero_hours.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                </div>
               </div>
             </div>
-            <div className="admin-stat-card">
+            <div className="admin-stat-card" style={{ minWidth: 200 }}>
               <div className="admin-stat-icon" style={{ background: '#1e88e5' }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
               </div>
               <div className="admin-stat-info">
                 <span className="admin-stat-value">£{stats.totalNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                 <span className="admin-stat-label">Total Net ({fyLabel})</span>
+                <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
+                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: £{stats.byType.employed.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: £{stats.byType.shift.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: £{stats.byType.zero_hours.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                </div>
               </div>
             </div>
-            <div className="admin-stat-card">
+            <div className="admin-stat-card" style={{ minWidth: 200 }}>
               <div className="admin-stat-icon" style={{ background: '#ef5350' }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 3v18"/><path d="M6 6l6 3 6-3"/></svg>
               </div>
               <div className="admin-stat-info">
                 <span className="admin-stat-value">£{stats.totalTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                 <span className="admin-stat-label">Total Tax ({fyLabel})</span>
+                <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
+                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: £{stats.byType.employed.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: £{stats.byType.shift.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: £{stats.byType.zero_hours.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                </div>
               </div>
             </div>
           </div>
@@ -2510,7 +2541,7 @@ export default function AdminPayrollNew() {
                 Each worker type is processed as its own independent pay run. Select one to begin.
               </p>
 
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 20 }}>
                 {employedEmployees.length > 0 && (() => {
                   const ws = workerSettings.find(s => s.worker_type === 'employed')
                   const f = ws?.pay_pattern || 'monthly'

@@ -143,6 +143,14 @@ export default function AdminTimesheets() {
   const [viewMode, setViewMode] = useState<'admin' | 'manager'>('admin')
   const [directReportIds, setDirectReportIds] = useState<string[]>([])
 
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [employedList, setEmployedList] = useState<{ id: string; first_name: string; last_name: string }[]>([])
+  const [createForm, setCreateForm] = useState({
+    employee_id: '', date: localDateStr(new Date()), end_date: '',
+    start_time: '09:00', end_time: '17:00', hours: '8',
+    location: '', role: '', customer: '', project_id: '', status: 'pending',
+  })
+
   const [projects, setProjects] = useState<CustomerProject[]>([])
   const [projLoading, setProjLoading] = useState(false)
   const [projEditId, setProjEditId] = useState<string | null>(null)
@@ -162,6 +170,67 @@ export default function AdminTimesheets() {
       setDirectReportIds((data || []).map((r: { id: string }) => r.id))
     })()
   }, [employeeId, selectedCompanyId])
+
+  useEffect(() => {
+    if (!selectedCompanyId) return
+    ;(async () => {
+      const { data } = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, employment_category')
+        .eq('company_id', selectedCompanyId)
+        .eq('is_active', true)
+        .neq('employment_category', 'shift_worker')
+        .order('first_name')
+      setEmployedList((data || []).map((e: any) => ({ id: e.id, first_name: e.first_name, last_name: e.last_name })))
+    })()
+  }, [selectedCompanyId])
+
+  async function createTimesheet() {
+    if (!createForm.employee_id) { showError('Please select an employee'); return }
+    if (!createForm.date) { showError('Start date is required'); return }
+    const { error } = await supabase.from('timesheets').insert({
+      employee_id: createForm.employee_id,
+      company_id: selectedCompanyId,
+      date: createForm.date,
+      end_date: createForm.end_date && createForm.end_date !== createForm.date ? createForm.end_date : null,
+      start_time: createForm.start_time,
+      end_time: createForm.end_time,
+      hours: Number(createForm.hours),
+      location: createForm.location,
+      role: createForm.role,
+      customer: createForm.customer || null,
+      project_id: createForm.project_id || null,
+      status: createForm.status,
+      source: 'manual',
+    })
+    if (error) { showError('Failed to create timesheet: ' + error.message); return }
+
+    const emp = employedList.find(e => e.id === createForm.employee_id)
+    const empName = emp ? `${emp.first_name} ${emp.last_name}` : ''
+    const dateDisplay = createForm.end_date && createForm.end_date !== createForm.date
+      ? `${formatDate(createForm.date)} – ${formatDate(createForm.end_date)}`
+      : formatDate(createForm.date)
+    await supabase.from('workflow_tracker').insert({
+      emp_display_name: empName,
+      step: 1, status: 'Pending', record_type: 'Timesheet',
+      action: 'New timesheet created by admin',
+      employee_email: '', assigned_to: '',
+      approval_id: 0, reminder_count: 0,
+      task_description: `A new timesheet has been created for you by admin for ${dateDisplay}`,
+      approval_status: 'Pending',
+      company_id: selectedCompanyId,
+    })
+    window.dispatchEvent(new Event('notifications-updated'))
+
+    setShowCreateForm(false)
+    setCreateForm({
+      employee_id: '', date: localDateStr(new Date()), end_date: '',
+      start_time: '09:00', end_time: '17:00', hours: '8',
+      location: '', role: '', customer: '', project_id: '', status: 'pending',
+    })
+    load()
+    showSuccess('Timesheet created')
+  }
 
   async function load() {
     setLoading(true)
@@ -189,7 +258,8 @@ export default function AdminTimesheets() {
     setEditingId(ts.id)
     setEditForm({
       location: ts.location, customer: ts.customer, role: ts.role,
-      date: ts.date, start_time: ts.start_time, end_time: ts.end_time,
+      date: ts.date, end_date: ts.end_date || ts.date,
+      start_time: ts.start_time, end_time: ts.end_time,
       hours: ts.hours, status: ts.status, project_id: ts.project_id || '',
     })
   }
@@ -204,6 +274,7 @@ export default function AdminTimesheets() {
       customer: editForm.customer || null,
       role: editForm.role,
       date: editForm.date,
+      end_date: editForm.end_date && editForm.end_date !== editForm.date ? editForm.end_date : null,
       start_time: editForm.start_time,
       end_time: editForm.end_time,
       hours: Number(editForm.hours),
@@ -451,7 +522,74 @@ export default function AdminTimesheets() {
               <option value="manual">Manual</option>
               <option value="adjusted">Adjusted</option>
             </select>
+            <button className="admin-btn admin-btn-primary" onClick={() => setShowCreateForm(!showCreateForm)}>
+              {showCreateForm ? '✕ Cancel' : '+ Create Timesheet'}
+            </button>
           </div>
+
+          {showCreateForm && (
+            <div className="admin-settings-group" style={{ marginBottom: 16, padding: 16, background: 'var(--bg-card, #f8f9fa)', borderRadius: 8, border: '1px solid var(--border, #e5e7eb)' }}>
+              <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>New Timesheet (Employed Staff Only)</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</label>
+                  <select className="admin-select" value={createForm.employee_id} onChange={e => setCreateForm(p => ({ ...p, employee_id: e.target.value }))} style={{ width: '100%' }}>
+                    <option value="">Select employee...</option>
+                    {employedList.map(emp => (
+                      <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Date *</label>
+                  <input type="date" className="admin-input" value={createForm.date} onChange={e => setCreateForm(p => ({ ...p, date: e.target.value }))} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>End Date</label>
+                  <input type="date" className="admin-input" value={createForm.end_date} onChange={e => setCreateForm(p => ({ ...p, end_date: e.target.value }))} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Time</label>
+                  <input type="time" className="admin-input" value={createForm.start_time} onChange={e => setCreateForm(p => ({ ...p, start_time: e.target.value }))} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>End Time</label>
+                  <input type="time" className="admin-input" value={createForm.end_time} onChange={e => setCreateForm(p => ({ ...p, end_time: e.target.value }))} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Hours</label>
+                  <input type="number" step="0.1" min="0" className="admin-input" value={createForm.hours} onChange={e => setCreateForm(p => ({ ...p, hours: e.target.value }))} style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Location</label>
+                  <input className="admin-input" value={createForm.location} onChange={e => setCreateForm(p => ({ ...p, location: e.target.value }))} placeholder="Office / Remote" style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Role</label>
+                  <input className="admin-input" value={createForm.role} onChange={e => setCreateForm(p => ({ ...p, role: e.target.value }))} placeholder="Role / task" style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Project</label>
+                  <select className="admin-select" value={createForm.project_id} onChange={e => setCreateForm(p => ({ ...p, project_id: e.target.value }))} style={{ width: '100%' }}>
+                    <option value="">No project</option>
+                    {projects.map(proj => (
+                      <option key={proj.id} value={proj.id}>{proj.customer_name} — {proj.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</label>
+                  <select className="admin-select" value={createForm.status} onChange={e => setCreateForm(p => ({ ...p, status: e.target.value }))} style={{ width: '100%' }}>
+                    {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                <button className="admin-btn admin-btn-primary" onClick={createTimesheet}>Create Timesheet</button>
+                <button className="admin-btn admin-btn-cancel" onClick={() => setShowCreateForm(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
 
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
@@ -474,7 +612,11 @@ export default function AdminTimesheets() {
                     <tr key={ts.id}>
                       <td>{ts.employee ? <span className="admin-inline-avatar">{ts.employee.avatar_url ? <img src={ts.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{ts.employee.first_name[0]}{ts.employee.last_name[0]}</span>}{ts.employee.first_name} {ts.employee.last_name}</span> : '—'}</td>
                       <td>{editingId === ts.id
-                        ? <input type="date" className="admin-inline-input" value={editForm.date || ''} onChange={e => setEditForm(p => ({ ...p, date: e.target.value }))} />
+                        ? <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <input type="date" className="admin-inline-input" value={editForm.date || ''} onChange={e => setEditForm(p => ({ ...p, date: e.target.value }))} style={{ width: 130 }} />
+                            <span style={{ fontSize: 11, color: '#888' }}>to</span>
+                            <input type="date" className="admin-inline-input" value={editForm.end_date || ''} onChange={e => setEditForm(p => ({ ...p, end_date: e.target.value }))} style={{ width: 130 }} />
+                          </div>
                         : ts.end_date && ts.end_date !== ts.date
                           ? `${formatDateUK(ts.date)} – ${formatDateUK(ts.end_date)}`
                           : formatDateUK(ts.date)
