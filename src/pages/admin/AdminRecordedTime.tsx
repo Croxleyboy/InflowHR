@@ -67,7 +67,10 @@ const getWeekKey = (dateStr: string) => {
   const mondayOffset = day === 0 ? -6 : 1 - day
   const monday = new Date(d)
   monday.setDate(d.getDate() + mondayOffset)
-  return monday.toISOString().split('T')[0]
+  const yy = monday.getFullYear()
+  const mm = String(monday.getMonth() + 1).padStart(2, '0')
+  const dd = String(monday.getDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
 }
 
 const fmtWeekLabel = (mondayStr: string) => {
