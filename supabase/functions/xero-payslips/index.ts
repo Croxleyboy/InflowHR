@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
     )
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
-    const { company_id } = await req.json()
+    const { company_id, worker_types } = await req.json()
     if (!company_id) return json({ error: 'company_id required' }, 400)
 
     const { data: cu } = await sb
@@ -198,13 +198,15 @@ Deno.serve(async (req) => {
     // Load InflowHR employees for this company to match by xero_employee_id or email
     const { data: inflowEmployees } = await sb
       .from('employees')
-      .select('id, email, xero_employee_id')
+      .select('id, email, xero_employee_id, employment_category, contract_type')
       .eq('company_id', company_id)
     const xeroIdToInflowId: Record<string, string> = {}
     const emailToInflowId: Record<string, string> = {}
+    const inflowEmployeeMap: Record<string, { employment_category: string | null; contract_type: string | null }> = {}
     for (const e of (inflowEmployees || [])) {
       if (e.xero_employee_id) xeroIdToInflowId[e.xero_employee_id] = e.id
       if (e.email) emailToInflowId[e.email.toLowerCase()] = e.id
+      inflowEmployeeMap[e.id] = { employment_category: e.employment_category, contract_type: e.contract_type }
     }
 
     // Parse payslips — handle both camelCase (v2) and PascalCase field names
@@ -286,12 +288,31 @@ Deno.serve(async (req) => {
       await sb.from('employees').update({ xero_employee_id: m.xeroId }).eq('id', m.inflowId)
     }
 
+    // Filter payslips to only employees matching the requested worker types
+    const workerTypeFilter = Array.isArray(worker_types) && worker_types.length > 0 ? worker_types as string[] : null
+    function matchesWorkerType(employeeId: string): boolean {
+      if (!workerTypeFilter) return true
+      const emp = inflowEmployeeMap[employeeId]
+      if (!emp) return true
+      for (const wt of workerTypeFilter) {
+        if (wt === 'employed' && emp.employment_category !== 'shift_worker') return true
+        if (wt === 'shift_worker' && emp.employment_category === 'shift_worker' && emp.contract_type !== 'Zero hours shift worker') return true
+        if (wt === 'zero_hours' && emp.employment_category === 'shift_worker' && emp.contract_type === 'Zero hours shift worker') return true
+      }
+      return false
+    }
+
     // Upsert matched payslips into the payslips table so employees see them
     let upsertedCount = 0
     let unmatchedCount = 0
+    let filteredCount = 0
     for (const ps of payslips) {
       if (!ps.inflow_employee_id) {
         unmatchedCount++
+        continue
+      }
+      if (!matchesWorkerType(ps.inflow_employee_id)) {
+        filteredCount++
         continue
       }
 
@@ -331,7 +352,7 @@ Deno.serve(async (req) => {
       company_id,
       user_id: user.id,
       action: 'Xero Payslip Sync',
-      detail: `Synced ${upsertedCount} payslips from Xero pay run ${payRunId}. Period: ${periodStart} to ${periodEnd}. Unmatched: ${unmatchedCount}. Data pulled: gross, tax, NI, deductions, net pay.`,
+      detail: `Synced ${upsertedCount} payslips from Xero pay run ${payRunId}. Period: ${periodStart} to ${periodEnd}. Unmatched: ${unmatchedCount}. Filtered out (other worker types): ${filteredCount}. Worker types: ${workerTypeFilter ? workerTypeFilter.join(', ') : 'all'}. Data pulled: gross, tax, NI, deductions, net pay.`,
       status: 'success',
     })
 
@@ -350,6 +371,7 @@ Deno.serve(async (req) => {
       payslips,
       upserted: upsertedCount,
       unmatched: unmatchedCount,
+      filtered: filteredCount,
     })
   } catch (err) {
     return json({ error: (err as Error).message }, 500)
