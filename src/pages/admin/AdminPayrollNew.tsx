@@ -666,7 +666,7 @@ export default function AdminPayrollNew() {
     })
 
     const targetEmpIds = new Set(targetEmployees.map(e => e.id))
-    const existingForTarget = payslips.filter(p => p.pay_period_start >= periodStart && p.pay_period_start <= periodEnd && targetEmpIds.has(p.employee_id))
+    const existingForTarget = payslips.filter(p => p.pay_period_start >= periodStart && p.pay_period_start <= periodEnd && p.employee && targetEmpIds.has(p.employee.id))
     if (existingForTarget.length > 0) {
       showError(`Payslips for ${existingForTarget.length} of these employees already exist for ${formatDate(periodStart)} – ${formatDate(periodEnd)}. Run a different worker type or navigate to a different period.`)
       setWizGenerating(false)
