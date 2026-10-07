@@ -73,7 +73,20 @@ function getPeriodBoundaries(year: number, month: number, freq: PayFrequency, fy
   return periods.length > 0 ? periods : [{ start: monthStart, end: monthEnd }]
 }
 
-function getNextPeriodForFreq(freq: PayFrequency, fyStartMonth: number): { start: string; end: string } {
+function getNextPeriodForFreq(freq: PayFrequency, fyStartMonth: number, lastRun?: { period_end: string } | null): { start: string; end: string } {
+  if (lastRun) {
+    const lastEnd = new Date(lastRun.period_end + 'T00:00:00')
+    const nextStart = new Date(lastEnd)
+    nextStart.setDate(nextStart.getDate() + 1)
+    if (freq === 'monthly') {
+      const end = new Date(nextStart.getFullYear(), nextStart.getMonth() + 1, 0)
+      return { start: localDateStr(nextStart), end: localDateStr(end) }
+    }
+    const daysPerPeriod = freq === 'weekly' ? 7 : 14
+    const nextEnd = new Date(nextStart)
+    nextEnd.setDate(nextEnd.getDate() + daysPerPeriod - 1)
+    return { start: localDateStr(nextStart), end: localDateStr(nextEnd) }
+  }
   const today = new Date()
   if (freq === 'monthly') {
     const nextDate = new Date(today.getFullYear(), today.getMonth() + 1, 1)
@@ -241,6 +254,7 @@ export default function AdminPayrollNew() {
   const [wizSageFiles, setWizSageFiles] = useState<File[]>([])
   const [wizSageUploading, setWizSageUploading] = useState(false)
   const [wizRosterPage, setWizRosterPage] = useState(1)
+  const [wizPeriodEditType, setWizPeriodEditType] = useState<string | null>(null)
 
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
@@ -466,8 +480,12 @@ export default function AdminPayrollNew() {
     const sortedKeys = Array.from(map.keys()).sort((a, b) => b.localeCompare(a))
     sortedKeys.forEach(key => {
       const [yr, mo] = key.split('-').map(Number)
-      const label = `${MONTH_NAMES[mo - 1]} ${yr}`
-      groups.push({ key, label, payslips: map.get(key)! })
+      const ps = map.get(key)!
+      const starts = ps.map(p => p.pay_period_start).sort()
+      const ends = ps.map(p => p.pay_period_end).sort().reverse()
+      const periodRange = starts[0] && ends[0] ? ` (${formatDate(starts[0])} – ${formatDate(ends[0])})` : ''
+      const label = `${MONTH_NAMES[mo - 1]} ${yr}${periodRange}`
+      groups.push({ key, label, payslips: ps })
     })
     return groups
   }, [filtered])
@@ -1312,6 +1330,7 @@ export default function AdminPayrollNew() {
     setWizSageFiles([])
     setWizSageUploading(false)
     setWizRosterPage(1)
+    setWizPeriodEditType(null)
   }
 
   function advanceToStep2() {
@@ -1322,7 +1341,8 @@ export default function AdminPayrollNew() {
       const freq = (wtSetting?.pay_pattern || 'monthly') as PayFrequency
       const freqLabel = freq === 'weekly' ? 'Weekly' : freq === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'
       const overtimeLabel = (wtSetting?.overtime_handling || 'none') === 'overtime' ? 'Overtime' : (wtSetting?.overtime_handling || 'none') === 'toil' ? 'TOIL' : 'None'
-      const period = getNextPeriodForFreq(freq, fyStartMonth)
+      const lastRun = lastPayRuns[wt] || null
+      const period = getNextPeriodForFreq(freq, fyStartMonth, lastRun)
       periodMap[wt] = { ...period, freq, freqLabel, overtimeLabel }
     }
     setWizPeriodByType(periodMap)
@@ -2099,7 +2119,7 @@ export default function AdminPayrollNew() {
 
                     <div className="admin-table-wrap">
                       <table className="admin-table">
-                        <thead><tr><th>Ref</th><th>Employee</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
                         <tbody>
                           {group.payslips.map(p => {
                             const isPaid = p.status === 'paid'
@@ -2109,6 +2129,7 @@ export default function AdminPayrollNew() {
                                 <tr className={`${expandedId === p.id ? 'admin-row-active' : ''} ${p.status === 'flagged' ? 'admin-row-flagged' : ''}`}>
                                   <td className="admin-td-mono">{p.reference_number}</td>
                                   <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
+                                  <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{formatDate(p.pay_period_start)} – {formatDate(p.pay_period_end)}</td>
                                   <td>£{Number(p.gross_pay).toFixed(2)}</td>
                                   <td>£{Number(p.tax).toFixed(2)}</td>
                                   <td>£{Number(p.national_insurance).toFixed(2)}</td>
@@ -2428,11 +2449,28 @@ export default function AdminPayrollNew() {
               {Object.entries(wizPeriodByType).map(([wt, p]) => {
                 const label = wt === 'employed' ? 'Employed' : wt === 'shift' ? 'Shift Workers' : 'Zero Hours'
                 const colour = wt === 'employed' ? '#7986cb' : wt === 'shift' ? '#b39ddb' : '#ffb74d'
+                const isEditing = wizPeriodEditType === wt
                 return (
-                  <div key={wt} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '4px 10px' }}>
+                  <div key={wt} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.12)', borderRadius: 6, padding: '4px 10px', flexWrap: 'wrap' }}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: colour, flexShrink: 0 }} />
                     <span style={{ fontSize: 12, fontWeight: 600 }}>{label}</span>
-                    <span style={{ fontSize: 12, opacity: 0.85 }}>{formatDate(p.start)} – {formatDate(p.end)}</span>
+                    {isEditing ? (
+                      <>
+                        <input type="date" value={p.start} onChange={e => {
+                          setWizPeriodByType(prev => ({ ...prev, [wt]: { ...prev[wt], start: e.target.value } }))
+                        }} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.15)', color: '#fff' }} />
+                        <span style={{ fontSize: 12 }}>–</span>
+                        <input type="date" value={p.end} onChange={e => {
+                          setWizPeriodByType(prev => ({ ...prev, [wt]: { ...prev[wt], end: e.target.value } }))
+                        }} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.15)', color: '#fff' }} />
+                        <button onClick={() => { setWizPeriodEditType(null); if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) loadWizPeriodReviews(wizPeriodByType); loadWizTimesheets(wizPeriodByType) }} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.25)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apply</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ fontSize: 12, opacity: 0.85 }}>{formatDate(p.start)} – {formatDate(p.end)}</span>
+                        <button onClick={() => setWizPeriodEditType(wt)} style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, background: 'rgba(255,255,255,0.15)', color: '#fff', border: 'none', cursor: 'pointer', opacity: 0.7 }} title="Override period dates">✎</button>
+                      </>
+                    )}
                     <span style={{ fontSize: 10, opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 6px', borderRadius: 3 }}>{p.freqLabel}</span>
                     {p.overtimeLabel !== 'None' && (
                       <span style={{ fontSize: 10, opacity: 0.7, background: 'rgba(255,255,255,0.15)', padding: '1px 6px', borderRadius: 3 }}>{p.overtimeLabel}</span>
@@ -2477,7 +2515,7 @@ export default function AdminPayrollNew() {
                   const ws = workerSettings.find(s => s.worker_type === 'employed')
                   const f = ws?.pay_pattern || 'monthly'
                   const ot = ws?.overtime_handling || 'none'
-                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth)
+                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth, lastPayRuns['employed'])
                   return (
                     <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
                       <div className="pn-wiz-type-icon" style={{ background: '#5c6bc0' }}>
@@ -2500,7 +2538,7 @@ export default function AdminPayrollNew() {
                   const ws = workerSettings.find(s => s.worker_type === 'shift_worker')
                   const f = ws?.pay_pattern || 'weekly'
                   const ot = ws?.overtime_handling || 'none'
-                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth)
+                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth, lastPayRuns['shift'])
                   return (
                     <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
                       <div className="pn-wiz-type-icon" style={{ background: '#7e57c2' }}>
@@ -2523,7 +2561,7 @@ export default function AdminPayrollNew() {
                   const ws = workerSettings.find(s => s.worker_type === 'zero_hours')
                   const f = ws?.pay_pattern || 'weekly'
                   const ot = ws?.overtime_handling || 'none'
-                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth)
+                  const period = getNextPeriodForFreq(f as PayFrequency, fyStartMonth, lastPayRuns['zero_hours'])
                   return (
                     <div className="pn-wiz-type-card" style={{ cursor: 'default' }}>
                       <div className="pn-wiz-type-icon" style={{ background: '#ef6c00' }}>
