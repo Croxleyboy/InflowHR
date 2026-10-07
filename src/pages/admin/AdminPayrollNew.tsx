@@ -1438,7 +1438,7 @@ export default function AdminPayrollNew() {
     ])
 
     const checkins = checkinRes.data || []
-    const assignments = (assignmentRes.data || []) as { id: string; employee_id: string; date: string; shift_template: { name: string; start_time: string; end_time: string } | null }[]
+    const assignments = (assignmentRes.data || []) as unknown as { id: string; employee_id: string; date: string; shift_template: { name: string; start_time: string; end_time: string } | null }[]
 
     const assignmentMap = new Map<string, { name: string; start_time: string; end_time: string; date: string }>()
     for (const a of assignments) {
