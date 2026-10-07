@@ -47,6 +47,14 @@ function prorateBenefit(monthlyCost: number, freq: PayFrequency): number {
   return monthlyCost
 }
 
+function snapToMonday(d: Date): Date {
+  const day = d.getDay()
+  const offset = day === 0 ? -6 : 1 - day
+  const mon = new Date(d)
+  mon.setDate(mon.getDate() + offset)
+  return mon
+}
+
 function getPeriodBoundaries(year: number, month: number, freq: PayFrequency, fyStartMonth: number): { start: Date; end: Date }[] {
   if (freq === 'monthly') {
     return [{ start: new Date(year, month, 1), end: new Date(year, month + 1, 0) }]
@@ -56,7 +64,7 @@ function getPeriodBoundaries(year: number, month: number, freq: PayFrequency, fy
   const monthStart = new Date(year, month, 1)
   const monthEnd = new Date(year, month + 1, 0)
   const periods: { start: Date; end: Date }[] = []
-  let anchor = new Date(fyStartDate)
+  let anchor = snapToMonday(fyStartDate)
   while (anchor <= monthEnd) {
     const periodEnd = new Date(anchor)
     periodEnd.setDate(periodEnd.getDate() + daysPerPeriod - 1)
@@ -94,7 +102,8 @@ function getNextPeriodForFreq(freq: PayFrequency, fyStartMonth: number, lastRun?
     return { start: localDateStr(nextDate), end: localDateStr(end) }
   }
   const daysPerPeriod = freq === 'weekly' ? 7 : 14
-  const fyStart = new Date(today.getMonth() + 1 >= fyStartMonth ? today.getFullYear() : today.getFullYear() - 1, fyStartMonth - 1, 1)
+  const fyStartRaw = new Date(today.getMonth() + 1 >= fyStartMonth ? today.getFullYear() : today.getFullYear() - 1, fyStartMonth - 1, 1)
+  const fyStart = snapToMonday(fyStartRaw)
   const daysSinceFyStart = Math.floor((today.getTime() - fyStart.getTime()) / 86400000)
   const currentPeriodIndex = Math.floor(daysSinceFyStart / daysPerPeriod)
   const nextPeriodStart = new Date(fyStart)
