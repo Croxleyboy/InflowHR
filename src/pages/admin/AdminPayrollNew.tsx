@@ -70,8 +70,8 @@ function getPeriodBoundaries(year: number, month: number, freq: PayFrequency, fy
     periodEnd.setDate(periodEnd.getDate() + daysPerPeriod - 1)
     if (periodEnd >= monthStart && anchor <= monthEnd) {
       periods.push({
-        start: anchor < monthStart ? monthStart : new Date(anchor),
-        end: periodEnd > monthEnd ? monthEnd : periodEnd,
+        start: new Date(anchor),
+        end: periodEnd,
       })
     }
     anchor = new Date(anchor)
@@ -82,29 +82,25 @@ function getPeriodBoundaries(year: number, month: number, freq: PayFrequency, fy
 }
 
 function getNextPeriodForFreq(freq: PayFrequency, fyStartMonth: number, lastRun?: { period_end: string } | null): { start: string; end: string } {
-  if (lastRun) {
-    const lastEnd = new Date(lastRun.period_end + 'T00:00:00')
-    const nextStart = new Date(lastEnd)
-    nextStart.setDate(nextStart.getDate() + 1)
-    if (freq === 'monthly') {
+  if (freq === 'monthly') {
+    if (lastRun) {
+      const lastEnd = new Date(lastRun.period_end + 'T00:00:00')
+      const nextStart = new Date(lastEnd)
+      nextStart.setDate(nextStart.getDate() + 1)
       const end = new Date(nextStart.getFullYear(), nextStart.getMonth() + 1, 0)
       return { start: localDateStr(nextStart), end: localDateStr(end) }
     }
-    const daysPerPeriod = freq === 'weekly' ? 7 : 14
-    const nextEnd = new Date(nextStart)
-    nextEnd.setDate(nextEnd.getDate() + daysPerPeriod - 1)
-    return { start: localDateStr(nextStart), end: localDateStr(nextEnd) }
-  }
-  const today = new Date()
-  if (freq === 'monthly') {
+    const today = new Date()
     const nextDate = new Date(today.getFullYear(), today.getMonth() + 1, 1)
     const end = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0)
     return { start: localDateStr(nextDate), end: localDateStr(end) }
   }
   const daysPerPeriod = freq === 'weekly' ? 7 : 14
-  const fyStartRaw = new Date(today.getMonth() + 1 >= fyStartMonth ? today.getFullYear() : today.getFullYear() - 1, fyStartMonth - 1, 1)
+  const reference = lastRun ? new Date(lastRun.period_end + 'T00:00:00') : new Date()
+  const refMonth = reference.getMonth() + 1
+  const fyStartRaw = new Date(refMonth >= fyStartMonth ? reference.getFullYear() : reference.getFullYear() - 1, fyStartMonth - 1, 1)
   const fyStart = snapToMonday(fyStartRaw)
-  const daysSinceFyStart = Math.floor((today.getTime() - fyStart.getTime()) / 86400000)
+  const daysSinceFyStart = Math.floor((reference.getTime() - fyStart.getTime()) / 86400000)
   const currentPeriodIndex = Math.floor(daysSinceFyStart / daysPerPeriod)
   const nextPeriodStart = new Date(fyStart)
   nextPeriodStart.setDate(nextPeriodStart.getDate() + (currentPeriodIndex + 1) * daysPerPeriod)
