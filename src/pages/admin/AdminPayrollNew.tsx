@@ -3197,7 +3197,7 @@ export default function AdminPayrollNew() {
 
                     {Object.values(wizOvertimeHours).every(h => h === 0) && wizUnpaidLeave.length === 0 && wizBenefitChanges.length === 0 && (
                       <p style={{ fontSize: 12, color: '#558b2f', margin: 0, fontStyle: 'italic' }}>
-                        No adjustments detected — a clean pay run. Your provider will process standard salaries.
+                        No adjustments detected — a clean pay run. You can skip the push step and go straight to syncing payslips from your provider.
                       </p>
                     )}
                   </div>
@@ -3275,20 +3275,19 @@ export default function AdminPayrollNew() {
                         }).length
                         const manualCount = wizUnpaidLeave.length + wizBenefitChanges.length + wizBonusEntries.length
                         const totalCount = otCount + manualCount + toilCount
-                        return (
-                          <>
-                            <button className="admin-btn admin-btn-primary" disabled={wizGenerating || totalCount === 0} onClick={wizPushAdjustments}>
-                              {wizGenerating
-                                ? (connectedProvider === 'xero' ? 'Pushing to Xero…' : 'Exporting…')
-                                : connectedProvider === 'xero'
-                                  ? otCount > 0 ? `Push ${otCount} Timesheet${otCount !== 1 ? 's' : ''} to Xero` : manualCount > 0 ? 'Process Adjustments' : 'Credit TOIL Lieu Days'
-                                  : otCount > 0 || manualCount > 0 ? 'Export Adjustments CSV' : 'Credit TOIL Lieu Days'
-                              }
-                            </button>
-                            {totalCount === 0 && (
-                              <p style={{ fontSize: 12, color: '#e53935', marginTop: 8, textAlign: 'right' }}>No adjustments found for this period.</p>
-                            )}
-                          </>
+                        return totalCount === 0 ? (
+                          <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
+                            Skip to Sync Back →
+                          </button>
+                        ) : (
+                          <button className="admin-btn admin-btn-primary" disabled={wizGenerating} onClick={wizPushAdjustments}>
+                            {wizGenerating
+                              ? (connectedProvider === 'xero' ? 'Pushing to Xero…' : 'Exporting…')
+                              : connectedProvider === 'xero'
+                                ? otCount > 0 ? `Push ${otCount} Timesheet${otCount !== 1 ? 's' : ''} to Xero` : manualCount > 0 ? 'Process Adjustments' : 'Credit TOIL Lieu Days'
+                                : otCount > 0 || manualCount > 0 ? 'Export Adjustments CSV' : 'Credit TOIL Lieu Days'
+                            }
+                          </button>
                         )
                       })()}
                     </div>
