@@ -45,6 +45,7 @@ interface RecordedEntry {
   checkins: { checkIn: string; checkOut: string | null; hours: number; status: string }[]
   totalHours: number
   payableHours: number
+  scheduledHours: number
   hasCorrectionRaised: boolean
   correctionStatus: string | null
 }
@@ -218,6 +219,7 @@ export default function AdminRecordedTime() {
         checkins: checkinDetails,
         totalHours: Math.round(totalHours * 100) / 100,
         payableHours: Math.round(payable * 100) / 100,
+        scheduledHours: Math.round(scheduledHrs * 100) / 100,
         hasCorrectionRaised,
         correctionStatus: hasCorrectionRaised ? latestCorr?.status || null : null,
       })
@@ -369,6 +371,7 @@ export default function AdminRecordedTime() {
                                       <th>Hours</th>
                                       <th>Break</th>
                                       <th>Payable</th>
+                                      <th>OT</th>
                                       <th>Correction</th>
                                     </tr>
                                   </thead>
@@ -387,6 +390,7 @@ export default function AdminRecordedTime() {
                                               <td style={{ color: '#999' }}>0</td>
                                               <td>{entry.breakMinutes} mins</td>
                                               <td style={{ color: '#999' }}>0</td>
+                                              <td style={{ color: '#999' }}>—</td>
                                               <td>
                                                 {entry.hasCorrectionRaised && entry.correctionStatus && (() => {
                                                   const badge = CORR_BADGES[entry.correctionStatus] || CORR_BADGES.pending
@@ -418,6 +422,18 @@ export default function AdminRecordedTime() {
                                               <>
                                                 <td rowSpan={entry.checkins.length}>{entry.breakMinutes} mins</td>
                                                 <td rowSpan={entry.checkins.length} style={{ fontWeight: 600 }}>{entry.payableHours > 0 ? entry.payableHours : '—'}</td>
+                                                {(() => {
+                                                  const scheduledPayable = Math.max(0, entry.scheduledHours - entry.breakMinutes / 60)
+                                                  const ot = Math.round((entry.payableHours - scheduledPayable) * 100) / 100
+                                                  return (
+                                                    <td rowSpan={entry.checkins.length} style={{
+                                                      fontWeight: 600,
+                                                      color: ot > 0 ? '#2e7d32' : ot < 0 ? '#dc2626' : '#999',
+                                                    }}>
+                                                      {ot > 0 ? `+${ot}` : ot < 0 ? `${ot}` : '—'}
+                                                    </td>
+                                                  )
+                                                })()}
                                               </>
                                             )}
                                             {idx === 0 && (
