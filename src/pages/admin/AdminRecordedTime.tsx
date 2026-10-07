@@ -52,6 +52,13 @@ interface RecordedEntry {
 
 type SubTab = 'employed' | 'zero_hours'
 
+const fmtHrs = (decimal: number) => {
+  const h = Math.floor(Math.abs(decimal))
+  const m = Math.round((Math.abs(decimal) - h) * 60)
+  const sign = decimal < 0 ? '-' : ''
+  return m === 0 ? `${sign}${h}h` : `${sign}${h}h ${m}m`
+}
+
 const fmtTime = (iso: string) => {
   const d = new Date(iso)
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -312,8 +319,8 @@ export default function AdminRecordedTime() {
                   </div>
                   <div style={{ display: 'flex', gap: 16, alignItems: 'center', fontSize: 12 }}>
                     <span>{totalShifts} shift{totalShifts !== 1 ? 's' : ''}</span>
-                    <span>{Math.round(totalHrs * 100) / 100} hrs recorded</span>
-                    <span style={{ fontWeight: 600 }}>{Math.round(totalPayable * 100) / 100} hrs payable</span>
+                    <span>{fmtHrs(Math.round(totalHrs * 100) / 100)} recorded</span>
+                    <span style={{ fontWeight: 600 }}>{fmtHrs(Math.round(totalPayable * 100) / 100)} payable</span>
                     {corrCount > 0 && (
                       <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: '#fff3e0', color: '#e65100' }}>
                         {corrCount} correction{corrCount !== 1 ? 's' : ''}
@@ -350,8 +357,8 @@ export default function AdminRecordedTime() {
                               <span>Week: {fmtWeekLabel(weekKey)}</span>
                               <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                                 <span>{weekEntries.length} shift{weekEntries.length !== 1 ? 's' : ''}</span>
-                                <span>{Math.round(weekHrs * 100) / 100} hrs</span>
-                                <span style={{ fontWeight: 700 }}>{Math.round(weekPayable * 100) / 100} payable</span>
+                                <span>{fmtHrs(Math.round(weekHrs * 100) / 100)}</span>
+                                <span style={{ fontWeight: 700 }}>{fmtHrs(Math.round(weekPayable * 100) / 100)} payable</span>
                                 <span style={{ fontSize: 14, transform: weekOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
                                   &#9662;
                                 </span>
@@ -417,11 +424,11 @@ export default function AdminRecordedTime() {
                                             )}
                                             <td>{fmtTime(ci.checkIn)}</td>
                                             <td>{ci.checkOut ? fmtTime(ci.checkOut) : <span style={{ color: '#e65100' }}>In progress</span>}</td>
-                                            <td>{ci.hours > 0 ? ci.hours : '—'}</td>
+                                            <td>{ci.hours > 0 ? fmtHrs(ci.hours) : '—'}</td>
                                             {idx === 0 && (
                                               <>
                                                 <td rowSpan={entry.checkins.length}>{entry.breakMinutes} mins</td>
-                                                <td rowSpan={entry.checkins.length} style={{ fontWeight: 600 }}>{entry.payableHours > 0 ? entry.payableHours : '—'}</td>
+                                                <td rowSpan={entry.checkins.length} style={{ fontWeight: 600 }}>{entry.payableHours > 0 ? fmtHrs(entry.payableHours) : '—'}</td>
                                                 {(() => {
                                                   const scheduledPayable = Math.max(0, entry.scheduledHours - entry.breakMinutes / 60)
                                                   const ot = Math.round((entry.payableHours - scheduledPayable) * 100) / 100
@@ -430,7 +437,7 @@ export default function AdminRecordedTime() {
                                                       fontWeight: 600,
                                                       color: ot > 0 ? '#2e7d32' : ot < 0 ? '#dc2626' : '#999',
                                                     }}>
-                                                      {ot > 0 ? `+${ot}` : ot < 0 ? `${ot}` : '—'}
+                                                      {ot > 0 ? `+${fmtHrs(ot)}` : ot < 0 ? fmtHrs(ot) : '—'}
                                                     </td>
                                                   )
                                                 })()}
