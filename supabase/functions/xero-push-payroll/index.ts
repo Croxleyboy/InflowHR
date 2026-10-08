@@ -299,7 +299,12 @@ Deno.serve(async (req) => {
         if (empRes.ok) {
           const empBody = await empRes.json()
           const xeroEmp = empBody.employees?.[0] || empBody.Employees?.[0]
-          payrollCalendarID = xeroEmp?.payrollCalendarID || xeroEmp?.PayrollCalendarID || null
+            || empBody.employee || empBody.Employee
+          if (xeroEmp) {
+            payrollCalendarID = xeroEmp.payrollCalendarID || xeroEmp.PayrollCalendarID
+              || xeroEmp.payrollCalendar?.calendarID || xeroEmp.PayrollCalendar?.CalendarID
+              || null
+          }
         }
         if (!payrollCalendarID) {
           skipped.push({ employee: emp.name, reason: 'No payroll calendar assigned in Xero — assign one before pushing timesheets' })
@@ -350,37 +355,37 @@ Deno.serve(async (req) => {
       const overtimeRate = Math.round(baseRate * ot.multiplier * 100) / 100
       const overtimeAmount = Math.round(overtimeRate * ot.hours * 100) / 100
 
-      // Spread hours across weekdays, max 8hrs per line per day
+      // Build timesheet line with overtime hours spread across weekdays (max 8hrs per day)
       let remaining = ot.hours
       let dayIndex = 0
-      let linesPosted = 0
-      let lastError = ''
+      const unitEntries: { dateOfUnits: string; units: number }[] = []
 
       while (remaining > 0 && dayIndex < weekdays.length) {
         const units = Math.min(remaining, 8)
-        const lineBody = {
-          date: weekdays[dayIndex],
-          earningsRateID: effectiveOtRateId,
-          numberOfUnits: units,
-        }
-
-        const lineRes = await fetch(
-          `${XERO_PAYROLL_V2}/Timesheets/${timesheetID}/Lines`,
-          { method: 'POST', headers: xeroHeaders, body: JSON.stringify(lineBody) }
-        )
-
-        if (lineRes.ok) {
-          linesPosted++
-        } else {
-          const errText = await lineRes.text()
-          lastError = sanitise(errText)
-        }
-
+        unitEntries.push({ dateOfUnits: weekdays[dayIndex], units })
         remaining -= units
         dayIndex++
       }
 
-      if (linesPosted > 0) {
+      // Xero Payroll AU v2: update timesheet with timesheetLines via POST /Timesheets
+      const tsUpdateBody = [{
+        timesheetID,
+        employeeID: emp.xeroId,
+        startDate: tsStartDate,
+        endDate: tsEndDate,
+        timesheetLines: [{
+          earningsRateID: effectiveOtRateId,
+          numberOfUnits: unitEntries.map(e => e.units),
+        }],
+      }]
+
+      const updateRes = await fetch(`${XERO_PAYROLL_V2}/Timesheets`, {
+        method: 'POST',
+        headers: xeroHeaders,
+        body: JSON.stringify(tsUpdateBody),
+      })
+
+      if (updateRes.ok) {
         timesheetResults.push({
           employee: emp.name,
           status: 'pushed',
@@ -389,9 +394,10 @@ Deno.serve(async (req) => {
           rate: baseRate,
           amount: overtimeAmount,
           earningsRateId: effectiveOtRateId,
-          lines_posted: linesPosted,
+          lines_posted: unitEntries.length,
         })
       } else {
+        const errText = await updateRes.text()
         timesheetResults.push({
           employee: emp.name,
           status: 'failed',
@@ -399,7 +405,7 @@ Deno.serve(async (req) => {
           multiplier: ot.multiplier,
           rate: baseRate,
           amount: overtimeAmount,
-          error: lastError || 'All line posts failed',
+          error: sanitise(errText) || 'Timesheet update failed',
         })
       }
     }
