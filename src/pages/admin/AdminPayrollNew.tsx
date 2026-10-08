@@ -284,6 +284,25 @@ export default function AdminPayrollNew() {
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
 
+  const wizCancelPayRun = () => {
+    setWizStep(1)
+    setWizWorkerTypes(new Set())
+    setWizGenerated(false)
+    setWizGenerating(false)
+    setWizExported(false)
+    setWizExporting(false)
+    setWizComplete(false)
+    setWizReleasing(false)
+    setWizPushResult(null)
+    setWizOvertimeHours({})
+    setWizOvertimeRates({})
+    setWizUnpaidLeave([])
+    setWizBenefitChanges([])
+    setWizBonusEntries([])
+    setWizPayRunId(null)
+    setLastXeroPayRun(null)
+  }
+
   // FY
   const fyStartMonth = selectedCompany?.fy_start_month || 4
   const fyMonths = useMemo(() => getFYMonths(fyStartMonth), [fyStartMonth])
@@ -3563,6 +3582,7 @@ export default function AdminPayrollNew() {
               )}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+                <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                 <button className="admin-btn" onClick={() => setWizStep(1)}>← Back</button>
                 <button className="admin-btn admin-btn-primary" disabled={!canProceed} onClick={async () => {
                   const overrides = Object.entries(wizOvertimeRates).filter(([empId, rate]) => {
@@ -3648,6 +3668,7 @@ export default function AdminPayrollNew() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                       <button className="admin-btn" onClick={() => setWizStep(2)}>← Back</button>
                       {(() => {
                         const otCount = Object.entries(allOvertimeHours).filter(([empId, hrs]) => {
@@ -4006,6 +4027,7 @@ export default function AdminPayrollNew() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                       <button className="admin-btn" onClick={() => setWizStep(2)}>← Back</button>
                       <button className="admin-btn admin-btn-primary" disabled={wizGenerating} onClick={wizGenerate}>
                         {wizGenerating ? 'Generating…' : 'Generate Estimate Payslips'}
@@ -4254,6 +4276,7 @@ export default function AdminPayrollNew() {
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, alignItems: 'center' }}>
+                    <button className="admin-btn" style={{ marginRight: !wizExported ? 0 : 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                     {!wizExported && (
                       <span style={{ fontSize: 12, color: '#e65100', marginRight: 'auto' }}>
                         Sync payslips from {connectedProvider === 'xero' ? 'Xero' : 'Sage'} before releasing to employees.
@@ -4354,6 +4377,7 @@ export default function AdminPayrollNew() {
 
                   {!wizExported ? (
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                       <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
                       <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={wizExport}>
                         {wizExporting ? 'Exporting…' : wizPayMethod === 'external' ? 'Mark as Externally Managed' : `Export via ${wizPayMethod.toUpperCase()}`}
@@ -4474,6 +4498,7 @@ export default function AdminPayrollNew() {
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                  <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                   <button className="admin-btn" onClick={() => setWizStep(4)}>← Back</button>
                   <button className="admin-btn admin-btn-primary" disabled={wizReleasing} onClick={wizRelease} style={{ background: '#2e7d32' }}>
                     {wizReleasing ? 'Releasing…' : `Release ${wizRunEmployees.length} Payslip${wizRunEmployees.length !== 1 ? 's' : ''} to Employees`}
