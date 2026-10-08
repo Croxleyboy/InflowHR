@@ -252,6 +252,7 @@ export default function AdminPayrollNew() {
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
   const [wizExported, setWizExported] = useState(false)
+  const [lastXeroPayRun, setLastXeroPayRun] = useState<{ period_start: string; period_end: string } | null>(null)
   const [wizPushResult, setWizPushResult] = useState<{
     pushed: number; failed: number; skipped: number; api: string;
     timesheet_results?: { employee: string; status: string; hours: number; multiplier: number; rate: number; amount: number; xeroTimesheetId?: string; error?: string }[];
@@ -443,6 +444,7 @@ export default function AdminPayrollNew() {
     if (cpr.shift_custom_pay_day) setShiftCustomPayDay(cpr.shift_custom_pay_day)
     if (cpr.zero_hrs_pay_day_mode) setZeroHrsPayDayMode(cpr.zero_hrs_pay_day_mode)
     if (cpr.zero_hrs_custom_pay_day) setZeroHrsCustomPayDay(cpr.zero_hrs_custom_pay_day)
+    if (cpr.period_start && cpr.period_end) setLastXeroPayRun({ period_start: cpr.period_start, period_end: cpr.period_end })
 
     // Load recent audit logs
     const { data: logData } = await supabase.from('payroll_audit_log').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false }).limit(5)
@@ -1362,8 +1364,8 @@ export default function AdminPayrollNew() {
   }
 
   // Phase 5: Sync + release
-  async function wizSyncXero() {
-    if (!session || !selectedCompanyId) return
+  async function wizSyncXero(): Promise<boolean> {
+    if (!session || !selectedCompanyId) return false
     setWizExporting(true)
     try {
       const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
@@ -1373,15 +1375,32 @@ export default function AdminPayrollNew() {
       })
       if (error) throw error
       if (data?.error) throw new Error(data.error)
+      if (!data?.payRun) {
+        showError('No pay run found in Xero. Create a pay run in Xero for this period first, then fetch again.')
+        setWizExporting(false)
+        return false
+      }
+      if (data.upserted === 0) {
+        const msg = data.unmatched > 0
+          ? `Xero pay run found (${data.payRun.period_start} – ${data.payRun.period_end}) but no employees matched. Check employee email addresses match between InflowHR and Xero.`
+          : 'Xero pay run found but contained no payslips for the selected worker types.'
+        showError(msg)
+        setWizExporting(false)
+        return false
+      }
       if (wizPayRunId) {
         await supabase.from('pay_runs').update({ status: 'synced' }).eq('id', wizPayRunId)
       }
-      showSuccess('Pay run synced from Xero — payslips updated with actual tax/NI')
+      setLastXeroPayRun({ period_start: data.payRun.period_start, period_end: data.payRun.period_end })
+      showSuccess(`Synced ${data.upserted} payslip${data.upserted !== 1 ? 's' : ''} from Xero (${data.payRun.period_start} – ${data.payRun.period_end})`)
       await loadAll()
+      setWizExporting(false)
+      return true
     } catch (err: any) {
       showError('Xero sync failed: ' + (err?.message || 'Unknown error'))
+      setWizExporting(false)
+      return false
     }
-    setWizExporting(false)
   }
 
   async function wizRelease() {
@@ -4111,8 +4130,37 @@ export default function AdminPayrollNew() {
                     </div>
                   )}
 
-                  {connectedProvider === 'xero' && (
+                  {connectedProvider === 'xero' && (() => {
+                    const allStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
+                    const allEnds = Object.values(wizPeriodByType).map(p => p.end).sort().reverse()
+                    const wizStart = allStarts[0]
+                    const wizEnd = allEnds[0]
+                    const periodMismatch = lastXeroPayRun && wizStart && wizEnd &&
+                      (lastXeroPayRun.period_start !== wizStart || lastXeroPayRun.period_end !== wizEnd)
+                    const noLastPayRun = !lastXeroPayRun && wizStart
+                    return (
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
+                      {(periodMismatch || noLastPayRun) && !wizExported && (
+                        <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 6, padding: '10px 14px', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
+                          <div style={{ fontSize: 12, color: '#795548' }}>
+                            {periodMismatch ? (
+                              <>
+                                <strong>Pay run period mismatch.</strong> The last Xero pay run fetched was for{' '}
+                                {formatDate(lastXeroPayRun!.period_start)} – {formatDate(lastXeroPayRun!.period_end)},
+                                but this wizard is running for {formatDate(wizStart!)} – {formatDate(wizEnd!)}.
+                                If no pay run exists in Xero for this period, you may need to create one in Xero first.
+                              </>
+                            ) : (
+                              <>
+                                <strong>No previous Xero pay run on record.</strong> This wizard is running for{' '}
+                                {formatDate(wizStart!)} – {formatDate(wizEnd!)}.
+                                If no pay run exists in Xero for this period, you may need to create one in Xero first.
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <strong style={{ fontSize: 14 }}>Fetch Payslips from Xero</strong>
@@ -4121,14 +4169,15 @@ export default function AdminPayrollNew() {
                           </p>
                         </div>
                         <button className="admin-btn admin-btn-primary" disabled={wizExporting || wizExported} onClick={async () => {
-                          await wizSyncXero()
-                          setWizExported(true)
+                          const ok = await wizSyncXero()
+                          if (ok) setWizExported(true)
                         }} style={{ fontSize: 13 }}>
                           {wizExporting ? 'Syncing…' : wizExported ? '✓ Fetched' : 'Fetch Pay Run'}
                         </button>
                       </div>
                     </div>
-                  )}
+                    )
+                  })()}
 
                   {connectedProvider === 'sage' && (
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
