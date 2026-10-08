@@ -3869,6 +3869,7 @@ export default function AdminPayrollNew() {
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                       <button className="admin-btn admin-btn-primary"
                         disabled={wizPushResult.manual_items && wizPushResult.manual_items.length > 0 && !wizPushResult.manual_items.every((_: any, i: number) => wizManualChecked.has(`manual-${i}`))}
                         onClick={() => setWizStep(4)}>
@@ -3974,6 +3975,7 @@ export default function AdminPayrollNew() {
                     )}
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                       <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
                         Next: Sync Back →
                       </button>
@@ -4044,6 +4046,7 @@ export default function AdminPayrollNew() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                      <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                       <button className="admin-btn" onClick={() => { setView('payslips') }}>Review Payslips</button>
                       <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
                         Next: Export & Pay →

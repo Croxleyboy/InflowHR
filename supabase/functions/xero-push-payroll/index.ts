@@ -105,6 +105,26 @@ function getWeekdaysInRange(startDate: string, endDate: string): string[] {
   return days
 }
 
+function buildNumberOfUnits(startDate: string, endDate: string, overtimeHours: number): number[] {
+  const units: number[] = []
+  const start = new Date(startDate.split('T')[0])
+  const end = new Date(endDate.split('T')[0])
+  const current = new Date(start)
+  let remaining = overtimeHours
+  while (current <= end) {
+    const dow = current.getDay()
+    if (dow >= 1 && dow <= 5 && remaining > 0) {
+      const hrs = Math.min(remaining, 8)
+      units.push(hrs)
+      remaining -= hrs
+    } else {
+      units.push(0)
+    }
+    current.setDate(current.getDate() + 1)
+  }
+  return units
+}
+
 interface OvertimeEntry {
   employee_id: string
   hours: number
@@ -312,12 +332,6 @@ Deno.serve(async (req) => {
         }
 
         // No existing timesheet — create one with overtime lines in a single call
-        const weekdays = getWeekdaysInRange(period_start, period_end)
-        if (!weekdays.length) {
-          skipped.push({ employee: emp.name, reason: 'No weekdays in pay period' })
-          continue
-        }
-
         const baseRate = ot.hourly_rate_override && ot.hourly_rate_override > 0
           ? ot.hourly_rate_override
           : emp.hourlyRate > 0
@@ -327,16 +341,7 @@ Deno.serve(async (req) => {
               : 0
         const overtimeRate = Math.round(baseRate * ot.multiplier * 100) / 100
         const overtimeAmount = Math.round(overtimeRate * ot.hours * 100) / 100
-
-        let remaining = ot.hours
-        let dayIdx = 0
-        const numberOfUnits: Record<string, number> = {}
-        while (remaining > 0 && dayIdx < weekdays.length) {
-          const units = Math.min(remaining, 8)
-          numberOfUnits[weekdays[dayIdx]] = units
-          remaining -= units
-          dayIdx++
-        }
+        const numberOfUnits = buildNumberOfUnits(period_start, period_end, ot.hours)
 
         const createBody = [{
           employeeID: emp.xeroId,
@@ -363,7 +368,7 @@ Deno.serve(async (req) => {
             rate: baseRate,
             amount: overtimeAmount,
             earningsRateId: effectiveOtRateId,
-            lines_posted: Object.keys(numberOfUnits).length,
+            lines_posted: numberOfUnits.filter(u => u > 0).length,
           })
         } else {
           const errText = await createRes.text()
@@ -381,13 +386,6 @@ Deno.serve(async (req) => {
       }
 
       // Existing timesheet found — add overtime lines to it
-      const weekdays = getWeekdaysInRange(tsStartDate, tsEndDate)
-
-      if (!weekdays.length) {
-        skipped.push({ employee: emp.name, reason: 'No weekdays in timesheet period' })
-        continue
-      }
-
       const baseRate = ot.hourly_rate_override && ot.hourly_rate_override > 0
         ? ot.hourly_rate_override
         : emp.hourlyRate > 0
@@ -397,18 +395,8 @@ Deno.serve(async (req) => {
             : 0
       const overtimeRate = Math.round(baseRate * ot.multiplier * 100) / 100
       const overtimeAmount = Math.round(overtimeRate * ot.hours * 100) / 100
+      const numberOfUnits = buildNumberOfUnits(tsStartDate, tsEndDate, ot.hours)
 
-      let remaining = ot.hours
-      let dayIndex = 0
-      const numberOfUnits: Record<string, number> = {}
-      while (remaining > 0 && dayIndex < weekdays.length) {
-        const units = Math.min(remaining, 8)
-        numberOfUnits[weekdays[dayIndex]] = units
-        remaining -= units
-        dayIndex++
-      }
-
-      // Xero Payroll AU v2: update existing timesheet with overtime lines
       const tsUpdateBody = [{
         timesheetID,
         employeeID: emp.xeroId,
@@ -435,7 +423,7 @@ Deno.serve(async (req) => {
           rate: baseRate,
           amount: overtimeAmount,
           earningsRateId: effectiveOtRateId,
-          lines_posted: Object.keys(numberOfUnits).length,
+          lines_posted: numberOfUnits.filter(u => u > 0).length,
         })
       } else {
         const errText = await updateRes.text()
