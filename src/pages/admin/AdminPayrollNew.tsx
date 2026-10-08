@@ -1130,6 +1130,7 @@ export default function AdminPayrollNew() {
       const unpaidLeaveEntries = wizUnpaidLeave.filter(u => isEmpInScope(u.employee_id))
       const benefitChangeEntries = wizBenefitChanges.filter(b => isEmpInScope(b.employee_id))
 
+      let xeroPushData: any = null
       if (connectedProvider === 'xero') {
         // Xero: push overtime via API, flag unpaid leave + benefits as manual
         const { data, error } = await supabase.functions.invoke('xero-push-payroll', {
@@ -1147,6 +1148,7 @@ export default function AdminPayrollNew() {
 
         if (error) throw error
         if (data?.error) throw new Error(data.error)
+        xeroPushData = data
 
         const bonusManualItems = wizBonusEntries.filter(b => isEmpInScope(b.employee_id)).map(b => ({
           employee: b.employee_name,
@@ -1233,9 +1235,10 @@ export default function AdminPayrollNew() {
       setWizExported(true)
 
       if (connectedProvider === 'xero') {
-        const pushed = wizPushResult?.pushed || 0
+        const pushed = xeroPushData?.pushed || 0
+        const skippedCount = xeroPushData?.skipped || 0
         showSuccess(pushed > 0
-          ? `Overtime pushed to Xero (${pushed} employee${pushed !== 1 ? 's' : ''}). Check the manual items below for anything to enter in Xero yourself.`
+          ? `Overtime pushed to Xero (${pushed} employee${pushed !== 1 ? 's' : ''}).${skippedCount > 0 ? ` ${skippedCount} skipped.` : ''} Check the manual items below for anything to enter in Xero yourself.`
           : 'No overtime to push — check the manual items below for anything to enter in Xero.')
       } else {
         const { rowCount } = generateAdjustmentsCsv()

@@ -281,16 +281,45 @@ Deno.serve(async (req) => {
       if (!emp.xeroId) { skipped.push({ employee: emp.name, reason: 'No Xero employee mapping — sync employees first' }); continue }
       if (ot.hours <= 0) { skipped.push({ employee: emp.name, reason: 'No overtime hours' }); continue }
 
-      // Find the employee's auto-created timesheet for this period
-      const empTimesheets = allTimesheets.filter((ts: any) => ts.employeeID === emp.xeroId)
-      if (!empTimesheets.length) {
-        skipped.push({ employee: emp.name, reason: 'No timesheet found in Xero for this employee — ensure a pay run is open' })
-        continue
+      // Find the employee's timesheet for this period, or create one
+      let empTimesheets = allTimesheets.filter((ts: any) => ts.employeeID === emp.xeroId)
+      let timesheetID: string
+      let tsStartDate: string
+      let tsEndDate: string
+
+      if (empTimesheets.length) {
+        const ts = empTimesheets[0]
+        timesheetID = ts.timesheetID
+        tsStartDate = ts.startDate
+        tsEndDate = ts.endDate
+      } else {
+        // Create a timesheet for salaried employees who don't have one
+        const createRes = await fetch(`${XERO_PAYROLL_V2}/Timesheets`, {
+          method: 'POST',
+          headers: xeroHeaders,
+          body: JSON.stringify({
+            employeeID: emp.xeroId,
+            startDate: period_start,
+            endDate: period_end,
+          }),
+        })
+        if (!createRes.ok) {
+          const errText = await createRes.text()
+          skipped.push({ employee: emp.name, reason: `Could not create timesheet in Xero: ${sanitise(errText)}` })
+          continue
+        }
+        const createBody = await createRes.json()
+        const created = createBody.timesheets?.[0] || createBody.Timesheets?.[0]
+        if (!created?.timesheetID) {
+          skipped.push({ employee: emp.name, reason: 'Timesheet created in Xero but no ID returned' })
+          continue
+        }
+        timesheetID = created.timesheetID
+        tsStartDate = created.startDate || period_start
+        tsEndDate = created.endDate || period_end
       }
 
-      const ts = empTimesheets[0]
-      const timesheetID = ts.timesheetID
-      const weekdays = getWeekdaysInRange(ts.startDate, ts.endDate)
+      const weekdays = getWeekdaysInRange(tsStartDate, tsEndDate)
 
       if (!weekdays.length) {
         skipped.push({ employee: emp.name, reason: 'No weekdays in timesheet period' })
