@@ -2562,7 +2562,9 @@ export default function AdminPayrollNew() {
                   <th>Shift</th>
                   <th>Zero Hrs</th>
                   <th>Total Gross</th>
-                  <th>Status</th>
+                  <th>Emp Status</th>
+                  <th>Shift Status</th>
+                  <th>Zero Hrs Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -2572,28 +2574,37 @@ export default function AdminPayrollNew() {
                   const empIds = new Set(employedEmployees.map(e => e.id))
                   const shiftIds = new Set(shiftEmployees.map(e => e.id))
                   const zeroIds = new Set(zeroHoursEmployees.map(e => e.id))
-                  const empCount = monthPayslips.filter(p => p.employee?.id && empIds.has(p.employee.id)).length
-                  const shiftCount = monthPayslips.filter(p => p.employee?.id && shiftIds.has(p.employee.id)).length
-                  const zeroCount = monthPayslips.filter(p => p.employee?.id && zeroIds.has(p.employee.id)).length
+                  const empSlips = monthPayslips.filter(p => p.employee?.id && empIds.has(p.employee.id))
+                  const shiftSlips = monthPayslips.filter(p => p.employee?.id && shiftIds.has(p.employee.id))
+                  const zeroSlips = monthPayslips.filter(p => p.employee?.id && zeroIds.has(p.employee.id))
                   const gross = monthPayslips.reduce((s, p) => s + Number(p.gross_pay), 0)
-                  const allPaid = monthPayslips.length > 0 && monthPayslips.every(p => p.status === 'paid')
-                  const hasDraft = monthPayslips.some(p => p.status === 'draft' || p.status === 'flagged')
                   const startDate = new Date(m.year, m.month, 1)
                   const endDate = new Date(m.year, m.month + 1, 0)
                   const payDate = getPayDay(m.year, m.month, payDayMode, customPayDay)
                   const isPast = endDate < new Date()
-                  const status = allPaid ? 'Paid' : hasDraft ? 'Draft' : monthPayslips.length > 0 ? 'Processed' : isPast ? 'No Payslips' : 'Upcoming'
-                  const statusCls = allPaid ? 'admin-badge-paid' : hasDraft ? 'admin-badge-draft' : monthPayslips.length > 0 ? 'admin-badge-approved' : 'admin-badge-pending'
+                  const getStatus = (slips: typeof monthPayslips) => {
+                    if (slips.length === 0) return isPast ? 'No Payslips' : 'Upcoming'
+                    if (slips.every(p => p.status === 'paid')) return 'Paid'
+                    if (slips.some(p => p.status === 'draft' || p.status === 'flagged')) return 'Draft'
+                    return 'Processed'
+                  }
+                  const getStatusCls = (s: string) =>
+                    s === 'Paid' ? 'admin-badge-paid' : s === 'Draft' ? 'admin-badge-draft' : s === 'Processed' ? 'admin-badge-approved' : 'admin-badge-pending'
+                  const empStatus = getStatus(empSlips)
+                  const shiftStatus = getStatus(shiftSlips)
+                  const zeroStatus = getStatus(zeroSlips)
                   return (
                     <tr key={key}>
                       <td style={{ fontWeight: 600 }}>{m.label}</td>
                       <td>{formatDate(localDateStr(startDate))} – {formatDate(localDateStr(endDate))}</td>
                       <td>{formatDate(localDateStr(payDate))}</td>
-                      <td style={{ textAlign: 'center' }}>{empCount || '—'}</td>
-                      <td style={{ textAlign: 'center' }}>{shiftCount || '—'}</td>
-                      <td style={{ textAlign: 'center' }}>{zeroCount || '—'}</td>
+                      <td style={{ textAlign: 'center' }}>{empSlips.length || '—'}</td>
+                      <td style={{ textAlign: 'center' }}>{shiftSlips.length || '—'}</td>
+                      <td style={{ textAlign: 'center' }}>{zeroSlips.length || '—'}</td>
                       <td>£{gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
-                      <td><span className={`admin-badge ${statusCls}`}>{status}</span></td>
+                      <td><span className={`admin-badge ${getStatusCls(empStatus)}`}>{empStatus}</span></td>
+                      <td><span className={`admin-badge ${getStatusCls(shiftStatus)}`}>{shiftStatus}</span></td>
+                      <td><span className={`admin-badge ${getStatusCls(zeroStatus)}`}>{zeroStatus}</span></td>
                     </tr>
                   )
                 })}

@@ -58,6 +58,7 @@ export default function Payslips() {
   const payslip = monthPayslips[selectedPayslipIdx] || null
   const [loading, setLoading] = useState(true)
   const [employeeRole, setEmployeeRole] = useState('')
+  const [workerType, setWorkerType] = useState<'employed' | 'shift' | 'zero_hours'>('employed')
   const [benefitDeductions, setBenefitDeductions] = useState<BenefitDeduction[]>([])
   const [initialised, setInitialised] = useState(false)
   const monthNames = lang === 'de' ? MONTH_NAMES_DE : MONTH_NAMES_EN
@@ -101,7 +102,7 @@ export default function Payslips() {
   useEffect(() => {
     if (!EMPLOYEE_ID || !companyUser?.company_id) return
     supabase.from('employees')
-      .select('job_title, department')
+      .select('job_title, department, employment_category, contract_type')
       .eq('id', EMPLOYEE_ID)
       .eq('company_id', companyUser.company_id)
       .single()
@@ -109,6 +110,11 @@ export default function Payslips() {
         if (data) {
           const parts = [data.job_title, data.department].filter(Boolean)
           setEmployeeRole(parts.join(' — '))
+          if (data.employment_category === 'shift_worker') {
+            setWorkerType(data.contract_type === 'Zero hours shift worker' ? 'zero_hours' : 'shift')
+          } else {
+            setWorkerType('employed')
+          }
         }
       })
   }, [EMPLOYEE_ID, companyUser?.company_id])
@@ -242,6 +248,14 @@ export default function Payslips() {
             <div className="payslips-employee-info">
               <span className="payslips-employee-name">{employeeName}</span>
               {employeeRole && <span className="payslips-employee-role">{employeeRole}</span>}
+              <span style={{
+                display: 'inline-block', marginTop: 4, fontSize: 11, fontWeight: 600,
+                padding: '2px 10px', borderRadius: 10,
+                background: workerType === 'employed' ? 'rgba(92,107,192,0.2)' : workerType === 'shift' ? 'rgba(126,87,194,0.2)' : 'rgba(38,166,154,0.2)',
+                color: workerType === 'employed' ? '#5c6bc0' : workerType === 'shift' ? '#7e57c2' : '#26a69a',
+              }}>
+                {workerType === 'employed' ? 'Salaried Staff' : workerType === 'shift' ? 'Shift Worker' : 'Zero Hours'}
+              </span>
             </div>
           </div>
 
