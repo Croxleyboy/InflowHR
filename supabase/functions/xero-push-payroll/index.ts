@@ -293,6 +293,19 @@ Deno.serve(async (req) => {
         tsStartDate = ts.startDate
         tsEndDate = ts.endDate
       } else {
+        // Fetch the employee's payroll calendar ID from Xero (required for timesheet creation)
+        const empRes = await fetch(`${XERO_PAYROLL_V2}/Employees/${emp.xeroId}`, { headers: xeroHeaders })
+        let payrollCalendarID: string | null = null
+        if (empRes.ok) {
+          const empBody = await empRes.json()
+          const xeroEmp = empBody.employees?.[0] || empBody.Employees?.[0]
+          payrollCalendarID = xeroEmp?.payrollCalendarID || xeroEmp?.PayrollCalendarID || null
+        }
+        if (!payrollCalendarID) {
+          skipped.push({ employee: emp.name, reason: 'No payroll calendar assigned in Xero — assign one before pushing timesheets' })
+          continue
+        }
+
         // Create a timesheet for salaried employees who don't have one
         const createRes = await fetch(`${XERO_PAYROLL_V2}/Timesheets`, {
           method: 'POST',
@@ -301,6 +314,7 @@ Deno.serve(async (req) => {
             employeeID: emp.xeroId,
             startDate: period_start,
             endDate: period_end,
+            payrollCalendarID,
           }),
         })
         if (!createRes.ok) {
