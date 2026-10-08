@@ -488,7 +488,7 @@ export default function AdminPayrollNew() {
       if (filterEmployee && p.employee && `${p.employee.first_name} ${p.employee.last_name}` !== filterEmployee) return false
       if (p.employee?.id) {
         const cat = empCategoryById[p.employee.id] || 'not_assigned'
-        const emp = employees.find(e => e.id === p.employee.id)
+        const emp = employees.find(e => e.id === p.employee!.id)
         const isZero = cat === 'shift_worker' && emp?.contract_type === 'Zero hours shift worker'
         const isShift = cat === 'shift_worker' && !isZero
         if (payslipSubTab === 'employed' && cat === 'shift_worker') return false
