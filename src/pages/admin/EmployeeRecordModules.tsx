@@ -4,7 +4,7 @@ import { useFeatures } from '../../context/FeatureContext'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 
-type Module = 'overview' | 'timeoff' | 'assets' | 'benefits' | 'dependents' | 'education' | 'grievances' | 'performance' | 'elearning' | 'onboarding' | 'expenses' | 'timesheets' | 'documents' | 'shift_skills'
+type Module = 'overview' | 'timeoff' | 'assets' | 'benefits' | 'dependents' | 'education' | 'grievances' | 'performance' | 'elearning' | 'onboarding' | 'expenses' | 'timesheets' | 'documents' | 'shift_skills' | 'custom_fields'
 
 interface Employee {
   id: string
@@ -82,6 +82,7 @@ const MODULES: { key: Module; label: string; icon: string }[] = [
   { key: 'timesheets', label: 'Timesheets', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z|M12 6v6l4 2' },
   { key: 'documents', label: 'Documents', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z|M14 2v6h6|M12 18v-6|M9 15h6' },
   { key: 'shift_skills', label: 'Shift Skills', icon: 'M22 11.08V12a10 10 0 1 1-5.93-9.14|M9 11l3 3L22 4' },
+  { key: 'custom_fields', label: 'Custom Fields', icon: 'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7|M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z' },
 ]
 
 const DOC_CATEGORIES: { key: string; label: string; expiryTracking?: boolean }[] = [
@@ -154,6 +155,8 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
   const docFileRef = useRef<HTMLInputElement>(null)
   const [shiftSkillEdits, setShiftSkillEdits] = useState<string[] | null>(null)
   const [shiftSkillSaving, setShiftSkillSaving] = useState(false)
+  const [customFieldValues, setCustomFieldValues] = useState<Record<number, string>>({})
+  const [customFieldsSaving, setCustomFieldsSaving] = useState(false)
 
   useEffect(() => { setActiveModule('overview'); setModuleData({}) }, [employee.id])
 
@@ -244,6 +247,21 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         data = { allSkills: allSkills || [], empSkillIds: (empSkills || []).map((r: any) => r.shift_skill_id) }
         break
       }
+      case 'custom_fields': {
+        const [{ data: defs }, { data: vals }] = await Promise.all([
+          supabase.from('company_custom_fields').select('*').eq('company_id', companyId).order('field_number'),
+          supabase.from('employee_custom_field_values').select('*').eq('employee_id', employee.id).eq('company_id', companyId),
+        ])
+        const visibleDefs = (defs || []).filter((d: any) => d.title.trim())
+        const valMap: Record<number, string> = {}
+        for (const v of (vals || []) as any[]) valMap[v.field_number] = v.value
+        for (const d of visibleDefs as any[]) {
+          if (!(d.field_number in valMap)) valMap[d.field_number] = d.default_value || ''
+        }
+        setCustomFieldValues(valMap)
+        data = { definitions: visibleDefs }
+        break
+      }
     }
 
     if (data) setModuleData(prev => ({ ...prev, [cacheKey]: data }))
@@ -278,6 +296,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
       case 'timesheets': return renderTimesheets()
       case 'documents': return renderDocuments()
       case 'shift_skills': return renderShiftSkills()
+      case 'custom_fields': return renderCustomFields()
       default: return null
     }
   }
@@ -1289,6 +1308,67 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
             )}
           </>
         )}
+      </div>
+    )
+  }
+
+  function renderCustomFields() {
+    const defs: any[] = currentData?.definitions || []
+    if (defs.length === 0) {
+      return <div style={emptyStyle}>No custom fields have been configured. Go to the Custom Fields tab to set them up.</div>
+    }
+
+    async function saveFieldValue(fieldNumber: number, value: string) {
+      setCustomFieldsSaving(true)
+      const { data: existing } = await supabase
+        .from('employee_custom_field_values')
+        .select('id')
+        .eq('employee_id', employee.id)
+        .eq('field_number', fieldNumber)
+        .maybeSingle()
+
+      if (existing) {
+        await supabase.from('employee_custom_field_values')
+          .update({ value, updated_at: new Date().toISOString() })
+          .eq('id', existing.id)
+      } else {
+        await supabase.from('employee_custom_field_values').insert({
+          employee_id: employee.id, company_id: companyId,
+          field_number: fieldNumber, value,
+        })
+      }
+      showSuccess('Saved')
+      setCustomFieldsSaving(false)
+    }
+
+    return (
+      <div style={cardStyle}>
+        <h4 style={headingStyle}>Custom Fields</h4>
+        <div style={{ display: 'grid', gap: 16 }}>
+          {defs.map((d: any) => (
+            <div key={d.field_number}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>{d.title}</label>
+              {d.field_type === 'long' ? (
+                <textarea
+                  value={customFieldValues[d.field_number] ?? ''}
+                  onChange={e => setCustomFieldValues(prev => ({ ...prev, [d.field_number]: e.target.value }))}
+                  onBlur={e => saveFieldValue(d.field_number, e.target.value)}
+                  rows={3}
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={customFieldValues[d.field_number] ?? ''}
+                  onChange={e => setCustomFieldValues(prev => ({ ...prev, [d.field_number]: e.target.value }))}
+                  onBlur={e => saveFieldValue(d.field_number, e.target.value)}
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+        {customFieldsSaving && <p style={{ fontSize: 11, color: '#999', marginTop: 8 }}>Saving...</p>}
       </div>
     )
   }

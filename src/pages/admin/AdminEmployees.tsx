@@ -84,7 +84,7 @@ export default function AdminEmployees() {
   const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
   const [lieuDays, setLieuDays] = useState<Record<string, { balanceId: number; lieu_days: number }>>({})
   const [editLieuDays, setEditLieuDays] = useState<number>(0)
-  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart' | 'settings'>('management')
+  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart' | 'settings' | 'custom_fields'>('management')
   const [recordsSearch, setRecordsSearch] = useState('')
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
@@ -104,6 +104,20 @@ export default function AdminEmployees() {
   const [editingSettings, setEditingSettings] = useState<Record<string, WorkerTypeSetting>>({})
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [changeLog, setChangeLog] = useState<{ id: number; worker_type: string; setting_name: string; old_value: string; new_value: string; exception_count: number; created_at: string }[]>([])
+
+  // Custom fields state
+  interface CustomFieldDef {
+    id?: string
+    company_id: string
+    field_number: number
+    title: string
+    field_type: 'short' | 'long'
+    default_value: string
+    is_visible: boolean
+  }
+  const [customFields, setCustomFields] = useState<CustomFieldDef[]>([])
+  const [customFieldsLoading, setCustomFieldsLoading] = useState(false)
+  const [customFieldsSaving, setCustomFieldsSaving] = useState(false)
 
   // Impact assessment modal state
   const [impactModal, setImpactModal] = useState<{
@@ -549,6 +563,46 @@ export default function AdminEmployees() {
     load()
   }
 
+  async function loadCustomFields() {
+    setCustomFieldsLoading(true)
+    const { data } = await supabase
+      .from('company_custom_fields')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .order('field_number')
+    const existing = data || []
+    const fields: CustomFieldDef[] = []
+    for (let i = 1; i <= 5; i++) {
+      const found = existing.find((f: any) => f.field_number === i)
+      if (found) {
+        fields.push({ id: found.id, company_id: found.company_id, field_number: found.field_number, title: found.title, field_type: found.field_type, default_value: found.default_value, is_visible: found.is_visible })
+      } else {
+        fields.push({ company_id: selectedCompanyId, field_number: i, title: '', field_type: 'short', default_value: '', is_visible: false })
+      }
+    }
+    setCustomFields(fields)
+    setCustomFieldsLoading(false)
+  }
+
+  async function saveCustomFields() {
+    setCustomFieldsSaving(true)
+    for (const f of customFields) {
+      if (f.id) {
+        await supabase.from('company_custom_fields').update({
+          title: f.title, field_type: f.field_type, default_value: f.default_value, is_visible: f.is_visible, updated_at: new Date().toISOString(),
+        }).eq('id', f.id)
+      } else if (f.title.trim()) {
+        await supabase.from('company_custom_fields').insert({
+          company_id: selectedCompanyId, field_number: f.field_number,
+          title: f.title, field_type: f.field_type, default_value: f.default_value, is_visible: f.is_visible,
+        })
+      }
+    }
+    showSuccess('Custom fields saved')
+    setCustomFieldsSaving(false)
+    loadCustomFields()
+  }
+
   function getEffectiveSetting(emp: Employee, field: 'pay_pattern' | 'overtime_handling' | 'time_recording'): string {
     const overrideVal = emp[`${field}_override` as keyof Employee] as string | null
     if (overrideVal) return overrideVal
@@ -659,6 +713,7 @@ export default function AdminEmployees() {
         <button className={`admin-tab ${activeTab === 'records' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('records')}>Employee Records</button>
         <button className={`admin-tab ${activeTab === 'orgchart' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('orgchart')}>Org Chart</button>
         <button className={`admin-tab ${activeTab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('settings')}>Payroll Settings</button>
+        <button className={`admin-tab ${activeTab === 'custom_fields' ? 'admin-tab-active' : ''}`} onClick={() => { setActiveTab('custom_fields'); if (customFields.length === 0) loadCustomFields() }}>Custom Fields</button>
       </div>
 
       {activeTab === 'records' && (
@@ -1119,6 +1174,79 @@ export default function AdminEmployees() {
                 </div>
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'custom_fields' && (
+        <div className="admin-settings-section">
+          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
+            Define up to 5 custom profile fields for your employees. Set a title, choose short (single line) or long (multi-line) format,
+            optionally set a default value, and toggle visibility. Visible fields appear in employee records and in the employee HR app.
+          </p>
+
+          {customFieldsLoading ? (
+            <p style={{ fontSize: 13, color: '#999' }}>Loading...</p>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gap: 16 }}>
+                {customFields.map((f, idx) => (
+                  <div key={f.field_number} style={{ background: '#fff', borderRadius: 10, border: '1px solid #e0e0e0', padding: 20 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#333' }}>Field {f.field_number}</span>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={f.is_visible}
+                          onChange={e => setCustomFields(prev => prev.map((p, i) => i === idx ? { ...p, is_visible: e.target.checked } : p))}
+                        />
+                        Visible to employees
+                      </label>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px', gap: 12, marginBottom: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Title</label>
+                        <input type="text" value={f.title} placeholder={`e.g. Custom Field ${f.field_number}`}
+                          onChange={e => setCustomFields(prev => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Field Type</label>
+                        <select value={f.field_type}
+                          onChange={e => setCustomFields(prev => prev.map((p, i) => i === idx ? { ...p, field_type: e.target.value as 'short' | 'long' } : p))}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                        >
+                          <option value="short">Short (single line)</option>
+                          <option value="long">Long (multi-line)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Default Value (optional)</label>
+                      {f.field_type === 'long' ? (
+                        <textarea value={f.default_value} placeholder="Leave blank or set a default..."
+                          onChange={e => setCustomFields(prev => prev.map((p, i) => i === idx ? { ...p, default_value: e.target.value } : p))}
+                          rows={3}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }}
+                        />
+                      ) : (
+                        <input type="text" value={f.default_value} placeholder="Leave blank or set a default..."
+                          onChange={e => setCustomFields(prev => prev.map((p, i) => i === idx ? { ...p, default_value: e.target.value } : p))}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13 }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                <button className="admin-btn admin-btn-primary" onClick={saveCustomFields} disabled={customFieldsSaving}>
+                  {customFieldsSaving ? 'Saving...' : 'Save Custom Fields'}
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
