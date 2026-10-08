@@ -4120,11 +4120,11 @@ export default function AdminPayrollNew() {
                             Only payslips for the {wizRunEmployees.length} {wizWorkerTypes.has('employed') ? 'employed' : wizWorkerTypes.has('shift') ? 'shift worker' : 'zero hours'} employee{wizRunEmployees.length !== 1 ? 's' : ''} in this pay run will be synced.
                           </p>
                         </div>
-                        <button className="admin-btn admin-btn-primary" disabled={wizExporting} onClick={async () => {
+                        <button className="admin-btn admin-btn-primary" disabled={wizExporting || wizExported} onClick={async () => {
                           await wizSyncXero()
                           setWizExported(true)
                         }} style={{ fontSize: 13 }}>
-                          {wizExporting ? 'Syncing…' : 'Fetch Pay Run'}
+                          {wizExporting ? 'Syncing…' : wizExported ? '✓ Fetched' : 'Fetch Pay Run'}
                         </button>
                       </div>
                     </div>
