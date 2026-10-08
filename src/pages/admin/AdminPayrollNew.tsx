@@ -4250,9 +4250,14 @@ export default function AdminPayrollNew() {
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, alignItems: 'center' }}>
+                    {!wizExported && (
+                      <span style={{ fontSize: 12, color: '#e65100', marginRight: 'auto' }}>
+                        Sync payslips from {connectedProvider === 'xero' ? 'Xero' : 'Sage'} before releasing to employees.
+                      </span>
+                    )}
                     <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
-                    <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(5)}>
+                    <button className="admin-btn admin-btn-primary" disabled={!wizExported} onClick={() => setWizStep(5)}>
                       Next: Release →
                     </button>
                   </div>
