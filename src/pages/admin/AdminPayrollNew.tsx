@@ -235,7 +235,7 @@ export default function AdminPayrollNew() {
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set())
   const [bulkUpdating, setBulkUpdating] = useState(false)
-  const [payslipSubTab, setPayslipSubTab] = useState<'employed' | 'shift'>('employed')
+  const [payslipSubTab, setPayslipSubTab] = useState<'employed' | 'shift' | 'zero_hours'>('employed')
   const [empBenefits, setEmpBenefits] = useState<Record<string, { title: string; enrolled_at: string; monthly_cost: number }[]>>({})
   const [workerSettings, setWorkerSettings] = useState<WorkerTypeSetting[]>([])
   const [wizPeriodReviews, setWizPeriodReviews] = useState<PeriodReview[]>([])
@@ -488,8 +488,12 @@ export default function AdminPayrollNew() {
       if (filterEmployee && p.employee && `${p.employee.first_name} ${p.employee.last_name}` !== filterEmployee) return false
       if (p.employee?.id) {
         const cat = empCategoryById[p.employee.id] || 'not_assigned'
-        if (payslipSubTab === 'shift' && cat !== 'shift_worker') return false
+        const emp = employees.find(e => e.id === p.employee.id)
+        const isZero = cat === 'shift_worker' && emp?.contract_type === 'Zero hours shift worker'
+        const isShift = cat === 'shift_worker' && !isZero
         if (payslipSubTab === 'employed' && cat === 'shift_worker') return false
+        if (payslipSubTab === 'shift' && !isShift) return false
+        if (payslipSubTab === 'zero_hours' && !isZero) return false
       }
       return true
     })
@@ -506,7 +510,7 @@ export default function AdminPayrollNew() {
           )
         })
       : base
-  }, [filterStatus, filterEmployee, payslips, search, payslipSubTab, empCategoryById])
+  }, [filterStatus, filterEmployee, payslips, search, payslipSubTab, empCategoryById, employees])
 
   const groupedByMonth = useMemo(() => {
     const groups: { key: string; label: string; payslips: Payslip[] }[] = []
@@ -2244,7 +2248,7 @@ export default function AdminPayrollNew() {
               <button className="admin-btn admin-btn-primary" style={{ fontSize: 13, whiteSpace: 'nowrap' }} onClick={startRunPayroll}>Continue Pay Run →</button>
             </div>
           )}
-          {/* Employed / Shift sub-tabs */}
+          {/* Employed / Shift / Zero Hours sub-tabs */}
           <div style={{ display: 'flex', gap: 0, marginBottom: 12 }}>
             <button
               onClick={() => setPayslipSubTab('employed')}
@@ -2261,12 +2265,23 @@ export default function AdminPayrollNew() {
               onClick={() => setPayslipSubTab('shift')}
               style={{
                 padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
-                borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+                borderLeft: 'none', cursor: 'pointer',
                 background: payslipSubTab === 'shift' ? '#7e57c2' : 'var(--bg-card, #fff)',
                 color: payslipSubTab === 'shift' ? '#fff' : 'var(--text, #1a1a2e)',
               }}
             >
               Shift Payslips
+            </button>
+            <button
+              onClick={() => setPayslipSubTab('zero_hours')}
+              style={{
+                padding: '8px 20px', fontSize: 13, fontWeight: 600, border: '1px solid var(--border, #e5e7eb)',
+                borderLeft: 'none', borderRadius: '0 8px 8px 0', cursor: 'pointer',
+                background: payslipSubTab === 'zero_hours' ? '#26a69a' : 'var(--bg-card, #fff)',
+                color: payslipSubTab === 'zero_hours' ? '#fff' : 'var(--text, #1a1a2e)',
+              }}
+            >
+              Zero Hours Payslips
             </button>
           </div>
 
