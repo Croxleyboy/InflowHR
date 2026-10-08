@@ -90,6 +90,7 @@ export default function MyProfile() {
   const [myDocs, setMyDocs] = useState<EmployeeDocument[]>([])
   const [docsLoading, setDocsLoading] = useState(false)
   const docsRef = useRef<HTMLDivElement>(null)
+  const [companyFields, setCompanyFields] = useState<{ field_number: number; title: string; field_type: string; value: string }[]>([])
 
   const fetchData = useCallback(async () => {
     if (!EMPLOYEE_EMAIL || !companyUser?.company_id) return
@@ -145,6 +146,25 @@ export default function MyProfile() {
         setMyDocs((data || []) as EmployeeDocument[])
         setDocsLoading(false)
       })
+  }, [employeeId, companyUser?.company_id])
+
+  useEffect(() => {
+    if (!employeeId || !companyUser?.company_id) return
+    ;(async () => {
+      const [{ data: defs }, { data: vals }] = await Promise.all([
+        supabase.from('company_custom_fields').select('field_number, title, field_type, default_value, is_visible')
+          .eq('company_id', companyUser.company_id).eq('is_visible', true).order('field_number'),
+        supabase.from('employee_custom_field_values').select('field_number, value')
+          .eq('employee_id', employeeId).eq('company_id', companyUser.company_id),
+      ])
+      const valMap: Record<number, string> = {}
+      for (const v of (vals || []) as any[]) valMap[v.field_number] = v.value
+      const fields = ((defs || []) as any[]).filter(d => d.title.trim()).map(d => ({
+        field_number: d.field_number, title: d.title, field_type: d.field_type,
+        value: valMap[d.field_number] ?? d.default_value ?? '',
+      }))
+      setCompanyFields(fields)
+    })()
   }, [employeeId, companyUser?.company_id])
 
   useEffect(() => {
@@ -488,6 +508,23 @@ export default function MyProfile() {
               <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{t('my_profile.emp_type')}</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{empData?.contract_type || profile.contract_type}</span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'job' && companyFields.length > 0 && (
+        <div style={{ padding: '0 16px 16px' }}>
+          <div style={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border)', overflow: 'hidden' }}>
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Company Fields</span>
+            </div>
+            {companyFields.map((f, i) => (
+              <div key={f.field_number} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: i < companyFields.length - 1 ? '1px solid var(--border)' : 'none', gap: 16 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>{f.title}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', textAlign: 'right', whiteSpace: f.field_type === 'long' ? 'pre-line' : 'nowrap' }}>{f.value || '—'}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
