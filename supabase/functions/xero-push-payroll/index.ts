@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const XERO_TOKEN_URL = 'https://identity.xero.com/connect/token'
 const XERO_PAYROLL_UK = 'https://api.xero.com/payroll.xro/1.0'
 const XERO_PAYROLL_AU = 'https://api.xero.com/payroll.xro/2.0'
+const XERO_PAYROLL_UK_V2 = 'https://api.xero.com/payroll.xro/2.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': 'https://app.inflowhr.com',
@@ -91,7 +92,7 @@ function sanitise(raw: string): string {
   return raw.slice(0, 500).replace(/[<>"'&]/g, '')
 }
 
-// Build UK v1 timesheet lines — each line has Date, EarningsRateID, NumberOfUnits (PascalCase)
+// Build UK v1 timesheet lines for shift/zero-hours workers only
 function buildUkTimesheetLines(
   startDate: string,
   endDate: string,
@@ -119,7 +120,7 @@ function buildUkTimesheetLines(
   return lines
 }
 
-// Build AU v2 timesheet lines — each line has date, earningsRateID, numberOfUnits (camelCase)
+// Build AU v2 timesheet lines for shift/zero-hours workers only
 function buildAuTimesheetLines(
   startDate: string,
   endDate: string,
@@ -233,9 +234,10 @@ Deno.serve(async (req) => {
     for (const u of (unpaid_leave || [])) allEmpIds.add(u.employee_id)
     for (const b of (benefit_changes || [])) allEmpIds.add(b.employee_id)
 
+    // Query employees WITH employment_category to determine salaried vs shift
     const { data: employees } = await sb
       .from('employees')
-      .select('id, first_name, last_name, xero_employee_id, hourly_rate, annual_salary')
+      .select('id, first_name, last_name, xero_employee_id, hourly_rate, annual_salary, employment_category')
       .in('id', [...allEmpIds])
 
     const empMap: Record<string, {
@@ -243,6 +245,7 @@ Deno.serve(async (req) => {
       name: string
       hourlyRate: number
       annualSalary: number
+      isSalaried: boolean
     }> = {}
     for (const e of (employees || [])) {
       empMap[e.id] = {
@@ -250,6 +253,7 @@ Deno.serve(async (req) => {
         name: `${e.first_name} ${e.last_name}`,
         hourlyRate: e.hourly_rate || 0,
         annualSalary: e.annual_salary || 0,
+        isSalaried: e.employment_category === 'Employed',
       }
     }
 
@@ -264,7 +268,6 @@ Deno.serve(async (req) => {
 
     // Auto-detect earnings rates from Xero if not mapped
     if (!regularRateId || !overtimeRateId) {
-      // Try /EarningsRates first, fall back to /PayItems for AU
       let rates: any[] = []
       const rateRes = await fetch(`${baseUrl}/EarningsRates`, { headers: xeroHeaders })
       if (rateRes.ok) {
@@ -278,6 +281,15 @@ Deno.serve(async (req) => {
           const piBody = await piRes.json()
           const payItems = piBody.PayItems || piBody.payItems || {}
           rates = payItems.EarningsRates || payItems.earningsRates || []
+        }
+      }
+
+      // Also try UK v2 EarningsRates if v1 returned nothing
+      if (!rates.length && isUK) {
+        const v2RateRes = await fetch(`${XERO_PAYROLL_UK_V2}/EarningsRates`, { headers: xeroHeaders })
+        if (v2RateRes.ok) {
+          const v2Body = await v2RateRes.json()
+          rates = v2Body.earningsRates || v2Body.EarningsRates || []
         }
       }
 
@@ -316,7 +328,7 @@ Deno.serve(async (req) => {
 
     const effectiveOtRateId = overtimeRateId || regularRateId!
 
-    // Get or fetch payroll calendar ID (needed for timesheet creation)
+    // Get payroll calendar ID (needed for timesheet creation for shift workers)
     const { data: xeroIntegration } = await sb
       .from('xero_integrations')
       .select('payroll_calendar_id')
@@ -339,12 +351,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fetch all timesheets for the period to find existing employee timesheets
-    const tsListRes = await fetch(`${baseUrl}/Timesheets`, { headers: xeroHeaders })
+    // Only fetch timesheets for non-salaried workers (shift/zero hours still use timesheets)
+    const hasNonSalariedOt = (overtime || []).some(ot => {
+      const emp = empMap[ot.employee_id]
+      return emp && !emp.isSalaried
+    })
+
     let allTimesheets: any[] = []
-    if (tsListRes.ok) {
-      const tsBody = await tsListRes.json()
-      allTimesheets = tsBody.timesheets || tsBody.Timesheets || []
+    if (hasNonSalariedOt) {
+      const tsListRes = await fetch(`${baseUrl}/Timesheets`, { headers: xeroHeaders })
+      if (tsListRes.ok) {
+        const tsBody = await tsListRes.json()
+        allTimesheets = tsBody.timesheets || tsBody.Timesheets || []
+      }
     }
 
     // Cache for per-employee payroll calendar lookups (AU)
@@ -375,8 +394,10 @@ Deno.serve(async (req) => {
       multiplier: number
       rate: number
       amount: number
+      method?: string
       earningsRateId?: string
       lines_posted?: number
+      payTemplateEarningID?: string
       error?: string
     }[] = []
     const skipped: { employee: string; reason: string }[] = []
@@ -388,7 +409,7 @@ Deno.serve(async (req) => {
       days?: number
     }[] = []
 
-    // Push overtime via Timesheets
+    // Process overtime for each employee
     for (const ot of (overtime || [])) {
       const emp = empMap[ot.employee_id]
       if (!emp) { skipped.push({ employee: ot.employee_id, reason: 'Employee not found' }); continue }
@@ -405,7 +426,97 @@ Deno.serve(async (req) => {
       const overtimeRate = Math.round(baseRate * ot.multiplier * 100) / 100
       const overtimeAmount = Math.round(overtimeRate * ot.hours * 100) / 100
 
-      // Check for existing timesheet
+      // ── SALARIED EMPLOYEES: Use Pay Template Earnings (not timesheets) ──
+      if (emp.isSalaried) {
+        // Use UK v2 API for pay template operations (v1 doesn't support pay templates)
+        const payTemplateBaseUrl = isUK ? XERO_PAYROLL_UK_V2 : baseUrl
+
+        // Step 1: GET existing pay template to check for existing overtime line
+        let existingOtLineId: string | null = null
+        const ptRes = await fetch(
+          `${payTemplateBaseUrl}/Employees/${emp.xeroId}/PayTemplates`,
+          { headers: xeroHeaders }
+        )
+        if (ptRes.ok) {
+          const ptBody = await ptRes.json()
+          const payTemplate = ptBody.payTemplate || ptBody.PayTemplate || {}
+          const earningsLines = payTemplate.earningTemplates || payTemplate.EarningTemplates
+            || payTemplate.earningsLines || payTemplate.EarningsLines || []
+          const existingOtLine = earningsLines.find((line: any) => {
+            const lineRateId = line.earningsRateID || line.EarningsRateID
+            return lineRateId === effectiveOtRateId
+          })
+          if (existingOtLine) {
+            existingOtLineId = existingOtLine.payTemplateEarningID || existingOtLine.PayTemplateEarningID
+          }
+        }
+
+        // Step 2: Create or update the overtime earnings template line
+        // numberOfUnits = overtime hours; Xero calculates pay using the earnings rate's multiplier (1.5x)
+        const earningsTemplateBody = {
+          earningsRateID: effectiveOtRateId,
+          numberOfUnits: ot.hours,
+        }
+
+        let ptPushRes: Response
+
+        if (existingOtLineId) {
+          // Update existing overtime line
+          ptPushRes = await fetch(
+            `${payTemplateBaseUrl}/Employees/${emp.xeroId}/PayTemplates/earnings/${existingOtLineId}`,
+            {
+              method: 'PUT',
+              headers: xeroHeaders,
+              body: JSON.stringify(earningsTemplateBody),
+            }
+          )
+        } else {
+          // Create new overtime earnings template line
+          ptPushRes = await fetch(
+            `${payTemplateBaseUrl}/Employees/${emp.xeroId}/PayTemplates/earnings`,
+            {
+              method: 'POST',
+              headers: xeroHeaders,
+              body: JSON.stringify(earningsTemplateBody),
+            }
+          )
+        }
+
+        if (ptPushRes.ok) {
+          const ptResult = await ptPushRes.json()
+          const createdLine = ptResult.earningTemplate || ptResult.EarningTemplate
+            || ptResult.earningsLine || ptResult.EarningsLine || {}
+          const newLineId = createdLine.payTemplateEarningID || createdLine.PayTemplateEarningID || existingOtLineId
+
+          timesheetResults.push({
+            employee: emp.name,
+            status: 'pushed',
+            hours: ot.hours,
+            multiplier: ot.multiplier,
+            rate: baseRate,
+            amount: overtimeAmount,
+            method: 'pay_template',
+            earningsRateId: effectiveOtRateId,
+            payTemplateEarningID: newLineId || undefined,
+          })
+        } else {
+          const errText = await ptPushRes.text()
+          timesheetResults.push({
+            employee: emp.name,
+            status: 'failed',
+            hours: ot.hours,
+            multiplier: ot.multiplier,
+            rate: baseRate,
+            amount: overtimeAmount,
+            method: 'pay_template',
+            error: sanitise(errText) || 'Pay template push failed',
+          })
+        }
+
+        continue
+      }
+
+      // ── SHIFT / ZERO HOURS WORKERS: Use Timesheets (existing approach) ──
       const empTimesheets = allTimesheets.filter((ts: any) =>
         (ts.employeeID || ts.EmployeeID) === emp.xeroId
       )
@@ -414,7 +525,6 @@ Deno.serve(async (req) => {
       let linesCount: number
 
       if (isUK) {
-        // UK v1: PascalCase fields, each line has Date + EarningsRateID + NumberOfUnits
         const calId = companyCalendarId || await getEmployeeCalendarId(emp.xeroId!)
         if (!calId) {
           skipped.push({ employee: emp.name, reason: 'No payroll calendar assigned in Xero — assign one before pushing timesheets' })
@@ -442,7 +552,6 @@ Deno.serve(async (req) => {
           }
         }
       } else {
-        // AU v2: camelCase fields, each line has date + earningsRateID + numberOfUnits
         const calId = await getEmployeeCalendarId(emp.xeroId!)
         if (!calId) {
           skipped.push({ employee: emp.name, reason: 'No payroll calendar assigned in Xero — assign one before pushing timesheets' })
@@ -473,7 +582,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // POST to Timesheets — try single object first, then array wrapper
       const tsUrl = `${baseUrl}/Timesheets`
       let tsRes = await fetch(tsUrl, {
         method: 'POST',
@@ -497,6 +605,7 @@ Deno.serve(async (req) => {
           multiplier: ot.multiplier,
           rate: baseRate,
           amount: overtimeAmount,
+          method: 'timesheet',
           earningsRateId: effectiveOtRateId,
           lines_posted: linesCount,
         })
@@ -509,6 +618,7 @@ Deno.serve(async (req) => {
           multiplier: ot.multiplier,
           rate: baseRate,
           amount: overtimeAmount,
+          method: 'timesheet',
           error: sanitise(errText) || 'Timesheet push failed',
         })
       }
@@ -545,8 +655,11 @@ Deno.serve(async (req) => {
     const failedCount = timesheetResults.filter(r => r.status === 'failed').length
 
     // GDPR audit log
+    const salariedPushed = timesheetResults.filter(r => r.status === 'pushed' && r.method === 'pay_template').length
+    const shiftPushed = timesheetResults.filter(r => r.status === 'pushed' && r.method === 'timesheet').length
     const auditDetail = `Xero payroll push (${isUK ? 'UK' : 'AU'}) — Pay run: ${pay_run_id}, Period: ${period_start} to ${period_end}. ` +
-      `Overtime timesheets pushed: ${pushedCount}, Failed: ${failedCount}, Skipped: ${skipped.length}. ` +
+      `Salaried overtime via pay template: ${salariedPushed}, Shift/ZH overtime via timesheet: ${shiftPushed}, ` +
+      `Failed: ${failedCount}, Skipped: ${skipped.length}. ` +
       `Manual items flagged: ${manualItems.length} (unpaid leave: ${(unpaid_leave || []).length}, benefit changes: ${(benefit_changes || []).length}). ` +
       `Data sent to Xero: employee IDs, overtime hours, earning rate IDs.`
     await sb.from('payroll_audit_log').insert({
