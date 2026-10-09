@@ -86,6 +86,34 @@ async function getValidXeroToken(companyId: string): Promise<{
   return { accessToken: tokens.access_token, tenantId: row.tenant_id }
 }
 
+function extractDate(val: string | undefined | null): string {
+  if (!val) return ''
+  return val.split('T')[0]
+}
+
+function getPayRunField(r: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    if (r[k]) return String(r[k])
+  }
+  return ''
+}
+
+function getPayRunPeriodStart(r: Record<string, unknown>): string {
+  return extractDate(getPayRunField(r, 'periodStartDate', 'PayRunPeriodStartDate', 'payRunPeriodStartDate'))
+}
+
+function getPayRunPeriodEnd(r: Record<string, unknown>): string {
+  return extractDate(getPayRunField(r, 'periodEndDate', 'PayRunPeriodEndDate', 'payRunPeriodEndDate'))
+}
+
+function getPayRunStatus(r: Record<string, unknown>): string {
+  return getPayRunField(r, 'payRunStatus', 'PayRunStatus').toUpperCase()
+}
+
+function getPayRunId(r: Record<string, unknown>): string {
+  return getPayRunField(r, 'payRunID', 'PayRunID')
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -99,7 +127,7 @@ Deno.serve(async (req) => {
     )
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
-    const { company_id, worker_types } = await req.json()
+    const { company_id, worker_types, period_start, period_end } = await req.json()
     if (!company_id) return json({ error: 'company_id required' }, 400)
 
     const { data: cu } = await sb
@@ -132,20 +160,65 @@ Deno.serve(async (req) => {
     if (!payRuns.length) return json({ payRun: null, payslips: [] })
 
     // Sort by period end date descending to find the most recent
-    payRuns.sort((a: Record<string, string>, b: Record<string, string>) => {
-      const aDate = a.periodEndDate || a.PayRunPeriodEndDate || a.payRunPeriodEndDate || ''
-      const bDate = b.periodEndDate || b.PayRunPeriodEndDate || b.payRunPeriodEndDate || ''
-      return bDate.localeCompare(aDate)
+    payRuns.sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+      return getPayRunPeriodEnd(b).localeCompare(getPayRunPeriodEnd(a))
     })
 
-    // Prefer the most recent POSTED pay run, fall back to the latest
-    const completedRun = payRuns.find((r: Record<string, string>) => {
-      const status = (r.payRunStatus || r.PayRunStatus || '').toUpperCase()
-      return status === 'POSTED'
-    }) || payRuns[0]
+    // Build a summary of available pay runs for error messages
+    function availablePayRunsSummary(): string {
+      return payRuns.slice(0, 5).map((r: Record<string, unknown>) =>
+        `${getPayRunPeriodStart(r)} to ${getPayRunPeriodEnd(r)} (${getPayRunStatus(r)})`
+      ).join('; ')
+    }
 
-    const payRunId = completedRun.payRunID || completedRun.PayRunID
-    if (!payRunId) return json({ error: 'No valid pay run found' }, 404)
+    let selectedRun: Record<string, unknown> | null = null
+
+    if (period_start && period_end) {
+      const reqStart = extractDate(period_start)
+      const reqEnd = extractDate(period_end)
+
+      // Exact match on period dates first
+      selectedRun = payRuns.find((r: Record<string, unknown>) => {
+        return getPayRunPeriodStart(r) === reqStart && getPayRunPeriodEnd(r) === reqEnd
+      }) || null
+
+      // Overlapping periods fallback (Xero period contains or overlaps our period)
+      if (!selectedRun) {
+        selectedRun = payRuns.find((r: Record<string, unknown>) => {
+          const rStart = getPayRunPeriodStart(r)
+          const rEnd = getPayRunPeriodEnd(r)
+          if (!rStart || !rEnd) return false
+          return rStart <= reqEnd && rEnd >= reqStart
+        }) || null
+      }
+
+      if (!selectedRun) {
+        return json({
+          error: `No Xero pay run found for period ${reqStart} to ${reqEnd}. Available pay runs: ${availablePayRunsSummary()}. Create a pay run in Xero for this period first.`,
+        }, 404)
+      }
+
+      const status = getPayRunStatus(selectedRun)
+      if (status !== 'POSTED' && status !== 'DRAFT') {
+        return json({
+          error: `Xero pay run for ${reqStart} to ${reqEnd} has status "${status}". The pay run must be Posted or Draft to sync payslips. Process and post the pay run in Xero first.`,
+        }, 400)
+      }
+    } else {
+      // Legacy fallback: no period dates provided — grab most recent POSTED, then DRAFT
+      selectedRun = payRuns.find((r: Record<string, unknown>) => getPayRunStatus(r) === 'POSTED') || null
+      if (!selectedRun) {
+        selectedRun = payRuns.find((r: Record<string, unknown>) => getPayRunStatus(r) === 'DRAFT') || null
+      }
+      if (!selectedRun) {
+        return json({
+          error: `No Posted or Draft pay run found in Xero. Available pay runs: ${availablePayRunsSummary()}. Post or finalise a pay run in Xero first.`,
+        }, 404)
+      }
+    }
+
+    const payRunId = getPayRunId(selectedRun)
+    if (!payRunId) return json({ error: 'No valid pay run ID found' }, 404)
 
     // Fetch pay run detail to get payslip IDs
     const payRunDetailRes = await fetch(`${XERO_PAYROLL_V2}/PayRuns/${payRunId}`, { headers })
@@ -154,7 +227,7 @@ Deno.serve(async (req) => {
       return json({ error: 'Failed to fetch pay run detail from Xero', detail: errText }, 502)
     }
     const payRunDetail = await payRunDetailRes.json()
-    const payRunData = payRunDetail.payRun || payRunDetail.PayRun || completedRun
+    const payRunData = payRunDetail.payRun || payRunDetail.PayRun || selectedRun
     const paySlipRefs = payRunData.paySlips || payRunData.PaySlips || []
 
     // Fetch each payslip individually for full breakdown
@@ -271,9 +344,9 @@ Deno.serve(async (req) => {
     })
 
     // Extract period dates from the pay run
-    const periodStart = (payRunData.periodStartDate || payRunData.PayRunPeriodStartDate || payRunData.payRunPeriodStartDate || '')?.split('T')[0]
-    const periodEnd = (payRunData.periodEndDate || payRunData.PayRunPeriodEndDate || payRunData.payRunPeriodEndDate || '')?.split('T')[0]
-    const paymentDate = (payRunData.paymentDate || payRunData.PaymentDate || '')?.split('T')[0]
+    const periodStart = getPayRunPeriodStart(payRunData)
+    const periodEnd = getPayRunPeriodEnd(payRunData)
+    const paymentDate = extractDate(getPayRunField(payRunData, 'paymentDate', 'PaymentDate'))
 
     // Store xero_employee_id on InflowHR employees matched by email (one-time mapping)
     const mappingsToStore: { inflowId: string; xeroId: string }[] = []

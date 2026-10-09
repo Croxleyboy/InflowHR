@@ -1400,9 +1400,13 @@ export default function AdminPayrollNew() {
     setWizExporting(true)
     try {
       const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
+      const allStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
+      const allEnds = Object.values(wizPeriodByType).map(p => p.end).sort().reverse()
+      const periodStart = allStarts[0] || undefined
+      const periodEnd = allEnds[0] || undefined
       const { data, error } = await supabase.functions.invoke('xero-payslips', {
         headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { company_id: selectedCompanyId, worker_types: workerTypeArr },
+        body: { company_id: selectedCompanyId, worker_types: workerTypeArr, period_start: periodStart, period_end: periodEnd },
       })
       if (error) throw error
       if (data?.error) throw new Error(data.error)
