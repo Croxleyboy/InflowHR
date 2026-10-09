@@ -269,6 +269,7 @@ export default function AdminPayrollNew() {
   const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
   const [wizBonusEntries, setWizBonusEntries] = useState<{ employee_id: string; employee_name: string; amount: number; description: string; type: 'bonus' | 'deduction' }[]>([])
   const [lastPayRuns, setLastPayRuns] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }>>({})
+  const [processingRuns, setProcessingRuns] = useState<{ id: string; worker_types: string[]; status: string; period_start: string; period_end: string; created_at: string }[]>([])
   const [wizPeriodByType, setWizPeriodByType] = useState<Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }>>({})
   const [wizGeneratingReviews, setWizGeneratingReviews] = useState(false)
   const [wizShiftDetails, setWizShiftDetails] = useState<Record<string, { employee_id: string; check_in_at: string; check_out_at: string; hours: number; scheduled_start?: string; scheduled_end?: string; shift_name?: string; overtime_hours?: number }[]>>({})
@@ -492,6 +493,14 @@ export default function AdminPayrollNew() {
       }
     }
     setLastPayRuns(runMap)
+
+    const { data: procRuns } = await supabase.from('pay_runs')
+      .select('id, worker_types, status, period_start, period_end, created_at')
+      .eq('company_id', selectedCompanyId!)
+      .in('status', ['processing', 'exported'])
+      .order('created_at', { ascending: false })
+      .limit(5)
+    setProcessingRuns((procRuns || []) as any)
 
     setLoading(false)
   }, [selectedCompanyId, fyRange])
@@ -1249,7 +1258,7 @@ export default function AdminPayrollNew() {
         } catch { /* non-blocking */ }
       }
 
-      await supabase.from('pay_runs').update({ status: 'exported' }).eq('id', payRunId)
+      await supabase.from('pay_runs').update({ status: providerConnected ? 'processing' : 'exported' }).eq('id', payRunId)
       setWizGenerated(true)
       setWizExported(true)
 
@@ -1453,7 +1462,7 @@ export default function AdminPayrollNew() {
       const { data: activeRun } = await supabase.from('pay_runs')
         .select('id, status, worker_types, payment_method')
         .eq('company_id', selectedCompanyId)
-        .in('status', ['generating', 'exported', 'synced'])
+        .in('status', ['generating', 'exported', 'processing', 'synced'])
         .order('created_at', { ascending: false })
         .limit(1)
 
@@ -1471,15 +1480,19 @@ export default function AdminPayrollNew() {
         setWizWorkerTypes(types)
 
         if (run.status === 'generating') {
-          setWizStep(4)
+          setWizStep(providerConnected ? 3 : 4)
           setWizExported(false)
           setWizPayMethod(run.payment_method || 'external')
+        } else if (run.status === 'processing') {
+          setWizStep(4)
+          setWizExported(true)
+          setWizPayMethod(run.payment_method || 'external')
         } else if (run.status === 'exported') {
-          setWizStep(5)
+          setWizStep(providerConnected ? 5 : 5)
           setWizExported(true)
           setWizPayMethod(run.payment_method || 'external')
         } else if (run.status === 'synced') {
-          setWizStep(5)
+          setWizStep(providerConnected ? 6 : 5)
           setWizExported(true)
           setWizPayMethod(run.payment_method || 'external')
         }
@@ -1587,7 +1600,7 @@ export default function AdminPayrollNew() {
         .select('id, status, worker_types, payment_method')
         .eq('company_id', selectedCompanyId)
         .contains('worker_types', [wtKey])
-        .in('status', ['generating', 'exported', 'synced'])
+        .in('status', ['generating', 'exported', 'processing', 'synced'])
         .order('created_at', { ascending: false })
         .limit(1)
 
@@ -1598,8 +1611,10 @@ export default function AdminPayrollNew() {
         setWizComplete(false)
         setWizReleasing(false)
         setWizWorkerTypes(new Set([type]))
-        if (run.status === 'generating') { setWizStep(4); setWizExported(false); setWizPayMethod(run.payment_method || 'external') }
-        else { setWizStep(5); setWizExported(true); setWizPayMethod(run.payment_method || 'external') }
+        if (run.status === 'generating') { setWizStep(providerConnected ? 3 : 4); setWizExported(false); setWizPayMethod(run.payment_method || 'external') }
+        else if (run.status === 'processing') { setWizStep(4); setWizExported(true); setWizPayMethod(run.payment_method || 'external') }
+        else if (run.status === 'exported') { setWizStep(providerConnected ? 5 : 5); setWizExported(true); setWizPayMethod(run.payment_method || 'external') }
+        else { setWizStep(providerConnected ? 6 : 5); setWizExported(true); setWizPayMethod(run.payment_method || 'external') }
         setWizExporting(false)
         setWizOvertimeHours({})
         setWizPeriodReviews([])
@@ -1989,6 +2004,7 @@ export default function AdminPayrollNew() {
     const map: Record<string, { label: string; cls: string }> = {
       not_started: { label: 'Not Started', cls: 'pn-badge-grey' },
       in_progress: { label: 'In Progress', cls: 'pn-badge-amber' },
+      processing: { label: 'Processing', cls: 'pn-badge-amber' },
       submitted: { label: 'Submitted', cls: 'pn-badge-blue' },
       paid: { label: 'Paid', cls: 'pn-badge-green' },
     }
@@ -2177,6 +2193,53 @@ export default function AdminPayrollNew() {
                 )
               })}
             </div>
+          )}
+
+          {/* Processing Pay Runs */}
+          {processingRuns.length > 0 && (
+            <>
+              <h3 className="pn-section-title" style={{ marginTop: 28 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Pay Runs In Progress
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                {processingRuns.map(run => {
+                  const wtLabels = (run.worker_types || []).map((wt: string) => wt === 'employed' ? 'Employed' : wt === 'shift_worker' ? 'Shift Workers' : 'Zero Hours').join(', ')
+                  const statusColor = run.status === 'processing' ? '#ff9800' : '#1565c0'
+                  const statusLabel = run.status === 'processing' ? 'Processing' : 'Exported'
+                  return (
+                    <div key={run.id} style={{
+                      background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: '12px 16px',
+                      border: `1px solid var(--border, #e5e7eb)`, borderLeft: `4px solid ${statusColor}`,
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10,
+                    }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <strong style={{ fontSize: 14 }}>{wtLabels}</strong>
+                          <span style={{ fontSize: 11, background: statusColor + '18', color: statusColor, padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>{statusLabel}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginTop: 2 }}>
+                          {run.period_start && run.period_end
+                            ? `${formatDate(run.period_start)} – ${formatDate(run.period_end)}`
+                            : `Started ${formatDate(run.created_at.split('T')[0])}`}
+                        </div>
+                      </div>
+                      <button className="admin-btn admin-btn-primary" style={{ fontSize: 12, background: statusColor }} onClick={() => {
+                        const types = new Set<'employed' | 'shift' | 'zero_hours'>()
+                        if (run.worker_types?.includes('employed')) types.add('employed')
+                        if (run.worker_types?.includes('shift_worker')) types.add('shift')
+                        if (run.worker_types?.includes('zero_hours')) types.add('zero_hours')
+                        const firstType = [...types][0]
+                        if (firstType) startPayrollForType(firstType)
+                        else startRunPayroll()
+                      }}>
+                        Resume →
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           )}
 
           {/* Quick Actions */}
@@ -2788,7 +2851,7 @@ export default function AdminPayrollNew() {
           {/* Progress steps */}
           <div className="pn-wizard-steps">
             {(providerConnected
-              ? ['Select Workers', 'Review Adjustments', 'Push & Manual Actions', 'Sync Back', 'Release']
+              ? ['Select Workers', 'Review Adjustments', 'Push & Manual Actions', 'Processing', 'Sync Back', 'Release']
               : ['Select Workers', 'Review', 'Generate Estimates', 'Export', 'Sync & Release']
             ).map((label, i) => {
               const step = i + 1
@@ -3682,8 +3745,8 @@ export default function AdminPayrollNew() {
                         const manualCount = wizUnpaidLeave.length + wizBenefitChanges.length + wizBonusEntries.length
                         const totalCount = otCount + manualCount + toilCount
                         return totalCount === 0 ? (
-                          <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
-                            Skip to Sync Back →
+                          <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(providerConnected ? 5 : 4)}>
+                            Skip to {providerConnected ? 'Sync Back' : 'Export'} →
                           </button>
                         ) : (
                           <button className="admin-btn admin-btn-primary" disabled={wizGenerating} onClick={wizPushAdjustments}>
@@ -3868,12 +3931,50 @@ export default function AdminPayrollNew() {
                       </div>
                     )}
 
+                    {/* Pay template cleanup notice for salaried overtime */}
+                    {wizPushResult.timesheet_results && wizPushResult.timesheet_results.some((r: any) => r.method === 'pay_template' && r.status === 'pushed') && (
+                      <div style={{ background: '#fff3e0', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ff9800', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" style={{ flexShrink: 0, marginTop: 2 }}><path d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 0 0 1.73-3L13.73 4a2 2 0 0 0-3.46 0L3.34 16a2 2 0 0 0 1.73 3z"/></svg>
+                        <div>
+                          <strong style={{ color: '#e65100', fontSize: 13 }}>Important: Clean up pay templates after pay run</strong>
+                          <p style={{ fontSize: 12, color: '#bf360c', margin: '4px 0 0' }}>
+                            Overtime for salaried staff was added to their Xero pay templates. After the pay run is posted and finalised,
+                            you <strong>must delete the overtime earnings line</strong> from each employee's pay template in Xero to prevent
+                            it carrying over to the next pay period. Go to Payroll &gt; Employees &gt; [Employee] &gt; Pay Template &gt; remove the overtime earnings line.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* CSV fallback download */}
+                    <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <strong style={{ fontSize: 13 }}>Download Changes as CSV</strong>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '2px 0 0' }}>
+                          Fallback if Xero is unavailable — download all adjustments to apply manually.
+                        </p>
+                      </div>
+                      <button className="admin-btn" style={{ fontSize: 12 }} onClick={() => {
+                        const { csv, rowCount } = generateAdjustmentsCsv()
+                        if (rowCount === 0) { showError('No adjustments to export'); return }
+                        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+                        const url = URL.createObjectURL(blob)
+                        const a = document.createElement('a')
+                        a.href = url
+                        a.download = `Payroll_Adjustments_Fallback_${localDateStr(new Date())}.csv`
+                        a.click()
+                        URL.revokeObjectURL(url)
+                      }}>
+                        Download CSV
+                      </button>
+                    </div>
+
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                       <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                       <button className="admin-btn admin-btn-primary"
                         disabled={wizPushResult.manual_items && wizPushResult.manual_items.length > 0 && !wizPushResult.manual_items.every((_: any, i: number) => wizManualChecked.has(`manual-${i}`))}
                         onClick={() => setWizStep(4)}>
-                        Next: Sync Back →
+                        Next: Processing →
                       </button>
                     </div>
                   </>
@@ -3977,7 +4078,7 @@ export default function AdminPayrollNew() {
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                       <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                       <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(4)}>
-                        Next: Sync Back →
+                        Next: Processing →
                       </button>
                     </div>
                   </>
@@ -4058,8 +4159,113 @@ export default function AdminPayrollNew() {
             </div>
           )}
 
-          {/* Step 4: Sync Back (connected) / Export (standalone) */}
-          {wizStep === 4 && (
+          {/* Step 4: Processing (connected) / Export (standalone) */}
+          {wizStep === 4 && providerConnected && (
+            <div className="admin-settings-group" style={{ marginTop: 20 }}>
+              <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Processing — Reconcile in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</h3>
+              <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
+                Adjustments have been pushed. Complete the following steps in {connectedProvider === 'xero' ? 'Xero' : 'Sage'} before syncing payslips back to InflowHR.
+              </p>
+
+              {/* Summary of what was pushed */}
+              {wizPushResult && (
+                <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                  <strong style={{ fontSize: 13 }}>Push Summary</strong>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginTop: 8 }}>
+                    {(wizPushResult.pushed || 0) > 0 && (
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value" style={{ color: '#2e7d32' }}>{wizPushResult.pushed}</span>
+                        <span className="pn-worker-metric-label">Auto-pushed</span>
+                      </div>
+                    )}
+                    {(wizPushResult.manual_items?.length || 0) > 0 && (
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value" style={{ color: '#e65100' }}>{wizPushResult.manual_items!.length}</span>
+                        <span className="pn-worker-metric-label">Manual items</span>
+                      </div>
+                    )}
+                    {(wizPushResult.skipped || 0) > 0 && (
+                      <div className="pn-worker-metric">
+                        <span className="pn-worker-metric-value" style={{ color: '#78909c' }}>{wizPushResult.skipped}</span>
+                        <span className="pn-worker-metric-label">Skipped</span>
+                      </div>
+                    )}
+                    <div className="pn-worker-metric">
+                      <span className="pn-worker-metric-value">{wizRunEmployees.length}</span>
+                      <span className="pn-worker-metric-label">Employees in run</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Checklist */}
+              {(() => {
+                const checklistItems = [
+                  { id: 'verify_push', label: `Verify all overtime and adjustments appear correctly in ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}`, detail: connectedProvider === 'xero' ? 'Payroll → Employees → check pay templates and timesheets' : 'Check imported adjustments in Sage' },
+                  { id: 'manual_items', label: 'Complete any manual items (benefits, deductions, bonuses) not pushed automatically', detail: 'See the manual actions listed in the previous step' },
+                  { id: 'create_payrun', label: `Create a pay run in ${connectedProvider === 'xero' ? 'Xero' : 'Sage'} for this period`, detail: connectedProvider === 'xero' ? 'Payroll → Pay Runs → Create Draft Pay Run' : 'Process → Pay Run' },
+                  { id: 'review_payrun', label: 'Review the draft pay run — check gross, tax, NI, net for each employee', detail: 'Verify figures match expected amounts before posting' },
+                  { id: 'post_payrun', label: `Post the pay run in ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}`, detail: connectedProvider === 'xero' ? 'Pay Run → Post → Confirm' : 'Process → Post Pay Run' },
+                ]
+                if (connectedProvider === 'xero' && wizPushResult?.timesheet_results?.some((r: any) => r.method === 'pay_template')) {
+                  checklistItems.push({ id: 'cleanup_template', label: 'Delete overtime earnings lines from pay templates after posting', detail: 'Payroll → Employees → [name] → Pay Template → remove overtime line to prevent carry-over' })
+                }
+                return (
+                  <div style={{ marginBottom: 16 }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 600, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                      Processing Checklist ({wizManualChecked.size}/{checklistItems.length} complete)
+                    </h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {checklistItems.map(item => {
+                        const checked = wizManualChecked.has(item.id)
+                        return (
+                          <div key={item.id} style={{
+                            background: checked ? '#f1f8e9' : '#fff', borderRadius: 8, padding: '10px 14px',
+                            border: `1px solid ${checked ? '#a5d6a7' : 'var(--border, #e5e7eb)'}`, opacity: checked ? 0.8 : 1,
+                            display: 'flex', gap: 10, alignItems: 'flex-start',
+                          }}>
+                            <input type="checkbox" checked={checked} onChange={() => {
+                              setWizManualChecked(prev => {
+                                const next = new Set(prev)
+                                if (next.has(item.id)) next.delete(item.id); else next.add(item.id)
+                                return next
+                              })
+                            }} style={{ marginTop: 3, accentColor: '#2e7d32', width: 16, height: 16, flexShrink: 0 }} />
+                            <div style={{ flex: 1 }}>
+                              <strong style={{ fontSize: 13, textDecoration: checked ? 'line-through' : undefined }}>{item.label}</strong>
+                              <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '2px 0 0' }}>{item.detail}</p>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {wizManualChecked.size < checklistItems.length && (
+                      <p style={{ fontSize: 12, color: '#e65100', marginTop: 8, fontWeight: 500 }}>
+                        Complete all checklist items before continuing to sync.
+                      </p>
+                    )}
+                  </div>
+                )
+              })()}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
+                <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
+                <button className="admin-btn admin-btn-primary" onClick={async () => {
+                  if (wizPayRunId) {
+                    await supabase.from('pay_runs').update({ status: 'exported' }).eq('id', wizPayRunId)
+                  }
+                  setWizStep(5)
+                }}>
+                  Continue to Sync Back →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Sync Back (connected) / Sync & Release (standalone step 5) */}
+          {((wizStep === 5 && providerConnected) || (wizStep === 4 && !providerConnected)) && (
             <div className="admin-settings-group" style={{ marginTop: 20 }}>
               {providerConnected ? (
                 <>
@@ -4285,8 +4491,8 @@ export default function AdminPayrollNew() {
                         Sync payslips from {connectedProvider === 'xero' ? 'Xero' : 'Sage'} before releasing to employees.
                       </span>
                     )}
-                    <button className="admin-btn" onClick={() => setWizStep(3)}>← Back</button>
-                    <button className="admin-btn admin-btn-primary" disabled={!wizExported} onClick={() => setWizStep(5)}>
+                    <button className="admin-btn" onClick={() => setWizStep(4)}>← Back</button>
+                    <button className="admin-btn admin-btn-primary" disabled={!wizExported} onClick={() => setWizStep(6)}>
                       Next: Release →
                     </button>
                   </div>
@@ -4411,8 +4617,8 @@ export default function AdminPayrollNew() {
             </div>
           )}
 
-          {/* Step 5: Sync & Release */}
-          {wizStep === 5 || wizComplete ? (
+          {/* Step 6: Release (connected) / Step 5: Sync & Release (standalone) */}
+          {(providerConnected ? wizStep === 6 : wizStep === 5) || wizComplete ? (
             wizComplete ? (
               <div className="admin-settings-group" style={{ marginTop: 20, textAlign: 'center', padding: 40 }}>
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" style={{ marginBottom: 12 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -4502,7 +4708,7 @@ export default function AdminPayrollNew() {
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
-                  <button className="admin-btn" onClick={() => setWizStep(4)}>← Back</button>
+                  <button className="admin-btn" onClick={() => setWizStep(providerConnected ? 5 : 4)}>← Back</button>
                   <button className="admin-btn admin-btn-primary" disabled={wizReleasing} onClick={wizRelease} style={{ background: '#2e7d32' }}>
                     {wizReleasing ? 'Releasing…' : `Release ${wizRunEmployees.length} Payslip${wizRunEmployees.length !== 1 ? 's' : ''} to Employees`}
                   </button>
