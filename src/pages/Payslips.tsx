@@ -82,6 +82,7 @@ export default function Payslips() {
       .gte('pay_period_start', startOfMonth)
       .lte('pay_period_start', endStr)
       .in('status', ['processed', 'paid'])
+      .eq('released', true)
       .order('pay_period_start', { ascending: true })
       .limit(10)
     const results = (data as PayslipData[] | null) || []

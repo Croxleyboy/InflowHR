@@ -172,6 +172,7 @@ interface Payslip {
   tax_code: string; annual_salary: number; payroll_id: string; overtime: number
   adjustments: number; monthly_deductions: number; bank_account: string
   payroll_office: string; source: string; xero_payslip_id: string | null
+  released: boolean
   employee: { id: string; first_name: string; last_name: string } | null
 }
 
@@ -519,7 +520,9 @@ export default function AdminPayrollNew() {
 
   const filtered = useMemo(() => {
     const base = payslips.filter(p => {
-      if (filterStatus && p.status !== filterStatus) return false
+      if (filterStatus === 'released' && !p.released) return false
+      if (filterStatus === 'unreleased' && p.released) return false
+      if (filterStatus && filterStatus !== 'released' && filterStatus !== 'unreleased' && p.status !== filterStatus) return false
       if (filterEmployee && p.employee && `${p.employee.first_name} ${p.employee.last_name}` !== filterEmployee) return false
       if (p.employee?.id) {
         const cat = empCategoryById[p.employee.id] || 'not_assigned'
@@ -1443,23 +1446,11 @@ export default function AdminPayrollNew() {
     }
   }
 
-  async function wizRelease() {
+  async function wizCompleteRun() {
     if (!wizPayRunId) return
     setWizReleasing(true)
-    const nextDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-    const nextKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`
-    const runEmployeeIds = new Set(employees.filter(e => {
-      if (wizWorkerTypes.has('employed') && e.employment_category !== 'shift_worker') return true
-      if (wizWorkerTypes.has('shift') && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker') return true
-      if (wizWorkerTypes.has('zero_hours') && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker') return true
-      return false
-    }).map(e => e.id))
-    const toRelease = payslips.filter(p => p.pay_period_start.startsWith(nextKey) && (p.status === 'draft' || p.status === 'processed') && p.employee?.id && runEmployeeIds.has(p.employee.id))
-    for (const p of toRelease) {
-      await supabase.from('payslips').update({ status: 'paid' }).eq('id', p.id)
-    }
-    await supabase.from('pay_runs').update({ status: 'released', completed_at: new Date().toISOString() }).eq('id', wizPayRunId)
-    showSuccess(`Released ${toRelease.length} payslips to employees`)
+    await supabase.from('pay_runs').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', wizPayRunId)
+    showSuccess('Pay run complete. Go to Payslips to review and release to employees.')
     setWizComplete(true)
     await loadAll()
     setWizReleasing(false)
@@ -1471,12 +1462,19 @@ export default function AdminPayrollNew() {
       const { data: activeRun } = await supabase.from('pay_runs')
         .select('id, status, worker_types, payment_method')
         .eq('company_id', selectedCompanyId)
-        .in('status', ['generating', 'exported', 'processing', 'synced'])
+        .in('status', ['generating', 'exported', 'processing', 'synced', 'completed'])
         .order('created_at', { ascending: false })
         .limit(1)
 
       if (activeRun && activeRun.length > 0) {
         const run = activeRun[0]
+
+        if (run.status === 'completed') {
+          showSuccess('This pay run is already complete. Go to Payslips to review and release.')
+          setView('payslips')
+          return
+        }
+
         setWizPayRunId(run.id)
         setWizGenerated(true)
         setWizComplete(false)
@@ -1614,12 +1612,19 @@ export default function AdminPayrollNew() {
         .select('id, status, worker_types, payment_method')
         .eq('company_id', selectedCompanyId)
         .contains('worker_types', [wtKey])
-        .in('status', ['generating', 'exported', 'processing', 'synced'])
+        .in('status', ['generating', 'exported', 'processing', 'synced', 'completed'])
         .order('created_at', { ascending: false })
         .limit(1)
 
       if (activeRun && activeRun.length > 0) {
         const run = activeRun[0]
+
+        if (run.status === 'completed') {
+          showSuccess('This pay run is already complete. Go to Payslips to review and release.')
+          setView('payslips')
+          return
+        }
+
         setWizPayRunId(run.id)
         setWizGenerated(true)
         setWizComplete(false)
@@ -2013,6 +2018,26 @@ export default function AdminPayrollNew() {
     showSuccess(`${eligible.length} payslip(s) set to ${newStatus}`)
   }
 
+  async function releaseAllMonth(monthPayslips: Payslip[]) {
+    const unreleased = monthPayslips.filter(p => !p.released)
+    if (unreleased.length === 0) { showSuccess('All payslips already released'); return }
+    if (!confirm(`Release ${unreleased.length} payslip(s) to employees? They will be visible on their next login.`)) return
+    setBulkUpdating(true)
+    const ids = unreleased.map(p => p.id)
+    const { error } = await supabase.from('payslips').update({ released: true }).in('id', ids)
+    setBulkUpdating(false)
+    if (error) { showError('Release failed: ' + error.message); return }
+    setPayslips(prev => prev.map(ps => ids.includes(ps.id) ? { ...ps, released: true } : ps))
+    showSuccess(`${unreleased.length} payslip(s) released to employees`)
+  }
+
+  async function togglePayslipRelease(id: number, released: boolean) {
+    const { error } = await supabase.from('payslips').update({ released }).eq('id', id)
+    if (error) { showError('Failed to update release status: ' + error.message); return }
+    setPayslips(prev => prev.map(ps => ps.id === id ? { ...ps, released } : ps))
+    showSuccess(released ? 'Payslip released to employee' : 'Payslip unreleased')
+  }
+
   if (loading) return <div className="admin-section"><p style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted, #888)' }}>Loading payroll data…</p></div>
 
   const statusBadge = (status: string) => {
@@ -2362,7 +2387,7 @@ export default function AdminPayrollNew() {
             <div style={{ background: '#fff3e0', border: '1px solid #ffb74d', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#e65100' }}>A pay run is in progress. Review your payslips below, then continue the wizard to export and release.</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#e65100' }}>A pay run is in progress. Review your payslips below, then continue the wizard to complete it.</span>
               </div>
               <button className="admin-btn admin-btn-primary" style={{ fontSize: 13, whiteSpace: 'nowrap' }} onClick={startRunPayroll}>Continue Pay Run →</button>
             </div>
@@ -2412,6 +2437,7 @@ export default function AdminPayrollNew() {
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="admin-select">
               <option value="">All Statuses</option>
               <option value="flagged">Flagged</option><option value="draft">Draft</option><option value="processed">Processed</option><option value="paid">Paid</option>
+              <option value="released">Released</option><option value="unreleased">Unreleased</option>
             </select>
           </div>
 
@@ -2430,6 +2456,9 @@ export default function AdminPayrollNew() {
             const gDraft = group.payslips.filter(p => p.status === 'draft').length
             const gProcessed = group.payslips.filter(p => p.status === 'processed').length
             const gFlagged = group.payslips.filter(p => p.status === 'flagged').length
+            const gReleased = group.payslips.filter(p => p.released).length
+            const gUnreleased = group.payslips.filter(p => !p.released).length
+            const allReleased = gUnreleased === 0
             const gGross = group.payslips.reduce((s, p) => s + Number(p.gross_pay), 0)
             const gNet = group.payslips.reduce((s, p) => s + Number(p.net_pay), 0)
             const isLatest = groupIdx === 0
@@ -2461,6 +2490,8 @@ export default function AdminPayrollNew() {
                     {gProcessed > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.2)' : '#dbeafe', color: isLatest ? '#fff' : '#1e40af' }}>{gProcessed} processed</span>}
                     {gDraft > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.2)' : '#fef3c7', color: isLatest ? '#fff' : '#92400e' }}>{gDraft} draft</span>}
                     {gFlagged > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.15)' : '#fef2f2', color: isLatest ? '#fca5a5' : '#dc2626' }}>{gFlagged} flagged</span>}
+                    {gReleased > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.2)' : '#e8f5e9', color: isLatest ? '#a5d6a7' : '#2e7d32' }}>✓ {gReleased} released</span>}
+                    {gUnreleased > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.15)' : '#fff3e0', color: isLatest ? '#ffcc80' : '#e65100' }}>{gUnreleased} unreleased</span>}
                     <span style={{ fontSize: 12, opacity: 0.8 }}>Gross: £{gGross.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
                     <span style={{ fontSize: 12, fontWeight: 600 }}>Net: £{gNet.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
                   </div>
@@ -2475,6 +2506,17 @@ export default function AdminPayrollNew() {
                       <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => bulkUpdateMonthStatus(group.payslips, 'draft', group.key)} style={{ fontSize: 11 }}>All → Draft</button>
                       <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => bulkUpdateMonthStatus(group.payslips, 'processed', group.key)} style={{ fontSize: 11 }}>All → Processed</button>
                       <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => bulkUpdateMonthStatus(group.payslips, 'paid', group.key)} style={{ fontSize: 11 }}>All → Paid</button>
+                      <span style={{ borderLeft: '1px solid var(--border, #e5e7eb)', height: 16, margin: '0 4px' }} />
+                      {allReleased ? (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#2e7d32', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                          All Released
+                        </span>
+                      ) : (
+                        <button className="admin-btn-sm" disabled={bulkUpdating} onClick={() => releaseAllMonth(group.payslips)} style={{ fontSize: 11, background: '#2e7d32', color: '#fff', border: '1px solid #2e7d32' }}>
+                          Release All ({gUnreleased})
+                        </button>
+                      )}
                       {gDraft > 0 && (
                         <button className="admin-btn-sm admin-btn-danger" disabled={bulkUpdating} onClick={() => deleteDraftMonth(group.key, group.payslips)} style={{ fontSize: 11, marginLeft: 'auto' }}>
                           Delete {gDraft} Draft{gDraft !== 1 ? 's' : ''}
@@ -2484,14 +2526,15 @@ export default function AdminPayrollNew() {
 
                     <div className="admin-table-wrap">
                       <table className="admin-table">
-                        <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Ref</th><th>Employee</th><th>Period</th><th>Gross</th><th>Tax</th><th>NI</th><th>Pension</th><th>Net</th><th>Status</th><th>Released</th><th>Actions</th></tr></thead>
                         <tbody>
                           {group.payslips.map(p => {
                             const isPaid = p.status === 'paid'
                             const isDraft = p.status === 'draft'
+                            const isReleased = p.released
                             return (
                               <React.Fragment key={p.id}>
-                                <tr className={`${expandedId === p.id ? 'admin-row-active' : ''} ${p.status === 'flagged' ? 'admin-row-flagged' : ''}`}>
+                                <tr className={`${expandedId === p.id ? 'admin-row-active' : ''} ${p.status === 'flagged' ? 'admin-row-flagged' : ''}`} style={isReleased ? { background: '#f1f8e9' } : undefined}>
                                   <td className="admin-td-mono">{p.reference_number}</td>
                                   <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
                                   <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{formatDate(p.pay_period_start)} – {formatDate(p.pay_period_end)}</td>
@@ -2512,6 +2555,20 @@ export default function AdminPayrollNew() {
                                       <option value="processed">Processed</option>
                                       <option value="paid">Paid</option>
                                     </select>
+                                  </td>
+                                  <td style={{ textAlign: 'center' }}>
+                                    <button
+                                      className="admin-btn-sm"
+                                      onClick={() => togglePayslipRelease(p.id, !isReleased)}
+                                      style={{
+                                        fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600, minWidth: 70,
+                                        background: isReleased ? '#e8f5e9' : '#fff3e0',
+                                        color: isReleased ? '#2e7d32' : '#e65100',
+                                        border: `1px solid ${isReleased ? '#a5d6a7' : '#ffcc80'}`,
+                                      }}
+                                    >
+                                      {isReleased ? '✓ Released' : 'Unreleased'}
+                                    </button>
                                   </td>
                                   <td className="admin-actions">
                                     {editingId === p.id ? (
@@ -2540,7 +2597,7 @@ export default function AdminPayrollNew() {
                                 </tr>
                                 {expandedId === p.id && (
                                   <tr className="admin-expanded-row">
-                                    <td colSpan={9}>
+                                    <td colSpan={10}>
                                       {editingId === p.id ? (
                                         <div className="admin-detail-grid admin-detail-grid-4">
                                           <div><label style={{ fontSize: 12, fontWeight: 600 }}>Gross Pay</label><input type="number" className="admin-inline-input" value={editForm.gross_pay} onChange={e => setEditForm(f => ({...f, gross_pay: +e.target.value}))} /></div>
@@ -4632,35 +4689,33 @@ export default function AdminPayrollNew() {
             </div>
           )}
 
-          {/* Step 6: Release (connected) / Step 5: Sync & Release (standalone) */}
+          {/* Step 6: Complete (connected) / Step 5: Complete (standalone) */}
           {(providerConnected ? wizStep === 6 : wizStep === 5) || wizComplete ? (
             wizComplete ? (
               <div className="admin-settings-group" style={{ marginTop: 20, textAlign: 'center', padding: 40 }}>
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" style={{ marginBottom: 12 }}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                 <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#2e7d32' }}>Payroll Run Complete</h3>
                 <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 20 }}>
-                  Payslips have been released. Employees will see them on their next login.
+                  Payslips are ready for review. Go to <strong>Payslips</strong> to approve and release them to employees.
                 </p>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
-                  <button className="admin-btn" onClick={() => setView('payslips')}>View Payslips</button>
-                  <button className="admin-btn admin-btn-primary" onClick={() => setView('dashboard')}>Back to Dashboard</button>
+                  <button className="admin-btn admin-btn-primary" onClick={() => setView('payslips')}>Review & Release Payslips →</button>
+                  <button className="admin-btn" onClick={() => setView('dashboard')}>Back to Dashboard</button>
                 </div>
               </div>
             ) : (
               <div className="admin-settings-group" style={{ marginTop: 20 }}>
                 <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
-                  {providerConnected ? 'Release Payslips' : 'Sync & Release'}
+                  {providerConnected ? 'Complete Pay Run' : 'Complete Pay Run'}
                 </h3>
                 <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-                  {providerConnected
-                    ? 'Payslips have been synced from your provider. Release them to make them visible to employees.'
-                    : 'Release the estimate payslips to employees. They will see them on their next login.'}
+                  Complete this pay run to finalise payslips. You can then review and release them individually from the Payslips page.
                 </p>
 
                 {!providerConnected && wizPayMethod === 'external' && (
                   <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 14, marginBottom: 12 }}>
                     <p style={{ fontSize: 13, margin: 0, color: '#1565c0' }}>
-                      When your external payroll is complete, release the payslips below so employees can view them.
+                      Once completed, go to Payslips to review and release to employees when ready.
                     </p>
                   </div>
                 )}
@@ -4681,7 +4736,7 @@ export default function AdminPayrollNew() {
                   return (
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 16 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <strong style={{ fontSize: 14 }}>Releasing Payslips for — {workerTypeLabel} ({rosterTotal})</strong>
+                        <strong style={{ fontSize: 14 }}>Completing Payslips for — {workerTypeLabel} ({rosterTotal})</strong>
                       </div>
                       <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
                         <thead>
@@ -4714,18 +4769,18 @@ export default function AdminPayrollNew() {
                   )
                 })()}
 
-                <div style={{ background: '#fff8e1', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #ffa000' }}>
-                  <strong style={{ color: '#e65100', fontSize: 14 }}>Release to Employees</strong>
-                  <p style={{ fontSize: 12, color: '#bf360c', margin: '4px 0 0' }}>
-                    Once released, employees will see their payslips in their app. This cannot be undone.
+                <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #43a047' }}>
+                  <strong style={{ color: '#2e7d32', fontSize: 14 }}>Ready to Complete</strong>
+                  <p style={{ fontSize: 12, color: '#1b5e20', margin: '4px 0 0' }}>
+                    Completing the pay run will finalise payslips. Go to the Payslips page to review and release them to employees.
                   </p>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button className="admin-btn" style={{ marginRight: 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
                   <button className="admin-btn" onClick={() => setWizStep(providerConnected ? 5 : 4)}>← Back</button>
-                  <button className="admin-btn admin-btn-primary" disabled={wizReleasing} onClick={wizRelease} style={{ background: '#2e7d32' }}>
-                    {wizReleasing ? 'Releasing…' : `Release ${wizRunEmployees.length} Payslip${wizRunEmployees.length !== 1 ? 's' : ''} to Employees`}
+                  <button className="admin-btn admin-btn-primary" disabled={wizReleasing} onClick={wizCompleteRun} style={{ background: '#2e7d32' }}>
+                    {wizReleasing ? 'Completing…' : `Complete Pay Run (${wizRunEmployees.length} Payslip${wizRunEmployees.length !== 1 ? 's' : ''})`}
                   </button>
                 </div>
               </div>
