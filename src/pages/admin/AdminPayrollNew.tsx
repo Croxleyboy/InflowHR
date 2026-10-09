@@ -285,7 +285,10 @@ export default function AdminPayrollNew() {
   const providerConnected = xeroConnected || sageConnected
   const connectedProvider = xeroConnected ? 'xero' : sageConnected ? 'sage' : null
 
-  const wizCancelPayRun = () => {
+  const wizCancelPayRun = async () => {
+    if (wizPayRunId) {
+      await supabase.from('pay_runs').update({ status: 'cancelled' }).eq('id', wizPayRunId)
+    }
     setWizStep(1)
     setWizWorkerTypes(new Set())
     setWizGenerated(false)
