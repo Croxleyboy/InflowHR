@@ -253,7 +253,7 @@ Deno.serve(async (req) => {
         name: `${e.first_name} ${e.last_name}`,
         hourlyRate: e.hourly_rate || 0,
         annualSalary: e.annual_salary || 0,
-        isSalaried: e.employment_category === 'Employed',
+        isSalaried: e.employment_category !== 'shift_worker',
       }
     }
 
