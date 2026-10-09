@@ -234,10 +234,10 @@ Deno.serve(async (req) => {
     for (const u of (unpaid_leave || [])) allEmpIds.add(u.employee_id)
     for (const b of (benefit_changes || [])) allEmpIds.add(b.employee_id)
 
-    // Query employees WITH employment_category to determine salaried vs shift
+    // Query employees WITH employment_category + contract_type to determine push method
     const { data: employees } = await sb
       .from('employees')
-      .select('id, first_name, last_name, xero_employee_id, hourly_rate, annual_salary, employment_category')
+      .select('id, first_name, last_name, xero_employee_id, hourly_rate, annual_salary, employment_category, contract_type')
       .in('id', [...allEmpIds])
 
     const empMap: Record<string, {
@@ -253,7 +253,7 @@ Deno.serve(async (req) => {
         name: `${e.first_name} ${e.last_name}`,
         hourlyRate: e.hourly_rate || 0,
         annualSalary: e.annual_salary || 0,
-        isSalaried: e.employment_category !== 'shift_worker',
+        isSalaried: e.employment_category !== 'shift_worker' || e.contract_type !== 'Zero hours shift worker',
       }
     }
 
@@ -351,7 +351,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Only fetch timesheets for non-salaried workers (shift/zero hours still use timesheets)
+    // Only fetch timesheets for zero hours workers (shift workers with salary now use pay templates)
     const hasNonSalariedOt = (overtime || []).some(ot => {
       const emp = empMap[ot.employee_id]
       return emp && !emp.isSalaried
