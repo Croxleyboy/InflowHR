@@ -252,6 +252,7 @@ export default function AdminPayrollNew() {
   const [wizPayRunId, setWizPayRunId] = useState<string | null>(null)
   const [wizExporting, setWizExporting] = useState(false)
   const [wizExported, setWizExported] = useState(false)
+  const [wizPayslipsFetched, setWizPayslipsFetched] = useState(false)
   const [lastXeroPayRun, setLastXeroPayRun] = useState<{ period_start: string; period_end: string } | null>(null)
   const [wizPushResult, setWizPushResult] = useState<{
     pushed: number; failed: number; skipped: number; api: string;
@@ -304,6 +305,7 @@ export default function AdminPayrollNew() {
     setWizBenefitChanges([])
     setWizBonusEntries([])
     setWizPayRunId(null)
+    setWizPayslipsFetched(false)
     setLastXeroPayRun(null)
   }
 
@@ -1489,18 +1491,22 @@ export default function AdminPayrollNew() {
         if (run.status === 'generating') {
           setWizStep(providerConnected ? 3 : 4)
           setWizExported(false)
+          setWizPayslipsFetched(false)
           setWizPayMethod(run.payment_method || 'external')
         } else if (run.status === 'processing') {
           setWizStep(4)
           setWizExported(true)
+          setWizPayslipsFetched(false)
           setWizPayMethod(run.payment_method || 'external')
         } else if (run.status === 'exported') {
           setWizStep(providerConnected ? 5 : 5)
           setWizExported(true)
+          setWizPayslipsFetched(false)
           setWizPayMethod(run.payment_method || 'external')
         } else if (run.status === 'synced') {
           setWizStep(providerConnected ? 6 : 5)
           setWizExported(true)
+          setWizPayslipsFetched(true)
           setWizPayMethod(run.payment_method || 'external')
         }
 
@@ -1523,6 +1529,7 @@ export default function AdminPayrollNew() {
     setWizPayRunId(null)
     setWizExporting(false)
     setWizExported(false)
+    setWizPayslipsFetched(false)
     setWizPushResult(null)
     setWizReleasing(false)
     setWizManualChecked(new Set())
@@ -1618,10 +1625,10 @@ export default function AdminPayrollNew() {
         setWizComplete(false)
         setWizReleasing(false)
         setWizWorkerTypes(new Set([type]))
-        if (run.status === 'generating') { setWizStep(providerConnected ? 3 : 4); setWizExported(false); setWizPayMethod(run.payment_method || 'external') }
-        else if (run.status === 'processing') { setWizStep(4); setWizExported(true); setWizPayMethod(run.payment_method || 'external') }
-        else if (run.status === 'exported') { setWizStep(providerConnected ? 5 : 5); setWizExported(true); setWizPayMethod(run.payment_method || 'external') }
-        else { setWizStep(providerConnected ? 6 : 5); setWizExported(true); setWizPayMethod(run.payment_method || 'external') }
+        if (run.status === 'generating') { setWizStep(providerConnected ? 3 : 4); setWizExported(false); setWizPayslipsFetched(false); setWizPayMethod(run.payment_method || 'external') }
+        else if (run.status === 'processing') { setWizStep(4); setWizExported(true); setWizPayslipsFetched(false); setWizPayMethod(run.payment_method || 'external') }
+        else if (run.status === 'exported') { setWizStep(providerConnected ? 5 : 5); setWizExported(true); setWizPayslipsFetched(false); setWizPayMethod(run.payment_method || 'external') }
+        else { setWizStep(providerConnected ? 6 : 5); setWizExported(true); setWizPayslipsFetched(true); setWizPayMethod(run.payment_method || 'external') }
         setWizExporting(false)
         setWizOvertimeHours({})
         setWizPeriodReviews([])
@@ -1641,6 +1648,7 @@ export default function AdminPayrollNew() {
     setWizPayRunId(null)
     setWizExporting(false)
     setWizExported(false)
+    setWizPayslipsFetched(false)
     setWizPushResult(null)
     setWizReleasing(false)
     setWizBonusEntries([])
@@ -4381,7 +4389,7 @@ export default function AdminPayrollNew() {
                     const noLastPayRun = !lastXeroPayRun && wizStart
                     return (
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
-                      {(periodMismatch || noLastPayRun) && !wizExported && (
+                      {(periodMismatch || noLastPayRun) && !wizPayslipsFetched && (
                         <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 6, padding: '10px 14px', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                           <span style={{ fontSize: 18, lineHeight: 1 }}>⚠️</span>
                           <div style={{ fontSize: 12, color: '#795548' }}>
@@ -4409,11 +4417,11 @@ export default function AdminPayrollNew() {
                             Only payslips for the {wizRunEmployees.length} {wizWorkerTypes.has('employed') ? 'employed' : wizWorkerTypes.has('shift') ? 'shift worker' : 'zero hours'} employee{wizRunEmployees.length !== 1 ? 's' : ''} in this pay run will be synced.
                           </p>
                         </div>
-                        <button className="admin-btn admin-btn-primary" disabled={wizExporting || wizExported} onClick={async () => {
+                        <button className="admin-btn admin-btn-primary" disabled={wizExporting || wizPayslipsFetched} onClick={async () => {
                           const ok = await wizSyncXero()
-                          if (ok) setWizExported(true)
+                          if (ok) setWizPayslipsFetched(true)
                         }} style={{ fontSize: 13 }}>
-                          {wizExporting ? 'Syncing…' : wizExported ? '✓ Fetched' : 'Fetch Pay Run'}
+                          {wizExporting ? 'Syncing…' : wizPayslipsFetched ? '✓ Fetched' : 'Fetch Pay Run'}
                         </button>
                       </div>
                     </div>
@@ -4492,14 +4500,14 @@ export default function AdminPayrollNew() {
                   )}
 
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, alignItems: 'center' }}>
-                    <button className="admin-btn" style={{ marginRight: !wizExported ? 0 : 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
-                    {!wizExported && (
+                    <button className="admin-btn" style={{ marginRight: !wizPayslipsFetched ? 0 : 'auto', color: '#c62828' }} onClick={wizCancelPayRun}>Cancel Pay Run</button>
+                    {!wizPayslipsFetched && (
                       <span style={{ fontSize: 12, color: '#e65100', marginRight: 'auto' }}>
                         Sync payslips from {connectedProvider === 'xero' ? 'Xero' : 'Sage'} before releasing to employees.
                       </span>
                     )}
                     <button className="admin-btn" onClick={() => setWizStep(4)}>← Back</button>
-                    <button className="admin-btn admin-btn-primary" disabled={!wizExported} onClick={() => setWizStep(6)}>
+                    <button className="admin-btn admin-btn-primary" disabled={!wizPayslipsFetched} onClick={() => setWizStep(6)}>
                       Next: Release →
                     </button>
                   </div>
