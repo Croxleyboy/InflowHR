@@ -730,9 +730,17 @@ export default function AdminPayrollNew() {
       .eq('leave_type', 'Unpaid Leave')
       .gte('start_date', monthStart)
       .lte('start_date', monthEnd)
+    const targetEmpIds = new Set(employees.filter(e => {
+      if (wizWorkerTypes.has('employed') && e.employment_category !== 'shift_worker') return true
+      if (wizWorkerTypes.has('shift') && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker') return true
+      if (wizWorkerTypes.has('zero_hours') && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker') return true
+      return false
+    }).map(e => e.id))
+
     const unpaid: { employee_id: string; days: number; employee_name: string }[] = []
     if (leaveData) {
       for (const r of leaveData as any[]) {
+        if (!targetEmpIds.has(r.employee_id)) continue
         const emp = r.employees
         unpaid.push({
           employee_id: r.employee_id,
@@ -754,6 +762,7 @@ export default function AdminPayrollNew() {
     const changes: { employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[] = []
     if (enrollData) {
       for (const r of enrollData as any[]) {
+        if (!targetEmpIds.has(r.employee_id)) continue
         const emp = employees.find(e => e.id === r.employee_id)
         changes.push({
           employee_id: r.employee_id,
