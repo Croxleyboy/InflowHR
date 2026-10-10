@@ -193,7 +193,7 @@ interface AuditLogEntry {
   performed_by: string; performer_name: string | null; status: string; created_at: string
 }
 
-type View = 'dashboard' | 'payslips' | 'employee_pay' | 'schedule' | 'reporting' | 'logs' | 'run_payroll'
+type View = 'dashboard' | 'payslips' | 'employee_pay' | 'schedule' | 'logs' | 'run_payroll'
 
 export default function AdminPayrollNew() {
   const { selectedCompanyId, selectedCompany } = useAdminCompany()
@@ -485,7 +485,7 @@ export default function AdminPayrollNew() {
         .select('id, period_start, period_end, status, completed_at')
         .eq('company_id', selectedCompanyId!)
         .contains('worker_types', [wt])
-        .in('status', ['released', 'synced', 'exported'])
+        .in('status', ['completed', 'released', 'synced', 'exported'])
         .order('completed_at', { ascending: false })
         .limit(1)
       if (runs && runs.length > 0) {
@@ -2403,13 +2403,13 @@ export default function AdminPayrollNew() {
                           <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => startPayrollForType(wt.key)}>
                             Continue Pay Run
                           </button>
-                          <button className="admin-btn" style={{ fontSize: 13, marginLeft: 6 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
+                          <button className="admin-btn" style={{ fontSize: 13, marginLeft: 6 }} onClick={() => { setPayslipSubTab(wt.key); setView('payslips') }}>
                             Review Payslips
                           </button>
                         </>
                       )}
                       {(wt.status === 'submitted' || wt.status === 'paid') && (
-                        <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key === 'employed' ? 'employed' : 'shift'); setView('payslips') }}>
+                        <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key); setView('payslips') }}>
                           View Payslips
                         </button>
                       )}
@@ -2497,14 +2497,6 @@ export default function AdminPayrollNew() {
               </div>
               <div><strong>Payroll Schedule</strong><br /><span>Pay dates and calendar</span></div>
             </button>
-            {(enabledFeatures.timesheets || enabledFeatures.shifts) && (
-              <button className="pn-action-card" onClick={() => setView('reporting')}>
-                <div className="pn-action-icon" style={{ background: '#1e88e5' }}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
-                </div>
-                <div><strong>Reporting</strong><br /><span>Time breakdown and analytics</span></div>
-              </button>
-            )}
             <button className="pn-action-card" onClick={() => setView('logs')}>
               <div className="pn-action-icon" style={{ background: '#78909c' }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -2990,40 +2982,6 @@ export default function AdminPayrollNew() {
         </div>
       )}
 
-      {/* ── REPORTING ──────────────────────────────────────────── */}
-      {view === 'reporting' && (
-        <div className="admin-settings-group">
-          <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 700 }}>Payroll Reporting</h3>
-          <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', marginBottom: 16 }}>
-            Time breakdown and payroll analytics are available on the existing Payroll page. This section will be expanded in a future update.
-          </p>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {(enabledFeatures.timesheets || enabledFeatures.shifts) && (
-              <div className="admin-settings-group" style={{ flex: '1 1 280px', minWidth: 280 }}>
-                <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>Summary ({MONTH_NAMES[now.getMonth()]} {now.getFullYear()})</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="pn-worker-metric">
-                    <span className="pn-worker-metric-value">{employedEmployees.length}</span>
-                    <span className="pn-worker-metric-label">Salaried employees</span>
-                  </div>
-                  <div className="pn-worker-metric">
-                    <span className="pn-worker-metric-value">{shiftEmployees.length + zeroHoursEmployees.length}</span>
-                    <span className="pn-worker-metric-label">Hourly workers</span>
-                  </div>
-                  <div className="pn-worker-metric">
-                    <span className="pn-worker-metric-value">{stats.draft}</span>
-                    <span className="pn-worker-metric-label">Draft payslips</span>
-                  </div>
-                  <div className="pn-worker-metric">
-                    <span className="pn-worker-metric-value">{stats.paid}</span>
-                    <span className="pn-worker-metric-label">Paid payslips</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ── LOGS ───────────────────────────────────────────────── */}
       {view === 'logs' && (
