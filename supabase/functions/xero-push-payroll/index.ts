@@ -396,7 +396,7 @@ Deno.serve(async (req) => {
       const overtimeAmount = Math.round(overtimeRate * otHours * 100) / 100
       const regularAmount = Math.round(baseRate * rhHours * 100) / 100
 
-      // ── ZERO HOURS WORKERS: Push combined timesheet (regular + overtime) via v2 API ──
+      // ── ZERO HOURS WORKERS: Push combined timesheet (regular + overtime) via UK v1 API ──
       if (emp.isZeroHours) {
         const calId = companyCalendarId || await getEmployeeCalendarId(emp.xeroId!)
         if (!calId) {
@@ -405,32 +405,35 @@ Deno.serve(async (req) => {
         }
 
         // Build timesheet lines — one for regular hours, one for overtime (if any)
-        const timesheetLines: { earningsRateID: string; numberOfUnits: number }[] = []
+        // UK v1 API uses PascalCase with a Date field per line
+        const timesheetLines: { Date: string; EarningsRateID: string; NumberOfUnits: number }[] = []
 
         if (rhHours > 0) {
           timesheetLines.push({
-            earningsRateID: regularRateId!,
-            numberOfUnits: rhHours,
+            Date: period_start,
+            EarningsRateID: regularRateId!,
+            NumberOfUnits: rhHours,
           })
         }
 
         if (otHours > 0) {
           timesheetLines.push({
-            earningsRateID: effectiveOtRateId,
-            numberOfUnits: otHours,
+            Date: period_start,
+            EarningsRateID: effectiveOtRateId,
+            NumberOfUnits: otHours,
           })
         }
 
         const timesheetPayload = {
-          payrollCalendarID: calId,
-          employeeID: emp.xeroId,
-          startDate: period_start,
-          endDate: period_end,
-          timesheetLines,
+          PayrollCalendarID: calId,
+          EmployeeID: emp.xeroId,
+          StartDate: period_start,
+          EndDate: period_end,
+          TimesheetLines: timesheetLines,
         }
 
-        // Use UK v2 API for timesheets (consistent with xero-payslips which uses v2)
-        const tsUrl = `${XERO_PAYROLL_UK_V2}/Timesheets`
+        // Use UK v1 API for timesheets (matches working xero-push-timesheets function)
+        const tsUrl = `${XERO_PAYROLL_UK}/Timesheets`
         let tsRes = await fetch(tsUrl, {
           method: 'POST',
           headers: xeroHeaders,
@@ -480,6 +483,7 @@ Deno.serve(async (req) => {
           })
         } else {
           const errText = await tsRes.text()
+          const debugInfo = `API: ${XERO_PAYROLL_UK}/Timesheets, Status: ${tsRes.status}, Calendar: ${calId}, EarningsRate: ${regularRateId}, OtRate: ${effectiveOtRateId}, Period: ${period_start} to ${period_end}, RegHrs: ${rhHours}, OtHrs: ${otHours}`
           timesheetResults.push({
             employee: emp.name,
             status: 'failed',
@@ -490,7 +494,7 @@ Deno.serve(async (req) => {
             regular_hours: rhHours,
             regular_amount: regularAmount,
             method: 'timesheet',
-            error: sanitise(errText) || 'Timesheet push failed',
+            error: `${sanitise(errText) || 'Timesheet push failed'} [${debugInfo}]`,
           })
         }
 
