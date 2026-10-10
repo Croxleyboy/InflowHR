@@ -482,14 +482,24 @@ Deno.serve(async (req) => {
         let v2Error = ''
         if (!tsRes.ok) {
           v2Error = await tsRes.text()
+
+          // Retry v2 with array wrapper
+          tsRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
+            method: 'POST',
+            headers: xeroHeaders,
+            body: JSON.stringify([v2Payload]),
+          })
+          if (!tsRes.ok) {
+            v2Error += ' | v2arr: ' + await tsRes.text()
+          }
         }
 
-        // Fall back to v1 UK deprecated (PascalCase, NumberOfUnits as daily array)
+        // Fall back to v1 UK deprecated (PascalCase, NumberOfUnits as daily array, array-wrapped)
         if (!tsRes.ok) {
           tsRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
             method: 'POST',
             headers: xeroHeaders,
-            body: JSON.stringify(v1Payload),
+            body: JSON.stringify([v1Payload]),
           })
         }
 
@@ -527,7 +537,7 @@ Deno.serve(async (req) => {
           })
         } else {
           const v1Error = await tsRes.text()
-          const debugInfo = `v2: ${sanitise(v2Error).slice(0, 200)} | v1: ${sanitise(v1Error).slice(0, 200)} | Calendar: ${calId}, EarningsRate: ${regularRateId}, Period: ${period_start} to ${period_end}, RegHrs: ${rhHours}, OtHrs: ${otHours}, v2Lines: ${v2Lines.length}`
+          const debugInfo = `v2: ${sanitise(v2Error).slice(0, 400)} | v1: ${sanitise(v1Error).slice(0, 300)} | Cal: ${calId}, Rate: ${regularRateId}, Period: ${period_start}-${period_end}, Reg: ${rhHours}, OT: ${otHours}`
           timesheetResults.push({
             employee: emp.name,
             status: 'failed',
