@@ -416,7 +416,26 @@ Deno.serve(async (req) => {
           if (dow !== 0 && dow !== 6) weekdays++
         }
 
-        // Build daily hours array for v2 AU format: [0, hrs, hrs, hrs, hrs, hrs, 0]
+        // v2 UK (camelCase): one line PER WEEKDAY per earnings rate, each with date + single numberOfUnits
+        const buildPerDayLines = (totalHours: number, earningsRateId: string): Record<string, unknown>[] => {
+          const lines: Record<string, unknown>[] = []
+          if (totalHours <= 0 || weekdays <= 0) return lines
+          const perDay = Math.round((totalHours / weekdays) * 100) / 100
+          for (let i = 0; i < days; i++) {
+            const d = new Date(start)
+            d.setDate(d.getDate() + i)
+            const dow = d.getDay()
+            if (dow !== 0 && dow !== 6) {
+              const yyyy = d.getFullYear()
+              const mm = String(d.getMonth() + 1).padStart(2, '0')
+              const dd2 = String(d.getDate()).padStart(2, '0')
+              lines.push({ date: `${yyyy}-${mm}-${dd2}`, earningsRateID: earningsRateId, numberOfUnits: perDay })
+            }
+          }
+          return lines
+        }
+
+        // v1 UK deprecated (PascalCase): NumberOfUnits as daily hours array [0, hrs, hrs, hrs, hrs, hrs, 0]
         const buildDailyArray = (totalHours: number): number[] => {
           const arr = new Array(days).fill(0)
           if (totalHours <= 0 || weekdays <= 0) return arr
@@ -430,23 +449,15 @@ Deno.serve(async (req) => {
           return arr
         }
 
-        // v1 UK (PascalCase): single object, TimesheetLines with Date + single NumberOfUnits
+        const v2Lines: Record<string, unknown>[] = [
+          ...buildPerDayLines(rhHours, regularRateId!),
+          ...buildPerDayLines(otHours, effectiveOtRateId),
+        ]
+
         const v1Lines: Record<string, unknown>[] = []
-        if (rhHours > 0) v1Lines.push({ Date: period_start, EarningsRateID: regularRateId!, NumberOfUnits: rhHours })
-        if (otHours > 0) v1Lines.push({ Date: period_start, EarningsRateID: effectiveOtRateId, NumberOfUnits: otHours })
+        if (rhHours > 0) v1Lines.push({ EarningsRateID: regularRateId!, NumberOfUnits: buildDailyArray(rhHours) })
+        if (otHours > 0) v1Lines.push({ EarningsRateID: effectiveOtRateId, NumberOfUnits: buildDailyArray(otHours) })
 
-        // v2 AU (camelCase): single line per rate, numberOfUnits as daily array
-        const v2Lines: Record<string, unknown>[] = []
-        if (rhHours > 0) v2Lines.push({ earningsRateID: regularRateId!, numberOfUnits: buildDailyArray(rhHours) })
-        if (otHours > 0) v2Lines.push({ earningsRateID: effectiveOtRateId, numberOfUnits: buildDailyArray(otHours) })
-
-        const v1Payload = {
-          PayrollCalendarID: calId,
-          EmployeeID: emp.xeroId,
-          StartDate: period_start,
-          EndDate: period_end,
-          TimesheetLines: v1Lines,
-        }
         const v2Payload = {
           payrollCalendarID: calId,
           employeeID: emp.xeroId,
@@ -454,24 +465,31 @@ Deno.serve(async (req) => {
           endDate: period_end,
           timesheetLines: v2Lines,
         }
-
-        // Try v1 (UK PascalCase) — single object, not array-wrapped
-        let tsRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
-          method: 'POST',
-          headers: xeroHeaders,
-          body: JSON.stringify(v1Payload),
-        })
-        let v1Error = ''
-        if (!tsRes.ok) {
-          v1Error = await tsRes.text()
+        const v1Payload = {
+          PayrollCalendarID: calId,
+          EmployeeID: emp.xeroId,
+          StartDate: period_start,
+          EndDate: period_end,
+          TimesheetLines: v1Lines,
         }
 
-        // Try v2 (AU camelCase, daily array format)
+        // Try v2 UK first (current API: camelCase, per-day lines with date + single numberOfUnits)
+        let tsRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
+          method: 'POST',
+          headers: xeroHeaders,
+          body: JSON.stringify(v2Payload),
+        })
+        let v2Error = ''
         if (!tsRes.ok) {
-          tsRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
+          v2Error = await tsRes.text()
+        }
+
+        // Fall back to v1 UK deprecated (PascalCase, NumberOfUnits as daily array)
+        if (!tsRes.ok) {
+          tsRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
             method: 'POST',
             headers: xeroHeaders,
-            body: JSON.stringify(v2Payload),
+            body: JSON.stringify(v1Payload),
           })
         }
 
@@ -508,8 +526,8 @@ Deno.serve(async (req) => {
             lines_posted: v1Lines.length,
           })
         } else {
-          const v2Error = await tsRes.text()
-          const debugInfo = `v1: ${sanitise(v1Error).slice(0, 200)} | v2: ${sanitise(v2Error).slice(0, 200)} | Calendar: ${calId}, EarningsRate: ${regularRateId}, Period: ${period_start} to ${period_end}, RegHrs: ${rhHours}, OtHrs: ${otHours}, v2Lines: ${v2Lines.length}`
+          const v1Error = await tsRes.text()
+          const debugInfo = `v2: ${sanitise(v2Error).slice(0, 200)} | v1: ${sanitise(v1Error).slice(0, 200)} | Calendar: ${calId}, EarningsRate: ${regularRateId}, Period: ${period_start} to ${period_end}, RegHrs: ${rhHours}, OtHrs: ${otHours}, v2Lines: ${v2Lines.length}`
           timesheetResults.push({
             employee: emp.name,
             status: 'failed',
