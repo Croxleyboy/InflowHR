@@ -460,11 +460,11 @@ Deno.serve(async (req) => {
           timesheetLines: v2Lines,
         }
 
-        // Try v1 (UK PascalCase) first
+        // Try v1 (UK PascalCase) — wrapped in array as v1 expects
         let tsRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
           method: 'POST',
           headers: xeroHeaders,
-          body: JSON.stringify(v1Payload),
+          body: JSON.stringify([v1Payload]),
         })
         let v1Error = ''
         if (!tsRes.ok) {
