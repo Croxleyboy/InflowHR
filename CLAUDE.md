@@ -54,6 +54,10 @@ PII fields: `ni_number`, `bank_sort_code`, `bank_account_number`, `salary`, `dat
 
 Always use `src/lib/formatters.ts`: `formatDate()`, `formatDateFriendly()`, `formatDateTime()`. Never use `en-US` locale or month-first format.
 
+## Edge function code delivery
+
+When any Supabase edge function is modified, **always provide the complete edge function code** in the response for the user to copy and deploy. Never provide partial diffs or snippets — show the full file contents.
+
 ## Edge function auth pattern
 
 1. Extract Bearer token from Authorization header

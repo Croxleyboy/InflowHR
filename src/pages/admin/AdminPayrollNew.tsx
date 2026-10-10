@@ -1177,9 +1177,30 @@ export default function AdminPayrollNew() {
       const unpaidLeaveEntries = wizUnpaidLeave.filter(u => isEmpInScope(u.employee_id))
       const benefitChangeEntries = wizBenefitChanges.filter(b => isEmpInScope(b.employee_id))
 
+      // Build regular hours entries for zero hours workers from approved period reviews
+      const regularHoursEntries: { employee_id: string; hours: number; hourly_rate: number }[] = []
+      if (wizWorkerTypes.has('zero_hours')) {
+        for (const r of wizPeriodReviews) {
+          if (r.status !== 'approved') continue
+          const emp = employees.find(e => e.id === r.employee_id)
+          if (!emp) continue
+          if (emp.contract_type !== 'Zero hours shift worker') continue
+          if (!isEmpInScope(r.employee_id)) continue
+          const totalHrs = Number(r.adjusted_hours ?? r.total_hours ?? 0)
+          const otHrs = Number(r.overtime_hours ?? 0)
+          const regularHrs = totalHrs - otHrs
+          if (regularHrs <= 0) continue
+          regularHoursEntries.push({
+            employee_id: r.employee_id,
+            hours: regularHrs,
+            hourly_rate: r.hourly_rate || emp.hourly_rate || 0,
+          })
+        }
+      }
+
       let xeroPushData: any = null
       if (connectedProvider === 'xero') {
-        // Xero: push overtime via API, flag unpaid leave + benefits as manual
+        // Xero: push regular hours + overtime via API, flag unpaid leave + benefits as manual
         const { data, error } = await supabase.functions.invoke('xero-push-payroll', {
           headers: { Authorization: `Bearer ${session.access_token}` },
           body: {
@@ -1188,6 +1209,7 @@ export default function AdminPayrollNew() {
             period_start: pStart,
             period_end: pEnd,
             overtime: overtimeEntries,
+            regular_hours: regularHoursEntries,
             unpaid_leave: unpaidLeaveEntries.map(u => ({ employee_id: u.employee_id, days: u.days })),
             benefit_changes: benefitChangeEntries.map(b => ({ employee_id: b.employee_id, benefit: b.benefit, monthly_cost: b.monthly_cost })),
           },
@@ -1285,8 +1307,8 @@ export default function AdminPayrollNew() {
         const pushed = xeroPushData?.pushed || 0
         const skippedCount = xeroPushData?.skipped || 0
         showSuccess(pushed > 0
-          ? `Overtime pushed to Xero (${pushed} employee${pushed !== 1 ? 's' : ''}).${skippedCount > 0 ? ` ${skippedCount} skipped.` : ''} Check the manual items below for anything to enter in Xero yourself.`
-          : 'No overtime to push — check the manual items below for anything to enter in Xero.')
+          ? `Timesheets pushed to Xero (${pushed} employee${pushed !== 1 ? 's' : ''}).${skippedCount > 0 ? ` ${skippedCount} skipped.` : ''} Check the manual items below for anything to enter in Xero yourself.`
+          : 'No hours to push — check the manual items below for anything to enter in Xero.')
       } else {
         const { rowCount } = generateAdjustmentsCsv()
         if (rowCount > 0) {
@@ -1372,10 +1394,14 @@ export default function AdminPayrollNew() {
   }
 
   async function wizExportXero() {
-    if (!session) throw new Error('Not authenticated')
+    if (!session || !selectedCompanyId) throw new Error('Not authenticated')
+    const pAllStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
+    const pAllEnds = Object.values(wizPeriodByType).map(p => p.end).sort().reverse()
+    const pStart = pAllStarts[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 1))
+    const pEnd = pAllEnds[0] || localDateStr(new Date(now.getFullYear(), now.getMonth() + 2, 0))
     const { data, error } = await supabase.functions.invoke('xero-push-timesheets', {
       headers: { Authorization: `Bearer ${session.access_token}` },
-      body: { company_id: selectedCompanyId, pay_run_id: wizPayRunId },
+      body: { company_id: selectedCompanyId, period_start: pStart, period_end: pEnd },
     })
     if (error) throw error
     if (data?.error) throw new Error(data.error)
@@ -3239,7 +3265,11 @@ export default function AdminPayrollNew() {
                   <strong style={{ color: '#1565c0', fontSize: 14 }}>Connected to {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</strong>
                   <p style={{ fontSize: 12, color: '#1565c0', margin: '4px 0 0' }}>
                     {connectedProvider === 'xero'
-                      ? 'Overtime hours are pushed directly to Xero via the Timesheets API. Unpaid leave, benefit changes, bonuses, and deductions must be entered manually in Xero — the wizard will list each item with full details for you to work through.'
+                      ? wizWorkerTypes.has('zero_hours') && !wizWorkerTypes.has('employed') && !wizWorkerTypes.has('shift')
+                        ? 'All approved zero hours time (scheduled hours and overtime) will be pushed to Xero as timesheets. Unpaid leave, benefit changes, bonuses, and deductions must be entered manually in Xero — the wizard will list each item with full details for you to work through.'
+                        : wizWorkerTypes.has('zero_hours')
+                          ? 'Salaried overtime is pushed to Xero via pay template earnings. Zero hours time (scheduled hours and overtime) is pushed as timesheets. Unpaid leave, benefit changes, bonuses, and deductions must be entered manually in Xero — the wizard will list each item with full details for you to work through.'
+                          : 'Overtime hours are pushed directly to Xero via pay template earnings. Unpaid leave, benefit changes, bonuses, and deductions must be entered manually in Xero — the wizard will list each item with full details for you to work through.'
                       : 'Adjustments (overtime, unpaid leave, benefit changes) are exported as a CSV file for Sage import. Bonuses and deductions must be entered manually.'
                     } TOIL hours are credited internally as lieu days. Your provider calculates tax, NI, pension, and net pay.
                   </p>
@@ -3973,8 +4003,15 @@ export default function AdminPayrollNew() {
                           const emp = employees.find(e => e.id === empId)
                           return emp && hrs > 0 && getEffectiveSetting(emp, workerSettings, 'overtime_handling') === 'toil'
                         }).length
+                        // Count zero hours workers with approved regular hours to push
+                        const zhRegularCount = wizWorkerTypes.has('zero_hours') ? wizPeriodReviews.filter(r => {
+                          if (r.status !== 'approved') return false
+                          const emp = employees.find(e => e.id === r.employee_id)
+                          return emp && emp.contract_type === 'Zero hours shift worker' && Number(r.adjusted_hours ?? r.total_hours ?? 0) > 0
+                        }).length : 0
+                        const pushCount = otCount + zhRegularCount
                         const manualCount = wizUnpaidLeave.length + wizBenefitChanges.length + wizBonusEntries.length
-                        const totalCount = otCount + manualCount + toilCount
+                        const totalCount = pushCount + manualCount + toilCount
                         return totalCount === 0 ? (
                           <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(providerConnected ? 5 : 4)}>
                             Skip to {providerConnected ? 'Sync Back' : 'Export'} →
@@ -3984,8 +4021,8 @@ export default function AdminPayrollNew() {
                             {wizGenerating
                               ? (connectedProvider === 'xero' ? 'Pushing to Xero…' : 'Exporting…')
                               : connectedProvider === 'xero'
-                                ? otCount > 0 ? `Push ${otCount} Timesheet${otCount !== 1 ? 's' : ''} to Xero` : manualCount > 0 ? 'Process Adjustments' : 'Credit TOIL Lieu Days'
-                                : otCount > 0 || manualCount > 0 ? 'Export Adjustments CSV' : 'Credit TOIL Lieu Days'
+                                ? pushCount > 0 ? `Push ${pushCount} Timesheet${pushCount !== 1 ? 's' : ''} to Xero` : manualCount > 0 ? 'Process Adjustments' : 'Credit TOIL Lieu Days'
+                                : pushCount > 0 || manualCount > 0 ? 'Export Adjustments CSV' : 'Credit TOIL Lieu Days'
                             }
                           </button>
                         )
@@ -4005,18 +4042,18 @@ export default function AdminPayrollNew() {
                       <div style={{ flex: 1 }}>
                         <strong style={{ color: (wizPushResult.pushed || 0) > 0 ? '#2e7d32' : '#e65100' }}>
                           {(wizPushResult.pushed || 0) > 0
-                            ? `${wizPushResult.pushed} overtime timesheet${wizPushResult.pushed !== 1 ? 's' : ''} pushed to Xero`
-                            : (wizPushResult.failed || 0) > 0 ? 'Push failed — check errors below' : 'No overtime to push'}
+                            ? `${wizPushResult.pushed} timesheet${wizPushResult.pushed !== 1 ? 's' : ''} pushed to Xero`
+                            : (wizPushResult.failed || 0) > 0 ? 'Push failed — check errors below' : 'No hours to push'}
                         </strong>
                         <p style={{ fontSize: 12, margin: '4px 0 0', color: 'var(--text-muted, #6b7280)' }}>
                           {(wizPushResult.pushed || 0) > 0
-                            ? 'Overtime hours have been added as timesheet lines in Xero. Review them in Xero before processing the pay run.'
+                            ? 'Hours have been pushed as timesheet lines in Xero. Review them in Xero before processing the pay run.'
                             : (wizPushResult.manual_items?.length || 0) > 0 ? 'Check the manual action items below.' : 'No adjustments for this period.'}
                         </p>
                       </div>
                     </div>
 
-                    {/* Auto-pushed overtime results */}
+                    {/* Auto-pushed results */}
                     {wizPushResult.timesheet_results && wizPushResult.timesheet_results.length > 0 && (
                       <div style={{ marginBottom: 16 }}>
                         <h4 style={{ margin: '0 0 8px', fontSize: 14, fontWeight: 600, color: '#1565c0', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -4028,7 +4065,8 @@ export default function AdminPayrollNew() {
                             <thead>
                               <tr style={{ background: 'var(--bg-muted, #f0f1f3)', textAlign: 'left' }}>
                                 <th style={{ padding: '8px 12px', fontWeight: 600 }}>Employee</th>
-                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Hours</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Regular Hrs</th>
+                                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Overtime</th>
                                 <th style={{ padding: '8px 12px', fontWeight: 600 }}>Rate</th>
                                 <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
                                 <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'center' }}>Status</th>
@@ -4038,9 +4076,10 @@ export default function AdminPayrollNew() {
                               {wizPushResult.timesheet_results.map((r: any, i: number) => (
                                 <tr key={i} style={{ borderTop: '1px solid var(--border, #e5e7eb)' }}>
                                   <td style={{ padding: '8px 12px', fontWeight: 500 }}>{r.employee}</td>
-                                  <td style={{ padding: '8px 12px' }}>{r.hours}h × {r.multiplier}x</td>
+                                  <td style={{ padding: '8px 12px' }}>{r.regular_hours ? `${r.regular_hours}h` : '—'}</td>
+                                  <td style={{ padding: '8px 12px' }}>{r.hours > 0 ? `${r.hours}h × ${r.multiplier}x` : '—'}</td>
                                   <td style={{ padding: '8px 12px' }}>£{(r.rate || 0).toFixed(2)}/hr</td>
-                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>£{(r.amount || 0).toFixed(2)}</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>£{((r.regular_amount || 0) + (r.amount || 0)).toFixed(2)}</td>
                                   <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                     {r.status === 'pushed' ? (
                                       <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 10px', borderRadius: 10, fontWeight: 600 }}>Pushed</span>
@@ -4054,9 +4093,9 @@ export default function AdminPayrollNew() {
                             {wizPushResult.timesheet_results.filter((r: any) => r.status === 'pushed').length > 0 && (
                               <tfoot>
                                 <tr style={{ borderTop: '2px solid var(--border, #d1d5db)', background: 'var(--bg-muted, #f0f1f3)' }}>
-                                  <td colSpan={3} style={{ padding: '8px 12px', fontWeight: 700 }}>Total overtime pushed</td>
+                                  <td colSpan={4} style={{ padding: '8px 12px', fontWeight: 700 }}>Total pushed</td>
                                   <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
-                                    £{wizPushResult.timesheet_results.filter((r: any) => r.status === 'pushed').reduce((s: number, r: any) => s + (r.amount || 0), 0).toFixed(2)}
+                                    £{wizPushResult.timesheet_results.filter((r: any) => r.status === 'pushed').reduce((s: number, r: any) => s + (r.regular_amount || 0) + (r.amount || 0), 0).toFixed(2)}
                                   </td>
                                   <td />
                                 </tr>
