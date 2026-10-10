@@ -513,9 +513,8 @@ Deno.serve(async (req) => {
             lines_posted: v1Lines.length + v2Lines.length,
           })
         } else {
-          const errText = await tsRes.text()
           const v2Error = await tsRes.text()
-          const debugInfo = `v1(${XERO_PAYROLL_UK}/Timesheets): ${sanitise(v1Error).slice(0, 200)} | v2(${XERO_PAYROLL_UK_V2}/Timesheets): ${sanitise(v2Error).slice(0, 200)} | Calendar: ${calId}, EarningsRate: ${regularRateId}, Period: ${period_start} to ${period_end}, RegHrs: ${rhHours}, OtHrs: ${otHours}, v2Lines: ${v2Lines.length}`
+          const debugInfo = `v1: ${sanitise(v1Error).slice(0, 200)} | v2: ${sanitise(v2Error).slice(0, 200)} | Calendar: ${calId}, EarningsRate: ${regularRateId}, Period: ${period_start} to ${period_end}, RegHrs: ${rhHours}, OtHrs: ${otHours}, v2Lines: ${v2Lines.length}`
           timesheetResults.push({
             employee: emp.name,
             status: 'failed',
