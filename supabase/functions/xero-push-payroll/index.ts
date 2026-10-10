@@ -404,87 +404,118 @@ Deno.serve(async (req) => {
           continue
         }
 
-        // Xero Payroll UK v2: one line per earnings rate with total hours for the period.
-        // Date range is on the timesheet header (startDate/endDate), not on individual lines.
-        const v2Lines: Record<string, unknown>[] = []
-        if (rhHours > 0) {
-          v2Lines.push({ earningsRateID: regularRateId!, numberOfUnits: rhHours })
-        }
-        if (otHours > 0) {
-          v2Lines.push({ earningsRateID: effectiveOtRateId, numberOfUnits: otHours })
+        // Fetch the payroll calendar to find the exact period dates that Xero expects
+        let xeroStartDate = period_start
+        let xeroEndDate = period_end
+        const calDetailRes = await fetch(`${XERO_PAYROLL_UK_V2}/PayrollCalendars/${calId}`, { headers: xeroHeaders })
+        if (calDetailRes.ok) {
+          const calDetail = await calDetailRes.json()
+          const cal = calDetail.payrollCalendar || calDetail.PayrollCalendar
+          if (cal) {
+            const calStart = cal.periodStartDate || cal.PeriodStartDate
+            const calEnd = cal.periodEndDate || cal.PeriodEndDate
+            if (calStart && calEnd) {
+              xeroStartDate = calStart.substring(0, 10)
+              xeroEndDate = calEnd.substring(0, 10)
+            }
+          }
         }
 
-        // Approach 1: Create timesheet with lines in one call
-        const v2Payload = {
-          payrollCalendarID: calId,
-          employeeID: emp.xeroId,
-          startDate: period_start,
-          endDate: period_end,
-          timesheetLines: v2Lines,
+        // Check for existing timesheet for this employee/period (POST fails if one exists)
+        let existingTimesheetId: string | null = null
+        const existingTsRes = await fetch(
+          `${XERO_PAYROLL_UK_V2}/Timesheets?employeeId=${emp.xeroId}&startDate=${xeroStartDate}&endDate=${xeroEndDate}`,
+          { headers: xeroHeaders }
+        )
+        if (existingTsRes.ok) {
+          const existingBody = await existingTsRes.json()
+          const timesheets = existingBody.timesheets || existingBody.Timesheets || []
+          if (timesheets.length > 0) {
+            existingTimesheetId = timesheets[0].timesheetID || timesheets[0].TimesheetID
+          }
         }
+
+        // Xero UK v2: each timesheetLine needs date (YYYY-MM-DD), earningsRateID, numberOfUnits
+        const start = new Date(xeroStartDate)
+        const end = new Date(xeroEndDate)
+        const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+
+        let weekdays = 0
+        for (let i = 0; i < days; i++) {
+          const d = new Date(start)
+          d.setDate(d.getDate() + i)
+          if (d.getDay() !== 0 && d.getDay() !== 6) weekdays++
+        }
+
+        const buildPerDayLines = (totalHours: number, earningsRateId: string): Record<string, unknown>[] => {
+          const lines: Record<string, unknown>[] = []
+          if (totalHours <= 0 || weekdays <= 0) return lines
+          const perDay = Math.round((totalHours / weekdays) * 100) / 100
+          for (let i = 0; i < days; i++) {
+            const d = new Date(start)
+            d.setDate(d.getDate() + i)
+            if (d.getDay() !== 0 && d.getDay() !== 6) {
+              const yyyy = d.getFullYear()
+              const mm = String(d.getMonth() + 1).padStart(2, '0')
+              const dd2 = String(d.getDate()).padStart(2, '0')
+              lines.push({ date: `${yyyy}-${mm}-${dd2}`, earningsRateID: earningsRateId, numberOfUnits: perDay })
+            }
+          }
+          return lines
+        }
+
+        const v2Lines: Record<string, unknown>[] = [
+          ...buildPerDayLines(rhHours, regularRateId!),
+          ...buildPerDayLines(otHours, effectiveOtRateId),
+        ]
 
         let pushSuccess = false
         let xeroTimesheetId: string | null = null
         let allErrors = ''
 
-        const oneCallRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
-          method: 'POST',
-          headers: xeroHeaders,
-          body: JSON.stringify(v2Payload),
-        })
-        if (oneCallRes.ok) {
-          const body = await oneCallRes.json()
-          const ts = body.timesheet || body.Timesheet
-            || (body.timesheets && body.timesheets[0])
-            || (body.Timesheets && body.Timesheets[0])
-          xeroTimesheetId = ts?.timesheetID || ts?.TimesheetID || null
-          pushSuccess = true
+        if (existingTimesheetId) {
+          // Update existing timesheet — add lines to it
+          let linesOk = true
+          for (const line of v2Lines) {
+            const lineRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets/${existingTimesheetId}/Lines`, {
+              method: 'POST',
+              headers: xeroHeaders,
+              body: JSON.stringify(line),
+            })
+            if (!lineRes.ok) {
+              allErrors += 'line-add: ' + (await lineRes.text()).slice(0, 300)
+              linesOk = false
+              break
+            }
+          }
+          if (linesOk) {
+            pushSuccess = true
+            xeroTimesheetId = existingTimesheetId
+          }
         } else {
-          allErrors = 'one-call: ' + await oneCallRes.text()
-        }
-
-        // Approach 2: Create timesheet header first, then add lines separately
-        if (!pushSuccess) {
-          const headerPayload = {
+          // Create new timesheet with lines
+          const v2Payload = {
             payrollCalendarID: calId,
             employeeID: emp.xeroId,
-            startDate: period_start,
-            endDate: period_end,
+            startDate: xeroStartDate,
+            endDate: xeroEndDate,
+            timesheetLines: v2Lines,
           }
-          const headerRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
+
+          const tsRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
             method: 'POST',
             headers: xeroHeaders,
-            body: JSON.stringify(headerPayload),
+            body: JSON.stringify(v2Payload),
           })
-          if (headerRes.ok) {
-            const headerBody = await headerRes.json()
-            const ts = headerBody.timesheet || headerBody.Timesheet
-              || (headerBody.timesheets && headerBody.timesheets[0])
-              || (headerBody.Timesheets && headerBody.Timesheets[0])
-            const newTsId = ts?.timesheetID || ts?.TimesheetID
-            if (newTsId) {
-              let linesOk = true
-              for (const line of v2Lines) {
-                const lineRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets/${newTsId}/Lines`, {
-                  method: 'POST',
-                  headers: xeroHeaders,
-                  body: JSON.stringify(line),
-                })
-                if (!lineRes.ok) {
-                  allErrors += ' | line-add: ' + (await lineRes.text()).slice(0, 200)
-                  linesOk = false
-                  break
-                }
-              }
-              if (linesOk) {
-                pushSuccess = true
-                xeroTimesheetId = newTsId
-              }
-            } else {
-              allErrors += ' | header-ok-no-id'
-            }
+          if (tsRes.ok) {
+            const body = await tsRes.json()
+            const ts = body.timesheet || body.Timesheet
+              || (body.timesheets && body.timesheets[0])
+              || (body.Timesheets && body.Timesheets[0])
+            xeroTimesheetId = ts?.timesheetID || ts?.TimesheetID || null
+            pushSuccess = true
           } else {
-            allErrors += ' | header-only: ' + (await headerRes.text()).slice(0, 300)
+            allErrors = 'create: ' + (await tsRes.text()).slice(0, 1000)
           }
         }
 
