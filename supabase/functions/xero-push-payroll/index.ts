@@ -305,7 +305,7 @@ Deno.serve(async (req) => {
 
     // Cache for per-employee payroll calendar lookups
     const empCalendarCache: Record<string, string | null> = {}
-    async function getEmployeeCalendarId(xeroEmployeeId: string): Promise<string | null> {
+    const getEmployeeCalendarId = async (xeroEmployeeId: string): Promise<string | null> => {
       if (empCalendarCache[xeroEmployeeId] !== undefined) return empCalendarCache[xeroEmployeeId]
       if (companyCalendarId) { empCalendarCache[xeroEmployeeId] = companyCalendarId; return companyCalendarId }
       const empRes = await fetch(`${XERO_PAYROLL_UK_V2}/Employees/${xeroEmployeeId}`, { headers: xeroHeaders })
@@ -417,7 +417,7 @@ Deno.serve(async (req) => {
         }
 
         // v2 (camelCase): one line PER DAY per earnings rate, each with date + numberOfUnits (single number)
-        function buildPerDayLines(totalHours: number, earningsRateId: string): Record<string, unknown>[] {
+        const buildPerDayLines = (totalHours: number, earningsRateId: string): Record<string, unknown>[] => {
           const lines: Record<string, unknown>[] = []
           if (totalHours <= 0 || weekdays <= 0) return lines
           const perDay = Math.round((totalHours / weekdays) * 100) / 100
@@ -428,8 +428,8 @@ Deno.serve(async (req) => {
             if (dow !== 0 && dow !== 6) {
               const yyyy = d.getFullYear()
               const mm = String(d.getMonth() + 1).padStart(2, '0')
-              const dd = String(d.getDate()).padStart(2, '0')
-              lines.push({ date: `${yyyy}-${mm}-${dd}`, earningsRateID: earningsRateId, numberOfUnits: perDay })
+              const dd2 = String(d.getDate()).padStart(2, '0')
+              lines.push({ date: `${yyyy}-${mm}-${dd2}`, earningsRateID: earningsRateId, numberOfUnits: perDay })
             }
           }
           return lines
