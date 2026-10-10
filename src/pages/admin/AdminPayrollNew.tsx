@@ -1411,6 +1411,8 @@ export default function AdminPayrollNew() {
     try {
       let totalUpserted = 0
       let totalUnmatched = 0
+      let totalFiltered = 0
+      let totalPayslips = 0
       let lastPayRun: { period_start: string; period_end: string } | null = null
       const errors: string[] = []
 
@@ -1436,13 +1438,19 @@ export default function AdminPayrollNew() {
         if (data?.payRun) lastPayRun = { period_start: data.payRun.period_start, period_end: data.payRun.period_end }
         totalUpserted += data?.upserted || 0
         totalUnmatched += data?.unmatched || 0
+        totalFiltered += data?.filtered || 0
+        totalPayslips += (data?.payslips?.length || 0)
       }
 
       if (totalUpserted === 0) {
         if (!lastPayRun) {
           showError('No pay run found in Xero for any selected period. Create pay runs in Xero first, then fetch again.')
-        } else if (totalUnmatched > 0) {
-          showError('Xero pay run found but no employees matched. Check employee email addresses match between InflowHR and Xero.')
+        } else if (totalPayslips === 0) {
+          showError(`Xero pay run found (${lastPayRun.period_start} to ${lastPayRun.period_end}) but it contained no payslips. Check the pay run has been processed in Xero.`)
+        } else if (totalUnmatched > 0 && totalFiltered === 0) {
+          showError(`Xero pay run found with ${totalUnmatched} payslip${totalUnmatched !== 1 ? 's' : ''} but no employees matched. Check employee email addresses match between InflowHR and Xero.`)
+        } else if (totalFiltered > 0) {
+          showError(`Xero pay run found (${lastPayRun.period_start} to ${lastPayRun.period_end}) with ${totalPayslips} payslip${totalPayslips !== 1 ? 's' : ''}, but ${totalFiltered} were filtered out as they don't match the selected worker types. ${totalUnmatched > 0 ? `${totalUnmatched} also didn't match any InflowHR employee. ` : ''}Check employment categories are set correctly in InflowHR.`)
         } else if (errors.length > 0) {
           showError(errors[0])
         } else {
