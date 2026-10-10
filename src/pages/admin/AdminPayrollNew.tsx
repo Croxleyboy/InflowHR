@@ -1443,7 +1443,9 @@ export default function AdminPayrollNew() {
       }
 
       if (totalUpserted === 0) {
-        if (!lastPayRun) {
+        if (errors.length > 0) {
+          showError(errors[0])
+        } else if (!lastPayRun) {
           showError('No pay run found in Xero for any selected period. Create pay runs in Xero first, then fetch again.')
         } else if (totalPayslips === 0) {
           showError(`Xero pay run found (${lastPayRun.period_start} to ${lastPayRun.period_end}) but it contained no payslips. Check the pay run has been processed in Xero.`)
@@ -1451,8 +1453,6 @@ export default function AdminPayrollNew() {
           showError(`Xero pay run found with ${totalUnmatched} payslip${totalUnmatched !== 1 ? 's' : ''} but no employees matched. Check employee email addresses match between InflowHR and Xero.`)
         } else if (totalFiltered > 0) {
           showError(`Xero pay run found (${lastPayRun.period_start} to ${lastPayRun.period_end}) with ${totalPayslips} payslip${totalPayslips !== 1 ? 's' : ''}, but ${totalFiltered} were filtered out as they don't match the selected worker types. ${totalUnmatched > 0 ? `${totalUnmatched} also didn't match any InflowHR employee. ` : ''}Check employment categories are set correctly in InflowHR.`)
-        } else if (errors.length > 0) {
-          showError(errors[0])
         } else {
           showError('Xero pay run found but contained no payslips for the selected worker types.')
         }
