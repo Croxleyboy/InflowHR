@@ -1624,18 +1624,12 @@ export default function AdminPayrollNew() {
       const { data: activeRun } = await supabase.from('pay_runs')
         .select('id, status, worker_types, payment_method')
         .eq('company_id', selectedCompanyId)
-        .in('status', ['generating', 'exported', 'processing', 'synced', 'completed'])
+        .in('status', ['generating', 'exported', 'processing', 'synced'])
         .order('created_at', { ascending: false })
         .limit(1)
 
       if (activeRun && activeRun.length > 0) {
         const run = activeRun[0]
-
-        if (run.status === 'completed') {
-          showSuccess('This pay run is already complete. Go to Payslips to review and release.')
-          setView('payslips')
-          return
-        }
 
         setWizPayRunId(run.id)
         setWizGenerated(true)
@@ -1774,18 +1768,12 @@ export default function AdminPayrollNew() {
         .select('id, status, worker_types, payment_method')
         .eq('company_id', selectedCompanyId)
         .contains('worker_types', [wtKey])
-        .in('status', ['generating', 'exported', 'processing', 'synced', 'completed'])
+        .in('status', ['generating', 'exported', 'processing', 'synced'])
         .order('created_at', { ascending: false })
         .limit(1)
 
       if (activeRun && activeRun.length > 0) {
         const run = activeRun[0]
-
-        if (run.status === 'completed') {
-          showSuccess('This pay run is already complete. Go to Payslips to review and release.')
-          setView('payslips')
-          return
-        }
 
         setWizPayRunId(run.id)
         setWizGenerated(true)
