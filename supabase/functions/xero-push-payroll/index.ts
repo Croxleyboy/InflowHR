@@ -515,7 +515,23 @@ Deno.serve(async (req) => {
             xeroTimesheetId = ts?.timesheetID || ts?.TimesheetID || null
             pushSuccess = true
           } else {
-            allErrors = 'create: ' + (await tsRes.text()).slice(0, 1000)
+            const errText = await tsRes.text()
+            let parsedErr = ''
+            try {
+              const errObj = JSON.parse(errText)
+              const prob = errObj.problem || errObj.Problem || errObj
+              const detail = prob.detail || prob.Detail || ''
+              const invFields = JSON.stringify(prob.invalidFields || [])
+              const invObjs = prob.invalidObjects || prob.InvalidObjects || []
+              const valErrors = invObjs.map((o: any) => {
+                const ve = o.validationErrors || o.ValidationErrors || []
+                return ve.map((v: any) => v.message || v.Message || JSON.stringify(v)).join('; ')
+              }).filter((s: string) => s).join(' | ')
+              parsedErr = `${detail} validationErrors:[${valErrors}] invalidFields:${invFields}`
+            } catch {
+              parsedErr = errText.slice(0, 500)
+            }
+            allErrors = `create(${tsRes.status}): ${parsedErr} | payload:${JSON.stringify(v2Payload).slice(0, 300)} | calDates:${xeroStartDate}..${xeroEndDate}`
           }
         }
 
