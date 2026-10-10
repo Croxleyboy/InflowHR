@@ -298,7 +298,7 @@ Deno.serve(async (req) => {
     const payslips = detailedSlips.map((s: Record<string, unknown>) => {
       const earningsLines = (s.earningsLines || s.EarningsLines || []) as { earningsType?: string; EarningsType?: string; displayName?: string; DisplayName?: string; name?: string; Name?: string; amount?: number; Amount?: number }[]
       const deductionLines = (s.deductionLines || s.DeductionLines || []) as { deductionType?: string; DeductionType?: string; displayName?: string; DisplayName?: string; amount?: number; Amount?: number }[]
-      const taxLines = (s.taxLines || s.TaxLines || s.employeeTaxLines || []) as { description?: string; Description?: string; taxType?: string; TaxType?: string; amount?: number; Amount?: number; percentage?: number; Percentage?: number }[]
+      const taxLines = (s.taxLines || s.TaxLines || s.employeeTaxLines || []) as { description?: string; Description?: string; taxType?: string; TaxType?: string; displayName?: string; DisplayName?: string; name?: string; Name?: string; amount?: number; Amount?: number; percentage?: number; Percentage?: number }[]
       const reimbursementLines = (s.reimbursementLines || s.ReimbursementLines || []) as { description?: string; Description?: string; displayName?: string; DisplayName?: string; amount?: number; Amount?: number }[]
 
       const overtimeAmount = earningsLines
@@ -308,23 +308,27 @@ Deno.serve(async (req) => {
         })
         .reduce((sum, e) => sum + (e.amount ?? e.Amount ?? 0), 0)
 
+      function taxLineName(t: { description?: string; Description?: string; taxType?: string; TaxType?: string; displayName?: string; DisplayName?: string; name?: string; Name?: string }): string {
+        return (t.description || t.Description || t.displayName || t.DisplayName || t.name || t.Name || t.taxType || t.TaxType || '').toUpperCase()
+      }
+
       const paye = taxLines
         .filter(t => {
-          const desc = (t.description || t.Description || t.taxType || t.TaxType || '').toUpperCase()
+          const desc = taxLineName(t)
           return desc.includes('PAYE') || desc.includes('TAX')
         })
         .reduce((sum, t) => sum + (t.amount ?? t.Amount ?? 0), 0)
 
       const employeeNI = taxLines
         .filter(t => {
-          const desc = (t.description || t.Description || t.taxType || t.TaxType || '').toUpperCase()
-          return (desc.includes('EMPLOYEE') && desc.includes('NATIONAL INSURANCE')) || desc.includes('EMPLOYEE NI')
+          const desc = taxLineName(t)
+          return (desc.includes('EMPLOYEE') && desc.includes('NATIONAL INSURANCE')) || desc.includes('EMPLOYEE NI') || desc.includes('NIC')
         })
         .reduce((sum, t) => sum + (t.amount ?? t.Amount ?? 0), 0)
 
       const studentLoan = taxLines
         .filter(t => {
-          const desc = (t.description || t.Description || t.taxType || t.TaxType || '').toUpperCase()
+          const desc = taxLineName(t)
           return desc.includes('STUDENT LOAN')
         })
         .reduce((sum, t) => sum + (t.amount ?? t.Amount ?? 0), 0)
@@ -350,8 +354,8 @@ Deno.serve(async (req) => {
         gross_earnings: (s.grossEarnings ?? s.GrossEarnings ?? 0) as number,
         overtime: overtimeAmount,
         net_pay: (s.netPay ?? s.totalPay ?? s.NetPay ?? 0) as number,
-        tax: paye,
-        employee_ni: employeeNI,
+        tax: paye || (s.incomeTax ?? s.IncomeTax ?? 0) as number,
+        employee_ni: employeeNI || (s.employeesNationalInsurance ?? s.EmployeesNationalInsurance ?? 0) as number,
         employer_ni: 0,
         student_loan: studentLoan,
         deductions: deductionLines.map(d => ({ name: d.displayName || d.DisplayName || d.deductionType || d.DeductionType || '', amount: d.amount ?? d.Amount ?? 0 })),

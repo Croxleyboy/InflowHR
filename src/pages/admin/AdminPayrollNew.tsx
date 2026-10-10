@@ -4146,8 +4146,58 @@ export default function AdminPayrollNew() {
                       )
                     })()}
 
+                    {/* Benefit changes checklist */}
+                    {wizBenefitChanges.length > 0 && (
+                      <div style={{ background: '#f3e5f5', borderRadius: 8, padding: 14, marginBottom: 16, borderLeft: '4px solid #7e57c2' }}>
+                        <strong style={{ color: '#4a148c', fontSize: 14 }}>Benefit Adjustments — enter these in {connectedProvider === 'xero' ? 'Xero' : 'Sage'}</strong>
+                        <p style={{ fontSize: 12, color: '#6a1b9a', margin: '4px 0 8px' }}>
+                          These benefit changes need to be added manually in {connectedProvider === 'xero' ? 'Xero' : 'Sage'} before running the pay run. Tick each one once done.
+                        </p>
+                        <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: 6, overflow: 'hidden' }}>
+                          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ background: 'rgba(126,87,194,0.1)', textAlign: 'left' }}>
+                                <th style={{ padding: '6px 10px', width: 28 }}></th>
+                                <th style={{ padding: '6px 10px', fontWeight: 600 }}>Employee</th>
+                                <th style={{ padding: '6px 10px', fontWeight: 600 }}>Benefit</th>
+                                <th style={{ padding: '6px 10px', fontWeight: 600, textAlign: 'right' }}>Monthly Cost</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {wizBenefitChanges.map((b, i) => (
+                                <tr key={i} style={{ borderTop: '1px solid rgba(126,87,194,0.15)' }}>
+                                  <td style={{ padding: '6px 10px', textAlign: 'center' }}>
+                                    <input type="checkbox" checked={wizBenefitChecked.has(`benefit-${i}`)}
+                                      onChange={e => {
+                                        const next = new Set(wizBenefitChecked)
+                                        e.target.checked ? next.add(`benefit-${i}`) : next.delete(`benefit-${i}`)
+                                        setWizBenefitChecked(next)
+                                      }}
+                                    />
+                                  </td>
+                                  <td style={{ padding: '6px 10px', fontWeight: 500, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{b.employee_name}</td>
+                                  <td style={{ padding: '6px 10px', textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{b.benefit} ({b.action})</td>
+                                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>£{b.monthly_cost.toFixed(2)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {wizBenefitChecked.size < wizBenefitChanges.length && (
+                          <p style={{ fontSize: 11, color: '#e65100', margin: '8px 0 0', fontStyle: 'italic' }}>
+                            Tick each item once added in {connectedProvider === 'xero' ? 'Xero' : 'Sage'} to confirm completion.
+                          </p>
+                        )}
+                        {wizBenefitChecked.size === wizBenefitChanges.length && (
+                          <p style={{ fontSize: 11, color: '#2e7d32', margin: '8px 0 0', fontWeight: 600 }}>
+                            All benefit adjustments confirmed.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     {/* No manual items */}
-                    {(!wizPushResult.manual_items || wizPushResult.manual_items.length === 0) && (
+                    {(!wizPushResult.manual_items || wizPushResult.manual_items.length === 0) && wizBenefitChanges.length === 0 && (
                       <div style={{ background: '#e8f5e9', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#2e7d32' }}>
                         No manual actions required — all adjustments were pushed automatically.
                       </div>
@@ -4536,55 +4586,6 @@ export default function AdminPayrollNew() {
                       </div>
                     )
                   })()}
-
-                  {wizBenefitChanges.length > 0 && (
-                    <div style={{ background: '#f3e5f5', borderRadius: 8, padding: 14, marginBottom: 12, borderLeft: '4px solid #7e57c2' }}>
-                      <strong style={{ color: '#4a148c', fontSize: 14 }}>Manual Actions Required Before Syncing</strong>
-                      <p style={{ fontSize: 12, color: '#6a1b9a', margin: '4px 0 8px' }}>
-                        The following benefit adjustments need to be added manually in {connectedProvider === 'xero' ? 'Xero' : 'Sage'} before syncing payslips back.
-                      </p>
-                      <div style={{ background: 'rgba(255,255,255,0.6)', borderRadius: 6, overflow: 'hidden' }}>
-                        <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                          <thead>
-                            <tr style={{ background: 'rgba(126,87,194,0.1)', textAlign: 'left' }}>
-                              <th style={{ padding: '6px 10px', width: 28 }}></th>
-                              <th style={{ padding: '6px 10px', fontWeight: 600 }}>Employee</th>
-                              <th style={{ padding: '6px 10px', fontWeight: 600 }}>Benefit</th>
-                              <th style={{ padding: '6px 10px', fontWeight: 600, textAlign: 'right' }}>Monthly Cost</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {wizBenefitChanges.map((b, i) => (
-                              <tr key={i} style={{ borderTop: '1px solid rgba(126,87,194,0.15)' }}>
-                                <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                                  <input type="checkbox" checked={wizBenefitChecked.has(`benefit-${i}`)}
-                                    onChange={e => {
-                                      const next = new Set(wizBenefitChecked)
-                                      e.target.checked ? next.add(`benefit-${i}`) : next.delete(`benefit-${i}`)
-                                      setWizBenefitChecked(next)
-                                    }}
-                                  />
-                                </td>
-                                <td style={{ padding: '6px 10px', fontWeight: 500, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{b.employee_name}</td>
-                                <td style={{ padding: '6px 10px', textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{b.benefit} ({b.action})</td>
-                                <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>£{b.monthly_cost.toFixed(2)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      {wizBenefitChecked.size < wizBenefitChanges.length && (
-                        <p style={{ fontSize: 11, color: '#e65100', margin: '8px 0 0', fontStyle: 'italic' }}>
-                          Tick each item once added in {connectedProvider === 'xero' ? 'Xero' : 'Sage'} to confirm completion.
-                        </p>
-                      )}
-                      {wizBenefitChecked.size === wizBenefitChanges.length && (
-                        <p style={{ fontSize: 11, color: '#2e7d32', margin: '8px 0 0', fontWeight: 600 }}>
-                          All benefit adjustments confirmed — ready to sync payslips.
-                        </p>
-                      )}
-                    </div>
-                  )}
 
                   {connectedProvider === 'xero' && (() => {
                     const allStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
