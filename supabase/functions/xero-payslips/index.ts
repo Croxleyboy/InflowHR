@@ -171,91 +171,92 @@ Deno.serve(async (req) => {
       ).join('; ')
     }
 
-    let selectedRun: Record<string, unknown> | null = null
+    // Find ALL candidate pay runs (exact + overlapping, with valid status)
+    let candidateRuns: Record<string, unknown>[] = []
 
     if (period_start && period_end) {
       const reqStart = extractDate(period_start)
       const reqEnd = extractDate(period_end)
 
-      // Exact match on period dates first
-      selectedRun = payRuns.find((r: Record<string, unknown>) => {
+      // Exact matches first
+      const exactMatches = payRuns.filter((r: Record<string, unknown>) => {
+        const status = getPayRunStatus(r)
+        if (status !== 'POSTED' && status !== 'DRAFT') return false
         return getPayRunPeriodStart(r) === reqStart && getPayRunPeriodEnd(r) === reqEnd
-      }) || null
+      })
 
-      // Overlapping periods fallback — pick the closest-matching pay run by period length
-      if (!selectedRun) {
-        const reqDays = Math.abs(new Date(reqEnd).getTime() - new Date(reqStart).getTime()) / 86400000
-        let bestOverlap: Record<string, unknown> | null = null
-        let bestDiff = Infinity
-        for (const r of payRuns) {
+      // Overlapping matches sorted by closest period length
+      const reqDays = Math.abs(new Date(reqEnd).getTime() - new Date(reqStart).getTime()) / 86400000
+      const overlapMatches = payRuns
+        .filter((r: Record<string, unknown>) => {
+          const status = getPayRunStatus(r)
+          if (status !== 'POSTED' && status !== 'DRAFT') return false
           const rStart = getPayRunPeriodStart(r)
           const rEnd = getPayRunPeriodEnd(r)
-          if (!rStart || !rEnd) continue
-          if (rStart <= reqEnd && rEnd >= reqStart) {
-            const rDays = Math.abs(new Date(rEnd).getTime() - new Date(rStart).getTime()) / 86400000
-            const diff = Math.abs(rDays - reqDays)
-            if (diff < bestDiff) {
-              bestDiff = diff
-              bestOverlap = r
-            }
-          }
-        }
-        selectedRun = bestOverlap
-      }
+          if (!rStart || !rEnd) return false
+          if (rStart === reqStart && rEnd === reqEnd) return false
+          return rStart <= reqEnd && rEnd >= reqStart
+        })
+        .sort((a: Record<string, unknown>, b: Record<string, unknown>) => {
+          const aDays = Math.abs(new Date(getPayRunPeriodEnd(a)).getTime() - new Date(getPayRunPeriodStart(a)).getTime()) / 86400000
+          const bDays = Math.abs(new Date(getPayRunPeriodEnd(b)).getTime() - new Date(getPayRunPeriodStart(b)).getTime()) / 86400000
+          return Math.abs(aDays - reqDays) - Math.abs(bDays - reqDays)
+        })
 
-      if (!selectedRun) {
+      candidateRuns = [...exactMatches, ...overlapMatches]
+
+      if (!candidateRuns.length) {
         return json({
           error: `No Xero pay run found for period ${reqStart} to ${reqEnd}. Available pay runs: ${availablePayRunsSummary()}. Create a pay run in Xero for this period first.`,
         }, 404)
       }
-
-      const status = getPayRunStatus(selectedRun)
-      if (status !== 'POSTED' && status !== 'DRAFT') {
-        return json({
-          error: `Xero pay run for ${reqStart} to ${reqEnd} has status "${status}". The pay run must be Posted or Draft to sync payslips. Process and post the pay run in Xero first.`,
-        }, 400)
-      }
     } else {
       // Legacy fallback: no period dates provided — grab most recent POSTED, then DRAFT
-      selectedRun = payRuns.find((r: Record<string, unknown>) => getPayRunStatus(r) === 'POSTED') || null
-      if (!selectedRun) {
-        selectedRun = payRuns.find((r: Record<string, unknown>) => getPayRunStatus(r) === 'DRAFT') || null
-      }
-      if (!selectedRun) {
+      const posted = payRuns.filter((r: Record<string, unknown>) => getPayRunStatus(r) === 'POSTED')
+      const drafted = payRuns.filter((r: Record<string, unknown>) => getPayRunStatus(r) === 'DRAFT')
+      candidateRuns = [...posted, ...drafted]
+      if (!candidateRuns.length) {
         return json({
           error: `No Posted or Draft pay run found in Xero. Available pay runs: ${availablePayRunsSummary()}. Post or finalise a pay run in Xero first.`,
         }, 404)
       }
     }
 
-    const payRunId = getPayRunId(selectedRun)
-    if (!payRunId) return json({ error: 'No valid pay run ID found' }, 404)
+    // Fetch payslips from ALL candidate pay runs
+    const detailedSlips: Record<string, unknown>[] = []
+    let selectedRun = candidateRuns[0]
+    let payRunData: Record<string, unknown> = selectedRun
 
-    // Fetch pay run detail to get payslip IDs
-    const payRunDetailRes = await fetch(`${XERO_PAYROLL_V2}/PayRuns/${payRunId}`, { headers })
-    if (!payRunDetailRes.ok) {
-      const errText = await payRunDetailRes.text()
-      return json({ error: 'Failed to fetch pay run detail from Xero', detail: errText }, 502)
-    }
-    const payRunDetail = await payRunDetailRes.json()
-    const payRunData = payRunDetail.payRun || payRunDetail.PayRun || selectedRun
-    const paySlipRefs = payRunData.paySlips || payRunData.PaySlips || []
+    for (const candidate of candidateRuns) {
+      const runId = getPayRunId(candidate)
+      if (!runId) continue
 
-    // Fetch each payslip individually for full breakdown
-    const detailedSlips = []
-    for (const ref of paySlipRefs) {
-      const slipId = ref.paySlipID || ref.payslipID || ref.PayslipID || ref.PaySlipID
-      if (!slipId) continue
-      const detailRes = await fetch(`${XERO_PAYROLL_V2}/Payslips/${slipId}`, { headers })
-      if (detailRes.ok) {
-        const detailBody = await detailRes.json()
-        const detail = detailBody.paySlip || detailBody.Payslip
-          || (detailBody.paySlips && detailBody.paySlips[0])
-          || (detailBody.Payslips && detailBody.Payslips[0])
-          || ref
-        detailedSlips.push(detail)
-      } else {
-        detailedSlips.push(ref)
+      const payRunDetailRes = await fetch(`${XERO_PAYROLL_V2}/PayRuns/${runId}`, { headers })
+      if (!payRunDetailRes.ok) continue
+
+      const payRunDetail = await payRunDetailRes.json()
+      const runData = payRunDetail.payRun || payRunDetail.PayRun || candidate
+      const paySlipRefs = runData.paySlips || runData.PaySlips || []
+
+      for (const ref of paySlipRefs) {
+        const slipId = ref.paySlipID || ref.payslipID || ref.PayslipID || ref.PaySlipID
+        if (!slipId) continue
+        const detailRes = await fetch(`${XERO_PAYROLL_V2}/Payslips/${slipId}`, { headers })
+        if (detailRes.ok) {
+          const detailBody = await detailRes.json()
+          const detail = detailBody.paySlip || detailBody.Payslip
+            || (detailBody.paySlips && detailBody.paySlips[0])
+            || (detailBody.Payslips && detailBody.Payslips[0])
+            || ref
+          detailedSlips.push(detail)
+        } else {
+          detailedSlips.push(ref)
+        }
+      }
+
+      if (!payRunData || payRunData === selectedRun) {
+        selectedRun = candidate
+        payRunData = runData
       }
     }
 
@@ -390,12 +391,21 @@ Deno.serve(async (req) => {
     let upsertedCount = 0
     let unmatchedCount = 0
     let filteredCount = 0
+    const filteredDetails: { name: string; xero_id: string; inflow_id: string; employment_category: string | null; contract_type: string | null }[] = []
     for (const ps of payslips) {
       if (!ps.inflow_employee_id) {
         unmatchedCount++
         continue
       }
       if (!matchesWorkerType(ps.inflow_employee_id)) {
+        const empInfo = inflowEmployeeMap[ps.inflow_employee_id]
+        filteredDetails.push({
+          name: `${ps.first_name} ${ps.last_name}`,
+          xero_id: ps.xero_employee_id,
+          inflow_id: ps.inflow_employee_id,
+          employment_category: empInfo?.employment_category || null,
+          contract_type: empInfo?.contract_type || null,
+        })
         filteredCount++
         continue
       }
@@ -423,12 +433,14 @@ Deno.serve(async (req) => {
       upsertedCount++
     }
 
+    const payRunId = getPayRunId(selectedRun)
     const payRunResult = {
       id: payRunId,
       period_start: periodStart,
       period_end: periodEnd,
       payment_date: paymentDate,
       status: payRunData.payRunStatus || payRunData.PayRunStatus,
+      pay_runs_checked: candidateRuns.length,
     }
 
     // GDPR audit log
@@ -436,7 +448,7 @@ Deno.serve(async (req) => {
       company_id,
       user_id: user.id,
       action: 'Xero Payslip Sync',
-      detail: `Synced ${upsertedCount} payslips from Xero pay run ${payRunId}. Period: ${periodStart} to ${periodEnd}. Unmatched: ${unmatchedCount}. Filtered out (other worker types): ${filteredCount}. Worker types: ${workerTypeFilter ? workerTypeFilter.join(', ') : 'all'}. Data pulled: gross, tax, NI, deductions, net pay.`,
+      detail: `Synced ${upsertedCount} payslips from ${candidateRuns.length} Xero pay run(s). Period: ${periodStart} to ${periodEnd}. Unmatched: ${unmatchedCount}. Filtered out (other worker types): ${filteredCount}. Worker types: ${workerTypeFilter ? workerTypeFilter.join(', ') : 'all'}. Data pulled: gross, tax, NI, deductions, net pay.`,
       status: 'success',
     })
 
@@ -456,6 +468,11 @@ Deno.serve(async (req) => {
       upserted: upsertedCount,
       unmatched: unmatchedCount,
       filtered: filteredCount,
+      filteredDetails,
+      debug: {
+        worker_types_requested: workerTypeFilter,
+        inflow_employees_loaded: Object.keys(inflowEmployeeMap).length,
+      },
     })
   } catch (err) {
     return json({ error: (err as Error).message }, 500)
