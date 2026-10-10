@@ -1440,6 +1440,12 @@ export default function AdminPayrollNew() {
         totalUnmatched += data?.unmatched || 0
         totalFiltered += data?.filtered || 0
         totalPayslips += (data?.payslips?.length || 0)
+        if (data?.filteredDetails?.length) {
+          const details = data.filteredDetails.map((d: any) => `${d.name} (cat=${d.employment_category}, type=${d.contract_type})`).join('; ')
+          const requested = data?.debug?.worker_types_requested?.join(', ') || 'unknown'
+          const loaded = data?.debug?.inflow_employees_loaded || 0
+          errors.push(`Filtered: ${details}. Requested types: [${requested}]. InflowHR employees loaded: ${loaded}.`)
+        }
       }
 
       if (totalUpserted === 0) {
