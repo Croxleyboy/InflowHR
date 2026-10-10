@@ -450,18 +450,28 @@ Deno.serve(async (req) => {
           timesheetLines: v2Lines,
         }
 
-        let tsRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
+        let pushSuccess = false
+        let xeroTimesheetId: string | null = null
+        let allErrors = ''
+
+        const oneCallRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
           method: 'POST',
           headers: xeroHeaders,
           body: JSON.stringify(v2Payload),
         })
-        let allErrors = ''
-        if (!tsRes.ok) {
-          allErrors = 'one-call: ' + await tsRes.text()
+        if (oneCallRes.ok) {
+          const body = await oneCallRes.json()
+          const ts = body.timesheet || body.Timesheet
+            || (body.timesheets && body.timesheets[0])
+            || (body.Timesheets && body.Timesheets[0])
+          xeroTimesheetId = ts?.timesheetID || ts?.TimesheetID || null
+          pushSuccess = true
+        } else {
+          allErrors = 'one-call: ' + await oneCallRes.text()
         }
 
         // Approach 2: Create timesheet header first, then add lines separately
-        if (!tsRes.ok) {
+        if (!pushSuccess) {
           const headerPayload = {
             payrollCalendarID: calId,
             employeeID: emp.xeroId,
@@ -475,10 +485,10 @@ Deno.serve(async (req) => {
           })
           if (headerRes.ok) {
             const headerBody = await headerRes.json()
-            const createdTs = headerBody.timesheet || headerBody.Timesheet
+            const ts = headerBody.timesheet || headerBody.Timesheet
               || (headerBody.timesheets && headerBody.timesheets[0])
               || (headerBody.Timesheets && headerBody.Timesheets[0])
-            const newTsId = createdTs?.timesheetID || createdTs?.TimesheetID
+            const newTsId = ts?.timesheetID || ts?.TimesheetID
             if (newTsId) {
               let linesOk = true
               for (const line of v2Lines) {
@@ -494,22 +504,18 @@ Deno.serve(async (req) => {
                 }
               }
               if (linesOk) {
-                tsRes = { ok: true, json: async () => headerBody } as Response
+                pushSuccess = true
+                xeroTimesheetId = newTsId
               }
+            } else {
+              allErrors += ' | header-ok-no-id'
             }
           } else {
             allErrors += ' | header-only: ' + (await headerRes.text()).slice(0, 300)
           }
         }
 
-        if (tsRes.ok) {
-          const tsBody = await tsRes.json()
-          const createdTs = tsBody.timesheet || tsBody.Timesheet
-            || (tsBody.timesheets && tsBody.timesheets[0])
-            || (tsBody.Timesheets && tsBody.Timesheets[0])
-          const xeroTimesheetId = createdTs?.timesheetID || createdTs?.TimesheetID
-
-          // Store the Xero timesheet ID on the period review
+        if (pushSuccess) {
           if (xeroTimesheetId) {
             await sb.from('pay_period_reviews').update({
               xero_timesheet_id: xeroTimesheetId,
@@ -535,8 +541,7 @@ Deno.serve(async (req) => {
             lines_posted: v2Lines.length,
           })
         } else {
-          const lastError = tsRes.ok ? '' : await tsRes.text()
-          const debugInfo = `${sanitise(allErrors + (lastError ? ' | last: ' + lastError : '')).slice(0, 800)} | Cal: ${calId}, Rate: ${regularRateId}, Period: ${period_start}-${period_end}, Reg: ${rhHours}, OT: ${otHours}`
+          const debugInfo = `${sanitise(allErrors).slice(0, 800)} | Cal: ${calId}, Rate: ${regularRateId}, Period: ${period_start}-${period_end}, Reg: ${rhHours}, OT: ${otHours}`
           timesheetResults.push({
             employee: emp.name,
             status: 'failed',
