@@ -296,10 +296,17 @@ Deno.serve(async (req) => {
 
     // Parse payslips — handle both camelCase (v2) and PascalCase field names
     const payslips = detailedSlips.map((s: Record<string, unknown>) => {
-      const earningsLines = (s.earningsLines || s.EarningsLines || []) as { earningsType?: string; EarningsType?: string; amount?: number; Amount?: number }[]
+      const earningsLines = (s.earningsLines || s.EarningsLines || []) as { earningsType?: string; EarningsType?: string; displayName?: string; DisplayName?: string; name?: string; Name?: string; amount?: number; Amount?: number }[]
       const deductionLines = (s.deductionLines || s.DeductionLines || []) as { deductionType?: string; DeductionType?: string; displayName?: string; DisplayName?: string; amount?: number; Amount?: number }[]
       const taxLines = (s.taxLines || s.TaxLines || s.employeeTaxLines || []) as { description?: string; Description?: string; taxType?: string; TaxType?: string; amount?: number; Amount?: number; percentage?: number; Percentage?: number }[]
       const reimbursementLines = (s.reimbursementLines || s.ReimbursementLines || []) as { description?: string; Description?: string; displayName?: string; DisplayName?: string; amount?: number; Amount?: number }[]
+
+      const overtimeAmount = earningsLines
+        .filter(e => {
+          const name = (e.displayName || e.DisplayName || e.name || e.Name || e.earningsType || e.EarningsType || '').toUpperCase()
+          return name.includes('OVERTIME') || name.includes(' OT ') || name.endsWith(' OT') || name === 'OT'
+        })
+        .reduce((sum, e) => sum + (e.amount ?? e.Amount ?? 0), 0)
 
       const paye = taxLines
         .filter(t => {
@@ -341,6 +348,7 @@ Deno.serve(async (req) => {
         email: xeroEmail,
         total_earnings: (s.totalEarnings ?? s.TotalEarnings ?? 0) as number,
         gross_earnings: (s.grossEarnings ?? s.GrossEarnings ?? 0) as number,
+        overtime: overtimeAmount,
         net_pay: (s.netPay ?? s.totalPay ?? s.NetPay ?? 0) as number,
         tax: paye,
         employee_ni: employeeNI,
@@ -359,6 +367,12 @@ Deno.serve(async (req) => {
     const periodStart = getPayRunPeriodStart(payRunData)
     const periodEnd = getPayRunPeriodEnd(payRunData)
     const paymentDate = extractDate(getPayRunField(payRunData, 'paymentDate', 'PaymentDate'))
+
+    // Detect pay period type from the period span
+    const periodDays = periodStart && periodEnd
+      ? Math.round((new Date(periodEnd).getTime() - new Date(periodStart).getTime()) / 86400000) + 1
+      : 0
+    const payPeriodType = periodDays <= 10 ? 'weekly' : periodDays <= 18 ? 'bi_weekly' : 'monthly'
 
     // Store xero_employee_id on InflowHR employees matched by email (one-time mapping)
     const mappingsToStore: { inflowId: string; xeroId: string }[] = []
@@ -418,7 +432,8 @@ Deno.serve(async (req) => {
         reference_number: ref,
         pay_period_start: periodStart,
         pay_period_end: periodEnd,
-        gross_pay: ps.total_earnings,
+        gross_pay: ps.total_earnings - ps.overtime,
+        overtime: ps.overtime,
         tax: ps.tax,
         national_insurance: ps.employee_ni,
         pension: ps.employer_pension,
@@ -429,6 +444,7 @@ Deno.serve(async (req) => {
         status: 'paid',
         source: 'xero',
         xero_payslip_id: ps.payslip_id,
+        pay_period_type: payPeriodType,
       }, { onConflict: 'reference_number,company_id' })
       upsertedCount++
     }
