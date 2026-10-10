@@ -398,13 +398,23 @@ Deno.serve(async (req) => {
 
       // ── ZERO HOURS WORKERS: Push combined timesheet (regular + overtime) ──
       if (emp.isZeroHours) {
-        const calId = companyCalendarId || await getEmployeeCalendarId(emp.xeroId!)
+        // Always get the employee's ACTUAL payroll calendar from Xero
+        let empCalId: string | null = null
+        const empDetailRes = await fetch(`${XERO_PAYROLL_UK_V2}/Employees/${emp.xeroId}`, { headers: xeroHeaders })
+        if (empDetailRes.ok) {
+          const empDetail = await empDetailRes.json()
+          const xEmp = empDetail.employee || empDetail.Employee
+            || (empDetail.employees && empDetail.employees[0])
+            || (empDetail.Employees && empDetail.Employees[0])
+          empCalId = xEmp?.payrollCalendarID || xEmp?.PayrollCalendarID || null
+        }
+        const calId = empCalId || companyCalendarId || await getEmployeeCalendarId(emp.xeroId!)
         if (!calId) {
           skipped.push({ employee: emp.name, reason: 'No payroll calendar assigned in Xero — assign one before pushing timesheets' })
           continue
         }
 
-        // Fetch the payroll calendar to find the exact period dates that Xero expects
+        // Get the calendar type and period anchor to calculate the correct pay period
         let xeroStartDate = period_start
         let xeroEndDate = period_end
         const calDetailRes = await fetch(`${XERO_PAYROLL_UK_V2}/PayrollCalendars/${calId}`, { headers: xeroHeaders })
@@ -412,11 +422,47 @@ Deno.serve(async (req) => {
           const calDetail = await calDetailRes.json()
           const cal = calDetail.payrollCalendar || calDetail.PayrollCalendar
           if (cal) {
-            const calStart = cal.periodStartDate || cal.PeriodStartDate
-            const calEnd = cal.periodEndDate || cal.PeriodEndDate
-            if (calStart && calEnd) {
-              xeroStartDate = calStart.substring(0, 10)
-              xeroEndDate = calEnd.substring(0, 10)
+            const calType = (cal.calendarType || cal.CalendarType || '').toLowerCase()
+            const anchorStart = cal.periodStartDate || cal.PeriodStartDate
+            if (anchorStart) {
+              const anchor = new Date(anchorStart.substring(0, 10))
+              const target = new Date(period_start)
+              if (calType === 'weekly' || calType === 'weekly') {
+                // Calculate the weekly period that contains the target date
+                const diffDays = Math.floor((target.getTime() - anchor.getTime()) / 86400000)
+                const weeksSinceAnchor = Math.floor(diffDays / 7)
+                const periodStart = new Date(anchor)
+                periodStart.setDate(periodStart.getDate() + (weeksSinceAnchor * 7))
+                const periodEnd = new Date(periodStart)
+                periodEnd.setDate(periodEnd.getDate() + 6)
+                xeroStartDate = periodStart.toISOString().substring(0, 10)
+                xeroEndDate = periodEnd.toISOString().substring(0, 10)
+              } else if (calType === 'fortnightly' || calType === 'twoweekly') {
+                const diffDays = Math.floor((target.getTime() - anchor.getTime()) / 86400000)
+                const fortnightsSinceAnchor = Math.floor(diffDays / 14)
+                const periodStart = new Date(anchor)
+                periodStart.setDate(periodStart.getDate() + (fortnightsSinceAnchor * 14))
+                const periodEnd = new Date(periodStart)
+                periodEnd.setDate(periodEnd.getDate() + 13)
+                xeroStartDate = periodStart.toISOString().substring(0, 10)
+                xeroEndDate = periodEnd.toISOString().substring(0, 10)
+              } else if (calType === 'fourweekly') {
+                const diffDays = Math.floor((target.getTime() - anchor.getTime()) / 86400000)
+                const fourWeeksSinceAnchor = Math.floor(diffDays / 28)
+                const periodStart = new Date(anchor)
+                periodStart.setDate(periodStart.getDate() + (fourWeeksSinceAnchor * 28))
+                const periodEnd = new Date(periodStart)
+                periodEnd.setDate(periodEnd.getDate() + 27)
+                xeroStartDate = periodStart.toISOString().substring(0, 10)
+                xeroEndDate = periodEnd.toISOString().substring(0, 10)
+              } else {
+                // Monthly — use the calendar's period dates directly
+                const calEnd = cal.periodEndDate || cal.PeriodEndDate
+                if (calEnd) {
+                  xeroStartDate = anchorStart.substring(0, 10)
+                  xeroEndDate = calEnd.substring(0, 10)
+                }
+              }
             }
           }
         }
