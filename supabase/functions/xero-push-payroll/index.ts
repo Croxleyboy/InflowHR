@@ -396,7 +396,7 @@ Deno.serve(async (req) => {
       const overtimeAmount = Math.round(overtimeRate * otHours * 100) / 100
       const regularAmount = Math.round(baseRate * rhHours * 100) / 100
 
-      // ── ZERO HOURS WORKERS: Push combined timesheet (regular + overtime) via UK v1 API ──
+      // ── ZERO HOURS WORKERS: Push combined timesheet (regular + overtime) ──
       if (emp.isZeroHours) {
         const calId = companyCalendarId || await getEmployeeCalendarId(emp.xeroId!)
         if (!calId) {
@@ -404,26 +404,52 @@ Deno.serve(async (req) => {
           continue
         }
 
+        // Xero expects NumberOfUnits as an array of daily hours, one per day in the period
+        const start = new Date(period_start)
+        const end = new Date(period_end)
+        const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+
+        // Count weekdays to distribute hours evenly across working days
+        let weekdays = 0
+        for (let i = 0; i < days; i++) {
+          const d = new Date(start)
+          d.setDate(d.getDate() + i)
+          const dow = d.getDay()
+          if (dow !== 0 && dow !== 6) weekdays++
+        }
+
+        // Build daily hours arrays for regular and overtime
+        function buildDailyHours(totalHours: number): number[] {
+          const daily = new Array(days).fill(0)
+          if (totalHours <= 0 || weekdays <= 0) return daily
+          const perDay = Math.round((totalHours / weekdays) * 100) / 100
+          for (let i = 0; i < days; i++) {
+            const d = new Date(start)
+            d.setDate(d.getDate() + i)
+            const dow = d.getDay()
+            if (dow !== 0 && dow !== 6) daily[i] = perDay
+          }
+          return daily
+        }
+
         // Build timesheet lines — one for regular hours, one for overtime (if any)
-        // UK v1 API uses PascalCase with a Date field per line
-        const timesheetLines: { Date: string; EarningsRateID: string; NumberOfUnits: number }[] = []
+        const timesheetLines: { EarningsRateID: string; NumberOfUnits: number[] }[] = []
 
         if (rhHours > 0) {
           timesheetLines.push({
-            Date: period_start,
             EarningsRateID: regularRateId!,
-            NumberOfUnits: rhHours,
+            NumberOfUnits: buildDailyHours(rhHours),
           })
         }
 
         if (otHours > 0) {
           timesheetLines.push({
-            Date: period_start,
             EarningsRateID: effectiveOtRateId,
-            NumberOfUnits: otHours,
+            NumberOfUnits: buildDailyHours(otHours),
           })
         }
 
+        // Use the detected base URL (handles UK v1 or AU v2 routing)
         const timesheetPayload = {
           PayrollCalendarID: calId,
           EmployeeID: emp.xeroId,
@@ -432,8 +458,7 @@ Deno.serve(async (req) => {
           TimesheetLines: timesheetLines,
         }
 
-        // Use UK v1 API for timesheets (matches working xero-push-timesheets function)
-        const tsUrl = `${XERO_PAYROLL_UK}/Timesheets`
+        const tsUrl = `${baseUrl}/Timesheets`
         let tsRes = await fetch(tsUrl, {
           method: 'POST',
           headers: xeroHeaders,
@@ -483,7 +508,7 @@ Deno.serve(async (req) => {
           })
         } else {
           const errText = await tsRes.text()
-          const debugInfo = `API: ${XERO_PAYROLL_UK}/Timesheets, Status: ${tsRes.status}, Calendar: ${calId}, EarningsRate: ${regularRateId}, OtRate: ${effectiveOtRateId}, Period: ${period_start} to ${period_end}, RegHrs: ${rhHours}, OtHrs: ${otHours}`
+          const debugInfo = `API: ${baseUrl}/Timesheets, Status: ${tsRes.status}, Calendar: ${calId}, EarningsRate: ${regularRateId}, OtRate: ${effectiveOtRateId}, Period: ${period_start} to ${period_end}, Days: ${days}, Weekdays: ${weekdays}, RegHrs: ${rhHours}, OtHrs: ${otHours}`
           timesheetResults.push({
             employee: emp.name,
             status: 'failed',
