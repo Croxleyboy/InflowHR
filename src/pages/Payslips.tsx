@@ -412,7 +412,7 @@ export default function Payslips() {
           </div>
 
           <div className="payslips-footer-info">
-            {(workerType === 'zero_hours' || workerType === 'shift') ? (
+            {workerType === 'zero_hours' ? (
               <div className="payslips-info-item">
                 <span className="payslips-info-label">Hourly Rate</span>
                 <span className="payslips-info-value">&pound;{fmt(periodReview?.hourly_rate || empHourlyRate)}/hr</span>
