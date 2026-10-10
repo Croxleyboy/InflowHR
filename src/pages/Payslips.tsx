@@ -42,6 +42,14 @@ interface PayslipData {
   bank_account: string
   payroll_office: string
   source: string | null
+  source_review_id: string | null
+}
+
+interface PeriodReview {
+  total_hours: number
+  overtime_hours: number
+  hourly_rate: number
+  gross_pay: number
 }
 
 interface BenefitDeduction {
@@ -60,6 +68,9 @@ export default function Payslips() {
   const [employeeRole, setEmployeeRole] = useState('')
   const [workerType, setWorkerType] = useState<'employed' | 'shift' | 'zero_hours'>('employed')
   const [benefitDeductions, setBenefitDeductions] = useState<BenefitDeduction[]>([])
+  const [periodReview, setPeriodReview] = useState<PeriodReview | null>(null)
+  const [empHourlyRate, setEmpHourlyRate] = useState(0)
+  const [empOvertimeMultiplier, setEmpOvertimeMultiplier] = useState(1.5)
   const [initialised, setInitialised] = useState(false)
   const monthNames = lang === 'de' ? MONTH_NAMES_DE : MONTH_NAMES_EN
 
@@ -103,7 +114,7 @@ export default function Payslips() {
   useEffect(() => {
     if (!EMPLOYEE_ID || !companyUser?.company_id) return
     supabase.from('employees')
-      .select('job_title, department, employment_category, contract_type')
+      .select('job_title, department, employment_category, contract_type, hourly_rate, overtime_rate_multiplier')
       .eq('id', EMPLOYEE_ID)
       .eq('company_id', companyUser.company_id)
       .single()
@@ -116,6 +127,8 @@ export default function Payslips() {
           } else {
             setWorkerType('employed')
           }
+          setEmpHourlyRate(data.hourly_rate || 0)
+          setEmpOvertimeMultiplier(data.overtime_rate_multiplier || 1.5)
         }
       })
   }, [EMPLOYEE_ID, companyUser?.company_id])
@@ -147,6 +160,31 @@ export default function Payslips() {
         setBenefitDeductions(active)
       })
   }, [EMPLOYEE_ID, companyUser?.company_id, current?.year, current?.month])
+
+  useEffect(() => {
+    if (!payslip || workerType === 'employed' || !EMPLOYEE_ID || !companyUser?.company_id) {
+      setPeriodReview(null)
+      return
+    }
+    if (payslip.source_review_id) {
+      supabase.from('pay_period_reviews')
+        .select('total_hours, overtime_hours, hourly_rate, gross_pay')
+        .eq('id', payslip.source_review_id)
+        .single()
+        .then(({ data }) => setPeriodReview(data as PeriodReview | null))
+    } else {
+      supabase.from('pay_period_reviews')
+        .select('total_hours, overtime_hours, hourly_rate, gross_pay')
+        .eq('company_id', companyUser.company_id)
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('period_start', payslip.pay_period_start)
+        .eq('period_end', payslip.pay_period_end)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => setPeriodReview(data as PeriodReview | null))
+    }
+  }, [payslip?.id, workerType, EMPLOYEE_ID, companyUser?.company_id])
 
   const canPrev = monthIdx > 0
   const canNext = monthIdx < fyMonths.length - 1
@@ -281,22 +319,59 @@ export default function Payslips() {
 
           <div className="payslips-section">
             <div className="payslips-section-header payslips-section-earnings">{t('payslips.earnings')}</div>
-            <div className="payslips-row">
-              <span>{t('payslips.basic_salary')}</span>
-              <span>&pound;{fmt(payslip.gross_pay)}</span>
-            </div>
-            <div className="payslips-row">
-              <span>{t('payslips.overtime')}</span>
-              <span>&pound;{fmt(payslip.overtime || 0)}</span>
-            </div>
-            <div className="payslips-row">
-              <span>{t('payslips.adjustments')}</span>
-              <span>&pound;{fmt(payslip.adjustments || 0)}</span>
-            </div>
-            <div className="payslips-row payslips-row-total">
-              <span>{t('payslips.total_earnings')}</span>
-              <span>&pound;{fmt(payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0))}</span>
-            </div>
+            {(workerType === 'zero_hours' || workerType === 'shift') && periodReview ? (() => {
+              const regHours = periodReview.total_hours - periodReview.overtime_hours
+              const rate = periodReview.hourly_rate
+              const otMultiplier = empOvertimeMultiplier
+              const otRate = Math.round(rate * otMultiplier * 100) / 100
+              const regAmount = Math.round(regHours * rate * 100) / 100
+              const otAmount = Math.round(periodReview.overtime_hours * otRate * 100) / 100
+              return (
+                <>
+                  <div className="payslips-row">
+                    <span>Regular Hours ({regHours}h &times; &pound;{fmt(rate)}/hr)</span>
+                    <span>&pound;{fmt(regAmount)}</span>
+                  </div>
+                  {periodReview.overtime_hours > 0 && (
+                    <div className="payslips-row">
+                      <span>Overtime ({periodReview.overtime_hours}h &times; &pound;{fmt(otRate)}/hr, {otMultiplier}&times;)</span>
+                      <span>&pound;{fmt(otAmount)}</span>
+                    </div>
+                  )}
+                  {(payslip.adjustments || 0) !== 0 && (
+                    <div className="payslips-row">
+                      <span>{t('payslips.adjustments')}</span>
+                      <span>&pound;{fmt(payslip.adjustments || 0)}</span>
+                    </div>
+                  )}
+                  <div className="payslips-row payslips-row-total">
+                    <span>{t('payslips.total_earnings')}</span>
+                    <span>&pound;{fmt(payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0))}</span>
+                  </div>
+                </>
+              )
+            })() : (
+              <>
+                <div className="payslips-row">
+                  <span>{t('payslips.basic_salary')}</span>
+                  <span>&pound;{fmt(payslip.gross_pay)}</span>
+                </div>
+                <div className="payslips-row">
+                  <span>{t('payslips.overtime')}</span>
+                  <span>&pound;{fmt(payslip.overtime || 0)}</span>
+                </div>
+                {(payslip.adjustments || 0) !== 0 && (
+                  <div className="payslips-row">
+                    <span>{t('payslips.adjustments')}</span>
+                    <span>&pound;{fmt(payslip.adjustments || 0)}</span>
+                  </div>
+                )}
+                <div className="payslips-row payslips-row-total">
+                  <span>{t('payslips.total_earnings')}</span>
+                  <span>&pound;{fmt(payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0))}</span>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="payslips-section">
@@ -337,10 +412,17 @@ export default function Payslips() {
           </div>
 
           <div className="payslips-footer-info">
-            <div className="payslips-info-item">
-              <span className="payslips-info-label">{t('payslips.annual_salary')}</span>
-              <span className="payslips-info-value">&pound;{fmt(payslip.annual_salary || 0)}</span>
-            </div>
+            {(workerType === 'zero_hours' || workerType === 'shift') ? (
+              <div className="payslips-info-item">
+                <span className="payslips-info-label">Hourly Rate</span>
+                <span className="payslips-info-value">&pound;{fmt(periodReview?.hourly_rate || empHourlyRate)}/hr</span>
+              </div>
+            ) : (
+              <div className="payslips-info-item">
+                <span className="payslips-info-label">{t('payslips.annual_salary')}</span>
+                <span className="payslips-info-value">&pound;{fmt(payslip.annual_salary || 0)}</span>
+              </div>
+            )}
             <div className="payslips-info-item">
               <span className="payslips-info-label">{t('payslips.bank_account')}</span>
               <span className="payslips-info-value">{payslip.bank_account || '-'}</span>
