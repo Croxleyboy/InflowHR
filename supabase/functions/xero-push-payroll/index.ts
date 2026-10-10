@@ -520,18 +520,19 @@ Deno.serve(async (req) => {
             try {
               const errObj = JSON.parse(errText)
               const prob = errObj.problem || errObj.Problem || errObj
-              const detail = prob.detail || prob.Detail || ''
-              const invFields = JSON.stringify(prob.invalidFields || [])
               const invObjs = prob.invalidObjects || prob.InvalidObjects || []
-              const valErrors = invObjs.map((o: any) => {
-                const ve = o.validationErrors || o.ValidationErrors || []
-                return ve.map((v: any) => v.message || v.Message || JSON.stringify(v)).join('; ')
-              }).filter((s: string) => s).join(' | ')
-              parsedErr = `${detail} validationErrors:[${valErrors}] invalidFields:${invFields}`
+              // Strip bulky timesheetLines from each invalidObject, keep everything else
+              const stripped = invObjs.map((o: any) => {
+                const copy = { ...o }
+                delete copy.timesheetLines
+                delete copy.TimesheetLines
+                return copy
+              })
+              parsedErr = JSON.stringify({ detail: prob.detail, invalidFields: prob.invalidFields, invalidObjects: stripped }).slice(0, 800)
             } catch {
-              parsedErr = errText.slice(0, 500)
+              parsedErr = errText.slice(0, 800)
             }
-            allErrors = `create(${tsRes.status}): ${parsedErr} | payload:${JSON.stringify(v2Payload).slice(0, 300)} | calDates:${xeroStartDate}..${xeroEndDate}`
+            allErrors = `create(${tsRes.status}): ${parsedErr} | calDates:${xeroStartDate}..${xeroEndDate}`
           }
         }
 
