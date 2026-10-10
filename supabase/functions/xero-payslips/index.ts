@@ -182,14 +182,25 @@ Deno.serve(async (req) => {
         return getPayRunPeriodStart(r) === reqStart && getPayRunPeriodEnd(r) === reqEnd
       }) || null
 
-      // Overlapping periods fallback (Xero period contains or overlaps our period)
+      // Overlapping periods fallback — pick the closest-matching pay run by period length
       if (!selectedRun) {
-        selectedRun = payRuns.find((r: Record<string, unknown>) => {
+        const reqDays = Math.abs(new Date(reqEnd).getTime() - new Date(reqStart).getTime()) / 86400000
+        let bestOverlap: Record<string, unknown> | null = null
+        let bestDiff = Infinity
+        for (const r of payRuns) {
           const rStart = getPayRunPeriodStart(r)
           const rEnd = getPayRunPeriodEnd(r)
-          if (!rStart || !rEnd) return false
-          return rStart <= reqEnd && rEnd >= reqStart
-        }) || null
+          if (!rStart || !rEnd) continue
+          if (rStart <= reqEnd && rEnd >= reqStart) {
+            const rDays = Math.abs(new Date(rEnd).getTime() - new Date(rStart).getTime()) / 86400000
+            const diff = Math.abs(rDays - reqDays)
+            if (diff < bestDiff) {
+              bestDiff = diff
+              bestOverlap = r
+            }
+          }
+        }
+        selectedRun = bestOverlap
       }
 
       if (!selectedRun) {

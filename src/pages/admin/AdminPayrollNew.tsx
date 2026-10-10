@@ -281,6 +281,8 @@ export default function AdminPayrollNew() {
   const [wizPriorRuns, setWizPriorRuns] = useState<{ id: string; worker_types: string[]; status: string; completed_at: string | null }[]>([])
   const [wizSageFiles, setWizSageFiles] = useState<File[]>([])
   const [wizSageUploading, setWizSageUploading] = useState(false)
+  const [wizXeroCsvFile, setWizXeroCsvFile] = useState<File | null>(null)
+  const [wizXeroCsvImporting, setWizXeroCsvImporting] = useState(false)
   const [wizRosterPage, setWizRosterPage] = useState(1)
   const [wizPeriodEditType, setWizPeriodEditType] = useState<string | null>(null)
 
@@ -1407,41 +1409,187 @@ export default function AdminPayrollNew() {
     if (!session || !selectedCompanyId) return false
     setWizExporting(true)
     try {
-      const workerTypeArr = [...wizWorkerTypes].map(t => t === 'shift' ? 'shift_worker' : t)
-      const allStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
-      const allEnds = Object.values(wizPeriodByType).map(p => p.end).sort().reverse()
-      const periodStart = allStarts[0] || undefined
-      const periodEnd = allEnds[0] || undefined
-      const { data, error } = await supabase.functions.invoke('xero-payslips', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-        body: { company_id: selectedCompanyId, worker_types: workerTypeArr, period_start: periodStart, period_end: periodEnd },
-      })
-      if (error) throw error
-      if (data?.error) throw new Error(data.error)
-      if (!data?.payRun) {
-        showError('No pay run found in Xero. Create a pay run in Xero for this period first, then fetch again.')
+      let totalUpserted = 0
+      let totalUnmatched = 0
+      let lastPayRun: { period_start: string; period_end: string } | null = null
+      const errors: string[] = []
+
+      // Group worker types by their distinct period dates to minimize API calls
+      const periodGroups: Record<string, { types: string[]; start: string; end: string }> = {}
+      for (const wt of wizWorkerTypes) {
+        const wtKey = wt === 'shift' ? 'shift' : wt
+        const xeroWt = wt === 'shift' ? 'shift_worker' : wt
+        const period = wizPeriodByType[wtKey]
+        if (!period) continue
+        const key = `${period.start}_${period.end}`
+        if (!periodGroups[key]) periodGroups[key] = { types: [], start: period.start, end: period.end }
+        periodGroups[key].types.push(xeroWt)
+      }
+
+      for (const group of Object.values(periodGroups)) {
+        const { data, error } = await supabase.functions.invoke('xero-payslips', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          body: { company_id: selectedCompanyId, worker_types: group.types, period_start: group.start, period_end: group.end },
+        })
+        if (error) throw error
+        if (data?.error) { errors.push(data.error); continue }
+        if (data?.payRun) lastPayRun = { period_start: data.payRun.period_start, period_end: data.payRun.period_end }
+        totalUpserted += data?.upserted || 0
+        totalUnmatched += data?.unmatched || 0
+      }
+
+      if (totalUpserted === 0) {
+        if (!lastPayRun) {
+          showError('No pay run found in Xero for any selected period. Create pay runs in Xero first, then fetch again.')
+        } else if (totalUnmatched > 0) {
+          showError('Xero pay run found but no employees matched. Check employee email addresses match between InflowHR and Xero.')
+        } else if (errors.length > 0) {
+          showError(errors[0])
+        } else {
+          showError('Xero pay run found but contained no payslips for the selected worker types.')
+        }
         setWizExporting(false)
         return false
       }
-      if (data.upserted === 0) {
-        const msg = data.unmatched > 0
-          ? `Xero pay run found (${data.payRun.period_start} – ${data.payRun.period_end}) but no employees matched. Check employee email addresses match between InflowHR and Xero.`
-          : 'Xero pay run found but contained no payslips for the selected worker types.'
-        showError(msg)
-        setWizExporting(false)
-        return false
-      }
+
       if (wizPayRunId) {
         await supabase.from('pay_runs').update({ status: 'synced' }).eq('id', wizPayRunId)
       }
-      setLastXeroPayRun({ period_start: data.payRun.period_start, period_end: data.payRun.period_end })
-      showSuccess(`Synced ${data.upserted} payslip${data.upserted !== 1 ? 's' : ''} from Xero (${data.payRun.period_start} – ${data.payRun.period_end})`)
+      if (lastPayRun) setLastXeroPayRun(lastPayRun)
+      showSuccess(`Synced ${totalUpserted} payslip${totalUpserted !== 1 ? 's' : ''} from Xero`)
       await loadAll()
       setWizExporting(false)
       return true
     } catch (err: any) {
       showError('Xero sync failed: ' + (err?.message || 'Unknown error'))
       setWizExporting(false)
+      return false
+    }
+  }
+
+  async function wizImportXeroCsv(): Promise<boolean> {
+    if (!wizXeroCsvFile || !session || !selectedCompanyId) return false
+    setWizXeroCsvImporting(true)
+    try {
+      const text = await wizXeroCsvFile.text()
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l)
+      if (lines.length < 2) { showError('CSV file is empty or has no data rows.'); setWizXeroCsvImporting(false); return false }
+
+      const headerLine = lines[0]
+      const headers = headerLine.split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase())
+
+      const findCol = (...names: string[]) => headers.findIndex(h => names.some(n => h.includes(n)))
+      const nameCol = findCol('employee name', 'employee', 'name', 'full name')
+      const firstNameCol = findCol('first name', 'firstname')
+      const lastNameCol = findCol('last name', 'lastname', 'surname')
+      const emailCol = findCol('email')
+      const grossCol = findCol('gross pay', 'gross earnings', 'total earnings', 'gross')
+      const taxCol = findCol('paye', 'tax', 'income tax')
+      const niCol = findCol('employee ni', 'employee nic', 'national insurance', 'ni')
+      const netCol = findCol('net pay', 'net', 'take home')
+
+      if (grossCol === -1 || netCol === -1) {
+        showError('CSV must contain at least Gross Pay and Net Pay columns.')
+        setWizXeroCsvImporting(false)
+        return false
+      }
+      if (nameCol === -1 && firstNameCol === -1 && emailCol === -1) {
+        showError('CSV must contain an Employee Name, First Name, or Email column to match employees.')
+        setWizXeroCsvImporting(false)
+        return false
+      }
+
+      const { data: companyEmployees } = await supabase
+        .from('employees')
+        .select('id, first_name, last_name, email')
+        .eq('company_id', selectedCompanyId)
+
+      const empByEmail: Record<string, string> = {}
+      const empByName: Record<string, string> = {}
+      for (const e of (companyEmployees || [])) {
+        if (e.email) empByEmail[e.email.toLowerCase()] = e.id
+        empByName[`${e.first_name} ${e.last_name}`.toLowerCase()] = e.id
+        empByName[`${e.last_name} ${e.first_name}`.toLowerCase()] = e.id
+      }
+
+      function parseCsvLine(line: string): string[] {
+        const values: string[] = []
+        let current = ''
+        let inQuotes = false
+        for (const ch of line) {
+          if (ch === '"') { inQuotes = !inQuotes; continue }
+          if (ch === ',' && !inQuotes) { values.push(current.trim()); current = ''; continue }
+          current += ch
+        }
+        values.push(current.trim())
+        return values
+      }
+
+      const allStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
+      const allEnds = Object.values(wizPeriodByType).map(p => p.end).sort().reverse()
+      const periodStart = allStarts[0] || new Date().toISOString().split('T')[0]
+      const periodEnd = allEnds[0] || periodStart
+
+      let imported = 0
+      let unmatched = 0
+      for (let i = 1; i < lines.length; i++) {
+        const vals = parseCsvLine(lines[i])
+        if (vals.length < 2) continue
+
+        let empId: string | null = null
+        if (emailCol !== -1 && vals[emailCol]) empId = empByEmail[vals[emailCol].toLowerCase()] || null
+        if (!empId && nameCol !== -1 && vals[nameCol]) empId = empByName[vals[nameCol].toLowerCase()] || null
+        if (!empId && firstNameCol !== -1 && lastNameCol !== -1) {
+          const full = `${vals[firstNameCol]} ${vals[lastNameCol]}`.toLowerCase()
+          empId = empByName[full] || null
+        }
+
+        if (!empId) { unmatched++; continue }
+
+        const parseNum = (idx: number) => {
+          if (idx === -1) return 0
+          const v = (vals[idx] || '').replace(/[£$€,\s]/g, '')
+          return parseFloat(v) || 0
+        }
+
+        const ref = `XERO-CSV-${empId}-${periodStart}`
+        await supabase.from('payslips').upsert({
+          employee_id: empId,
+          company_id: selectedCompanyId,
+          reference_number: ref,
+          pay_period_start: periodStart,
+          pay_period_end: periodEnd,
+          gross_pay: parseNum(grossCol),
+          tax: parseNum(taxCol),
+          national_insurance: parseNum(niCol),
+          pension: 0,
+          other_deductions: 0,
+          adjustments: 0,
+          net_pay: parseNum(netCol),
+          payment_date: periodEnd,
+          status: 'paid',
+          source: 'xero',
+        }, { onConflict: 'reference_number,company_id' })
+        imported++
+      }
+
+      if (imported === 0) {
+        showError(`No employees matched from CSV.${unmatched > 0 ? ` ${unmatched} row${unmatched !== 1 ? 's' : ''} could not be matched — check names/emails match InflowHR.` : ''}`)
+        setWizXeroCsvImporting(false)
+        return false
+      }
+
+      if (wizPayRunId) {
+        await supabase.from('pay_runs').update({ status: 'synced' }).eq('id', wizPayRunId)
+      }
+      showSuccess(`Imported ${imported} payslip${imported !== 1 ? 's' : ''} from CSV${unmatched > 0 ? ` (${unmatched} unmatched)` : ''}`)
+      await loadAll()
+      setWizXeroCsvImporting(false)
+      setWizXeroCsvFile(null)
+      return true
+    } catch (err: any) {
+      showError('CSV import failed: ' + (err?.message || 'Unknown error'))
+      setWizXeroCsvImporting(false)
       return false
     }
   }
@@ -4484,6 +4632,42 @@ export default function AdminPayrollNew() {
                     </div>
                     )
                   })()}
+
+                  {connectedProvider === 'xero' && !wizPayslipsFetched && (
+                    <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12, borderLeft: '4px solid #e0e0e0' }}>
+                      <strong style={{ fontSize: 14 }}>Or Import Payslips from CSV</strong>
+                      <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', margin: '4px 0 8px' }}>
+                        If the API fetch above doesn't work, export payslips from Xero as CSV and import them here. The CSV should include Employee Name, Gross Pay, Tax, NI, and Net Pay columns.
+                      </p>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <input type="file" accept=".csv" id="xero-csv-import"
+                          style={{ display: 'none' }}
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (file) setWizXeroCsvFile(file)
+                            e.target.value = ''
+                          }}
+                        />
+                        <label htmlFor="xero-csv-import" className="admin-btn" style={{ fontSize: 12, cursor: 'pointer', margin: 0 }}>
+                          {wizXeroCsvFile ? wizXeroCsvFile.name : 'Choose CSV file…'}
+                        </label>
+                        {wizXeroCsvFile && (
+                          <>
+                            <button className="admin-btn admin-btn-primary" style={{ fontSize: 12 }}
+                              disabled={wizXeroCsvImporting}
+                              onClick={async () => {
+                                const ok = await wizImportXeroCsv()
+                                if (ok) setWizPayslipsFetched(true)
+                              }}>
+                              {wizXeroCsvImporting ? 'Importing…' : 'Import CSV'}
+                            </button>
+                            <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53935', fontSize: 14, padding: 0 }}
+                              onClick={() => setWizXeroCsvFile(null)}>×</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   {connectedProvider === 'sage' && (
                     <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 12 }}>
