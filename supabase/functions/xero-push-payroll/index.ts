@@ -414,63 +414,71 @@ Deno.serve(async (req) => {
           continue
         }
 
-        // Get the calendar type and period anchor to calculate the correct pay period
+        // Fetch all pay periods from this calendar's pay runs to find valid dates
         let xeroStartDate = period_start
         let xeroEndDate = period_end
-        const calDetailRes = await fetch(`${XERO_PAYROLL_UK_V2}/PayrollCalendars/${calId}`, { headers: xeroHeaders })
-        if (calDetailRes.ok) {
-          const calDetail = await calDetailRes.json()
-          const cal = calDetail.payrollCalendar || calDetail.PayrollCalendar
-          if (cal) {
-            const calType = (cal.calendarType || cal.CalendarType || '').toLowerCase()
-            const anchorStart = cal.periodStartDate || cal.PeriodStartDate
-            if (anchorStart) {
-              const anchor = new Date(anchorStart.substring(0, 10))
-              const target = new Date(period_start)
-              if (calType === 'weekly' || calType === 'weekly') {
-                // Calculate the weekly period that contains the target date
-                const diffDays = Math.floor((target.getTime() - anchor.getTime()) / 86400000)
-                const weeksSinceAnchor = Math.floor(diffDays / 7)
-                const periodStart = new Date(anchor)
-                periodStart.setDate(periodStart.getDate() + (weeksSinceAnchor * 7))
-                const periodEnd = new Date(periodStart)
-                periodEnd.setDate(periodEnd.getDate() + 6)
-                xeroStartDate = periodStart.toISOString().substring(0, 10)
-                xeroEndDate = periodEnd.toISOString().substring(0, 10)
-              } else if (calType === 'fortnightly' || calType === 'twoweekly') {
-                const diffDays = Math.floor((target.getTime() - anchor.getTime()) / 86400000)
-                const fortnightsSinceAnchor = Math.floor(diffDays / 14)
-                const periodStart = new Date(anchor)
-                periodStart.setDate(periodStart.getDate() + (fortnightsSinceAnchor * 14))
-                const periodEnd = new Date(periodStart)
-                periodEnd.setDate(periodEnd.getDate() + 13)
-                xeroStartDate = periodStart.toISOString().substring(0, 10)
-                xeroEndDate = periodEnd.toISOString().substring(0, 10)
-              } else if (calType === 'fourweekly') {
-                const diffDays = Math.floor((target.getTime() - anchor.getTime()) / 86400000)
-                const fourWeeksSinceAnchor = Math.floor(diffDays / 28)
-                const periodStart = new Date(anchor)
-                periodStart.setDate(periodStart.getDate() + (fourWeeksSinceAnchor * 28))
-                const periodEnd = new Date(periodStart)
-                periodEnd.setDate(periodEnd.getDate() + 27)
-                xeroStartDate = periodStart.toISOString().substring(0, 10)
-                xeroEndDate = periodEnd.toISOString().substring(0, 10)
-              } else {
-                // Monthly — use the calendar's period dates directly
-                const calEnd = cal.periodEndDate || cal.PeriodEndDate
-                if (calEnd) {
-                  xeroStartDate = anchorStart.substring(0, 10)
-                  xeroEndDate = calEnd.substring(0, 10)
-                }
-              }
+        let calDebug = 'no-cal-data'
+
+        // First try: list existing timesheets for this employee to find valid periods
+        const empTsRes = await fetch(
+          `${XERO_PAYROLL_UK_V2}/Timesheets?employeeId=${emp.xeroId}`,
+          { headers: xeroHeaders }
+        )
+        if (empTsRes.ok) {
+          const empTsBody = await empTsRes.json()
+          const allTs = empTsBody.timesheets || empTsBody.Timesheets || []
+          calDebug = `existingTs:${allTs.length}`
+          // Find a timesheet period that overlaps with our target
+          const targetStart = new Date(period_start).getTime()
+          const targetEnd = new Date(period_end).getTime()
+          for (const ts of allTs) {
+            const tsStart = new Date((ts.startDate || ts.StartDate || '').substring(0, 10)).getTime()
+            const tsEnd = new Date((ts.endDate || ts.EndDate || '').substring(0, 10)).getTime()
+            if (tsStart <= targetEnd && tsEnd >= targetStart) {
+              xeroStartDate = (ts.startDate || ts.StartDate || '').substring(0, 10)
+              xeroEndDate = (ts.endDate || ts.EndDate || '').substring(0, 10)
+              calDebug += `,matchedTs:${xeroStartDate}..${xeroEndDate}`
+              break
             }
+          }
+          // Log first few timesheet periods for debugging
+          if (allTs.length > 0) {
+            const periods = allTs.slice(0, 5).map((ts: any) =>
+              `${(ts.startDate || ts.StartDate || '').substring(0, 10)}..${(ts.endDate || ts.EndDate || '').substring(0, 10)}`
+            ).join(',')
+            calDebug += `,periods:[${periods}]`
           }
         }
 
-        // Check for existing timesheet for this employee/period (POST fails if one exists)
+        // Second try: get calendar details and look at pay period structure
+        if (xeroStartDate === period_start) {
+          const calDetailRes = await fetch(`${XERO_PAYROLL_UK_V2}/PayrollCalendars/${calId}`, { headers: xeroHeaders })
+          if (calDetailRes.ok) {
+            const calRaw = await calDetailRes.text()
+            // Log the raw calendar response for debugging
+            calDebug += ` | calRaw:${calRaw.slice(0, 400)}`
+            try {
+              const calDetail = JSON.parse(calRaw)
+              const cal = calDetail.payrollCalendar || calDetail.PayrollCalendar
+              if (cal) {
+                const calType = cal.calendarType || cal.CalendarType || 'unknown'
+                const anchorStart = cal.periodStartDate || cal.PeriodStartDate || ''
+                const anchorEnd = cal.periodEndDate || cal.PeriodEndDate || ''
+                calDebug += `,type:${calType},anchor:${anchorStart.substring(0,10)}..${anchorEnd.substring(0,10)}`
+                // Use the calendar's own period dates directly
+                if (anchorStart && anchorEnd) {
+                  xeroStartDate = anchorStart.substring(0, 10)
+                  xeroEndDate = anchorEnd.substring(0, 10)
+                }
+              }
+            } catch { /* already captured raw */ }
+          }
+        }
+
+        // Check if an existing timesheet already covers this period
         let existingTimesheetId: string | null = null
         const existingTsRes = await fetch(
-          `${XERO_PAYROLL_UK_V2}/Timesheets?employeeId=${emp.xeroId}&startDate=${xeroStartDate}&endDate=${xeroEndDate}`,
+          `${XERO_PAYROLL_UK_V2}/Timesheets?employeeId=${emp.xeroId}`,
           { headers: xeroHeaders }
         )
         if (existingTsRes.ok) {
@@ -578,7 +586,7 @@ Deno.serve(async (req) => {
             } catch {
               parsedErr = errText.slice(0, 800)
             }
-            allErrors = `create(${tsRes.status}): ${parsedErr} | calDates:${xeroStartDate}..${xeroEndDate}`
+            allErrors = `create(${tsRes.status}): ${parsedErr} | dates:${xeroStartDate}..${xeroEndDate} | ${calDebug}`
           }
         }
 
