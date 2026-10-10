@@ -433,29 +433,36 @@ Deno.serve(async (req) => {
         }
 
         // Build timesheet lines — one for regular hours, one for overtime (if any)
-        const timesheetLines: { EarningsRateID: string; NumberOfUnits: number[] }[] = []
+        // v1 (UK) uses PascalCase, v2 uses camelCase
+        const timesheetLines: Record<string, unknown>[] = []
 
         if (rhHours > 0) {
-          timesheetLines.push({
-            EarningsRateID: regularRateId!,
-            NumberOfUnits: buildDailyHours(rhHours),
-          })
+          timesheetLines.push(isUK
+            ? { EarningsRateID: regularRateId!, NumberOfUnits: buildDailyHours(rhHours) }
+            : { earningsRateID: regularRateId!, numberOfUnits: buildDailyHours(rhHours) }
+          )
         }
 
         if (otHours > 0) {
-          timesheetLines.push({
-            EarningsRateID: effectiveOtRateId,
-            NumberOfUnits: buildDailyHours(otHours),
-          })
+          timesheetLines.push(isUK
+            ? { EarningsRateID: effectiveOtRateId, NumberOfUnits: buildDailyHours(otHours) }
+            : { earningsRateID: effectiveOtRateId, numberOfUnits: buildDailyHours(otHours) }
+          )
         }
 
-        // Use the detected base URL (handles UK v1 or AU v2 routing)
-        const timesheetPayload = {
+        // Use the detected base URL and matching field casing
+        const timesheetPayload = isUK ? {
           PayrollCalendarID: calId,
           EmployeeID: emp.xeroId,
           StartDate: period_start,
           EndDate: period_end,
           TimesheetLines: timesheetLines,
+        } : {
+          payrollCalendarID: calId,
+          employeeID: emp.xeroId,
+          startDate: period_start,
+          endDate: period_end,
+          timesheetLines,
         }
 
         const tsUrl = `${baseUrl}/Timesheets`
