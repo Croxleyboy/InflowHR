@@ -404,42 +404,15 @@ Deno.serve(async (req) => {
           continue
         }
 
-        const start = new Date(period_start)
-        const end = new Date(period_end)
-        const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
-
-        let weekdays = 0
-        for (let i = 0; i < days; i++) {
-          const d = new Date(start)
-          d.setDate(d.getDate() + i)
-          const dow = d.getDay()
-          if (dow !== 0 && dow !== 6) weekdays++
+        // Xero Payroll UK v2: one line per earnings rate with total hours for the period.
+        // Date range is on the timesheet header (startDate/endDate), not on individual lines.
+        const v2Lines: Record<string, unknown>[] = []
+        if (rhHours > 0) {
+          v2Lines.push({ earningsRateID: regularRateId!, numberOfUnits: rhHours })
         }
-
-        // Xero Payroll UK uses v2 only (payroll.xro/2.0). v1 (payroll.xro/1.0) is AU-only.
-        // v2 UK: per-day lines with date + single numberOfUnits (camelCase)
-        const buildPerDayLines = (totalHours: number, earningsRateId: string): Record<string, unknown>[] => {
-          const lines: Record<string, unknown>[] = []
-          if (totalHours <= 0 || weekdays <= 0) return lines
-          const perDay = Math.round((totalHours / weekdays) * 100) / 100
-          for (let i = 0; i < days; i++) {
-            const d = new Date(start)
-            d.setDate(d.getDate() + i)
-            const dow = d.getDay()
-            if (dow !== 0 && dow !== 6) {
-              const yyyy = d.getFullYear()
-              const mm = String(d.getMonth() + 1).padStart(2, '0')
-              const dd2 = String(d.getDate()).padStart(2, '0')
-              lines.push({ date: `${yyyy}-${mm}-${dd2}`, earningsRateID: earningsRateId, numberOfUnits: perDay })
-            }
-          }
-          return lines
+        if (otHours > 0) {
+          v2Lines.push({ earningsRateID: effectiveOtRateId, numberOfUnits: otHours })
         }
-
-        const v2Lines: Record<string, unknown>[] = [
-          ...buildPerDayLines(rhHours, regularRateId!),
-          ...buildPerDayLines(otHours, effectiveOtRateId),
-        ]
 
         // Approach 1: Create timesheet with lines in one call
         const v2Payload = {
