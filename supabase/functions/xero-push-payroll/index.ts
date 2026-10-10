@@ -432,52 +432,65 @@ Deno.serve(async (req) => {
           return daily
         }
 
-        // Build timesheet lines — one for regular hours, one for overtime (if any)
-        // v1 (UK) uses PascalCase, v2 uses camelCase
-        const timesheetLines: Record<string, unknown>[] = []
+        // Build both v1 (PascalCase) and v2 (camelCase) payloads
+        const dailyRegular = buildDailyHours(rhHours)
+        const dailyOvertime = buildDailyHours(otHours)
 
+        const v1Lines: Record<string, unknown>[] = []
+        const v2Lines: Record<string, unknown>[] = []
         if (rhHours > 0) {
-          timesheetLines.push(isUK
-            ? { EarningsRateID: regularRateId!, NumberOfUnits: buildDailyHours(rhHours) }
-            : { earningsRateID: regularRateId!, numberOfUnits: buildDailyHours(rhHours) }
-          )
+          v1Lines.push({ EarningsRateID: regularRateId!, NumberOfUnits: dailyRegular })
+          v2Lines.push({ earningsRateID: regularRateId!, numberOfUnits: dailyRegular })
         }
-
         if (otHours > 0) {
-          timesheetLines.push(isUK
-            ? { EarningsRateID: effectiveOtRateId, NumberOfUnits: buildDailyHours(otHours) }
-            : { earningsRateID: effectiveOtRateId, numberOfUnits: buildDailyHours(otHours) }
-          )
+          v1Lines.push({ EarningsRateID: effectiveOtRateId, NumberOfUnits: dailyOvertime })
+          v2Lines.push({ earningsRateID: effectiveOtRateId, numberOfUnits: dailyOvertime })
         }
 
-        // Use the detected base URL and matching field casing
-        const timesheetPayload = isUK ? {
+        const v1Payload = {
           PayrollCalendarID: calId,
           EmployeeID: emp.xeroId,
           StartDate: period_start,
           EndDate: period_end,
-          TimesheetLines: timesheetLines,
-        } : {
+          TimesheetLines: v1Lines,
+        }
+        const v2Payload = {
           payrollCalendarID: calId,
           employeeID: emp.xeroId,
           startDate: period_start,
           endDate: period_end,
-          timesheetLines,
+          timesheetLines: v2Lines,
         }
 
-        const tsUrl = `${baseUrl}/Timesheets`
-        let tsRes = await fetch(tsUrl, {
+        // Try v1 (UK) first, then v2 — API detection from /PayRuns is unreliable for timesheets
+        let tsRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
           method: 'POST',
           headers: xeroHeaders,
-          body: JSON.stringify(timesheetPayload),
+          body: JSON.stringify(v1Payload),
         })
 
-        // If single object fails, try array wrapper
         if (!tsRes.ok) {
-          tsRes = await fetch(tsUrl, {
+          // Try v2 with camelCase
+          tsRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
             method: 'POST',
             headers: xeroHeaders,
-            body: JSON.stringify([timesheetPayload]),
+            body: JSON.stringify(v2Payload),
+          })
+        }
+
+        // If still failing, try array wrappers
+        if (!tsRes.ok) {
+          tsRes = await fetch(`${XERO_PAYROLL_UK}/Timesheets`, {
+            method: 'POST',
+            headers: xeroHeaders,
+            body: JSON.stringify([v1Payload]),
+          })
+        }
+        if (!tsRes.ok) {
+          tsRes = await fetch(`${XERO_PAYROLL_UK_V2}/Timesheets`, {
+            method: 'POST',
+            headers: xeroHeaders,
+            body: JSON.stringify([v2Payload]),
           })
         }
 
@@ -515,7 +528,7 @@ Deno.serve(async (req) => {
           })
         } else {
           const errText = await tsRes.text()
-          const debugInfo = `API: ${baseUrl}/Timesheets, Status: ${tsRes.status}, Calendar: ${calId}, EarningsRate: ${regularRateId}, OtRate: ${effectiveOtRateId}, Period: ${period_start} to ${period_end}, Days: ${days}, Weekdays: ${weekdays}, RegHrs: ${rhHours}, OtHrs: ${otHours}`
+          const debugInfo = `Tried v1+v2 (single+array), Last: ${tsRes.url || 'unknown'}, Status: ${tsRes.status}, Calendar: ${calId}, EarningsRate: ${regularRateId}, OtRate: ${effectiveOtRateId}, Period: ${period_start} to ${period_end}, Days: ${days}, Weekdays: ${weekdays}, RegHrs: ${rhHours}, OtHrs: ${otHours}`
           timesheetResults.push({
             employee: emp.name,
             status: 'failed',
