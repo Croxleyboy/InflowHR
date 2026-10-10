@@ -4084,7 +4084,10 @@ export default function AdminPayrollNew() {
                                     {r.status === 'pushed' ? (
                                       <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 10px', borderRadius: 10, fontWeight: 600 }}>Pushed</span>
                                     ) : (
-                                      <span title={r.error || ''} style={{ fontSize: 11, background: '#ffebee', color: '#c62828', padding: '2px 10px', borderRadius: 10, fontWeight: 600, cursor: r.error ? 'help' : undefined }}>Failed</span>
+                                      <div>
+                                        <span style={{ fontSize: 11, background: '#ffebee', color: '#c62828', padding: '2px 10px', borderRadius: 10, fontWeight: 600 }}>Failed</span>
+                                        {r.error && <div style={{ fontSize: 11, color: '#c62828', marginTop: 4, wordBreak: 'break-word' }}>{r.error}</div>}
+                                      </div>
                                     )}
                                   </td>
                                 </tr>
