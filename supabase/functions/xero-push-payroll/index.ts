@@ -414,64 +414,63 @@ Deno.serve(async (req) => {
           continue
         }
 
-        // Fetch all pay periods from this calendar's pay runs to find valid dates
+        // Find valid pay period dates from pay runs on this calendar
         let xeroStartDate = period_start
         let xeroEndDate = period_end
-        let calDebug = 'no-cal-data'
+        let calDebug = ''
 
-        // First try: list existing timesheets for this employee to find valid periods
-        const empTsRes = await fetch(
-          `${XERO_PAYROLL_UK_V2}/Timesheets?employeeId=${emp.xeroId}`,
-          { headers: xeroHeaders }
-        )
-        if (empTsRes.ok) {
-          const empTsBody = await empTsRes.json()
-          const allTs = empTsBody.timesheets || empTsBody.Timesheets || []
-          calDebug = `existingTs:${allTs.length}`
-          // Find a timesheet period that overlaps with our target
+        // Query pay runs for this calendar to find valid period dates
+        const payRunRes = await fetch(`${XERO_PAYROLL_UK_V2}/PayRuns`, { headers: xeroHeaders })
+        if (payRunRes.ok) {
+          const prBody = await payRunRes.json()
+          const payRuns = prBody.payRuns || prBody.PayRuns || []
+          calDebug = `payRuns:${payRuns.length}`
           const targetStart = new Date(period_start).getTime()
           const targetEnd = new Date(period_end).getTime()
-          for (const ts of allTs) {
-            const tsStart = new Date((ts.startDate || ts.StartDate || '').substring(0, 10)).getTime()
-            const tsEnd = new Date((ts.endDate || ts.EndDate || '').substring(0, 10)).getTime()
-            if (tsStart <= targetEnd && tsEnd >= targetStart) {
-              xeroStartDate = (ts.startDate || ts.StartDate || '').substring(0, 10)
-              xeroEndDate = (ts.endDate || ts.EndDate || '').substring(0, 10)
-              calDebug += `,matchedTs:${xeroStartDate}..${xeroEndDate}`
+          // Find a pay run whose period contains our target date
+          for (const pr of payRuns) {
+            const prCalId = pr.payrollCalendarID || pr.PayrollCalendarID || ''
+            if (prCalId !== calId) continue
+            const prStart = new Date((pr.periodStartDate || pr.PeriodStartDate || '').substring(0, 10)).getTime()
+            const prEnd = new Date((pr.periodEndDate || pr.PeriodEndDate || '').substring(0, 10)).getTime()
+            if (prStart <= targetEnd && prEnd >= targetStart) {
+              xeroStartDate = (pr.periodStartDate || pr.PeriodStartDate || '').substring(0, 10)
+              xeroEndDate = (pr.periodEndDate || pr.PeriodEndDate || '').substring(0, 10)
+              calDebug += `,matchedPR:${xeroStartDate}..${xeroEndDate}`
               break
             }
           }
-          // Log first few timesheet periods for debugging
-          if (allTs.length > 0) {
-            const periods = allTs.slice(0, 5).map((ts: any) =>
-              `${(ts.startDate || ts.StartDate || '').substring(0, 10)}..${(ts.endDate || ts.EndDate || '').substring(0, 10)}`
+          // Log pay runs for this calendar
+          const calRuns = payRuns.filter((pr: any) => (pr.payrollCalendarID || pr.PayrollCalendarID) === calId)
+          calDebug += `,calRuns:${calRuns.length}`
+          if (calRuns.length > 0) {
+            const periods = calRuns.slice(0, 3).map((pr: any) =>
+              `${(pr.periodStartDate || pr.PeriodStartDate || '').substring(0, 10)}..${(pr.periodEndDate || pr.PeriodEndDate || '').substring(0, 10)}`
             ).join(',')
-            calDebug += `,periods:[${periods}]`
+            calDebug += `,[${periods}]`
           }
+        } else {
+          calDebug = `payRunsFailed:${payRunRes.status}`
         }
 
-        // Second try: get calendar details and look at pay period structure
+        // Fallback: get calendar type for debugging
         if (xeroStartDate === period_start) {
           const calDetailRes = await fetch(`${XERO_PAYROLL_UK_V2}/PayrollCalendars/${calId}`, { headers: xeroHeaders })
           if (calDetailRes.ok) {
-            const calRaw = await calDetailRes.text()
-            // Log the raw calendar response for debugging
-            calDebug += ` | calRaw:${calRaw.slice(0, 400)}`
-            try {
-              const calDetail = JSON.parse(calRaw)
-              const cal = calDetail.payrollCalendar || calDetail.PayrollCalendar
-              if (cal) {
-                const calType = cal.calendarType || cal.CalendarType || 'unknown'
-                const anchorStart = cal.periodStartDate || cal.PeriodStartDate || ''
-                const anchorEnd = cal.periodEndDate || cal.PeriodEndDate || ''
-                calDebug += `,type:${calType},anchor:${anchorStart.substring(0,10)}..${anchorEnd.substring(0,10)}`
-                // Use the calendar's own period dates directly
-                if (anchorStart && anchorEnd) {
-                  xeroStartDate = anchorStart.substring(0, 10)
-                  xeroEndDate = anchorEnd.substring(0, 10)
-                }
+            const calDetail = await calDetailRes.json()
+            const cal = calDetail.payrollCalendar || calDetail.PayrollCalendar
+            if (cal) {
+              const calType = cal.calendarType || cal.CalendarType || 'unknown'
+              const anchorStart = (cal.periodStartDate || cal.PeriodStartDate || '').substring(0, 10)
+              const anchorEnd = (cal.periodEndDate || cal.PeriodEndDate || '').substring(0, 10)
+              const payDate = (cal.paymentDate || cal.PaymentDate || '').substring(0, 10)
+              calDebug += `,cal:${calType},${anchorStart}..${anchorEnd},pay:${payDate}`
+              // Use calendar dates as last resort
+              if (anchorStart && anchorEnd) {
+                xeroStartDate = anchorStart
+                xeroEndDate = anchorEnd
               }
-            } catch { /* already captured raw */ }
+            }
           }
         }
 
