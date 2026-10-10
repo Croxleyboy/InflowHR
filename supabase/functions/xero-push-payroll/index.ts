@@ -466,7 +466,6 @@ Deno.serve(async (req) => {
           TimesheetLines: v1Lines,
         }
         const v2Payload = {
-          payrollCalendarID: calId,
           employeeID: emp.xeroId,
           startDate: period_start,
           endDate: period_end,
