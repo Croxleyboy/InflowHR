@@ -1934,7 +1934,7 @@
 .pn-breadcrumb button:hover { text-decoration: underline; }
 .pn-breadcrumb-sep { color: var(--text-muted, #ccc); }
 .pn-section-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; margin: 0 0 14px; color: var(--text, #1a1a2e); }
-.pn-worker-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.pn-worker-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .pn-worker-card { background: var(--bg-card, #fff); border-radius: 12px; border: 1px solid var(--border, #e5e7eb); padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .pn-worker-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
 .pn-worker-card-body { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

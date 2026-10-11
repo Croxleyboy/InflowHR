@@ -795,6 +795,17 @@ export default function AdminPayrollNew() {
     setWizBenefitChanges(changes)
   }
 
+  async function logPayrollAction(action: string, detail: string, status: 'success' | 'error' = 'success') {
+    if (!selectedCompanyId || !session) return
+    await supabase.from('payroll_audit_log').insert({
+      company_id: selectedCompanyId,
+      user_id: session.user.id,
+      action,
+      detail,
+      status,
+    })
+  }
+
   // Wizard: generate payslips for selected worker types
   async function wizGenerate() {
     setWizGenerating(true)
@@ -1019,8 +1030,10 @@ export default function AdminPayrollNew() {
     setWizGenerating(false)
     if (errors.length > 0) {
       showError(`Failed to generate ${errors.length} payslip(s): ${errors[0]}`)
+      await logPayrollAction('Payslip Generation Failed', `${errors.length} error(s): ${errors[0]}`, 'error')
     } else {
       showSuccess(`Generated payslips for ${formatDate(periodStart)} – ${formatDate(periodEnd)}`)
+      await logPayrollAction('Payslips Generated', `Period ${formatDate(periodStart)} – ${formatDate(periodEnd)}, ${targetEmps.length} employee(s)`)
       setWizGenerated(true)
       await loadAll()
     }
@@ -1338,9 +1351,11 @@ export default function AdminPayrollNew() {
           showSuccess('No adjustments for this period')
         }
       }
+      await logPayrollAction('Adjustments Pushed', `Provider: ${connectedProvider || 'sage'}, pay run ${payRunId}`)
       await loadAll()
     } catch (err: any) {
       showError('Push failed: ' + (err?.message || 'Unknown error'))
+      await logPayrollAction('Adjustments Push Failed', err?.message || 'Unknown error', 'error')
       await supabase.from('pay_runs').update({ status: 'draft' }).eq('id', payRunId)
     }
     setWizGenerating(false)
@@ -1370,8 +1385,10 @@ export default function AdminPayrollNew() {
 
       setWizExported(true)
       showSuccess(`Pay run exported via ${wizPayMethod.toUpperCase()}`)
+      await logPayrollAction('Pay Run Exported', `Method: ${wizPayMethod.toUpperCase()}, pay run ${wizPayRunId}`)
     } catch (err: any) {
       showError('Export failed: ' + (err?.message || 'Unknown error'))
+      await logPayrollAction('Pay Run Export Failed', err?.message || 'Unknown error', 'error')
     }
     setWizExporting(false)
   }
@@ -1525,11 +1542,13 @@ export default function AdminPayrollNew() {
       }
       if (lastPayRun) setLastXeroPayRun(lastPayRun)
       showSuccess(`Synced ${totalUpserted} payslip${totalUpserted !== 1 ? 's' : ''} from Xero`)
+      await logPayrollAction('Xero Sync', `Synced ${totalUpserted} payslip(s) from Xero`)
       await loadAll()
       setWizExporting(false)
       return true
     } catch (err: any) {
       showError('Xero sync failed: ' + (err?.message || 'Unknown error'))
+      await logPayrollAction('Xero Sync Failed', err?.message || 'Unknown error', 'error')
       setWizExporting(false)
       return false
     }
@@ -1651,6 +1670,7 @@ export default function AdminPayrollNew() {
         await supabase.from('pay_runs').update({ status: 'synced' }).eq('id', wizPayRunId)
       }
       showSuccess(`Imported ${imported} payslip${imported !== 1 ? 's' : ''} from CSV${unmatched > 0 ? ` (${unmatched} unmatched)` : ''}`)
+      await logPayrollAction('Xero CSV Import', `Imported ${imported} payslip(s)${unmatched > 0 ? `, ${unmatched} unmatched` : ''}`)
       await loadAll()
       setWizXeroCsvImporting(false)
       setWizXeroCsvFile(null)
@@ -1667,6 +1687,7 @@ export default function AdminPayrollNew() {
     setWizReleasing(true)
     await supabase.from('pay_runs').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', wizPayRunId)
     showSuccess('Pay run complete. Go to Payslips to review and release to employees.')
+    await logPayrollAction('Pay Run Completed', `Pay run ${wizPayRunId} marked as completed`)
     setWizComplete(true)
     await loadAll()
     setWizReleasing(false)
@@ -2438,9 +2459,14 @@ export default function AdminPayrollNew() {
                         </>
                       )}
                       {(wt.status === 'submitted' || wt.status === 'paid') && (
-                        <button className="admin-btn" style={{ fontSize: 13 }} onClick={() => { setPayslipSubTab(wt.key); setView('payslips') }}>
-                          View Payslips
-                        </button>
+                        <>
+                          <button className="admin-btn admin-btn-primary" style={{ background: wt.colour, fontSize: 13 }} onClick={() => startPayrollForType(wt.key)}>
+                            Run Next Payrun
+                          </button>
+                          <button className="admin-btn" style={{ fontSize: 13, marginLeft: 6 }} onClick={() => { setPayslipSubTab(wt.key); setView('payslips') }}>
+                            View Payslips
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
