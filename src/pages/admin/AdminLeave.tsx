@@ -48,7 +48,7 @@ export default function AdminLeave() {
   const [savingDeduct, setSavingDeduct] = useState<number | null>(null)
   const [savingCarry, setSavingCarry] = useState<number | null>(null)
   const [fyStartMonth, setFyStartMonth] = useState(4)
-  const [activeTab, setActiveTab] = useState<'requests' | 'settings'>('requests')
+  const [activeTab, setActiveTab] = useState<'requests' | 'settings' | 'compliance'>('requests')
   const [managerNames, setManagerNames] = useState<Record<string, string>>({})
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -56,6 +56,21 @@ export default function AdminLeave() {
   const [zhAccrualRate, setZhAccrualRate] = useState(12.07)
   const [zhSettingSaving, setZhSettingSaving] = useState(false)
   const [zhAccrualSummary, setZhAccrualSummary] = useState<{ name: string; hours_worked: number; hours_accrued: number; hours_used: number }[]>([])
+
+  const [zhcEnabled, setZhcEnabled] = useState(false)
+  const [zhcCancellationHours, setZhcCancellationHours] = useState(48)
+  const [zhcPensionThreshold, setZhcPensionThreshold] = useState(10000)
+  const [zhcQualifyingWeeks, setZhcQualifyingWeeks] = useState(12)
+  const [zhcOvertimeRate, setZhcOvertimeRate] = useState(12.07)
+  const [zhcSaving, setZhcSaving] = useState(false)
+  const [zhcWorkers, setZhcWorkers] = useState<{ id: string; name: string; start_date: string; weeks: number; avg_hours: number; qualified: boolean; has_request: boolean; guaranteed_hours_approved: boolean }[]>([])
+  const [zhcRequests, setZhcRequests] = useState<{ id: number; employee_id: string; employee_name: string; request_date: string; weeks_of_service: number; average_weekly_hours: number; offered_weekly_hours: number | null; status: string; admin_notes: string | null }[]>([])
+  const [zhcLoadingCompliance, setZhcLoadingCompliance] = useState(false)
+  const [zhcOfferHours, setZhcOfferHours] = useState<Record<number, number>>({})
+  const [zhcOfferNotes, setZhcOfferNotes] = useState<Record<number, string>>({})
+  const [zhcActionLoading, setZhcActionLoading] = useState<number | null>(null)
+  const [zhcCancellations, setZhcCancellations] = useState<{ id: number; employee_name: string; shift_date: string; shift_start: string; shift_end: string; shift_hours: number; notice_hours: number; compensation_amount: number; cancellation_type: string; compensation_included_in_payrun: boolean; cancelled_at: string }[]>([])
+  const [zhcPensionWorkers, setZhcPensionWorkers] = useState<{ id: string; name: string; ytd_earnings: number; threshold: number; enrolled: boolean; enrolled_date: string | null }[]>([])
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -143,13 +158,174 @@ export default function AdminLeave() {
     setZhSettingSaving(false)
   }
 
+  const loadZhcSettings = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase.from('zero_hours_compliance_settings').select('*').eq('company_id', selectedCompanyId).maybeSingle()
+    if (data) {
+      setZhcEnabled(data.enabled ?? false)
+      setZhcCancellationHours(data.cancellation_notice_hours ?? 48)
+      setZhcPensionThreshold(data.pension_threshold ?? 10000)
+      setZhcQualifyingWeeks(data.predictable_hours_qualifying_weeks ?? 12)
+      setZhcOvertimeRate(data.guaranteed_hours_overtime_rate ?? 12.07)
+    }
+  }, [selectedCompanyId])
+
+  async function saveZhcSettings() {
+    if (!selectedCompanyId) return
+    setZhcSaving(true)
+    const { error } = await supabase.from('zero_hours_compliance_settings').upsert({
+      company_id: selectedCompanyId,
+      enabled: zhcEnabled,
+      cancellation_notice_hours: zhcCancellationHours,
+      pension_threshold: zhcPensionThreshold,
+      predictable_hours_qualifying_weeks: zhcQualifyingWeeks,
+      guaranteed_hours_overtime_rate: zhcOvertimeRate,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id' })
+    if (error) showError('Failed to save: ' + error.message)
+    setZhcSaving(false)
+  }
+
+  const loadZhcCompliance = useCallback(async () => {
+    if (!selectedCompanyId || !zhcEnabled) return
+    setZhcLoadingCompliance(true)
+    const { data: zhEmps } = await supabase.from('employees')
+      .select('id, first_name, last_name, start_date, guaranteed_hours_approved, pension_auto_enrolled, pension_enrolled_date')
+      .eq('company_id', selectedCompanyId).eq('employment_category', 'shift_worker')
+      .eq('contract_type', 'Zero hours shift worker').eq('is_active', true)
+    const { data: existingReqs } = await supabase.from('predictable_hours_requests')
+      .select('id, employee_id, request_date, weeks_of_service, average_weekly_hours, offered_weekly_hours, status, admin_notes')
+      .eq('company_id', selectedCompanyId).order('created_at', { ascending: false })
+    const reqEmployeeIds = new Set((existingReqs || []).map((r: any) => r.employee_id))
+    const workers = await Promise.all((zhEmps || []).map(async (e: any) => {
+      const { data: weeksData } = await supabase.rpc('get_zero_hours_service_weeks', { p_employee_id: e.id })
+      const { data: avgData } = await supabase.rpc('get_zero_hours_avg_weekly_hours', { p_employee_id: e.id, p_weeks: zhcQualifyingWeeks })
+      const weeks = typeof weeksData === 'number' ? weeksData : 0
+      const avg = typeof avgData === 'number' ? avgData : 0
+      return {
+        id: e.id,
+        name: `${e.first_name} ${e.last_name}`,
+        start_date: e.start_date || '',
+        weeks,
+        avg_hours: avg,
+        qualified: weeks >= zhcQualifyingWeeks,
+        has_request: reqEmployeeIds.has(e.id),
+        guaranteed_hours_approved: e.guaranteed_hours_approved === true,
+      }
+    }))
+    setZhcWorkers(workers)
+    const reqRows = (existingReqs || []).map((r: any) => {
+      const emp = (zhEmps || []).find((e: any) => e.id === r.employee_id)
+      return { ...r, employee_name: emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown' }
+    })
+    setZhcRequests(reqRows)
+    const { data: cancLogs } = await supabase.from('shift_cancellation_log')
+      .select('id, employee_id, shift_date, shift_start, shift_end, shift_hours, notice_hours, compensation_amount, cancellation_type, compensation_included_in_payrun, cancelled_at')
+      .eq('company_id', selectedCompanyId).eq('within_notice_window', true)
+      .order('cancelled_at', { ascending: false }).limit(50)
+    const cancRows = (cancLogs || []).map((c: any) => {
+      const emp = (zhEmps || []).find((e: any) => e.id === c.employee_id)
+      return { ...c, employee_name: emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown' }
+    })
+    setZhcCancellations(cancRows)
+    const pensionWorkers = await Promise.all((zhEmps || []).map(async (e: any) => {
+      const { data: ytdData } = await supabase.rpc('get_zero_hours_ytd_earnings', { p_employee_id: e.id })
+      const ytd = typeof ytdData === 'number' ? ytdData : 0
+      return {
+        id: e.id,
+        name: `${e.first_name} ${e.last_name}`,
+        ytd_earnings: ytd,
+        threshold: zhcPensionThreshold,
+        enrolled: e.pension_auto_enrolled === true,
+        enrolled_date: e.pension_enrolled_date || null,
+      }
+    }))
+    setZhcPensionWorkers(pensionWorkers)
+    setZhcLoadingCompliance(false)
+  }, [selectedCompanyId, zhcEnabled, zhcQualifyingWeeks, zhcPensionThreshold])
+
+  async function zhcCreateOffer(employeeId: string) {
+    if (!selectedCompanyId) return
+    setZhcActionLoading(-1)
+    const worker = zhcWorkers.find(w => w.id === employeeId)
+    if (!worker) return
+    const { error } = await supabase.from('predictable_hours_requests').insert({
+      company_id: selectedCompanyId,
+      employee_id: employeeId,
+      weeks_of_service: worker.weeks,
+      average_weekly_hours: worker.avg_hours,
+      status: 'pending',
+    })
+    if (error) { showError('Failed to create request: ' + error.message); setZhcActionLoading(null); return }
+    await loadZhcCompliance()
+    setZhcActionLoading(null)
+  }
+
+  async function zhcUpdateRequest(reqId: number, newStatus: string) {
+    setZhcActionLoading(reqId)
+    const updates: Record<string, any> = { status: newStatus, updated_at: new Date().toISOString() }
+    if (newStatus === 'offered') {
+      updates.offered_weekly_hours = zhcOfferHours[reqId] || 0
+      updates.offered_at = new Date().toISOString()
+      if (zhcOfferNotes[reqId]) updates.admin_notes = zhcOfferNotes[reqId]
+    }
+    if (newStatus === 'accepted' || newStatus === 'declined' || newStatus === 'withdrawn') {
+      updates.responded_at = new Date().toISOString()
+    }
+    const { error } = await supabase.from('predictable_hours_requests').update(updates).eq('id', reqId)
+    if (error) { showError('Failed to update request: ' + error.message); setZhcActionLoading(null); return }
+    if (newStatus === 'accepted') {
+      const req = zhcRequests.find(r => r.id === reqId)
+      if (req) {
+        const weeklyHours = req.offered_weekly_hours || req.average_weekly_hours
+        const annualLeaveWeeks = 5.6
+        const proRatedLeaveHours = Math.round((weeklyHours * annualLeaveWeeks) * 10) / 10
+        await supabase.from('employees').update({
+          guaranteed_hours_approved: true,
+          guaranteed_weekly_hours: weeklyHours,
+          guaranteed_hours_start_date: new Date().toISOString().slice(0, 10),
+        }).eq('id', req.employee_id)
+        const currentYear = new Date().getFullYear()
+        await supabase.from('leave_balances').upsert({
+          employee_id: req.employee_id,
+          company_id: selectedCompanyId,
+          year: currentYear,
+          leave_type: 'Annual Leave',
+          total_allowance: proRatedLeaveHours,
+          used: 0,
+          accrual_unit: 'hours',
+        }, { onConflict: 'employee_id,company_id,year,leave_type' })
+      }
+    }
+    await loadZhcCompliance()
+    setZhcActionLoading(null)
+  }
+
+  async function zhcTogglePensionEnrolled(employeeId: string, currentlyEnrolled: boolean) {
+    setZhcActionLoading(-2)
+    const updates: Record<string, any> = {
+      pension_auto_enrolled: !currentlyEnrolled,
+    }
+    if (!currentlyEnrolled) {
+      updates.pension_enrolled_date = new Date().toISOString().slice(0, 10)
+    }
+    const { error } = await supabase.from('employees').update(updates).eq('id', employeeId)
+    if (error) { showError('Failed to update pension status: ' + error.message); setZhcActionLoading(null); return }
+    await loadZhcCompliance()
+    setZhcActionLoading(null)
+  }
+
   useEffect(() => {
     if (selectedCompanyId) {
-      load(); loadWeekendSetting(); loadLeaveTypeSettings(); loadZhSettings()
+      load(); loadWeekendSetting(); loadLeaveTypeSettings(); loadZhSettings(); loadZhcSettings()
       supabase.from('companies').select('fy_start_month').eq('id', selectedCompanyId).single()
         .then(({ data }) => { if (data?.fy_start_month) setFyStartMonth(data.fy_start_month) })
     }
-  }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings, loadZhSettings])
+  }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings, loadZhSettings, loadZhcSettings])
+
+  useEffect(() => {
+    if (activeTab === 'compliance' && zhcEnabled && selectedCompanyId) loadZhcCompliance()
+  }, [activeTab, zhcEnabled, selectedCompanyId, loadZhcCompliance])
 
   async function load() {
     setLoading(true)
@@ -612,6 +788,11 @@ export default function AdminLeave() {
       <div className="admin-tabs">
         <button className={`admin-tab${activeTab === 'requests' ? ' active' : ''}`} onClick={() => setActiveTab('requests')}>Leave Requests</button>
         <button className={`admin-tab${activeTab === 'settings' ? ' active' : ''}`} onClick={() => setActiveTab('settings')}>Settings</button>
+        {zhcEnabled && (
+          <button className={`admin-tab${activeTab === 'compliance' ? ' active' : ''}`} onClick={() => setActiveTab('compliance')}>
+            Zero Hours Compliance
+          </button>
+        )}
       </div>
 
       {activeTab === 'requests' && !loading && chartData.monthData.some(d => d.total > 0) && (
@@ -789,6 +970,394 @@ export default function AdminLeave() {
               <p style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic', margin: 0 }}>No zero hours workers found in this company.</p>
             )}
           </div>
+
+          {/* Zero Hours Compliance Engine */}
+          <div style={{ marginTop: 20, padding: 16, background: zhcEnabled ? '#fef3c7' : '#f9fafb', borderRadius: 8, border: `1px solid ${zhcEnabled ? '#f59e0b' : '#e5e7eb'}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Zero Hours Compliance Engine</h4>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Employment Rights Act 2024</span>
+            </div>
+            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 14px', lineHeight: 1.5 }}>
+              Enables monitoring and enforcement of UK zero hours worker protections: right to request predictable hours (after a qualifying period), shift cancellation compensation, and pension auto-enrolment tracking. When switched off, none of these features are active.
+            </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input type="checkbox" checked={zhcEnabled} onChange={e => setZhcEnabled(e.target.checked)} style={{ width: 18, height: 18, accentColor: '#f59e0b' }} />
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{zhcEnabled ? 'Enabled' : 'Disabled'}</span>
+              </label>
+            </div>
+
+            {zhcEnabled && (
+              <>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+                  <div className="admin-form-field" style={{ flex: 1, minWidth: 200 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Predictable Hours Qualifying Period</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input className="admin-inline-input" type="number" min="4" max="52" value={zhcQualifyingWeeks} onChange={e => setZhcQualifyingWeeks(parseInt(e.target.value) || 12)} style={{ width: 60, textAlign: 'center' }} />
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>weeks (statutory: 12 weeks)</span>
+                    </div>
+                  </div>
+                  <div className="admin-form-field" style={{ flex: 1, minWidth: 200 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Shift Cancellation Notice Period</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <select className="admin-select" value={zhcCancellationHours} onChange={e => setZhcCancellationHours(parseInt(e.target.value))}>
+                        <option value={24}>24 hours (1 day)</option>
+                        <option value={48}>48 hours (2 days)</option>
+                        <option value={72}>72 hours (3 days)</option>
+                        <option value={96}>96 hours (4 days)</option>
+                        <option value={120}>120 hours (5 days)</option>
+                        <option value={144}>144 hours (6 days)</option>
+                        <option value={168}>168 hours (7 days)</option>
+                      </select>
+                    </div>
+                    <span style={{ fontSize: 10, color: '#6b7280', marginTop: 2, display: 'block' }}>Cancellations within this window trigger compensation</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+                  <div className="admin-form-field" style={{ flex: 1, minWidth: 200 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Pension Auto-Enrolment Threshold</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12 }}>£</span>
+                      <input className="admin-inline-input" type="number" min="0" step="100" value={zhcPensionThreshold} onChange={e => setZhcPensionThreshold(parseFloat(e.target.value) || 10000)} style={{ width: 100, textAlign: 'center' }} />
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>per year (statutory: £10,000)</span>
+                    </div>
+                  </div>
+                  <div className="admin-form-field" style={{ flex: 1, minWidth: 200 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Guaranteed Hours Overtime Rate</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input className="admin-inline-input" type="number" step="0.01" min="0" max="30" value={zhcOvertimeRate} onChange={e => setZhcOvertimeRate(parseFloat(e.target.value) || 12.07)} style={{ width: 80, textAlign: 'center' }} />
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>% (hours above guaranteed weekly hours)</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button className="admin-btn admin-btn-primary" disabled={zhcSaving} onClick={saveZhcSettings} style={{ fontSize: 12 }}>
+                    {zhcSaving ? 'Saving...' : 'Save Compliance Settings'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {!zhcEnabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <button className="admin-btn admin-btn-primary" disabled={zhcSaving} onClick={() => { setZhcEnabled(true) }} style={{ fontSize: 12 }}>
+                  Enable Compliance Engine
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {activeTab === 'compliance' && zhcEnabled && (
+        <>
+          {zhcLoadingCompliance && <div style={{ padding: 20, textAlign: 'center', color: '#6b7280' }}>Loading compliance data…</div>}
+
+          {!zhcLoadingCompliance && (
+            <>
+              <div style={{ background: '#fffbeb', border: '1px solid #f59e0b', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Predictable Hours Monitoring</h4>
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Employment Rights Act 2024</span>
+                </div>
+                <p style={{ fontSize: 12, color: '#374151', margin: '0 0 14px', lineHeight: 1.5 }}>
+                  Zero hours workers who have completed {zhcQualifyingWeeks} weeks of service are entitled to request predictable hours.
+                  Workers shown as "Qualified" below have met the qualifying period and should be offered a predictable hours contract.
+                </p>
+
+                {zhcWorkers.length === 0 && (
+                  <p style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>No zero hours workers found.</p>
+                )}
+
+                {zhcWorkers.length > 0 && (
+                  <table className="admin-table" style={{ fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th>Start Date</th>
+                        <th style={{ textAlign: 'right' }}>Weeks of Service</th>
+                        <th style={{ textAlign: 'right' }}>Avg Weekly Hours</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {zhcWorkers.map(w => (
+                        <tr key={w.id} style={w.qualified ? { background: '#fefce8' } : undefined}>
+                          <td style={{ fontWeight: 500 }}>{w.name}</td>
+                          <td>{w.start_date ? formatDate(w.start_date) : '—'}</td>
+                          <td style={{ textAlign: 'right' }}>{w.weeks}</td>
+                          <td style={{ textAlign: 'right' }}>{w.avg_hours.toFixed(1)}</td>
+                          <td>
+                            {w.guaranteed_hours_approved ? (
+                              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontWeight: 600 }}>Guaranteed Hours</span>
+                            ) : w.qualified ? (
+                              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Qualified</span>
+                            ) : (
+                              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#f3f4f6', color: '#6b7280', fontWeight: 500 }}>
+                                {zhcQualifyingWeeks - w.weeks} weeks remaining
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            {w.qualified && !w.has_request && !w.guaranteed_hours_approved && (
+                              <button
+                                className="admin-btn admin-btn-primary"
+                                style={{ fontSize: 11, padding: '4px 10px' }}
+                                disabled={zhcActionLoading !== null}
+                                onClick={() => zhcCreateOffer(w.id)}
+                              >
+                                {zhcActionLoading === -1 ? 'Creating…' : 'Create Request'}
+                              </button>
+                            )}
+                            {w.has_request && !w.guaranteed_hours_approved && (
+                              <span style={{ fontSize: 11, color: '#6b7280' }}>Request exists — see below</span>
+                            )}
+                            {w.guaranteed_hours_approved && (
+                              <span style={{ fontSize: 11, color: '#065f46' }}>Transitioned</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {zhcCancellations.length > 0 && (
+                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                  <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Shift Cancellation Compensation Log</h4>
+                  <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px' }}>
+                    Shifts cancelled within the notice window. Compensation amounts are included in the next payrun.
+                  </p>
+                  <table className="admin-table" style={{ fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th>Shift Date</th>
+                        <th>Shift Time</th>
+                        <th style={{ textAlign: 'right' }}>Hours</th>
+                        <th style={{ textAlign: 'right' }}>Notice (hrs)</th>
+                        <th style={{ textAlign: 'right' }}>Compensation</th>
+                        <th>Type</th>
+                        <th>Payrun</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {zhcCancellations.map(c => (
+                        <tr key={c.id}>
+                          <td style={{ fontWeight: 500 }}>{c.employee_name}</td>
+                          <td>{formatDate(c.shift_date)}</td>
+                          <td>{c.shift_start?.substring(0, 5)} – {c.shift_end?.substring(0, 5)}</td>
+                          <td style={{ textAlign: 'right' }}>{Number(c.shift_hours).toFixed(1)}</td>
+                          <td style={{ textAlign: 'right' }}>{Number(c.notice_hours).toFixed(0)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>£{Number(c.compensation_amount).toFixed(2)}</td>
+                          <td>
+                            <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 8, background: '#fee2e2', color: '#991b1b' }}>
+                              {c.cancellation_type}
+                            </span>
+                          </td>
+                          <td>
+                            {c.compensation_included_in_payrun ? (
+                              <span style={{ fontSize: 11, color: '#059669' }}>Included</span>
+                            ) : (
+                              <span style={{ fontSize: 11, color: '#d97706' }}>Pending</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {zhcPensionWorkers.length > 0 && (
+                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Pension Auto-Enrolment Monitoring</h4>
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#ede9fe', color: '#5b21b6', fontWeight: 600 }}>Workplace Pensions</span>
+                  </div>
+                  <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px' }}>
+                    Zero hours workers earning above £{zhcPensionThreshold.toLocaleString()} per year must be auto-enrolled into a workplace pension.
+                    Mark workers as enrolled once their pension has been set up with your pension provider.
+                  </p>
+                  <table className="admin-table" style={{ fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th style={{ textAlign: 'right' }}>YTD Earnings</th>
+                        <th style={{ textAlign: 'right' }}>Threshold</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {zhcPensionWorkers.map(pw => {
+                        const aboveThreshold = pw.ytd_earnings >= pw.threshold
+                        return (
+                          <tr key={pw.id} style={aboveThreshold && !pw.enrolled ? { background: '#fef2f2' } : undefined}>
+                            <td style={{ fontWeight: 500 }}>{pw.name}</td>
+                            <td style={{ textAlign: 'right' }}>£{pw.ytd_earnings.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td style={{ textAlign: 'right' }}>£{pw.threshold.toLocaleString()}</td>
+                            <td>
+                              {pw.enrolled ? (
+                                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontWeight: 600 }}>
+                                  Enrolled{pw.enrolled_date ? ` (${formatDate(pw.enrolled_date)})` : ''}
+                                </span>
+                              ) : aboveThreshold ? (
+                                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>Action Required</span>
+                              ) : (
+                                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#f3f4f6', color: '#6b7280', fontWeight: 500 }}>
+                                  Below threshold ({Math.round((pw.ytd_earnings / pw.threshold) * 100)}%)
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {!pw.enrolled && aboveThreshold && (
+                                <button
+                                  className="admin-btn admin-btn-primary"
+                                  style={{ fontSize: 11, padding: '4px 10px' }}
+                                  disabled={zhcActionLoading === -2}
+                                  onClick={() => zhcTogglePensionEnrolled(pw.id, false)}
+                                >
+                                  Mark as Enrolled
+                                </button>
+                              )}
+                              {pw.enrolled && (
+                                <button
+                                  className="admin-btn"
+                                  style={{ fontSize: 11, padding: '4px 10px', background: '#f3f4f6', color: '#6b7280' }}
+                                  disabled={zhcActionLoading === -2}
+                                  onClick={() => zhcTogglePensionEnrolled(pw.id, true)}
+                                >
+                                  Unenrol
+                                </button>
+                              )}
+                              {!pw.enrolled && !aboveThreshold && (
+                                <span style={{ fontSize: 11, color: '#9ca3af' }}>Monitoring</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {zhcRequests.length > 0 && (
+                <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 8, padding: 16 }}>
+                  <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Predictable Hours Requests</h4>
+                  <table className="admin-table" style={{ fontSize: 12 }}>
+                    <thead>
+                      <tr>
+                        <th>Employee</th>
+                        <th>Request Date</th>
+                        <th style={{ textAlign: 'right' }}>Service Weeks</th>
+                        <th style={{ textAlign: 'right' }}>Avg Hours</th>
+                        <th style={{ textAlign: 'right' }}>Offered Hours</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {zhcRequests.map(req => (
+                        <tr key={req.id}>
+                          <td style={{ fontWeight: 500 }}>{req.employee_name}</td>
+                          <td>{formatDate(req.request_date)}</td>
+                          <td style={{ textAlign: 'right' }}>{req.weeks_of_service}</td>
+                          <td style={{ textAlign: 'right' }}>{Number(req.average_weekly_hours).toFixed(1)}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            {req.status === 'pending' ? (
+                              <input
+                                className="admin-inline-input"
+                                type="number"
+                                step="0.5"
+                                min="1"
+                                max="48"
+                                value={zhcOfferHours[req.id] ?? Math.round(Number(req.average_weekly_hours))}
+                                onChange={e => setZhcOfferHours(prev => ({ ...prev, [req.id]: parseFloat(e.target.value) || 0 }))}
+                                style={{ width: 60, textAlign: 'center' }}
+                              />
+                            ) : (
+                              req.offered_weekly_hours ? `${Number(req.offered_weekly_hours).toFixed(1)}` : '—'
+                            )}
+                          </td>
+                          <td>
+                            <span style={{
+                              fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+                              background: req.status === 'accepted' ? '#d1fae5' : req.status === 'offered' ? '#dbeafe' : req.status === 'declined' ? '#fee2e2' : req.status === 'withdrawn' ? '#f3f4f6' : '#fef3c7',
+                              color: req.status === 'accepted' ? '#065f46' : req.status === 'offered' ? '#1e40af' : req.status === 'declined' ? '#991b1b' : req.status === 'withdrawn' ? '#6b7280' : '#92400e',
+                            }}>
+                              {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                            </span>
+                          </td>
+                          <td>
+                            {req.status === 'pending' && (
+                              <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                                <input
+                                  className="admin-inline-input"
+                                  type="text"
+                                  placeholder="Notes (optional)"
+                                  value={zhcOfferNotes[req.id] || ''}
+                                  onChange={e => setZhcOfferNotes(prev => ({ ...prev, [req.id]: e.target.value }))}
+                                  style={{ width: 120, fontSize: 11 }}
+                                />
+                                <button
+                                  className="admin-btn admin-btn-primary"
+                                  style={{ fontSize: 11, padding: '3px 8px' }}
+                                  disabled={zhcActionLoading === req.id}
+                                  onClick={() => zhcUpdateRequest(req.id, 'offered')}
+                                >
+                                  Send Offer
+                                </button>
+                                <button
+                                  className="admin-btn"
+                                  style={{ fontSize: 11, padding: '3px 8px', background: '#fee2e2', color: '#991b1b' }}
+                                  disabled={zhcActionLoading === req.id}
+                                  onClick={() => zhcUpdateRequest(req.id, 'withdrawn')}
+                                >
+                                  Withdraw
+                                </button>
+                              </div>
+                            )}
+                            {req.status === 'offered' && (
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                  className="admin-btn admin-btn-primary"
+                                  style={{ fontSize: 11, padding: '3px 8px', background: '#059669' }}
+                                  disabled={zhcActionLoading === req.id}
+                                  onClick={() => zhcUpdateRequest(req.id, 'accepted')}
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  className="admin-btn"
+                                  style={{ fontSize: 11, padding: '3px 8px', background: '#fee2e2', color: '#991b1b' }}
+                                  disabled={zhcActionLoading === req.id}
+                                  onClick={() => zhcUpdateRequest(req.id, 'declined')}
+                                >
+                                  Decline
+                                </button>
+                              </div>
+                            )}
+                            {(req.status === 'accepted' || req.status === 'declined' || req.status === 'withdrawn') && (
+                              <span style={{ fontSize: 11, color: '#9ca3af' }}>
+                                {req.status === 'accepted' ? 'Profile updated — guaranteed hours applied' : 'No action required'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
         </>
       )}
 

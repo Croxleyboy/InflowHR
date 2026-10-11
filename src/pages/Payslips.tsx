@@ -44,6 +44,7 @@ interface PayslipData {
   source: string | null
   source_review_id: string | null
   holiday_pay: number
+  cancellation_compensation: number
 }
 
 interface PeriodReview {
@@ -343,6 +344,12 @@ export default function Payslips() {
                     <div className="payslips-row">
                       <span>Holiday Pay Uplift</span>
                       <span>&pound;{fmt(payslip.holiday_pay)}</span>
+                    </div>
+                  )}
+                  {(payslip.cancellation_compensation || 0) > 0 && (
+                    <div className="payslips-row">
+                      <span>Shift Cancellation Compensation</span>
+                      <span>&pound;{fmt(payslip.cancellation_compensation)}</span>
                     </div>
                   )}
                   {(payslip.adjustments || 0) !== 0 && (

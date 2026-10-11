@@ -39,6 +39,18 @@ const SECTIONS: GuideSection[] = [
         '• When booking annual leave, enter the number of hours you want to take off.',
         '• Your balance updates after each pay run.',
       ], callout: { type: 'tip', text: 'The 12.07% rate is the UK statutory minimum. Your company may offer a higher rate for enhanced contractual holiday.' } },
+      { title: 'Predictable Hours', purpose: 'After a qualifying period of service (typically 12 weeks), you may be eligible to request guaranteed weekly hours.', steps: [
+        'Your employer monitors your service length and average weekly hours automatically.',
+        'If you qualify, your employer may send you a formal offer of guaranteed weekly hours.',
+        'You can accept or decline the offer. Accepting transitions you to guaranteed hours with pro-rated annual leave.',
+        'After accepting, hours above your guaranteed weekly amount continue to attract the zero hours holiday pay uplift.',
+      ], callout: { type: 'note', text: 'This is part of UK zero hours worker protections. Your employer is required to monitor eligibility and offer predictable hours where applicable.' } },
+      { title: 'Shift Cancellation Compensation', purpose: 'If your employer cancels a shift within the notice window, you are entitled to compensation.', steps: [
+        'Your company sets a cancellation notice window (between 48 hours and 7 days before the shift).',
+        'If a shift is cancelled within this window, compensation is calculated as: shift hours × your hourly rate.',
+        'The compensation is automatically included in your next payslip as a "Shift Cancellation Compensation" line item.',
+        'You can see the cancellation log in the Zero Hours Compliance tab (admin view) for full details.',
+      ] },
     ],
   },
   {
