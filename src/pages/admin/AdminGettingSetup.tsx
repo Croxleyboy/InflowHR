@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useFeatures } from '../../context/FeatureContext'
-import { useAuth } from '../../context/AuthContext'
+import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { supabase } from '../../lib/supabase'
 
 interface SetupStep {
@@ -164,7 +164,7 @@ function getPhase(stepNum: number) {
 export default function AdminGettingSetup() {
   const navigate = useNavigate()
   const { features } = useFeatures()
-  const { selectedCompanyId } = useAuth()
+  const { selectedCompanyId } = useAdminCompany()
   const [expandedStep, setExpandedStep] = useState<number | null>(null)
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set())
 

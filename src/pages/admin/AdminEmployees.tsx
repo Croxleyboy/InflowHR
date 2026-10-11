@@ -103,9 +103,6 @@ export default function AdminEmployees() {
     overtime_rate_multiplier: number
   }
   const [workerSettings, setWorkerSettings] = useState<WorkerTypeSetting[]>([])
-  const [editingSettings, setEditingSettings] = useState<Record<string, WorkerTypeSetting>>({})
-  const [settingsSaving, setSettingsSaving] = useState(false)
-  const [changeLog, setChangeLog] = useState<{ id: number; worker_type: string; setting_name: string; old_value: string; new_value: string; exception_count: number; created_at: string }[]>([])
 
   // Custom fields state
   interface CustomFieldDef {
@@ -120,12 +117,6 @@ export default function AdminEmployees() {
   const [customFields, setCustomFields] = useState<CustomFieldDef[]>([])
   const [customFieldsLoading, setCustomFieldsLoading] = useState(false)
   const [customFieldsSaving, setCustomFieldsSaving] = useState(false)
-
-  // Impact assessment modal state
-  const [impactModal, setImpactModal] = useState<{
-    open: boolean; workerType: string; changes: { name: string; oldVal: string; newVal: string }[]
-    affectedCount: number; exceptionCount: number; effectiveDate: string; confirmText: string
-  }>({ open: false, workerType: '', changes: [], affectedCount: 0, exceptionCount: 0, effectiveDate: '', confirmText: '' })
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
@@ -459,109 +450,6 @@ export default function AdminEmployees() {
     const { error: onbErr } = await supabase.from('onboarding').update({ avatar_url: null }).eq('user_email', emp.email)
     if (onbErr) console.error('Onboarding photo update failed:', onbErr)
     showSuccess('Photo removed')
-    load()
-  }
-
-  function saveWorkerTypeSettings(workerType: string) {
-    const setting = editingSettings[workerType]
-    if (!setting) return
-
-    const existing = workerSettings.find(s => s.worker_type === workerType)
-    const changedFields: { name: string; oldVal: string; newVal: string }[] = []
-
-    if (existing) {
-      if (existing.pay_pattern !== setting.pay_pattern) changedFields.push({ name: 'pay_pattern', oldVal: existing.pay_pattern, newVal: setting.pay_pattern })
-      if (existing.overtime_handling !== setting.overtime_handling) changedFields.push({ name: 'overtime_handling', oldVal: existing.overtime_handling, newVal: setting.overtime_handling })
-      if (existing.time_recording !== setting.time_recording) changedFields.push({ name: 'time_recording', oldVal: existing.time_recording, newVal: setting.time_recording })
-      if (Number(existing.overtime_rate_multiplier) !== Number(setting.overtime_rate_multiplier)) changedFields.push({ name: 'overtime_rate_multiplier', oldVal: String(existing.overtime_rate_multiplier), newVal: String(setting.overtime_rate_multiplier) })
-    }
-
-    if (changedFields.length === 0 && existing) {
-      showSuccess('No changes to save')
-      return
-    }
-
-    const workerTypeFilter = workerType === 'zero_hours'
-      ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker')
-      : workerType === 'shift_worker'
-      ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker')
-      : employees.filter(e => e.employment_category === 'employed')
-
-    const exceptionCount = workerTypeFilter.filter(e =>
-      e.pay_pattern_override != null || e.overtime_handling_override != null || e.time_recording_override != null
-    ).length
-
-    const nextMonth = new Date()
-    nextMonth.setMonth(nextMonth.getMonth() + 1, 1)
-    const defaultEffective = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-${String(nextMonth.getDate()).padStart(2, '0')}`
-
-    setImpactModal({
-      open: true,
-      workerType,
-      changes: changedFields,
-      affectedCount: workerTypeFilter.length - exceptionCount,
-      exceptionCount,
-      effectiveDate: defaultEffective,
-      confirmText: '',
-    })
-  }
-
-  async function confirmSaveWorkerTypeSettings() {
-    const { workerType, changes, effectiveDate } = impactModal
-    setSettingsSaving(true)
-    const setting = editingSettings[workerType]
-    if (!setting) { setSettingsSaving(false); return }
-
-    const { error } = await supabase.from('worker_type_settings').upsert({
-      company_id: selectedCompanyId,
-      worker_type: workerType,
-      pay_pattern: setting.pay_pattern,
-      overtime_handling: setting.overtime_handling,
-      time_recording: setting.time_recording,
-      overtime_rate_multiplier: setting.overtime_rate_multiplier,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id,worker_type' })
-
-    if (error) { showError('Failed to save settings: ' + error.message); setSettingsSaving(false); return }
-
-    const workerTypeFilter = workerType === 'zero_hours'
-      ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker')
-      : workerType === 'shift_worker'
-      ? employees.filter(e => e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker')
-      : employees.filter(e => e.employment_category === 'employed')
-
-    const impactParts: string[] = []
-    for (const change of changes) {
-      const overrideField = change.name + '_override' as keyof Employee
-      const exceptionIds = workerTypeFilter
-        .filter(e => e[overrideField] != null)
-        .map(e => e.id)
-
-      impactParts.push(`${change.name}: ${change.oldVal} → ${change.newVal}`)
-
-      await supabase.from('worker_setting_change_log').insert({
-        company_id: selectedCompanyId,
-        worker_type: workerType,
-        setting_name: change.name,
-        old_value: change.oldVal,
-        new_value: change.newVal,
-        exception_employee_ids: exceptionIds,
-        exception_count: exceptionIds.length,
-        effective_date: effectiveDate || null,
-        impact_summary: `Affects ${workerTypeFilter.length - exceptionIds.length} employee(s), ${exceptionIds.length} exception(s)`,
-      })
-    }
-
-    await supabase.from('payroll_audit_log').insert({
-      company_id: selectedCompanyId,
-      action: 'Worker Type Settings Changed',
-      detail: `${workerType}: ${impactParts.join('; ')}. Effective: ${effectiveDate || 'Immediately'}`,
-      status: 'success',
-    })
-
-    setImpactModal({ open: false, workerType: '', changes: [], affectedCount: 0, exceptionCount: 0, effectiveDate: '', confirmText: '' })
-    showSuccess('Settings saved with audit trail')
-    setSettingsSaving(false)
     load()
   }
 
