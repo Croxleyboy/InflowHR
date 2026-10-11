@@ -228,6 +228,20 @@ const ADMIN_SECTIONS: GuideSection[] = [
         'When approving leave, check the "Hours off" column for zero hours requests.',
         'The employee\'s accrued balance is displayed on their request for reference.',
       ] },
+      { title: 'Zero Hours Compliance Engine', purpose: 'Monitor predictable hours eligibility, shift cancellation compensation, and pension auto-enrolment for zero hours workers — all gated behind a per-company toggle.', steps: [
+        'Navigate to Admin > Leave and switch to the Zero Hours Compliance tab (visible only when the compliance toggle is enabled).',
+        'Enable the engine: Admin > Leave > Settings > Zero Hours Compliance section. Toggle "Enable Zero Hours Compliance" on. Configure the cancellation notice window (48h–168h), pension threshold (default £10,000), qualifying weeks (default 12), and guaranteed hours overtime rate (default 12.07%).',
+        'Predictable Hours Monitoring: the table lists all zero hours workers with their weeks of service and average weekly hours. Workers who have completed the qualifying period (default 12 weeks) are flagged as "Qualified". Click "Create Request" to open a formal predictable hours request.',
+        'Predictable Hours Requests: use "Send Offer" to propose guaranteed weekly hours. The employee can accept or decline. On acceptance, the system automatically updates the employee record with guaranteed hours and pro-rates their annual leave entitlement (5.6 weeks × weekly hours).',
+        'Shift Cancellation Compensation: when a manager removes a zero hours worker\'s shift within the notice window, a compensation amount is calculated (shift hours × hourly rate) and logged. The log appears in the compliance tab with payrun inclusion status.',
+        'Pension Auto-Enrolment: the table shows each zero hours worker\'s year-to-date earnings against the pension threshold. Click "Mark Enrolled" when an employee reaches the threshold to record their enrolment date.',
+      ], callout: { type: 'note', text: 'The compliance engine is off by default. When enabled, a dashboard alert card shows the count of workers who have qualified for predictable hours. Shift cancellation compensation is automatically included in the next payroll run.' } },
+      { title: 'Guaranteed Hours Transition', purpose: 'When a zero hours worker accepts a predictable hours offer, their payroll treatment changes.', steps: [
+        'After acceptance, the employee\'s record is updated: guaranteed_hours_approved = true, guaranteed_weekly_hours set to the offered amount, and a start date is recorded.',
+        'Pro-rated annual leave is automatically calculated and credited: guaranteed weekly hours × 5.6 weeks.',
+        'In payroll: hours up to the guaranteed weekly amount are treated as contracted. Only excess hours above the guaranteed threshold attract the zero hours holiday pay uplift (at the configurable overtime rate).',
+        'Shift cancellation compensation for any cancelled shifts within the notice window is added to the payslip as "Shift Cancellation Compensation" and surfaced as a manual action item in connected payroll (Xero/Sage).',
+      ], callout: { type: 'tip', text: 'The guaranteed hours overtime rate defaults to 12.07% (UK statutory minimum) and can be configured per company in the compliance settings.' } },
       { title: 'Shift Conflict & Working-Today Blocking', purpose: 'Leave submissions are now hard-blocked when employees have assigned shifts or are already working.', steps: [
         'When any employee (employed, shift worker, or zero hours) requests leave on dates with assigned shifts, the submission is blocked — not just warned.',
         'The employee sees a list of conflicting shifts and is told to swap or remove them before resubmitting.',

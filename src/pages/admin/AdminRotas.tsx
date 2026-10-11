@@ -504,6 +504,46 @@ export default function AdminRotas() {
   async function removeAssignment(employeeId: string, date: string) {
     const existing = getAssignment(employeeId, date)
     if (!existing) return
+    const emp = employees.find(e => e.id === employeeId)
+    const isZeroHours = emp?.employment_category === 'shift_worker' && emp?.contract_type === 'Zero hours shift worker'
+    if (isZeroHours && selectedCompanyId) {
+      const { data: zhcSettings } = await supabase.from('zero_hours_compliance_settings')
+        .select('enabled, cancellation_notice_hours').eq('company_id', selectedCompanyId).maybeSingle()
+      if (zhcSettings?.enabled) {
+        const tmpl = getTemplate(existing.shift_template_id)
+        const shiftDateTime = new Date(`${date}T${tmpl?.start_time || '09:00'}`)
+        const noticeHours = Math.max(0, (shiftDateTime.getTime() - Date.now()) / (1000 * 60 * 60))
+        const withinWindow = noticeHours < (zhcSettings.cancellation_notice_hours || 48)
+        if (withinWindow) {
+          const shiftHrs = tmpl ? (
+            (new Date(`1970-01-01T${tmpl.end_time}`).getTime() - new Date(`1970-01-01T${tmpl.start_time}`).getTime()) / 3600000
+            - (tmpl.break_minutes || 0) / 60
+          ) : 0
+          const { data: payData } = await supabase.from('employees').select('hourly_rate').eq('id', employeeId).single()
+          const hourlyRate = payData?.hourly_rate || 0
+          const compensation = Math.round(shiftHrs * hourlyRate * 100) / 100
+          const confirmed = window.confirm(
+            `⚠️ Zero Hours Compliance Warning\n\nThis shift is being cancelled within the ${zhcSettings.cancellation_notice_hours}-hour notice window (${Math.round(noticeHours)} hours before the shift).\n\nThe worker is entitled to compensation of £${compensation.toFixed(2)} (${shiftHrs.toFixed(1)} hrs × £${hourlyRate.toFixed(2)}/hr).\n\nThis will be logged for inclusion in their next payrun.\n\nProceed with cancellation?`
+          )
+          if (!confirmed) return
+          const { data: userData } = await supabase.auth.getUser()
+          await supabase.from('shift_cancellation_log').insert({
+            company_id: selectedCompanyId,
+            employee_id: employeeId,
+            shift_date: date,
+            shift_start: tmpl?.start_time || '09:00',
+            shift_end: tmpl?.end_time || '17:00',
+            shift_hours: shiftHrs,
+            cancellation_type: 'cancelled',
+            notice_hours: Math.round(noticeHours * 100) / 100,
+            within_notice_window: true,
+            compensation_amount: compensation,
+            cancelled_by: userData?.user?.id || null,
+            original_shift_data: { shift_template_id: existing.shift_template_id, template_name: tmpl?.name },
+          })
+        }
+      }
+    }
     const { error } = await supabase.from('shift_assignments').delete().eq('id', existing.id)
     if (error) { showError('Failed to remove shift: ' + error.message); return }
     setAssignments(prev => prev.filter(a => a.id !== existing.id))

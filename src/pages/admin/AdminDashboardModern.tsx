@@ -116,6 +116,7 @@ export default function AdminDashboardModern() {
   const [grantingAccess, setGrantingAccess] = useState(false)
   const [revokingAccess, setRevokingAccess] = useState(false)
   const [popupDate, setPopupDate] = useState<string | null>(null)
+  const [zhcAlert, setZhcAlert] = useState<{ enabled: boolean; qualifiedCount: number; names: string[] }>({ enabled: false, qualifiedCount: 0, names: [] })
   const [empBreakdown, setEmpBreakdown] = useState({ fulltime: 0, parttime: 0, freelance: 0, ftChange: 0, flChange: 0 })
   const [attendanceRate, setAttendanceRate] = useState({ rate: 0, change: 0 , sickDays: 0, daysOff: 0, onTime: 0 })
   const [topAssets, setTopAssets] = useState<{ type: string; count: number; color: string }[]>([])
@@ -296,6 +297,26 @@ export default function AdminDashboardModern() {
     const ASSET_COLOURS = ['#6366f1', '#f59e0b', '#10b981', '#ec4899', '#3b82f6']
     const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]).slice(0, 3)
     setTopAssets(sorted.map(([type, count], i) => ({ type, count, color: ASSET_COLOURS[i % ASSET_COLOURS.length] })))
+
+    const { data: zhcSettings } = await supabase.from('zero_hours_compliance_settings').select('enabled, predictable_hours_qualifying_weeks').eq('company_id', cid).maybeSingle()
+    if (zhcSettings?.enabled) {
+      const qWeeks = zhcSettings.predictable_hours_qualifying_weeks || 12
+      const { data: zhEmps } = await supabase.from('employees')
+        .select('id, first_name, last_name, start_date, guaranteed_hours_approved')
+        .eq('company_id', cid).eq('employment_category', 'shift_worker')
+        .eq('contract_type', 'Zero hours shift worker').eq('is_active', true)
+        .eq('guaranteed_hours_approved', false)
+      const qualified: string[] = []
+      for (const e of (zhEmps || [])) {
+        if (e.start_date) {
+          const weeks = Math.floor((Date.now() - new Date(e.start_date).getTime()) / (7 * 24 * 60 * 60 * 1000))
+          if (weeks >= qWeeks) qualified.push(`${e.first_name} ${e.last_name}`)
+        }
+      }
+      setZhcAlert({ enabled: true, qualifiedCount: qualified.length, names: qualified.slice(0, 5) })
+    } else {
+      setZhcAlert({ enabled: false, qualifiedCount: 0, names: [] })
+    }
 
     await loadSupportStatus(cid)
     setLoading(false)
@@ -542,6 +563,39 @@ export default function AdminDashboardModern() {
               </div>
             </section>
           </div>
+
+          {/* ── Zero Hours Compliance Alert ── */}
+          {zhcAlert.enabled && zhcAlert.qualifiedCount > 0 && (
+            <div
+              onClick={() => navigate('/admin/leave')}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px',
+                background: '#fffbeb', border: '1px solid #f59e0b', borderRadius: 10,
+                marginBottom: 16, cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                width: 36, height: 36, borderRadius: '50%', background: '#fef3c7',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e', marginBottom: 2 }}>
+                  Zero Hours Compliance: {zhcAlert.qualifiedCount} worker{zhcAlert.qualifiedCount !== 1 ? 's' : ''} qualified for predictable hours
+                </div>
+                <div style={{ fontSize: 11, color: '#b45309' }}>
+                  {zhcAlert.names.join(', ')}{zhcAlert.qualifiedCount > 5 ? ` and ${zhcAlert.qualifiedCount - 5} more` : ''} — review in Leave → Zero Hours Compliance
+                </div>
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </div>
+          )}
 
           {/* ── Insight Cards ── */}
           <div className="dm-insight-strip">

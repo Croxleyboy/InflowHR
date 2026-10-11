@@ -477,7 +477,7 @@ export default function AdminPayrollNew() {
     const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes, sRes, mRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception, weekly_hours, bonus_amount, bonus_frequency').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception, weekly_hours, bonus_amount, bonus_frequency, guaranteed_hours_approved, guaranteed_weekly_hours').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, status').eq('company_id', selectedCompanyId).maybeSingle(),
@@ -1017,7 +1017,23 @@ export default function AdminPayrollNew() {
         let accruedHoursRounded = 0
 
         if (isZeroHours) {
-          if (holidayMethod === 'rolled_up') {
+          if (emp.guaranteed_hours_approved && Number(emp.guaranteed_weekly_hours) > 0) {
+            const guaranteedWeekly = Number(emp.guaranteed_weekly_hours)
+            const weeksInPeriod = freq === 'monthly' ? 52 / 12 : freq === 'fortnightly' ? 2 : 1
+            const guaranteedHours = guaranteedWeekly * weeksInPeriod
+            const excessHours = Math.max(0, totalHoursWorked - guaranteedHours)
+            const { data: zhcSettings } = await supabase.from('zero_hours_compliance_settings')
+              .select('guaranteed_hours_overtime_rate').eq('company_id', selectedCompanyId).maybeSingle()
+            const overtimeRate = zhcSettings?.guaranteed_hours_overtime_rate ?? 12.07
+            if (holidayMethod === 'rolled_up') {
+              const hourlyRate = emp.hourly_rate || 0
+              const excessGross = excessHours * hourlyRate
+              holidayPayAmount = Math.round(excessGross * (overtimeRate / 100) * 100) / 100
+            } else {
+              accruedHoursRaw = excessHours * (overtimeRate / 100)
+              accruedHoursRounded = Math.round(accruedHoursRaw)
+            }
+          } else if (holidayMethod === 'rolled_up') {
             holidayPayAmount = Math.round(reviewGross * (accrualRate / 100) * 100) / 100
           } else {
             accruedHoursRaw = totalHoursWorked * (accrualRate / 100)
@@ -1025,7 +1041,22 @@ export default function AdminPayrollNew() {
           }
         }
 
-        const effectiveGross = reviewGross + holidayPayAmount
+        let cancellationCompensation = 0
+        if (isZeroHours && wtPeriod) {
+          const { data: cancLogs } = await supabase.from('shift_cancellation_log')
+            .select('id, compensation_amount')
+            .eq('company_id', selectedCompanyId).eq('employee_id', emp.id)
+            .eq('within_notice_window', true).eq('compensation_included_in_payrun', false)
+            .gte('shift_date', wtPeriod.start).lte('shift_date', wtPeriod.end)
+          if (cancLogs && cancLogs.length > 0) {
+            cancellationCompensation = cancLogs.reduce((s: number, c: any) => s + Number(c.compensation_amount), 0)
+            cancellationCompensation = Math.round(cancellationCompensation * 100) / 100
+            const cancIds = cancLogs.map((c: any) => c.id)
+            await supabase.from('shift_cancellation_log').update({ compensation_included_in_payrun: true }).in('id', cancIds)
+          }
+        }
+
+        const effectiveGross = reviewGross + holidayPayAmount + cancellationCompensation
         const annualised = effectiveGross * getPeriodsPerYear(freq)
         const annualAfterSacrifice = annualised - (benefitMonthly * 12)
         const tax = calcTax(annualAfterSacrifice, freq)
@@ -1066,6 +1097,7 @@ export default function AdminPayrollNew() {
             payroll_id: emp.payroll_id,
             overtime: Number(empReview.overtime_hours) || 0,
             holiday_pay: holidayPayAmount,
+            cancellation_compensation: cancellationCompensation,
           }).select('id').maybeSingle()
           if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
 
@@ -1382,6 +1414,24 @@ export default function AdminPayrollNew() {
         })
         .filter(h => h.amount > 0)
 
+      const { data: cancCompLogs } = await supabase.from('shift_cancellation_log')
+        .select('employee_id, shift_date, shift_hours, compensation_amount')
+        .eq('company_id', selectedCompanyId).eq('within_notice_window', true)
+        .eq('compensation_included_in_payrun', true)
+        .gte('shift_date', pStart).lte('shift_date', pEnd)
+      const cancManualItems = (cancCompLogs || [])
+        .filter(c => Number(c.compensation_amount) > 0)
+        .map(c => {
+          const emp = employees.find(e => e.id === c.employee_id)
+          const empName = emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'
+          return {
+            employee: empName,
+            type: 'cancellation_compensation' as const,
+            description: `Shift Cancellation Compensation — ${c.shift_hours}h shift on ${new Date(c.shift_date).toLocaleDateString('en-GB')} cancelled within notice window. Add £${Number(c.compensation_amount).toFixed(2)} as an additional earnings line.`,
+            amount: Number(c.compensation_amount),
+          }
+        })
+
       let xeroPushData: any = null
       if (connectedProvider === 'xero') {
         // Xero: push regular hours + overtime via API, flag unpaid leave + benefits as manual
@@ -1431,7 +1481,7 @@ export default function AdminPayrollNew() {
           skipped: data.skipped || 0,
           api: 'xero',
           timesheet_results: data.timesheet_results || [],
-          manual_items: [...(data.manual_items || []), ...bonusManualItems, ...holidayManualItems],
+          manual_items: [...(data.manual_items || []), ...bonusManualItems, ...holidayManualItems, ...cancManualItems],
           skipped_details: data.skipped_details || [],
           provider: 'xero',
         })
@@ -1468,7 +1518,7 @@ export default function AdminPayrollNew() {
           pushed: 0, failed: 0, skipped: 0, api: 'csv',
           csv_exported: rowCount, csv_items: items,
           provider: 'sage',
-          timesheet_results: [], manual_items: [...holidayManualItems], skipped_details: [],
+          timesheet_results: [], manual_items: [...holidayManualItems, ...cancManualItems], skipped_details: [],
         })
       }
 
