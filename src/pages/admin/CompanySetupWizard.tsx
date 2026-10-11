@@ -583,19 +583,24 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
 
       // 5. Create leave balances for each leave type
       if (employeeId) {
-        const allowance = row.leave_allowance ?? 15
-        const { data: leaveTypes } = await supabase.from('leave_types').select('id, deducts_from_allowance').eq('company_id', setupCompanyId)
+        const isZh = row.employment_category === 'shift_worker' && row.contract_type === 'Zero hours shift worker'
+        const allowance = isZh ? 0 : (row.leave_allowance ?? 15)
+        const { data: leaveTypes } = await supabase.from('leave_types').select('id, name, deducts_from_allowance').eq('company_id', setupCompanyId)
         if (leaveTypes && leaveTypes.length > 0) {
           const { error: leaveBalErr } = await supabase.from('leave_balances').insert(
-            leaveTypes.map(lt => ({
-              employee_id: employeeId,
-              leave_type_id: lt.id,
-              year: now.getFullYear(),
-              total_allowance: lt.deducts_from_allowance ? allowance : 0,
-              used: 0,
-              carried_over: 0,
-              company_id: setupCompanyId,
-            }))
+            leaveTypes.map(lt => {
+              const bal: Record<string, unknown> = {
+                employee_id: employeeId,
+                leave_type_id: lt.id,
+                year: now.getFullYear(),
+                total_allowance: lt.deducts_from_allowance ? allowance : 0,
+                used: 0,
+                carried_over: 0,
+                company_id: setupCompanyId,
+              }
+              if (isZh && lt.name === 'Annual Leave') bal.accrual_unit = 'hours'
+              return bal
+            })
           )
           if (leaveBalErr) errors.push(`Leave balances for ${row.firstname} ${row.surname}: ${leaveBalErr.message}`)
         }

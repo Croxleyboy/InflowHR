@@ -17,6 +17,7 @@ interface LeaveRequest {
   status: string
   reason: string | null
   created_at: string
+  unit: string | null
 }
 
 interface Employee {
@@ -68,7 +69,7 @@ export default function LeaveApproval() {
     if (!id) return
     setLoading(true)
     const { data: req } = await supabase.from('leave_requests')
-      .select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status, reason, created_at')
+      .select('id, employee_id, leave_type_id, start_date, end_date, days_requested, status, reason, created_at, unit')
       .eq('id', id)
       .eq('company_id', companyUser?.company_id)
       .single()
@@ -306,8 +307,8 @@ export default function LeaveApproval() {
             <span className="leave-detail-value">{formatDate(request.end_date)}</span>
           </div>
           <div className="leave-detail-row">
-            <span className="leave-detail-label">{t('approval.days_off')}</span>
-            <span className="leave-detail-value">{request.days_requested}</span>
+            <span className="leave-detail-label">{request.unit === 'hours' ? 'Hours off' : t('approval.days_off')}</span>
+            <span className="leave-detail-value">{request.unit === 'hours' ? `${Number(request.days_requested).toFixed(1)} hrs` : request.days_requested}</span>
           </div>
           <div className="leave-detail-row leave-detail-desc">
             <span className="leave-detail-label">{t('approval.leave_description')}</span>

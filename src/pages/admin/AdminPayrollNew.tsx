@@ -113,6 +113,8 @@ interface WorkerTypeSetting {
   id: number; company_id: string; worker_type: string
   pay_pattern: PayFrequency; overtime_handling: string; time_recording: string
   overtime_rate_multiplier: number
+  holiday_accrual_rate: number
+  holiday_pay_method: 'accrual' | 'rolled_up'
 }
 
 function getEffectiveSetting(emp: Employee, settings: WorkerTypeSetting[], field: 'pay_pattern' | 'overtime_handling' | 'time_recording'): string {
@@ -493,7 +495,7 @@ export default function AdminPayrollNew() {
     const esMap: Record<string, WorkerTypeSetting> = {}
     for (const wt of ['employed', 'shift_worker', 'zero_hours']) {
       const existing = wsList.find(s => s.worker_type === wt)
-      esMap[wt] = existing ? { ...existing } : { id: 0, company_id: selectedCompanyId!, worker_type: wt, pay_pattern: 'monthly' as PayFrequency, overtime_handling: 'none', time_recording: 'checkin', overtime_rate_multiplier: 1.5 }
+      esMap[wt] = existing ? { ...existing } : { id: 0, company_id: selectedCompanyId!, worker_type: wt, pay_pattern: 'monthly' as PayFrequency, overtime_handling: 'none', time_recording: 'checkin', overtime_rate_multiplier: 1.5, holiday_accrual_rate: 12.07, holiday_pay_method: 'rolled_up' }
     }
     setEditingSettings(esMap)
 
@@ -583,6 +585,8 @@ export default function AdminPayrollNew() {
       company_id: selectedCompanyId, worker_type: workerType,
       pay_pattern: setting.pay_pattern, overtime_handling: setting.overtime_handling,
       time_recording: setting.time_recording, overtime_rate_multiplier: setting.overtime_rate_multiplier,
+      holiday_accrual_rate: setting.holiday_accrual_rate ?? 12.07,
+      holiday_pay_method: setting.holiday_pay_method ?? 'rolled_up',
       updated_at: new Date().toISOString(),
     }, { onConflict: 'company_id,worker_type' })
     if (error) { showError('Failed to save settings: ' + error.message); setSettingsSaving(false); return }
@@ -1000,13 +1004,33 @@ export default function AdminPayrollNew() {
         }
 
         const reviewGross = Number(empReview.gross_pay)
-        const annualised = reviewGross * getPeriodsPerYear(freq)
+        const totalHoursWorked = Number(empReview.total_hours)
         const benefitMonthly = benefitCostMapMonthly[emp.id] || 0
         const benefitPeriod = prorateBenefit(benefitMonthly, freq)
+
+        const isZeroHours = emp.contract_type === 'Zero hours shift worker'
+        const zhSetting = workerSettings.find(s => s.worker_type === 'zero_hours')
+        const accrualRate = zhSetting?.holiday_accrual_rate ?? 12.07
+        const holidayMethod = zhSetting?.holiday_pay_method ?? 'rolled_up'
+        let holidayPayAmount = 0
+        let accruedHoursRaw = 0
+        let accruedHoursRounded = 0
+
+        if (isZeroHours) {
+          if (holidayMethod === 'rolled_up') {
+            holidayPayAmount = Math.round(reviewGross * (accrualRate / 100) * 100) / 100
+          } else {
+            accruedHoursRaw = totalHoursWorked * (accrualRate / 100)
+            accruedHoursRounded = Math.round(accruedHoursRaw)
+          }
+        }
+
+        const effectiveGross = reviewGross + holidayPayAmount
+        const annualised = effectiveGross * getPeriodsPerYear(freq)
         const annualAfterSacrifice = annualised - (benefitMonthly * 12)
         const tax = calcTax(annualAfterSacrifice, freq)
         const ni = calcNI(annualAfterSacrifice, freq)
-        const pen = Math.round(reviewGross * 0.05 * 100) / 100
+        const pen = Math.round(effectiveGross * 0.05 * 100) / 100
 
         // TOIL: credit lieu_days for overtime instead of paying it
         if (overtimeHandling === 'toil' && Number(empReview.overtime_hours) > 0) {
@@ -1025,24 +1049,43 @@ export default function AdminPayrollNew() {
           const paymentDate = new Date(period.end)
           paymentDate.setDate(paymentDate.getDate() + 3)
 
-          const { error } = await supabase.from('payslips').insert({
+          const { data: payslipRow, error } = await supabase.from('payslips').insert({
             employee_id: emp.id, company_id: selectedCompanyId,
             reference_number: `PAY-${nextKey}-${batch}-${String(payslipIdx).padStart(3, '0')}`,
             pay_period_start: localDateStr(period.start), pay_period_end: localDateStr(period.end),
             pay_period_type: freq,
             source_review_id: empReview.id,
             pay_run_id: payRunId,
-            gross_pay: reviewGross, tax, national_insurance: ni, pension: pen, other_deductions: 0,
+            gross_pay: effectiveGross, tax, national_insurance: ni, pension: pen, other_deductions: 0,
             monthly_deductions: benefitPeriod,
-            net_pay: (reviewGross - benefitPeriod) - tax - ni - pen,
+            net_pay: (effectiveGross - benefitPeriod) - tax - ni - pen,
             payment_date: localDateStr(paymentDate),
             status: 'draft',
             tax_code: emp.tax_code || '1257L',
             annual_salary: emp.annual_salary || 0,
             payroll_id: emp.payroll_id,
             overtime: Number(empReview.overtime_hours) || 0,
-          })
+            holiday_pay: holidayPayAmount,
+          }).select('id').maybeSingle()
           if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
+
+          if (isZeroHours && !error) {
+            await supabase.from('holiday_accrual_log').insert({
+              employee_id: emp.id, company_id: selectedCompanyId,
+              pay_period_start: localDateStr(period.start), pay_period_end: localDateStr(period.end),
+              hours_worked: totalHoursWorked, accrual_rate: accrualRate,
+              hours_accrued_raw: Math.round(accruedHoursRaw * 100) / 100,
+              hours_accrued_rounded: accruedHoursRounded,
+              holiday_pay_amount: holidayPayAmount,
+              method: holidayMethod,
+              payslip_id: payslipRow?.id || null,
+            })
+            if (holidayMethod === 'accrual' && accruedHoursRounded > 0) {
+              const periodYear = new Date(period.start).getFullYear()
+              await supabase.rpc('accrue_holiday_hours', { p_employee_id: emp.id, p_company_id: selectedCompanyId, p_year: periodYear, p_hours: accruedHoursRounded })
+            }
+          }
+
           if (freq === 'monthly') break
         }
       } else {
@@ -3219,6 +3262,36 @@ export default function AdminPayrollNew() {
                       <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Rate Multiplier</label>
                       <input className="admin-inline-input" type="number" step="0.25" min="1" max="3" value={s.overtime_rate_multiplier} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_rate_multiplier: parseFloat(e.target.value) || 1.5 } }))} />
                     </div>
+                  )}
+                  {wt === 'zero_hours' && (
+                    <>
+                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                          <h4 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Holiday Pay</h4>
+                          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#dbeafe', color: '#1e40af', fontWeight: 600 }}>UK Statutory</span>
+                        </div>
+                        <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 12px', lineHeight: 1.4 }}>
+                          Under UK Working Time Regulations 1998 (amended 2024), zero hours workers accrue paid holiday based on hours worked. The statutory minimum is 5.6 weeks (12.07% of hours worked).
+                        </p>
+                      </div>
+                      <div className="admin-form-field">
+                        <label style={{ fontSize: 12, fontWeight: 600 }}>Holiday Pay Method</label>
+                        <select className="admin-select" value={s.holiday_pay_method || 'rolled_up'} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], holiday_pay_method: e.target.value as 'accrual' | 'rolled_up' } }))}>
+                          <option value="rolled_up">Rolled-up Holiday Pay (paid on each payslip)</option>
+                          <option value="accrual">Accrual (workers take paid leave)</option>
+                        </select>
+                      </div>
+                      <div className="admin-form-field">
+                        <label style={{ fontSize: 12, fontWeight: 600 }}>Accrual Rate (%)</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input className="admin-inline-input" type="number" step="0.01" min="12.07" max="30" value={s.holiday_accrual_rate ?? 12.07} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], holiday_accrual_rate: parseFloat(e.target.value) || 12.07 } }))} style={{ width: 90 }} />
+                          <span style={{ fontSize: 11, color: '#6b7280' }}>Statutory minimum: 12.07%</span>
+                        </div>
+                        <p style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                          For enhanced contractual holiday: total holiday weeks &divide; (52 &minus; holiday weeks) &times; 100. E.g. 33 days (6.6 weeks) = 14.54%.
+                        </p>
+                      </div>
+                    </>
                   )}
                 </div>
                 <div style={{ marginTop: 12, textAlign: 'right' }}>

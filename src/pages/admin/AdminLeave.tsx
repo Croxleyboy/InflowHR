@@ -52,6 +52,10 @@ export default function AdminLeave() {
   const [managerNames, setManagerNames] = useState<Record<string, string>>({})
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [zhHolidayMethod, setZhHolidayMethod] = useState<'accrual' | 'rolled_up'>('rolled_up')
+  const [zhAccrualRate, setZhAccrualRate] = useState(12.07)
+  const [zhSettingSaving, setZhSettingSaving] = useState(false)
+  const [zhAccrualSummary, setZhAccrualSummary] = useState<{ name: string; hours_worked: number; hours_accrued: number; hours_used: number }[]>([])
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -99,13 +103,53 @@ export default function AdminLeave() {
     setSavingCarry(null)
   }
 
+  const loadZhSettings = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data: wts } = await supabase.from('worker_type_settings').select('holiday_pay_method, holiday_accrual_rate').eq('company_id', selectedCompanyId).eq('worker_type', 'zero_hours').maybeSingle()
+    if (wts) {
+      setZhHolidayMethod((wts.holiday_pay_method as 'accrual' | 'rolled_up') || 'rolled_up')
+      setZhAccrualRate(wts.holiday_accrual_rate ?? 12.07)
+    }
+    const currentYear = new Date().getFullYear()
+    const { data: zhEmps } = await supabase.from('employees').select('id, first_name, last_name').eq('company_id', selectedCompanyId).eq('employment_category', 'shift_worker').eq('contract_type', 'Zero hours shift worker').eq('is_active', true)
+    if (zhEmps && zhEmps.length > 0) {
+      const empIds = zhEmps.map((e: any) => e.id)
+      const [{ data: accrualLogs }, { data: balances }] = await Promise.all([
+        supabase.from('holiday_accrual_log').select('employee_id, hours_worked, hours_accrued_rounded').eq('company_id', selectedCompanyId).in('employee_id', empIds),
+        supabase.from('leave_balances').select('employee_id, total_allowance, used').eq('company_id', selectedCompanyId).eq('year', currentYear).eq('accrual_unit', 'hours').in('employee_id', empIds),
+      ])
+      const summary = zhEmps.map((e: any) => {
+        const empLogs = (accrualLogs || []).filter((l: any) => l.employee_id === e.id)
+        const totalWorked = empLogs.reduce((s: number, l: any) => s + Number(l.hours_worked), 0)
+        const totalAccrued = empLogs.reduce((s: number, l: any) => s + Number(l.hours_accrued_rounded), 0)
+        const bal = (balances || []).find((b: any) => b.employee_id === e.id)
+        return { name: `${e.first_name} ${e.last_name}`, hours_worked: Math.round(totalWorked * 100) / 100, hours_accrued: bal ? Number(bal.total_allowance) : totalAccrued, hours_used: bal ? Number(bal.used) : 0 }
+      })
+      setZhAccrualSummary(summary)
+    } else {
+      setZhAccrualSummary([])
+    }
+  }, [selectedCompanyId])
+
+  async function saveZhSettings() {
+    if (!selectedCompanyId) return
+    setZhSettingSaving(true)
+    const { error } = await supabase.from('worker_type_settings').upsert({
+      company_id: selectedCompanyId, worker_type: 'zero_hours',
+      holiday_pay_method: zhHolidayMethod, holiday_accrual_rate: zhAccrualRate,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,worker_type' })
+    if (error) showError('Failed to save: ' + error.message)
+    setZhSettingSaving(false)
+  }
+
   useEffect(() => {
     if (selectedCompanyId) {
-      load(); loadWeekendSetting(); loadLeaveTypeSettings()
+      load(); loadWeekendSetting(); loadLeaveTypeSettings(); loadZhSettings()
       supabase.from('companies').select('fy_start_month').eq('id', selectedCompanyId).single()
         .then(({ data }) => { if (data?.fy_start_month) setFyStartMonth(data.fy_start_month) })
     }
-  }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings])
+  }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings, loadZhSettings])
 
   async function load() {
     setLoading(true)
@@ -682,6 +726,69 @@ export default function AdminLeave() {
               ))}
             </div>
           )}
+
+          <div className="admin-weekend-toggle" style={{ marginTop: 20, padding: 16, background: '#f0f9ff', borderRadius: 8, border: '1px solid #bfdbfe' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Zero Hours Holiday Accrual</h4>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#dbeafe', color: '#1e40af', fontWeight: 600 }}>UK Statutory</span>
+            </div>
+            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 14px', lineHeight: 1.5 }}>
+              Under UK Working Time Regulations 1998 (amended 2024), zero hours workers accrue paid holiday based on hours worked. The statutory minimum is 5.6 weeks (12.07% of hours worked).
+            </p>
+
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+              <div className="admin-form-field" style={{ flex: 1, minWidth: 200 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Holiday Pay Method</label>
+                <select className="admin-select" value={zhHolidayMethod} onChange={e => setZhHolidayMethod(e.target.value as 'accrual' | 'rolled_up')}>
+                  <option value="rolled_up">Rolled-up Holiday Pay (paid on each payslip)</option>
+                  <option value="accrual">Accrual (workers take paid leave)</option>
+                </select>
+              </div>
+              <div className="admin-form-field" style={{ minWidth: 140 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Accrual Rate (%)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input className="admin-inline-input" type="number" step="0.01" min="12.07" max="30" value={zhAccrualRate} onChange={e => setZhAccrualRate(parseFloat(e.target.value) || 12.07)} style={{ width: 80, textAlign: 'center' }} />
+                  <span style={{ fontSize: 11, color: '#6b7280' }}>min 12.07%</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <button className="admin-btn admin-btn-primary" disabled={zhSettingSaving} onClick={saveZhSettings} style={{ fontSize: 12 }}>
+                  {zhSettingSaving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+
+            {zhAccrualSummary.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <h5 style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Current Accrual Summary</h5>
+                <table className="admin-table" style={{ fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th style={{ textAlign: 'right' }}>Hours Worked</th>
+                      <th style={{ textAlign: 'right' }}>Hours Accrued</th>
+                      <th style={{ textAlign: 'right' }}>Hours Used</th>
+                      <th style={{ textAlign: 'right' }}>Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {zhAccrualSummary.map(row => (
+                      <tr key={row.name}>
+                        <td>{row.name}</td>
+                        <td style={{ textAlign: 'right' }}>{row.hours_worked.toFixed(1)}</td>
+                        <td style={{ textAlign: 'right' }}>{row.hours_accrued.toFixed(1)}</td>
+                        <td style={{ textAlign: 'right' }}>{row.hours_used.toFixed(1)}</td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>{(row.hours_accrued - row.hours_used).toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {zhAccrualSummary.length === 0 && (
+              <p style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic', margin: 0 }}>No zero hours workers found in this company.</p>
+            )}
+          </div>
         </>
       )}
 

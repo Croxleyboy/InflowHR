@@ -115,6 +115,10 @@ export default function NewLeaveRequest() {
   const [shiftConflicts, setShiftConflicts] = useState<{ date: string; shiftName: string; startTime: string; endTime: string }[]>([])
   const [shiftConflictDismissed, setShiftConflictDismissed] = useState(false)
   const [showLeaveInfoPopup, setShowLeaveInfoPopup] = useState(false)
+  const [isZeroHours, setIsZeroHours] = useState(false)
+  const [zhHolidayMethod, setZhHolidayMethod] = useState<'accrual' | 'rolled_up'>('rolled_up')
+  const [zhAccrualRate, setZhAccrualRate] = useState(12.07)
+  const [zhHoursRequested, setZhHoursRequested] = useState('')
 
   useEffect(() => {
     if (!companyUser?.company_id) return
@@ -213,6 +217,27 @@ export default function NewLeaveRequest() {
               }
               setBenefitLeaveTypes(extras)
             })
+        })
+    }
+    if (EMPLOYEE_ID) {
+      supabase.from('employees')
+        .select('employment_category, contract_type')
+        .eq('id', EMPLOYEE_ID)
+        .single()
+        .then(({ data: emp }) => {
+          const zh = emp?.employment_category === 'shift_worker' && emp?.contract_type === 'Zero hours shift worker'
+          setIsZeroHours(zh)
+          if (zh && companyUser?.company_id) {
+            supabase.from('worker_type_settings')
+              .select('holiday_pay_method, holiday_accrual_rate')
+              .eq('company_id', companyUser.company_id)
+              .eq('worker_type', 'zero_hours')
+              .maybeSingle()
+              .then(({ data: wts }) => {
+                if (wts?.holiday_pay_method) setZhHolidayMethod(wts.holiday_pay_method as 'accrual' | 'rolled_up')
+                if (wts?.holiday_accrual_rate) setZhAccrualRate(Number(wts.holiday_accrual_rate))
+              })
+          }
         })
     }
   }, [companyUser?.company_id, EMPLOYEE_ID])
@@ -355,7 +380,24 @@ export default function NewLeaveRequest() {
       }
     }
 
-    if (typeDeducts && leaveBalance) {
+    if (isZeroHours && leaveType === 'Annual Leave' && zhHolidayMethod === 'rolled_up') {
+      // Rolled-up: record-keeping only, skip balance check
+    } else if (isZeroHours && leaveType === 'Annual Leave' && zhHolidayMethod === 'accrual') {
+      const hoursVal = parseFloat(zhHoursRequested || '0')
+      if (hoursVal <= 0) {
+        setError('Please enter the number of hours to use.')
+        setSubmitting(false)
+        return
+      }
+      if (leaveBalance) {
+        const remaining = leaveBalance.total - leaveBalance.used - leaveBalance.pending
+        if (hoursVal > remaining) {
+          setError(`Insufficient accrued hours. You have ${remaining.toFixed(1)} hours remaining.`)
+          setSubmitting(false)
+          return
+        }
+      }
+    } else if (typeDeducts && leaveBalance) {
       const remaining = leaveBalance.total - leaveBalance.used - leaveBalance.pending
       if (daysVal > remaining) {
         if (leaveType === 'Career Break') {
@@ -368,18 +410,22 @@ export default function NewLeaveRequest() {
       }
     }
 
+    const isZhAnnual = isZeroHours && leaveType === 'Annual Leave'
+    const insertPayload: Record<string, unknown> = {
+      employee_id: EMPLOYEE_ID,
+      leave_type_id: typeId,
+      start_date: startDate,
+      end_date: endDate,
+      days_requested: isZhAnnual ? parseFloat(zhHoursRequested || '0') || daysVal : daysVal,
+      status: 'pending',
+      reason: reason.trim() || null,
+      company_id: companyUser?.company_id,
+    }
+    if (isZhAnnual) insertPayload.unit = 'hours'
+
     const { data, error: err } = await supabase
       .from('leave_requests')
-      .insert({
-        employee_id: EMPLOYEE_ID,
-        leave_type_id: typeId,
-        start_date: startDate,
-        end_date: endDate,
-        days_requested: daysVal,
-        status: 'pending',
-        reason: reason.trim() || null,
-        company_id: companyUser?.company_id,
-      })
+      .insert(insertPayload)
       .select('id')
       .single()
 
@@ -392,7 +438,8 @@ export default function NewLeaveRequest() {
     const flagNote = careerBreakFlag ? ` ⚠️ ${t('leave.career_break_flag')}` : ''
     const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL)
 
-    const taskDesc = `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${halfDay ? ' (Half Day)' : ` (${days} days)`}${flagNote}`
+    const zhHoursVal = parseFloat(zhHoursRequested || '0')
+    const taskDesc = `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${isZhAnnual && zhHoursVal > 0 ? ` (${zhHoursVal} hrs)` : halfDay ? ' (Half Day)' : ` (${days} days)`}${flagNote}`
 
     const { error: wfError } = await supabase.from('workflow_tracker').insert({
       emp_display_name: EMPLOYEE_NAME,
@@ -558,6 +605,35 @@ export default function NewLeaveRequest() {
         {halfDay && (
           <div className="leave-half-day-info">
             <span>{t('new_leave.half_day_info')}</span>
+          </div>
+        )}
+
+        {isZeroHours && leaveType === 'Annual Leave' && zhHolidayMethod === 'rolled_up' && (
+          <div className="leave-deduction-info" style={{ background: '#e8f5e9', borderLeft: '4px solid #43a047' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2e7d32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span style={{ fontSize: 13 }}>Your holiday pay is included as a {zhAccrualRate}% uplift on each payslip. This booking is for record-keeping only — no balance will be deducted.</span>
+          </div>
+        )}
+
+        {isZeroHours && leaveType === 'Annual Leave' && zhHolidayMethod === 'accrual' && (
+          <div className="form-field">
+            <label className="field-label">Hours to use</label>
+            <input
+              type="number"
+              step="0.5"
+              min="0.5"
+              value={zhHoursRequested}
+              onChange={e => setZhHoursRequested(e.target.value)}
+              className="form-input"
+              placeholder="e.g. 4"
+            />
+            {leaveBalance && (
+              <span className="leave-days-hint">
+                {(leaveBalance.total - leaveBalance.used - leaveBalance.pending).toFixed(1)} hrs available of {leaveBalance.total.toFixed(1)} hrs accrued
+              </span>
+            )}
           </div>
         )}
 

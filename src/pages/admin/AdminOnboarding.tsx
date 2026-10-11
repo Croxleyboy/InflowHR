@@ -754,19 +754,24 @@ export default function AdminOnboarding() {
     }
 
     if (newEmp) {
-      const allowance = record.leave_allowance ?? 15
+      const isZh = record.employment_category === 'shift_worker' && record.contract_type === 'Zero hours shift worker'
+      const allowance = isZh ? 0 : (record.leave_allowance ?? 15)
       const { data: leaveTypes } = await supabase.from('leave_types').select('id, name, deducts_from_allowance').eq('company_id', selectedCompanyId)
       if (leaveTypes && leaveTypes.length > 0) {
         const year = new Date().getFullYear()
-        const balances = leaveTypes.map(lt => ({
-          employee_id: newEmp.id,
-          leave_type_id: lt.id,
-          year,
-          total_allowance: lt.deducts_from_allowance ? allowance : 0,
-          used: 0,
-          carried_over: 0,
-          company_id: selectedCompanyId,
-        }))
+        const balances = leaveTypes.map(lt => {
+          const bal: Record<string, unknown> = {
+            employee_id: newEmp.id,
+            leave_type_id: lt.id,
+            year,
+            total_allowance: lt.deducts_from_allowance ? allowance : 0,
+            used: 0,
+            carried_over: 0,
+            company_id: selectedCompanyId,
+          }
+          if (isZh && lt.name === 'Annual Leave') bal.accrual_unit = 'hours'
+          return bal
+        })
         await supabase.from('leave_balances').insert(balances)
       }
     }

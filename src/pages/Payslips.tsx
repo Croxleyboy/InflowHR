@@ -43,6 +43,7 @@ interface PayslipData {
   payroll_office: string
   source: string | null
   source_review_id: string | null
+  holiday_pay: number
 }
 
 interface PeriodReview {
@@ -336,6 +337,12 @@ export default function Payslips() {
                     <div className="payslips-row">
                       <span>Overtime ({periodReview.overtime_hours}h &times; &pound;{fmt(otRate)}/hr, {otMultiplier}&times;)</span>
                       <span>&pound;{fmt(otAmount)}</span>
+                    </div>
+                  )}
+                  {(payslip.holiday_pay || 0) > 0 && (
+                    <div className="payslips-row">
+                      <span>Holiday Pay Uplift</span>
+                      <span>&pound;{fmt(payslip.holiday_pay)}</span>
                     </div>
                   )}
                   {(payslip.adjustments || 0) !== 0 && (

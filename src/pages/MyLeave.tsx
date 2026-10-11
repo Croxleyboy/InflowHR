@@ -26,12 +26,24 @@ export default function MyLeave() {
   const [pendingCount, setPendingCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [imOffState, setImOffState] = useState<'idle' | 'sending' | 'sent'>('idle')
+  const [isZeroHours, setIsZeroHours] = useState(false)
+  const [zhHolidayMethod, setZhHolidayMethod] = useState<'accrual' | 'rolled_up'>('rolled_up')
+  const [zhAccrualRate, setZhAccrualRate] = useState(12.07)
 
   const loadData = useCallback(async () => {
     if (!EMPLOYEE_ID) return
     setLoading(true)
     const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyUser?.company_id).single()
     const { fyYear, fyStart, fyEnd } = getFYRange(co?.fy_start_month || 4)
+
+    const { data: empData } = await supabase.from('employees').select('employment_category, contract_type').eq('id', EMPLOYEE_ID).single()
+    const zh = empData?.employment_category === 'shift_worker' && empData?.contract_type === 'Zero hours shift worker'
+    setIsZeroHours(zh)
+    if (zh && companyUser?.company_id) {
+      const { data: wts } = await supabase.from('worker_type_settings').select('holiday_pay_method, holiday_accrual_rate').eq('company_id', companyUser.company_id).eq('worker_type', 'zero_hours').maybeSingle()
+      setZhHolidayMethod((wts?.holiday_pay_method as 'accrual' | 'rolled_up') || 'rolled_up')
+      setZhAccrualRate(wts?.holiday_accrual_rate ?? 12.07)
+    }
     const [balRes, pendReqRes, approvedReqRes] = await Promise.all([
       supabase
         .from('leave_balances')
@@ -211,6 +223,18 @@ export default function MyLeave() {
         </div>
       </header>
 
+      {isZeroHours && zhHolidayMethod === 'rolled_up' && (
+        <div style={{ margin: '0 0 16px', padding: 16, background: '#f0f9ff', borderRadius: 10, border: '1px solid #bfdbfe' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 14, fontWeight: 700 }}>Holiday Pay — Rolled Up</span>
+            <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#dbeafe', color: '#1e40af', fontWeight: 600 }}>UK Statutory</span>
+          </div>
+          <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.5 }}>
+            Your holiday pay is included as a {zhAccrualRate}% uplift on each payslip. You can still book time off for record-keeping — see your payslips for holiday pay details.
+          </p>
+        </div>
+      )}
+
       <div className="my-leave-summary">
         <div className="my-leave-ring-wrap">
           <svg viewBox="0 0 120 120" className="my-leave-ring">
@@ -250,23 +274,23 @@ export default function MyLeave() {
             )}
           </svg>
           <div className="my-leave-ring-center">
-            <span className="my-leave-ring-value">{remaining}</span>
-            <span className="my-leave-ring-label">{t('my_leave.remaining')}</span>
+            <span className="my-leave-ring-value">{isZeroHours ? remaining.toFixed(1) : remaining}</span>
+            <span className="my-leave-ring-label">{isZeroHours ? 'hrs remaining' : t('my_leave.remaining')}</span>
           </div>
         </div>
 
         <div className="my-leave-stats">
           <div className="my-leave-stat">
-            <span className="my-leave-stat-value">{totalEntitlement}</span>
-            <span className="my-leave-stat-label">{t('my_leave.entitlement')}</span>
+            <span className="my-leave-stat-value">{isZeroHours ? totalEntitlement.toFixed(1) : totalEntitlement}</span>
+            <span className="my-leave-stat-label">{isZeroHours ? 'Accrued (hrs)' : t('my_leave.entitlement')}</span>
           </div>
           <div className="my-leave-stat">
-            <span className="my-leave-stat-value">{totalUsed}</span>
-            <span className="my-leave-stat-label">{t('my_leave.used')}</span>
+            <span className="my-leave-stat-value">{isZeroHours ? totalUsed.toFixed(1) : totalUsed}</span>
+            <span className="my-leave-stat-label">{isZeroHours ? 'Used (hrs)' : t('my_leave.used')}</span>
           </div>
           <div className="my-leave-stat">
-            <span className="my-leave-stat-value my-leave-stat-pending">{pendingCount}</span>
-            <span className="my-leave-stat-label">{t('my_leave.pending_days')}</span>
+            <span className="my-leave-stat-value my-leave-stat-pending">{isZeroHours ? pendingCount.toFixed(1) : pendingCount}</span>
+            <span className="my-leave-stat-label">{isZeroHours ? 'Pending (hrs)' : t('my_leave.pending_days')}</span>
           </div>
           {primaryCarried > 0 && (
             <div className="my-leave-stat">
