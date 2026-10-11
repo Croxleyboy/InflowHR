@@ -989,15 +989,25 @@ export default function AdminOnboarding() {
               </div>
               <div className="admin-form-field">
                 <label>Employment Category</label>
-                <select className="admin-select" value={newForm.employment_category} onChange={e => setNewForm(p => ({...p, employment_category: e.target.value}))}>
+                <select className="admin-select" value={newForm.employment_category === 'shift_worker' && newForm.contract_type === 'Zero hours shift worker' ? 'zero_hours' : newForm.employment_category} onChange={e => {
+                  const val = e.target.value
+                  if (val === 'zero_hours') {
+                    setNewForm(p => ({...p, employment_category: 'shift_worker', contract_type: 'Zero hours shift worker', weekly_hours: '0', leave_allowance: '0'}))
+                  } else if (val === 'shift_worker') {
+                    setNewForm(p => ({...p, employment_category: 'shift_worker', contract_type: p.contract_type === 'Zero hours shift worker' ? 'Full-time' : p.contract_type, weekly_hours: p.weekly_hours === '0' ? '37.5' : p.weekly_hours, leave_allowance: p.leave_allowance === '0' ? '' : p.leave_allowance}))
+                  } else {
+                    setNewForm(p => ({...p, employment_category: val, weekly_hours: p.weekly_hours === '0' ? '37.5' : p.weekly_hours, leave_allowance: p.leave_allowance === '0' ? '' : p.leave_allowance}))
+                  }
+                }}>
                   <option value="employed">Employed (Salaried)</option>
                   <option value="shift_worker">Shift Worker</option>
+                  <option value="zero_hours">Zero Hours</option>
                 </select>
                 <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
                   {newForm.employment_category === 'employed'
                     ? 'Paid a fixed salary divided by pay period. Uses timesheets for time recording.'
                     : newForm.contract_type === 'Zero hours shift worker'
-                      ? 'Zero hours — no guaranteed hours, paid per shift worked × hourly rate.'
+                      ? 'Zero hours — no guaranteed hours, paid per shift worked × hourly rate. Leave allowance and weekly hours set to 0.'
                       : 'Works scheduled shifts, paid based on hours worked × hourly rate.'
                   }
                 </div>
@@ -1079,8 +1089,11 @@ export default function AdminOnboarding() {
                 <input className="admin-input" value={newForm.payroll_id} onChange={e => setNewForm(p => ({...p, payroll_id: e.target.value}))} />
               </div>
               <div className="admin-form-field">
-                <label>Leave Allowance (days)</label>
-                <input type="number" className="admin-input" placeholder="15" value={newForm.leave_allowance} onChange={e => setNewForm(p => ({...p, leave_allowance: e.target.value}))} />
+                <label>{newForm.contract_type === 'Zero hours shift worker' ? 'Leave Allowance (hours — accrued)' : 'Leave Allowance (days)'}</label>
+                <input type="number" className="admin-input" placeholder={newForm.contract_type === 'Zero hours shift worker' ? '0' : '15'} value={newForm.leave_allowance} onChange={e => setNewForm(p => ({...p, leave_allowance: e.target.value}))} readOnly={newForm.contract_type === 'Zero hours shift worker'} style={newForm.contract_type === 'Zero hours shift worker' ? { background: '#f5f5f5', cursor: 'default' } : {}} />
+                {newForm.contract_type === 'Zero hours shift worker' && (
+                  <div style={{ fontSize: 11, color: '#1565c0', marginTop: 2 }}>Zero hours workers start with 0 hours and accrue holiday based on hours worked.</div>
+                )}
               </div>
             </div>
           </fieldset>

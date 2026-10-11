@@ -113,7 +113,7 @@ export default function NewLeaveRequest() {
   const [employeeLieuDays, setEmployeeLieuDays] = useState(0)
   const [showLieuPopup, setShowLieuPopup] = useState(false)
   const [shiftConflicts, setShiftConflicts] = useState<{ date: string; shiftName: string; startTime: string; endTime: string }[]>([])
-  const [shiftConflictDismissed, setShiftConflictDismissed] = useState(false)
+  const [workingToday, setWorkingToday] = useState(false)
   const [showLeaveInfoPopup, setShowLeaveInfoPopup] = useState(false)
   const [isZeroHours, setIsZeroHours] = useState(false)
   const [zhHolidayMethod, setZhHolidayMethod] = useState<'accrual' | 'rolled_up'>('rolled_up')
@@ -274,7 +274,6 @@ export default function NewLeaveRequest() {
 
   useEffect(() => {
     if (!EMPLOYEE_ID || !companyUser?.company_id) return
-    setShiftConflictDismissed(false)
     const sd = startDate
     const ed = halfDay ? startDate : endDate
     supabase
@@ -296,6 +295,20 @@ export default function NewLeaveRequest() {
           }))
         setShiftConflicts(conflicts)
       })
+    const today = todayStr()
+    if (sd <= today && ed >= today) {
+      supabase
+        .from('checkin_records')
+        .select('id')
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('company_id', companyUser.company_id)
+        .eq('date', today)
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => setWorkingToday(!!data))
+    } else {
+      setWorkingToday(false)
+    }
   }, [startDate, endDate, halfDay, EMPLOYEE_ID, companyUser?.company_id])
 
   function translateLeaveType(name: string): string {
@@ -671,16 +684,27 @@ export default function NewLeaveRequest() {
           />
         </div>
 
-        {shiftConflicts.length > 0 && !shiftConflictDismissed && (
+        {workingToday && (
           <div className="leave-shift-conflict-warning">
             <div className="leave-shift-conflict-header">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
               </svg>
-              <span>Shift Conflict</span>
+              <span>Already Working Today</span>
             </div>
-            <p className="leave-shift-conflict-text">You have shifts assigned on the following dates. If approved, your manager will need to resolve the scheduling conflict.</p>
+            <p className="leave-shift-conflict-text">You cannot submit time off for today because you have already checked in for work. Please speak to your manager if you need to leave early.</p>
+          </div>
+        )}
+
+        {shiftConflicts.length > 0 && (
+          <div className="leave-shift-conflict-warning">
+            <div className="leave-shift-conflict-header">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+              </svg>
+              <span>Shift Conflict — Submission Blocked</span>
+            </div>
+            <p className="leave-shift-conflict-text">You have shifts assigned on the following dates. You must swap or cancel your shifts before booking time off. Please use the Shift Swap feature or speak to your manager.</p>
             <div className="leave-shift-conflict-list">
               {shiftConflicts.map((c, i) => (
                 <div key={i} className="leave-shift-conflict-item">
@@ -689,7 +713,6 @@ export default function NewLeaveRequest() {
                 </div>
               ))}
             </div>
-            <button className="leave-shift-conflict-dismiss" onClick={() => setShiftConflictDismissed(true)}>I understand, continue</button>
           </div>
         )}
 
@@ -699,7 +722,7 @@ export default function NewLeaveRequest() {
           className="new-leave-submit-btn"
           style={{ background: `linear-gradient(135deg, ${selectedColor}, ${selectedColor}dd)` }}
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || shiftConflicts.length > 0 || workingToday}
         >
           {submitting ? t('new_leave.submitting') : t('new_leave.submit')}
         </button>
