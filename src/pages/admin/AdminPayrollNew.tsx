@@ -188,6 +188,7 @@ interface Employee {
   time_recording_override: string | null; is_payroll_exception: boolean | null
   weekly_hours: number | null
   bonus_amount: number | null; bonus_frequency: string | null
+  guaranteed_hours_approved: boolean | null; guaranteed_weekly_hours: number | null
 }
 
 interface AuditLogEntry {
@@ -1019,7 +1020,7 @@ export default function AdminPayrollNew() {
         if (isZeroHours) {
           if (emp.guaranteed_hours_approved && Number(emp.guaranteed_weekly_hours) > 0) {
             const guaranteedWeekly = Number(emp.guaranteed_weekly_hours)
-            const weeksInPeriod = freq === 'monthly' ? 52 / 12 : freq === 'fortnightly' ? 2 : 1
+            const weeksInPeriod = freq === 'monthly' ? 52 / 12 : freq === 'bi_weekly' ? 2 : 1
             const guaranteedHours = guaranteedWeekly * weeksInPeriod
             const excessHours = Math.max(0, totalHoursWorked - guaranteedHours)
             const { data: zhcSettings } = await supabase.from('zero_hours_compliance_settings')
