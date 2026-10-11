@@ -36,7 +36,7 @@ const SECTIONS: GuideSection[] = [
   {
     icon: '💷', title: 'Payslips',
     features: [
-      { title: 'View Payslips', purpose: 'Access your monthly payslip breakdown.', steps: ['Navigate to Home > Payslips.', 'Payslips are listed by financial-year month. Tap any month to expand the full breakdown: gross pay, tax, National Insurance, pension, and net pay.'] },
+      { title: 'View Payslips', purpose: 'Access your payslip breakdown for each pay period.', steps: ['Navigate to Home > Payslips.', 'Payslips are listed by financial-year month. Tap any month to expand the full breakdown: gross pay, tax, National Insurance, pension, and net pay.', 'If you are paid weekly or bi-weekly, multiple payslips may appear within a single month — each showing the specific period dates (e.g. 01/10/2026 – 07/10/2026).', 'Shift and zero-hours workers see hours worked and hourly rate alongside the gross pay calculation.'] },
       { title: 'Year-to-Date Summary', purpose: 'See cumulative earnings and deductions for the current financial year.', steps: ['The YTD summary is displayed at the top of the Payslips page.'] },
     ],
   },

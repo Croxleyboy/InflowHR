@@ -62,11 +62,12 @@ const SECTIONS: FeatureSection[] = [
     title: 'Payroll & Payslips',
     icon: '💰',
     faqs: [
-      { q: 'Where can I view my payslips?', a: 'Go to Payslips from the main menu. All your payslips are listed by month with gross pay, deductions (tax, NI, pension) and net pay clearly displayed.' },
+      { q: 'Where can I view my payslips?', a: 'Go to Payslips from the main menu. All your payslips are listed by month with gross pay, deductions (tax, NI, pension) and net pay clearly displayed. If you are paid weekly or bi-weekly, you will see multiple payslips per month, each with specific period dates.' },
       { q: 'Can I download my payslip?', a: 'Yes — click on any payslip to view the full breakdown, then use the Download button to save it as a PDF for your records.' },
       { q: 'What do the deductions mean?', a: 'Tax is your income tax (based on your tax code), NI is National Insurance, and Pension is your workplace pension contribution. Your payslip shows each amount separately.' },
+      { q: 'I\'m a shift worker — how is my pay calculated?', a: 'Your gross pay is calculated from your approved check-in hours multiplied by your hourly rate. Overtime hours above your contracted weekly hours are paid at your overtime rate (typically 1.5x). You can see the hours breakdown on each payslip.' },
       { q: 'My payslip seems incorrect — what should I do?', a: 'Contact your company admin or payroll team immediately. They can review the calculation and issue a correction if needed.' },
-      { q: 'When are payslips available?', a: 'Payslips are typically available a few days before or on your pay date. You\'ll receive a notification when a new payslip is ready to view.' },
+      { q: 'When are payslips available?', a: 'Payslips are typically available a few days before or on your pay date. You\'ll receive a notification when a new payslip is ready to view. Draft payslips are hidden until your admin releases them.' },
     ],
   },
   {
@@ -121,7 +122,7 @@ const SECTIONS: FeatureSection[] = [
     icon: '📅',
     faqs: [
       { q: 'Where can I see my shift schedule?', a: 'Go to Shifts from the main menu. Your upcoming shifts are shown in a calendar view with start time, end time and location.' },
-      { q: 'Can I swap a shift with a colleague?', a: 'Shift swaps depend on your company\'s policy. Contact your manager or admin to arrange a swap — they can update the schedule in the system.' },
+      { q: 'Can I swap a shift with a colleague?', a: 'Yes — go to My Shifts and tap the swap icon on the shift you want to swap. Select an available colleague and their shift. They will receive a notification to accept or decline. Once they accept, your manager or admin reviews and approves the swap. Both shifts are updated automatically once approved.' },
       { q: 'How do I report that I can\'t make a shift?', a: 'Notify your manager as soon as possible. If the absence is due to illness, submit a sick leave request through the Leave feature.' },
     ],
   },

@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useFeatures } from '../../context/FeatureContext'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
 
 interface SetupStep {
   number: number
@@ -50,11 +52,11 @@ const SETUP_STEPS: SetupStep[] = [
   },
   {
     number: 5,
-    title: 'Connect Payroll & Xero',
-    summary: 'Link to Xero for payslips or use manual payslip management.',
-    details: 'On the Payroll page, decide if you want to connect to Xero for automated payslip delivery. If yes, switch the payslip source to Xero and navigate to the Xero Pay page to progress through the connection wizard. Follow the User Guide for detailed payslip management instructions. If not using Xero, payslips can be managed manually through the upload feature.',
+    title: 'Connect Payroll Provider',
+    summary: 'Link Xero or Sage for payslips, or run payroll in standalone mode.',
+    details: 'Navigate to Admin > Integrations and connect your payroll provider — Xero or Sage — using the Configure button on the relevant card. Both are included in the Core subscription at no extra cost. Once connected, the payroll wizard enters Connected mode automatically: it pushes overtime and variable hours to your provider and guides you through manual items. If you do not connect a provider, the wizard runs in Standalone mode and generates estimate payslips with approximate tax/NI (not HMRC-certified). See the User Guide Payroll section for the full connected vs standalone walkthrough.',
     icon: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/>',
-    page: '/admin/payroll',
+    page: '/admin/integrations',
     optional: true,
     feature: 'payslips',
   },
@@ -162,7 +164,36 @@ function getPhase(stepNum: number) {
 export default function AdminGettingSetup() {
   const navigate = useNavigate()
   const { features } = useFeatures()
+  const { selectedCompanyId } = useAuth()
   const [expandedStep, setExpandedStep] = useState<number | null>(null)
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set())
+
+  const loadProgress = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase
+      .from('companies')
+      .select('setup_progress')
+      .eq('id', selectedCompanyId)
+      .single()
+    if (data?.setup_progress?.completed) {
+      setCompletedSteps(new Set(data.setup_progress.completed))
+    }
+  }, [selectedCompanyId])
+
+  useEffect(() => { loadProgress() }, [loadProgress])
+
+  async function toggleStep(stepNum: number) {
+    const next = new Set(completedSteps)
+    if (next.has(stepNum)) next.delete(stepNum)
+    else next.add(stepNum)
+    setCompletedSteps(next)
+    if (selectedCompanyId) {
+      await supabase
+        .from('companies')
+        .update({ setup_progress: { completed: Array.from(next) } })
+        .eq('id', selectedCompanyId)
+    }
+  }
 
   const visibleSteps = SETUP_STEPS.filter(s => {
     if (!s.feature) return true
@@ -170,6 +201,8 @@ export default function AdminGettingSetup() {
   })
 
   const totalSteps = visibleSteps.length
+  const completedCount = visibleSteps.filter(s => completedSteps.has(s.number)).length
+  const progressPct = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0
   let currentPhaseLabel = ''
 
   return (
@@ -177,6 +210,26 @@ export default function AdminGettingSetup() {
       <div className="admin-page-header">
         <h1>Getting Setup</h1>
         <p className="admin-page-subtitle">Follow these steps to get your company ready to use InflowHR</p>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>
+            {completedCount} of {totalSteps} steps completed
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: progressPct === 100 ? '#16a34a' : 'var(--text, #666)' }}>
+            {progressPct}%
+          </span>
+        </div>
+        <div style={{ height: 8, borderRadius: 4, background: 'var(--border, #e5e7eb)', overflow: 'hidden' }}>
+          <div style={{
+            height: '100%', borderRadius: 4,
+            width: `${progressPct}%`,
+            background: progressPct === 100 ? '#16a34a' : 'linear-gradient(90deg, #2563eb, #7c3aed)',
+            transition: 'width 0.4s ease',
+          }} />
+        </div>
       </div>
 
       {/* Phase legend */}
@@ -280,6 +333,25 @@ export default function AdminGettingSetup() {
                     padding: '14px 16px',
                     display: 'flex', alignItems: 'center', gap: 12,
                   }}>
+                    {/* Completion checkbox */}
+                    <div
+                      onClick={(e) => { e.stopPropagation(); toggleStep(step.number) }}
+                      style={{
+                        width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                        border: completedSteps.has(step.number) ? 'none' : `2px solid var(--border, #d1d5db)`,
+                        background: completedSteps.has(step.number) ? '#16a34a' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer', transition: 'all 0.2s ease',
+                      }}
+                    >
+                      {completedSteps.has(step.number) && (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                          stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </div>
+
                     {/* Step icon */}
                     <div style={{
                       width: 36, height: 36, borderRadius: 8,
