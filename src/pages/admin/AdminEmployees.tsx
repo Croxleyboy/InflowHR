@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
@@ -66,6 +67,7 @@ interface Employee {
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function AdminEmployees() {
+  const navigate = useNavigate()
   const { selectedCompanyId } = useAdminCompany()
   const { showError, showSuccess } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -84,7 +86,7 @@ export default function AdminEmployees() {
   const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
   const [lieuDays, setLieuDays] = useState<Record<string, { balanceId: number; lieu_days: number }>>({})
   const [editLieuDays, setEditLieuDays] = useState<number>(0)
-  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart' | 'settings' | 'custom_fields'>('management')
+  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart' | 'settings' | 'custom_fields'>('records')
   const [recordsSearch, setRecordsSearch] = useState('')
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
@@ -887,294 +889,16 @@ export default function AdminEmployees() {
 
       {activeTab === 'settings' && (
         <div className="admin-settings-section">
-          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
-            Set company-wide defaults for how each worker type records time, gets paid, and handles overtime.
-            Individual employees can be overridden in their profile — overridden employees become exceptions and won't change when you update these defaults.
-          </p>
-
-          {/* Employed / Salaried Staff */}
-          {(() => {
-            const wt = 'employed'
-            const s = editingSettings[wt]
-            if (!s) return null
-            const empCount = employees.filter(e => e.is_active && e.employment_category === 'employed').length
-            const exceptionCount = employees.filter(e => e.is_active && e.employment_category === 'employed' && e.is_payroll_exception).length
-            return (
-              <div className="admin-settings-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <div>
-                    <h3 style={{ margin: 0 }}>Employed / Salaried Staff</h3>
-                    <span style={{ fontSize: 12, color: '#6b7280' }}>
-                      {empCount} employee{empCount !== 1 ? 's' : ''}
-                      {exceptionCount > 0 && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>}
-                    </span>
-                  </div>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#3b82f6' }} />
-                </div>
-                <div className="admin-detail-grid admin-detail-grid-3">
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>Pay Pattern</label>
-                    <select className="admin-select" value={s.pay_pattern} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], pay_pattern: e.target.value } }))}>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </div>
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Handling</label>
-                    <select className="admin-select" value={s.overtime_handling} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_handling: e.target.value } }))}>
-                      <option value="none">None</option>
-                      <option value="overtime">Overtime (Paid)</option>
-                      <option value="toil">TOIL (Time Off in Lieu)</option>
-                    </select>
-                  </div>
-                  {s.overtime_handling === 'overtime' && (
-                    <div className="admin-form-field">
-                      <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Rate Multiplier</label>
-                      <input className="admin-inline-input" type="number" step="0.25" min="1" max="3" value={s.overtime_rate_multiplier} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_rate_multiplier: parseFloat(e.target.value) || 1.5 } }))} />
-                    </div>
-                  )}
-                </div>
-                <div style={{ marginTop: 12, textAlign: 'right' }}>
-                  <button className="admin-btn admin-btn-primary" disabled={settingsSaving} onClick={() => saveWorkerTypeSettings(wt)}>
-                    {settingsSaving ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Employed Shift Workers */}
-          {(() => {
-            const wt = 'shift_worker'
-            const s = editingSettings[wt]
-            if (!s) return null
-            const empCount = employees.filter(e => e.is_active && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker').length
-            const exceptionCount = employees.filter(e => e.is_active && e.employment_category === 'shift_worker' && e.contract_type !== 'Zero hours shift worker' && e.is_payroll_exception).length
-            return (
-              <div className="admin-settings-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <div>
-                    <h3 style={{ margin: 0 }}>Employed Shift Workers</h3>
-                    <span style={{ fontSize: 12, color: '#6b7280' }}>
-                      {empCount} employee{empCount !== 1 ? 's' : ''}
-                      {exceptionCount > 0 && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>}
-                    </span>
-                  </div>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#8b5cf6' }} />
-                </div>
-                <div className="admin-detail-grid admin-detail-grid-3">
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>Time Recording</label>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-                      <button
-                        type="button"
-                        onClick={() => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], time_recording: 'checkin' } }))}
-                        style={{ padding: '6px 14px', borderRadius: 6, border: s.time_recording === 'checkin' ? '2px solid #8b5cf6' : '1px solid #d1d5db', background: s.time_recording === 'checkin' ? '#ede9fe' : '#fff', color: s.time_recording === 'checkin' ? '#6d28d9' : '#6b7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                      >Check-in</button>
-                      <button
-                        type="button"
-                        onClick={() => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], time_recording: 'timesheet' } }))}
-                        style={{ padding: '6px 14px', borderRadius: 6, border: s.time_recording === 'timesheet' ? '2px solid #8b5cf6' : '1px solid #d1d5db', background: s.time_recording === 'timesheet' ? '#ede9fe' : '#fff', color: s.time_recording === 'timesheet' ? '#6d28d9' : '#6b7280', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
-                      >Timesheets</button>
-                    </div>
-                  </div>
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>Pay Pattern</label>
-                    <select className="admin-select" value={s.pay_pattern} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], pay_pattern: e.target.value } }))}>
-                      <option value="weekly">Weekly</option>
-                      <option value="bi_weekly">Bi-weekly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </div>
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Handling</label>
-                    <select className="admin-select" value={s.overtime_handling} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_handling: e.target.value } }))}>
-                      <option value="none">None</option>
-                      <option value="overtime">Overtime (Paid)</option>
-                      <option value="toil">TOIL (Time Off in Lieu)</option>
-                    </select>
-                  </div>
-                  {s.overtime_handling === 'overtime' && (
-                    <div className="admin-form-field">
-                      <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Rate Multiplier</label>
-                      <input className="admin-inline-input" type="number" step="0.25" min="1" max="3" value={s.overtime_rate_multiplier} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_rate_multiplier: parseFloat(e.target.value) || 1.5 } }))} />
-                    </div>
-                  )}
-                </div>
-                <div style={{ marginTop: 12, textAlign: 'right' }}>
-                  <button className="admin-btn admin-btn-primary" disabled={settingsSaving} onClick={() => saveWorkerTypeSettings(wt)}>
-                    {settingsSaving ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Zero Hours Workers */}
-          {(() => {
-            const wt = 'zero_hours'
-            const s = editingSettings[wt]
-            if (!s) return null
-            const empCount = employees.filter(e => e.is_active && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker').length
-            const exceptionCount = employees.filter(e => e.is_active && e.employment_category === 'shift_worker' && e.contract_type === 'Zero hours shift worker' && e.is_payroll_exception).length
-            return (
-              <div className="admin-settings-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <div>
-                    <h3 style={{ margin: 0 }}>Zero Hours Workers</h3>
-                    <span style={{ fontSize: 12, color: '#6b7280' }}>
-                      {empCount} employee{empCount !== 1 ? 's' : ''}
-                      {exceptionCount > 0 && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{exceptionCount} exception{exceptionCount !== 1 ? 's' : ''}</span>}
-                    </span>
-                  </div>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} />
-                </div>
-                <div className="admin-detail-grid admin-detail-grid-3">
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>Pay Pattern</label>
-                    <select className="admin-select" value={s.pay_pattern} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], pay_pattern: e.target.value } }))}>
-                      <option value="weekly">Weekly</option>
-                      <option value="bi_weekly">Bi-weekly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </div>
-                  <div className="admin-form-field">
-                    <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Handling</label>
-                    <select className="admin-select" value={s.overtime_handling} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_handling: e.target.value } }))}>
-                      <option value="none">None</option>
-                      <option value="overtime">Overtime (Paid)</option>
-                      <option value="toil">TOIL (Time Off in Lieu)</option>
-                    </select>
-                  </div>
-                  {s.overtime_handling === 'overtime' && (
-                    <div className="admin-form-field">
-                      <label style={{ fontSize: 12, fontWeight: 600 }}>Overtime Rate Multiplier</label>
-                      <input className="admin-inline-input" type="number" step="0.25" min="1" max="3" value={s.overtime_rate_multiplier} onChange={e => setEditingSettings(p => ({ ...p, [wt]: { ...p[wt], overtime_rate_multiplier: parseFloat(e.target.value) || 1.5 } }))} />
-                    </div>
-                  )}
-                </div>
-                <div style={{ marginTop: 12, textAlign: 'right' }}>
-                  <button className="admin-btn admin-btn-primary" disabled={settingsSaving} onClick={() => saveWorkerTypeSettings(wt)}>
-                    {settingsSaving ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Exception / Change Log */}
-          {changeLog.length > 0 && (
-            <div className="admin-settings-group">
-              <h3>Settings Change Log</h3>
-              <p style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>
-                Shows when company defaults changed and how many employees were exceptions (not updated).
-              </p>
-              <table className="admin-table" style={{ fontSize: 12 }}>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Worker Type</th>
-                    <th>Setting</th>
-                    <th>Changed From</th>
-                    <th>Changed To</th>
-                    <th>Exceptions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {changeLog.map(log => (
-                    <tr key={log.id}>
-                      <td>{new Date(log.created_at).toLocaleDateString('en-GB')}</td>
-                      <td style={{ textTransform: 'capitalize' }}>{log.worker_type.replace('_', ' ')}</td>
-                      <td style={{ textTransform: 'capitalize' }}>{log.setting_name.replace(/_/g, ' ')}</td>
-                      <td>{log.old_value?.replace('_', '-') || '—'}</td>
-                      <td>{log.new_value?.replace('_', '-') || '—'}</td>
-                      <td>
-                        {log.exception_count > 0 ? (
-                          <span style={{ padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600 }}>{log.exception_count}</span>
-                        ) : (
-                          <span style={{ color: '#9ca3af' }}>0</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Impact Assessment Modal */}
-          {impactModal.open && (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-              <div style={{ background: 'var(--bg, #fff)', borderRadius: 12, padding: 24, maxWidth: 520, width: '90vw', maxHeight: '85vh', overflowY: 'auto' }}>
-                <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" style={{ verticalAlign: -3, marginRight: 6 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                  Payroll Settings Impact Assessment
-                </h3>
-                <p style={{ fontSize: 13, color: 'var(--text-muted, #6b7280)', margin: '0 0 16px' }}>
-                  Changing payroll settings affects how employees are paid. Please review the impact carefully.
-                </p>
-
-                {(() => {
-                  const now = new Date()
-                  const hour = now.getHours()
-                  const day = now.getDay()
-                  const isBusinessHours = day >= 1 && day <= 5 && hour >= 9 && hour < 17
-                  return isBusinessHours ? (
-                    <div style={{ background: '#fff3e0', borderRadius: 8, padding: 12, marginBottom: 14, display: 'flex', gap: 10 }}>
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                      <div style={{ fontSize: 13 }}>
-                        <strong style={{ color: '#e65100' }}>Out-of-hours recommended</strong>
-                        <p style={{ margin: '4px 0 0', color: '#bf360c', fontSize: 12 }}>
-                          This change is recommended to be made outside of business hours (before 09:00 or after 17:00, or at weekends) to minimise disruption to payroll processing.
-                        </p>
-                      </div>
-                    </div>
-                  ) : null
-                })()}
-
-                <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 14, marginBottom: 14 }}>
-                  <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 8px', textTransform: 'capitalize' }}>
-                    {impactModal.workerType.replace('_', ' ')} — Changes
-                  </p>
-                  {impactModal.changes.map(c => (
-                    <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                      <span style={{ textTransform: 'capitalize' }}>{c.name.replace(/_/g, ' ')}</span>
-                      <span><span style={{ textDecoration: 'line-through', color: 'var(--text-muted, #999)' }}>{c.oldVal.replace('_', '-')}</span> → <strong>{c.newVal.replace('_', '-')}</strong></span>
-                    </div>
-                  ))}
-                  <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', marginTop: 8, paddingTop: 8, fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>
-                    <p style={{ margin: '0 0 2px' }}><strong>{impactModal.affectedCount}</strong> employee(s) will be affected by this change</p>
-                    {impactModal.exceptionCount > 0 && (
-                      <p style={{ margin: 0 }}><strong>{impactModal.exceptionCount}</strong> employee(s) have individual overrides and will not be changed</p>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Effective Date</label>
-                  <input type="date" value={impactModal.effectiveDate} onChange={e => setImpactModal(prev => ({ ...prev, effectiveDate: e.target.value }))}
-                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', fontSize: 13, width: '100%' }}
-                  />
-                  <p style={{ fontSize: 11, color: 'var(--text-muted, #999)', margin: '4px 0 0' }}>When this change takes effect for payroll calculations</p>
-                </div>
-
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Type CONFIRM to proceed</label>
-                  <input type="text" value={impactModal.confirmText} onChange={e => setImpactModal(prev => ({ ...prev, confirmText: e.target.value }))}
-                    placeholder="CONFIRM" autoComplete="off"
-                    style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border, #d1d5db)', fontSize: 13, width: '100%' }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                  <button className="admin-btn" onClick={() => setImpactModal(prev => ({ ...prev, open: false }))}>Cancel</button>
-                  <button className="admin-btn admin-btn-primary" disabled={impactModal.confirmText !== 'CONFIRM' || settingsSaving} onClick={confirmSaveWorkerTypeSettings}>
-                    {settingsSaving ? 'Saving...' : 'Apply Changes'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="1.5" style={{ marginBottom: 16 }}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <h3 style={{ margin: '0 0 8px', fontSize: 16 }}>Payroll Settings have moved</h3>
+            <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
+              Pay patterns, overtime handling, and worker type settings are now managed from the Payroll dashboard.
+            </p>
+            <button className="admin-btn admin-btn-primary" onClick={() => navigate('/admin/payroll')}>
+              Go to Payroll Settings →
+            </button>
+          </div>
         </div>
       )}
 
