@@ -412,21 +412,50 @@ export default function AdminPayrollNew() {
       const gross = t.payslips.reduce((s, p) => s + Number(p.gross_pay), 0)
       const net = t.payslips.reduce((s, p) => s + Number(p.net_pay), 0)
 
+      const wtSettingKey = t.key === 'shift' ? 'shift_worker' : t.key
+      const wtSetting = workerSettings.find(s => s.worker_type === wtSettingKey)
+      const payFreq = wtSetting?.pay_pattern || 'monthly'
+      const isShiftType = t.key === 'shift' || t.key === 'zero_hours'
+
       let nextPayDate: Date
-      if (t.key === 'employed') nextPayDate = getPayDay(now.getFullYear(), now.getMonth(), payDayMode, customPayDay)
-      else if (t.key === 'shift') nextPayDate = getPayDay(now.getFullYear(), now.getMonth(), shiftPayDayMode, shiftCustomPayDay)
-      else nextPayDate = getPayDay(now.getFullYear(), now.getMonth(), zeroHrsPayDayMode, zeroHrsCustomPayDay)
-      if (nextPayDate < now) {
-        const nextMonth = now.getMonth() + 1
-        const nextYear = nextMonth > 11 ? now.getFullYear() + 1 : now.getFullYear()
-        if (t.key === 'employed') nextPayDate = getPayDay(nextYear, nextMonth % 12, payDayMode, customPayDay)
-        else if (t.key === 'shift') nextPayDate = getPayDay(nextYear, nextMonth % 12, shiftPayDayMode, shiftCustomPayDay)
-        else nextPayDate = getPayDay(nextYear, nextMonth % 12, zeroHrsPayDayMode, zeroHrsCustomPayDay)
+      let currentPeriodStart = ''
+      let currentPeriodEnd = ''
+      let processingWindowStart = ''
+      let processingWindowEnd = ''
+
+      if (isShiftType && payFreq !== 'monthly') {
+        const lastRun = lastPayRuns[t.key]
+        const period = getNextPeriodForFreq(payFreq, fyStartMonth, lastRun || null)
+        currentPeriodStart = period.start
+        currentPeriodEnd = period.end
+
+        const periodEndDate = new Date(period.end + 'T00:00:00')
+        const procStart = new Date(periodEndDate)
+        procStart.setDate(procStart.getDate() + 1)
+        while (procStart.getDay() === 0 || procStart.getDay() === 6) procStart.setDate(procStart.getDate() + 1)
+        const procEnd = new Date(procStart)
+        procEnd.setDate(procEnd.getDate() + 4)
+        while (procEnd.getDay() === 0 || procEnd.getDay() === 6) procEnd.setDate(procEnd.getDate() + 1)
+
+        processingWindowStart = localDateStr(procStart)
+        processingWindowEnd = localDateStr(procEnd)
+        nextPayDate = procEnd
+      } else {
+        if (t.key === 'employed') nextPayDate = getPayDay(now.getFullYear(), now.getMonth(), payDayMode, customPayDay)
+        else if (t.key === 'shift') nextPayDate = getPayDay(now.getFullYear(), now.getMonth(), shiftPayDayMode, shiftCustomPayDay)
+        else nextPayDate = getPayDay(now.getFullYear(), now.getMonth(), zeroHrsPayDayMode, zeroHrsCustomPayDay)
+        if (nextPayDate < now) {
+          const nextMonth = now.getMonth() + 1
+          const nextYear = nextMonth > 11 ? now.getFullYear() + 1 : now.getFullYear()
+          if (t.key === 'employed') nextPayDate = getPayDay(nextYear, nextMonth % 12, payDayMode, customPayDay)
+          else if (t.key === 'shift') nextPayDate = getPayDay(nextYear, nextMonth % 12, shiftPayDayMode, shiftCustomPayDay)
+          else nextPayDate = getPayDay(nextYear, nextMonth % 12, zeroHrsPayDayMode, zeroHrsCustomPayDay)
+        }
       }
 
-      return { ...t, status, gross, net, nextPayDate }
+      return { ...t, status, gross, net, nextPayDate, currentPeriodStart, currentPeriodEnd, processingWindowStart, processingWindowEnd, isShiftType, payFreq }
     })
-  }, [payslips, employedEmployees, shiftEmployees, zeroHoursEmployees, currentMonthKey, payDayMode, customPayDay, shiftPayDayMode, shiftCustomPayDay, zeroHrsPayDayMode, zeroHrsCustomPayDay])
+  }, [payslips, employedEmployees, shiftEmployees, zeroHoursEmployees, currentMonthKey, payDayMode, customPayDay, shiftPayDayMode, shiftCustomPayDay, zeroHrsPayDayMode, zeroHrsCustomPayDay, lastPayRuns, workerSettings, fyStartMonth])
 
   // Data loading
   useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId])
@@ -2324,13 +2353,8 @@ export default function AdminPayrollNew() {
           ) : (
             <div className="pn-worker-cards">
               {workerTypeStats.map(wt => {
-                const wtSettingKey = wt.key === 'shift' ? 'shift_worker' : wt.key
-                const wtSetting = workerSettings.find(s => s.worker_type === wtSettingKey)
-                const payFreq = wtSetting?.pay_pattern || 'monthly'
-                const freqLabel = payFreq === 'weekly' ? 'Weekly' : payFreq === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'
+                const freqLabel = wt.payFreq === 'weekly' ? 'Weekly' : wt.payFreq === 'bi_weekly' ? 'Bi-weekly' : 'Monthly'
                 const lastRun = lastPayRuns[wt.key]
-                const expectedRunDate = new Date(wt.nextPayDate)
-                expectedRunDate.setDate(expectedRunDate.getDate() - 5)
                 const bonusCount = wt.employees.filter(e => e.bonus_amount && e.bonus_amount > 0).length
 
                 return (
@@ -2363,14 +2387,29 @@ export default function AdminPayrollNew() {
                           <span className="pn-worker-metric-label">Last run</span>
                         </div>
                       )}
-                      <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{formatDate(wt.nextPayDate.toISOString().split('T')[0])}</span>
-                        <span className="pn-worker-metric-label">Next pay date</span>
-                      </div>
-                      <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">{formatDate(expectedRunDate.toISOString().split('T')[0])}</span>
-                        <span className="pn-worker-metric-label">Expected run by</span>
-                      </div>
+                      {wt.isShiftType && wt.payFreq !== 'monthly' && wt.currentPeriodStart ? (
+                        <>
+                          <div className="pn-worker-metric">
+                            <span className="pn-worker-metric-value">{formatDate(wt.currentPeriodStart)} – {formatDate(wt.currentPeriodEnd)}</span>
+                            <span className="pn-worker-metric-label">Current period (collecting)</span>
+                          </div>
+                          <div className="pn-worker-metric">
+                            <span className="pn-worker-metric-value">{formatDate(wt.processingWindowStart)} – {formatDate(wt.processingWindowEnd)}</span>
+                            <span className="pn-worker-metric-label">Process & pay window</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="pn-worker-metric">
+                            <span className="pn-worker-metric-value">{formatDate(wt.nextPayDate.toISOString().split('T')[0])}</span>
+                            <span className="pn-worker-metric-label">Next pay date</span>
+                          </div>
+                          <div className="pn-worker-metric">
+                            <span className="pn-worker-metric-value">{formatDate((() => { const d = new Date(wt.nextPayDate); d.setDate(d.getDate() - 5); return d })().toISOString().split('T')[0])}</span>
+                            <span className="pn-worker-metric-label">Expected run by</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                     {(bonusCount > 0 || wt.payslips.length > 0) && (
                       <div style={{ padding: '0 16px 8px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -3221,6 +3260,11 @@ export default function AdminPayrollNew() {
                       : 'Adjustments (overtime, unpaid leave, benefit changes) are exported as a CSV file for Sage import. Bonuses and deductions must be entered manually.'
                     } TOIL hours are credited internally as lieu days. Your provider calculates tax, NI, pension, and net pay.
                   </p>
+                  {connectedProvider === 'xero' && (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) && (
+                    <p style={{ fontSize: 12, color: '#e65100', margin: '8px 0 0', background: '#fff3e0', padding: '8px 10px', borderRadius: 4 }}>
+                      <strong>Note:</strong> Xero distributes timesheet hours across weekdays (Mon–Fri) only. If your shift workers work weekends, the total hours pushed are correct but will appear spread across the weekday dates in the Xero pay period. You can adjust individual day entries in Xero after pushing, or download the data for manual entry.
+                    </p>
+                  )}
                 </div>
               )}
 
