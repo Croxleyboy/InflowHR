@@ -1033,7 +1033,7 @@ export default function AdminPayrollNew() {
       await logPayrollAction('Payslip Generation Failed', `${errors.length} error(s): ${errors[0]}`, 'error')
     } else {
       showSuccess(`Generated payslips for ${formatDate(periodStart)} – ${formatDate(periodEnd)}`)
-      await logPayrollAction('Payslips Generated', `Period ${formatDate(periodStart)} – ${formatDate(periodEnd)}, ${targetEmps.length} employee(s)`)
+      await logPayrollAction('Payslips Generated', `Period ${formatDate(periodStart)} – ${formatDate(periodEnd)}, ${targetEmployees.length} employee(s)`)
       setWizGenerated(true)
       await loadAll()
     }
