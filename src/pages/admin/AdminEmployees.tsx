@@ -182,28 +182,6 @@ export default function AdminEmployees() {
       .select('*')
       .eq('company_id', selectedCompanyId)
     setWorkerSettings(wtsData || [])
-    const editMap: Record<string, WorkerTypeSetting> = {}
-    for (const wt of ['employed', 'shift_worker', 'zero_hours']) {
-      const existing = (wtsData || []).find((s: WorkerTypeSetting) => s.worker_type === wt)
-      editMap[wt] = existing || {
-        company_id: selectedCompanyId,
-        worker_type: wt,
-        pay_pattern: wt === 'employed' ? 'monthly' : 'weekly',
-        overtime_handling: 'none',
-        time_recording: wt === 'shift_worker' ? 'checkin' : 'timesheet',
-        overtime_rate_multiplier: 1.50,
-      }
-    }
-    setEditingSettings(editMap)
-
-    // Load recent change log
-    const { data: logData } = await supabase
-      .from('worker_setting_change_log')
-      .select('id, worker_type, setting_name, old_value, new_value, exception_count, created_at')
-      .eq('company_id', selectedCompanyId)
-      .order('created_at', { ascending: false })
-      .limit(20)
-    setChangeLog(logData || [])
 
     setLoading(false)
   }
