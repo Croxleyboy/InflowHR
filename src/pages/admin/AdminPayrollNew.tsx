@@ -1354,6 +1354,34 @@ export default function AdminPayrollNew() {
         }
       }
 
+      const { data: holidayLogs } = await supabase.from('holiday_accrual_log')
+        .select('employee_id, hours_worked, accrual_rate, hours_accrued_rounded, holiday_pay_amount, method')
+        .eq('company_id', selectedCompanyId)
+        .gte('pay_period_start', pStart)
+        .lte('pay_period_end', pEnd)
+      const holidayManualItems = (holidayLogs || [])
+        .filter(h => h.holiday_pay_amount > 0 || h.hours_accrued_rounded > 0)
+        .map(h => {
+          const emp = employees.find(e => e.id === h.employee_id)
+          const empName = emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown'
+          const hourlyRate = emp?.hourly_rate || 0
+          if (h.method === 'rolled_up') {
+            return {
+              employee: empName,
+              type: 'holiday_pay' as const,
+              description: `Holiday Pay Uplift (${h.accrual_rate}%) — ${h.hours_worked}h worked × £${hourlyRate.toFixed(2)}/hr = £${(h.hours_worked * hourlyRate).toFixed(2)} gross → £${h.holiday_pay_amount.toFixed(2)} holiday pay. Add as an additional earnings line in ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}.`,
+              amount: h.holiday_pay_amount,
+            }
+          }
+          return {
+            employee: empName,
+            type: 'holiday_pay' as const,
+            description: `Holiday Accrual — ${h.hours_worked}h worked × ${h.accrual_rate}% = ${h.hours_accrued_rounded}h accrued. No pay item needed (hours banked for paid leave). For reference only.`,
+            amount: 0,
+          }
+        })
+        .filter(h => h.amount > 0)
+
       let xeroPushData: any = null
       if (connectedProvider === 'xero') {
         // Xero: push regular hours + overtime via API, flag unpaid leave + benefits as manual
@@ -1403,7 +1431,7 @@ export default function AdminPayrollNew() {
           skipped: data.skipped || 0,
           api: 'xero',
           timesheet_results: data.timesheet_results || [],
-          manual_items: [...(data.manual_items || []), ...bonusManualItems],
+          manual_items: [...(data.manual_items || []), ...bonusManualItems, ...holidayManualItems],
           skipped_details: data.skipped_details || [],
           provider: 'xero',
         })
@@ -1440,7 +1468,7 @@ export default function AdminPayrollNew() {
           pushed: 0, failed: 0, skipped: 0, api: 'csv',
           csv_exported: rowCount, csv_items: items,
           provider: 'sage',
-          timesheet_results: [], manual_items: [], skipped_details: [],
+          timesheet_results: [], manual_items: [...holidayManualItems], skipped_details: [],
         })
       }
 
@@ -4466,10 +4494,10 @@ export default function AdminPayrollNew() {
                       <div style={{ marginBottom: 16 }}>
                         <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: '#e65100', display: 'flex', alignItems: 'center', gap: 6 }}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2"><path d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 0 0 1.73-3L13.73 4a2 2 0 0 0-3.46 0L3.34 16a2 2 0 0 0 1.73 3z"/></svg>
-                          Manual actions — enter these in Xero ({wizManualChecked.size}/{wizPushResult.manual_items.length} done)
+                          Manual actions — enter these in {wizPushResult.provider === 'sage' ? 'Sage' : 'Xero'} ({wizManualChecked.size}/{wizPushResult.manual_items.length} done)
                         </h4>
                         <p style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 10 }}>
-                          These items cannot be pushed via the Xero API. Work through each one in your Xero pay run, then tick it off. You cannot proceed until all items are confirmed.
+                          These items cannot be pushed automatically. Work through each one in your {wizPushResult.provider === 'sage' ? 'Sage' : 'Xero'} pay run, then tick it off. You cannot proceed until all items are confirmed.
                         </p>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -4482,19 +4510,24 @@ export default function AdminPayrollNew() {
                               : item.type === 'bonus' ? 'Bonus'
                               : item.type === 'deduction' ? 'Deduction'
                               : item.type === 'benefit_removal' ? 'Benefit Removal'
+                              : item.type === 'holiday_pay' ? 'Holiday Pay'
                               : item.type
                             const typeBg = item.type === 'unpaid_leave' ? '#e3f2fd'
                               : item.type === 'bonus' ? '#e8f5e9'
                               : item.type === 'deduction' ? '#ffebee'
+                              : item.type === 'holiday_pay' ? '#fff8e1'
                               : '#f3e5f5'
                             const typeColor = item.type === 'unpaid_leave' ? '#1565c0'
                               : item.type === 'bonus' ? '#2e7d32'
                               : item.type === 'deduction' ? '#c62828'
+                              : item.type === 'holiday_pay' ? '#f57f17'
                               : '#7b1fa2'
                             const xeroPath = item.type === 'unpaid_leave'
                               ? 'Payroll → Pay Runs → select employee → Leave tab → add Unpaid Leave for ' + (item.days || '') + ' day(s)'
                               : item.type === 'bonus' || item.type === 'deduction'
                               ? 'Payroll → Pay Runs → select employee → Earnings/Deductions → add line'
+                              : item.type === 'holiday_pay'
+                              ? 'Payroll → Pay Runs → select employee → Earnings → add Holiday Pay line'
                               : 'Payroll → Pay Runs → select employee → Benefits tab → add/remove benefit'
                             return (
                               <div key={i} style={{
