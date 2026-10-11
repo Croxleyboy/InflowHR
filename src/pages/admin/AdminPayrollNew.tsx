@@ -208,7 +208,6 @@ export default function AdminPayrollNew() {
   const [xeroConnected, setXeroConnected] = useState(false)
   const [sageConnected, setSageConnected] = useState(false)
   const [modulrConnected, setModulrConnected] = useState(false)
-  const [enabledFeatures, setEnabledFeatures] = useState({ timesheets: false, shifts: false, legal_timesheets: false })
   const [recentLogs, setRecentLogs] = useState<AuditLogEntry[]>([])
 
   // Payroll schedule settings
@@ -432,15 +431,6 @@ export default function AdminPayrollNew() {
   // Data loading
   useEffect(() => { if (selectedCompanyId) loadAll() }, [selectedCompanyId])
 
-  useEffect(() => {
-    if (!selectedCompanyId) return
-    supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', selectedCompanyId)
-      .in('feature_key', ['timesheets', 'shifts', 'legal_timesheets']).then(({ data }) => {
-        const map: Record<string, boolean> = { timesheets: false, shifts: false, legal_timesheets: false }
-        data?.forEach(r => { if (r.feature_key in map) map[r.feature_key] = r.is_enabled })
-        setEnabledFeatures(map as any)
-      })
-  }, [selectedCompanyId])
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -2240,7 +2230,7 @@ export default function AdminPayrollNew() {
   // Breadcrumb nav
   const viewLabels: Record<View, string> = {
     dashboard: 'Dashboard', payslips: 'Payslips', employee_pay: 'Employee Pay',
-    schedule: 'Payroll Schedule', reporting: 'Reporting', logs: 'Audit Logs', run_payroll: 'Run Payroll',
+    schedule: 'Payroll Schedule', logs: 'Audit Logs', run_payroll: 'Run Payroll',
   }
 
   return (
