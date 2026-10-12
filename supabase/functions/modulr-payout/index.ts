@@ -61,9 +61,10 @@ Deno.serve(async (req) => {
     }
 
     // Insert line items
-    const items = payments.map((p: { employee_id: string; amount: number; sort_code: string; account_number: string; reference: string }) => ({
+    const items = payments.map((p: { employee_id: string; payslip_id?: number; amount: number; sort_code: string; account_number: string; reference: string }) => ({
       payment_id: paymentRecord.id,
       employee_id: p.employee_id,
+      payslip_id: p.payslip_id || null,
       amount: p.amount,
       sort_code: '**' + p.sort_code.slice(-4),
       account_number: '****' + p.account_number.slice(-4),
