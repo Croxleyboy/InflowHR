@@ -211,6 +211,9 @@ export default function AdminPayrollNew() {
   const [xeroConnected, setXeroConnected] = useState(false)
   const [sageConnected, setSageConnected] = useState(false)
   const [modulrConnected, setModulrConnected] = useState(false)
+  const [modulrPaidEmployees, setModulrPaidEmployees] = useState<Set<string>>(new Set())
+  const [modulrPaying, setModulrPaying] = useState(false)
+  const [modulrWarning, setModulrWarning] = useState<{ show: boolean; payslipIds: number[]; bulk: boolean }>({ show: false, payslipIds: [], bulk: false })
   const [recentLogs, setRecentLogs] = useState<AuditLogEntry[]>([])
 
   // Payroll schedule settings
@@ -487,7 +490,16 @@ export default function AdminPayrollNew() {
     setEmployees((eRes.data as Employee[]) || [])
     setXeroConnected(!!(xRes.data && (xRes.data as any).sync_status !== 'not_connected'))
     setSageConnected(!!(sRes.data && (sRes.data as any).sync_status !== 'not_connected'))
-    setModulrConnected(!!(mRes.data && (mRes.data as any).status === 'active'))
+    const isModulrConnected = !!(mRes.data && (mRes.data as any).status === 'connected')
+    setModulrConnected(isModulrConnected)
+
+    if (isModulrConnected) {
+      const { data: mpData } = await supabase.from('modulr_payments').select('id').eq('company_id', selectedCompanyId).neq('status', 'failed')
+      if (mpData?.length) {
+        const { data: itemsData } = await supabase.from('modulr_payment_items').select('employee_id').in('payment_id', mpData.map(p => p.id)).neq('status', 'failed')
+        setModulrPaidEmployees(new Set((itemsData || []).map((i: any) => i.employee_id)))
+      }
+    }
 
     // Load worker type settings
     const { data: wtsData } = await supabase.from('worker_type_settings').select('*').eq('company_id', selectedCompanyId)
@@ -2490,6 +2502,15 @@ export default function AdminPayrollNew() {
   async function releaseAllMonth(monthPayslips: Payslip[]) {
     const unreleased = monthPayslips.filter(p => !p.released)
     if (unreleased.length === 0) { showSuccess('All payslips already released'); return }
+
+    if (features.modulr_integration && modulrConnected) {
+      const unpushed = unreleased.filter(p => p.employee?.id && !modulrPaidEmployees.has(p.employee.id) && (p.source === 'xero' || p.source === 'sage'))
+      if (unpushed.length > 0) {
+        setModulrWarning({ show: true, payslipIds: unreleased.map(p => p.id), bulk: true })
+        return
+      }
+    }
+
     if (!confirm(`Release ${unreleased.length} payslip(s) to employees? They will be visible on their next login.`)) return
     setBulkUpdating(true)
     const ids = unreleased.map(p => p.id)
@@ -2501,10 +2522,77 @@ export default function AdminPayrollNew() {
   }
 
   async function togglePayslipRelease(id: number, released: boolean) {
-    const { error } = await supabase.from('payslips').update({ released }).eq('id', id)
+    if (released && features.modulr_integration && modulrConnected) {
+      const p = payslips.find(ps => ps.id === id)
+      if (p && p.employee?.id && !modulrPaidEmployees.has(p.employee.id) && (p.source === 'xero' || p.source === 'sage')) {
+        setModulrWarning({ show: true, payslipIds: [id], bulk: false })
+        return
+      }
+    }
+    await doRelease([id], released)
+  }
+
+  async function doRelease(ids: number[], released: boolean) {
+    const { error } = await supabase.from('payslips').update({ released }).in('id', ids)
     if (error) { showError('Failed to update release status: ' + error.message); return }
-    setPayslips(prev => prev.map(ps => ps.id === id ? { ...ps, released } : ps))
-    showSuccess(released ? 'Payslip released to employee' : 'Payslip unreleased')
+    setPayslips(prev => prev.map(ps => ids.includes(ps.id) ? { ...ps, released } : ps))
+    showSuccess(released ? `${ids.length} payslip(s) released to employee${ids.length > 1 ? 's' : ''}` : 'Payslip unreleased')
+  }
+
+  async function payWithModulrMonth(monthPayslips: Payslip[]) {
+    if (!session || !selectedCompanyId) return
+    const eligible = monthPayslips.filter(p =>
+      p.status === 'paid' && !p.released &&
+      (p.source === 'xero' || p.source === 'sage') &&
+      p.employee?.id && !modulrPaidEmployees.has(p.employee.id)
+    )
+    if (!eligible.length) { showError('No eligible payslips to push to Modulr. Payslips must be paid, unreleased, and from Xero/Sage.'); return }
+
+    const periodLabel = eligible[0].pay_period_start.substring(0, 7)
+    if (!confirm(`Push ${eligible.length} payslip(s) to Modulr for payment?\n\nPeriod: ${periodLabel}\nTotal: £${eligible.reduce((s, p) => s + Number(p.net_pay), 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`)) return
+
+    await doModulrPay(eligible, periodLabel)
+  }
+
+  async function payWithModulrSingle(p: Payslip) {
+    if (!session || !selectedCompanyId || !p.employee?.id) return
+    const periodLabel = p.pay_period_start.substring(0, 7)
+    if (!confirm(`Push payslip for ${p.employee.first_name} ${p.employee.last_name} to Modulr?\n\nNet: £${Number(p.net_pay).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`)) return
+    await doModulrPay([p], periodLabel)
+  }
+
+  async function doModulrPay(eligible: Payslip[], periodLabel: string) {
+    setModulrPaying(true)
+    try {
+      const payments: { employee_id: string; amount: number; sort_code: string; account_number: string; reference: string; employee_name: string }[] = []
+      for (const p of eligible) {
+        const emp = employees.find(e => e.id === p.employee?.id)
+        if (!emp) continue
+        const sortCode = (emp.bank_sort_code || '').replace(/[-\s]/g, '')
+        const accountNo = (emp.bank_account_number || '').replace(/\s/g, '')
+        if (!/^\d{6}$/.test(sortCode) || !/^\d{8}$/.test(accountNo)) continue
+        const netPay = Number(p.net_pay)
+        if (netPay <= 0) continue
+        payments.push({ employee_id: emp.id, amount: netPay, sort_code: sortCode, account_number: accountNo, reference: `SALARY ${periodLabel}`, employee_name: `${emp.first_name} ${emp.last_name}` })
+      }
+      if (!payments.length) { showError('No employees with valid bank details and positive net pay'); return }
+
+      const { data, error } = await supabase.functions.invoke('modulr-payout', {
+        headers: { Authorization: `Bearer ${session!.access_token}` },
+        body: { company_id: selectedCompanyId, payrun_ref: `PR-BROWSE-${periodLabel}`, payments },
+      })
+      if (error) throw error
+      if (data?.error) throw new Error(data.error)
+
+      const paidIds = new Set(modulrPaidEmployees)
+      for (const pm of payments) paidIds.add(pm.employee_id)
+      setModulrPaidEmployees(paidIds)
+      showSuccess(`${payments.length} payment(s) submitted to Modulr (Batch: ${data?.modulr_batch_id || 'pending'})`)
+    } catch (err) {
+      showError('Modulr payment failed: ' + (err as Error).message)
+    } finally {
+      setModulrPaying(false)
+    }
   }
 
   if (loading) return <div className="admin-section"><p style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted, #888)' }}>Loading payroll data…</p></div>
@@ -2999,6 +3087,20 @@ export default function AdminPayrollNew() {
                           Release All ({gUnreleased})
                         </button>
                       )}
+                      {features.modulr_integration && modulrConnected && (() => {
+                        const modulrEligible = group.payslips.filter(p => p.status === 'paid' && !p.released && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && !modulrPaidEmployees.has(p.employee.id))
+                        const allPushed = group.payslips.filter(p => p.status === 'paid' && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && modulrPaidEmployees.has(p.employee.id)).length > 0
+                        return modulrEligible.length > 0 ? (
+                          <button className="admin-btn-sm" disabled={modulrPaying} onClick={() => payWithModulrMonth(group.payslips)} style={{ fontSize: 11, background: '#1a237e', color: '#fff', border: '1px solid #1a237e' }}>
+                            Pay with Modulr ({modulrEligible.length})
+                          </button>
+                        ) : allPushed ? (
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#1a237e', display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1a237e" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            Modulr Paid
+                          </span>
+                        ) : null
+                      })()}
                       {gDraft > 0 && (
                         <button className="admin-btn-sm admin-btn-danger" disabled={bulkUpdating} onClick={() => deleteDraftMonth(group.key, group.payslips)} style={{ fontSize: 11, marginLeft: 'auto' }}>
                           Delete {gDraft} Draft{gDraft !== 1 ? 's' : ''}
@@ -3038,7 +3140,7 @@ export default function AdminPayrollNew() {
                                       <option value="paid">Paid</option>
                                     </select>
                                   </td>
-                                  <td style={{ textAlign: 'center' }}>
+                                  <td style={{ textAlign: 'center', display: 'flex', gap: 4, justifyContent: 'center', alignItems: 'center' }}>
                                     <button
                                       className="admin-btn-sm"
                                       onClick={() => togglePayslipRelease(p.id, !isReleased)}
@@ -3051,6 +3153,15 @@ export default function AdminPayrollNew() {
                                     >
                                       {isReleased ? '✓ Released' : 'Unreleased'}
                                     </button>
+                                    {features.modulr_integration && modulrConnected && isPaid && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && (
+                                      modulrPaidEmployees.has(p.employee.id) ? (
+                                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 8, background: '#e8eaf6', color: '#1a237e', border: '1px solid #c5cae9', whiteSpace: 'nowrap' }}>Modulr ✓</span>
+                                      ) : !isReleased ? (
+                                        <button className="admin-btn-sm" disabled={modulrPaying} onClick={() => payWithModulrSingle(p)} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: '#1a237e', color: '#fff', border: '1px solid #1a237e', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                          Pay
+                                        </button>
+                                      ) : null
+                                    )}
                                   </td>
                                   <td className="admin-actions">
                                     {editingId === p.id ? (
@@ -3462,6 +3573,36 @@ export default function AdminPayrollNew() {
             </div>
           )}
 
+          {modulrWarning.show && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'var(--bg, #fff)', borderRadius: 12, padding: 24, maxWidth: 480, width: '90vw' }}>
+                <h3 style={{ margin: '0 0 12px', fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  Modulr Payment Not Submitted
+                </h3>
+                <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 8 }}>
+                  {modulrWarning.bulk
+                    ? 'Some payslips in this batch have not been pushed to Modulr for payment yet.'
+                    : 'This payslip has not been pushed to Modulr for payment yet.'}
+                </p>
+                <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
+                  Releasing without pushing to Modulr means employees will see their payslips but payment has not been initiated through Modulr.
+                </p>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <button className="admin-btn" onClick={() => setModulrWarning({ show: false, payslipIds: [], bulk: false })} style={{ fontSize: 13 }}>
+                    Cancel
+                  </button>
+                  <button className="admin-btn admin-btn-primary" onClick={() => {
+                    const ids = modulrWarning.payslipIds
+                    setModulrWarning({ show: false, payslipIds: [], bulk: false })
+                    doRelease(ids, true)
+                  }} style={{ fontSize: 13, background: '#e65100', borderColor: '#e65100' }}>
+                    Continue Without Modulr
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {settingsImpactModal.open && (
             <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
               <div style={{ background: 'var(--bg, #fff)', borderRadius: 12, padding: 24, maxWidth: 520, width: '90vw', maxHeight: '85vh', overflowY: 'auto' }}>
