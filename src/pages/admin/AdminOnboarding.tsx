@@ -102,6 +102,7 @@ interface OnboardRecord {
   payroll_id: string | null
   leave_allowance: number | null
   skipped_steps: Record<string, boolean> | null
+  custom_steps_completed: Record<string, boolean> | null
 }
 
 const WORKFLOW_STEPS = [
@@ -123,7 +124,7 @@ export default function AdminOnboarding() {
   const { features } = useFeatures()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow'>('dashboard')
+  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow' | 'settings'>('dashboard')
   const [filterStatus, setFilterStatus] = useState('')
   const [onbPage, setOnbPage] = useState(1)
   const [offPage, setOffPage] = useState(1)
@@ -165,6 +166,18 @@ export default function AdminOnboarding() {
   const [uploadErrors, setUploadErrors] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadResult, setUploadResult] = useState<{ success: number; failed: number } | null>(null)
+
+  // Custom workflow steps state
+  interface CustomStep { id?: number; step_key: string; label: string; icon: string; description: string; sort_order: number; is_default: boolean }
+  const [customSteps, setCustomSteps] = useState<CustomStep[]>([])
+  const [editingSteps, setEditingSteps] = useState<CustomStep[]>([])
+  const [hasCustomSteps, setHasCustomSteps] = useState(false)
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [settingsDirty, setSettingsDirty] = useState(false)
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+
+  const activeSteps = hasCustomSteps ? customSteps : WORKFLOW_STEPS.map((s, i) => ({ ...s, sort_order: i, is_default: true }))
 
 
   const COLUMN_MAP: Record<string, string> = {
@@ -295,6 +308,7 @@ export default function AdminOnboarding() {
       setFrozenEmployees([])
       load()
       loadOffboarding()
+      loadCustomSteps()
     }
   }, [selectedCompanyId])
 
@@ -319,6 +333,71 @@ export default function AdminOnboarding() {
     ])
     setOffboardRecords((offData as OffboardRecord[]) || [])
     setFrozenEmployees((frozenData as FrozenEmployee[]) || [])
+  }
+
+  async function loadCustomSteps() {
+    if (!selectedCompanyId) return
+    const { data } = await supabase.from('onboard_workflow_steps')
+      .select('*').eq('company_id', selectedCompanyId).order('sort_order')
+    if (data && data.length > 0) {
+      setCustomSteps(data)
+      setHasCustomSteps(true)
+    } else {
+      setCustomSteps([])
+      setHasCustomSteps(false)
+    }
+  }
+
+  async function saveCustomSteps() {
+    if (!selectedCompanyId || !settingsDirty) return
+    setSettingsSaving(true)
+    try {
+      await supabase.from('onboard_workflow_steps').delete().eq('company_id', selectedCompanyId)
+      const rows = editingSteps.map((s, i) => ({
+        company_id: selectedCompanyId,
+        step_key: s.step_key,
+        label: s.label,
+        icon: s.icon,
+        description: s.description,
+        sort_order: i,
+        is_default: s.is_default,
+      }))
+      const { error } = await supabase.from('onboard_workflow_steps').insert(rows)
+      if (error) { showError('Failed to save workflow steps: ' + error.message); return }
+
+      const oldStepKeys = new Set(activeSteps.map(s => s.step_key))
+      const newStepKeys = editingSteps.map(s => s.step_key).filter(k => !oldStepKeys.has(k))
+      if (newStepKeys.length > 0) {
+        const { data: onboardedRecords } = await supabase.from('onboarding')
+          .select('id, is_complete, custom_steps_completed')
+          .eq('company_id', selectedCompanyId)
+          .eq('is_complete', true)
+        if (onboardedRecords) {
+          for (const rec of onboardedRecords) {
+            const existing = (rec.custom_steps_completed as Record<string, boolean>) || {}
+            const updated = { ...existing }
+            newStepKeys.forEach(k => { updated[k] = true })
+            await supabase.from('onboarding').update({ custom_steps_completed: updated }).eq('id', rec.id)
+          }
+        }
+      }
+
+      showSuccess('Workflow steps saved')
+      setSettingsDirty(false)
+      loadCustomSteps()
+      load()
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
+  function initEditingSteps() {
+    const steps = hasCustomSteps
+      ? customSteps.map(s => ({ ...s }))
+      : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
+    setEditingSteps(steps)
+    setSettingsDirty(false)
+    setEditingIdx(null)
   }
 
   async function searchEmployeesForOffboard(query: string) {
@@ -611,11 +690,16 @@ export default function AdminOnboarding() {
       accounts: record.elearning,
       day1_access: record.is_complete,
     }
+    const customCompleted = (record as any).custom_steps_completed || {}
+    Object.keys(customCompleted).forEach(k => { if (customCompleted[k]) checks[k] = true })
     setStepChecks(checks)
     const skipped = record.skipped_steps
     setStepSkips(skipped && typeof skipped === 'object' ? skipped : {})
-    const doneCount = WORKFLOW_STEPS.filter(s => checks[s.key] || (skipped && skipped[s.key])).length
-    setWorkflowStep(record.is_complete ? WORKFLOW_STEPS.length - 1 : Math.min(doneCount, WORKFLOW_STEPS.length - 1))
+    const doneCount = activeSteps.filter(s => {
+      const k = 'step_key' in s ? s.step_key : (s as any).key
+      return checks[k] || (skipped && skipped[k])
+    }).length
+    setWorkflowStep(record.is_complete ? activeSteps.length - 1 : Math.min(doneCount, activeSteps.length - 1))
     setTab('workflow')
   }
 
@@ -806,19 +890,23 @@ export default function AdminOnboarding() {
     const overdue = records.filter(r => !r.is_complete && r.start_date && r.start_date < today).length
 
     const stageMap: Record<string, number> = {}
-    WORKFLOW_STEPS.forEach(s => { stageMap[s.key] = 0 })
+    activeSteps.forEach(s => { const k = 'step_key' in s ? s.step_key : (s as any).key; stageMap[k] = 0 })
     stageMap['complete'] = 0
     records.filter(r => !r.is_complete).forEach(r => {
-      if (r.status === 'new') { stageMap['details'] = (stageMap['details'] || 0) + 1; return }
+      const firstKey = activeSteps.length > 0 ? ('step_key' in activeSteps[0] ? activeSteps[0].step_key : (activeSteps[0] as any).key) : 'details'
+      if (r.status === 'new') { stageMap[firstKey] = (stageMap[firstKey] || 0) + 1; return }
       const checks: Record<string, boolean> = {
         details: true, equipment: r.equipment_order === 'Y',
         meeting: r.first_day, notify_manager: r.first_day, plan_day1: r.first_day,
         inform_starter: r.first_week, accounts: r.elearning, day1_access: r.is_complete,
       }
       const skipped = r.skipped_steps
-      const doneCount = WORKFLOW_STEPS.filter(s => checks[s.key] || (skipped && skipped[s.key])).length
-      const currentIdx = Math.min(doneCount, WORKFLOW_STEPS.length - 1)
-      const stepKey = WORKFLOW_STEPS[currentIdx].key
+      const doneCount = activeSteps.filter(s => {
+        const k = 'step_key' in s ? s.step_key : (s as any).key
+        return checks[k] || (skipped && skipped[k])
+      }).length
+      const currentIdx = Math.min(doneCount, activeSteps.length - 1)
+      const stepKey = 'step_key' in activeSteps[currentIdx] ? activeSteps[currentIdx].step_key : (activeSteps[currentIdx] as any).key
       stageMap[stepKey] = (stageMap[stepKey] || 0) + 1
     })
     stageMap['complete'] = records.filter(r => r.is_complete).length
@@ -834,7 +922,7 @@ export default function AdminOnboarding() {
       stageMap,
       fyLabel: `${fyStart.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${fyEnd.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`,
     }
-  }, [records, fyStartMonth])
+  }, [records, fyStartMonth, activeSteps])
 
   const filtered = useMemo(() => {
     if (!filterStatus) return records
@@ -874,6 +962,7 @@ export default function AdminOnboarding() {
         {selectedId && <button className={`admin-tab ${tab === 'workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('workflow')}>Onboard Workflow</button>}
         <button className={`admin-tab ${tab === 'offboarding' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboarding')}>Offboarding</button>
         {offboardSelectedId && <button className={`admin-tab ${tab === 'offboard-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboard-workflow')}>Offboarding Workflow</button>}
+        <button className={`admin-tab ${tab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => { setTab('settings'); initEditingSteps() }}>Settings</button>
         {isSuperAdmin && (
           <button className={`admin-tab ${tab === 'setup' ? 'admin-tab-active' : ''}`} onClick={() => setTab('setup')} style={{ borderColor: '#7b1fa2', color: tab === 'setup' ? '#fff' : '#7b1fa2', background: tab === 'setup' ? '#7b1fa2' : undefined }}>
             Company Setup
@@ -883,13 +972,24 @@ export default function AdminOnboarding() {
 
       {tab === 'dashboard' && (
         <div className="admin-onboard-dash">
-          <div className="admin-mini-stats">
-            <div className="admin-mini-stat"><span className="admin-mini-value">{stats.total}</span><span>Total</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{stats.fyTotal}</span><span>This FY</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>{stats.pending}</span><span>In Progress</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#7b1fa2'}}>{stats.dueJoining}</span><span>Due to Join</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color: stats.overdue > 0 ? '#c62828' : '#43a047'}}>{stats.overdue}</span><span>Overdue</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{stats.completed}</span><span>Completed</span></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14, marginBottom: 20 }}>
+            {[
+              { label: 'Total Starters', value: stats.total, color: '#4f46e5', bg: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)', icon: '👥' },
+              { label: 'This FY', value: stats.fyTotal, color: '#0284c7', bg: 'linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%)', icon: '📊' },
+              { label: 'In Progress', value: stats.pending, color: '#d97706', bg: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', icon: '⏳' },
+              { label: 'Due to Join', value: stats.dueJoining, color: '#7c3aed', bg: 'linear-gradient(135deg, #ede9fe 0%, #ddd6fe 100%)', icon: '🗓️' },
+              { label: 'Overdue', value: stats.overdue, color: stats.overdue > 0 ? '#dc2626' : '#16a34a', bg: stats.overdue > 0 ? 'linear-gradient(135deg, #fef2f2 0%, #fecaca 100%)' : 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', icon: stats.overdue > 0 ? '🚨' : '✅' },
+              { label: 'Completed', value: stats.completed, color: '#16a34a', bg: 'linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)', icon: '🎉' },
+            ].map((card, i) => (
+              <div key={i} style={{
+                background: card.bg, borderRadius: 14, padding: '16px 18px',
+                border: `1px solid ${card.color}22`, position: 'relative', overflow: 'hidden',
+              }}>
+                <div style={{ position: 'absolute', top: 10, right: 12, fontSize: 28, opacity: 0.2 }}>{card.icon}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: card.color, lineHeight: 1 }}>{card.value}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: card.color, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 }}>{card.label}</div>
+              </div>
+            ))}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 20, marginTop: 24 }}>
@@ -914,10 +1014,11 @@ export default function AdminOnboarding() {
             <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 20, border: '1px solid var(--admin-border, #e0e0e0)' }}>
               <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600 }}>Onboarding Pipeline</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {WORKFLOW_STEPS.map((step) => {
-                  const count = stats.stageMap[step.key] || 0
+                {activeSteps.map((step) => {
+                  const key = 'step_key' in step ? step.step_key : (step as any).key
+                  const count = stats.stageMap[key] || 0
                   return (
-                    <div key={step.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                       <span style={{ width: 24, textAlign: 'center' }}>{step.icon}</span>
                       <span style={{ flex: 1, color: count > 0 ? '#333' : '#bbb' }}>{step.label}</span>
                       <span style={{ fontWeight: 600, minWidth: 20, textAlign: 'right', color: count > 0 ? '#1565c0' : '#ccc' }}>{count}</span>
@@ -1236,9 +1337,13 @@ export default function AdminOnboarding() {
                 <tbody>
                   {paginatedFiltered.map(r => {
                     const skipped = r.skipped_steps || {}
-                    const completedSteps = [true, r.equipment_order === 'Y', r.first_day, r.first_day, r.first_day, r.first_week, r.elearning, r.is_complete].filter(Boolean).length
+                    const defaultDone = [true, r.equipment_order === 'Y', r.first_day, r.first_day, r.first_day, r.first_week, r.elearning, r.is_complete].filter(Boolean).length
                     const skippedCount = Object.values(skipped).filter(Boolean).length
-                    const totalDone = completedSteps + skippedCount
+                    const customCompleted = (r as any).custom_steps_completed || {}
+                    const customDoneCount = Object.values(customCompleted).filter(Boolean).length
+                    const totalSteps = activeSteps.length
+                    const totalDone = hasCustomSteps ? (defaultDone + customDoneCount + skippedCount) : (defaultDone + skippedCount)
+                    const displayDone = Math.min(totalDone, totalSteps)
                     return (
                       <tr key={r.id}>
                         <td><strong>{r.firstname} {r.surname}</strong></td>
@@ -1247,8 +1352,8 @@ export default function AdminOnboarding() {
                         <td>{r.start_date ? new Date(r.start_date).toLocaleDateString('en-GB') : '—'}</td>
                         <td><span className={`admin-badge ${r.is_complete ? 'admin-badge-approved' : 'admin-badge-pending'}`}>{r.is_complete ? 'Onboarded' : r.status}</span></td>
                         <td>
-                          <div className="admin-progress-bar"><div className="admin-progress-fill" style={{width: `${(totalDone / WORKFLOW_STEPS.length) * 100}%`}} /></div>
-                          <span className="admin-progress-text">{completedSteps}/{WORKFLOW_STEPS.length}{skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}</span>
+                          <div className="admin-progress-bar"><div className="admin-progress-fill" style={{width: `${(displayDone / totalSteps) * 100}%`}} /></div>
+                          <span className="admin-progress-text">{displayDone}/{totalSteps}{skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}</span>
                         </td>
                         <td className="admin-actions">
                           <button className="admin-btn-sm admin-btn-save" onClick={() => openWorkflow(r)}>Workflow</button>
@@ -1281,12 +1386,13 @@ export default function AdminOnboarding() {
             <p>{selectedRecord.job_title} · Starting {selectedRecord.start_date ? new Date(selectedRecord.start_date).toLocaleDateString('en-GB') : 'TBC'}</p>
           </div>
           <div className="admin-workflow-timeline">
-            {WORKFLOW_STEPS.map((step, i) => {
-              const done = stepChecks[step.key]
-              const skipped = stepSkips[step.key]
+            {activeSteps.map((step, i) => {
+              const stepKey = 'step_key' in step ? step.step_key : (step as any).key
+              const done = stepChecks[stepKey]
+              const skipped = stepSkips[stepKey]
               const isCurrent = i === workflowStep
               return (
-                <div key={step.key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => setWorkflowStep(i)}>
+                <div key={stepKey} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => setWorkflowStep(i)}>
                   <div className="admin-wf-connector" />
                   <div className="admin-wf-dot">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
                   <div className="admin-wf-content">
@@ -1296,23 +1402,23 @@ export default function AdminOnboarding() {
                         <p>{step.description}</p>
                         <div className="admin-wf-actions">
                           {done ? (
-                            <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(step.key) }}>Undo</button>
+                            <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(stepKey) }}>Undo</button>
                           ) : skipped ? (
                             <>
-                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(step.key) }}>
+                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(stepKey) }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                                 Mark Complete
                               </button>
-                              <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(step.key) }}>Undo Skip</button>
+                              <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(stepKey) }}>Undo Skip</button>
                             </>
                           ) : (
                             <>
-                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(step.key) }}>
+                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(stepKey) }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                                 Mark Complete
                               </button>
-                              {step.key !== 'details' && (
-                                <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipStep(step.key) }}>
+                              {stepKey !== 'details' && (
+                                <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipStep(stepKey) }}>
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
                                   Skip
                                 </button>
@@ -1621,6 +1727,186 @@ export default function AdminOnboarding() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === 'settings' && (
+        <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div>
+              <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700 }}>Onboarding Workflow Steps</h3>
+              <p style={{ margin: 0, fontSize: 13, color: '#888' }}>Customise the onboarding workflow for your company. Drag steps to reorder, edit titles and descriptions, or add new steps.</p>
+            </div>
+            <button
+              className="admin-btn-sm admin-btn-save"
+              disabled={!settingsDirty || settingsSaving}
+              onClick={saveCustomSteps}
+              style={{ minWidth: 100, opacity: settingsDirty ? 1 : 0.5 }}
+            >
+              {settingsSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>
+            {editingSteps.map((step, i) => (
+              <div key={step.step_key + '-' + i}>
+                {/* Add step button between steps */}
+                {i === 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
+                    <button
+                      onClick={() => {
+                        const key = `custom_${Date.now()}`
+                        const newStep: CustomStep = { step_key: key, label: 'New Step', icon: '📋', description: 'Describe this step...', sort_order: 0, is_default: false }
+                        const updated = [newStep, ...editingSteps]
+                        setEditingSteps(updated)
+                        setSettingsDirty(true)
+                        setEditingIdx(0)
+                      }}
+                      style={{ background: 'none', border: '2px dashed #c7d2fe', borderRadius: 8, padding: '4px 16px', cursor: 'pointer', color: '#4f46e5', fontSize: 18, lineHeight: 1, fontWeight: 700 }}
+                      title="Add step before"
+                    >+</button>
+                  </div>
+                )}
+
+                {/* Step card */}
+                <div
+                  draggable
+                  onDragStart={() => setDragIdx(i)}
+                  onDragOver={e => { e.preventDefault() }}
+                  onDrop={() => {
+                    if (dragIdx === null || dragIdx === i) return
+                    const updated = [...editingSteps]
+                    const [moved] = updated.splice(dragIdx, 1)
+                    updated.splice(i, 0, moved)
+                    setEditingSteps(updated)
+                    setDragIdx(null)
+                    setSettingsDirty(true)
+                  }}
+                  onDragEnd={() => setDragIdx(null)}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 14, padding: 16,
+                    background: dragIdx === i ? '#eef2ff' : 'var(--admin-card-bg, #fff)',
+                    border: '1px solid var(--admin-border, #e5e7eb)', borderRadius: 10,
+                    cursor: 'grab', transition: 'background 0.15s',
+                    borderLeft: `4px solid ${step.is_default ? '#4f46e5' : '#10b981'}`,
+                  }}
+                >
+                  {/* Drag handle */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2, color: '#bbb', fontSize: 16, userSelect: 'none' }}>
+                    <span>⠿</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#aaa', width: 22, height: 22, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
+                  </div>
+
+                  {/* Icon */}
+                  <div style={{ fontSize: 24, lineHeight: 1, paddingTop: 2 }}>{step.icon}</div>
+
+                  {/* Content */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {editingIdx === i ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <input
+                            className="admin-input"
+                            value={step.icon}
+                            onChange={e => {
+                              const updated = [...editingSteps]
+                              updated[i] = { ...updated[i], icon: e.target.value }
+                              setEditingSteps(updated)
+                              setSettingsDirty(true)
+                            }}
+                            style={{ width: 50, textAlign: 'center', fontSize: 18, padding: '4px 6px' }}
+                            placeholder="📋"
+                          />
+                          <input
+                            className="admin-input"
+                            value={step.label}
+                            onChange={e => {
+                              const updated = [...editingSteps]
+                              updated[i] = { ...updated[i], label: e.target.value }
+                              setEditingSteps(updated)
+                              setSettingsDirty(true)
+                            }}
+                            style={{ flex: 1, fontWeight: 700, fontSize: 14 }}
+                            placeholder="Step title"
+                          />
+                        </div>
+                        <textarea
+                          className="admin-input"
+                          value={step.description}
+                          onChange={e => {
+                            const updated = [...editingSteps]
+                            updated[i] = { ...updated[i], description: e.target.value }
+                            setEditingSteps(updated)
+                            setSettingsDirty(true)
+                          }}
+                          rows={2}
+                          style={{ resize: 'vertical', fontSize: 13 }}
+                          placeholder="Step description"
+                        />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button className="admin-btn-sm admin-btn-save" onClick={() => setEditingIdx(null)}>Done</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: '#1e1e2d' }}>{step.label}</div>
+                        <div style={{ fontSize: 12, color: '#888', marginTop: 2, lineHeight: 1.4 }}>{step.description}</div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    {editingIdx !== i && (
+                      <button
+                        onClick={() => setEditingIdx(i)}
+                        style={{ background: 'none', border: '1px solid #e0e0e0', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12, color: '#666' }}
+                      >Edit</button>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (editingSteps.length <= 1) return
+                        const updated = editingSteps.filter((_, idx) => idx !== i)
+                        setEditingSteps(updated)
+                        setSettingsDirty(true)
+                        if (editingIdx === i) setEditingIdx(null)
+                      }}
+                      style={{ background: 'none', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12, color: '#dc2626' }}
+                      title="Remove step"
+                    >✕</button>
+                  </div>
+                </div>
+
+                {/* Add step button after each step */}
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
+                  <button
+                    onClick={() => {
+                      const key = `custom_${Date.now()}`
+                      const newStep: CustomStep = { step_key: key, label: 'New Step', icon: '📋', description: 'Describe this step...', sort_order: i + 1, is_default: false }
+                      const updated = [...editingSteps]
+                      updated.splice(i + 1, 0, newStep)
+                      setEditingSteps(updated)
+                      setSettingsDirty(true)
+                      setEditingIdx(i + 1)
+                    }}
+                    style={{ background: 'none', border: '2px dashed #c7d2fe', borderRadius: 8, padding: '4px 16px', cursor: 'pointer', color: '#4f46e5', fontSize: 18, lineHeight: 1, fontWeight: 700 }}
+                    title="Add step after"
+                  >+</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {hasCustomSteps && (
+            <div style={{ marginTop: 16, padding: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#166534' }}>
+              ✅ Custom workflow active — {customSteps.length} steps configured for this company.
+            </div>
+          )}
+          {!hasCustomSteps && (
+            <div style={{ marginTop: 16, padding: 12, background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, fontSize: 13, color: '#4338ca' }}>
+              Using default workflow ({WORKFLOW_STEPS.length} steps). Click Save Changes to customise for this company.
+            </div>
+          )}
         </div>
       )}
 
