@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
       type: 'FASTER_PAYMENT',
     }))
 
-    const result = await modulrRequest(apiKey, hmacSecret, 'POST', '/payments/batchpayments', {
+    const result = await modulrRequest(apiKey, hmacSecret, 'POST', '/batchpayments', {
       externalReference: payrun_ref,
       payments: modulrPayments,
     })

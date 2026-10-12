@@ -19,10 +19,14 @@ export function json(data: unknown, status = 200) {
   })
 }
 
-const MODULR_BASE_URL = Deno.env.get('MODULR_API_URL') || 'https://api.modulrfinance.com/api-sandbox-token'
+const MODULR_BASE_URL = Deno.env.get('MODULR_API_URL') || 'https://api-sandbox.modulrfinance.com/api-sandbox-token'
 
 export function getModulrBaseUrl(): string {
   return MODULR_BASE_URL
+}
+
+function isSandboxTokenMode(): boolean {
+  return MODULR_BASE_URL.includes('api-sandbox-token')
 }
 
 // AES-256-GCM encryption for credential storage
@@ -52,31 +56,44 @@ export async function decryptCredential(encrypted: string, ivB64: string): Promi
   return new TextDecoder().decode(plaintext)
 }
 
-// Modulr HMAC-SHA512 signature generation
+// Modulr HMAC-SHA1 signature generation (per https://modulr.readme.io/docs/authentication)
 export async function buildModulrAuthHeader(
   apiKey: string,
   hmacSecret: string,
-  method: string,
-  path: string,
 ): Promise<Record<string, string>> {
   const now = new Date().toUTCString()
   const nonce = crypto.randomUUID()
-  const signatureString = `date: ${now}\nx-mod-nonce: ${nonce}\n${method.toLowerCase()} ${path}`
+  const signatureString = `date: ${now}\nx-mod-nonce: ${nonce}`
 
   const keyBytes = new TextEncoder().encode(hmacSecret)
   const msgBytes = new TextEncoder().encode(signatureString)
   const cryptoKey = await crypto.subtle.importKey(
-    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-512' }, false, ['sign'],
+    'raw', keyBytes, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign'],
   )
   const sig = await crypto.subtle.sign('HMAC', cryptoKey, msgBytes)
   const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
+  const sigEncoded = encodeURIComponent(sigB64).replace(/%([0-9a-f]{2})/gi, (_, hex) => `%${hex.toUpperCase()}`)
 
   return {
-    'Authorization': `Signature keyId="${apiKey}",algorithm="hmac-sha512",headers="date x-mod-nonce (request-target)",signature="${sigB64}"`,
+    'Authorization': `Signature keyId="${apiKey}",algorithm="hmac-sha1",headers="date x-mod-nonce",signature="${sigEncoded}"`,
     'Date': now,
     'x-mod-nonce': nonce,
     'Content-Type': 'application/json',
   }
+}
+
+// Build auth headers — sandbox token mode skips HMAC
+async function buildAuthHeaders(
+  apiKey: string,
+  hmacSecret: string,
+): Promise<Record<string, string>> {
+  if (isSandboxTokenMode()) {
+    return {
+      'Authorization': apiKey,
+      'Content-Type': 'application/json',
+    }
+  }
+  return buildModulrAuthHeader(apiKey, hmacSecret)
 }
 
 // Execute an authenticated Modulr API request
@@ -87,7 +104,7 @@ export async function modulrRequest(
   path: string,
   body?: unknown,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
-  const headers = await buildModulrAuthHeader(apiKey, hmacSecret, method, path)
+  const headers = await buildAuthHeaders(apiKey, hmacSecret)
   const url = `${getModulrBaseUrl()}${path}`
 
   const res = await fetch(url, {
