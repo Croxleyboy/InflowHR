@@ -988,13 +988,13 @@ export default function AdminOnboarding() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20, marginTop: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20, marginTop: 24 }}>
             {/* Line Graph — Onboarders per Month */}
             {(() => {
               const data = stats.monthlyBreakdown
               const max = Math.max(...data.map(x => x.count), 1)
-              const padTop = 28, padBot = 28, padLeft = 30, padRight = 16
-              const w = 520, h = 200
+              const padTop = 28, padBot = 32, padLeft = 30, padRight = 16
+              const w = 800, h = 240
               const chartW = w - padLeft - padRight, chartH = h - padTop - padBot
               const points = data.map((m, i) => ({
                 x: padLeft + (i / (data.length - 1)) * chartW,
@@ -1031,8 +1031,8 @@ export default function AdminOnboarding() {
                     {points.map((p, i) => (
                       <g key={i}>
                         <circle cx={p.x} cy={p.y} r={p.count > 0 ? 4 : 2.5} fill={p.count > 0 ? '#4f46e5' : '#cbd5e1'} stroke="#fff" strokeWidth="2" />
-                        {p.count > 0 && <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#4f46e5" fontSize="11" fontWeight="700">{p.count}</text>}
-                        <text x={p.x} y={padTop + chartH + 16} textAnchor="middle" fill="#999" fontSize="10">{p.label}</text>
+                        {p.count > 0 && <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#4f46e5" fontSize="12" fontWeight="700">{p.count}</text>}
+                        <text x={p.x} y={padTop + chartH + 18} textAnchor="middle" fill="#999" fontSize="12">{p.label}</text>
                       </g>
                     ))}
                   </svg>
