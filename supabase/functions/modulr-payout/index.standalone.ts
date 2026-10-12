@@ -165,34 +165,48 @@ Deno.serve(async (req) => {
       return json({ error: `${invalid.length} payment(s) have missing or invalid bank details` }, 400)
     }
 
-    // Check for already-paid employees (cross-batch duplicate prevention)
-    const employeeIds = payments.map((p: { employee_id: string }) => p.employee_id)
-    const { data: existingItems } = await sb
-      .from('modulr_payment_items')
-      .select('employee_id, payment_id')
-      .in('employee_id', employeeIds)
-      .neq('status', 'failed')
-
-    if (existingItems?.length) {
-      const alreadyPaid = new Set(existingItems.map(i => i.employee_id))
-      // Check these belong to the same payrun_ref
-      const paymentIds = [...new Set(existingItems.map(i => i.payment_id))]
-      const { data: existingPayments } = await sb
-        .from('modulr_payments')
-        .select('id, payrun_ref')
-        .in('id', paymentIds)
-        .eq('payrun_ref', payrun_ref)
-      if (existingPayments?.length) {
-        const dupeEmployeeIds = new Set(
-          existingItems
-            .filter(i => existingPayments.some(p => p.id === i.payment_id))
-            .map(i => i.employee_id)
-        )
-        const filtered = payments.filter((p: { employee_id: string }) => !dupeEmployeeIds.has(p.employee_id))
+    // Cross-batch duplicate prevention (by payslip_id when available, else by employee_id + payrun_ref)
+    const payslipIds = payments.map((p: { payslip_id?: number }) => p.payslip_id).filter(Boolean)
+    if (payslipIds.length) {
+      const { data: existingByPayslip } = await sb
+        .from('modulr_payment_items')
+        .select('payslip_id')
+        .in('payslip_id', payslipIds)
+        .neq('status', 'failed')
+      if (existingByPayslip?.length) {
+        const dupePayslipIds = new Set(existingByPayslip.map((i: { payslip_id: number }) => i.payslip_id))
+        const filtered = payments.filter((p: { payslip_id?: number }) => !p.payslip_id || !dupePayslipIds.has(p.payslip_id))
         if (!filtered.length) {
-          return json({ error: 'All employees in this batch have already been submitted for this payrun' }, 400)
+          return json({ error: 'All payslips in this batch have already been submitted' }, 400)
         }
         payments.splice(0, payments.length, ...filtered)
+      }
+    } else {
+      const employeeIds = payments.map((p: { employee_id: string }) => p.employee_id)
+      const { data: existingItems } = await sb
+        .from('modulr_payment_items')
+        .select('employee_id, payment_id')
+        .in('employee_id', employeeIds)
+        .neq('status', 'failed')
+      if (existingItems?.length) {
+        const paymentIds = [...new Set(existingItems.map((i: { payment_id: string }) => i.payment_id))]
+        const { data: existingPayments } = await sb
+          .from('modulr_payments')
+          .select('id, payrun_ref')
+          .in('id', paymentIds)
+          .eq('payrun_ref', payrun_ref)
+        if (existingPayments?.length) {
+          const dupeEmployeeIds = new Set(
+            existingItems
+              .filter((i: { payment_id: string }) => existingPayments.some((p: { id: string }) => p.id === i.payment_id))
+              .map((i: { employee_id: string }) => i.employee_id)
+          )
+          const filtered = payments.filter((p: { employee_id: string }) => !dupeEmployeeIds.has(p.employee_id))
+          if (!filtered.length) {
+            return json({ error: 'All employees in this batch have already been submitted for this payrun' }, 400)
+          }
+          payments.splice(0, payments.length, ...filtered)
+        }
       }
     }
 
@@ -217,9 +231,10 @@ Deno.serve(async (req) => {
     }
 
     // Insert line items
-    const items = payments.map((p: { employee_id: string; amount: number; sort_code: string; account_number: string; reference: string }) => ({
+    const items = payments.map((p: { employee_id: string; payslip_id?: number; amount: number; sort_code: string; account_number: string; reference: string }) => ({
       payment_id: paymentRecord.id,
       employee_id: p.employee_id,
+      payslip_id: p.payslip_id || null,
       amount: p.amount,
       sort_code: '**' + p.sort_code.slice(-4),
       account_number: '****' + p.account_number.slice(-4),

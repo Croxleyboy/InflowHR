@@ -211,8 +211,8 @@ export default function AdminPayrollNew() {
   const [xeroConnected, setXeroConnected] = useState(false)
   const [sageConnected, setSageConnected] = useState(false)
   const [modulrConnected, setModulrConnected] = useState(false)
-  const [modulrPaidEmployees, setModulrPaidEmployees] = useState<Set<string>>(new Set())
-  const [modulrHeldEmployees, setModulrHeldEmployees] = useState<Set<string>>(new Set())
+  const [modulrPaidPayslips, setModulrPaidPayslips] = useState<Set<number>>(new Set())
+  const [modulrHeldPayslips, setModulrHeldPayslips] = useState<Set<number>>(new Set())
   const [modulrPaying, setModulrPaying] = useState(false)
   const [modulrWarning, setModulrWarning] = useState<{ show: boolean; payslipIds: number[]; bulk: boolean }>({ show: false, payslipIds: [], bulk: false })
   const [recentLogs, setRecentLogs] = useState<AuditLogEntry[]>([])
@@ -497,15 +497,15 @@ export default function AdminPayrollNew() {
     if (isModulrConnected) {
       const { data: mpData } = await supabase.from('modulr_payments').select('id').eq('company_id', selectedCompanyId).neq('status', 'failed')
       if (mpData?.length) {
-        const { data: itemsData } = await supabase.from('modulr_payment_items').select('employee_id, modulr_hold').in('payment_id', mpData.map(p => p.id)).neq('status', 'failed')
-        const paid = new Set<string>()
-        const held = new Set<string>()
+        const { data: itemsData } = await supabase.from('modulr_payment_items').select('payslip_id, modulr_hold').in('payment_id', mpData.map(p => p.id)).neq('status', 'failed').not('payslip_id', 'is', null)
+        const paid = new Set<number>()
+        const held = new Set<number>()
         for (const i of (itemsData || []) as any[]) {
-          if (i.modulr_hold) held.add(i.employee_id)
-          else paid.add(i.employee_id)
+          if (i.modulr_hold) held.add(i.payslip_id)
+          else paid.add(i.payslip_id)
         }
-        setModulrPaidEmployees(paid)
-        setModulrHeldEmployees(held)
+        setModulrPaidPayslips(paid)
+        setModulrHeldPayslips(held)
       }
     }
 
@@ -2516,7 +2516,7 @@ export default function AdminPayrollNew() {
     if (unreleased.length === 0) { showSuccess('All payslips already released'); return }
 
     if (features.modulr_integration && modulrConnected) {
-      const unpushed = unreleased.filter(p => p.employee?.id && !modulrPaidEmployees.has(p.employee.id) && (p.source === 'xero' || p.source === 'sage'))
+      const unpushed = unreleased.filter(p => p.employee?.id && !modulrPaidPayslips.has(p.id) && (p.source === 'xero' || p.source === 'sage'))
       if (unpushed.length > 0) {
         setModulrWarning({ show: true, payslipIds: unreleased.map(p => p.id), bulk: true })
         return
@@ -2536,7 +2536,7 @@ export default function AdminPayrollNew() {
   async function togglePayslipRelease(id: number, released: boolean) {
     if (released && features.modulr_integration && modulrConnected) {
       const p = payslips.find(ps => ps.id === id)
-      if (p && p.employee?.id && !modulrPaidEmployees.has(p.employee.id) && (p.source === 'xero' || p.source === 'sage')) {
+      if (p && p.employee?.id && !modulrPaidPayslips.has(p.id) && (p.source === 'xero' || p.source === 'sage')) {
         setModulrWarning({ show: true, payslipIds: [id], bulk: false })
         return
       }
@@ -2556,27 +2556,26 @@ export default function AdminPayrollNew() {
     const eligible = monthPayslips.filter(p =>
       p.status === 'paid' && !p.released &&
       (p.source === 'xero' || p.source === 'sage') &&
-      p.employee?.id && !modulrPaidEmployees.has(p.employee.id) && !modulrHeldEmployees.has(p.employee.id)
+      p.employee?.id && !modulrPaidPayslips.has(p.id) && !modulrHeldPayslips.has(p.id)
     )
     if (!eligible.length) { showError('No eligible payslips to push to Modulr. Payslips must be paid, unreleased, and from Xero/Sage.'); return }
 
     const periodLabel = eligible[0].pay_period_start.substring(0, 7)
     if (!confirm(`Push ${eligible.length} payslip(s) to Modulr for payment?\n\nPeriod: ${periodLabel}\nTotal: £${eligible.reduce((s, p) => s + Number(p.net_pay), 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`)) return
 
-    await doModulrPay(eligible, periodLabel)
+    await doModulrPay(eligible)
   }
 
   async function payWithModulrSingle(p: Payslip) {
     if (!session || !selectedCompanyId || !p.employee?.id) return
-    const periodLabel = p.pay_period_start.substring(0, 7)
     if (!confirm(`Push payslip for ${p.employee.first_name} ${p.employee.last_name} to Modulr?\n\nNet: £${Number(p.net_pay).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`)) return
-    await doModulrPay([p], periodLabel)
+    await doModulrPay([p])
   }
 
-  async function doModulrPay(eligible: Payslip[], periodLabel: string) {
+  async function doModulrPay(eligible: Payslip[]) {
     setModulrPaying(true)
     try {
-      const payments: { employee_id: string; amount: number; sort_code: string; account_number: string; reference: string; employee_name: string }[] = []
+      const payments: { employee_id: string; payslip_id: number; amount: number; sort_code: string; account_number: string; reference: string; employee_name: string }[] = []
       for (const p of eligible) {
         const emp = employees.find(e => e.id === p.employee?.id)
         if (!emp) continue
@@ -2585,13 +2584,16 @@ export default function AdminPayrollNew() {
         if (!/^\d{6}$/.test(sortCode) || !/^\d{8}$/.test(accountNo)) continue
         const netPay = Number(p.net_pay)
         if (netPay <= 0) continue
-        payments.push({ employee_id: emp.id, amount: netPay, sort_code: sortCode, account_number: accountNo, reference: `SALARY ${periodLabel}`, employee_name: `${emp.first_name} ${emp.last_name}` })
+        payments.push({ employee_id: emp.id, payslip_id: p.id, amount: netPay, sort_code: sortCode, account_number: accountNo, reference: `SALARY ${p.pay_period_start}`, employee_name: `${emp.first_name} ${emp.last_name}` })
       }
       if (!payments.length) { showError('No employees with valid bank details and positive net pay'); return }
 
+      const periods = [...new Set(eligible.map(p => p.pay_period_start))].sort()
+      const payrunRef = `PR-${periods[0]}_${periods[periods.length - 1]}`
+
       const { data, error } = await supabase.functions.invoke('modulr-payout', {
         headers: { Authorization: `Bearer ${session!.access_token}` },
-        body: { company_id: selectedCompanyId, payrun_ref: `PR-BROWSE-${periodLabel}`, payments },
+        body: { company_id: selectedCompanyId, payrun_ref: payrunRef, payments },
       })
       if (error) {
         let detail = error.message
@@ -2600,9 +2602,9 @@ export default function AdminPayrollNew() {
       }
       if (data?.error) throw new Error(data.error)
 
-      const paidIds = new Set(modulrPaidEmployees)
-      for (const pm of payments) paidIds.add(pm.employee_id)
-      setModulrPaidEmployees(paidIds)
+      const paidIds = new Set(modulrPaidPayslips)
+      for (const pm of payments) paidIds.add(pm.payslip_id)
+      setModulrPaidPayslips(paidIds)
       showSuccess(`${payments.length} payment(s) submitted to Modulr (Batch: ${data?.modulr_batch_id || 'pending'})`)
     } catch (err) {
       showError('Modulr payment failed: ' + (err as Error).message)
@@ -2611,30 +2613,24 @@ export default function AdminPayrollNew() {
     }
   }
 
-  async function toggleModulrHold(employeeId: string, hold: boolean) {
+  async function toggleModulrHold(payslipId: number, employeeId: string, hold: boolean) {
     if (!selectedCompanyId) return
     const { data: mpData } = await supabase
       .from('modulr_payments').select('id').eq('company_id', selectedCompanyId).neq('status', 'failed')
-    if (!mpData?.length) {
-      if (hold) {
-        const held = new Set(modulrHeldEmployees)
-        held.add(employeeId)
-        setModulrHeldEmployees(held)
+    if (mpData?.length) {
+      const { data: items } = await supabase
+        .from('modulr_payment_items').select('id')
+        .in('payment_id', mpData.map(p => p.id))
+        .eq('payslip_id', payslipId)
+        .neq('status', 'failed')
+      if (items?.length) {
+        await supabase.from('modulr_payment_items').update({ modulr_hold: hold }).in('id', items.map(i => i.id))
       }
-      return
     }
-    const { data: items } = await supabase
-      .from('modulr_payment_items').select('id')
-      .in('payment_id', mpData.map(p => p.id))
-      .eq('employee_id', employeeId)
-      .neq('status', 'failed')
-    if (items?.length) {
-      await supabase.from('modulr_payment_items').update({ modulr_hold: hold }).in('id', items.map(i => i.id))
-    }
-    const held = new Set(modulrHeldEmployees)
-    if (hold) held.add(employeeId); else held.delete(employeeId)
-    setModulrHeldEmployees(held)
-    showSuccess(hold ? 'Employee payment on hold' : 'Employee payment hold removed')
+    const held = new Set(modulrHeldPayslips)
+    if (hold) held.add(payslipId); else held.delete(payslipId)
+    setModulrHeldPayslips(held)
+    showSuccess(hold ? 'Payslip payment on hold' : 'Payslip payment hold removed')
   }
 
   if (loading) return <div className="admin-section"><p style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted, #888)' }}>Loading payroll data…</p></div>
@@ -3130,8 +3126,8 @@ export default function AdminPayrollNew() {
                         </button>
                       )}
                       {features.modulr_integration && modulrConnected && (() => {
-                        const modulrEligible = group.payslips.filter(p => p.status === 'paid' && !p.released && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && !modulrPaidEmployees.has(p.employee.id) && !modulrHeldEmployees.has(p.employee.id))
-                        const allPushed = group.payslips.filter(p => p.status === 'paid' && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && modulrPaidEmployees.has(p.employee.id)).length > 0
+                        const modulrEligible = group.payslips.filter(p => p.status === 'paid' && !p.released && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && !modulrPaidPayslips.has(p.id) && !modulrHeldPayslips.has(p.id))
+                        const allPushed = group.payslips.filter(p => p.status === 'paid' && (p.source === 'xero' || p.source === 'sage') && modulrPaidPayslips.has(p.id)).length > 0
                         return modulrEligible.length > 0 ? (
                           <button className="admin-btn-sm" disabled={modulrPaying} onClick={() => payWithModulrMonth(group.payslips)} style={{ fontSize: 11, background: '#1a237e', color: '#fff', border: '1px solid #1a237e' }}>
                             Pay with Modulr ({modulrEligible.length})
@@ -3187,7 +3183,7 @@ export default function AdminPayrollNew() {
                                       className="admin-btn-sm"
                                       onClick={() => togglePayslipRelease(p.id, !isReleased)}
                                       style={{
-                                        fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600, minWidth: 70,
+                                        fontSize: 12, padding: '4px 12px', borderRadius: 10, fontWeight: 600, minWidth: 85,
                                         background: isReleased ? '#e8f5e9' : '#fff3e0',
                                         color: isReleased ? '#2e7d32' : '#e65100',
                                         border: `1px solid ${isReleased ? '#a5d6a7' : '#ffcc80'}`,
@@ -3196,18 +3192,18 @@ export default function AdminPayrollNew() {
                                       {isReleased ? '✓ Released' : 'Unreleased'}
                                     </button>
                                     {features.modulr_integration && modulrConnected && isPaid && (p.source === 'xero' || p.source === 'sage') && p.employee?.id && (
-                                      modulrPaidEmployees.has(p.employee.id) ? (
-                                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 8, background: '#e8eaf6', color: '#1a237e', border: '1px solid #c5cae9', whiteSpace: 'nowrap' }}>Modulr ✓</span>
-                                      ) : modulrHeldEmployees.has(p.employee.id) ? (
-                                        <button className="admin-btn-sm" onClick={() => toggleModulrHold(p.employee!.id, false)} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                      modulrPaidPayslips.has(p.id) ? (
+                                        <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 8, background: '#e8eaf6', color: '#1a237e', border: '1px solid #c5cae9', whiteSpace: 'nowrap' }}>Modulr ✓</span>
+                                      ) : modulrHeldPayslips.has(p.id) ? (
+                                        <button className="admin-btn-sm" onClick={() => toggleModulrHold(p.id, p.employee!.id, false)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80', fontWeight: 600, whiteSpace: 'nowrap' }}>
                                           On Hold
                                         </button>
                                       ) : !isReleased ? (
                                         <>
-                                          <button className="admin-btn-sm" disabled={modulrPaying} onClick={() => payWithModulrSingle(p)} style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: '#1a237e', color: '#fff', border: '1px solid #1a237e', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                            Pay
+                                          <button className="admin-btn-sm" disabled={modulrPaying} onClick={() => payWithModulrSingle(p)} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, background: '#1a237e', color: '#fff', border: '1px solid #1a237e', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                            Modulr-Pay
                                           </button>
-                                          <button className="admin-btn-sm" onClick={() => toggleModulrHold(p.employee!.id, true)} title="Hold payment" style={{ fontSize: 9, padding: '2px 6px', borderRadius: 8, background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                          <button className="admin-btn-sm" onClick={() => toggleModulrHold(p.id, p.employee!.id, true)} title="Hold payment" style={{ fontSize: 11, padding: '4px 10px', borderRadius: 8, background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80', fontWeight: 600, whiteSpace: 'nowrap' }}>
                                             Hold
                                           </button>
                                         </>
