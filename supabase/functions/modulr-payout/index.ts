@@ -111,20 +111,22 @@ Deno.serve(async (req) => {
       await sb.from('modulr_payment_items').update({ status: 'submitted' }).eq('payment_id', paymentRecord.id)
 
       // Audit log
-      await sb.rpc('log_gdpr_action', {
-        p_company_id: company_id,
-        p_user_id: authResult.userId,
-        p_action: 'modulr_batch_payout',
-        p_entity_type: 'modulr_payments',
-        p_entity_id: paymentRecord.id,
-        p_details: {
-          payrun_ref,
-          total_amount: totalAmount,
-          employee_count: payments.length,
-          modulr_batch_id: batchData.id,
-          modulr_status: batchData.status,
-        },
-      }).catch(() => {})
+      try {
+        await sb.rpc('log_gdpr_action', {
+          p_company_id: company_id,
+          p_user_id: authResult.userId,
+          p_action: 'modulr_batch_payout',
+          p_entity_type: 'modulr_payments',
+          p_entity_id: paymentRecord.id,
+          p_details: {
+            payrun_ref,
+            total_amount: totalAmount,
+            employee_count: payments.length,
+            modulr_batch_id: batchData.id,
+            modulr_status: batchData.status,
+          },
+        })
+      } catch (_) {}
 
       return json({
         payment_id: paymentRecord.id,

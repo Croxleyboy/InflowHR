@@ -62,13 +62,15 @@ Deno.serve(async (req) => {
     if (upsertErr) return json({ error: 'Failed to save integration: ' + upsertErr.message }, 500)
 
     // Audit log
-    await sb.rpc('log_gdpr_action', {
-      p_company_id: company_id,
-      p_user_id: authResult.userId,
-      p_action: 'modulr_connect',
-      p_entity_type: 'modulr_integrations',
-      p_details: { status, source_account_id },
-    }).catch(() => {})
+    try {
+      await sb.rpc('log_gdpr_action', {
+        p_company_id: company_id,
+        p_user_id: authResult.userId,
+        p_action: 'modulr_connect',
+        p_entity_type: 'modulr_integrations',
+        p_details: { status, source_account_id },
+      })
+    } catch (_) {}
 
     return json({ status, error: statusError })
   } catch (err) {
