@@ -1670,9 +1670,50 @@ export default function AdminPayrollNew() {
 
   async function wizExportModulr() {
     if (!session) throw new Error('Not authenticated')
+
+    const pAllStarts = Object.values(wizPeriodByType).map(p => p.start).sort()
+    const pAllEnds = Object.values(wizPeriodByType).map(p => p.end).sort().reverse()
+    const pStart = pAllStarts[0]
+    const pEnd = pAllEnds[0]
+    if (!pStart || !pEnd) throw new Error('No pay period dates available')
+
+    const runPayslips = payslips.filter(p =>
+      p.status === 'paid' && !p.released &&
+      (p.source === 'xero' || p.source === 'sage') &&
+      p.pay_period_start >= pStart && p.pay_period_end <= pEnd
+    )
+    if (!runPayslips.length) throw new Error('No imported payslips found for this period. Fetch payslips from Xero or Sage first.')
+
+    const periodLabel = pStart.substring(0, 7)
+    const payments: { employee_id: string; amount: number; sort_code: string; account_number: string; reference: string; employee_name: string }[] = []
+
+    for (const p of runPayslips) {
+      const emp = employees.find(e => e.id === p.employee?.id)
+      if (!emp) continue
+      const sortCode = (emp.bank_sort_code || '').replace(/[-\s]/g, '')
+      const accountNo = (emp.bank_account_number || '').replace(/\s/g, '')
+      if (!/^\d{6}$/.test(sortCode) || !/^\d{8}$/.test(accountNo)) continue
+      const netPay = Number(p.net_pay)
+      if (netPay <= 0) continue
+      payments.push({
+        employee_id: emp.id,
+        amount: netPay,
+        sort_code: sortCode,
+        account_number: accountNo,
+        reference: `SALARY ${periodLabel}`,
+        employee_name: `${emp.first_name} ${emp.last_name}`,
+      })
+    }
+
+    if (!payments.length) throw new Error('No employees with valid bank details and positive net pay')
+
     const { data, error } = await supabase.functions.invoke('modulr-payout', {
       headers: { Authorization: `Bearer ${session.access_token}` },
-      body: { company_id: selectedCompanyId, pay_run_id: wizPayRunId },
+      body: {
+        company_id: selectedCompanyId,
+        payrun_ref: `PR-${wizPayRunId}-${periodLabel}`,
+        payments,
+      },
     })
     if (error) throw error
     if (data?.error) throw new Error(data.error)
