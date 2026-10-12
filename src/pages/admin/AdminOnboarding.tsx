@@ -988,13 +988,13 @@ export default function AdminOnboarding() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20, marginTop: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: 20, marginTop: 24 }}>
             {/* Line Graph — Onboarders per Month */}
             {(() => {
               const data = stats.monthlyBreakdown
               const max = Math.max(...data.map(x => x.count), 1)
               const padTop = 28, padBot = 32, padLeft = 30, padRight = 16
-              const w = 800, h = 240
+              const w = 660, h = 220
               const chartW = w - padLeft - padRight, chartH = h - padTop - padBot
               const points = data.map((m, i) => ({
                 x: padLeft + (i / (data.length - 1)) * chartW,
