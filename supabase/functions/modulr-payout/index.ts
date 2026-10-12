@@ -65,8 +65,8 @@ Deno.serve(async (req) => {
       payment_id: paymentRecord.id,
       employee_id: p.employee_id,
       amount: p.amount,
-      sort_code: p.sort_code,
-      account_number: p.account_number,
+      sort_code: '**' + p.sort_code.slice(-4),
+      account_number: '****' + p.account_number.slice(-4),
       reference: p.reference,
       status: 'pending',
     }))
