@@ -988,45 +988,96 @@ export default function AdminOnboarding() {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 20, marginTop: 24 }}>
-            <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 20, border: '1px solid var(--admin-border, #e0e0e0)' }}>
-              <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600 }}>Onboarders per Month</h4>
-              <p style={{ margin: '0 0 16px', fontSize: 12, color: '#888' }}>{stats.fyLabel}</p>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 120 }}>
-                {stats.monthlyBreakdown.map((m, i) => {
-                  const max = Math.max(...stats.monthlyBreakdown.map(x => x.count), 1)
-                  const h = m.count > 0 ? Math.max((m.count / max) * 100, 12) : 4
-                  return (
-                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                      {m.count > 0 && <span style={{ fontSize: 11, fontWeight: 600, color: '#1565c0' }}>{m.count}</span>}
-                      <div style={{ width: '100%', height: h, background: m.count > 0 ? '#1565c0' : '#e0e0e0', borderRadius: 4 }} />
-                      <span style={{ fontSize: 10, color: '#888' }}>{m.label}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 20, border: '1px solid var(--admin-border, #e0e0e0)' }}>
-              <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600 }}>Onboarding Pipeline</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {activeSteps.map((step) => {
-                  const count = stats.stageMap[step.step_key] || 0
-                  return (
-                    <div key={step.step_key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                      <span style={{ width: 24, textAlign: 'center' }}>{step.icon}</span>
-                      <span style={{ flex: 1, color: count > 0 ? '#333' : '#bbb' }}>{step.label}</span>
-                      <span style={{ fontWeight: 600, minWidth: 20, textAlign: 'right', color: count > 0 ? '#1565c0' : '#ccc' }}>{count}</span>
-                    </div>
-                  )
-                })}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, borderTop: '1px solid #e0e0e0', paddingTop: 6, marginTop: 2 }}>
-                  <span style={{ width: 24, textAlign: 'center' }}>✅</span>
-                  <span style={{ flex: 1, fontWeight: 600 }}>Completed</span>
-                  <span style={{ fontWeight: 600, minWidth: 20, textAlign: 'right', color: '#43a047' }}>{stats.stageMap['complete'] || 0}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20, marginTop: 24 }}>
+            {/* Line Graph — Onboarders per Month */}
+            {(() => {
+              const data = stats.monthlyBreakdown
+              const max = Math.max(...data.map(x => x.count), 1)
+              const padTop = 28, padBot = 28, padLeft = 30, padRight = 16
+              const w = 520, h = 200
+              const chartW = w - padLeft - padRight, chartH = h - padTop - padBot
+              const points = data.map((m, i) => ({
+                x: padLeft + (i / (data.length - 1)) * chartW,
+                y: padTop + chartH - (m.count / max) * chartH,
+                count: m.count,
+                label: m.label,
+              }))
+              const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+              const areaPath = `${linePath} L${points[points.length - 1].x},${padTop + chartH} L${points[0].x},${padTop + chartH} Z`
+              const gridLines = Array.from({ length: 5 }, (_, i) => {
+                const val = Math.round((max / 4) * i)
+                const y = padTop + chartH - (val / max) * chartH
+                return { y, val }
+              })
+              return (
+                <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
+                  <h4 style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>Onboarders per Month</h4>
+                  <p style={{ margin: '0 0 12px', fontSize: 12, color: '#888' }}>{stats.fyLabel}</p>
+                  <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 'auto' }}>
+                    <defs>
+                      <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.18" />
+                        <stop offset="100%" stopColor="#4f46e5" stopOpacity="0.01" />
+                      </linearGradient>
+                    </defs>
+                    {gridLines.map((g, i) => (
+                      <g key={i}>
+                        <line x1={padLeft} y1={g.y} x2={w - padRight} y2={g.y} stroke="#e5e7eb" strokeWidth="1" />
+                        <text x={padLeft - 6} y={g.y + 4} textAnchor="end" fill="#aaa" fontSize="10">{g.val}</text>
+                      </g>
+                    ))}
+                    <path d={areaPath} fill="url(#lineGrad)" />
+                    <path d={linePath} fill="none" stroke="#4f46e5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                    {points.map((p, i) => (
+                      <g key={i}>
+                        <circle cx={p.x} cy={p.y} r={p.count > 0 ? 4 : 2.5} fill={p.count > 0 ? '#4f46e5' : '#cbd5e1'} stroke="#fff" strokeWidth="2" />
+                        {p.count > 0 && <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#4f46e5" fontSize="11" fontWeight="700">{p.count}</text>}
+                        <text x={p.x} y={padTop + chartH + 16} textAnchor="middle" fill="#999" fontSize="10">{p.label}</text>
+                      </g>
+                    ))}
+                  </svg>
                 </div>
-              </div>
-            </div>
+              )
+            })()}
+
+            {/* Horizontal Bar Chart — Pipeline */}
+            {(() => {
+              const pipelineData = [
+                ...activeSteps.map(s => ({ label: s.label, icon: s.icon, count: stats.stageMap[s.step_key] || 0, color: '#4f46e5' })),
+                { label: 'Completed', icon: '✅', count: stats.stageMap['complete'] || 0, color: '#16a34a' },
+              ]
+              const maxCount = Math.max(...pipelineData.map(d => d.count), 1)
+              return (
+                <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
+                  <h4 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>Onboarding Pipeline</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {pipelineData.map((d, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 16, width: 22, textAlign: 'center', flexShrink: 0 }}>{d.icon}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: d.count > 0 ? 'var(--admin-text, #333)' : '#bbb', width: 120, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</span>
+                        <div style={{ flex: 1, height: 22, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                          <div style={{
+                            height: '100%',
+                            width: d.count > 0 ? `${Math.max((d.count / maxCount) * 100, 8)}%` : '0%',
+                            background: d.color === '#16a34a'
+                              ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)'
+                              : `linear-gradient(90deg, #4f46e5 0%, #818cf8 100%)`,
+                            borderRadius: 6,
+                            transition: 'width 0.4s ease',
+                          }} />
+                          {d.count > 0 && (
+                            <span style={{
+                              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                              fontSize: 11, fontWeight: 700, color: (d.count / maxCount) > 0.5 ? '#fff' : d.color,
+                            }}>{d.count}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           {stats.overdue > 0 && (
