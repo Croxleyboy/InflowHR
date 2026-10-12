@@ -165,6 +165,37 @@ Deno.serve(async (req) => {
       return json({ error: `${invalid.length} payment(s) have missing or invalid bank details` }, 400)
     }
 
+    // Check for already-paid employees (cross-batch duplicate prevention)
+    const employeeIds = payments.map((p: { employee_id: string }) => p.employee_id)
+    const { data: existingItems } = await sb
+      .from('modulr_payment_items')
+      .select('employee_id, payment_id')
+      .in('employee_id', employeeIds)
+      .neq('status', 'failed')
+
+    if (existingItems?.length) {
+      const alreadyPaid = new Set(existingItems.map(i => i.employee_id))
+      // Check these belong to the same payrun_ref
+      const paymentIds = [...new Set(existingItems.map(i => i.payment_id))]
+      const { data: existingPayments } = await sb
+        .from('modulr_payments')
+        .select('id, payrun_ref')
+        .in('id', paymentIds)
+        .eq('payrun_ref', payrun_ref)
+      if (existingPayments?.length) {
+        const dupeEmployeeIds = new Set(
+          existingItems
+            .filter(i => existingPayments.some(p => p.id === i.payment_id))
+            .map(i => i.employee_id)
+        )
+        const filtered = payments.filter((p: { employee_id: string }) => !dupeEmployeeIds.has(p.employee_id))
+        if (!filtered.length) {
+          return json({ error: 'All employees in this batch have already been submitted for this payrun' }, 400)
+        }
+        payments.splice(0, payments.length, ...filtered)
+      }
+    }
+
     const totalAmount = payments.reduce((sum: number, p: { amount: number }) => sum + p.amount, 0)
 
     // Create audit record
@@ -190,8 +221,8 @@ Deno.serve(async (req) => {
       payment_id: paymentRecord.id,
       employee_id: p.employee_id,
       amount: p.amount,
-      sort_code: p.sort_code,
-      account_number: p.account_number,
+      sort_code: '**' + p.sort_code.slice(-4),
+      account_number: '****' + p.account_number.slice(-4),
       reference: p.reference,
       status: 'pending',
     }))
