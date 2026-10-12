@@ -478,488 +478,497 @@ export default function DashboardDetailed() {
 
   const meetingTotal = pendingOneToOnes + completedOneToOnes
 
-  return (
-    <div className="dd2">
-      {/* Top bar: greeting left, actions right */}
-      <header className="dd2-header">
-        <div className="dd2-header-left">
-          <div>
-            <h1 className="dd2-greeting">{greeting} {firstName}</h1>
-            <p className="dd2-date">{dateStr}</p>
-          </div>
-        </div>
-        <div className="dd2-header-right">
-          {company?.logo_url ? (
-            <img className="dd2-company-logo" src={company.logo_url} alt={company.name} />
-          ) : (
-            <span className="dd2-company-name">{company?.name || 'InflowHR'}</span>
-          )}
-          <div className="dd2-header-actions">
-            <button className="dd2-action-btn" onClick={toggle} title="Toggle theme">
-              {dark ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></g></svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              )}
-            </button>
-            <button className="dd2-action-btn" onClick={signOut} title="Sign out">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-      </header>
+  // Drag-and-drop card ordering
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [cardOrder, setCardOrder] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('inflowhr-dd2-order')
+      if (saved) return JSON.parse(saved)
+    } catch { /* empty */ }
+    return []
+  })
 
-      {/* Profile hero card — landscape background with avatar overlay */}
-      <section className="dd2-profile-hero" onClick={() => navigate('/profile')}>
-        <div className="dd2-profile-bg" />
-        <div className="dd2-profile-content">
-          <div className="dd2-profile-avatar-wrap">
-            {avatarUrl ? (
-              <img className="dd2-profile-avatar" src={avatarUrl} alt={initials} />
-            ) : (
-              <div className="dd2-profile-avatar dd2-profile-avatar-initials">{initials}</div>
-            )}
+  type CardDef = { id: string; el: JSX.Element }
+  const allCards: CardDef[] = []
+
+  // Build card list — each card has a stable id
+  allCards.push({ id: 'attendance', el: (
+    <section className="dd2-card" onClick={() => navigate(isShiftWorker ? '/shifts' : '/timesheets')}>
+      <div className="dd2-card-header">
+        <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <h2 className="dd2-card-title">Attendance Overview</h2>
+      </div>
+      <div className="dd2-card-body">
+        {isShiftWorker ? (
+          <>
+            <AttendanceBarChart days={attendanceDays} />
+            <div className="dd2-att-legend">
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#43a047' }} />{attendancePresent} Present</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#ff9800' }} />{attendanceLate} Late</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#e53935' }} />{attendanceAbsent} Absent</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="dd2-att-week-dots">
+              {attendanceDays.map((d, i) => (
+                <div key={i} className="dd2-att-dot-col">
+                  <div className={`dd2-att-week-dot dd2-att-week-dot-${d.status}`} title={d.hours ? `${d.hours}h` : d.status} />
+                  <span className="dd2-att-bar-label">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]}</span>
+                </div>
+              ))}
+            </div>
+            <div className="dd2-att-hours-summary">
+              <span className="dd2-att-hours-big">{tsHoursThisWeek !== null ? tsHoursThisWeek.toFixed(1) : '--'}h</span>
+              <span className="dd2-att-hours-label">of {tsExpectedHours}h this week</span>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  )})
+
+  allCards.push({ id: 'notifications', el: (
+    <section className="dd2-card" onClick={() => navigate('/notifications')}>
+      <div className="dd2-card-header">
+        <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <h2 className="dd2-card-title">Notifications</h2>
+        {unreadCount > 0 && <span className="dd2-card-count dd2-card-count-alert">{unreadCount} new</span>}
+      </div>
+      <div className="dd2-card-body">
+        {recentNotifications.length === 0 ? (
+          <p className="dd2-empty">No recent notifications</p>
+        ) : (
+          <ul className="dd2-item-list">
+            {recentNotifications.map(n => (
+              <li key={n.id} className={`dd2-item ${!n.is_read ? 'dd2-item-unread' : ''}`}>
+                <span className={`dd2-notif-indicator dd2-notif-${n.type}`} />
+                <div className="dd2-item-content">
+                  <span className="dd2-item-title">{n.title}</span>
+                  <span className="dd2-item-sub">{n.message.length > 50 ? n.message.slice(0, 50) + '…' : n.message}</span>
+                </div>
+                <span className="dd2-item-time">{new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="dd2-card-link">View all notifications →</div>
+      </div>
+    </section>
+  )})
+
+  if (features.performance) {
+    allCards.push({ id: 'meetings', el: (
+      <section className="dd2-card" onClick={() => navigate('/one-to-ones')}>
+        <div className="dd2-card-header">
+          <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <h2 className="dd2-card-title">1:1 Meetings</h2>
+        </div>
+        <div className="dd2-card-body">
+          <div className="dd2-meeting-donut-row">
+            <div className="dd2-meeting-donut-wrap">
+              <DonutChart segments={[{ value: completedOneToOnes, color: '#43a047', label: 'Completed' }, { value: pendingOneToOnes, color: '#ff9800', label: 'Pending' }]} size={80} />
+              <div className="dd2-meeting-donut-center">
+                <span className="dd2-meeting-donut-num">{meetingTotal}</span>
+                <span className="dd2-meeting-donut-label">total</span>
+              </div>
+            </div>
+            <div className="dd2-meeting-donut-legend">
+              <div className="dd2-meeting-legend-row"><span className="dd2-att-dot" style={{ background: '#43a047' }} /><span>{completedOneToOnes} Completed</span></div>
+              <div className="dd2-meeting-legend-row"><span className="dd2-att-dot" style={{ background: '#ff9800' }} /><span>{pendingOneToOnes} Pending</span></div>
+            </div>
           </div>
-          <div className="dd2-profile-info">
-            <h2 className="dd2-profile-name">{employeeName}</h2>
-            {jobTitle && <p className="dd2-profile-title">{jobTitle}</p>}
-          </div>
-          {lastPayNet !== null && (
-            <div className="dd2-profile-pay" onClick={(e) => { e.stopPropagation(); navigate('/payslips') }}>
-              <span className="dd2-profile-pay-amount">&pound;{lastPayNet.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              <span className="dd2-profile-pay-label">
-                Last Pay{lastPayDate ? ` · ${new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
-              </span>
+          {nextMeetingDate && (
+            <div className="dd2-meeting-next">
+              <span className="dd2-meeting-next-label">Next:</span>
+              <span>{new Date(nextMeetingDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{nextMeetingTime ? ` at ${nextMeetingTime}` : ''}</span>
+              {nextMeetingWith && <span className="dd2-meeting-next-with">with {nextMeetingWith}</span>}
             </div>
           )}
         </div>
       </section>
+    )})
+  }
 
-      {/* Summary strip */}
-      {features.leave && (
-        <div className="dd2-summary-strip">
-          <div className="dd2-summary-card dd2-summary-remaining" onClick={() => navigate('/leave')}>
-            <span className="dd2-summary-value">{leaveRemaining ?? '--'}</span>
-            <span className="dd2-summary-label">Days Remaining</span>
+  if (features.leave) {
+    allCards.push({ id: 'leave', el: (
+      <section className="dd2-card" onClick={() => navigate('/leave')}>
+        <div className="dd2-card-header">
+          <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <h2 className="dd2-card-title">Upcoming Leave</h2>
+          <span className="dd2-card-count">{upcomingLeave.length}</span>
+        </div>
+        <div className="dd2-card-body">
+          {upcomingLeave.length === 0 ? (
+            <p className="dd2-empty">No upcoming leave planned</p>
+          ) : (
+            <ul className="dd2-item-list">
+              {upcomingLeave.slice(0, 3).map(lr => (
+                <li key={lr.id} className="dd2-item">
+                  <span className={`dd2-badge dd2-badge-${lr.status}`}>{lr.status}</span>
+                  <div className="dd2-item-content">
+                    <span className="dd2-item-title">{(lr.leave_type as any)?.name || 'Leave'}</span>
+                    <span className="dd2-item-sub">{formatDate(lr.start_date)} – {formatDate(lr.end_date)} ({lr.days_requested}d)</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+    )})
+  }
+
+  if (features.expenses) {
+    allCards.push({ id: 'expenses', el: (
+      <section className="dd2-card">
+        <div className="dd2-card-header" onClick={() => navigate('/expenses')}>
+          <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <h2 className="dd2-card-title">Expenses</h2>
+          <span className="dd2-card-count">&pound;{expenseTotal.toFixed(2)}</span>
+        </div>
+        <div className="dd2-card-body">
+          {recentExpenses.length === 0 ? (
+            <p className="dd2-empty" onClick={() => navigate('/expenses')}>No expense claims</p>
+          ) : (
+            <>
+              <ul className="dd2-item-list" onClick={() => navigate('/expenses')}>
+                {expenseSlice.map(e => (
+                  <li key={e.id} className="dd2-item">
+                    <span className={`dd2-badge dd2-badge-${e.status}`}>{e.status}</span>
+                    <div className="dd2-item-content">
+                      <span className="dd2-item-title">&pound;{Number(e.amount).toFixed(2)}</span>
+                      <span className="dd2-item-sub">{e.description || new Date(e.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {expensePages > 1 && (
+                <div className="dd2-pagination">
+                  <button className="dd2-page-btn" disabled={expensePage === 0} onClick={(ev) => { ev.stopPropagation(); setExpensePage(p => p - 1) }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                  <span className="dd2-page-info">{expensePage + 1} / {expensePages}</span>
+                  <button className="dd2-page-btn" disabled={expensePage >= expensePages - 1} onClick={(ev) => { ev.stopPropagation(); setExpensePage(p => p + 1) }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+    )})
+  }
+
+  if (features.kudos) {
+    allCards.push({ id: 'kudos', el: (
+      <section className="dd2-card" onClick={() => navigate('/kudos')}>
+        <div className="dd2-card-header">
+          <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <h2 className="dd2-card-title">Kudos</h2>
+          <span className="dd2-card-count">{recentKudos.length}</span>
+        </div>
+        <div className="dd2-card-body">
+          {recentKudos.length === 0 ? (
+            <p className="dd2-empty">No kudos yet</p>
+          ) : (
+            <ul className="dd2-item-list">
+              {recentKudos.slice(0, 3).map(k => {
+                const person = k.direction === 'sent' ? k.to_employee : k.from_employee
+                const dirLabel = k.direction === 'sent' ? 'Sent to' : 'From'
+                return (
+                  <li key={`${k.id}-${k.direction}`} className="dd2-item">
+                    <div className="dd2-person-circle" style={{ background: k.direction === 'sent' ? '#fff3e0' : '#e8f5e9', color: k.direction === 'sent' ? '#e65100' : '#2e7d32', fontSize: 11 }}>
+                      {person ? `${person.first_name[0]}${person.last_name[0]}` : '?'}
+                    </div>
+                    <div className="dd2-item-content">
+                      <span className="dd2-item-title">{person ? `${person.first_name} ${person.last_name}` : 'Someone'}</span>
+                      <span className="dd2-item-sub"><span style={{ fontWeight: 600 }}>{dirLabel}:</span> {k.message.length > 40 ? k.message.slice(0, 40) + '…' : k.message}</span>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      </section>
+    )})
+  }
+
+  allCards.push({ id: 'newsfeed', el: (
+    <section className="dd2-card">
+      <div className="dd2-card-header" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
+        <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1"/><path d="M21 12h-8"/><path d="M21 16h-8"/><path d="M21 8h-8"/></svg>
+        <h2 className="dd2-card-title">News Feed</h2>
+      </div>
+      <div className="dd2-card-body">
+        {announcements.length === 0 ? (
+          <p className="dd2-empty" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>No announcements</p>
+        ) : (
+          <>
+            <ul className="dd2-item-list" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
+              {newsSlice.map((a, i) => (
+                <li key={i} className="dd2-item">
+                  <div className="dd2-item-content">
+                    <span className="dd2-item-title">{a.title}</span>
+                    <span className="dd2-item-sub">{a.body.length > 60 ? a.body.slice(0, 60) + '…' : a.body}</span>
+                  </div>
+                  {a.published_at && <span className="dd2-item-time">{new Date(a.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                </li>
+              ))}
+            </ul>
+            {newsPages > 1 && (
+              <div className="dd2-pagination">
+                <button className="dd2-page-btn" disabled={newsPage === 0} onClick={(ev) => { ev.stopPropagation(); setNewsPage(p => p - 1) }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
+                <span className="dd2-page-info">{newsPage + 1} / {newsPages}</span>
+                <button className="dd2-page-btn" disabled={newsPage >= newsPages - 1} onClick={(ev) => { ev.stopPropagation(); setNewsPage(p => p + 1) }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  )})
+
+  if (features.elearning) {
+    allCards.push({ id: 'elearning', el: (
+      <section className="dd2-card" onClick={() => navigate('/elearning')}>
+        <div className="dd2-card-header">
+          <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 1.1 2.7 3 6 3s6-1.9 6-3v-5"/></svg>
+          <h2 className="dd2-card-title">E-Learning</h2>
+        </div>
+        <div className="dd2-card-body">
+          <div className="dd2-elearn-stats">
+            <div className="dd2-elearn-stat"><span className="dd2-elearn-num dd2-elearn-completed">{elearningCompleted}</span><span className="dd2-elearn-label">Completed</span></div>
+            <div className="dd2-elearn-stat"><span className="dd2-elearn-num dd2-elearn-outstanding">{elearningOutstanding}</span><span className="dd2-elearn-label">Outstanding</span></div>
+            <div className="dd2-elearn-stat"><span className="dd2-elearn-num dd2-elearn-overdue">{elearningOverdue}</span><span className="dd2-elearn-label">Overdue</span></div>
           </div>
-          <div className="dd2-summary-card dd2-summary-approved" onClick={() => navigate('/leave')}>
-            <span className="dd2-summary-value">{leaveApproved ?? 0}</span>
-            <span className="dd2-summary-label">Approved</span>
-          </div>
-          <div className="dd2-summary-card dd2-summary-pending" onClick={() => navigate('/leave')}>
-            <span className="dd2-summary-value">{leavePending ?? 0}</span>
-            <span className="dd2-summary-label">Pending</span>
-          </div>
-          <div className="dd2-summary-card dd2-summary-total" onClick={() => navigate('/leave')}>
-            <span className="dd2-summary-value">{leaveTotal ?? '--'}</span>
-            <span className="dd2-summary-label">Total Allowance</span>
+          {elearningOverdue > 0 && (
+            <div className="dd2-elearn-alert">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e53935" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              {elearningOverdue} course{elearningOverdue !== 1 ? 's' : ''} past deadline
+            </div>
+          )}
+        </div>
+      </section>
+    )})
+  }
+
+  if (features.surveys) {
+    allCards.push({ id: 'surveys', el: (
+      <section className="dd2-card" onClick={() => navigate('/surveys')}>
+        <div className="dd2-card-header">
+          <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <h2 className="dd2-card-title">Surveys</h2>
+        </div>
+        <div className="dd2-card-body">
+          <div className="dd2-survey-stats">
+            {surveyOutstanding > 0 ? (
+              <div className="dd2-survey-badge dd2-survey-badge-pending">{surveyOutstanding} outstanding</div>
+            ) : (
+              <div className="dd2-survey-badge dd2-survey-badge-ok">All caught up!</div>
+            )}
+            <span className="dd2-survey-completed">{surveyCompleted} completed</span>
           </div>
         </div>
-      )}
+      </section>
+    )})
+  }
 
-      {/* Main content — 3-column grid */}
-      <div className="dd2-grid dd2-grid-3">
-
-        {/* ─── Row 1: Attendance · Notifications · 1:1 Meetings ─── */}
-
-        {/* Attendance Overview */}
-        <section className="dd2-card dd2-card-accent-green" onClick={() => navigate(isShiftWorker ? '/shifts' : '/timesheets')}>
-          <div className="dd2-card-header">
-            <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            <h2 className="dd2-card-title">Attendance Overview</h2>
-          </div>
-          <div className="dd2-card-body">
-            {isShiftWorker ? (
-              <>
-                <AttendanceBarChart days={attendanceDays} />
-                <div className="dd2-att-legend">
-                  <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#43a047' }} />{attendancePresent} Present</span>
-                  <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#ff9800' }} />{attendanceLate} Late</span>
-                  <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#e53935' }} />{attendanceAbsent} Absent</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="dd2-att-week-dots">
-                  {attendanceDays.map((d, i) => (
-                    <div key={i} className="dd2-att-dot-col">
-                      <div className={`dd2-att-week-dot dd2-att-week-dot-${d.status}`} title={d.hours ? `${d.hours}h` : d.status} />
-                      <span className="dd2-att-bar-label">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="dd2-att-hours-summary">
-                  <span className="dd2-att-hours-big">{tsHoursThisWeek !== null ? tsHoursThisWeek.toFixed(1) : '--'}h</span>
-                  <span className="dd2-att-hours-label">of {tsExpectedHours}h this week</span>
-                </div>
-              </>
-            )}
-          </div>
-        </section>
-
-        {/* Notifications */}
-        <section className="dd2-card dd2-card-accent-blue" onClick={() => navigate('/notifications')}>
-          <div className="dd2-card-header">
-            <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            <h2 className="dd2-card-title">Notifications</h2>
-            {unreadCount > 0 && <span className="dd2-card-count dd2-card-count-alert">{unreadCount} new</span>}
-          </div>
-          <div className="dd2-card-body">
-            {recentNotifications.length === 0 ? (
-              <p className="dd2-empty">No recent notifications</p>
-            ) : (
-              <ul className="dd2-item-list">
-                {recentNotifications.map(n => (
-                  <li key={n.id} className={`dd2-item ${!n.is_read ? 'dd2-item-unread' : ''}`}>
-                    <span className={`dd2-notif-indicator dd2-notif-${n.type}`} />
-                    <div className="dd2-item-content">
-                      <span className="dd2-item-title">{n.title}</span>
-                      <span className="dd2-item-sub">{n.message.length > 50 ? n.message.slice(0, 50) + '…' : n.message}</span>
-                    </div>
-                    <span className="dd2-item-time">{new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="dd2-card-link">View all notifications →</div>
-          </div>
-        </section>
-
-        {/* 1:1 Meetings with donut */}
-        {features.performance ? (
-          <section className="dd2-card dd2-card-accent-pink" onClick={() => navigate('/one-to-ones')}>
-            <div className="dd2-card-header">
-              <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c2185b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <h2 className="dd2-card-title">1:1 Meetings</h2>
-            </div>
-            <div className="dd2-card-body">
-              <div className="dd2-meeting-donut-row">
-                <div className="dd2-meeting-donut-wrap">
-                  <DonutChart
-                    segments={[
-                      { value: completedOneToOnes, color: '#43a047', label: 'Completed' },
-                      { value: pendingOneToOnes, color: '#ff9800', label: 'Pending' },
-                    ]}
-                    size={90}
-                  />
-                  <div className="dd2-meeting-donut-center">
-                    <span className="dd2-meeting-donut-num">{meetingTotal}</span>
-                    <span className="dd2-meeting-donut-label">total</span>
-                  </div>
-                </div>
-                <div className="dd2-meeting-donut-legend">
-                  <div className="dd2-meeting-legend-row">
-                    <span className="dd2-att-dot" style={{ background: '#43a047' }} />
-                    <span>{completedOneToOnes} Completed</span>
-                  </div>
-                  <div className="dd2-meeting-legend-row">
-                    <span className="dd2-att-dot" style={{ background: '#ff9800' }} />
-                    <span>{pendingOneToOnes} Pending</span>
-                  </div>
-                </div>
-              </div>
-              {nextMeetingDate && (
-                <div className="dd2-meeting-next">
-                  <span className="dd2-meeting-next-label">Next:</span>
-                  <span>{new Date(nextMeetingDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{nextMeetingTime ? ` at ${nextMeetingTime}` : ''}</span>
-                  {nextMeetingWith && <span className="dd2-meeting-next-with">with {nextMeetingWith}</span>}
-                </div>
-              )}
-            </div>
-          </section>
+  allCards.push({ id: 'birthdays', el: (
+    <section className="dd2-card">
+      <div className="dd2-card-header">
+        <span className="dd2-card-icon">🎂</span>
+        <h2 className="dd2-card-title">Birthdays</h2>
+        <span className="dd2-card-count">{birthdays.length}</span>
+      </div>
+      <div className="dd2-card-body">
+        {birthdays.length === 0 ? (
+          <p className="dd2-empty">No watchlist birthdays in the next 30 days</p>
         ) : (
-          <section className="dd2-card dd2-card-accent-purple" onClick={() => navigate('/leave')}>
-            <div className="dd2-card-header">
-              <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7b1fa2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              <h2 className="dd2-card-title">Upcoming Leave</h2>
-              <span className="dd2-card-count">{upcomingLeave.length}</span>
-            </div>
-            <div className="dd2-card-body">
-              {upcomingLeave.length === 0 ? (
-                <p className="dd2-empty">No upcoming leave planned</p>
-              ) : (
-                <ul className="dd2-item-list">
-                  {upcomingLeave.slice(0, 3).map(lr => (
-                    <li key={lr.id} className="dd2-item">
-                      <span className={`dd2-badge dd2-badge-${lr.status}`}>{lr.status}</span>
-                      <div className="dd2-item-content">
-                        <span className="dd2-item-title">{(lr.leave_type as any)?.name || 'Leave'}</span>
-                        <span className="dd2-item-sub">{formatDate(lr.start_date)} – {formatDate(lr.end_date)} ({lr.days_requested}d)</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* ─── Row 2: Expenses · Kudos · Leave/Shifts ─── */}
-
-        {/* Expenses with pagination */}
-        {features.expenses && (
-          <section className="dd2-card dd2-card-accent-red">
-            <div className="dd2-card-header" onClick={() => navigate('/expenses')}>
-              <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e53935" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              <h2 className="dd2-card-title">Expenses</h2>
-              <span className="dd2-card-count">&pound;{expenseTotal.toFixed(2)}</span>
-            </div>
-            <div className="dd2-card-body">
-              {recentExpenses.length === 0 ? (
-                <p className="dd2-empty" onClick={() => navigate('/expenses')}>No expense claims</p>
-              ) : (
-                <>
-                  <ul className="dd2-item-list" onClick={() => navigate('/expenses')}>
-                    {expenseSlice.map(e => (
-                      <li key={e.id} className="dd2-item">
-                        <span className={`dd2-badge dd2-badge-${e.status}`}>{e.status}</span>
-                        <div className="dd2-item-content">
-                          <span className="dd2-item-title">&pound;{Number(e.amount).toFixed(2)}</span>
-                          <span className="dd2-item-sub">{e.description || new Date(e.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                  {expensePages > 1 && (
-                    <div className="dd2-pagination">
-                      <button className="dd2-page-btn" disabled={expensePage === 0} onClick={(e) => { e.stopPropagation(); setExpensePage(p => p - 1) }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-                      </button>
-                      <span className="dd2-page-info">{expensePage + 1} / {expensePages}</span>
-                      <button className="dd2-page-btn" disabled={expensePage >= expensePages - 1} onClick={(e) => { e.stopPropagation(); setExpensePage(p => p + 1) }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Kudos — last 3 received/sent */}
-        {features.kudos && (
-          <section className="dd2-card dd2-card-accent-amber" onClick={() => navigate('/kudos')}>
-            <div className="dd2-card-header">
-              <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              <h2 className="dd2-card-title">Kudos</h2>
-              <span className="dd2-card-count">{recentKudos.length}</span>
-            </div>
-            <div className="dd2-card-body">
-              {recentKudos.length === 0 ? (
-                <p className="dd2-empty">No kudos yet — give or receive recognition</p>
-              ) : (
-                <ul className="dd2-item-list">
-                  {recentKudos.slice(0, 3).map(k => {
-                    const person = k.direction === 'sent' ? k.to_employee : k.from_employee
-                    const dirLabel = k.direction === 'sent' ? 'Sent to' : 'From'
-                    return (
-                      <li key={`${k.id}-${k.direction}`} className="dd2-item">
-                        <div className="dd2-person-circle" style={{ background: k.direction === 'sent' ? '#fff3e0' : '#e8f5e9', color: k.direction === 'sent' ? '#e65100' : '#2e7d32', fontSize: 11 }}>
-                          {person ? `${person.first_name[0]}${person.last_name[0]}` : '?'}
-                        </div>
-                        <div className="dd2-item-content">
-                          <span className="dd2-item-title">{person ? `${person.first_name} ${person.last_name}` : 'Someone'}</span>
-                          <span className="dd2-item-sub"><span style={{ fontWeight: 600 }}>{dirLabel}:</span> {k.message.length > 40 ? k.message.slice(0, 40) + '…' : k.message}</span>
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* Upcoming Leave (if performance is on, leave goes here instead of row 1) */}
-        {features.performance && features.leave && (
-          <section className="dd2-card dd2-card-accent-purple" onClick={() => navigate('/leave')}>
-            <div className="dd2-card-header">
-              <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7b1fa2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              <h2 className="dd2-card-title">Upcoming Leave</h2>
-              <span className="dd2-card-count">{upcomingLeave.length}</span>
-            </div>
-            <div className="dd2-card-body">
-              {upcomingLeave.length === 0 ? (
-                <p className="dd2-empty">No upcoming leave planned</p>
-              ) : (
-                <ul className="dd2-item-list">
-                  {upcomingLeave.slice(0, 3).map(lr => (
-                    <li key={lr.id} className="dd2-item">
-                      <span className={`dd2-badge dd2-badge-${lr.status}`}>{lr.status}</span>
-                      <div className="dd2-item-content">
-                        <span className="dd2-item-title">{(lr.leave_type as any)?.name || 'Leave'}</span>
-                        <span className="dd2-item-sub">{formatDate(lr.start_date)} – {formatDate(lr.end_date)} ({lr.days_requested}d)</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* ─── Row 3: News Feed · E-Learning · Surveys ─── */}
-
-        {/* News Feed with pagination */}
-        <section className="dd2-card dd2-card-accent-indigo">
-          <div className="dd2-card-header" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
-            <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3949ab" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1"/><path d="M21 12h-8"/><path d="M21 16h-8"/><path d="M21 8h-8"/></svg>
-            <h2 className="dd2-card-title">News Feed</h2>
-          </div>
-          <div className="dd2-card-body">
-            {announcements.length === 0 ? (
-              <p className="dd2-empty" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>No announcements</p>
-            ) : (
-              <>
-                <ul className="dd2-item-list" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
-                  {newsSlice.map((a, i) => (
-                    <li key={i} className="dd2-item">
-                      <div className="dd2-item-content">
-                        <span className="dd2-item-title">{a.title}</span>
-                        <span className="dd2-item-sub">{a.body.length > 60 ? a.body.slice(0, 60) + '…' : a.body}</span>
-                      </div>
-                      {a.published_at && <span className="dd2-item-time">{new Date(a.published_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                    </li>
-                  ))}
-                </ul>
-                {newsPages > 1 && (
-                  <div className="dd2-pagination">
-                    <button className="dd2-page-btn" disabled={newsPage === 0} onClick={(e) => { e.stopPropagation(); setNewsPage(p => p - 1) }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-                    </button>
-                    <span className="dd2-page-info">{newsPage + 1} / {newsPages}</span>
-                    <button className="dd2-page-btn" disabled={newsPage >= newsPages - 1} onClick={(e) => { e.stopPropagation(); setNewsPage(p => p + 1) }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                    </button>
+          <ul className="dd2-item-list">
+            {birthdays.slice(0, 4).map(c => {
+              const dob = new Date(c.date_of_birth!)
+              const bday = new Date(new Date().getFullYear(), dob.getMonth(), dob.getDate())
+              if (bday < new Date()) bday.setFullYear(bday.getFullYear() + 1)
+              const isToday = toLocalDateStr(bday) === toLocalDateStr()
+              return (
+                <li key={c.id} className={`dd2-item ${isToday ? 'dd2-item-highlight' : ''}`}>
+                  {c.avatar_url ? <img className="dd2-person-circle dd2-person-img" src={c.avatar_url} alt="" /> : <div className="dd2-person-circle">{c.first_name[0]}{c.last_name[0]}</div>}
+                  <div className="dd2-item-content">
+                    <span className="dd2-item-title">{c.first_name} {c.last_name}</span>
+                    <span className="dd2-item-sub">{isToday ? 'Today!' : formatDate(bday.toISOString().split('T')[0])}</span>
                   </div>
-                )}
-              </>
-            )}
-          </div>
-        </section>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
+  )})
 
-        {/* E-Learning */}
-        {features.elearning && (
-          <section className="dd2-card dd2-card-accent-yellow" onClick={() => navigate('/elearning')}>
-            <div className="dd2-card-header">
-              <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 1.1 2.7 3 6 3s6-1.9 6-3v-5"/></svg>
-              <h2 className="dd2-card-title">E-Learning</h2>
+  allCards.push({ id: 'anniversaries', el: (
+    <section className="dd2-card">
+      <div className="dd2-card-header">
+        <span className="dd2-card-icon">🎉</span>
+        <h2 className="dd2-card-title">Work Anniversaries</h2>
+        <span className="dd2-card-count">{anniversaries.length}</span>
+      </div>
+      <div className="dd2-card-body">
+        {anniversaries.length === 0 ? (
+          <p className="dd2-empty">No upcoming anniversaries</p>
+        ) : (
+          <ul className="dd2-item-list">
+            {anniversaries.slice(0, 4).map(c => (
+              <li key={c.id} className="dd2-item">
+                {c.avatar_url ? <img className="dd2-person-circle dd2-person-img" src={c.avatar_url} alt="" /> : <div className="dd2-person-circle">{c.first_name[0]}{c.last_name[0]}</div>}
+                <div className="dd2-item-content">
+                  <span className="dd2-item-title">{c.first_name} {c.last_name}</span>
+                  <span className="dd2-item-sub">{c.department}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+  )})
+
+  // Sort cards by saved order, unknown ids go to end
+  const sortedCards = [...allCards].sort((a, b) => {
+    const ai = cardOrder.indexOf(a.id), bi = cardOrder.indexOf(b.id)
+    if (ai === -1 && bi === -1) return 0
+    if (ai === -1) return 1
+    if (bi === -1) return -1
+    return ai - bi
+  })
+
+  function handleDragStart(idx: number) { setDragIdx(idx) }
+  function handleDragOver(e: React.DragEvent) { e.preventDefault() }
+  function handleDrop(targetIdx: number) {
+    if (dragIdx === null || dragIdx === targetIdx) return
+    const ids = sortedCards.map(c => c.id)
+    const [moved] = ids.splice(dragIdx, 1)
+    ids.splice(targetIdx, 0, moved)
+    setCardOrder(ids)
+    try { localStorage.setItem('inflowhr-dd2-order', JSON.stringify(ids)) } catch { /* empty */ }
+    setDragIdx(null)
+  }
+
+  return (
+    <div className="dd2">
+      {/* Top row: greeting + profile card side by side */}
+      <div className="dd2-top-row">
+        <div className="dd2-top-left">
+          <header className="dd2-header">
+            <div>
+              <h1 className="dd2-greeting">{greeting} {firstName}</h1>
+              <p className="dd2-date">{dateStr}</p>
             </div>
-            <div className="dd2-card-body">
-              <div className="dd2-elearn-stats">
-                <div className="dd2-elearn-stat">
-                  <span className="dd2-elearn-num dd2-elearn-completed">{elearningCompleted}</span>
-                  <span className="dd2-elearn-label">Completed</span>
-                </div>
-                <div className="dd2-elearn-stat">
-                  <span className="dd2-elearn-num dd2-elearn-outstanding">{elearningOutstanding}</span>
-                  <span className="dd2-elearn-label">Outstanding</span>
-                </div>
-                <div className="dd2-elearn-stat">
-                  <span className="dd2-elearn-num dd2-elearn-overdue">{elearningOverdue}</span>
-                  <span className="dd2-elearn-label">Overdue</span>
-                </div>
+            <div className="dd2-header-actions">
+              <button className="dd2-action-btn" onClick={toggle} title="Toggle theme">
+                {dark ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></g></svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                )}
+              </button>
+              <button className="dd2-action-btn" onClick={signOut} title="Sign out">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+              </button>
+            </div>
+          </header>
+          {/* Leave summary strip */}
+          {features.leave && (
+            <div className="dd2-summary-strip">
+              <div className="dd2-summary-card dd2-summary-remaining" onClick={() => navigate('/leave')}>
+                <span className="dd2-summary-value">{leaveRemaining ?? '--'}</span>
+                <span className="dd2-summary-label">Days Remaining</span>
               </div>
-              {elearningOverdue > 0 && (
-                <div className="dd2-elearn-alert">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e53935" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  {elearningOverdue} course{elearningOverdue !== 1 ? 's' : ''} past deadline
-                </div>
+              <div className="dd2-summary-card dd2-summary-approved" onClick={() => navigate('/leave')}>
+                <span className="dd2-summary-value">{leaveApproved ?? 0}</span>
+                <span className="dd2-summary-label">Approved</span>
+              </div>
+              <div className="dd2-summary-card dd2-summary-pending" onClick={() => navigate('/leave')}>
+                <span className="dd2-summary-value">{leavePending ?? 0}</span>
+                <span className="dd2-summary-label">Pending</span>
+              </div>
+              <div className="dd2-summary-card dd2-summary-total" onClick={() => navigate('/leave')}>
+                <span className="dd2-summary-value">{leaveTotal ?? '--'}</span>
+                <span className="dd2-summary-label">Total Allowance</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Compact profile card with scenery background */}
+        <section className="dd2-profile-hero" onClick={() => navigate('/profile')}>
+          <div className="dd2-profile-bg">
+            <svg viewBox="0 0 400 260" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#4a90d9"/><stop offset="60%" stopColor="#87CEEB"/><stop offset="100%" stopColor="#c8e6f0"/></linearGradient>
+                <linearGradient id="skyDark" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1a1a3e"/><stop offset="50%" stopColor="#2d1b69"/><stop offset="100%" stopColor="#4a1942"/></linearGradient>
+              </defs>
+              <rect width="400" height="260" fill={dark ? 'url(#skyDark)' : 'url(#sky)'} />
+              <ellipse cx="60" cy="100" rx="40" ry="22" fill={dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)'} />
+              <ellipse cx="90" cy="95" rx="50" ry="25" fill={dark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.5)'} />
+              <ellipse cx="320" cy="80" rx="55" ry="20" fill={dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.6)'} />
+              <ellipse cx="350" cy="75" rx="35" ry="18" fill={dark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.4)'} />
+              <path d="M0 180 Q50 120 120 160 Q180 130 220 170 Q280 110 340 155 Q370 140 400 160 L400 260 L0 260Z" fill={dark ? '#1a3a2a' : '#4a7c59'} />
+              <path d="M0 210 Q80 170 160 200 Q240 165 320 195 Q360 180 400 190 L400 260 L0 260Z" fill={dark ? '#2a5a3a' : '#5c9a6e'} />
+              <path d="M0 230 Q100 210 200 225 Q300 215 400 230 L400 260 L0 260Z" fill={dark ? '#1a4a2a' : '#3d7a4a'} />
+              {!dark && <circle cx="340" cy="45" r="20" fill="#fff4a3" opacity="0.9" />}
+              {dark && <><circle cx="100" cy="30" r="1.5" fill="#fff" opacity="0.6"/><circle cx="200" cy="20" r="1" fill="#fff" opacity="0.5"/><circle cx="280" cy="40" r="1.5" fill="#fff" opacity="0.7"/><circle cx="350" cy="25" r="1" fill="#fff" opacity="0.4"/><circle cx="150" cy="50" r="1" fill="#fff" opacity="0.5"/></>}
+            </svg>
+          </div>
+          <div className="dd2-profile-content">
+            <div className="dd2-profile-avatar-wrap">
+              {avatarUrl ? (
+                <img className="dd2-profile-avatar" src={avatarUrl} alt={initials} />
+              ) : (
+                <div className="dd2-profile-avatar dd2-profile-avatar-initials">{initials}</div>
               )}
             </div>
-          </section>
-        )}
-
-        {/* Surveys */}
-        {features.surveys && (
-          <section className="dd2-card dd2-card-accent-violet" onClick={() => navigate('/surveys')}>
-            <div className="dd2-card-header">
-              <svg className="dd2-card-hicon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6d28d9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-              <h2 className="dd2-card-title">Surveys</h2>
+            <div className="dd2-profile-info">
+              <h2 className="dd2-profile-name">{employeeName}</h2>
+              {jobTitle && <p className="dd2-profile-title">{jobTitle}</p>}
             </div>
-            <div className="dd2-card-body">
-              <div className="dd2-survey-stats">
-                {surveyOutstanding > 0 ? (
-                  <div className="dd2-survey-badge dd2-survey-badge-pending">{surveyOutstanding} outstanding</div>
-                ) : (
-                  <div className="dd2-survey-badge dd2-survey-badge-ok">All caught up!</div>
-                )}
-                <span className="dd2-survey-completed">{surveyCompleted} completed</span>
+            {lastPayNet !== null && (
+              <div className="dd2-profile-pay" onClick={(ev) => { ev.stopPropagation(); navigate('/payslips') }}>
+                <span className="dd2-profile-pay-amount">&pound;{lastPayNet.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="dd2-profile-pay-label">
+                  Last Pay{lastPayDate ? ` · ${new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
+                </span>
               </div>
-            </div>
-          </section>
-        )}
-
-        {/* ─── Row 4: Birthdays · Anniversaries ─── */}
-
-        {/* Birthdays */}
-        <section className="dd2-card dd2-card-accent-cyan">
-          <div className="dd2-card-header">
-            <span className="dd2-card-icon">🎂</span>
-            <h2 className="dd2-card-title">Birthdays</h2>
-            <span className="dd2-card-count">{birthdays.length}</span>
-          </div>
-          <div className="dd2-card-body">
-            {birthdays.length === 0 ? (
-              <p className="dd2-empty">No watchlist birthdays in the next 30 days — add colleagues via the Directory</p>
-            ) : (
-              <ul className="dd2-item-list">
-                {birthdays.slice(0, 4).map(c => {
-                  const dob = new Date(c.date_of_birth!)
-                  const bday = new Date(new Date().getFullYear(), dob.getMonth(), dob.getDate())
-                  if (bday < new Date()) bday.setFullYear(bday.getFullYear() + 1)
-                  const isToday = toLocalDateStr(bday) === toLocalDateStr()
-                  return (
-                    <li key={c.id} className={`dd2-item ${isToday ? 'dd2-item-highlight' : ''}`}>
-                      {c.avatar_url ? (
-                        <img className="dd2-person-circle dd2-person-img" src={c.avatar_url} alt="" />
-                      ) : (
-                        <div className="dd2-person-circle">{c.first_name[0]}{c.last_name[0]}</div>
-                      )}
-                      <div className="dd2-item-content">
-                        <span className="dd2-item-title">{c.first_name} {c.last_name}</span>
-                        <span className="dd2-item-sub">{isToday ? 'Today!' : formatDate(bday.toISOString().split('T')[0])}</span>
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
             )}
+            {company?.logo_url && <img className="dd2-profile-company-logo" src={company.logo_url} alt="" />}
           </div>
         </section>
+      </div>
 
-        {/* Work Anniversaries */}
-        <section className="dd2-card dd2-card-accent-teal">
-          <div className="dd2-card-header">
-            <span className="dd2-card-icon">🎉</span>
-            <h2 className="dd2-card-title">Work Anniversaries</h2>
-            <span className="dd2-card-count">{anniversaries.length}</span>
+      {/* Card grid — draggable, symmetrical 3-column */}
+      <div className="dd2-grid dd2-grid-3">
+        {sortedCards.map((card, idx) => (
+          <div
+            key={card.id}
+            className={`dd2-drag-wrap${dragIdx === idx ? ' dd2-dragging' : ''}`}
+            draggable
+            onDragStart={() => handleDragStart(idx)}
+            onDragOver={handleDragOver}
+            onDrop={() => handleDrop(idx)}
+            onDragEnd={() => setDragIdx(null)}
+          >
+            {card.el}
           </div>
-          <div className="dd2-card-body">
-            {anniversaries.length === 0 ? (
-              <p className="dd2-empty">No upcoming anniversaries</p>
-            ) : (
-              <ul className="dd2-item-list">
-                {anniversaries.slice(0, 4).map(c => (
-                  <li key={c.id} className="dd2-item">
-                    {c.avatar_url ? (
-                      <img className="dd2-person-circle dd2-person-img" src={c.avatar_url} alt="" />
-                    ) : (
-                      <div className="dd2-person-circle">{c.first_name[0]}{c.last_name[0]}</div>
-                    )}
-                    <div className="dd2-item-content">
-                      <span className="dd2-item-title">{c.first_name} {c.last_name}</span>
-                      <span className="dd2-item-sub">{c.department}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
+        ))}
       </div>
     </div>
   )
