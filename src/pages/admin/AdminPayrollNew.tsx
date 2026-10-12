@@ -1727,7 +1727,11 @@ export default function AdminPayrollNew() {
         payments,
       },
     })
-    if (error) throw error
+    if (error) {
+      let detail = error.message
+      try { const body = await (error as any).context?.json?.(); if (body?.error) detail = body.error } catch (_) {}
+      throw new Error(detail)
+    }
     if (data?.error) throw new Error(data.error)
   }
 
@@ -2581,7 +2585,11 @@ export default function AdminPayrollNew() {
         headers: { Authorization: `Bearer ${session!.access_token}` },
         body: { company_id: selectedCompanyId, payrun_ref: `PR-BROWSE-${periodLabel}`, payments },
       })
-      if (error) throw error
+      if (error) {
+        let detail = error.message
+        try { const body = await (error as any).context?.json?.(); if (body?.error) detail = body.error } catch (_) {}
+        throw new Error(detail)
+      }
       if (data?.error) throw new Error(data.error)
 
       const paidIds = new Set(modulrPaidEmployees)
