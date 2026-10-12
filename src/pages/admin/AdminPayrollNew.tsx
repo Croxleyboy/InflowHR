@@ -2613,7 +2613,7 @@ export default function AdminPayrollNew() {
     }
   }
 
-  async function toggleModulrHold(payslipId: number, employeeId: string, hold: boolean) {
+  async function toggleModulrHold(payslipId: number, _employeeId: string, hold: boolean) {
     if (!selectedCompanyId) return
     const { data: mpData } = await supabase
       .from('modulr_payments').select('id').eq('company_id', selectedCompanyId).neq('status', 'failed')
