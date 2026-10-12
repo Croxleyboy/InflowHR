@@ -177,7 +177,7 @@ export default function AdminOnboarding() {
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
 
-  const activeSteps = hasCustomSteps ? customSteps : WORKFLOW_STEPS.map((s, i) => ({ ...s, sort_order: i, is_default: true }))
+  const activeSteps: CustomStep[] = hasCustomSteps ? customSteps : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
 
 
   const COLUMN_MAP: Record<string, string> = {
@@ -696,8 +696,7 @@ export default function AdminOnboarding() {
     const skipped = record.skipped_steps
     setStepSkips(skipped && typeof skipped === 'object' ? skipped : {})
     const doneCount = activeSteps.filter(s => {
-      const k = 'step_key' in s ? s.step_key : (s as any).key
-      return checks[k] || (skipped && skipped[k])
+      return checks[s.step_key] || (skipped && skipped[s.step_key])
     }).length
     setWorkflowStep(record.is_complete ? activeSteps.length - 1 : Math.min(doneCount, activeSteps.length - 1))
     setTab('workflow')
@@ -890,10 +889,10 @@ export default function AdminOnboarding() {
     const overdue = records.filter(r => !r.is_complete && r.start_date && r.start_date < today).length
 
     const stageMap: Record<string, number> = {}
-    activeSteps.forEach(s => { const k = 'step_key' in s ? s.step_key : (s as any).key; stageMap[k] = 0 })
+    activeSteps.forEach(s => { stageMap[s.step_key] = 0 })
     stageMap['complete'] = 0
     records.filter(r => !r.is_complete).forEach(r => {
-      const firstKey = activeSteps.length > 0 ? ('step_key' in activeSteps[0] ? activeSteps[0].step_key : (activeSteps[0] as any).key) : 'details'
+      const firstKey = activeSteps.length > 0 ? activeSteps[0].step_key : 'details'
       if (r.status === 'new') { stageMap[firstKey] = (stageMap[firstKey] || 0) + 1; return }
       const checks: Record<string, boolean> = {
         details: true, equipment: r.equipment_order === 'Y',
@@ -901,12 +900,9 @@ export default function AdminOnboarding() {
         inform_starter: r.first_week, accounts: r.elearning, day1_access: r.is_complete,
       }
       const skipped = r.skipped_steps
-      const doneCount = activeSteps.filter(s => {
-        const k = 'step_key' in s ? s.step_key : (s as any).key
-        return checks[k] || (skipped && skipped[k])
-      }).length
+      const doneCount = activeSteps.filter(s => checks[s.step_key] || (skipped && skipped[s.step_key])).length
       const currentIdx = Math.min(doneCount, activeSteps.length - 1)
-      const stepKey = 'step_key' in activeSteps[currentIdx] ? activeSteps[currentIdx].step_key : (activeSteps[currentIdx] as any).key
+      const stepKey = activeSteps[currentIdx].step_key
       stageMap[stepKey] = (stageMap[stepKey] || 0) + 1
     })
     stageMap['complete'] = records.filter(r => r.is_complete).length
@@ -1015,10 +1011,9 @@ export default function AdminOnboarding() {
               <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 600 }}>Onboarding Pipeline</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {activeSteps.map((step) => {
-                  const key = 'step_key' in step ? step.step_key : (step as any).key
-                  const count = stats.stageMap[key] || 0
+                  const count = stats.stageMap[step.step_key] || 0
                   return (
-                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <div key={step.step_key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                       <span style={{ width: 24, textAlign: 'center' }}>{step.icon}</span>
                       <span style={{ flex: 1, color: count > 0 ? '#333' : '#bbb' }}>{step.label}</span>
                       <span style={{ fontWeight: 600, minWidth: 20, textAlign: 'right', color: count > 0 ? '#1565c0' : '#ccc' }}>{count}</span>
@@ -1387,12 +1382,11 @@ export default function AdminOnboarding() {
           </div>
           <div className="admin-workflow-timeline">
             {activeSteps.map((step, i) => {
-              const stepKey = 'step_key' in step ? step.step_key : (step as any).key
-              const done = stepChecks[stepKey]
-              const skipped = stepSkips[stepKey]
+              const done = stepChecks[step.step_key]
+              const skipped = stepSkips[step.step_key]
               const isCurrent = i === workflowStep
               return (
-                <div key={stepKey} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => setWorkflowStep(i)}>
+                <div key={step.step_key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => setWorkflowStep(i)}>
                   <div className="admin-wf-connector" />
                   <div className="admin-wf-dot">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
                   <div className="admin-wf-content">
@@ -1402,23 +1396,23 @@ export default function AdminOnboarding() {
                         <p>{step.description}</p>
                         <div className="admin-wf-actions">
                           {done ? (
-                            <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(stepKey) }}>Undo</button>
+                            <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(step.step_key) }}>Undo</button>
                           ) : skipped ? (
                             <>
-                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(stepKey) }}>
+                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(step.step_key) }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                                 Mark Complete
                               </button>
-                              <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(stepKey) }}>Undo Skip</button>
+                              <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteStep(step.step_key) }}>Undo Skip</button>
                             </>
                           ) : (
                             <>
-                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(stepKey) }}>
+                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); completeStep(step.step_key) }}>
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                                 Mark Complete
                               </button>
-                              {stepKey !== 'details' && (
-                                <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipStep(stepKey) }}>
+                              {step.step_key !== 'details' && (
+                                <button className="admin-btn-sm admin-btn-skip" onClick={e => { e.stopPropagation(); skipStep(step.step_key) }}>
                                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="5 4 15 12 5 20"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
                                   Skip
                                 </button>
