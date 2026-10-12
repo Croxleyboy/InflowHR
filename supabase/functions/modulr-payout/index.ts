@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
       currency: 'GBP',
       amount: p.amount,
       reference: (p.reference || 'SALARY').substring(0, 18),
-      externalReference: `${payrun_ref}_${p.employee_id}`,
+      externalReference: `${payrun_ref}_${p.employee_id}`.substring(0, 50),
       type: 'FASTER_PAYMENT',
     }))
 
