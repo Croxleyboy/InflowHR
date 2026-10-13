@@ -136,7 +136,7 @@ function getWeekDates(): string[] {
 
 export default function LegalTimesheets() {
   const navigate = useNavigate()
-  const { t } = useLanguage()
+  const { t, fyStartMonth } = useLanguage()
   const { employeeId, companyUser } = useAuth()
   const companyId = companyUser?.company_id
 
@@ -174,6 +174,7 @@ export default function LegalTimesheets() {
   const [formEndTime, setFormEndTime] = useState('09:30')
   const [formTimerId, setFormTimerId] = useState('')
   const [formAutoRound, setFormAutoRound] = useState(true)
+  const [formDate, setFormDate] = useState(todayStr())
   const [clientSearch, setClientSearch] = useState('')
   const [matterSearch, setMatterSearch] = useState('')
   const [showTemplates, setShowTemplates] = useState(false)
@@ -352,7 +353,7 @@ export default function LegalTimesheets() {
       .insert({
         company_id: companyId,
         employee_id: employeeId,
-        date: todayStr(),
+        date: formDate,
         client_id: timer.clientId,
         matter_id: timer.matterId,
         task_code: timer.taskCode,
@@ -392,6 +393,13 @@ export default function LegalTimesheets() {
     .filter(e => weekDates.includes(e.date))
     .reduce((s, e) => s + e.durationHrs, 0)
   const progressPct = Math.min(100, (todayLogged / BILLABLE_TARGET) * 100)
+
+  const fyStartDate = (() => {
+    const now = new Date()
+    const yr = now.getMonth() + 1 >= fyStartMonth ? now.getFullYear() : now.getFullYear() - 1
+    const m = String(fyStartMonth).padStart(2, '0')
+    return `${yr}-${m}-01`
+  })()
 
   const groupedByDate = (() => {
     const map: Record<string, TimesheetEntry[]> = {}
@@ -457,7 +465,7 @@ export default function LegalTimesheets() {
       .insert({
         company_id: companyId,
         employee_id: employeeId,
-        date: todayStr(),
+        date: formDate,
         client_id: formClient,
         matter_id: formMatter,
         task_code: formTaskCode,
@@ -504,6 +512,7 @@ export default function LegalTimesheets() {
     setFormEndTime('09:30')
     setFormTimerId('')
     setFormDurationMode('manual')
+    setFormDate(todayStr())
     setClientSearch('')
     setMatterSearch('')
     setShowTemplates(false)
@@ -851,6 +860,19 @@ export default function LegalTimesheets() {
                     <option key={tc.code} value={tc.code}>{tc.code} - {tc.label}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Date */}
+              <div className="lt-form-group">
+                <label className="lt-form-label">Date</label>
+                <input
+                  type="date"
+                  className="lt-form-input"
+                  value={formDate}
+                  onChange={e => setFormDate(e.target.value)}
+                  min={fyStartDate}
+                  max={todayStr()}
+                />
               </div>
 
               {/* Narrative */}

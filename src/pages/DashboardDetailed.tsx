@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useFeatures } from '../context/FeatureContext'
@@ -72,7 +72,7 @@ interface ReminderItem {
 
 interface AttendanceDay {
   date: string
-  status: 'present' | 'absent' | 'late' | 'leave' | 'no_shift'
+  status: 'present' | 'absent' | 'late' | 'leave' | 'no_shift' | 'submitted' | 'approved' | 'not_contracted'
   hours?: number
 }
 
@@ -150,16 +150,21 @@ export default function DashboardDetailed() {
   const [surveyOutstanding, setSurveyOutstanding] = useState(0)
   const [surveyCompleted, setSurveyCompleted] = useState(0)
   const [attendanceDays, setAttendanceDays] = useState<AttendanceDay[]>([])
-  const [tsHoursThisWeek, setTsHoursThisWeek] = useState<number | null>(null)
-  const [tsExpectedHours] = useState(37.5)
   const [attendancePresent, setAttendancePresent] = useState(0)
   const [attendanceLate, setAttendanceLate] = useState(0)
   const [attendanceAbsent, setAttendanceAbsent] = useState(0)
   const [attendanceLeave, setAttendanceLeave] = useState(0)
+  const [attendanceSubmitted, setAttendanceSubmitted] = useState(0)
+  const [attendanceNotContracted, setAttendanceNotContracted] = useState(0)
   const [attendanceScore, setAttendanceScore] = useState<number | null>(null)
+  const [contractedDays, setContractedDays] = useState<boolean[]>([true, true, true, true, true, false, false])
   const [jobTitle, setJobTitle] = useState<string | null>(null)
   const [lastPayNet, setLastPayNet] = useState<number | null>(null)
   const [lastPayDate, setLastPayDate] = useState<string | null>(null)
+  const [nextPayday, setNextPayday] = useState<string | null>(null)
+  const [payHidden, setPayHidden] = useState(() => {
+    try { return localStorage.getItem('inflowhr-dd2-hide-pay') === '1' } catch { return false }
+  })
   const [empEmail, setEmpEmail] = useState<string | null>(null)
   const [empPhone, setEmpPhone] = useState<string | null>(null)
   const [empStartDate, setEmpStartDate] = useState<string | null>(null)
@@ -176,6 +181,51 @@ export default function DashboardDetailed() {
   const [ciTick, setCiTick] = useState(0)
   const [ciActing, setCiActing] = useState(false)
   const ciTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Legal timesheet timer (read from localStorage, shared with LegalTimesheets page)
+  interface LTTimer { id: string; clientId: string; clientName: string; matterId: string; matterName: string; taskCode: string; elapsed: number; running: boolean; startedAt: number | null }
+  const ltTimerKey = `lt-timers-${companyUser?.company_id}-${employeeId}`
+  const [ltTimers, setLtTimers] = useState<LTTimer[]>([])
+  const [ltTick, setLtTick] = useState(0)
+  const ltTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const loadLtTimers = useCallback(() => {
+    try {
+      const saved = localStorage.getItem(ltTimerKey)
+      if (saved) setLtTimers(JSON.parse(saved) as LTTimer[])
+      else setLtTimers([])
+    } catch { setLtTimers([]) }
+  }, [ltTimerKey])
+
+  useEffect(() => {
+    loadLtTimers()
+    const onStorage = (e: StorageEvent) => { if (e.key === ltTimerKey) loadLtTimers() }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [ltTimerKey, loadLtTimers])
+
+  useEffect(() => {
+    const hasRunning = ltTimers.some(t => t.running)
+    if (hasRunning && !ltTimerRef.current) {
+      ltTimerRef.current = setInterval(() => setLtTick(p => p + 1), 1000)
+    } else if (!hasRunning && ltTimerRef.current) {
+      clearInterval(ltTimerRef.current)
+      ltTimerRef.current = null
+    }
+    return () => { if (ltTimerRef.current) { clearInterval(ltTimerRef.current); ltTimerRef.current = null } }
+  }, [ltTimers])
+
+  function getLtElapsed(timer: LTTimer): number {
+    if (timer.running && timer.startedAt) return timer.elapsed + Math.floor((Date.now() - timer.startedAt) / 1000)
+    return timer.elapsed
+  }
+  function fmtLtElapsed(seconds: number): string {
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
+    const s = seconds % 60
+    if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
 
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
   const firstName = employeeName.split(' ')[0] || employeeName
@@ -227,23 +277,33 @@ export default function DashboardDetailed() {
       .then(({ data }) => { if (data) setUpcomingLeave(data as any) })
 
     // Job title, email, phone, start date
-    supabase.from('employees').select('job_title, email, phone, start_date').eq('id', employeeId).maybeSingle()
+    supabase.from('employees').select('job_title, email, phone, start_date, contracted_days').eq('id', employeeId).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setJobTitle((data as any).job_title || null)
           setEmpEmail((data as any).email || null)
           setEmpPhone((data as any).phone || null)
           setEmpStartDate((data as any).start_date || null)
+          if ((data as any).contracted_days) setContractedDays((data as any).contracted_days)
         }
       })
     supabase.from('payslips')
-      .select('net_pay, payment_date, pay_period_start, pay_period_end')
+      .select('net_pay, payment_date, pay_period_start, pay_period_end, frequency')
       .eq('employee_id', employeeId).eq('company_id', cid).eq('status', 'final')
       .order('pay_period_end', { ascending: false }).limit(1).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setLastPayNet(Number((data as any).net_pay))
           setLastPayDate((data as any).payment_date || (data as any).pay_period_end)
+          const periodEnd = (data as any).pay_period_end
+          const freq = (data as any).frequency || 'monthly'
+          if (periodEnd) {
+            const pe = new Date(periodEnd + 'T00:00')
+            if (freq === 'weekly') pe.setDate(pe.getDate() + 7)
+            else if (freq === 'fortnightly') pe.setDate(pe.getDate() + 14)
+            else pe.setMonth(pe.getMonth() + 1)
+            setNextPayday(toLocalDateStr(pe))
+          }
         }
       })
 
@@ -601,24 +661,35 @@ export default function DashboardDetailed() {
     } else {
       ;(async () => {
         const now = new Date()
+        const today = toLocalDateStr(now)
         const dayOfWeek = now.getDay()
         const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-        const monday = new Date(now)
-        monday.setDate(now.getDate() + mondayOffset)
-        const sunday = new Date(monday)
-        sunday.setDate(monday.getDate() + 6)
-        const mondayStr = toLocalDateStr(monday)
-        const sundayStr = toLocalDateStr(sunday)
-        const [{ data: tsEntries }, { data: leaveRows }] = await Promise.all([
-          supabase.from('timesheet_entries')
-            .select('hours, date')
+        const thisMonday = new Date(now)
+        thisMonday.setDate(now.getDate() + mondayOffset)
+        const threeWeeksAgoMonday = new Date(thisMonday)
+        threeWeeksAgoMonday.setDate(thisMonday.getDate() - 14)
+        const thisSunday = new Date(thisMonday)
+        thisSunday.setDate(thisMonday.getDate() + 6)
+        const rangeStart = toLocalDateStr(threeWeeksAgoMonday)
+        const rangeEnd = toLocalDateStr(thisSunday)
+        const lastSunday = new Date(thisMonday)
+        lastSunday.setDate(thisMonday.getDate() - 1)
+        const scoreEnd = toLocalDateStr(lastSunday)
+
+        const [{ data: tsRows }, { data: legalRows }, { data: leaveRows }] = await Promise.all([
+          supabase.from('timesheets')
+            .select('date, status, hours')
             .eq('employee_id', employeeId).eq('company_id', cid)
-            .gte('date', mondayStr).lte('date', sundayStr),
+            .gte('date', rangeStart).lte('date', rangeEnd),
+          supabase.from('legal_timesheet_entries')
+            .select('date, status, duration_hrs')
+            .eq('employee_id', employeeId).eq('company_id', cid)
+            .gte('date', rangeStart).lte('date', rangeEnd),
           supabase.from('leave_requests')
             .select('start_date, end_date')
             .eq('employee_id', employeeId).eq('company_id', cid)
             .eq('status', 'approved')
-            .lte('start_date', sundayStr).gte('end_date', mondayStr),
+            .lte('start_date', rangeEnd).gte('end_date', rangeStart),
         ])
 
         const leaveDates = new Set<string>()
@@ -632,32 +703,63 @@ export default function DashboardDetailed() {
           }
         }
 
-        if (tsEntries) {
-          const total = tsEntries.reduce((s: number, e: any) => s + Number(e.hours || 0), 0)
-          setTsHoursThisWeek(total)
-          const days: AttendanceDay[] = []
-          let present = 0, onLeave = 0
-          for (let i = 0; i < 7; i++) {
-            const d = new Date(monday)
-            d.setDate(monday.getDate() + i)
-            const dateStr = toLocalDateStr(d)
-            let status: AttendanceDay['status']
-            if (leaveDates.has(dateStr)) {
-              status = 'leave'; onLeave++
-            } else {
-              const dayEntries = tsEntries.filter((e: any) => e.date === dateStr)
-              const hrs = dayEntries.reduce((s: number, e: any) => s + Number(e.hours || 0), 0)
-              status = hrs > 0 ? 'present' : (d <= now && i < 5 ? 'absent' : 'no_shift')
-              if (hrs > 0) present++
-            }
-            const dayEntries = tsEntries.filter((e: any) => e.date === dateStr)
-            const hrs = dayEntries.reduce((s: number, e: any) => s + Number(e.hours || 0), 0)
-            days.push({ date: dateStr, status, hours: hrs })
+        const tsByDate: Record<string, { hasAny: boolean; hasApproved: boolean }> = {}
+        if (tsRows) {
+          for (const t of tsRows as any[]) {
+            if (!tsByDate[t.date]) tsByDate[t.date] = { hasAny: false, hasApproved: false }
+            tsByDate[t.date].hasAny = true
+            if (t.status === 'approved') tsByDate[t.date].hasApproved = true
           }
-          setAttendanceDays(days)
-          setAttendancePresent(present)
-          setAttendanceLeave(onLeave)
         }
+        if (legalRows) {
+          for (const l of legalRows as any[]) {
+            if (!tsByDate[l.date]) tsByDate[l.date] = { hasAny: false, hasApproved: false }
+            tsByDate[l.date].hasAny = true
+            if (l.status === 'approved') tsByDate[l.date].hasApproved = true
+          }
+        }
+
+        const { data: cdRow } = await supabase.from('employees').select('contracted_days').eq('id', employeeId).maybeSingle()
+        const cDays: boolean[] = (cdRow as any)?.contracted_days || [true, true, true, true, true, false, false]
+
+        const days: AttendanceDay[] = []
+        let approved = 0, submitted = 0, onLeave = 0, absent = 0, notContracted = 0
+        let scoreSum = 0, scoredDays = 0
+        for (let i = 0; i < 21; i++) {
+          const d = new Date(threeWeeksAgoMonday)
+          d.setDate(threeWeeksAgoMonday.getDate() + i)
+          const dateStr = toLocalDateStr(d)
+          const dayIdx = d.getDay() === 0 ? 6 : d.getDay() - 1
+          const isContracted = cDays[dayIdx]
+          const inScoreRange = dateStr < toLocalDateStr(thisMonday)
+          let status: AttendanceDay['status'] = 'no_shift'
+
+          if (leaveDates.has(dateStr)) {
+            status = 'leave'; onLeave++
+            if (inScoreRange) { scoreSum += 1; scoredDays++ }
+          } else if (!isContracted) {
+            status = 'not_contracted'; notContracted++
+            if (inScoreRange) { scoreSum += 1; scoredDays++ }
+          } else if (tsByDate[dateStr]?.hasApproved) {
+            status = 'approved'; approved++
+            if (inScoreRange) { scoreSum += 1; scoredDays++ }
+          } else if (tsByDate[dateStr]?.hasAny) {
+            status = 'submitted'; submitted++
+            if (inScoreRange) { scoreSum += 1; scoredDays++ }
+          } else if (dateStr < today) {
+            status = 'absent'; absent++
+            if (inScoreRange) { scoredDays++ }
+          }
+          days.push({ date: dateStr, status })
+        }
+
+        setAttendanceDays(days)
+        setAttendancePresent(approved)
+        setAttendanceSubmitted(submitted)
+        setAttendanceAbsent(absent)
+        setAttendanceLeave(onLeave)
+        setAttendanceNotContracted(notContracted)
+        setAttendanceScore(scoredDays > 0 ? Math.round((scoreSum / scoredDays) * 100) : 100)
       })()
     }
   }, [employeeId, companyUser?.company_id, features.expenses, features.kudos, features.performance, features.elearning, isShiftWorker])
@@ -815,7 +917,7 @@ export default function DashboardDetailed() {
       <div className="dd2-card-header">
         <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <h2 className="dd2-card-title">Attendance Overview</h2>
-        {isShiftWorker && attendanceScore !== null && (
+        {attendanceScore !== null && (
           <span className="dd2-card-count" style={{ background: attendanceScore >= 80 ? '#43a047' : attendanceScore >= 50 ? '#ff9800' : '#e53935', color: '#fff' }}>
             {attendanceScore}%
           </span>
@@ -857,22 +959,26 @@ export default function DashboardDetailed() {
           </>
         ) : (
           <>
-            <div className="dd2-att-week-dots">
-              {attendanceDays.map((d, i) => (
-                <div key={i} className="dd2-att-dot-col">
-                  <div className={`dd2-att-week-dot dd2-att-week-dot-${d.status}`} title={d.hours ? `${d.hours}h` : d.status} />
-                  <span className="dd2-att-bar-label">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]}</span>
+            <div className="dd2-att-14-grid">
+              {['2 weeks ago', 'Last week', 'This week'].map((label, wk) => (
+                <div key={wk} className="dd2-att-week-row">
+                  <span className="dd2-att-week-label">{label}</span>
+                  <div className="dd2-att-week-squares">
+                    {attendanceDays.slice(wk * 7, wk * 7 + 7).map((d, i) => (
+                      <div key={i} className="dd2-att-sq-col">
+                        <div className={`dd2-att-sq dd2-att-sq-${d.status}`} title={`${new Date(d.date + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} — ${d.status.replace('_', ' ')}`} />
+                        <span className="dd2-att-sq-label">{['M', 'T', 'W', 'T', 'F', 'S', 'S'][i]}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
-            <div className="dd2-att-hours-summary">
-              <span className="dd2-att-hours-big">{tsHoursThisWeek !== null ? tsHoursThisWeek.toFixed(1) : '--'}h</span>
-              <span className="dd2-att-hours-label">of {tsExpectedHours}h this week</span>
-            </div>
             <div className="dd2-att-legend">
-              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#43a047' }} />Logged</span>
-              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#7e57c2' }} />On Leave</span>
-              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#e53935' }} />No Hours</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#43a047' }} />{attendancePresent} Approved</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#1565c0' }} />{attendanceSubmitted} Submitted</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#7e57c2' }} />{attendanceLeave} Leave</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#e53935' }} />{attendanceAbsent} Missing</span>
             </div>
           </>
         )}
@@ -977,76 +1083,94 @@ export default function DashboardDetailed() {
     )})
   }
 
-  if (features.leave) {
+  if (features.leave || features.expenses) {
     allCards.push({ id: 'leave', el: (
-      <section className="dd2-card" onClick={() => navigate('/leave')}>
-        <div className="dd2-card-header">
+      <section className="dd2-card">
+        <div className="dd2-card-header" onClick={() => navigate('/leave')}>
           <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          <h2 className="dd2-card-title">Upcoming Leave</h2>
-          <span className="dd2-card-count">{upcomingLeave.length}</span>
+          <h2 className="dd2-card-title">Leave & Expenses</h2>
         </div>
         <div className="dd2-card-body">
-          {upcomingLeave.length === 0 ? (
-            <p className="dd2-empty">No upcoming leave planned</p>
-          ) : (
-            <ul className="dd2-item-list">
-              {upcomingLeave.slice(0, 3).map(lr => (
-                <li key={lr.id} className="dd2-item">
-                  <span className={`dd2-badge dd2-badge-${lr.status}`}>{lr.status}</span>
-                  <div className="dd2-item-content">
-                    <span className="dd2-item-title">{(lr.leave_type as any)?.name || 'Leave'}</span>
-                    <span className="dd2-item-sub">{formatDate(lr.start_date)} – {formatDate(lr.end_date)} ({lr.days_requested}d)</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
+          {features.leave && (
+            <>
+              {upcomingLeave.length === 0 ? (
+                <p className="dd2-empty" onClick={() => navigate('/leave')}>No upcoming leave planned</p>
+              ) : (
+                <ul className="dd2-item-list" onClick={() => navigate('/leave')}>
+                  {upcomingLeave.slice(0, 3).map(lr => (
+                    <li key={lr.id} className="dd2-item">
+                      <span className={`dd2-badge dd2-badge-${lr.status}`}>{lr.status}</span>
+                      <div className="dd2-item-content">
+                        <span className="dd2-item-title">{(lr.leave_type as any)?.name || 'Leave'}</span>
+                        <span className="dd2-item-sub">{formatDate(lr.start_date)} – {formatDate(lr.end_date)} ({lr.days_requested}d)</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+          {features.expenses && (
+            <div className="dd2-card-expense-summary" onClick={() => navigate('/expenses')}>
+              <div className="dd2-expense-row">
+                <span className="dd2-expense-label">Expense Total</span>
+                <span className="dd2-expense-value">&pound;{expenseTotal.toFixed(2)}</span>
+              </div>
+              {lastExpense && (
+                <div className="dd2-expense-row dd2-expense-row-sub">
+                  <span className="dd2-expense-label">Last submitted</span>
+                  <span className="dd2-expense-value">{new Date(lastExpense.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </section>
     )})
   }
 
-  if (features.expenses) {
-    allCards.push({ id: 'expenses', el: (
-      <section className="dd2-card">
-        <div className="dd2-card-header" onClick={() => navigate('/expenses')}>
-          <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          <h2 className="dd2-card-title">Expenses</h2>
-          <span className="dd2-card-count">&pound;{expenseTotal.toFixed(2)}</span>
-        </div>
-        <div className="dd2-card-body">
-          {recentExpenses.length === 0 ? (
-            <p className="dd2-empty" onClick={() => navigate('/expenses')}>No expense claims</p>
+  allCards.push({ id: 'expenses', el: (
+    <section className="dd2-card" onClick={() => navigate('/payslips')}>
+      <div className="dd2-card-header">
+        <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <h2 className="dd2-card-title">My Pay</h2>
+        <button className="dd2-pay-toggle" title={payHidden ? 'Show amount' : 'Hide amount'} onClick={(ev) => { ev.stopPropagation(); setPayHidden(h => { const v = !h; try { localStorage.setItem('inflowhr-dd2-hide-pay', v ? '1' : '0') } catch { /* empty */ }; return v }) }}>
+          {payHidden ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
           ) : (
-            <>
-              <ul className="dd2-item-list" onClick={() => navigate('/expenses')}>
-                {expenseSlice.map(e => (
-                  <li key={e.id} className="dd2-item">
-                    <span className={`dd2-badge dd2-badge-${e.status}`}>{e.status}</span>
-                    <div className="dd2-item-content">
-                      <span className="dd2-item-title">&pound;{Number(e.amount).toFixed(2)}</span>
-                      <span className="dd2-item-sub">{e.description || new Date(e.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {expensePages > 1 && (
-                <div className="dd2-pagination">
-                  <button className="dd2-page-btn" disabled={expensePage === 0} onClick={(ev) => { ev.stopPropagation(); setExpensePage(p => p - 1) }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-                  </button>
-                  <span className="dd2-page-info">{expensePage + 1} / {expensePages}</span>
-                  <button className="dd2-page-btn" disabled={expensePage >= expensePages - 1} onClick={(ev) => { ev.stopPropagation(); setExpensePage(p => p + 1) }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-                  </button>
-                </div>
-              )}
-            </>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           )}
+        </button>
+      </div>
+      <div className="dd2-card-body">
+        <div className="dd2-pay-rows">
+          <div className="dd2-pay-row">
+            <span className="dd2-pay-label">Last payslip</span>
+            <div className="dd2-pay-value-wrap">
+              {lastPayNet !== null ? (
+                <>
+                  <span className="dd2-pay-amount">{payHidden ? '••••••' : `£${lastPayNet.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                  {lastPayDate && <span className="dd2-pay-date">{new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+                </>
+              ) : (
+                <span className="dd2-pay-amount dd2-pay-none">No payslips yet</span>
+              )}
+            </div>
+          </div>
+          <div className="dd2-pay-row">
+            <span className="dd2-pay-label">Next payday</span>
+            <div className="dd2-pay-value-wrap">
+              {nextPayday ? (
+                <span className="dd2-pay-date">{new Date(nextPayday + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              ) : (
+                <span className="dd2-pay-amount dd2-pay-none">—</span>
+              )}
+            </div>
+          </div>
         </div>
-      </section>
-    )})
-  }
+      </div>
+    </section>
+  )})
 
   if (features.kudos) {
     allCards.push({ id: 'kudos', el: (
@@ -1455,6 +1579,28 @@ export default function DashboardDetailed() {
           )}
         </div>
       </div>
+
+      {/* Active legal timesheet timers */}
+      {ltTimers.length > 0 && features.legal_timesheets && (
+        <div className="dd2-lt-timer-bar" onClick={() => navigate('/legal-timesheets')}>
+          <div className="dd2-lt-timer-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2" /><path d="M5 3l2 2" /><path d="M19 3l-2 2" /><line x1="12" y1="1" x2="12" y2="3" /></svg>
+          </div>
+          <div className="dd2-lt-timer-items">
+            {ltTimers.map(timer => {
+              const elapsed = getLtElapsed(timer)
+              return (
+                <div key={timer.id} className={`dd2-lt-timer-item ${timer.running ? 'dd2-lt-timer-running' : ''}`}>
+                  <span className="dd2-lt-timer-name">{timer.clientName} — {timer.matterName}</span>
+                  <span className="dd2-lt-timer-time">{fmtLtElapsed(elapsed)}</span>
+                  {timer.running && <span className="dd2-lt-timer-pulse" />}
+                </div>
+              )
+            })}
+          </div>
+          <span className="dd2-lt-timer-link">View Timesheets</span>
+        </div>
+      )}
 
       {/* 3-column card grid — cards stack vertically, draggable between columns */}
       <div className="dd2-columns">

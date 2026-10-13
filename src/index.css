@@ -5417,6 +5417,76 @@ body {
 .desktop-action-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
 .desktop-signout-btn { flex: 1; }
 
+/* Sidebar toggle button */
+.desktop-sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.55);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: background 0.15s, color 0.15s;
+  width: 100%;
+}
+.desktop-sidebar-toggle:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+/* Collapsed sidebar */
+.desktop-sidebar-collapsed {
+  width: 60px;
+  transition: width 0.2s ease;
+}
+.desktop-sidebar-collapsed .desktop-sidebar-brand {
+  justify-content: center;
+  padding: 20px 8px 16px;
+}
+.desktop-sidebar-collapsed .desktop-brand-logo {
+  height: 28px;
+  max-width: 40px;
+}
+.desktop-sidebar-collapsed .desktop-nav-item {
+  justify-content: center;
+  padding: 10px 0;
+}
+.desktop-sidebar-collapsed .desktop-nav-active::before {
+  top: 6px; bottom: 6px;
+}
+.desktop-sidebar-collapsed .desktop-sidebar-footer {
+  padding: 12px 6px 16px;
+  align-items: center;
+}
+.desktop-sidebar-collapsed .desktop-admin-btn {
+  justify-content: center;
+  padding: 10px;
+}
+.desktop-sidebar-collapsed .desktop-sidebar-actions {
+  flex-direction: column;
+  width: 100%;
+}
+.desktop-sidebar-collapsed .desktop-action-btn {
+  justify-content: center;
+  padding: 8px;
+}
+.desktop-sidebar-collapsed .desktop-sidebar-toggle {
+  justify-content: center;
+  padding: 8px;
+}
+.desktop-nav-badge-collapsed {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  min-width: 14px;
+  height: 14px;
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 7px;
+}
+
 /* ── Main content area ── */
 .desktop-main {
   flex: 1;
@@ -7448,6 +7518,34 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Legal timesheet timer bar on dashboard */
+.dd2-lt-timer-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #1565c0, #0d47a1);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  color: #fff;
+}
+.dd2-lt-timer-bar:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(21,101,192,0.3); }
+[data-theme="dark"] .dd2-lt-timer-bar { background: linear-gradient(135deg, #1565c0, #0a3060); }
+.dd2-lt-timer-icon { flex-shrink: 0; opacity: 0.8; }
+.dd2-lt-timer-items { flex: 1; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.dd2-lt-timer-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.dd2-lt-timer-running .dd2-lt-timer-time { font-weight: 700; font-variant-numeric: tabular-nums; }
+.dd2-lt-timer-name { opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.dd2-lt-timer-time { font-weight: 600; font-variant-numeric: tabular-nums; }
+.dd2-lt-timer-pulse {
+  width: 8px; height: 8px; border-radius: 50%; background: #4caf50;
+  animation: dd2-lt-pulse 1.5s ease-in-out infinite;
+}
+@keyframes dd2-lt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.dd2-lt-timer-link { flex-shrink: 0; font-size: 12px; font-weight: 600; opacity: 0.7; white-space: nowrap; }
+
 /* 3-column card layout */
 .dd2-columns {
   display: grid;
@@ -7846,6 +7944,82 @@ body {
 .dd2-att-sq-absent { background: #e53935; }
 .dd2-att-sq-leave { background: #7e57c2; }
 .dd2-att-sq-no_shift { background: var(--border); }
+.dd2-att-sq-submitted { background: #1565c0; }
+.dd2-att-sq-approved { background: #43a047; }
+.dd2-att-sq-not_contracted { background: var(--border); }
+
+.dd2-card-expense-summary {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 8px;
+  cursor: pointer;
+}
+.dd2-expense-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+.dd2-expense-row-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.dd2-expense-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.dd2-expense-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dd2-pay-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+.dd2-pay-toggle:hover { color: var(--text); }
+.dd2-pay-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.dd2-pay-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dd2-pay-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.dd2-pay-value-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dd2-pay-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.dd2-pay-amount.dd2-pay-none {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.dd2-pay-date {
+  font-size: 13px;
+  color: var(--text-muted);
+}
 
 .dd2-att-hours-summary {
   display: flex;
