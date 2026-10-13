@@ -209,14 +209,17 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         break
       }
       case 'elearning': {
-        const [{ data: enrolments }, { data: courses }] = await Promise.all([
+        const [{ data: enrolments }, { data: completions }, { data: enabledCourses }, { data: courses }] = await Promise.all([
           supabase.from('course_enrolments').select('*, course:elearning_courses(title, category, type, duration, required)').eq('employee_id', employee.id).eq('company_id', companyId).order('enrolled_at', { ascending: false }),
-          supabase.from('elearning_courses').select('id, title, category, required').eq('company_id', companyId).eq('is_active', true),
+          supabase.from('elearning_completions').select('course_id').eq('employee_id', employee.id).eq('company_id', companyId),
+          supabase.from('company_elearning_courses').select('course_id').eq('company_id', companyId).eq('is_enabled', true),
+          supabase.from('elearning_courses').select('id, title, category, required').eq('is_active', true),
         ])
-        const completedIds = new Set((enrolments || []).filter((e: any) => e.completed_at).map((e: any) => e.course_id))
+        const completedIds = new Set((completions || []).map((r: any) => r.course_id))
+        const enabledIds = new Set((enabledCourses || []).map((r: any) => r.course_id))
         const enrolledIds = new Set((enrolments || []).map((e: any) => e.course_id))
-        const outstanding = (courses || []).filter((c: any) => c.required && !completedIds.has(c.id))
-        data = { enrolments: enrolments || [], outstanding, enrolledIds }
+        const outstanding = (courses || []).filter((c: any) => c.required && enabledIds.has(c.id) && !completedIds.has(c.id))
+        data = { enrolments: enrolments || [], outstanding, enrolledIds, completedIds }
         break
       }
       case 'onboarding': {

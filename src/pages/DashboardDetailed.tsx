@@ -515,11 +515,12 @@ export default function DashboardDetailed() {
     // E-Learning counts
     if (features.elearning) {
       ;(async () => {
-        const [activeCourseRes, enabledRes, completedRes, empDeptRes] = await Promise.all([
+        const [activeCourseRes, enabledRes, completedRes, empDeptRes, enrolRes] = await Promise.all([
           supabase.from('elearning_courses').select('id').eq('is_active', true),
           supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', cid).eq('is_enabled', true),
           supabase.from('elearning_completions').select('course_id').eq('employee_id', employeeId).eq('company_id', cid),
           supabase.from('employees').select('department').eq('id', employeeId).maybeSingle(),
+          supabase.from('course_enrolments').select('course_id, enrolled_at').eq('employee_id', employeeId).eq('company_id', cid),
         ])
         const activeCourseIds = new Set((activeCourseRes.data || []).map((r: any) => r.id))
         const myDept = (empDeptRes.data as any)?.department || ''
@@ -528,14 +529,24 @@ export default function DashboardDetailed() {
           .map((r: any) => r.course_id)
           .filter((id: string) => activeCourseIds.has(id))
         const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+        const enrolDates: Record<string, string> = {}
+        ;(enrolRes.data || []).forEach((r: any) => { if (r.enrolled_at) enrolDates[r.course_id] = r.enrolled_at })
         const enabledSet = new Set(enabledIds)
         const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
         setElearningCompleted([...completedIds].filter(id => enabledSet.has(id)).length)
         if (outstandingIds.length > 0) {
-          const { data: courses } = await supabase.from('elearning_courses').select('id, deadline').in('id', outstandingIds)
+          const { data: courses } = await supabase.from('elearning_courses').select('id, deadline, days_to_complete').in('id', outstandingIds)
           const now = new Date()
           let overdue = 0
-          if (courses) courses.forEach((c: any) => { if (c.deadline && new Date(c.deadline) < now) overdue++ })
+          if (courses) courses.forEach((c: any) => {
+            if (c.days_to_complete && enrolDates[c.id]) {
+              const dl = new Date(enrolDates[c.id])
+              dl.setDate(dl.getDate() + c.days_to_complete)
+              if (dl < now) overdue++
+            } else if (c.deadline && new Date(c.deadline) < now) {
+              overdue++
+            }
+          })
           setElearningOverdue(overdue)
           setElearningOutstanding(outstandingIds.length - overdue)
         } else {

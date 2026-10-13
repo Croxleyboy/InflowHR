@@ -47,8 +47,17 @@ function generateSections(_title: string, description: string, type: CourseType)
   ]
 }
 
+function shuffleOptions(options: string[], correctIndex: number): { options: string[]; correct: number } {
+  const entries = options.map((text, i) => ({ text, wasCorrect: i === correctIndex }))
+  for (let i = entries.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[entries[i], entries[j]] = [entries[j], entries[i]]
+  }
+  return { options: entries.map(e => e.text), correct: entries.findIndex(e => e.wasCorrect) }
+}
+
 function generateQuiz(title: string): QuizQuestion[] {
-  return [
+  const raw = [
     {
       question: `Which of the following best describes a key objective of "${title}"?`,
       options: [
@@ -80,6 +89,10 @@ function generateQuiz(title: string): QuizQuestion[] {
       correct: 1,
     },
   ]
+  return raw.map(q => {
+    const shuffled = shuffleOptions(q.options, q.correct)
+    return { question: q.question, options: shuffled.options, correct: shuffled.correct }
+  })
 }
 
 export default function CourseContent() {

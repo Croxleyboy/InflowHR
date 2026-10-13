@@ -545,22 +545,33 @@ export default function Notifications() {
 
     // E-learning — outstanding courses assigned to this employee
     if (features.elearning && HARDCODED_EMPLOYEE_ID && companyId) {
-      const [enabledRes, completedRes, empDeptRes] = await Promise.all([
+      const [activeCourseRes, enabledRes, completedRes, empDeptRes, enrolRes] = await Promise.all([
+        supabase.from('elearning_courses').select('id').eq('is_active', true),
         supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', companyId).eq('is_enabled', true),
         supabase.from('elearning_completions').select('course_id').eq('employee_id', HARDCODED_EMPLOYEE_ID).eq('company_id', companyId),
         supabase.from('employees').select('department').eq('id', HARDCODED_EMPLOYEE_ID).maybeSingle(),
+        supabase.from('course_enrolments').select('course_id, enrolled_at').eq('employee_id', HARDCODED_EMPLOYEE_ID).eq('company_id', companyId),
       ])
+      const activeCourseIds = new Set((activeCourseRes.data || []).map((r: any) => r.id))
       const myDept = (empDeptRes.data as any)?.department || ''
-      const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
+      const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id).filter((id: string) => activeCourseIds.has(id))
       const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+      const enrolDates: Record<string, string> = {}
+      ;(enrolRes.data || []).forEach((r: any) => { if (r.enrolled_at) enrolDates[r.course_id] = r.enrolled_at })
       const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
       if (outstandingIds.length > 0) {
-        const { data: courses } = await supabase.from('elearning_courses').select('id, title, deadline').in('id', outstandingIds)
+        const { data: courses } = await supabase.from('elearning_courses').select('id, title, deadline, days_to_complete').in('id', outstandingIds)
         if (courses) {
           courses.forEach((course: any) => {
             let subtitle = 'Required'
-            if (course.deadline) {
-              const deadlineDate = new Date(course.deadline)
+            let deadlineDate: Date | null = null
+            if (course.days_to_complete && enrolDates[course.id]) {
+              deadlineDate = new Date(enrolDates[course.id])
+              deadlineDate.setDate(deadlineDate.getDate() + course.days_to_complete)
+            } else if (course.deadline) {
+              deadlineDate = new Date(course.deadline)
+            }
+            if (deadlineDate) {
               const daysLeft = Math.floor((deadlineDate.getTime() - todayDate.getTime()) / 86400000)
               if (daysLeft < 0) {
                 subtitle = `Overdue — was due ${deadlineDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`

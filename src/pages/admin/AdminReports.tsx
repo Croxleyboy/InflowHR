@@ -464,20 +464,35 @@ export default function AdminReports() {
   }
 
   async function loadOverdueElearning() {
-    const { data: enrolments } = await supabase.from('course_enrolments').select('*, employee:employees!course_enrolments_employee_id_fkey(first_name, last_name, department, company_id), course:courses!course_enrolments_course_id_fkey(title, is_mandatory)').in('status', ['not_started', 'in_progress'])
-    const companyRows = (enrolments || []).filter(r => r.employee?.company_id === selectedCompanyId && r.course?.is_mandatory)
-    const rows = companyRows.map(r => {
-      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', Course: r.course?.title || '', Status: r.status === 'not_started' ? 'Not Started' : 'In Progress', 'Progress': `${r.progress_pct || 0}%` }
-    }).sort((a, b) => parseInt(a.Progress as string) - parseInt(b.Progress as string))
+    const [enrolRes, completionRes, enabledRes, courseRes, empRes] = await Promise.all([
+      supabase.from('course_enrolments').select('employee_id, course_id, status, progress_pct, enrolled_at').eq('company_id', selectedCompanyId),
+      supabase.from('elearning_completions').select('employee_id, course_id').eq('company_id', selectedCompanyId),
+      supabase.from('company_elearning_courses').select('course_id').eq('company_id', selectedCompanyId).eq('is_enabled', true),
+      supabase.from('elearning_courses').select('id, title, required').eq('is_active', true),
+      supabase.from('employees').select('id, first_name, last_name, department').eq('company_id', selectedCompanyId).eq('is_active', true),
+    ])
+    const completedSet = new Set((completionRes.data || []).map((r: any) => `${r.employee_id}|${r.course_id}`))
+    const enabledIds = new Set((enabledRes.data || []).map((r: any) => r.course_id))
+    const courseMap: Record<string, any> = {}
+    ;(courseRes.data || []).forEach((c: any) => { courseMap[c.id] = c })
+    const empMap: Record<string, any> = {}
+    ;(empRes.data || []).forEach((e: any) => { empMap[e.id] = e })
+    const rows = (enrolRes.data || [])
+      .filter((r: any) => enabledIds.has(r.course_id) && courseMap[r.course_id]?.required && !completedSet.has(`${r.employee_id}|${r.course_id}`))
+      .map((r: any) => {
+        const emp = empMap[r.employee_id]
+        const course = courseMap[r.course_id]
+        return { Employee: emp ? `${emp.first_name} ${emp.last_name}` : '', Department: emp?.department || '', Course: course?.title || '', Status: r.status === 'not_started' ? 'Not Started' : 'In Progress', 'Progress': `${r.progress_pct || 0}%` }
+      }).sort((a: any, b: any) => parseInt(a.Progress) - parseInt(b.Progress))
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Course', label: 'Course' }, { key: 'Status', label: 'Status' }, { key: 'Progress', label: 'Progress' }])
     setReportData(rows)
-    const uniqueEmps = new Set(rows.map(r => r.Employee)).size
-    const notStarted = rows.filter(r => r.Status === 'Not Started')
+    const uniqueEmps = new Set(rows.map((r: any) => r.Employee)).size
+    const notStarted = rows.filter((r: any) => r.Status === 'Not Started')
     setReportKPIs([
       { label: 'Incomplete Enrolments', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
       { label: 'Employees Affected', value: uniqueEmps, status: uniqueEmps > 3 ? 'danger' : uniqueEmps > 0 ? 'warning' : 'good' },
       { label: 'Not Started', value: notStarted.length, status: notStarted.length > 0 ? 'danger' : 'good' },
-      { label: 'Courses Affected', value: new Set(rows.map(r => r.Course)).size, status: 'neutral' },
+      { label: 'Courses Affected', value: new Set(rows.map((r: any) => r.Course)).size, status: 'neutral' },
     ])
     setReportSummary(`${rows.length} incomplete mandatory e-learning enrolments affecting ${uniqueEmps} employees. ${notStarted.length} not yet started.`)
   }

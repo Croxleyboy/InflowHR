@@ -217,8 +217,8 @@ export default function AdminDashboardModern() {
     const monthAgoEnd = fmtIso(monthAgo)
 
     const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev] = await Promise.all([
-      supabase.from('course_enrolments').select('id', { count: 'exact', head: true }).eq('company_id', cid),
-      supabase.from('course_enrolments').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('status', 'completed'),
+      supabase.from('elearning_completions').select('course_id', { count: 'exact', head: true }).eq('company_id', cid),
+      supabase.from('elearning_completions').select('course_id', { count: 'exact', head: true }).eq('company_id', cid).not('completed_at', 'is', null),
       supabase.from('shift_assignments').select('id', { count: 'exact', head: true }).eq('company_id', cid).gte('shift_date', todayStr),
       supabase.from('spaces').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('is_active', true),
       supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('company_id', cid).eq('booking_date', todayStr),
