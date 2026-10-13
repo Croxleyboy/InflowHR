@@ -85,9 +85,11 @@ If any change request has any form of UI impact or changes the admin or end user
 
 ## Development process
 
+**Re-read this file before every build/test cycle.** Do not guess ports, build commands, or conventions from memory — check here first.
+
 1. Make changes
 2. Run `npx tsc --noEmit` — fix any type errors
 3. Run `npx vite build` — verify production build
-4. Test on port 3003
+4. Test on port **3003** only — use the `inflowhr` config in `.claude/launch.json`. If port 3003 is unavailable, stop whatever is occupying it rather than using a different port
 5. Highlight any SQL migrations the user needs to run
 6. Update `docs/go-to-market/CHANGELOG.md` for security/GDPR changes

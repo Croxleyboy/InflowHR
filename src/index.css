@@ -7425,6 +7425,7 @@ body {
   flex-direction: column;
   gap: 16px;
   min-height: 100px;
+  min-width: 0;
 }
 .dd2-drop-indicator {
   height: 3px;
