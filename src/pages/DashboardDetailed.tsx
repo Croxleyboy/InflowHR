@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import { useCheckIn } from '../context/CheckInContext'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
-import { formatDate, toLocalDateStr } from '../lib/formatters'
+import { formatDate, toLocalDateStr, getFYRange } from '../lib/formatters'
 
 interface LeaveRequest {
   id: number
@@ -142,7 +142,7 @@ function AttendanceBarChart({ days }: { days: AttendanceDay[] }) {
 export default function DashboardDetailed() {
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
-  const { t, lang } = useLanguage()
+  const { t, lang, fyStartMonth } = useLanguage()
   const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser, employmentCategory } = useAuth()
   const { activeCheckin, activeBreak, checkIn, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const { showSuccess, showError } = useToast()
@@ -153,6 +153,7 @@ export default function DashboardDetailed() {
   const [leaveRemaining, setLeaveRemaining] = useState<number | null>(null)
   const [leavePending, setLeavePending] = useState<number | null>(null)
   const [leaveApproved, setLeaveApproved] = useState<number | null>(null)
+  const [leaveDeclined, setLeaveDeclined] = useState<number | null>(null)
   const [leaveTotal, setLeaveTotal] = useState<number | null>(null)
   const [upcomingLeave, setUpcomingLeave] = useState<LeaveRequest[]>([])
   const [recentNotifications, setRecentNotifications] = useState<WorkflowNotif[]>([])
@@ -161,6 +162,9 @@ export default function DashboardDetailed() {
   const [recentExpenses, setRecentExpenses] = useState<ExpenseClaim[]>([])
   const [expenseTotal, setExpenseTotal] = useState(0)
   const [expensePage, setExpensePage] = useState(0)
+  const [expenseFYSubmitted, setExpenseFYSubmitted] = useState(0)
+  const [expenseFYApproved, setExpenseFYApproved] = useState(0)
+  const [lastExpense, setLastExpense] = useState<ExpenseClaim | null>(null)
   const [recentKudos, setRecentKudos] = useState<KudosItem[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [newsPage, setNewsPage] = useState(0)
@@ -222,18 +226,23 @@ export default function DashboardDetailed() {
         if (!balRow) return
         const total = balRow.total_allowance + (Number(balRow.lieu_days) || 0)
         setLeaveTotal(total)
-        const [approvedRes, pendingRes] = await Promise.all([
+        const [approvedRes, pendingRes, declinedRes] = await Promise.all([
           supabase.from('leave_requests').select('days_requested')
             .eq('employee_id', employeeId).eq('company_id', cid).eq('leave_type_id', annualType.id)
             .eq('status', 'approved').gte('start_date', yearStart).lte('start_date', yearEnd),
           supabase.from('leave_requests').select('days_requested')
             .eq('employee_id', employeeId).eq('company_id', cid).eq('leave_type_id', annualType.id)
             .eq('status', 'pending').gte('start_date', yearStart).lte('start_date', yearEnd),
+          supabase.from('leave_requests').select('days_requested')
+            .eq('employee_id', employeeId).eq('company_id', cid).eq('leave_type_id', annualType.id)
+            .eq('status', 'declined').gte('start_date', yearStart).lte('start_date', yearEnd),
         ])
         const approved = (approvedRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
         const pending = (pendingRes.data || []).reduce((s: number, r: any) => s + Number(r.days_requested), 0)
+        const declined = (declinedRes.data || []).length
         setLeaveApproved(approved)
         setLeavePending(pending)
+        setLeaveDeclined(declined)
         setLeaveRemaining(total - approved)
       })
 
@@ -331,8 +340,9 @@ export default function DashboardDetailed() {
         setAnniversaries(annivs.slice(0, 6))
       })
 
-    // Expenses — last 6 for pagination
+    // Expenses — last 6 for pagination + FY totals
     if (features.expenses) {
+      const { fyStart, fyEnd } = getFYRange(fyStartMonth)
       supabase.from('expense_claims')
         .select('id, amount, status, created_at, description')
         .eq('employee_id', employeeId).eq('company_id', cid)
@@ -341,6 +351,17 @@ export default function DashboardDetailed() {
           if (data) {
             setRecentExpenses(data as ExpenseClaim[])
             setExpenseTotal(data.reduce((s: number, e: any) => s + Number(e.amount), 0))
+            if (data.length > 0) setLastExpense(data[0] as ExpenseClaim)
+          }
+        })
+      supabase.from('expense_claims')
+        .select('amount, status')
+        .eq('employee_id', employeeId).eq('company_id', cid)
+        .gte('created_at', fyStart).lte('created_at', fyEnd)
+        .then(({ data }) => {
+          if (data) {
+            setExpenseFYSubmitted(data.reduce((s: number, e: any) => s + Number(e.amount), 0))
+            setExpenseFYApproved(data.filter((e: any) => e.status === 'approved').reduce((s: number, e: any) => s + Number(e.amount), 0))
           }
         })
     }
@@ -1305,27 +1326,43 @@ export default function DashboardDetailed() {
         </div>
       )}
 
-      {/* Leave summary strip */}
-      {features.leave && (
-        <div className="dd2-summary-strip">
-          <div className="dd2-summary-card dd2-summary-remaining" onClick={() => navigate('/leave')}>
-            <span className="dd2-summary-value">{leaveRemaining ?? '--'}</span>
-            <span className="dd2-summary-label">Days Remaining</span>
-          </div>
-          <div className="dd2-summary-card dd2-summary-approved" onClick={() => navigate('/leave')}>
-            <span className="dd2-summary-value">{leaveApproved ?? 0}</span>
-            <span className="dd2-summary-label">Approved</span>
-          </div>
-          <div className="dd2-summary-card dd2-summary-pending" onClick={() => navigate('/leave')}>
-            <span className="dd2-summary-value">{leavePending ?? 0}</span>
-            <span className="dd2-summary-label">Pending</span>
-          </div>
-          <div className="dd2-summary-card dd2-summary-total" onClick={() => navigate('/leave')}>
-            <span className="dd2-summary-value">{leaveTotal ?? '--'}</span>
-            <span className="dd2-summary-label">Total Allowance</span>
-          </div>
+      {/* Summary strip — leave & expenses */}
+      <div className="dd2-summary-strip">
+        {/* Card 1: Leave Allowance & Remaining */}
+        <div className="dd2-summary-card dd2-summary-remaining" onClick={() => navigate('/leave')}>
+          <span className="dd2-summary-value">{leaveRemaining ?? '--'}</span>
+          <span className="dd2-summary-label">Days Remaining</span>
+          <span className="dd2-summary-sub">of {leaveTotal ?? '--'} allowance</span>
         </div>
-      )}
+        {/* Card 2: Leave Status Breakdown */}
+        <div className="dd2-summary-card dd2-summary-approved" onClick={() => navigate('/leave')}>
+          <span className="dd2-summary-value">{leaveApproved ?? 0}</span>
+          <span className="dd2-summary-label">Approved</span>
+          <span className="dd2-summary-sub">{leaveDeclined ?? 0} declined · {leavePending ?? 0} pending</span>
+        </div>
+        {/* Card 3: FY Expenses */}
+        <div className="dd2-summary-card dd2-summary-expenses" onClick={() => navigate('/expenses')}>
+          <span className="dd2-summary-value">&pound;{expenseFYSubmitted.toFixed(0)}</span>
+          <span className="dd2-summary-label">Expenses (FY)</span>
+          <span className="dd2-summary-sub">&pound;{expenseFYApproved.toFixed(0)} approved</span>
+        </div>
+        {/* Card 4: Last Expense */}
+        <div className="dd2-summary-card dd2-summary-lastexp" onClick={() => navigate('/expenses')}>
+          {lastExpense ? (
+            <>
+              <span className="dd2-summary-value">&pound;{Number(lastExpense.amount).toFixed(2)}</span>
+              <span className="dd2-summary-label">{lastExpense.description || 'Expense'}</span>
+              <span className="dd2-summary-sub">{new Date(lastExpense.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {lastExpense.status}</span>
+            </>
+          ) : (
+            <>
+              <span className="dd2-summary-value">--</span>
+              <span className="dd2-summary-label">Last Expense</span>
+              <span className="dd2-summary-sub">No expenses yet</span>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* 3-column card grid — cards stack vertically, draggable between columns */}
       <div className="dd2-columns">

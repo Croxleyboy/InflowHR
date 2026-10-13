@@ -7365,6 +7365,14 @@ body {
   background: linear-gradient(135deg, #f3e5f5, #e1bee7);
   color: #4a148c;
 }
+.dd2-summary-expenses {
+  background: linear-gradient(135deg, #fce4ec, #f8bbd0);
+  color: #880e4f;
+}
+.dd2-summary-lastexp {
+  background: linear-gradient(135deg, #e0f2f1, #b2dfdb);
+  color: #004d40;
+}
 [data-theme="dark"] .dd2-summary-remaining {
   background: linear-gradient(135deg, #0d47a1, #1565c0);
   color: #bbdefb;
@@ -7380,6 +7388,14 @@ body {
 [data-theme="dark"] .dd2-summary-total {
   background: linear-gradient(135deg, #4a148c, #6a1b9a);
   color: #e1bee7;
+}
+[data-theme="dark"] .dd2-summary-expenses {
+  background: linear-gradient(135deg, #880e4f, #ad1457);
+  color: #f8bbd0;
+}
+[data-theme="dark"] .dd2-summary-lastexp {
+  background: linear-gradient(135deg, #004d40, #00695c);
+  color: #b2dfdb;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .dd2-summary-remaining {
@@ -7398,6 +7414,14 @@ body {
     background: linear-gradient(135deg, #4a148c, #6a1b9a);
     color: #e1bee7;
   }
+  :root:not([data-theme="light"]) .dd2-summary-expenses {
+    background: linear-gradient(135deg, #880e4f, #ad1457);
+    color: #f8bbd0;
+  }
+  :root:not([data-theme="light"]) .dd2-summary-lastexp {
+    background: linear-gradient(135deg, #004d40, #00695c);
+    color: #b2dfdb;
+  }
 }
 .dd2-summary-value {
   font-size: 22px;
@@ -7411,6 +7435,17 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.3px;
   opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dd2-summary-sub {
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 3-column card layout */
