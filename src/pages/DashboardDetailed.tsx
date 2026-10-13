@@ -330,20 +330,22 @@ export default function DashboardDetailed() {
         }
       })
     supabase.from('payslips')
-      .select('net_pay, payment_date, pay_period_start, pay_period_end, frequency')
-      .eq('employee_id', employeeId).eq('company_id', cid).eq('released', true)
-      .order('id', { ascending: false }).limit(1).maybeSingle()
+      .select('*')
+      .eq('employee_id', employeeId).eq('company_id', cid)
+      .eq('released', true)
+      .order('created_at', { ascending: false }).limit(1)
       .then(({ data }) => {
-        if (data) {
-          setLastPayNet(Number((data as any).net_pay))
-          setLastPayDate((data as any).payment_date || (data as any).pay_period_end)
-          const ps = (data as any).pay_period_start
-          const pe = (data as any).pay_period_end
+        const row = data?.[0] as any
+        if (row) {
+          setLastPayNet(Number(row.net_pay) || 0)
+          setLastPayDate(row.payment_date || row.pay_period_end)
+          const ps = row.pay_period_start
+          const pe = row.pay_period_end
           if (ps && pe) {
             const fmt = (d: string) => new Date(d + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
             setLastPayPeriod(`${fmt(ps)} – ${fmt(pe)}`)
           }
-          const freq = (data as any).frequency || 'monthly'
+          const freq = row.frequency || 'monthly'
           if (pe) {
             const nextDt = new Date(pe + 'T00:00')
             if (freq === 'weekly') nextDt.setDate(nextDt.getDate() + 7)
@@ -375,7 +377,7 @@ export default function DashboardDetailed() {
         setTotalPendingCount(pending.length)
         const combined = [...pending, ...(completeRes.data || [])]
           .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 10)
+          .slice(0, 4)
         setRecentNotifications(combined as WorkflowNotif[])
       })
     }
@@ -508,13 +510,18 @@ export default function DashboardDetailed() {
     // E-Learning counts
     if (features.elearning) {
       ;(async () => {
-        const [enabledRes, completedRes, empDeptRes] = await Promise.all([
+        const [activeCourseRes, enabledRes, completedRes, empDeptRes] = await Promise.all([
+          supabase.from('elearning_courses').select('id').eq('is_active', true),
           supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', cid).eq('is_enabled', true),
           supabase.from('elearning_completions').select('course_id').eq('employee_id', employeeId).eq('company_id', cid),
           supabase.from('employees').select('department').eq('id', employeeId).maybeSingle(),
         ])
+        const activeCourseIds = new Set((activeCourseRes.data || []).map((r: any) => r.id))
         const myDept = (empDeptRes.data as any)?.department || ''
-        const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
+        const enabledIds = (enabledRes.data || [])
+          .filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) })
+          .map((r: any) => r.course_id)
+          .filter((id: string) => activeCourseIds.has(id))
         const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
         try {
           const raw = localStorage.getItem('inflowhr-elearning')
@@ -523,8 +530,8 @@ export default function DashboardDetailed() {
             if (Array.isArray(parsed.completed)) parsed.completed.forEach((id: string) => completedIds.add(id))
           }
         } catch { /* empty */ }
-        const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
         const enabledSet = new Set(enabledIds)
+        const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
         setElearningCompleted([...completedIds].filter(id => enabledSet.has(id)).length)
         if (outstandingIds.length > 0) {
           const { data: courses } = await supabase.from('elearning_courses').select('id, deadline').in('id', outstandingIds)
@@ -1620,6 +1627,12 @@ export default function DashboardDetailed() {
               <span className="dd2-summary-sub">No expenses yet</span>
             </>
           )}
+        </div>
+        {/* Card 5: Reminders */}
+        <div className="dd2-summary-card dd2-summary-reminders" onClick={() => navigate('/notifications')}>
+          <span className="dd2-summary-value">{reminders.length}</span>
+          <span className="dd2-summary-label">Reminders</span>
+          <span className="dd2-summary-sub">{reminders.length === 0 ? 'All caught up' : `${reminders.length} action${reminders.length !== 1 ? 's' : ''} pending`}</span>
         </div>
       </div>
 
