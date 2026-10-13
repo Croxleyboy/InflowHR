@@ -202,12 +202,13 @@ export default function Dashboard() {
 
   const [quickMenuOpen, setQuickMenuOpen] = useState(false)
 
-  const [dashPref, setDashPref] = useState(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
+  const desktopDefault = window.innerWidth >= 768 ? 'detailed' : 'cards'
+  const [dashPref, setDashPref] = useState(localStorage.getItem('inflowhr-dashboard-layout') || desktopDefault)
   useEffect(() => {
-    const handler = () => setDashPref(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
+    const handler = () => setDashPref(localStorage.getItem('inflowhr-dashboard-layout') || desktopDefault)
     window.addEventListener('storage', handler)
     return () => window.removeEventListener('storage', handler)
-  }, [])
+  }, [desktopDefault])
 
   useEffect(() => {
     if (companyUser?.company_id) {
