@@ -581,7 +581,7 @@ export default function DashboardDetailed() {
   const [dragCard, setDragCard] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<{ col: number; pos: number } | null>(null)
 
-  type CardDef = { id: string; el: JSX.Element }
+  type CardDef = { id: string; el: React.ReactNode }
   const allCards: CardDef[] = []
 
   // Build card list — each card has a stable id
