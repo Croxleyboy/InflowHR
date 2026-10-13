@@ -7800,6 +7800,53 @@ body {
 .dd2-att-week-dot-absent { background: #e53935; }
 .dd2-att-week-dot-leave { background: #7e57c2; }
 .dd2-att-week-dot-no_shift { background: var(--border); }
+
+.dd2-att-14-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dd2-att-week-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dd2-att-week-label {
+  font-size: 11px;
+  color: var(--text-muted, #8b8fa3);
+  width: 58px;
+  flex-shrink: 0;
+  text-align: right;
+}
+.dd2-att-week-squares {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+.dd2-att-sq-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+}
+.dd2-att-sq {
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: 28px;
+  border-radius: 4px;
+  background: var(--border);
+}
+.dd2-att-sq-label {
+  font-size: 9px;
+  color: var(--text-muted, #8b8fa3);
+}
+.dd2-att-sq-present { background: #43a047; }
+.dd2-att-sq-late { background: #ff9800; }
+.dd2-att-sq-absent { background: #e53935; }
+.dd2-att-sq-leave { background: #7e57c2; }
+.dd2-att-sq-no_shift { background: var(--border); }
+
 .dd2-att-hours-summary {
   display: flex;
   align-items: baseline;

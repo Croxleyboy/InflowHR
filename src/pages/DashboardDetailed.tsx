@@ -185,6 +185,7 @@ export default function DashboardDetailed() {
   const [attendanceLate, setAttendanceLate] = useState(0)
   const [attendanceAbsent, setAttendanceAbsent] = useState(0)
   const [attendanceLeave, setAttendanceLeave] = useState(0)
+  const [attendanceScore, setAttendanceScore] = useState<number | null>(null)
   const [jobTitle, setJobTitle] = useState<string | null>(null)
   const [lastPayNet, setLastPayNet] = useState<number | null>(null)
   const [lastPayDate, setLastPayDate] = useState<string | null>(null)
@@ -535,30 +536,49 @@ export default function DashboardDetailed() {
       setReminders(items.slice(0, 3))
     })()
 
-    // Attendance — shift workers: last 7 shift assignments; employed: timesheet hours this week
-    // Both paths also query approved leave to mark "on leave" days
+    // Attendance — shift workers: 14-day grid (last week + this week) using checkin_records
+    // Non-shift: timesheet hours this week
     if (isShiftWorker) {
       ;(async () => {
         const now = new Date()
-        const sevenDaysAgo = new Date(now)
-        sevenDaysAgo.setDate(now.getDate() - 6)
-        const rangeStart = toLocalDateStr(sevenDaysAgo)
-        const [{ data: shifts }, { data: leaveRows }] = await Promise.all([
+        const dayOfWeek = now.getDay()
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+        const thisMonday = new Date(now)
+        thisMonday.setDate(now.getDate() + mondayOffset)
+        const lastMonday = new Date(thisMonday)
+        lastMonday.setDate(thisMonday.getDate() - 7)
+        const thisSunday = new Date(thisMonday)
+        thisSunday.setDate(thisMonday.getDate() + 6)
+        const rangeStart = toLocalDateStr(lastMonday)
+        const rangeEnd = toLocalDateStr(thisSunday)
+
+        const [{ data: shifts }, { data: checkins }, { data: leaveRows }] = await Promise.all([
           supabase.from('shift_assignments')
-            .select('date, check_in_status')
+            .select('id, date, shift_template:shift_templates(start_time)')
             .eq('employee_id', employeeId).eq('company_id', cid)
-            .gte('date', rangeStart).lte('date', today)
+            .gte('date', rangeStart).lte('date', rangeEnd)
             .order('date', { ascending: true }),
+          supabase.from('checkin_records')
+            .select('shift_assignment_id, check_in_at, status')
+            .eq('employee_id', employeeId).eq('company_id', cid)
+            .eq('source', 'shifts'),
           supabase.from('leave_requests')
             .select('start_date, end_date')
             .eq('employee_id', employeeId).eq('company_id', cid)
             .eq('status', 'approved')
-            .lte('start_date', today).gte('end_date', rangeStart),
+            .lte('start_date', rangeEnd).gte('end_date', rangeStart),
         ])
+
+        const ciMap: Record<string, { check_in_at: string; status: string }> = {}
+        if (checkins) {
+          for (const c of checkins as any[]) {
+            if (c.shift_assignment_id) ciMap[c.shift_assignment_id] = c
+          }
+        }
 
         const leaveDates = new Set<string>()
         if (leaveRows) {
-          for (const lr of leaveRows) {
+          for (const lr of leaveRows as any[]) {
             const s = new Date(lr.start_date + 'T00:00')
             const e = new Date(lr.end_date + 'T00:00')
             for (let cur = new Date(s); cur <= e; cur.setDate(cur.getDate() + 1)) {
@@ -569,21 +589,33 @@ export default function DashboardDetailed() {
 
         const days: AttendanceDay[] = []
         let present = 0, late = 0, absent = 0, onLeave = 0
-        for (let i = 0; i < 7; i++) {
-          const d = new Date(sevenDaysAgo)
-          d.setDate(sevenDaysAgo.getDate() + i)
+        let scoredTotal = 0, scoreSum = 0
+        for (let i = 0; i < 14; i++) {
+          const d = new Date(lastMonday)
+          d.setDate(lastMonday.getDate() + i)
           const dateStr = toLocalDateStr(d)
           let status: AttendanceDay['status'] = 'no_shift'
+
           if (leaveDates.has(dateStr)) {
-            status = 'leave'; onLeave++
+            status = 'leave'; onLeave++; scoredTotal++; scoreSum += 1
           } else {
-            const shift = shifts?.find((s: any) => s.date === dateStr)
+            const shift = (shifts as any[])?.find((s: any) => s.date === dateStr)
             if (shift) {
-              const cis = shift.check_in_status
-              if (cis === 'checked_in' || cis === 'checked_out') { status = 'present'; present++ }
-              else if (cis === 'late') { status = 'late'; late++ }
-              else if (dateStr < today) { status = 'absent'; absent++ }
-              else { status = 'no_shift' }
+              const ci = ciMap[shift.id]
+              if (ci) {
+                const startTime = (shift.shift_template as any)?.start_time
+                if (startTime) {
+                  const expected = new Date(`${dateStr}T${startTime}`)
+                  const actual = new Date(ci.check_in_at)
+                  const diffMins = (actual.getTime() - expected.getTime()) / 60000
+                  if (diffMins > 15) { status = 'late'; late++; scoredTotal++; scoreSum += 0.5 }
+                  else { status = 'present'; present++; scoredTotal++; scoreSum += 1 }
+                } else {
+                  status = 'present'; present++; scoredTotal++; scoreSum += 1
+                }
+              } else if (dateStr < today) {
+                status = 'absent'; absent++; scoredTotal++
+              }
             }
           }
           days.push({ date: dateStr, status })
@@ -593,6 +625,7 @@ export default function DashboardDetailed() {
         setAttendanceLate(late)
         setAttendanceAbsent(absent)
         setAttendanceLeave(onLeave)
+        setAttendanceScore(scoredTotal > 0 ? Math.round((scoreSum / scoredTotal) * 100) : 100)
       })()
     } else {
       ;(async () => {
@@ -811,11 +844,39 @@ export default function DashboardDetailed() {
       <div className="dd2-card-header">
         <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <h2 className="dd2-card-title">Attendance Overview</h2>
+        {isShiftWorker && attendanceScore !== null && (
+          <span className="dd2-card-count" style={{ background: attendanceScore >= 80 ? '#43a047' : attendanceScore >= 50 ? '#ff9800' : '#e53935', color: '#fff' }}>
+            {attendanceScore}%
+          </span>
+        )}
       </div>
       <div className="dd2-card-body">
         {isShiftWorker ? (
           <>
-            <AttendanceBarChart days={attendanceDays} />
+            <div className="dd2-att-14-grid">
+              <div className="dd2-att-week-row">
+                <span className="dd2-att-week-label">Last week</span>
+                <div className="dd2-att-week-squares">
+                  {attendanceDays.slice(0, 7).map((d, i) => (
+                    <div key={i} className="dd2-att-sq-col">
+                      <div className={`dd2-att-sq dd2-att-sq-${d.status}`} title={`${d.date} — ${d.status.replace('_', ' ')}`} />
+                      <span className="dd2-att-sq-label">{['M', 'T', 'W', 'T', 'F', 'S', 'S'][i]}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="dd2-att-week-row">
+                <span className="dd2-att-week-label">This week</span>
+                <div className="dd2-att-week-squares">
+                  {attendanceDays.slice(7, 14).map((d, i) => (
+                    <div key={i} className="dd2-att-sq-col">
+                      <div className={`dd2-att-sq dd2-att-sq-${d.status}`} title={`${d.date} — ${d.status.replace('_', ' ')}`} />
+                      <span className="dd2-att-sq-label">{['M', 'T', 'W', 'T', 'F', 'S', 'S'][i]}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
             <div className="dd2-att-legend">
               <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#43a047' }} />{attendancePresent} Present</span>
               <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#ff9800' }} />{attendanceLate} Late</span>
