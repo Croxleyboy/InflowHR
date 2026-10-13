@@ -160,6 +160,7 @@ export default function DashboardDetailed() {
   const [jobTitle, setJobTitle] = useState<string | null>(null)
   const [lastPayNet, setLastPayNet] = useState<number | null>(null)
   const [lastPayDate, setLastPayDate] = useState<string | null>(null)
+  const [lastPayPeriod, setLastPayPeriod] = useState<string | null>(null)
   const [nextPayday, setNextPayday] = useState<string | null>(null)
   const [payHidden, setPayHidden] = useState(() => {
     try { return localStorage.getItem('inflowhr-dd2-hide-pay') === '1' } catch { return false }
@@ -329,20 +330,25 @@ export default function DashboardDetailed() {
       })
     supabase.from('payslips')
       .select('net_pay, payment_date, pay_period_start, pay_period_end, frequency')
-      .eq('employee_id', employeeId).eq('company_id', cid).eq('status', 'final')
+      .eq('employee_id', employeeId).eq('company_id', cid).in('status', ['processed', 'paid'])
       .order('pay_period_end', { ascending: false }).limit(1).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setLastPayNet(Number((data as any).net_pay))
           setLastPayDate((data as any).payment_date || (data as any).pay_period_end)
-          const periodEnd = (data as any).pay_period_end
+          const ps = (data as any).pay_period_start
+          const pe = (data as any).pay_period_end
+          if (ps && pe) {
+            const fmt = (d: string) => new Date(d + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+            setLastPayPeriod(`${fmt(ps)} – ${fmt(pe)}`)
+          }
           const freq = (data as any).frequency || 'monthly'
-          if (periodEnd) {
-            const pe = new Date(periodEnd + 'T00:00')
-            if (freq === 'weekly') pe.setDate(pe.getDate() + 7)
-            else if (freq === 'fortnightly') pe.setDate(pe.getDate() + 14)
-            else pe.setMonth(pe.getMonth() + 1)
-            setNextPayday(toLocalDateStr(pe))
+          if (pe) {
+            const nextDt = new Date(pe + 'T00:00')
+            if (freq === 'weekly') nextDt.setDate(nextDt.getDate() + 7)
+            else if (freq === 'fortnightly') nextDt.setDate(nextDt.getDate() + 14)
+            else nextDt.setMonth(nextDt.getMonth() + 1)
+            setNextPayday(toLocalDateStr(nextDt))
           }
         }
       })
@@ -1184,7 +1190,7 @@ export default function DashboardDetailed() {
               {lastPayNet !== null ? (
                 <>
                   <span className="dd2-pay-amount">{payHidden ? '••••••' : `£${lastPayNet.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
-                  {lastPayDate && <span className="dd2-pay-date">{new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>}
+                  {lastPayPeriod && <span className="dd2-pay-date">{lastPayPeriod}</span>}
                 </>
               ) : (
                 <span className="dd2-pay-amount dd2-pay-none">No payslips yet</span>
