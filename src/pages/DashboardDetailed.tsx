@@ -58,6 +58,14 @@ interface Announcement {
   published_at?: string
 }
 
+interface ReminderItem {
+  id: string
+  title: string
+  subtitle: string
+  navigateTo?: string
+  icon: 'shift' | 'meeting' | 'birthday' | 'booking' | 'leave' | 'elearning' | 'survey'
+}
+
 interface AttendanceDay {
   date: string
   status: 'present' | 'absent' | 'late' | 'leave' | 'no_shift'
@@ -169,6 +177,10 @@ export default function DashboardDetailed() {
   const [jobTitle, setJobTitle] = useState<string | null>(null)
   const [lastPayNet, setLastPayNet] = useState<number | null>(null)
   const [lastPayDate, setLastPayDate] = useState<string | null>(null)
+  const [empEmail, setEmpEmail] = useState<string | null>(null)
+  const [empPhone, setEmpPhone] = useState<string | null>(null)
+  const [empStartDate, setEmpStartDate] = useState<string | null>(null)
+  const [reminders, setReminders] = useState<ReminderItem[]>([])
 
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
   const firstName = employeeName.split(' ')[0] || employeeName
@@ -214,9 +226,16 @@ export default function DashboardDetailed() {
       .order('start_date').limit(5)
       .then(({ data }) => { if (data) setUpcomingLeave(data as any) })
 
-    // Job title + last payslip
-    supabase.from('employees').select('job_title').eq('id', employeeId).maybeSingle()
-      .then(({ data }) => { if (data) setJobTitle((data as any).job_title || null) })
+    // Job title, email, phone, start date
+    supabase.from('employees').select('job_title, email, phone, start_date').eq('id', employeeId).maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setJobTitle((data as any).job_title || null)
+          setEmpEmail((data as any).email || null)
+          setEmpPhone((data as any).phone || null)
+          setEmpStartDate((data as any).start_date || null)
+        }
+      })
     supabase.from('payslips')
       .select('net_pay, payment_date, pay_period_start, pay_period_end')
       .eq('employee_id', employeeId).eq('company_id', cid).eq('status', 'final')
@@ -389,6 +408,75 @@ export default function DashboardDetailed() {
         setSurveyCompleted(rows.filter((r: any) => r.status === 'completed').length)
       })
 
+    // Reminders & actions — upcoming shifts, meetings, leave, overdue e-learning
+    ;(async () => {
+      const items: ReminderItem[] = []
+      const weekAhead = new Date()
+      weekAhead.setDate(weekAhead.getDate() + 7)
+      const weekAheadStr = toLocalDateStr(weekAhead)
+
+      if (isShiftWorker) {
+        const { data: upShifts } = await supabase.from('shift_assignments')
+          .select('id, date, shift_template:shift_templates(name, start_time, end_time), rota:rotas(status)')
+          .eq('employee_id', employeeId).eq('company_id', cid)
+          .gte('date', today).lte('date', weekAheadStr).order('date').limit(3)
+        if (upShifts) upShifts.filter((s: any) => s.rota?.status === 'published').forEach((s: any) => {
+          items.push({
+            id: `shift-${s.id}`, icon: 'shift',
+            title: `${(s.shift_template as any)?.name || 'Shift'}`,
+            subtitle: `${new Date(s.date + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}${(s.shift_template as any)?.start_time ? ` · ${(s.shift_template as any).start_time.slice(0, 5)}` : ''}`,
+            navigateTo: '/shifts',
+          })
+        })
+      }
+
+      if (features.performance) {
+        const { data: mtgs } = await supabase.from('one_to_one_meetings')
+          .select('id, scheduled_date, scheduled_time, manager_id, employee_id')
+          .eq('company_id', cid).in('status', ['pending', 'accepted'])
+          .gte('scheduled_date', today).lte('scheduled_date', weekAheadStr)
+          .or(`manager_id.eq.${employeeId},employee_id.eq.${employeeId}`)
+          .order('scheduled_date').limit(3)
+        if (mtgs) {
+          const otherIds = [...new Set(mtgs.map((m: any) => m.manager_id === employeeId ? m.employee_id : m.manager_id))]
+          const nameMap: Record<string, string> = {}
+          if (otherIds.length) {
+            const { data: names } = await supabase.from('employees').select('id, first_name, last_name').in('id', otherIds)
+            ;(names || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
+          }
+          mtgs.forEach((m: any) => {
+            const otherId = m.manager_id === employeeId ? m.employee_id : m.manager_id
+            items.push({
+              id: `mtg-${m.id}`, icon: 'meeting',
+              title: `1:1 with ${nameMap[otherId] || 'colleague'}`,
+              subtitle: `${new Date(m.scheduled_date + 'T00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}${m.scheduled_time ? ` at ${m.scheduled_time.slice(0, 5)}` : ''}`,
+              navigateTo: '/one-to-ones',
+            })
+          })
+        }
+      }
+
+      const { data: pendingLeaveReqs } = await supabase.from('leave_requests')
+        .select('id, start_date, leave_type:leave_types(name)')
+        .eq('employee_id', employeeId).eq('company_id', cid).eq('status', 'pending')
+        .order('start_date').limit(2)
+      if (pendingLeaveReqs) pendingLeaveReqs.forEach((lr: any) => {
+        items.push({
+          id: `leave-${lr.id}`, icon: 'leave',
+          title: `${(lr.leave_type as any)?.name || 'Leave'} request pending`,
+          subtitle: formatDate(lr.start_date),
+          navigateTo: '/leave',
+        })
+      })
+
+      if (surveyOutstanding > 0) {
+        items.push({ id: 'survey-outstanding', icon: 'survey', title: `${surveyOutstanding} survey${surveyOutstanding > 1 ? 's' : ''} outstanding`, subtitle: 'Complete to share your feedback', navigateTo: '/surveys' })
+      }
+
+      items.sort((a, b) => a.title.localeCompare(b.title))
+      setReminders(items.slice(0, 3))
+    })()
+
     // Attendance — shift workers: last 7 shift assignments; employed: timesheet hours this week
     if (isShiftWorker) {
       ;(async () => {
@@ -478,15 +566,20 @@ export default function DashboardDetailed() {
 
   const meetingTotal = pendingOneToOnes + completedOneToOnes
 
-  // Drag-and-drop card ordering
-  const [dragIdx, setDragIdx] = useState<number | null>(null)
-  const [cardOrder, setCardOrder] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('inflowhr-dd2-order')
-      if (saved) return JSON.parse(saved)
-    } catch { /* empty */ }
-    return []
-  })
+  // Tenure calculation
+  const tenure = (() => {
+    if (!empStartDate) return null
+    const start = new Date(empStartDate + 'T00:00')
+    const now = new Date()
+    let years = now.getFullYear() - start.getFullYear()
+    let days = Math.floor((now.getTime() - new Date(start.getFullYear() + years, start.getMonth(), start.getDate()).getTime()) / 86400000)
+    if (days < 0) { years--; days = Math.floor((now.getTime() - new Date(start.getFullYear() + years, start.getMonth(), start.getDate()).getTime()) / 86400000) }
+    return { years, days }
+  })()
+
+  // Column-based drag-and-drop — cards stack vertically within 3 columns, draggable between
+  const [dragCard, setDragCard] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ col: number; pos: number } | null>(null)
 
   type CardDef = { id: string; el: JSX.Element }
   const allCards: CardDef[] = []
@@ -553,6 +646,35 @@ export default function DashboardDetailed() {
           </ul>
         )}
         <div className="dd2-card-link">View all notifications →</div>
+      </div>
+    </section>
+  )})
+
+  allCards.push({ id: 'reminders', el: (
+    <section className="dd2-card" onClick={() => navigate('/notifications')}>
+      <div className="dd2-card-header">
+        <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <h2 className="dd2-card-title">Reminders &amp; Actions</h2>
+        {reminders.length > 0 && <span className="dd2-card-count">{reminders.length}</span>}
+      </div>
+      <div className="dd2-card-body">
+        {reminders.length === 0 ? (
+          <p className="dd2-empty">All caught up — nothing pending</p>
+        ) : (
+          <ul className="dd2-item-list">
+            {reminders.map(r => (
+              <li key={r.id} className="dd2-item" onClick={(ev) => { if (r.navigateTo) { ev.stopPropagation(); navigate(r.navigateTo) } }}>
+                <span className={`dd2-reminder-icon dd2-reminder-${r.icon}`}>
+                  {r.icon === 'shift' ? '⏰' : r.icon === 'meeting' ? '👥' : r.icon === 'leave' ? '🏖' : r.icon === 'survey' ? '📋' : r.icon === 'elearning' ? '📚' : '📌'}
+                </span>
+                <div className="dd2-item-content">
+                  <span className="dd2-item-title">{r.title}</span>
+                  <span className="dd2-item-sub">{r.subtitle}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   )})
@@ -840,96 +962,87 @@ export default function DashboardDetailed() {
     </section>
   )})
 
-  // Sort cards by saved order, unknown ids go to end
-  const sortedCards = [...allCards].sort((a, b) => {
-    const ai = cardOrder.indexOf(a.id), bi = cardOrder.indexOf(b.id)
-    if (ai === -1 && bi === -1) return 0
-    if (ai === -1) return 1
-    if (bi === -1) return -1
-    return ai - bi
+  // Distribute cards into 3 columns — restore from localStorage or round-robin
+  const cardIds = allCards.map(c => c.id)
+  const cardMap = Object.fromEntries(allCards.map(c => [c.id, c]))
+
+  const [columns, setColumns] = useState<[string[], string[], string[]]>(() => {
+    try {
+      const saved = localStorage.getItem('inflowhr-dd2-columns')
+      if (saved) {
+        const parsed = JSON.parse(saved) as [string[], string[], string[]]
+        if (Array.isArray(parsed) && parsed.length === 3) return parsed
+      }
+    } catch { /* empty */ }
+    return [[], [], []]
   })
 
-  function handleDragStart(idx: number) { setDragIdx(idx) }
-  function handleDragOver(e: React.DragEvent) { e.preventDefault() }
-  function handleDrop(targetIdx: number) {
-    if (dragIdx === null || dragIdx === targetIdx) return
-    const ids = sortedCards.map(c => c.id)
-    const [moved] = ids.splice(dragIdx, 1)
-    ids.splice(targetIdx, 0, moved)
-    setCardOrder(ids)
-    try { localStorage.setItem('inflowhr-dd2-order', JSON.stringify(ids)) } catch { /* empty */ }
-    setDragIdx(null)
+  const resolvedColumns: [string[], string[], string[]] = (() => {
+    const flat = [...columns[0], ...columns[1], ...columns[2]]
+    const knownIds = new Set(flat.filter(id => cardMap[id]))
+    const missing = cardIds.filter(id => !knownIds.has(id))
+    const cols: [string[], string[], string[]] = [
+      columns[0].filter(id => cardMap[id]),
+      columns[1].filter(id => cardMap[id]),
+      columns[2].filter(id => cardMap[id]),
+    ]
+    missing.forEach((id, i) => cols[i % 3].push(id))
+    return cols
+  })()
+
+  function saveColumns(cols: [string[], string[], string[]]) {
+    setColumns(cols)
+    try { localStorage.setItem('inflowhr-dd2-columns', JSON.stringify(cols)) } catch { /* empty */ }
+  }
+
+  function handleColDragOver(e: React.DragEvent, col: number, pos: number) {
+    e.preventDefault()
+    setDropTarget({ col, pos })
+  }
+  function handleColDrop(col: number, pos: number) {
+    if (!dragCard) return
+    const newCols: [string[], string[], string[]] = [
+      resolvedColumns[0].filter(id => id !== dragCard),
+      resolvedColumns[1].filter(id => id !== dragCard),
+      resolvedColumns[2].filter(id => id !== dragCard),
+    ]
+    newCols[col].splice(pos, 0, dragCard)
+    saveColumns(newCols)
+    setDragCard(null)
+    setDropTarget(null)
   }
 
   return (
     <div className="dd2">
-      {/* Top row: greeting + profile card side by side */}
-      <div className="dd2-top-row">
-        <div className="dd2-top-left">
-          <header className="dd2-header">
-            <div>
-              <h1 className="dd2-greeting">{greeting} {firstName}</h1>
-              <p className="dd2-date">{dateStr}</p>
-            </div>
-            <div className="dd2-header-actions">
-              <button className="dd2-action-btn" onClick={toggle} title="Toggle theme">
-                {dark ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></g></svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-                )}
-              </button>
-              <button className="dd2-action-btn" onClick={signOut} title="Sign out">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-                </svg>
-              </button>
-            </div>
-          </header>
-          {/* Leave summary strip */}
-          {features.leave && (
-            <div className="dd2-summary-strip">
-              <div className="dd2-summary-card dd2-summary-remaining" onClick={() => navigate('/leave')}>
-                <span className="dd2-summary-value">{leaveRemaining ?? '--'}</span>
-                <span className="dd2-summary-label">Days Remaining</span>
-              </div>
-              <div className="dd2-summary-card dd2-summary-approved" onClick={() => navigate('/leave')}>
-                <span className="dd2-summary-value">{leaveApproved ?? 0}</span>
-                <span className="dd2-summary-label">Approved</span>
-              </div>
-              <div className="dd2-summary-card dd2-summary-pending" onClick={() => navigate('/leave')}>
-                <span className="dd2-summary-value">{leavePending ?? 0}</span>
-                <span className="dd2-summary-label">Pending</span>
-              </div>
-              <div className="dd2-summary-card dd2-summary-total" onClick={() => navigate('/leave')}>
-                <span className="dd2-summary-value">{leaveTotal ?? '--'}</span>
-                <span className="dd2-summary-label">Total Allowance</span>
-              </div>
-            </div>
-          )}
+      {/* Header bar: greeting + actions */}
+      <header className="dd2-header">
+        <div>
+          <h1 className="dd2-greeting">{greeting} {firstName}</h1>
+          <p className="dd2-date">{dateStr}</p>
         </div>
-
-        {/* Compact profile card with scenery background */}
-        <section className="dd2-profile-hero" onClick={() => navigate('/profile')}>
-          <div className="dd2-profile-bg">
-            <svg viewBox="0 0 400 260" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#4a90d9"/><stop offset="60%" stopColor="#87CEEB"/><stop offset="100%" stopColor="#c8e6f0"/></linearGradient>
-                <linearGradient id="skyDark" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1a1a3e"/><stop offset="50%" stopColor="#2d1b69"/><stop offset="100%" stopColor="#4a1942"/></linearGradient>
-              </defs>
-              <rect width="400" height="260" fill={dark ? 'url(#skyDark)' : 'url(#sky)'} />
-              <ellipse cx="60" cy="100" rx="40" ry="22" fill={dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.7)'} />
-              <ellipse cx="90" cy="95" rx="50" ry="25" fill={dark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.5)'} />
-              <ellipse cx="320" cy="80" rx="55" ry="20" fill={dark ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.6)'} />
-              <ellipse cx="350" cy="75" rx="35" ry="18" fill={dark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.4)'} />
-              <path d="M0 180 Q50 120 120 160 Q180 130 220 170 Q280 110 340 155 Q370 140 400 160 L400 260 L0 260Z" fill={dark ? '#1a3a2a' : '#4a7c59'} />
-              <path d="M0 210 Q80 170 160 200 Q240 165 320 195 Q360 180 400 190 L400 260 L0 260Z" fill={dark ? '#2a5a3a' : '#5c9a6e'} />
-              <path d="M0 230 Q100 210 200 225 Q300 215 400 230 L400 260 L0 260Z" fill={dark ? '#1a4a2a' : '#3d7a4a'} />
-              {!dark && <circle cx="340" cy="45" r="20" fill="#fff4a3" opacity="0.9" />}
-              {dark && <><circle cx="100" cy="30" r="1.5" fill="#fff" opacity="0.6"/><circle cx="200" cy="20" r="1" fill="#fff" opacity="0.5"/><circle cx="280" cy="40" r="1.5" fill="#fff" opacity="0.7"/><circle cx="350" cy="25" r="1" fill="#fff" opacity="0.4"/><circle cx="150" cy="50" r="1" fill="#fff" opacity="0.5"/></>}
+        <div className="dd2-header-actions">
+          <button className="dd2-action-btn" onClick={toggle} title="Toggle theme">
+            {dark ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/><g stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></g></svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            )}
+          </button>
+          <button className="dd2-action-btn" onClick={signOut} title="Sign out">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
             </svg>
-          </div>
-          <div className="dd2-profile-content">
+          </button>
+        </div>
+      </header>
+
+      {/* Full-width profile hero with vineyard background */}
+      <section className="dd2-profile-hero" onClick={() => navigate('/profile')}>
+        <div className="dd2-profile-bg">
+          <img src="/images/hero-landscape.jpg" alt="" />
+        </div>
+        <div className="dd2-profile-content">
+          <div className="dd2-profile-left">
             <div className="dd2-profile-avatar-wrap">
               {avatarUrl ? (
                 <img className="dd2-profile-avatar" src={avatarUrl} alt={initials} />
@@ -940,33 +1053,93 @@ export default function DashboardDetailed() {
             <div className="dd2-profile-info">
               <h2 className="dd2-profile-name">{employeeName}</h2>
               {jobTitle && <p className="dd2-profile-title">{jobTitle}</p>}
+              {company?.logo_url && <img className="dd2-profile-company-logo" src={company.logo_url} alt="" />}
             </div>
-            {lastPayNet !== null && (
-              <div className="dd2-profile-pay" onClick={(ev) => { ev.stopPropagation(); navigate('/payslips') }}>
-                <span className="dd2-profile-pay-amount">&pound;{lastPayNet.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                <span className="dd2-profile-pay-label">
-                  Last Pay{lastPayDate ? ` · ${new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}
-                </span>
+          </div>
+          <div className="dd2-profile-right">
+            {empEmail && (
+              <div className="dd2-profile-detail">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <span>{empEmail}</span>
               </div>
             )}
-            {company?.logo_url && <img className="dd2-profile-company-logo" src={company.logo_url} alt="" />}
+            {empPhone && (
+              <div className="dd2-profile-detail">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                <span>{empPhone}</span>
+              </div>
+            )}
+            {tenure && (
+              <div className="dd2-profile-detail">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <span>{tenure.years} year{tenure.years !== 1 ? 's' : ''}, {tenure.days} day{tenure.days !== 1 ? 's' : ''}</span>
+              </div>
+            )}
+            {lastPayNet !== null && (
+              <div className="dd2-profile-detail dd2-profile-detail-pay" onClick={(ev) => { ev.stopPropagation(); navigate('/payslips') }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <span>&pound;{lastPayNet.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{lastPayDate ? ` · ${new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
+              </div>
+            )}
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
-      {/* Card grid — draggable, symmetrical 3-column */}
-      <div className="dd2-grid dd2-grid-3">
-        {sortedCards.map((card, idx) => (
+      {/* Leave summary strip */}
+      {features.leave && (
+        <div className="dd2-summary-strip">
+          <div className="dd2-summary-card dd2-summary-remaining" onClick={() => navigate('/leave')}>
+            <span className="dd2-summary-value">{leaveRemaining ?? '--'}</span>
+            <span className="dd2-summary-label">Days Remaining</span>
+          </div>
+          <div className="dd2-summary-card dd2-summary-approved" onClick={() => navigate('/leave')}>
+            <span className="dd2-summary-value">{leaveApproved ?? 0}</span>
+            <span className="dd2-summary-label">Approved</span>
+          </div>
+          <div className="dd2-summary-card dd2-summary-pending" onClick={() => navigate('/leave')}>
+            <span className="dd2-summary-value">{leavePending ?? 0}</span>
+            <span className="dd2-summary-label">Pending</span>
+          </div>
+          <div className="dd2-summary-card dd2-summary-total" onClick={() => navigate('/leave')}>
+            <span className="dd2-summary-value">{leaveTotal ?? '--'}</span>
+            <span className="dd2-summary-label">Total Allowance</span>
+          </div>
+        </div>
+      )}
+
+      {/* 3-column card grid — cards stack vertically, draggable between columns */}
+      <div className="dd2-columns">
+        {resolvedColumns.map((colCards, colIdx) => (
           <div
-            key={card.id}
-            className={`dd2-drag-wrap${dragIdx === idx ? ' dd2-dragging' : ''}`}
-            draggable
-            onDragStart={() => handleDragStart(idx)}
-            onDragOver={handleDragOver}
-            onDrop={() => handleDrop(idx)}
-            onDragEnd={() => setDragIdx(null)}
+            key={colIdx}
+            className="dd2-column"
+            onDragOver={(e) => handleColDragOver(e, colIdx, colCards.length)}
+            onDrop={() => handleColDrop(colIdx, colCards.length)}
           >
-            {card.el}
+            {colCards.map((cardId, posIdx) => {
+              const card = cardMap[cardId]
+              if (!card) return null
+              return (
+                <div key={cardId}>
+                  {dropTarget?.col === colIdx && dropTarget?.pos === posIdx && (
+                    <div className="dd2-drop-indicator" />
+                  )}
+                  <div
+                    className={`dd2-drag-wrap${dragCard === cardId ? ' dd2-dragging' : ''}`}
+                    draggable
+                    onDragStart={() => setDragCard(cardId)}
+                    onDragOver={(e) => handleColDragOver(e, colIdx, posIdx)}
+                    onDrop={(e) => { e.stopPropagation(); handleColDrop(colIdx, posIdx) }}
+                    onDragEnd={() => { setDragCard(null); setDropTarget(null) }}
+                  >
+                    {card.el}
+                  </div>
+                </div>
+              )
+            })}
+            {dropTarget?.col === colIdx && dropTarget?.pos === colCards.length && (
+              <div className="dd2-drop-indicator" />
+            )}
           </div>
         ))}
       </div>
