@@ -4,7 +4,7 @@ import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
-import { toLocalDateStr, formatDate } from '../../lib/formatters'
+import { toLocalDateStr, formatDate, currencySymbol } from '../../lib/formatters'
 
 interface Rota {
   id: string
@@ -118,7 +118,8 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function AdminRotas() {
   const { selectedCompanyId } = useAdminCompany()
-  const { employeeEmail: adminEmail } = useAuth()
+  const { employeeEmail: adminEmail, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [rotas, setRotas] = useState<Rota[]>([])
   const [loading, setLoading] = useState(true)
@@ -523,7 +524,7 @@ export default function AdminRotas() {
           const hourlyRate = payData?.hourly_rate || 0
           const compensation = Math.round(shiftHrs * hourlyRate * 100) / 100
           const confirmed = window.confirm(
-            `⚠️ Zero Hours Compliance Warning\n\nThis shift is being cancelled within the ${zhcSettings.cancellation_notice_hours}-hour notice window (${Math.round(noticeHours)} hours before the shift).\n\nThe worker is entitled to compensation of £${compensation.toFixed(2)} (${shiftHrs.toFixed(1)} hrs × £${hourlyRate.toFixed(2)}/hr).\n\nThis will be logged for inclusion in their next payrun.\n\nProceed with cancellation?`
+            `⚠️ Zero Hours Compliance Warning\n\nThis shift is being cancelled within the ${zhcSettings.cancellation_notice_hours}-hour notice window (${Math.round(noticeHours)} hours before the shift).\n\nThe worker is entitled to compensation of ${currencySymbol(currency)}${compensation.toFixed(2)} (${shiftHrs.toFixed(1)} hrs × ${currencySymbol(currency)}${hourlyRate.toFixed(2)}/hr).\n\nThis will be logged for inclusion in their next payrun.\n\nProceed with cancellation?`
           )
           if (!confirmed) return
           const { data: userData } = await supabase.auth.getUser()

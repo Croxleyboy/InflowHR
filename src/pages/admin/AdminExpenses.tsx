@@ -3,6 +3,7 @@ import JSZip from 'jszip'
 import { supabase } from '../../lib/supabase'
 import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { getCompanyFY } from '../../lib/companyArchive'
+import { formatCurrency, currencySymbol } from '../../lib/formatters'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -57,7 +58,8 @@ const PAGE_SIZE = 30
 
 export default function AdminExpenses() {
   const { selectedCompanyId } = useAdminCompany()
-  const { employeeEmail, employeeName } = useAuth()
+  const { employeeEmail, employeeName, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { t } = useLanguage()
   const { showError, showSuccess } = useToast()
   const [claims, setClaims] = useState<Claim[]>([])
@@ -574,7 +576,7 @@ export default function AdminExpenses() {
       const empEmail = claim.employee?.email || ''
       const approved = newStatus === 'approved'
       const now = new Date().toISOString()
-      const amountStr = `£${Number(claim.amount).toFixed(2)}`
+      const amountStr = formatCurrency(Number(claim.amount), currency)
 
       const { data: pendingWf } = await supabase.from('workflow_tracker')
         .select('assigned_to')
@@ -997,7 +999,7 @@ export default function AdminExpenses() {
                         <td className="admin-td-mono">{claim.reference_number}</td>
                         <td>{claim.employee ? <span className="admin-inline-avatar">{claim.employee.avatar_url ? <img src={claim.employee.avatar_url} alt="" /> : <span className="admin-avatar-initials">{claim.employee.first_name[0]}{claim.employee.last_name[0]}</span>}{claim.employee.first_name} {claim.employee.last_name}</span> : '—'}</td>
                         <td>{editingId === claim.id ? <input className="admin-inline-input" value={editForm.title || ''} onChange={e => setEditForm(p => ({...p, title: e.target.value}))} /> : claim.title}</td>
-                        <td>{editingId === claim.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={editForm.amount ?? ''} onChange={e => setEditForm(p => ({...p, amount: +e.target.value}))} /> : `£${Number(claim.amount).toFixed(2)}`}</td>
+                        <td>{editingId === claim.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={editForm.amount ?? ''} onChange={e => setEditForm(p => ({...p, amount: +e.target.value}))} /> : formatCurrency(Number(claim.amount), currency)}</td>
                         <td>{editingId === claim.id ? (
                           <select className="admin-inline-select" value={editForm.status || ''} onChange={e => setEditForm(p => ({...p, status: e.target.value}))}>
                             {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1050,7 +1052,7 @@ export default function AdminExpenses() {
                                         <td>{editingLineId === li.id ? <input className="admin-inline-input" value={lineForm.title || ''} onChange={e => setLineForm(p => ({...p, title: e.target.value}))} /> : li.title}</td>
                                         <td>{editingLineId === li.id ? <input className="admin-inline-input" value={lineForm.expense_type || ''} onChange={e => setLineForm(p => ({...p, expense_type: e.target.value}))} /> : li.expense_type}</td>
                                         <td>{editingLineId === li.id ? <input type="date" className="admin-inline-input" value={lineForm.date_of_purchase || ''} onChange={e => setLineForm(p => ({...p, date_of_purchase: e.target.value}))} /> : new Date(li.date_of_purchase).toLocaleDateString('en-GB')}</td>
-                                        <td>{editingLineId === li.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={lineForm.amount ?? ''} onChange={e => setLineForm(p => ({...p, amount: +e.target.value}))} /> : `£${Number(li.amount).toFixed(2)}`}</td>
+                                        <td>{editingLineId === li.id ? <input type="number" className="admin-inline-input admin-inline-sm" value={lineForm.amount ?? ''} onChange={e => setLineForm(p => ({...p, amount: +e.target.value}))} /> : formatCurrency(Number(li.amount), currency)}</td>
                                         <td>{li.receipt_url ? <a href={li.receipt_url} target="_blank" rel="noopener noreferrer" className="admin-link" title={t('common.view_receipt')}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg></a> : '—'}</td>
                                         <td className="admin-actions">
                                           {editingLineId === li.id ? (
@@ -1119,30 +1121,30 @@ export default function AdminExpenses() {
                 <div key={m.label} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 10 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b', textAlign: 'right' }}>{m.label}</span>
                   <div style={{ display: 'flex', height: 22, borderRadius: 4, overflow: 'hidden', background: '#f1f5f9' }}>
-                    {m.approved > 0 && <div style={{ width: `${approvedPct}%`, background: '#22c55e', minWidth: 2 }} title={`Approved: £${m.approved.toFixed(2)}`} />}
-                    {m.submitted > 0 && <div style={{ width: `${submittedPct}%`, background: '#f59e0b', minWidth: 2 }} title={`Submitted: £${m.submitted.toFixed(2)}`} />}
-                    {m.declined > 0 && <div style={{ width: `${declinedPct}%`, background: '#ef4444', minWidth: 2 }} title={`Declined: £${m.declined.toFixed(2)}`} />}
+                    {m.approved > 0 && <div style={{ width: `${approvedPct}%`, background: '#22c55e', minWidth: 2 }} title={`Approved: ${formatCurrency(m.approved, currency)}`} />}
+                    {m.submitted > 0 && <div style={{ width: `${submittedPct}%`, background: '#f59e0b', minWidth: 2 }} title={`Submitted: ${formatCurrency(m.submitted, currency)}`} />}
+                    {m.declined > 0 && <div style={{ width: `${declinedPct}%`, background: '#ef4444', minWidth: 2 }} title={`Declined: ${formatCurrency(m.declined, currency)}`} />}
                   </div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: total > 0 ? '#0f172a' : '#cbd5e1' }}>£{total.toFixed(0)}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: total > 0 ? '#0f172a' : '#cbd5e1' }}>{currencySymbol(currency)}{total.toFixed(0)}</span>
                 </div>
               )
             })}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, marginTop: 20, paddingTop: 16, borderTop: '1px solid #e5e7eb' }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>£{chartData.overallTotal.toFixed(2)}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>{formatCurrency(chartData.overallTotal, currency)}</div>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>OVERALL TOTAL</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#22c55e' }}>£{chartData.totalApproved.toFixed(2)}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#22c55e' }}>{formatCurrency(chartData.totalApproved, currency)}</div>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>APPROVED</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#f59e0b' }}>£{chartData.totalSubmitted.toFixed(2)}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#f59e0b' }}>{formatCurrency(chartData.totalSubmitted, currency)}</div>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>SUBMITTED</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444' }}>£{chartData.totalDeclined.toFixed(2)}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#ef4444' }}>{formatCurrency(chartData.totalDeclined, currency)}</div>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 2 }}>DECLINED</div>
             </div>
           </div>
@@ -1213,7 +1215,7 @@ export default function AdminExpenses() {
                       <td className="admin-td-mono" style={{ fontSize: 11 }}>{e.expense_export_id}</td>
                       <td className="admin-td-mono">{e.reference_number}</td>
                       <td>{e.employee_name}</td>
-                      <td>£{Number(e.amount).toFixed(2)}</td>
+                      <td>{formatCurrency(Number(e.amount), currency)}</td>
                       <td><span className={`admin-badge admin-badge-${e.previous_status}`}>{e.previous_status}</span></td>
                       <td><span className={`admin-badge admin-badge-${e.new_status}`}>{e.new_status}</span></td>
                       <td>{e.changed_by}</td>

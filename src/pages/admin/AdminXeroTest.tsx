@@ -1,11 +1,15 @@
 import { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { currencySymbol } from '../../lib/formatters'
 
 export default function AdminXeroTest() {
   const { selectedCompanyId: companyId } = useAdminCompany()
+  const { company } = useAuth()
   const { showToast } = useToast()
+  const currency = company?.currency || 'GBP'
 
   const [loading, setLoading] = useState<string | null>(null)
   const [payItemsResult, setPayItemsResult] = useState<any>(null)
@@ -209,7 +213,7 @@ export default function AdminXeroTest() {
                           <span style={{ color: '#6b7280', marginLeft: 8 }}>
                             ID: <code style={{ fontSize: 11, background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>{er.earningsRateID}</code>
                           </span>
-                          {er.ratePerUnit != null && <span style={{ color: '#6b7280', marginLeft: 8 }}>Rate: £{er.ratePerUnit}</span>}
+                          {er.ratePerUnit != null && <span style={{ color: '#6b7280', marginLeft: 8 }}>Rate: {currencySymbol(currency)}{er.ratePerUnit}</span>}
                           {er.earningsType && <span style={{ color: '#9ca3af', marginLeft: 8 }}>({er.earningsType})</span>}
                         </div>
                       ))}
@@ -326,7 +330,7 @@ export default function AdminXeroTest() {
                     </div>
                     <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
                       <strong>PayRunID:</strong> <code style={{ fontSize: 11 }}>{pr.payRunID}</code>
-                      {' · '}<strong>Total Pay:</strong> £{pr.totalPay?.toFixed(2)}
+                      {' · '}<strong>Total Pay:</strong> {currencySymbol(currency)}{pr.totalPay?.toFixed(2)}
                       {' · '}<strong>Payment:</strong> {new Date(pr.paymentDate).toLocaleDateString('en-GB')}
                     </div>
 
@@ -350,7 +354,7 @@ export default function AdminXeroTest() {
                               PayslipID: <code style={{ fontSize: 11 }}>{ps.paySlipID}</code>
                             </span>
                             {ps.netPay != null && (
-                              <span style={{ float: 'right', fontWeight: 600, color: '#2e7d32' }}>£{ps.netPay?.toFixed(2)}</span>
+                              <span style={{ float: 'right', fontWeight: 600, color: '#2e7d32' }}>{currencySymbol(currency)}{ps.netPay?.toFixed(2)}</span>
                             )}
                           </button>
                         ))}

@@ -4,7 +4,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { useAuth } from '../../context/AuthContext'
-import { formatDate } from '../../lib/formatters'
+import { formatDate, formatCurrency, currencySymbol } from '../../lib/formatters'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -202,7 +202,8 @@ export default function AdminPayrollNew() {
   const { selectedCompanyId, selectedCompany } = useAdminCompany()
   const { showError, showSuccess } = useToast()
   const { features } = useFeatures()
-  const { session } = useAuth()
+  const { session, company } = useAuth()
+  const currency = company?.currency || 'GBP'
 
   const [view, setView] = useState<View>('dashboard')
   const [loading, setLoading] = useState(true)
@@ -1422,7 +1423,7 @@ export default function AdminPayrollNew() {
             return {
               employee: empName,
               type: 'holiday_pay' as const,
-              description: `Holiday Pay Uplift (${h.accrual_rate}%) — ${h.hours_worked}h worked × £${hourlyRate.toFixed(2)}/hr = £${(h.hours_worked * hourlyRate).toFixed(2)} gross → £${h.holiday_pay_amount.toFixed(2)} holiday pay. Add as an additional earnings line in ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}.`,
+              description: `Holiday Pay Uplift (${h.accrual_rate}%) — ${h.hours_worked}h worked × ${formatCurrency(hourlyRate, currency)}/hr = ${formatCurrency(h.hours_worked * hourlyRate, currency)} gross → ${formatCurrency(h.holiday_pay_amount, currency)} holiday pay. Add as an additional earnings line in ${connectedProvider === 'xero' ? 'Xero' : 'Sage'}.`,
               amount: h.holiday_pay_amount,
             }
           }
@@ -1448,7 +1449,7 @@ export default function AdminPayrollNew() {
           return {
             employee: empName,
             type: 'cancellation_compensation' as const,
-            description: `Shift Cancellation Compensation — ${c.shift_hours}h shift on ${new Date(c.shift_date).toLocaleDateString('en-GB')} cancelled within notice window. Add £${Number(c.compensation_amount).toFixed(2)} as an additional earnings line.`,
+            description: `Shift Cancellation Compensation — ${c.shift_hours}h shift on ${new Date(c.shift_date).toLocaleDateString('en-GB')} cancelled within notice window. Add ${formatCurrency(Number(c.compensation_amount), currency)} as an additional earnings line.`,
             amount: Number(c.compensation_amount),
           }
         })
@@ -2561,14 +2562,14 @@ export default function AdminPayrollNew() {
     if (!eligible.length) { showError('No eligible payslips to push to Modulr. Payslips must be paid, unreleased, and from Xero/Sage.'); return }
 
     const periodLabel = eligible[0].pay_period_start.substring(0, 7)
-    if (!confirm(`Push ${eligible.length} payslip(s) to Modulr for payment?\n\nPeriod: ${periodLabel}\nTotal: £${eligible.reduce((s, p) => s + Number(p.net_pay), 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`)) return
+    if (!confirm(`Push ${eligible.length} payslip(s) to Modulr for payment?\n\nPeriod: ${periodLabel}\nTotal: ${currencySymbol(currency)}${eligible.reduce((s, p) => s + Number(p.net_pay), 0).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`)) return
 
     await doModulrPay(eligible)
   }
 
   async function payWithModulrSingle(p: Payslip) {
     if (!session || !selectedCompanyId || !p.employee?.id) return
-    if (!confirm(`Push payslip for ${p.employee.first_name} ${p.employee.last_name} to Modulr?\n\nNet: £${Number(p.net_pay).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`)) return
+    if (!confirm(`Push payslip for ${p.employee.first_name} ${p.employee.last_name} to Modulr?\n\nNet: ${currencySymbol(currency)}${Number(p.net_pay).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`)) return
     await doModulrPay([p])
   }
 
@@ -2692,12 +2693,12 @@ export default function AdminPayrollNew() {
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
               </div>
               <div className="admin-stat-info">
-                <span className="admin-stat-value">£{stats.totalGross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalGross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                 <span className="admin-stat-label">Total Gross ({fyLabel})</span>
                 <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: £{stats.byType.employed.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: £{stats.byType.shift.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: £{stats.byType.zero_hours.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
                 </div>
               </div>
             </div>
@@ -2706,12 +2707,12 @@ export default function AdminPayrollNew() {
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
               </div>
               <div className="admin-stat-info">
-                <span className="admin-stat-value">£{stats.totalNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                 <span className="admin-stat-label">Total Net ({fyLabel})</span>
                 <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: £{stats.byType.employed.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: £{stats.byType.shift.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: £{stats.byType.zero_hours.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.net.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
                 </div>
               </div>
             </div>
@@ -2720,12 +2721,12 @@ export default function AdminPayrollNew() {
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 3v18"/><path d="M6 6l6 3 6-3"/></svg>
               </div>
               <div className="admin-stat-info">
-                <span className="admin-stat-value">£{stats.totalTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalTax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                 <span className="admin-stat-label">Total Tax ({fyLabel})</span>
                 <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted, #6b7280)' }}>
-                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: £{stats.byType.employed.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: £{stats.byType.shift.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
-                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: £{stats.byType.zero_hours.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {employedEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#5c6bc0', marginRight: 4 }} />Employed: {currencySymbol(currency)}{stats.byType.employed.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {shiftEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#7e57c2', marginRight: 4 }} />Shift: {currencySymbol(currency)}{stats.byType.shift.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                  {zeroHoursEmployees.length > 0 && <div><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#ef6c00', marginRight: 4 }} />Zero Hrs: {currencySymbol(currency)}{stats.byType.zero_hours.tax.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
                 </div>
               </div>
             </div>
@@ -2764,7 +2765,7 @@ export default function AdminPayrollNew() {
                       {lastRun ? (
                         <>
                           <div className="pn-worker-metric">
-                            <span className="pn-worker-metric-value">£{lastRun.total_gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                            <span className="pn-worker-metric-value">{currencySymbol(currency)}{lastRun.total_gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                             <span className="pn-worker-metric-label">Last run total</span>
                           </div>
                           <div className="pn-worker-metric">
@@ -3100,8 +3101,8 @@ export default function AdminPayrollNew() {
                     {gFlagged > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.15)' : '#fef2f2', color: isLatest ? '#fca5a5' : '#dc2626' }}>{gFlagged} flagged</span>}
                     {gReleased > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.2)' : '#e8f5e9', color: isLatest ? '#a5d6a7' : '#2e7d32' }}>✓ {gReleased} released</span>}
                     {gUnreleased > 0 && <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: isLatest ? 'rgba(255,255,255,0.15)' : '#fff3e0', color: isLatest ? '#ffcc80' : '#e65100' }}>{gUnreleased} unreleased</span>}
-                    <span style={{ fontSize: 12, opacity: 0.8 }}>Gross: £{gGross.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
-                    <span style={{ fontSize: 12, fontWeight: 600 }}>Net: £{gNet.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                    <span style={{ fontSize: 12, opacity: 0.8 }}>Gross: {currencySymbol(currency)}{gGross.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>Net: {currencySymbol(currency)}{gNet.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</span>
                   </div>
                 </div>
 
@@ -3160,11 +3161,11 @@ export default function AdminPayrollNew() {
                                   <td className="admin-td-mono">{p.reference_number}</td>
                                   <td>{p.employee ? `${p.employee.first_name} ${p.employee.last_name}` : '—'}</td>
                                   <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{formatDate(p.pay_period_start)} – {formatDate(p.pay_period_end)}</td>
-                                  <td>£{Number(p.gross_pay).toFixed(2)}</td>
-                                  <td>£{Number(p.tax).toFixed(2)}</td>
-                                  <td>£{Number(p.national_insurance).toFixed(2)}</td>
-                                  <td>£{Number(p.pension).toFixed(2)}</td>
-                                  <td><strong>£{Number(p.net_pay).toFixed(2)}</strong></td>
+                                  <td>{currencySymbol(currency)}{Number(p.gross_pay).toFixed(2)}</td>
+                                  <td>{currencySymbol(currency)}{Number(p.tax).toFixed(2)}</td>
+                                  <td>{currencySymbol(currency)}{Number(p.national_insurance).toFixed(2)}</td>
+                                  <td>{currencySymbol(currency)}{Number(p.pension).toFixed(2)}</td>
+                                  <td><strong>{currencySymbol(currency)}{Number(p.net_pay).toFixed(2)}</strong></td>
                                   <td>
                                     <select
                                       className="admin-inline-select"
@@ -3258,7 +3259,7 @@ export default function AdminPayrollNew() {
                                           </div>
                                           <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
                                             <span style={{ fontSize: 13, fontWeight: 600, marginRight: 'auto', color: 'var(--text, #1a1a2e)' }}>
-                                              Calculated Net: £{((Number(editForm.gross_pay) - Number(editForm.monthly_deductions || 0)) + Number(editForm.overtime || 0) + Number(editForm.adjustments || 0) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions)).toFixed(2)}
+                                              Calculated Net: {currencySymbol(currency)}{((Number(editForm.gross_pay) - Number(editForm.monthly_deductions || 0)) + Number(editForm.overtime || 0) + Number(editForm.adjustments || 0) - Number(editForm.tax) - Number(editForm.national_insurance) - Number(editForm.pension) - Number(editForm.other_deductions)).toFixed(2)}
                                             </span>
                                             <button className="admin-btn-sm admin-btn-save" onClick={() => saveEdit(p.id)}>Save</button>
                                             <button className="admin-btn-sm admin-btn-cancel" onClick={() => setEditingId(null)}>Cancel</button>
@@ -3275,14 +3276,14 @@ export default function AdminPayrollNew() {
                                           )}
                                           <div className="admin-detail-grid admin-detail-grid-4">
                                             <div><strong>Tax Code:</strong> {p.tax_code}</div>
-                                            <div><strong>Annual Salary:</strong> £{Number(p.annual_salary || 0).toLocaleString()}</div>
-                                            <div><strong>Tax:</strong> £{Number(p.tax).toFixed(2)}</div>
-                                            <div><strong>NI:</strong> £{Number(p.national_insurance).toFixed(2)}</div>
-                                            <div><strong>Pension:</strong> £{Number(p.pension).toFixed(2)}</div>
-                                            <div><strong>Overtime:</strong> £{Number(p.overtime || 0).toFixed(2)}</div>
-                                            <div><strong>Adjustments:</strong> £{Number(p.adjustments || 0).toFixed(2)}</div>
-                                            <div><strong>Other Deductions:</strong> £{Number(p.other_deductions || 0).toFixed(2)}</div>
-                                            <div><strong>Salary Sacrifice:</strong> £{Number(p.monthly_deductions || 0).toFixed(2)}</div>
+                                            <div><strong>Annual Salary:</strong> {currencySymbol(currency)}{Number(p.annual_salary || 0).toLocaleString()}</div>
+                                            <div><strong>Tax:</strong> {currencySymbol(currency)}{Number(p.tax).toFixed(2)}</div>
+                                            <div><strong>NI:</strong> {currencySymbol(currency)}{Number(p.national_insurance).toFixed(2)}</div>
+                                            <div><strong>Pension:</strong> {currencySymbol(currency)}{Number(p.pension).toFixed(2)}</div>
+                                            <div><strong>Overtime:</strong> {currencySymbol(currency)}{Number(p.overtime || 0).toFixed(2)}</div>
+                                            <div><strong>Adjustments:</strong> {currencySymbol(currency)}{Number(p.adjustments || 0).toFixed(2)}</div>
+                                            <div><strong>Other Deductions:</strong> {currencySymbol(currency)}{Number(p.other_deductions || 0).toFixed(2)}</div>
+                                            <div><strong>Salary Sacrifice:</strong> {currencySymbol(currency)}{Number(p.monthly_deductions || 0).toFixed(2)}</div>
                                             {Number(p.monthly_deductions || 0) > 0 && (() => {
                                               const sacrifice = Number(p.monthly_deductions || 0)
                                               const gross = Number(p.gross_pay || 0)
@@ -3293,7 +3294,7 @@ export default function AdminPayrollNew() {
                                               const niSaving = Math.round(sacrifice * niRate * 100) / 100
                                               const totalSaving = Math.round((taxSaving + niSaving) * 100) / 100
                                               return (
-                                                <div><strong>Benefit Tax Saving:</strong> <span style={{ color: '#16a34a', fontWeight: 600 }}>£{totalSaving.toFixed(2)}</span> <span style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)' }}>(£{taxSaving.toFixed(2)} tax + £{niSaving.toFixed(2)} NI)</span></div>
+                                                <div><strong>Benefit Tax Saving:</strong> <span style={{ color: '#16a34a', fontWeight: 600 }}>{currencySymbol(currency)}{totalSaving.toFixed(2)}</span> <span style={{ fontSize: 11, color: 'var(--text-muted, #8b8fa3)' }}>({currencySymbol(currency)}{taxSaving.toFixed(2)} tax + {currencySymbol(currency)}{niSaving.toFixed(2)} NI)</span></div>
                                               )
                                             })()}
                                             <div><strong>Payment Date:</strong> {new Date(p.payment_date + 'T00:00:00').toLocaleDateString('en-GB')}</div>
@@ -3306,7 +3307,7 @@ export default function AdminPayrollNew() {
                                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
                                                 {empBenefits[p.employee.id].map((b, i) => (
                                                   <span key={i} style={{ background: 'var(--bg-secondary, #f5f5f5)', padding: '4px 10px', borderRadius: '6px', fontSize: '12px' }}>
-                                                    {b.title} — £{b.monthly_cost.toFixed(2)}/mo (since {new Date(b.enrolled_at).toLocaleDateString('en-GB')})
+                                                    {b.title} — {currencySymbol(currency)}{b.monthly_cost.toFixed(2)}/mo (since {new Date(b.enrolled_at).toLocaleDateString('en-GB')})
                                                   </span>
                                                 ))}
                                               </div>
@@ -3363,8 +3364,8 @@ export default function AdminPayrollNew() {
                           : <span style={{ color: '#7e57c2', fontWeight: 600, fontSize: 12 }}>Shift Worker</span>)
                         : <span style={{ color: '#5c6bc0', fontWeight: 600, fontSize: 12 }}>Employed</span>}
                     </td>
-                    <td>{emp.annual_salary ? `£${Number(emp.annual_salary).toLocaleString()}` : '—'}</td>
-                    <td>{emp.hourly_rate ? `£${Number(emp.hourly_rate).toFixed(2)}` : '—'}</td>
+                    <td>{emp.annual_salary ? `${currencySymbol(currency)}${Number(emp.annual_salary).toLocaleString()}` : '—'}</td>
+                    <td>{emp.hourly_rate ? `${currencySymbol(currency)}${Number(emp.hourly_rate).toFixed(2)}` : '—'}</td>
                     <td>{emp.tax_code || '—'}</td>
                     <td>{emp.payroll_id || '—'}</td>
                   </tr>
@@ -3432,7 +3433,7 @@ export default function AdminPayrollNew() {
                       <td style={{ textAlign: 'center' }}>{empSlips.length || '—'}</td>
                       <td style={{ textAlign: 'center' }}>{shiftSlips.length || '—'}</td>
                       <td style={{ textAlign: 'center' }}>{zeroSlips.length || '—'}</td>
-                      <td>£{gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
+                      <td>{currencySymbol(currency)}{gross.toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                       <td><span className={`admin-badge ${getStatusCls(empStatus)}`}>{empStatus}</span></td>
                       <td><span className={`admin-badge ${getStatusCls(shiftStatus)}`}>{shiftStatus}</span></td>
                       <td><span className={`admin-badge ${getStatusCls(zeroStatus)}`}>{zeroStatus}</span></td>
@@ -3927,11 +3928,11 @@ export default function AdminPayrollNew() {
                   <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8, marginBottom: 12 }}>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">£{employedEmployees.reduce((s, e) => s + (e.annual_salary || 0), 0).toLocaleString()}</span>
+                        <span className="pn-worker-metric-value">{currencySymbol(currency)}{employedEmployees.reduce((s, e) => s + (e.annual_salary || 0), 0).toLocaleString()}</span>
                         <span className="pn-worker-metric-label">Total annual salary</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">£{Math.round(employedEmployees.reduce((s, e) => s + ((e.annual_salary || 42000) / periodsPerYear), 0)).toLocaleString()}</span>
+                        <span className="pn-worker-metric-value">{currencySymbol(currency)}{Math.round(employedEmployees.reduce((s, e) => s + ((e.annual_salary || 42000) / periodsPerYear), 0)).toLocaleString()}</span>
                         <span className="pn-worker-metric-label">Est. {employedFreq === 'weekly' ? 'weekly' : employedFreq === 'bi_weekly' ? 'bi-weekly' : 'monthly'} gross</span>
                       </div>
                       <div className="pn-worker-metric">
@@ -3991,7 +3992,7 @@ export default function AdminPayrollNew() {
                                           placeholder="0"
                                         />
                                         <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>hrs @</span>
-                                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>£</span>
+                                        <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>{currencySymbol(currency)}</span>
                                         <input type="number" min="0" step="0.01" style={{ width: 65, padding: '3px 6px', fontSize: 13, borderRadius: 4, border: `1px solid ${isOverridden ? '#e65100' : 'var(--border, #d1d5db)'}`, background: isOverridden ? '#fff3e0' : undefined }}
                                           value={currentRate || ''}
                                           onChange={e => {
@@ -4003,7 +4004,7 @@ export default function AdminPayrollNew() {
                                         />
                                         <span style={{ fontSize: 11, color: 'var(--text-muted, #999)' }}>/hr × {mul}x</span>
                                         {hrs > 0 && amount > 0 && (
-                                          <span style={{ fontSize: 12, fontWeight: 600, color: '#2e7d32' }}>= £{amount.toFixed(2)}</span>
+                                          <span style={{ fontSize: 12, fontWeight: 600, color: '#2e7d32' }}>= {currencySymbol(currency)}{amount.toFixed(2)}</span>
                                         )}
                                         {isOverridden && (
                                           <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '1px 6px', borderRadius: 3, fontWeight: 600, cursor: 'pointer' }}
@@ -4080,7 +4081,7 @@ export default function AdminPayrollNew() {
                         <span className="pn-worker-metric-label">Overtime hrs</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">£{[...shiftReviewsApproved, ...shiftReviewsPending].reduce((s, r) => s + Number(r.gross_pay || 0), 0).toFixed(2)}</span>
+                        <span className="pn-worker-metric-value">{currencySymbol(currency)}{[...shiftReviewsApproved, ...shiftReviewsPending].reduce((s, r) => s + Number(r.gross_pay || 0), 0).toFixed(2)}</span>
                         <span className="pn-worker-metric-label">Total gross</span>
                       </div>
                     </div>
@@ -4136,8 +4137,8 @@ export default function AdminPayrollNew() {
                                       disabled={r.status === 'approved'}
                                     />
                                   </td>
-                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>£{Number(r.hourly_rate).toFixed(2)}</td>
-                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>£{Number(r.gross_pay).toFixed(2)}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{currencySymbol(currency)}{Number(r.hourly_rate).toFixed(2)}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{currencySymbol(currency)}{Number(r.gross_pay).toFixed(2)}</td>
                                   <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                                     <span style={{
                                       fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
@@ -4274,7 +4275,7 @@ export default function AdminPayrollNew() {
                         <span className="pn-worker-metric-label">Overtime hrs</span>
                       </div>
                       <div className="pn-worker-metric">
-                        <span className="pn-worker-metric-value">£{[...zeroReviewsApproved, ...zeroReviewsPending].reduce((s, r) => s + Number(r.gross_pay || 0), 0).toFixed(2)}</span>
+                        <span className="pn-worker-metric-value">{currencySymbol(currency)}{[...zeroReviewsApproved, ...zeroReviewsPending].reduce((s, r) => s + Number(r.gross_pay || 0), 0).toFixed(2)}</span>
                         <span className="pn-worker-metric-label">Total gross</span>
                       </div>
                     </div>
@@ -4330,8 +4331,8 @@ export default function AdminPayrollNew() {
                                       disabled={r.status === 'approved'}
                                     />
                                   </td>
-                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>£{Number(r.hourly_rate).toFixed(2)}</td>
-                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>£{Number(r.gross_pay).toFixed(2)}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{currencySymbol(currency)}{Number(r.hourly_rate).toFixed(2)}</td>
+                                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{currencySymbol(currency)}{Number(r.gross_pay).toFixed(2)}</td>
                                   <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                                     <span style={{
                                       fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
@@ -4448,8 +4449,8 @@ export default function AdminPayrollNew() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border, #e5e7eb)' }}>
                       <span style={{ fontSize: 12, fontWeight: 600 }}>
-                        Total: £{wizBonusEntries.filter(e => e.type === 'bonus').reduce((s, e) => s + e.amount, 0).toFixed(2)} bonuses
-                        {wizBonusEntries.some(e => e.type === 'deduction') && `, £${wizBonusEntries.filter(e => e.type === 'deduction').reduce((s, e) => s + e.amount, 0).toFixed(2)} deductions`}
+                        Total: {currencySymbol(currency)}{wizBonusEntries.filter(e => e.type === 'bonus').reduce((s, e) => s + e.amount, 0).toFixed(2)} bonuses
+                        {wizBonusEntries.some(e => e.type === 'deduction') && `, ${currencySymbol(currency)}${wizBonusEntries.filter(e => e.type === 'deduction').reduce((s, e) => s + e.amount, 0).toFixed(2)} deductions`}
                       </span>
                       <details style={{ display: 'inline' }}>
                         <summary className="admin-btn" style={{ fontSize: 12, cursor: 'pointer', display: 'inline-block' }}>+ Add One-Off</summary>
@@ -4463,7 +4464,7 @@ export default function AdminPayrollNew() {
                             <option value="deduction">Deduction</option>
                           </select>
                           <input id="bonus-desc-input" placeholder="Description" style={{ padding: '4px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border, #d1d5db)', width: 140 }} />
-                          <input id="bonus-amt-input" type="number" step="0.01" min="0" placeholder="£ Amount" style={{ padding: '4px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border, #d1d5db)', width: 80 }} />
+                          <input id="bonus-amt-input" type="number" step="0.01" min="0" placeholder={`${currencySymbol(currency)} Amount`} style={{ padding: '4px 6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--border, #d1d5db)', width: 80 }} />
                           <button className="admin-btn admin-btn-primary" style={{ fontSize: 11, padding: '4px 10px' }}
                             onClick={() => {
                               const sel = document.getElementById('bonus-emp-select') as HTMLSelectElement
@@ -4535,7 +4536,7 @@ export default function AdminPayrollNew() {
                         <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px', color: '#7e57c2' }}>Benefit Enrolment Changes</p>
                         {wizBenefitChanges.map((b, i) => (
                           <div key={i} style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 2 }}>
-                            {b.employee_name}: {b.action} — {b.benefit} (£{b.monthly_cost}/mo)
+                            {b.employee_name}: {b.action} — {b.benefit} ({currencySymbol(currency)}{b.monthly_cost}/mo)
                           </div>
                         ))}
                       </div>
@@ -4564,7 +4565,7 @@ export default function AdminPayrollNew() {
                     const details = overrides.map(([empId, rate]) => {
                       const emp = employees.find(e => e.id === empId)
                       const derived = getDerivedHourlyRate(emp!)
-                      return `${emp!.first_name} ${emp!.last_name}: £${derived.toFixed(2)} → £${rate.toFixed(2)}/hr`
+                      return `${emp!.first_name} ${emp!.last_name}: ${currencySymbol(currency)}${derived.toFixed(2)} → ${currencySymbol(currency)}${rate.toFixed(2)}/hr`
                     }).join('; ')
                     await supabase.from('payroll_audit_log').insert({
                       company_id: selectedCompanyId,
@@ -4723,8 +4724,8 @@ export default function AdminPayrollNew() {
                                   <td style={{ padding: '8px 12px', fontWeight: 500 }}>{r.employee}</td>
                                   <td style={{ padding: '8px 12px' }}>{r.regular_hours ? `${r.regular_hours}h` : '—'}</td>
                                   <td style={{ padding: '8px 12px' }}>{r.hours > 0 ? `${r.hours}h × ${r.multiplier}x` : '—'}</td>
-                                  <td style={{ padding: '8px 12px' }}>£{(r.rate || 0).toFixed(2)}/hr</td>
-                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>£{((r.regular_amount || 0) + (r.amount || 0)).toFixed(2)}</td>
+                                  <td style={{ padding: '8px 12px' }}>{currencySymbol(currency)}{(r.rate || 0).toFixed(2)}/hr</td>
+                                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{currencySymbol(currency)}{((r.regular_amount || 0) + (r.amount || 0)).toFixed(2)}</td>
                                   <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                                     {r.status === 'pushed' ? (
                                       <span style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '2px 10px', borderRadius: 10, fontWeight: 600 }}>Pushed</span>
@@ -4743,7 +4744,7 @@ export default function AdminPayrollNew() {
                                 <tr style={{ borderTop: '2px solid var(--border, #d1d5db)', background: 'var(--bg-muted, #f0f1f3)' }}>
                                   <td colSpan={4} style={{ padding: '8px 12px', fontWeight: 700 }}>Total pushed</td>
                                   <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
-                                    £{wizPushResult.timesheet_results.filter((r: any) => r.status === 'pushed').reduce((s: number, r: any) => s + (r.regular_amount || 0) + (r.amount || 0), 0).toFixed(2)}
+                                    {currencySymbol(currency)}{wizPushResult.timesheet_results.filter((r: any) => r.status === 'pushed').reduce((s: number, r: any) => s + (r.regular_amount || 0) + (r.amount || 0), 0).toFixed(2)}
                                   </td>
                                   <td />
                                 </tr>
@@ -4826,7 +4827,7 @@ export default function AdminPayrollNew() {
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
                                     <strong style={{ fontSize: 13 }}>{item.employee}</strong>
                                     <span style={{ fontSize: 10, background: typeBg, color: typeColor, padding: '1px 8px', borderRadius: 10, fontWeight: 600 }}>{typeLabel}</span>
-                                    <span style={{ fontSize: 13, fontWeight: 700, marginLeft: 'auto' }}>£{(item.amount || 0).toFixed(2)}{item.days ? ` (${item.days} day${item.days !== 1 ? 's' : ''})` : ''}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, marginLeft: 'auto' }}>{currencySymbol(currency)}{(item.amount || 0).toFixed(2)}{item.days ? ` (${item.days} day${item.days !== 1 ? 's' : ''})` : ''}</span>
                                   </div>
                                   <div style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)' }}>{item.description}</div>
                                   <div style={{ fontSize: 11, color: '#6d4c41', marginTop: 4, fontStyle: 'italic' }}>
@@ -4878,7 +4879,7 @@ export default function AdminPayrollNew() {
                                   </td>
                                   <td style={{ padding: '6px 10px', fontWeight: 500, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{b.employee_name}</td>
                                   <td style={{ padding: '6px 10px', textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{b.benefit} ({b.action})</td>
-                                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>£{b.monthly_cost.toFixed(2)}</td>
+                                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, textDecoration: wizBenefitChecked.has(`benefit-${i}`) ? 'line-through' : undefined, opacity: wizBenefitChecked.has(`benefit-${i}`) ? 0.5 : 1 }}>{currencySymbol(currency)}{b.monthly_cost.toFixed(2)}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -4998,7 +4999,7 @@ export default function AdminPayrollNew() {
                                   </td>
                                   <td style={{ padding: '8px 12px' }}>{item.description}</td>
                                   <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: item.amount < 0 ? '#c62828' : undefined }}>
-                                    {item.amount < 0 ? '-' : '+'}£{Math.abs(item.amount).toFixed(2)}
+                                    {item.amount < 0 ? '-' : '+'}{currencySymbol(currency)}{Math.abs(item.amount).toFixed(2)}
                                   </td>
                                 </tr>
                               ))}
@@ -5007,7 +5008,7 @@ export default function AdminPayrollNew() {
                               <tr style={{ borderTop: '2px solid var(--border, #d1d5db)', background: 'var(--bg-muted, #f0f1f3)' }}>
                                 <td colSpan={3} style={{ padding: '8px 12px', fontWeight: 700 }}>Net adjustment total</td>
                                 <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700 }}>
-                                  £{wizPushResult.csv_items.reduce((s: number, i: any) => s + i.amount, 0).toFixed(2)}
+                                  {currencySymbol(currency)}{wizPushResult.csv_items.reduce((s: number, i: any) => s + i.amount, 0).toFixed(2)}
                                 </td>
                               </tr>
                             </tfoot>

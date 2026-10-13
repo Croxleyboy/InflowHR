@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
+import { currencySymbol } from '../../lib/formatters'
 import EmployeeRecordModules from './EmployeeRecordModules'
 
 const PAGE_SIZE = 30
@@ -69,6 +71,8 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 export default function AdminEmployees() {
   const navigate = useNavigate()
   const { selectedCompanyId } = useAdminCompany()
+  const { company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [setupMap, setSetupMap] = useState<Record<string, boolean>>({})
@@ -1175,7 +1179,7 @@ export default function AdminEmployees() {
                                   <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Payroll</legend>
                                   <div className="admin-detail-grid admin-detail-grid-3">
                                     {[
-                                      { k: 'annual_salary', l: 'Annual Salary (£)', t: 'number' },
+                                      { k: 'annual_salary', l: `Annual Salary (${currencySymbol(currency)})`, t: 'number' },
                                       { k: 'tax_code', l: 'Tax Code' },
                                       { k: 'payroll_id', l: 'Payroll ID' },
                                     ].map(f => (
@@ -1186,7 +1190,7 @@ export default function AdminEmployees() {
                                     ))}
                                     {editForm.employment_category === 'shift_worker' && (
                                       <div className="admin-form-field">
-                                        <label style={{ fontSize: 12 }}>Hourly Rate (£)</label>
+                                        <label style={{ fontSize: 12 }}>Hourly Rate ({currencySymbol(currency)})</label>
                                         <input className="admin-inline-input" type="number" step="0.01" value={editForm.hourly_rate ?? ''} onChange={e => setEditForm(p => ({...p, hourly_rate: e.target.value}))} />
                                       </div>
                                     )}
@@ -1274,9 +1278,9 @@ export default function AdminEmployees() {
                                   </div>
                                 )}
                                 <div className="admin-detail-grid admin-detail-grid-3">
-                                  <div><strong>Salary:</strong> {emp.annual_salary ? `£${Number(emp.annual_salary).toLocaleString()}` : '—'}</div>
+                                  <div><strong>Salary:</strong> {emp.annual_salary ? `${currencySymbol(currency)}${Number(emp.annual_salary).toLocaleString()}` : '—'}</div>
                                   {emp.employment_category === 'shift_worker' && (
-                                    <div><strong>Hourly Rate:</strong> {emp.hourly_rate ? `£${Number(emp.hourly_rate).toFixed(2)}` : '—'}</div>
+                                    <div><strong>Hourly Rate:</strong> {emp.hourly_rate ? `${currencySymbol(currency)}${Number(emp.hourly_rate).toFixed(2)}` : '—'}</div>
                                   )}
                                   <div><strong>Tax Code:</strong> {emp.tax_code || '—'}</div>
                                   <div><strong>Payroll ID:</strong> {emp.payroll_id || '—'}</div>

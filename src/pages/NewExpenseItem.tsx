@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { EXPENSE_TYPE_KEYS } from '../lib/translations'
-import { formatDateDisplay, toLocalDateStr } from '../lib/formatters'
+import { formatDateDisplay, toLocalDateStr, currencySymbol } from '../lib/formatters'
 
 interface Props {
   claimId: number
@@ -18,7 +18,8 @@ function todayStr() {
 
 export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: Props) {
   const { t, tExpenseType } = useLanguage()
-  const { companyUser } = useAuth()
+  const { companyUser, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const [title, setTitle] = useState('')
   const [expenseTypes, setExpenseTypes] = useState<string[]>(EXPENSE_TYPE_KEYS)
   const [expenseType, setExpenseType] = useState(EXPENSE_TYPE_KEYS[0])
@@ -239,7 +240,7 @@ export default function NewExpenseItem({ claimId, claimRef, onClose, onSaved }: 
               <span>{saving ? t('new_item.saving') : t('new_item.submit')}</span>
             </button>
             <span className="total-cost-label">{t('new_item.total_cost')}</span>
-            <span className="total-cost-currency">£</span>
+            <span className="total-cost-currency">{currencySymbol(currency)}</span>
             <input
               type="number"
               step="0.01"

@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import ExpenseGraph from '../components/ExpenseGraph'
-import { formatDateLong as formatDate } from '../lib/formatters'
+import { formatDateLong as formatDate, formatCurrency } from '../lib/formatters'
 
 type ClaimStatus = 'draft' | 'pending' | 'submitted' | 'approved' | 'rejected' | 'processing' | 'paid'
 type Filter = ClaimStatus | 'all'
@@ -29,14 +29,12 @@ const statusColor: Record<ClaimStatus, string> = {
   paid: '#2e7d32',
 }
 
-function formatAmount(n: number) {
-  return `£${n.toFixed(2)}`
-}
 
 export default function Expenses() {
   const navigate = useNavigate()
   const { t, tStatus } = useLanguage()
-  const { companyUser, employeeId } = useAuth()
+  const { companyUser, employeeId, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const [filter, setFilter] = useState<Filter>('all')
   const [claims, setClaims] = useState<Claim[]>([])
   const [loading, setLoading] = useState(true)
@@ -123,15 +121,15 @@ export default function Expenses() {
       <div className="expense-summary">
         <div className="summary-card">
           <span className="summary-label">{t('expenses.total_claims')}</span>
-          <span className="summary-value">{formatAmount(totalClaims)}</span>
+          <span className="summary-value">{formatCurrency(totalClaims, currency)}</span>
         </div>
         <div className="summary-card">
           <span className="summary-label">{t('expenses.approved')}</span>
-          <span className="summary-value">{formatAmount(approvedTotal)}</span>
+          <span className="summary-value">{formatCurrency(approvedTotal, currency)}</span>
         </div>
         <div className="summary-card">
           <span className="summary-label">{t('expenses.pending')}</span>
-          <span className="summary-value">{formatAmount(pendingTotal)}</span>
+          <span className="summary-value">{formatCurrency(pendingTotal, currency)}</span>
         </div>
       </div>
 
@@ -165,7 +163,7 @@ export default function Expenses() {
             <div className="claim-detail-col">
               <span className="claim-desc">{claim.title}</span>
               <div className="claim-amount-row">
-                <span className="claim-amount">{formatAmount(claim.amount)}</span>
+                <span className="claim-amount">{formatCurrency(claim.amount, currency)}</span>
                 {claimsWithReceipts.has(claim.id) && (
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />

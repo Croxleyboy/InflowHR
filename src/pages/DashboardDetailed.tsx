@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import { useCheckIn } from '../context/CheckInContext'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
-import { formatDate, toLocalDateStr, getFYRange } from '../lib/formatters'
+import { formatDate, toLocalDateStr, getFYRange, currencySymbol, formatCurrency } from '../lib/formatters'
 import { useUserPreferences } from '../hooks/useUserPreferences'
 
 interface LeaveRequest {
@@ -116,6 +116,7 @@ export default function DashboardDetailed() {
   const { features } = useFeatures()
   const { t, lang, fyStartMonth } = useLanguage()
   const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser, employmentCategory } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { activeCheckin, activeBreak, checkIn, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const { showSuccess, showError } = useToast()
   const { prefs, updatePref } = useUserPreferences()
@@ -1177,7 +1178,7 @@ export default function DashboardDetailed() {
             <div className="dd2-card-expense-summary" onClick={() => navigate('/expenses')}>
               <div className="dd2-expense-row">
                 <span className="dd2-expense-label">Expense Total</span>
-                <span className="dd2-expense-value">&pound;{expenseTotal.toFixed(2)}</span>
+                <span className="dd2-expense-value">{formatCurrency(expenseTotal, currency)}</span>
               </div>
               {lastExpense && (
                 <div className="dd2-expense-row dd2-expense-row-sub">
@@ -1212,7 +1213,7 @@ export default function DashboardDetailed() {
             <div className="dd2-pay-value-wrap">
               {lastPayNet !== null ? (
                 <>
-                  <span className="dd2-pay-amount">{payHidden ? '••••••' : `£${lastPayNet.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</span>
+                  <span className="dd2-pay-amount">{payHidden ? '••••••' : formatCurrency(lastPayNet, currency)}</span>
                   {lastPayPeriod && <span className="dd2-pay-date">{lastPayPeriod}</span>}
                 </>
               ) : (
@@ -1536,7 +1537,7 @@ export default function DashboardDetailed() {
             {lastPayNet !== null && (
               <div className="dd2-profile-detail dd2-profile-detail-pay" onClick={(ev) => { ev.stopPropagation(); navigate('/payslips') }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                <span>&pound;{lastPayNet.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{lastPayDate ? ` · ${new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
+                <span>{formatCurrency(lastPayNet, currency)}{lastPayDate ? ` · ${new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
               </div>
             )}
           </div>
@@ -1621,15 +1622,15 @@ export default function DashboardDetailed() {
         </div>
         {/* Card 3: FY Expenses */}
         <div className="dd2-summary-card dd2-summary-expenses" onClick={() => navigate('/expenses')}>
-          <span className="dd2-summary-value">&pound;{expenseFYSubmitted.toFixed(0)}</span>
+          <span className="dd2-summary-value">{currencySymbol(currency)}{expenseFYSubmitted.toFixed(0)}</span>
           <span className="dd2-summary-label">Expenses (FY)</span>
-          <span className="dd2-summary-sub">&pound;{expenseFYApproved.toFixed(0)} approved</span>
+          <span className="dd2-summary-sub">{currencySymbol(currency)}{expenseFYApproved.toFixed(0)} approved</span>
         </div>
         {/* Card 4: Last Expense */}
         <div className="dd2-summary-card dd2-summary-lastexp" onClick={() => navigate('/expenses')}>
           {lastExpense ? (
             <>
-              <span className="dd2-summary-value">&pound;{Number(lastExpense.amount).toFixed(2)}</span>
+              <span className="dd2-summary-value">{formatCurrency(Number(lastExpense.amount), currency)}</span>
               <span className="dd2-summary-label">{lastExpense.description || 'Expense'}</span>
               <span className="dd2-summary-sub">{new Date(lastExpense.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {lastExpense.status}</span>
             </>

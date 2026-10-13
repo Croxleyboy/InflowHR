@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import jsPDF from 'jspdf'
+import { formatCurrency, currencySymbol } from '../../lib/formatters'
 
 interface PricingRow {
   id: string
@@ -50,6 +51,7 @@ function generateInvoicePDF(
   companyId?: string,
   supportItems?: { name: string; price: number }[],
   platformFee?: number,
+  currency: string = 'GBP',
 ) {
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
@@ -157,20 +159,20 @@ function generateInvoicePDF(
     rowIdx++
   }
 
-  drawRow(baselineName, 'Core', `£${baselinePrice.toFixed(2)}`, String(employeeCount), `£${(baselinePrice * employeeCount).toFixed(2)}`, false, true)
+  drawRow(baselineName, 'Core', `${formatCurrency(baselinePrice, currency)}`, String(employeeCount), `${formatCurrency(baselinePrice * employeeCount, currency)}`, false, true)
 
   packs.forEach(p => {
-    drawRow(p.name, 'Pack', `£${p.price.toFixed(2)}`, String(employeeCount), `£${(p.price * employeeCount).toFixed(2)}`, false, true)
+    drawRow(p.name, 'Pack', `${formatCurrency(p.price, currency)}`, String(employeeCount), `${formatCurrency(p.price * employeeCount, currency)}`, false, true)
   })
 
   if (supportItems && supportItems.length > 0) {
     supportItems.forEach(sp => {
-      drawRow(sp.name, 'Support', `£${sp.price.toFixed(2)} flat`, '', `£${sp.price.toFixed(2)}`, false, true)
+      drawRow(sp.name, 'Support', `${formatCurrency(sp.price, currency)} flat`, '', `${formatCurrency(sp.price, currency)}`, false, true)
     })
   }
 
   if (platformFee && platformFee > 0) {
-    drawRow('Platform Fee', 'Flat', `£${platformFee.toFixed(2)} flat`, '', `£${platformFee.toFixed(2)}`, false, true)
+    drawRow('Platform Fee', 'Flat', `${formatCurrency(platformFee, currency)} flat`, '', `${formatCurrency(platformFee, currency)}`, false, true)
   }
 
   y += 4
@@ -186,10 +188,10 @@ function generateInvoicePDF(
   doc.setFontSize(10)
   doc.setFont('helvetica', 'normal')
   doc.text('Subtotal', lm + 110, y)
-  doc.text(`£${subtotal.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  doc.text(`${formatCurrency(subtotal, currency)}`, rm - 4, y, { align: 'right' })
   y += 7
   doc.text(`VAT (${(VAT_RATE * 100).toFixed(0)}%)`, lm + 110, y)
-  doc.text(`£${vat.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  doc.text(`${formatCurrency(vat, currency)}`, rm - 4, y, { align: 'right' })
   y += 3
   doc.setDrawColor(21, 101, 192)
   doc.setLineWidth(0.5)
@@ -199,7 +201,7 @@ function generateInvoicePDF(
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(21, 101, 192)
   doc.text('Total Due', lm + 110, y)
-  doc.text(`£${total.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  doc.text(`${formatCurrency(total, currency)}`, rm - 4, y, { align: 'right' })
   y += 16
 
   doc.setFontSize(8)
@@ -229,6 +231,7 @@ function generateAnnualInvoicePDF(
   annualPrice: number,
   subscribedFeatures: { name: string; type: string; pack?: string }[],
   companyId?: string,
+  currency: string = 'GBP',
 ) {
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
@@ -368,11 +371,11 @@ function generateAnnualInvoicePDF(
   doc.setFontSize(10)
   doc.setFont('helvetica', 'bold')
   doc.text('Fixed Annual Price', lm + 80, y)
-  doc.text(`£${annualPrice.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  doc.text(`${formatCurrency(annualPrice, currency)}`, rm - 4, y, { align: 'right' })
   y += 7
   doc.setFont('helvetica', 'normal')
   doc.text(`VAT (${(VAT_RATE * 100).toFixed(0)}%)`, lm + 80, y)
-  doc.text(`£${vatAmount.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  doc.text(`${formatCurrency(vatAmount, currency)}`, rm - 4, y, { align: 'right' })
   y += 3
   doc.setDrawColor(21, 101, 192)
   doc.setLineWidth(0.5)
@@ -382,7 +385,7 @@ function generateAnnualInvoicePDF(
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(21, 101, 192)
   doc.text('Total Due', lm + 80, y)
-  doc.text(`£${total.toFixed(2)}`, rm - 4, y, { align: 'right' })
+  doc.text(`${formatCurrency(total, currency)}`, rm - 4, y, { align: 'right' })
   y += 16
 
   doc.setFontSize(8)
@@ -440,7 +443,8 @@ interface ExistingCancellation {
 
 function CompanyBilling({ companyId, companyName }: { companyId: string; companyName: string }) {
   const { showError, showSuccess } = useToast()
-  const { isSuperAdmin } = useAuth()
+  const { isSuperAdmin, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [features, setFeatures] = useState<CompanyFeature[]>([])
   const [employeeCount, setEmployeeCount] = useState(0)
@@ -719,6 +723,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         companyId,
         enabledSupport.map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
         monthlyPlatformFee,
+        currency,
       )
     } else {
       const invoicePacks = enabledAddons.map(a => {
@@ -735,6 +740,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         companyId,
         enabledSupport.map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
         monthlyPlatformFee,
+        currency,
       )
     }
   }
@@ -760,7 +766,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       allFeatures.push({ name: 'Pack B: ' + packBPricing.display_name, type: 'Pack B' })
     }
     enabledSupport.forEach(sp => allFeatures.push({ name: sp.display_name, type: 'Support' }))
-    generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures, companyId)
+    generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures, companyId, currency)
   }
 
   if (loading) return <div className="admin-section"><div className="admin-loading">Loading...</div></div>
@@ -776,7 +782,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <span style={{ fontSize: 18 }}>&#9679;</span>
           <span style={{ fontWeight: 600, color: '#2e7d32' }}>Fixed Annual Billing</span>
-          <span style={{ color: '#555', fontSize: 13 }}>&mdash; &pound;{fixedAnnualPrice.toFixed(2)}/year (FY {getFYLabel()})</span>
+          <span style={{ color: '#555', fontSize: 13 }}>&mdash; {formatCurrency(fixedAnnualPrice, currency)}/year (FY {getFYLabel()})</span>
         </div>
       )}
 
@@ -785,12 +791,12 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
           <>
             <div className="billing-card">
               <span className="billing-card-label">Annual Price</span>
-              <span className="billing-card-value">&pound;{fixedAnnualPrice.toFixed(2)}</span>
+              <span className="billing-card-value">{formatCurrency(fixedAnnualPrice, currency)}</span>
               <span className="billing-card-sub">fixed / year</span>
             </div>
             <div className="billing-card">
               <span className="billing-card-label">Monthly Equivalent</span>
-              <span className="billing-card-value">&pound;{fixedMonthly.toFixed(2)}</span>
+              <span className="billing-card-value">{formatCurrency(fixedMonthly, currency)}</span>
               <span className="billing-card-sub">excl. VAT</span>
             </div>
             <div className="billing-card">
@@ -800,28 +806,28 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
             </div>
             <div className="billing-card billing-card-highlight">
               <span className="billing-card-label">Annual Total (inc. VAT)</span>
-              <span className="billing-card-value">&pound;{(fixedAnnualPrice + fixedAnnualPrice * VAT_RATE).toFixed(2)}</span>
-              <span className="billing-card-sub">&pound;{fixedAnnualPrice.toFixed(2)} + &pound;{(fixedAnnualPrice * VAT_RATE).toFixed(2)} VAT</span>
+              <span className="billing-card-value">{formatCurrency(fixedAnnualPrice + fixedAnnualPrice * VAT_RATE, currency)}</span>
+              <span className="billing-card-sub">{formatCurrency(fixedAnnualPrice, currency)} + {formatCurrency(fixedAnnualPrice * VAT_RATE, currency)} VAT</span>
             </div>
           </>
         ) : (
           <>
             <div className="billing-card">
               <span className="billing-card-label">Core Plan{hasCustomCore && <span style={{ marginLeft: 6, fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>Custom</span>}</span>
-              <span className="billing-card-value">&pound;{baselinePrice.toFixed(2)}</span>
+              <span className="billing-card-value">{formatCurrency(baselinePrice, currency)}</span>
               <span className="billing-card-sub">per user / month</span>
             </div>
             {packAEnabled && (
               <div className="billing-card" style={{ borderTop: '3px solid #43a047' }}>
                 <span className="billing-card-label" style={{ color: '#2e7d32' }}>Pack A: Workforce</span>
-                <span className="billing-card-value">&pound;{packAPrice.toFixed(2)}</span>
+                <span className="billing-card-value">{formatCurrency(packAPrice, currency)}</span>
                 <span className="billing-card-sub">per user / month</span>
               </div>
             )}
             {packBEnabled && (
               <div className="billing-card" style={{ borderTop: '3px solid #7b1fa2' }}>
                 <span className="billing-card-label" style={{ color: '#7b1fa2' }}>Pack B: Pro Integrations</span>
-                <span className="billing-card-value">&pound;{packBPrice.toFixed(2)}</span>
+                <span className="billing-card-value">{formatCurrency(packBPrice, currency)}</span>
                 <span className="billing-card-sub">per user / month</span>
               </div>
             )}
@@ -832,8 +838,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
             </div>
             <div className="billing-card billing-card-highlight">
               <span className="billing-card-label">Monthly Total (inc. VAT)</span>
-              <span className="billing-card-value">&pound;{monthlyTotal.toFixed(2)}</span>
-              <span className="billing-card-sub">&pound;{subtotal.toFixed(2)} + &pound;{vat.toFixed(2)} VAT</span>
+              <span className="billing-card-value">{formatCurrency(monthlyTotal, currency)}</span>
+              <span className="billing-card-sub">{formatCurrency(subtotal, currency)} + {formatCurrency(vat, currency)} VAT</span>
             </div>
           </>
         )}
@@ -849,7 +855,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
           )}
           {enabledSupport.map(sp => (
             <span key={sp.feature_key} className="billing-addon-chip" style={{ background: '#fff3e0', color: '#e65100', border: '1px solid #ffcc80' }}>
-              {sp.display_name} &mdash; &pound;{(sp.flat_price ?? 0).toFixed(2)}
+              {sp.display_name} &mdash; {formatCurrency(sp.flat_price ?? 0, currency)}
             </span>
           ))}
         </div>
@@ -1008,7 +1014,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                       <text x={b.cx} y={bubbleY + 15} textAnchor="middle"
                         fontSize={11} fontWeight={700} fontFamily="system-ui, -apple-system, sans-serif"
                         fill={b.m.isCurrent ? '#fff' : '#333'}>
-                        &pound;{b.grandTotal.toFixed(0)}
+                        {currencySymbol(currency)}{b.grandTotal.toFixed(0)}
                       </text>
 
                       <text x={b.cx} y={barBase + 18} textAnchor="middle"
@@ -1021,7 +1027,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                         fill="#e8eaf6" stroke="#c5cae9" strokeWidth={0.5} />
                       <text x={b.cx} y={barBase + 41} textAnchor="middle"
                         fontSize={9} fontWeight={600} fontFamily="system-ui, -apple-system, sans-serif" fill="#3949ab">
-                        &pound;{monthlyPlatformFee.toFixed(0)} fee
+                        {currencySymbol(currency)}{monthlyPlatformFee.toFixed(0)} fee
                       </text>
 
                       {b.m.isCurrent && (
@@ -1079,8 +1085,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
               <tr>
                 <td>{baseline.display_name}</td>
                 <td><span className="admin-badge admin-badge-approved">Core</span></td>
-                {!isFixed && <td>&pound;{effectivePrice(baseline).toFixed(2)}</td>}
-                <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(effectivePrice(baseline) * employeeCount).toFixed(2)}</>}</td>
+                {!isFixed && <td>{formatCurrency(effectivePrice(baseline), currency)}</td>}
+                <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>{formatCurrency(effectivePrice(baseline) * employeeCount, currency)}</>}</td>
               </tr>
             )}
             {packAEnabled && packAPricing && (
@@ -1088,8 +1094,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                 <tr>
                   <td style={{ color: '#2e7d32', fontWeight: 600 }}>Pack A: Workforce &amp; Operations</td>
                   <td><span className="admin-badge" style={{ background: '#e8f5e9', color: '#2e7d32' }}>Pack A</span></td>
-                  {!isFixed && <td>&pound;{packAPrice.toFixed(2)}</td>}
-                  <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(packAPrice * employeeCount).toFixed(2)}</>}</td>
+                  {!isFixed && <td>{formatCurrency(packAPrice, currency)}</td>}
+                  <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>{formatCurrency(packAPrice * employeeCount, currency)}</>}</td>
                 </tr>
               </>
             )}
@@ -1098,8 +1104,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                 <tr>
                   <td style={{ color: '#7b1fa2', fontWeight: 600 }}>Pack B: Pro Integrations</td>
                   <td><span className="admin-badge" style={{ background: '#f3e5f5', color: '#7b1fa2' }}>Pack B</span></td>
-                  {!isFixed && <td>&pound;{packBPrice.toFixed(2)}</td>}
-                  <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>&pound;{(packBPrice * employeeCount).toFixed(2)}</>}</td>
+                  {!isFixed && <td>{formatCurrency(packBPrice, currency)}</td>}
+                  <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>{formatCurrency(packBPrice * employeeCount, currency)}</>}</td>
                 </tr>
               </>
             )}
@@ -1107,32 +1113,32 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
               <tr key={sp.feature_key}>
                 <td style={{ color: '#e65100' }}>{sp.display_name}</td>
                 <td><span className="admin-badge" style={{ background: '#fff3e0', color: '#e65100' }}>Support</span></td>
-                {!isFixed && <td>&pound;{(sp.flat_price ?? 0).toFixed(2)} flat</td>}
-                <td>&pound;{(sp.flat_price ?? 0).toFixed(2)}</td>
+                {!isFixed && <td>{formatCurrency(sp.flat_price ?? 0, currency)} flat</td>}
+                <td>{formatCurrency(sp.flat_price ?? 0, currency)}</td>
               </tr>
             ))}
             <tr>
               <td>Platform Fee</td>
               <td><span className="admin-badge" style={{ background: '#e3f2fd', color: '#1565c0' }}>Flat</span></td>
-              {!isFixed && <td>&pound;{monthlyPlatformFee.toFixed(2)} flat</td>}
-              <td>&pound;{monthlyPlatformFee.toFixed(2)}</td>
+              {!isFixed && <td>{formatCurrency(monthlyPlatformFee, currency)} flat</td>}
+              <td>{formatCurrency(monthlyPlatformFee, currency)}</td>
             </tr>
             {isFixed ? (
               <>
                 <tr style={{ fontWeight: 700 }}>
                   <td>Annual Fixed Price</td>
                   <td></td>
-                  <td>&pound;{(fixedAnnualPrice + monthlyPlatformFee * 12).toFixed(2)}</td>
+                  <td>{formatCurrency(fixedAnnualPrice + monthlyPlatformFee * 12, currency)}</td>
                 </tr>
                 <tr style={{ fontWeight: 600 }}>
                   <td>VAT (20%)</td>
                   <td></td>
-                  <td>&pound;{((fixedAnnualPrice + monthlyPlatformFee * 12) * VAT_RATE).toFixed(2)}</td>
+                  <td>{formatCurrency((fixedAnnualPrice + monthlyPlatformFee * 12) * VAT_RATE, currency)}</td>
                 </tr>
                 <tr style={{ fontWeight: 700 }}>
                   <td>Annual Total</td>
                   <td></td>
-                  <td>&pound;{((fixedAnnualPrice + monthlyPlatformFee * 12) * (1 + VAT_RATE)).toFixed(2)}</td>
+                  <td>{formatCurrency((fixedAnnualPrice + monthlyPlatformFee * 12) * (1 + VAT_RATE), currency)}</td>
                 </tr>
               </>
             ) : (
@@ -1141,25 +1147,25 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                   <td>Subtotal</td>
                   <td></td>
                   <td></td>
-                  <td>&pound;{subtotal.toFixed(2)}</td>
+                  <td>{formatCurrency(subtotal, currency)}</td>
                 </tr>
                 <tr style={{ fontWeight: 600 }}>
                   <td>VAT (20%)</td>
                   <td></td>
                   <td></td>
-                  <td>&pound;{vat.toFixed(2)}</td>
+                  <td>{formatCurrency(vat, currency)}</td>
                 </tr>
                 <tr style={{ fontWeight: 700 }}>
                   <td>Monthly Total</td>
                   <td></td>
                   <td></td>
-                  <td>&pound;{monthlyTotal.toFixed(2)}</td>
+                  <td>{formatCurrency(monthlyTotal, currency)}</td>
                 </tr>
                 <tr style={{ fontWeight: 700 }}>
                   <td>Annual Estimate</td>
                   <td></td>
                   <td></td>
-                  <td>&pound;{(monthlyTotal * 12).toFixed(2)}</td>
+                  <td>{formatCurrency(monthlyTotal * 12, currency)}</td>
                 </tr>
               </>
             )}
@@ -1232,7 +1238,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 4 }}>
                     <span>Amount due</span>
-                    <strong style={{ color: '#dc2626', fontSize: 18 }}>&pound;{cancelBilling.outstanding_amount.toFixed(2)}</strong>
+                    <strong style={{ color: '#dc2626', fontSize: 18 }}>{formatCurrency(cancelBilling.outstanding_amount, currency)}</strong>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap' }}>
                     <span>Service until</span>
@@ -1293,6 +1299,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
   const [loading, setLoading] = useState(true)
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
   const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set([new Date().getFullYear()]))
+  const currency = 'GBP'
 
   useEffect(() => { load() }, [companies])
 
@@ -1416,6 +1423,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
       c.id,
       [],
       c.platformFee,
+      currency,
     )
   }
 
@@ -1441,27 +1449,27 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
         </div>
         <div className="billing-card">
           <span className="billing-card-label">Core Revenue</span>
-          <span className="billing-card-value">&pound;{platformCore.toFixed(2)}</span>
+          <span className="billing-card-value">{formatCurrency(platformCore, currency)}</span>
           <span className="billing-card-sub">excl. VAT</span>
         </div>
         <div className="billing-card">
           <span className="billing-card-label">Pack Revenue</span>
-          <span className="billing-card-value">&pound;{platformAddons.toFixed(2)}</span>
+          <span className="billing-card-value">{formatCurrency(platformAddons, currency)}</span>
           <span className="billing-card-sub">excl. VAT</span>
         </div>
         <div className="billing-card">
           <span className="billing-card-label">Platform Fees</span>
-          <span className="billing-card-value">&pound;{platformFeeTotal.toFixed(2)}</span>
+          <span className="billing-card-value">{formatCurrency(platformFeeTotal, currency)}</span>
           <span className="billing-card-sub">excl. VAT</span>
         </div>
         <div className="billing-card billing-card-highlight">
           <span className="billing-card-label">Platform Total (inc. VAT)</span>
-          <span className="billing-card-value">&pound;{platformTotal.toFixed(2)}</span>
-          <span className="billing-card-sub">&pound;{platformSubtotal.toFixed(2)} + &pound;{platformVat.toFixed(2)} VAT</span>
+          <span className="billing-card-value">{formatCurrency(platformTotal, currency)}</span>
+          <span className="billing-card-sub">{formatCurrency(platformSubtotal, currency)} + {formatCurrency(platformVat, currency)} VAT</span>
         </div>
         <div className="billing-card">
           <span className="billing-card-label">Annual Estimate</span>
-          <span className="billing-card-value">&pound;{(platformTotal * 12).toFixed(2)}</span>
+          <span className="billing-card-value">{formatCurrency(platformTotal * 12, currency)}</span>
           <span className="billing-card-sub">inc. VAT</span>
         </div>
       </div>
@@ -1495,16 +1503,16 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
                 </td>
                 <td>{c.employees}</td>
                 <td>
-                  &pound;{c.corePerUser.toFixed(2)}
+                  {formatCurrency(c.corePerUser, currency)}
                   {(c.hasCustomCore || c.hasCustomAddons) && (
                     <span style={{ display: 'inline-block', marginLeft: 4, fontSize: 10, background: '#e3f2fd', color: '#1565c0', padding: '1px 5px', borderRadius: 3, fontWeight: 600, verticalAlign: 'middle' }}>Custom</span>
                   )}
                 </td>
-                <td>&pound;{c.core.toFixed(2)}</td>
-                <td>&pound;{c.addonsTotal.toFixed(2)}</td>
-                <td>&pound;{c.platformFee.toFixed(2)}</td>
-                <td>&pound;{c.vat.toFixed(2)}</td>
-                <td><strong>&pound;{c.monthly.toFixed(2)}</strong></td>
+                <td>{formatCurrency(c.core, currency)}</td>
+                <td>{formatCurrency(c.addonsTotal, currency)}</td>
+                <td>{formatCurrency(c.platformFee, currency)}</td>
+                <td>{formatCurrency(c.vat, currency)}</td>
+                <td><strong>{formatCurrency(c.monthly, currency)}</strong></td>
                 <td>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {c.enabledAddons.length > 0
@@ -1526,11 +1534,11 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
               <td>Platform Total</td>
               <td>{totalEmployees}</td>
               <td></td>
-              <td>&pound;{platformCore.toFixed(2)}</td>
-              <td>&pound;{platformAddons.toFixed(2)}</td>
-              <td>&pound;{platformFeeTotal.toFixed(2)}</td>
-              <td>&pound;{platformVat.toFixed(2)}</td>
-              <td>&pound;{platformTotal.toFixed(2)}</td>
+              <td>{formatCurrency(platformCore, currency)}</td>
+              <td>{formatCurrency(platformAddons, currency)}</td>
+              <td>{formatCurrency(platformFeeTotal, currency)}</td>
+              <td>{formatCurrency(platformVat, currency)}</td>
+              <td>{formatCurrency(platformTotal, currency)}</td>
               <td></td>
               <td></td>
             </tr>
@@ -1577,7 +1585,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
                         {year}
                         {isCurrentYear && <span style={{ marginLeft: 10, fontSize: 10, background: '#1565c0', color: '#fff', padding: '2px 10px', borderRadius: 10, fontWeight: 600, verticalAlign: 'middle' }}>Current Year</span>}
                       </span>
-                      <span style={{ fontWeight: 700, fontSize: 15, color: '#1565c0' }}>&pound;{yearTotal.toFixed(2)}</span>
+                      <span style={{ fontWeight: 700, fontSize: 15, color: '#1565c0' }}>{formatCurrency(yearTotal, currency)}</span>
                     </button>
 
                     {isYearExpanded && (
@@ -1623,7 +1631,7 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
                                 {!isFuture && (
                                   <>
                                     <span style={{ fontSize: 12, color: '#888' }}>{billableCompanies.length} {billableCompanies.length === 1 ? 'company' : 'companies'}</span>
-                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#1565c0', minWidth: 80, textAlign: 'right' }}>&pound;{monthTotal.toFixed(2)}</span>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#1565c0', minWidth: 80, textAlign: 'right' }}>{formatCurrency(monthTotal, currency)}</span>
                                   </>
                                 )}
                               </button>
@@ -1654,11 +1662,11 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
                                               )}
                                             </td>
                                             <td>{c.employees}</td>
-                                            <td>&pound;{c.core.toFixed(2)}</td>
-                                            <td>&pound;{c.addonsTotal.toFixed(2)}</td>
-                                            <td>&pound;{c.platformFee.toFixed(2)}</td>
-                                            <td>&pound;{c.vat.toFixed(2)}</td>
-                                            <td><strong>&pound;{c.monthly.toFixed(2)}</strong></td>
+                                            <td>{formatCurrency(c.core, currency)}</td>
+                                            <td>{formatCurrency(c.addonsTotal, currency)}</td>
+                                            <td>{formatCurrency(c.platformFee, currency)}</td>
+                                            <td>{formatCurrency(c.vat, currency)}</td>
+                                            <td><strong>{formatCurrency(c.monthly, currency)}</strong></td>
                                             <td>
                                               <button className="billing-invoice-btn-table" title={`Download invoice for ${month} ${year}`} onClick={() => handleInvoice(c, month, year)}>
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
@@ -1669,11 +1677,11 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
                                         <tr style={{ fontWeight: 700, background: '#f5f7fa' }}>
                                           <td>Month Total</td>
                                           <td>{monthEmpTot}</td>
-                                          <td>&pound;{monthCoreTot.toFixed(2)}</td>
-                                          <td>&pound;{monthAddonTot.toFixed(2)}</td>
-                                          <td>&pound;{monthFeeTot.toFixed(2)}</td>
-                                          <td>&pound;{monthVatTot.toFixed(2)}</td>
-                                          <td>&pound;{monthTotal.toFixed(2)}</td>
+                                          <td>{formatCurrency(monthCoreTot, currency)}</td>
+                                          <td>{formatCurrency(monthAddonTot, currency)}</td>
+                                          <td>{formatCurrency(monthFeeTot, currency)}</td>
+                                          <td>{formatCurrency(monthVatTot, currency)}</td>
+                                          <td>{formatCurrency(monthTotal, currency)}</td>
                                           <td></td>
                                         </tr>
                                       </tbody>

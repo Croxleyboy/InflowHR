@@ -1071,7 +1071,7 @@ export default function AdminCompanies() {
             </div>
             {form.isTrial && (
               <div style={{ background: '#e3f2fd', borderRadius: 8, padding: '10px 14px', marginTop: 12, fontSize: 13, color: '#1565c0' }}>
-                Trial companies receive all features (including add-ons) enabled at £0 for the trial period.
+                Trial companies receive all features (including add-ons) enabled at no cost for the trial period.
               </div>
             )}
             <div style={{ marginTop: 16, marginBottom: 8 }}>

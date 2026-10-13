@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { sendFeatureEmail } from '../lib/emailNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
-import { formatDateTime } from '../lib/formatters'
+import { formatDateTime, formatCurrency } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 
 interface Claim {
@@ -36,7 +36,8 @@ export default function ExpenseApproval() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
-  const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL, companyUser } = useAuth()
+  const { employeeName: APPROVER_NAME, employeeEmail: APPROVER_EMAIL, companyUser, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
@@ -87,7 +88,7 @@ export default function ExpenseApproval() {
         approval_status: approved ? 'Approved' : 'Declined',
         updated_at: now,
         task_description: approved
-          ? `Expense claim ${claim.reference_number} approved - £${totalAmount.toFixed(2)}`
+          ? `Expense claim ${claim.reference_number} approved - ${formatCurrency(totalAmount, currency)}`
           : `Expense claim ${claim.reference_number} declined`,
       })
       .eq('record_type', 'Expense')
@@ -114,7 +115,7 @@ export default function ExpenseApproval() {
       approval_id: claim.id,
       reminder_count: 1,
       task_description: approved
-        ? `${happyMessages[Math.floor(Math.random() * happyMessages.length)]} Your expense claim ${claim.reference_number} for £${totalAmount.toFixed(2)} has been approved${responseNote}`
+        ? `${happyMessages[Math.floor(Math.random() * happyMessages.length)]} Your expense claim ${claim.reference_number} for ${formatCurrency(totalAmount, currency)} has been approved${responseNote}`
         : `Your expense claim ${claim.reference_number} has been declined. Please contact your manager for details.${responseNote}`,
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
@@ -131,7 +132,7 @@ export default function ExpenseApproval() {
       assigned_to: APPROVER_EMAIL,
       approval_id: claim.id,
       reminder_count: 1,
-      task_description: `You ${approved ? 'approved' : 'declined'} expense claim ${claim.reference_number} from ${empName} - £${totalAmount.toFixed(2)}`,
+      task_description: `You ${approved ? 'approved' : 'declined'} expense claim ${claim.reference_number} from ${empName} - ${formatCurrency(totalAmount, currency)}`,
       approval_status: approved ? 'Approved' : 'Declined',
       company_id: companyUser?.company_id,
     })
@@ -144,8 +145,8 @@ export default function ExpenseApproval() {
         featureKey: 'expenses_enabled',
         title: approved ? 'Expense Claim Approved' : 'Expense Claim Declined',
         message: approved
-          ? `Your expense claim ${claim.reference_number} for £${totalAmount.toFixed(2)} has been approved.`
-          : `Your expense claim ${claim.reference_number} for £${totalAmount.toFixed(2)} has been declined. Please contact your manager for details.`,
+          ? `Your expense claim ${claim.reference_number} for ${formatCurrency(totalAmount, currency)} has been approved.`
+          : `Your expense claim ${claim.reference_number} for ${formatCurrency(totalAmount, currency)} has been declined. Please contact your manager for details.`,
         type: approved ? 'info' : 'alert',
         link: '/expenses',
       })
@@ -239,7 +240,7 @@ export default function ExpenseApproval() {
                     </svg>
                   </button>
                 )}
-                <span className="exp-approval-item-amount">£{item.amount.toFixed(2)}</span>
+                <span className="exp-approval-item-amount">{formatCurrency(item.amount, currency)}</span>
               </div>
             ))}
           </div>
@@ -273,7 +274,7 @@ export default function ExpenseApproval() {
 
         <div className="exp-approval-total-row">
           <span className="exp-approval-total-label">{t('approval.total_amount')}</span>
-          <span className="exp-approval-total-value">£{totalAmount.toFixed(2)}</span>
+          <span className="exp-approval-total-value">{formatCurrency(totalAmount, currency)}</span>
         </div>
 
         {claim.status !== 'draft' && (

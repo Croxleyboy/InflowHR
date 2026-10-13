@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { formatCurrency, currencySymbol } from '../../lib/formatters'
 import AdminCompanies from './AdminCompanies'
 import AdminTrialRequests from './AdminTrialRequests'
 import AdminSupportAccess from './AdminSupportAccess'
@@ -54,7 +55,8 @@ const PACK_A_LABELS = ['Shifts & Rotas', 'Legal Timesheets', 'Space & Desk Booki
 const PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligence', 'Modulr Payments & BACS Export']
 
 export default function AdminSubscriptions() {
-  const { isSuperAdmin } = useAuth()
+  const { isSuperAdmin, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showSuccess, showError } = useToast()
   const [tab, setTab] = useState<'pricing' | 'features' | 'companies' | 'trial-requests' | 'support-access' | 'audit-log'>('pricing')
 
@@ -397,7 +399,7 @@ export default function AdminSubscriptions() {
                   </div>
                   <div className="sub-pricing-input-row">
                     <label>Price</label>
-                    <span>&pound;</span>
+                    <span>{currencySymbol(currency)}</span>
                     <input
                       type="number"
                       step="0.01"
@@ -431,7 +433,7 @@ export default function AdminSubscriptions() {
                   </div>
                   <div className="sub-pricing-input-row">
                     <label>Price</label>
-                    <span>&pound;</span>
+                    <span>{currencySymbol(currency)}</span>
                     <input
                       type="number"
                       step="0.01"
@@ -465,7 +467,7 @@ export default function AdminSubscriptions() {
                   </div>
                   <div className="sub-pricing-input-row">
                     <label>Price</label>
-                    <span>&pound;</span>
+                    <span>{currencySymbol(currency)}</span>
                     <input
                       type="number"
                       step="0.01"
@@ -499,7 +501,7 @@ export default function AdminSubscriptions() {
                         <div className="sub-pricing-desc">{sp.description}</div>
                         <div className="sub-pricing-input-row">
                           <label>Flat Price</label>
-                          <span>&pound;</span>
+                          <span>{currencySymbol(currency)}</span>
                           <input
                             type="number"
                             step="0.01"
@@ -589,7 +591,7 @@ export default function AdminSubscriptions() {
                     </div>
                     {billingType === 'fixed' && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-                        <label style={{ fontWeight: 600, fontSize: 13 }}>Annual Price &pound;</label>
+                        <label style={{ fontWeight: 600, fontSize: 13 }}>Annual Price {currencySymbol(currency)}</label>
                         <input
                           type="number"
                           step="0.01"
@@ -656,14 +658,14 @@ export default function AdminSubscriptions() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#fff', borderRadius: 6, padding: 12, border: '1px solid #e0e0e0' }}>
                         <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px', minWidth: 0 }}>
                           <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
-                          <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{corePricing.default_price.toFixed(2)}</div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>{formatCurrency(corePricing.default_price, currency)}</div>
                           <div style={{ fontSize: 10, color: '#bbb' }}>from Pricing tab</div>
                         </div>
                         <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
                         <div style={{ textAlign: 'center' }}>
                           <div style={{ fontSize: 10, color: '#1565c0', fontWeight: 600, textTransform: 'uppercase' }}>Company Price</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontWeight: 600 }}>&pound;</span>
+                            <span style={{ fontWeight: 600 }}>{currencySymbol(currency)}</span>
                             <input
                               type="number"
                               step="0.01"
@@ -680,9 +682,9 @@ export default function AdminSubscriptions() {
                         </div>
                         <div style={{ flex: 1, minWidth: 120, textAlign: 'right' }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: '#1565c0' }}>
-                            &pound;{coreCost.toFixed(2)}/mo
+                            {formatCurrency(coreCost, currency)}/mo
                           </div>
-                          <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; &pound;{getEffectivePrice('hr_core').toFixed(2)}</div>
+                          <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; {formatCurrency(getEffectivePrice('hr_core'), currency)}</div>
                         </div>
                       </div>
                     </div>
@@ -729,13 +731,13 @@ export default function AdminSubscriptions() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#fff', borderRadius: 6, padding: 12, border: '1px solid #e0e0e0' }}>
                           <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px' }}>
                             <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
-                            <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{packAPricing.default_price.toFixed(2)}</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>{formatCurrency(packAPricing.default_price, currency)}</div>
                           </div>
                           <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
                           <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 10, color: '#2e7d32', fontWeight: 600, textTransform: 'uppercase' }}>Company Price</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{ fontWeight: 600 }}>&pound;</span>
+                              <span style={{ fontWeight: 600 }}>{currencySymbol(currency)}</span>
                               <input
                                 type="number"
                                 step="0.01"
@@ -752,9 +754,9 @@ export default function AdminSubscriptions() {
                           {packAEnabled && (
                             <div style={{ flex: 1, minWidth: 120, textAlign: 'right' }}>
                               <div style={{ fontSize: 13, fontWeight: 700, color: '#2e7d32' }}>
-                                &pound;{packACost.toFixed(2)}/mo
+                                {formatCurrency(packACost, currency)}/mo
                               </div>
-                              <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; &pound;{getEffectivePrice('pack_a').toFixed(2)}</div>
+                              <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; {formatCurrency(getEffectivePrice('pack_a'), currency)}</div>
                             </div>
                           )}
                         </div>
@@ -803,13 +805,13 @@ export default function AdminSubscriptions() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', background: '#fff', borderRadius: 6, padding: 12, border: '1px solid #e0e0e0' }}>
                           <div style={{ textAlign: 'center', background: '#f5f5f5', borderRadius: 6, padding: '8px 14px' }}>
                             <div style={{ fontSize: 10, color: '#999', fontWeight: 600, textTransform: 'uppercase' }}>Default Price</div>
-                            <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>&pound;{packBPricing.default_price.toFixed(2)}</div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#999' }}>{formatCurrency(packBPricing.default_price, currency)}</div>
                           </div>
                           <div style={{ fontSize: 18, color: '#ccc' }}>&rarr;</div>
                           <div style={{ textAlign: 'center' }}>
                             <div style={{ fontSize: 10, color: '#7b1fa2', fontWeight: 600, textTransform: 'uppercase' }}>Company Price</div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{ fontWeight: 600 }}>&pound;</span>
+                              <span style={{ fontWeight: 600 }}>{currencySymbol(currency)}</span>
                               <input
                                 type="number"
                                 step="0.01"
@@ -826,9 +828,9 @@ export default function AdminSubscriptions() {
                           {packBEnabled && (
                             <div style={{ flex: 1, minWidth: 120, textAlign: 'right' }}>
                               <div style={{ fontSize: 13, fontWeight: 700, color: '#7b1fa2' }}>
-                                &pound;{packBCost.toFixed(2)}/mo
+                                {formatCurrency(packBCost, currency)}/mo
                               </div>
-                              <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; &pound;{getEffectivePrice('pack_b').toFixed(2)}</div>
+                              <div style={{ fontSize: 11, color: '#666' }}>{employeeCount} users &times; {formatCurrency(getEffectivePrice('pack_b'), currency)}</div>
                             </div>
                           )}
                         </div>
@@ -858,7 +860,7 @@ export default function AdminSubscriptions() {
                               <div style={{ fontSize: 12, color: '#666' }}>{sp.description}</div>
                             </div>
                             <div style={{ fontWeight: 700, fontSize: 14, color: '#e65100' }}>
-                              &pound;{(sp.flat_price ?? 0).toFixed(2)}
+                              {formatCurrency(sp.flat_price ?? 0, currency)}
                             </div>
                           </div>
                         )
@@ -871,7 +873,7 @@ export default function AdminSubscriptions() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                       <div style={{ fontWeight: 700, fontSize: 14, color: '#1565c0' }}>Monthly Platform Fee</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontWeight: 600 }}>&pound;</span>
+                        <span style={{ fontWeight: 600 }}>{currencySymbol(currency)}</span>
                         <input
                           type="number"
                           step="0.01"
@@ -915,46 +917,46 @@ export default function AdminSubscriptions() {
                         {corePricing && (
                           <tr>
                             <td>Core Features</td>
-                            <td>&pound;{getEffectivePrice('hr_core').toFixed(2)}/user</td>
+                            <td>{formatCurrency(getEffectivePrice('hr_core'), currency)}/user</td>
                             <td>{employeeCount}</td>
-                            <td>&pound;{coreCost.toFixed(2)}</td>
+                            <td>{formatCurrency(coreCost, currency)}</td>
                           </tr>
                         )}
                         {packAEnabled && packAPricing && (
                           <tr>
                             <td>Pack A: Workforce &amp; Operations</td>
-                            <td>&pound;{getEffectivePrice('pack_a').toFixed(2)}/user</td>
+                            <td>{formatCurrency(getEffectivePrice('pack_a'), currency)}/user</td>
                             <td>{employeeCount}</td>
-                            <td>&pound;{packACost.toFixed(2)}</td>
+                            <td>{formatCurrency(packACost, currency)}</td>
                           </tr>
                         )}
                         {packBEnabled && packBPricing && (
                           <tr>
                             <td>Pack B: Pro Integrations</td>
-                            <td>&pound;{getEffectivePrice('pack_b').toFixed(2)}/user</td>
+                            <td>{formatCurrency(getEffectivePrice('pack_b'), currency)}/user</td>
                             <td>{employeeCount}</td>
-                            <td>&pound;{packBCost.toFixed(2)}</td>
+                            <td>{formatCurrency(packBCost, currency)}</td>
                           </tr>
                         )}
                         {supportPackages.filter(sp => isFeatureEnabled(sp.feature_key)).map(sp => (
                           <tr key={sp.feature_key}>
                             <td>{sp.display_name}</td>
-                            <td>&pound;{(sp.flat_price ?? 0).toFixed(2)} flat</td>
+                            <td>{formatCurrency(sp.flat_price ?? 0, currency)} flat</td>
                             <td>—</td>
-                            <td>&pound;{(sp.flat_price ?? 0).toFixed(2)}</td>
+                            <td>{formatCurrency(sp.flat_price ?? 0, currency)}</td>
                           </tr>
                         ))}
                         <tr>
                           <td>Platform Fee</td>
-                          <td>&pound;{platformFee.toFixed(2)} flat</td>
+                          <td>{formatCurrency(platformFee, currency)} flat</td>
                           <td>—</td>
-                          <td>&pound;{platformFee.toFixed(2)}</td>
+                          <td>{formatCurrency(platformFee, currency)}</td>
                         </tr>
                         <tr className="sub-cost-total">
                           <td>Total</td>
                           <td></td>
                           <td></td>
-                          <td>&pound;{totalCost.toFixed(2)}</td>
+                          <td>{formatCurrency(totalCost, currency)}</td>
                         </tr>
                       </tbody>
                     </table>

@@ -6,7 +6,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useCheckIn } from '../context/CheckInContext'
 import { supabase } from '../lib/supabase'
-import { toLocalDateStr } from '../lib/formatters'
+import { toLocalDateStr, currencySymbol, formatCurrency } from '../lib/formatters'
 import { useUserPreferences } from '../hooks/useUserPreferences'
 import Chevron from '../components/Chevron'
 import DashboardDetailed from './DashboardDetailed'
@@ -80,6 +80,7 @@ export default function Dashboard() {
   const { features, dashboardStyle } = useFeatures()
   const { t, lang } = useLanguage()
   const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser, employmentCategory, isSuperAdmin } = useAuth()
+  const currency = company?.currency || 'GBP'
   const navigate = useNavigate()
   const { activeCheckin, activeBreak, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const { prefs } = useUserPreferences()
@@ -956,12 +957,12 @@ export default function Dashboard() {
             <div className="info-card-body">
               {pendingExpense !== null ? (
                 <>
-                  <span className="info-card-value">&pound;{pendingExpense.toFixed(2)}</span>
+                  <span className="info-card-value">{formatCurrency(pendingExpense, currency)}</span>
                   <div className="info-card-status info-card-status-pending"><span className="info-card-dot" />Claim pending approval</div>
                 </>
               ) : lastExpense !== null ? (
                 <>
-                  <span className="info-card-value">&pound;{lastExpense.toFixed(2)}</span>
+                  <span className="info-card-value">{formatCurrency(lastExpense, currency)}</span>
                   <div className="info-card-status info-card-status-ok"><span className="info-card-dot" />Last claim approved</div>
                 </>
               ) : (
@@ -1021,7 +1022,7 @@ export default function Dashboard() {
             <div className="info-card-body">
               {lastPayslip ? (
                 <>
-                  <span className="info-card-value" style={{ color: '#303f9f' }}>&pound;{Math.round(lastPayslip.net_pay)}</span>
+                  <span className="info-card-value" style={{ color: '#303f9f' }}>{currencySymbol(currency)}{Math.round(lastPayslip.net_pay)}</span>
                   <span className="info-card-sub" style={{ color: '#303f9f' }}>{lastPayslip.month}</span>
                 </>
               ) : (
@@ -1786,10 +1787,10 @@ export default function Dashboard() {
             <button className="dash-card card-expenses" onClick={() => navigate('/expenses')}>
               <div className="card-content">
                 <span className="card-label">{t('dashboard.expenses')}</span>
-                <span className="card-value">&pound;{lastExpense !== null ? lastExpense.toFixed(2) : '--'}{lastExpenseHasReceipt && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 4, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>}</span>
+                <span className="card-value">{lastExpense !== null ? formatCurrency(lastExpense, currency) : `${currencySymbol(currency)}--`}{lastExpenseHasReceipt && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 4, verticalAlign: 'middle' }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>}</span>
                 <span className="card-sub">{t('dashboard.last_claim')}</span>
                 {pendingExpense !== null && (
-                  <span className="card-sub card-expense-pending">&pound;{pendingExpense.toFixed(2)} {t('dashboard.pending')}</span>
+                  <span className="card-sub card-expense-pending">{formatCurrency(pendingExpense, currency)} {t('dashboard.pending')}</span>
                 )}
               </div>
               <Chevron color="#c62828" />

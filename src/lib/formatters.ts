@@ -1,3 +1,15 @@
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  GBP: '£', USD: '$', EUR: '€', JPY: '¥', AUD: 'A$', CAD: 'C$', CHF: 'CHF', SEK: 'kr', NOK: 'kr', DKK: 'kr', NZD: 'NZ$', ZAR: 'R', INR: '₹', SGD: 'S$', HKD: 'HK$',
+}
+
+export function currencySymbol(code: string = 'GBP'): string {
+  return CURRENCY_SYMBOLS[code] || code + ' '
+}
+
+export function formatCurrency(amount: number, code: string = 'GBP'): string {
+  return `${currencySymbol(code)}${amount.toFixed(2)}`
+}
+
 export function formatDate(dateStr: string | null): string {
   if (!dateStr) return ''
   const d = dateStr.includes('T') ? new Date(dateStr) : new Date(dateStr + 'T00:00:00')

@@ -4,7 +4,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import LegalClientMatters from './LegalClientMatters'
-import { toLocalDateStr } from '../../lib/formatters'
+import { toLocalDateStr, formatCurrency, currencySymbol } from '../../lib/formatters'
 import jsPDF from 'jspdf'
 
 // ── Types ──
@@ -206,7 +206,8 @@ function empName(e: { first_name: string; last_name: string } | null | undefined
 
 export default function AdminLegalTimesheets() {
   const { selectedCompanyId } = useAdminCompany()
-  const { session } = useAuth()
+  const { session, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [tab, setTab] = useState<Tab>('overview')
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -698,7 +699,7 @@ export default function AdminLegalTimesheets() {
       await supabase.from('legal_timesheet_entries').update({ status: 'billed' }).eq('id', l.entry.id)
     }
 
-    showSuccess(`Invoice ${invoiceNumber} created — ${lines.length} entries, £${total.toFixed(2)}`)
+    showSuccess(`Invoice ${invoiceNumber} created — ${lines.length} entries, ${formatCurrency(total, currency)}`)
     setShowCreateInvoice(false)
     setInvClient('')
     setInvPeriodStart('')
@@ -845,8 +846,8 @@ export default function AdminLegalTimesheets() {
       doc.text((line.matter_name || '').substring(0, 18), cols[2], y)
       doc.text((line.description || '').substring(0, 22), cols[3], y)
       doc.text(Number(line.hours).toFixed(2), cols[4], y)
-      doc.text(`£${Number(line.rate).toFixed(2)}`, cols[5], y)
-      doc.text(`£${Number(line.amount).toFixed(2)}`, cols[6], y, { align: 'right' })
+      doc.text(formatCurrency(Number(line.rate), currency), cols[5], y)
+      doc.text(formatCurrency(Number(line.amount), currency), cols[6], y, { align: 'right' })
       y += 7
     })
 
@@ -859,10 +860,10 @@ export default function AdminLegalTimesheets() {
     doc.setFont('helvetica', 'normal')
     doc.setTextColor(80, 80, 80)
     doc.text('Subtotal', rm - 70, y)
-    doc.text(`£${Number(invoice.subtotal).toFixed(2)}`, rm, y, { align: 'right' })
+    doc.text(formatCurrency(Number(invoice.subtotal), currency), rm, y, { align: 'right' })
     y += 6
     doc.text(`VAT (${Number(invoice.vat_rate).toFixed(0)}%)`, rm - 70, y)
-    doc.text(`£${Number(invoice.vat_amount).toFixed(2)}`, rm, y, { align: 'right' })
+    doc.text(formatCurrency(Number(invoice.vat_amount), currency), rm, y, { align: 'right' })
     y += 3
     doc.setDrawColor(220, 220, 220)
     doc.line(rm - 70, y, rm, y)
@@ -871,7 +872,7 @@ export default function AdminLegalTimesheets() {
     doc.setFontSize(12)
     doc.setTextColor(30, 30, 45)
     doc.text('Total Due', rm - 70, y)
-    doc.text(`£${Number(invoice.total).toFixed(2)}`, rm, y, { align: 'right' })
+    doc.text(formatCurrency(Number(invoice.total), currency), rm, y, { align: 'right' })
 
     // Footer
     y += 16
@@ -933,7 +934,7 @@ export default function AdminLegalTimesheets() {
       invoice.invoice_number,
       new Date(invoice.invoice_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
       new Date(invoice.due_date + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-      `${l.employee_name} - ${l.matter_name} (${Number(l.hours).toFixed(2)}h @ £${Number(l.rate).toFixed(2)}/hr)`,
+      `${l.employee_name} - ${l.matter_name} (${Number(l.hours).toFixed(2)}h @ ${formatCurrency(Number(l.rate), currency)}/hr)`,
       Number(l.hours).toFixed(2),
       Number(l.rate).toFixed(2),
       '200',
@@ -1485,9 +1486,9 @@ export default function AdminLegalTimesheets() {
                       <td>{new Date(inv.invoice_date + 'T00:00:00').toLocaleDateString('en-GB')}</td>
                       <td>{new Date(inv.due_date + 'T00:00:00').toLocaleDateString('en-GB')}</td>
                       <td style={{ fontSize: 12 }}>{fmtDate(inv.period_start)} — {fmtDate(inv.period_end)}</td>
-                      <td>£{Number(inv.subtotal).toFixed(2)}</td>
-                      <td>£{Number(inv.vat_amount).toFixed(2)}</td>
-                      <td><strong>£{Number(inv.total).toFixed(2)}</strong></td>
+                      <td>{formatCurrency(Number(inv.subtotal), currency)}</td>
+                      <td>{formatCurrency(Number(inv.vat_amount), currency)}</td>
+                      <td><strong>{formatCurrency(Number(inv.total), currency)}</strong></td>
                       <td>
                         <span style={{
                           padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600,
@@ -1543,15 +1544,15 @@ export default function AdminLegalTimesheets() {
                 <thead>
                   <tr>
                     <th>Employee</th>
-                    <th>Pay Rate (£/hr)</th>
-                    <th>Charge-out Rate (£/hr)</th>
+                    <th>Pay Rate ({currencySymbol(currency)}/hr)</th>
+                    <th>Charge-out Rate ({currencySymbol(currency)}/hr)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {employees.filter(e => e.is_active).map(emp => (
                     <tr key={emp.id}>
                       <td style={{ fontWeight: 600 }}>{emp.first_name} {emp.last_name}</td>
-                      <td style={{ color: '#8b8fa3' }}>{emp.hourly_rate ? `£${Number(emp.hourly_rate).toFixed(2)}` : '—'}</td>
+                      <td style={{ color: '#8b8fa3' }}>{emp.hourly_rate ? formatCurrency(Number(emp.hourly_rate), currency) : '—'}</td>
                       <td>
                         <input
                           className="admin-inline-input"
