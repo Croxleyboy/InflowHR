@@ -7135,6 +7135,32 @@ body {
   opacity: 0.8;
   margin-top: 4px;
 }
+.dd2-hero-dots {
+  position: absolute;
+  bottom: 10px;
+  right: 16px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+}
+.dd2-hero-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.7);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.2s, border-color 0.2s;
+}
+.dd2-hero-dot:hover {
+  border-color: #fff;
+  background: rgba(255,255,255,0.4);
+}
+.dd2-hero-dot-active {
+  background: #fff;
+  border-color: #fff;
+}
 @media (max-width: 700px) {
   .dd2-profile-content {
     flex-direction: column;
@@ -7154,6 +7180,7 @@ body {
   padding: 10px 20px;
   border-radius: 10px;
   margin-top: 10px;
+  margin-bottom: 16px;
   background: linear-gradient(135deg, #e65100, #f57c00);
   color: #fff;
   font-size: 13px;

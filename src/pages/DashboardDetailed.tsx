@@ -18,13 +18,15 @@ interface LeaveRequest {
   leave_type: { name: string } | null
 }
 
-interface Notification {
+interface WorkflowNotif {
   id: number
-  title: string
-  message: string
-  type: string
+  action: string
+  task_description: string | null
+  record_type: string | null
+  approval_status: string | null
+  status: string
+  emp_display_name: string | null
   created_at: string
-  is_read: boolean
 }
 
 interface Colleague {
@@ -141,7 +143,7 @@ export default function DashboardDetailed() {
   const { dark, toggle } = useTheme()
   const { features } = useFeatures()
   const { t, lang } = useLanguage()
-  const { signOut, employeeId, employeeName, company, avatarUrl, companyUser, employmentCategory } = useAuth()
+  const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser, employmentCategory } = useAuth()
   const { activeCheckin, activeBreak, checkIn, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const { showSuccess, showError } = useToast()
   const navigate = useNavigate()
@@ -153,7 +155,7 @@ export default function DashboardDetailed() {
   const [leaveApproved, setLeaveApproved] = useState<number | null>(null)
   const [leaveTotal, setLeaveTotal] = useState<number | null>(null)
   const [upcomingLeave, setUpcomingLeave] = useState<LeaveRequest[]>([])
-  const [recentNotifications, setRecentNotifications] = useState<Notification[]>([])
+  const [recentNotifications, setRecentNotifications] = useState<WorkflowNotif[]>([])
   const [birthdays, setBirthdays] = useState<Colleague[]>([])
   const [anniversaries, setAnniversaries] = useState<Colleague[]>([])
   const [recentExpenses, setRecentExpenses] = useState<ExpenseClaim[]>([])
@@ -185,6 +187,12 @@ export default function DashboardDetailed() {
   const [empPhone, setEmpPhone] = useState<string | null>(null)
   const [empStartDate, setEmpStartDate] = useState<string | null>(null)
   const [reminders, setReminders] = useState<ReminderItem[]>([])
+
+  // Hero background image switcher
+  const heroImages = ['/images/hero-landscape.jpg', '/images/hero-mountains.jpg', '/images/hero-sunset.jpg']
+  const [heroImageIdx, setHeroImageIdx] = useState(() => {
+    try { const saved = localStorage.getItem('inflowhr-dd2-hero-img'); return saved ? Math.min(Number(saved), 2) : 0 } catch { return 0 }
+  })
 
   // Shift check-in state for hero bar
   const [heroShift, setHeroShift] = useState<{ id: string; start_time: string; end_time: string; template_name: string } | null>(null)
@@ -257,12 +265,30 @@ export default function DashboardDetailed() {
         }
       })
 
-    // Notifications — last 5
-    supabase.from('notifications')
-      .select('id, title, message, type, created_at, is_read')
-      .eq('employee_id', employeeId).eq('company_id', cid)
-      .order('created_at', { ascending: false }).limit(5)
-      .then(({ data }) => { if (data) setRecentNotifications(data as Notification[]) })
+    // Notifications — workflow_tracker items (same source as My Notifications page)
+    if (employeeEmail) {
+      Promise.all([
+        supabase.from('workflow_tracker')
+          .select('id, action, task_description, record_type, approval_status, status, emp_display_name, created_at')
+          .ilike('assigned_to', `%${employeeEmail}%`)
+          .eq('status', 'Pending')
+          .eq('company_id', cid)
+          .order('created_at', { ascending: false })
+          .limit(5),
+        supabase.from('workflow_tracker')
+          .select('id, action, task_description, record_type, approval_status, status, emp_display_name, created_at')
+          .or(`assigned_to.ilike.%${employeeEmail}%,employee_email.ilike.%${employeeEmail}%`)
+          .eq('status', 'Complete')
+          .eq('company_id', cid)
+          .order('created_at', { ascending: false })
+          .limit(5),
+      ]).then(([pendingRes, completeRes]) => {
+        const combined = [...(pendingRes.data || []), ...(completeRes.data || [])]
+          .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+          .slice(0, 5)
+        setRecentNotifications(combined as WorkflowNotif[])
+      })
+    }
 
     // Birthdays & anniversaries
     let watchlistIds: string[] = []
@@ -672,7 +698,7 @@ export default function DashboardDetailed() {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
 
-  const unreadCount = recentNotifications.filter(n => !n.is_read).length
+  const pendingCount = recentNotifications.filter(n => n.status === 'Pending').length
 
   const expensesPerPage = 3
   const expensePages = Math.ceil(recentExpenses.length / expensesPerPage)
@@ -745,24 +771,30 @@ export default function DashboardDetailed() {
     <section className="dd2-card" onClick={() => navigate('/notifications')}>
       <div className="dd2-card-header">
         <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        <h2 className="dd2-card-title">Notifications</h2>
-        {unreadCount > 0 && <span className="dd2-card-count dd2-card-count-alert">{unreadCount} new</span>}
+        <h2 className="dd2-card-title">My Notifications</h2>
+        {pendingCount > 0 && <span className="dd2-card-count dd2-card-count-alert">{pendingCount} pending</span>}
       </div>
       <div className="dd2-card-body">
         {recentNotifications.length === 0 ? (
           <p className="dd2-empty">No recent notifications</p>
         ) : (
           <ul className="dd2-item-list">
-            {recentNotifications.map(n => (
-              <li key={n.id} className={`dd2-item ${!n.is_read ? 'dd2-item-unread' : ''}`}>
-                <span className={`dd2-notif-indicator dd2-notif-${n.type}`} />
-                <div className="dd2-item-content">
-                  <span className="dd2-item-title">{n.title}</span>
-                  <span className="dd2-item-sub">{n.message.length > 50 ? n.message.slice(0, 50) + '…' : n.message}</span>
-                </div>
-                <span className="dd2-item-time">{new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
-              </li>
-            ))}
+            {recentNotifications.map(n => {
+              const isPending = n.status === 'Pending'
+              const typeColor = n.record_type === 'leave' ? '#43a047' : n.record_type === 'expense' ? '#f57c00' : n.record_type === 'timesheet' ? '#1565c0' : n.record_type === 'shift' ? '#e65100' : 'var(--text-muted)'
+              const desc = n.task_description || n.action || 'Notification'
+              const who = n.emp_display_name ? ` · ${n.emp_display_name}` : ''
+              return (
+                <li key={n.id} className={`dd2-item ${isPending ? 'dd2-item-unread' : ''}`}>
+                  <span className="dd2-notif-indicator" style={{ background: typeColor }} />
+                  <div className="dd2-item-content">
+                    <span className="dd2-item-title">{desc}</span>
+                    <span className="dd2-item-sub">{isPending ? 'Pending' : n.approval_status || 'Complete'}{who}</span>
+                  </div>
+                  <span className="dd2-item-time">{new Date(n.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                </li>
+              )
+            })}
           </ul>
         )}
         <div className="dd2-card-link">View all notifications →</div>
@@ -1155,7 +1187,17 @@ export default function DashboardDetailed() {
       {/* Full-width profile hero with vineyard background */}
       <section className="dd2-profile-hero" onClick={() => navigate('/profile')}>
         <div className="dd2-profile-bg">
-          <img src="/images/hero-landscape.jpg" alt="" />
+          <img src={heroImages[heroImageIdx]} alt="" />
+        </div>
+        <div className="dd2-hero-dots" onClick={(e) => e.stopPropagation()}>
+          {heroImages.map((_, i) => (
+            <button
+              key={i}
+              className={`dd2-hero-dot${i === heroImageIdx ? ' dd2-hero-dot-active' : ''}`}
+              onClick={() => { setHeroImageIdx(i); try { localStorage.setItem('inflowhr-dd2-hero-img', String(i)) } catch { /* empty */ } }}
+              aria-label={`Background ${i + 1}`}
+            />
+          ))}
         </div>
         <div className="dd2-profile-content">
           <div className="dd2-profile-left">
