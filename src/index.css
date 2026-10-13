@@ -7051,7 +7051,7 @@ body {
   justify-content: space-between;
   gap: 16px;
   padding: 20px 24px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.2) 100%);
+  background: linear-gradient(90deg, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0.18) 50%, rgba(0,0,0,0.08) 100%);
   min-height: 120px;
 }
 .dd2-profile-left {
@@ -7151,6 +7151,7 @@ body {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 10px;
+  margin-bottom: 20px;
 }
 .dd2-summary-card {
   border-radius: 8px;

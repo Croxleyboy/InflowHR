@@ -572,8 +572,10 @@ export default function DashboardDetailed() {
     const start = new Date(empStartDate + 'T00:00')
     const now = new Date()
     let years = now.getFullYear() - start.getFullYear()
-    let days = Math.floor((now.getTime() - new Date(start.getFullYear() + years, start.getMonth(), start.getDate()).getTime()) / 86400000)
-    if (days < 0) { years--; days = Math.floor((now.getTime() - new Date(start.getFullYear() + years, start.getMonth(), start.getDate()).getTime()) / 86400000) }
+    const anniversary = new Date(now.getFullYear(), start.getMonth(), start.getDate())
+    if (now < anniversary) years--
+    const lastAnniversary = new Date(now.getFullYear() - (now < anniversary ? 1 : 0), start.getMonth(), start.getDate())
+    const days = Math.floor((now.getTime() - lastAnniversary.getTime()) / 86400000)
     return { years, days }
   })()
 
@@ -1112,9 +1114,9 @@ export default function DashboardDetailed() {
         {resolvedColumns.map((colCards, colIdx) => (
           <div
             key={colIdx}
-            className="dd2-column"
-            onDragOver={(e) => handleColDragOver(e, colIdx, colCards.length)}
-            onDrop={() => handleColDrop(colIdx, colCards.length)}
+            className={`dd2-column${dropTarget?.col === colIdx && dropTarget?.pos === colCards.length ? ' dd2-column-over' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDropTarget({ col: colIdx, pos: colCards.length }) }}
+            onDrop={(e) => { e.preventDefault(); handleColDrop(colIdx, colCards.length) }}
           >
             {colCards.map((cardId, posIdx) => {
               const card = cardMap[cardId]
@@ -1127,9 +1129,9 @@ export default function DashboardDetailed() {
                   <div
                     className={`dd2-drag-wrap${dragCard === cardId ? ' dd2-dragging' : ''}`}
                     draggable
-                    onDragStart={() => setDragCard(cardId)}
-                    onDragOver={(e) => handleColDragOver(e, colIdx, posIdx)}
-                    onDrop={(e) => { e.stopPropagation(); handleColDrop(colIdx, posIdx) }}
+                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', cardId); setDragCard(cardId) }}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; setDropTarget({ col: colIdx, pos: posIdx }) }}
+                    onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleColDrop(colIdx, posIdx) }}
                     onDragEnd={() => { setDragCard(null); setDropTarget(null) }}
                   >
                     {card.el}
