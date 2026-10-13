@@ -68,6 +68,7 @@ const MENU_GROUPS: (MenuItem | MenuGroup)[] = [
       { path: '/admin/kudos', label: 'Kudos', svg: '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>', feature: 'kudos', permKey: 'kudos' },
       { path: '/admin/announcements', label: 'Announcements', svg: '<path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>', permKey: 'announcements' },
       { path: '/admin/surveys', label: 'Surveys & Feedback', svg: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', feature: 'surveys', permKey: 'surveys' },
+      { path: '/admin/help', label: 'Employee Help', svg: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', feature: 'employee_help', permKey: 'help' },
     ],
   },
   {
