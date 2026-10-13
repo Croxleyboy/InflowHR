@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useFeatures } from '../context/FeatureContext'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { useCheckIn } from '../context/CheckInContext'
+import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
 import { formatDate, toLocalDateStr } from '../lib/formatters'
 
@@ -140,6 +142,8 @@ export default function DashboardDetailed() {
   const { features } = useFeatures()
   const { t, lang } = useLanguage()
   const { signOut, employeeId, employeeName, company, avatarUrl, companyUser, employmentCategory } = useAuth()
+  const { activeCheckin, activeBreak, checkIn, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
+  const { showSuccess, showError } = useToast()
   const navigate = useNavigate()
 
   const isShiftWorker = employmentCategory === 'shift_worker'
@@ -181,6 +185,12 @@ export default function DashboardDetailed() {
   const [empPhone, setEmpPhone] = useState<string | null>(null)
   const [empStartDate, setEmpStartDate] = useState<string | null>(null)
   const [reminders, setReminders] = useState<ReminderItem[]>([])
+
+  // Shift check-in state for hero bar
+  const [heroShift, setHeroShift] = useState<{ id: string; start_time: string; end_time: string; template_name: string } | null>(null)
+  const [ciTick, setCiTick] = useState(0)
+  const [ciActing, setCiActing] = useState(false)
+  const ciTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
   const firstName = employeeName.split(' ')[0] || employeeName
@@ -546,6 +556,114 @@ export default function DashboardDetailed() {
       })()
     }
   }, [employeeId, companyUser?.company_id, features.expenses, features.kudos, features.performance, features.elearning, isShiftWorker])
+
+  // Fetch today's shift for check-in hero strip
+  useEffect(() => {
+    if (!employeeId || !companyUser?.company_id || !isShiftWorker || !ciSettings?.shifts_checkin_enabled) return
+    const todayStr = toLocalDateStr()
+    supabase.from('shift_assignments')
+      .select('id, date, shift_template:shift_templates(name, start_time, end_time), rota:rotas(status)')
+      .eq('employee_id', employeeId).eq('company_id', companyUser.company_id).eq('date', todayStr)
+      .then(({ data }) => {
+        const valid = (data || []).find((s: any) => s.rota?.status === 'published') || null
+        if (valid) {
+          const s = valid as any
+          const tpl = s.shift_template
+          setHeroShift({ id: s.id, start_time: tpl?.start_time || '00:00', end_time: tpl?.end_time || '00:00', template_name: tpl?.name || 'Shift' })
+        } else {
+          setHeroShift(null)
+        }
+      })
+  }, [employeeId, companyUser?.company_id, isShiftWorker, ciSettings?.shifts_checkin_enabled])
+
+  // Live timer for check-in display
+  useEffect(() => {
+    if (ciTimerRef.current) clearInterval(ciTimerRef.current)
+    const needsTimer = (isShiftWorker && ciSettings?.shifts_checkin_enabled && (activeCheckin?.source === 'shifts' || heroShift))
+    if (needsTimer) {
+      ciTimerRef.current = setInterval(() => setCiTick(t => t + 1), 1000)
+    }
+    return () => { if (ciTimerRef.current) clearInterval(ciTimerRef.current) }
+  }, [activeCheckin, heroShift, isShiftWorker, ciSettings?.shifts_checkin_enabled])
+
+  // Check-in hero bar computed values
+  const ciShiftCheckedIn = activeCheckin?.source === 'shifts'
+  const ciOnBreak = !!activeBreak
+  const promptMins = ciSettings?.prompt_before_shift_mins || 30
+
+  const ciCanCheckIn = (() => {
+    if (!heroShift || activeCheckin) return false
+    const now = new Date()
+    const [sh, sm] = heroShift.start_time.split(':').map(Number)
+    const shiftStart = new Date(); shiftStart.setHours(sh, sm, 0, 0)
+    const windowStart = new Date(shiftStart.getTime() - promptMins * 60000)
+    const [eh, em] = heroShift.end_time.split(':').map(Number)
+    const shiftEnd = new Date(); shiftEnd.setHours(eh, em, 0, 0)
+    const windowEnd = new Date(shiftEnd.getTime() + 30 * 60000)
+    return now >= windowStart && now <= windowEnd
+  })()
+
+  const ciShiftOvertime = (() => {
+    void ciTick
+    if (!ciShiftCheckedIn || !heroShift) return false
+    const now = new Date()
+    const [eh, em] = heroShift.end_time.split(':').map(Number)
+    const shiftEnd = new Date(); shiftEnd.setHours(eh, em, 0, 0)
+    return now > shiftEnd
+  })()
+
+  const ciCountdown = (() => {
+    void ciTick
+    if (!heroShift) return null
+    const now = new Date()
+    const [eh, em] = heroShift.end_time.split(':').map(Number)
+    const shiftEnd = new Date(); shiftEnd.setHours(eh, em, 0, 0)
+    const diffMs = shiftEnd.getTime() - now.getTime()
+    const absDiff = Math.abs(diffMs)
+    const hrs = Math.floor(absDiff / 3600000)
+    const mins = Math.floor((absDiff % 3600000) / 60000)
+    return { over: diffMs < 0, hrs, mins }
+  })()
+
+  const ciElapsedStr = (() => {
+    void ciTick
+    if (!activeCheckin) return ''
+    const mins = Math.floor((Date.now() - new Date(activeCheckin.check_in_at).getTime()) / 60000)
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`
+  })()
+
+  async function handleHeroCheckIn() {
+    if (ciActing || !heroShift) return
+    setCiActing(true)
+    const result = await checkIn('shifts', heroShift.id)
+    if (result.ok) showSuccess(result.wfh ? 'Checked in from home' : 'Checked in for shift')
+    else showError(result.error || 'Check-in failed')
+    setCiActing(false)
+  }
+  async function handleHeroCheckOut() {
+    if (ciActing) return
+    setCiActing(true)
+    const result = await checkOut()
+    if (result.ok) showSuccess('Checked out')
+    else showError(result.error || 'Check-out failed')
+    setCiActing(false)
+  }
+  async function handleHeroBreak() {
+    if (ciActing) return
+    setCiActing(true)
+    if (ciOnBreak) {
+      const result = await endBreak()
+      if (result.ok) showSuccess('Break ended')
+      else showError(result.error || 'Failed to end break')
+    } else {
+      const result = await startBreak('lunch')
+      if (result.ok) showSuccess('Break started')
+      else showError(result.error || 'Failed to start break')
+    }
+    setCiActing(false)
+  }
+
+  const showHeroCheckin = isShiftWorker && ciSettings?.shifts_checkin_enabled && (ciCanCheckIn || ciShiftCheckedIn)
 
   const h = new Date().getHours()
   const greeting = h < 12 ? t('dashboard.greeting_morning') : h < 18 ? t('dashboard.greeting_afternoon') : t('dashboard.greeting_evening')
@@ -997,10 +1115,6 @@ export default function DashboardDetailed() {
     try { localStorage.setItem('inflowhr-dd2-columns', JSON.stringify(cols)) } catch { /* empty */ }
   }
 
-  function handleColDragOver(e: React.DragEvent, col: number, pos: number) {
-    e.preventDefault()
-    setDropTarget({ col, pos })
-  }
   function handleColDrop(col: number, pos: number) {
     if (!dragCard) return
     const newCols: [string[], string[], string[]] = [
@@ -1086,6 +1200,68 @@ export default function DashboardDetailed() {
           </div>
         </div>
       </section>
+
+      {/* Shift check-in hero strip — shift workers only */}
+      {showHeroCheckin && (
+        <div className={`dd2-checkin-strip${ciShiftOvertime ? ' dd2-checkin-overtime' : ciShiftCheckedIn ? (ciOnBreak ? ' dd2-checkin-onbreak' : ' dd2-checkin-active') : ''}`}>
+          {ciShiftCheckedIn ? (
+            <>
+              <div className="dd2-checkin-info">
+                <span className={`dd2-checkin-dot${ciOnBreak ? ' dd2-checkin-dot-break' : ciShiftOvertime ? ' dd2-checkin-dot-over' : ''}`} />
+                <span className="dd2-checkin-label">
+                  {ciOnBreak ? 'On Break' : ciShiftOvertime ? 'Overtime' : 'Checked In'}
+                </span>
+                <span className="dd2-checkin-time">
+                  Started {new Date(activeCheckin!.check_in_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span className="dd2-checkin-elapsed">{ciElapsedStr}</span>
+              </div>
+              <div className="dd2-checkin-countdown">
+                {ciCountdown && (
+                  ciCountdown.over ? (
+                    <span className="dd2-checkin-over-label">+{ciCountdown.hrs}h {ciCountdown.mins}m over</span>
+                  ) : (
+                    <span className="dd2-checkin-remaining-label">{ciCountdown.hrs}h {ciCountdown.mins}m left</span>
+                  )
+                )}
+              </div>
+              <div className="dd2-checkin-actions">
+                <button
+                  className={`dd2-checkin-btn dd2-checkin-btn-break${ciOnBreak ? ' dd2-checkin-btn-endbreak' : ''}`}
+                  onClick={handleHeroBreak}
+                  disabled={ciActing}
+                >
+                  {ciOnBreak ? 'End Break' : 'Break'}
+                </button>
+                <button
+                  className={`dd2-checkin-btn dd2-checkin-btn-out${ciShiftOvertime ? ' dd2-checkin-btn-out-overtime' : ''}`}
+                  onClick={handleHeroCheckOut}
+                  disabled={ciActing}
+                >
+                  Check Out
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="dd2-checkin-info">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                <span className="dd2-checkin-label">{heroShift?.template_name}</span>
+                <span className="dd2-checkin-time">{heroShift?.start_time?.slice(0, 5)} – {heroShift?.end_time?.slice(0, 5)}</span>
+              </div>
+              <div className="dd2-checkin-actions">
+                <button
+                  className="dd2-checkin-btn dd2-checkin-btn-in"
+                  onClick={handleHeroCheckIn}
+                  disabled={ciActing}
+                >
+                  Check In
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Leave summary strip */}
       {features.leave && (
