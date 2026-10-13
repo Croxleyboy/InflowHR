@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import NewExpenseItem from './NewExpenseItem'
-import { formatDateTime } from '../lib/formatters'
+import { formatDateTime, formatCurrency } from '../lib/formatters'
 import { useToast } from '../context/ToastContext'
 import { getManagerEmail } from '../lib/workflow'
 import { sendTeamsNotification } from '../lib/teamsNotifications'
@@ -32,7 +32,8 @@ export default function ExpenseDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { t, tStatus, tExpenseType } = useLanguage()
-  const { employeeId, employeeName: HARDCODED_EMPLOYEE_NAME, employeeEmail: HARDCODED_EMPLOYEE_EMAIL, companyUser } = useAuth()
+  const { employeeId, employeeName: HARDCODED_EMPLOYEE_NAME, employeeEmail: HARDCODED_EMPLOYEE_EMAIL, companyUser, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [claim, setClaim] = useState<Claim | null>(null)
   const [items, setItems] = useState<LineItem[]>([])
@@ -106,7 +107,7 @@ export default function ExpenseDetail() {
       assigned_to: managerEmail,
       approval_id: claim.id,
       reminder_count: 1,
-      task_description: `Expense claim ${claim.reference_number} - ${claim.title} - £${totalAmount.toFixed(2)}`,
+      task_description: `Expense claim ${claim.reference_number} - ${claim.title} - ${formatCurrency(totalAmount, currency)}`,
       company_id: companyUser?.company_id,
     })
     if (error2) { showError('Failed to create workflow entry: ' + error2.message); setSubmitting(false); return }
@@ -121,7 +122,7 @@ export default function ExpenseDetail() {
       assigned_to: HARDCODED_EMPLOYEE_EMAIL,
       approval_id: claim.id,
       reminder_count: 1,
-      task_description: `Expense claim submitted: ${claim.reference_number} - ${claim.title} - £${totalAmount.toFixed(2)}`,
+      task_description: `Expense claim submitted: ${claim.reference_number} - ${claim.title} - ${formatCurrency(totalAmount, currency)}`,
       approval_status: 'Submitted',
       company_id: companyUser?.company_id,
     })
@@ -132,7 +133,7 @@ export default function ExpenseDetail() {
           companyId: companyUser.company_id,
           managerEmail,
           employeeName: HARDCODED_EMPLOYEE_NAME,
-          message: `Expense claim needs your approval: ${claim.reference_number} - ${claim.title} - £${totalAmount.toFixed(2)}`,
+          message: `Expense claim needs your approval: ${claim.reference_number} - ${claim.title} - ${formatCurrency(totalAmount, currency)}`,
         })
       } catch { /* notification failure should not block the user */ }
     }
@@ -212,12 +213,12 @@ export default function ExpenseDetail() {
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           <span>{t('expense_detail.add_line')}</span>
-          <span className="line-item-total">£{totalAmount.toFixed(2)}</span>
+          <span className="line-item-total">{formatCurrency(totalAmount, currency)}</span>
         </button>
       ) : (
         <div className="add-line-item-btn" style={{ cursor: 'default' }}>
           <span>{t('expense_detail.line_items')}</span>
-          <span className="line-item-total">£{totalAmount.toFixed(2)}</span>
+          <span className="line-item-total">{formatCurrency(totalAmount, currency)}</span>
         </div>
       )}
 
@@ -238,7 +239,7 @@ export default function ExpenseDetail() {
                 </svg>
               </button>
             )}
-            <span className="line-item-amount">£{item.amount.toFixed(2)}</span>
+            <span className="line-item-amount">{formatCurrency(item.amount, currency)}</span>
             {isEditable && (
               <button className="line-item-delete" onClick={() => handleDeleteItem(item.id)}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c62828" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

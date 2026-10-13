@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
+import { currencySymbol } from '../lib/formatters'
 
 interface MonthlyStat {
   month: string
@@ -23,7 +24,8 @@ const COLORS = {
 
 export default function ExpenseGraph({ onClose }: { onClose: () => void }) {
   const { t, fyStartMonth } = useLanguage()
-  const { companyUser } = useAuth()
+  const { companyUser, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const [stats, setStats] = useState<MonthlyStat[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -102,7 +104,7 @@ export default function ExpenseGraph({ onClose }: { onClose: () => void }) {
                     <g key={frac}>
                       <line x1="0" y1={y} x2={chartW} y2={y} stroke="var(--border)" strokeWidth="0.5" />
                       <text x="-2" y={y + 3} fontSize="8" fill="var(--text-muted)" textAnchor="end">
-                        £{Math.round(maxVal * frac)}
+                        {currencySymbol(currency)}{Math.round(maxVal * frac)}
                       </text>
                     </g>
                   )

@@ -8,7 +8,7 @@ import { useFeatures } from '../../context/FeatureContext'
 import * as XLSX from 'xlsx'
 import CompanySetupWizard from './CompanySetupWizard'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
-import { toLocalDateStr } from '../../lib/formatters'
+import { toLocalDateStr, currencySymbol } from '../../lib/formatters'
 
 const PAGE_SIZE = 30
 
@@ -117,7 +117,8 @@ const WORKFLOW_STEPS = [
 ]
 
 export default function AdminOnboarding() {
-  const { isSuperAdmin } = useAuth()
+  const { isSuperAdmin, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { selectedCompanyId, selectedCompany, refreshCompanies } = useAdminCompany()
   const { fyStartMonth } = useLanguage()
   const { showError, showSuccess } = useToast()
@@ -1224,7 +1225,7 @@ export default function AdminOnboarding() {
                 <input className="admin-input" placeholder="e.g. 1 month" value={newForm.notice_period} onChange={e => setNewForm(p => ({...p, notice_period: e.target.value}))} />
               </div>
               <div className="admin-form-field">
-                <label>Annual Salary (£)</label>
+                <label>Annual Salary ({currencySymbol(currency)})</label>
                 <input type="number" className="admin-input" value={newForm.annual_salary} onChange={e => setNewForm(p => ({...p, annual_salary: e.target.value}))} />
               </div>
               <div className="admin-form-field">

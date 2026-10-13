@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { currencySymbol } from './formatters'
 
 interface DefaultOption {
   option_key: string
@@ -42,7 +43,7 @@ export const DEFAULT_BENEFITS: DefaultBenefit[] = [
   {
     benefit_key: 'health', title: 'Health Insurance', description: 'Comprehensive private medical cover for you and your family',
     icon: '🏥', color: '#e53935', intro: 'Comprehensive private medical insurance provided through our partnership with leading UK health insurers.',
-    eligibility: 'Available to all permanent employees from day one. Family cover available after probation.', cost_description: 'Employer-funded for individual cover. Family add-on: £45/month via salary sacrifice.',
+    eligibility: 'Available to all permanent employees from day one. Family cover available after probation.', cost_description: `Employer-funded for individual cover. Family add-on: ${currencySymbol()}45/month via salary sacrifice.`,
     monthly_cost: 45, lock_period: 'year', is_enabled: true, sort_order: 1,
     options: [
       { option_key: 'hospital', icon: '🏥', title: 'Private Hospital Treatment', description: 'Access to private hospitals and specialists with no NHS waiting lists', is_enabled: true, sort_order: 0 },
@@ -57,14 +58,14 @@ export const DEFAULT_BENEFITS: DefaultBenefit[] = [
   {
     benefit_key: 'car', title: 'Car Insurance', description: 'Discounted group car insurance through salary sacrifice',
     icon: '🚗', color: '#1565c0', intro: 'Take advantage of our corporate group car insurance scheme offering competitive rates and comprehensive cover.',
-    eligibility: 'Available to all permanent employees after 3 months of service. Must hold a valid UK driving licence.', cost_description: 'From £35/month via salary sacrifice — exact rate based on vehicle and driving history.',
+    eligibility: 'Available to all permanent employees after 3 months of service. Must hold a valid UK driving licence.', cost_description: `From ${currencySymbol()}35/month via salary sacrifice — exact rate based on vehicle and driving history.`,
     monthly_cost: 35, lock_period: 'year', is_enabled: true, sort_order: 2,
     options: [
       { option_key: 'comprehensive', icon: '🚗', title: 'Fully Comprehensive Cover', description: 'Full cover for damage, theft, third party and fire', is_enabled: true, sort_order: 0 },
       { option_key: 'breakdown', icon: '🛡️', title: 'Breakdown Assistance', description: 'Roadside recovery and home start included as standard', is_enabled: true, sort_order: 1 },
       { option_key: 'windscreen', icon: '🔧', title: 'Windscreen & Glass', description: 'Windscreen repair and replacement without affecting no-claims', is_enabled: true, sort_order: 2 },
       { option_key: 'discount', icon: '💰', title: 'Group Discount Rate', description: 'Up to 20% discount vs individual policies through group scheme', is_enabled: true, sort_order: 3 },
-      { option_key: 'legal', icon: '⚖️', title: 'Legal Expenses Cover', description: 'Motor legal protection up to £100,000 included', is_enabled: true, sort_order: 4 },
+      { option_key: 'legal', icon: '⚖️', title: 'Legal Expenses Cover', description: `Motor legal protection up to ${currencySymbol()}100,000 included`, is_enabled: true, sort_order: 4 },
       { option_key: 'courtesy', icon: '🚙', title: 'Courtesy Car', description: 'Replacement vehicle provided while yours is being repaired', is_enabled: true, sort_order: 5 },
     ],
   },
@@ -74,7 +75,7 @@ export const DEFAULT_BENEFITS: DefaultBenefit[] = [
     eligibility: 'Open to all employees on PAYE. You must use the bike primarily for commuting to work.', cost_description: 'Tax-free salary sacrifice over 12 months. Typical saving: 32–42% vs retail.',
     monthly_cost: 48, lock_period: 'month', is_enabled: true, sort_order: 3,
     options: [
-      { option_key: 'bike', icon: '🚲', title: 'Bicycle Purchase', description: 'Any bike up to £1,000 (standard) or £5,000 (enhanced scheme)', is_enabled: true, sort_order: 0 },
+      { option_key: 'bike', icon: '🚲', title: 'Bicycle Purchase', description: `Any bike up to ${currencySymbol()}1,000 (standard) or ${currencySymbol()}5,000 (enhanced scheme)`, is_enabled: true, sort_order: 0 },
       { option_key: 'tax_free', icon: '💷', title: 'Tax-Free Saving', description: 'Save on Income Tax and National Insurance contributions', is_enabled: true, sort_order: 1 },
       { option_key: 'green', icon: '🌱', title: 'Eco-Friendly Commute', description: 'Reduce your carbon footprint and improve your health', is_enabled: true, sort_order: 2 },
       { option_key: 'accessories', icon: '🔄', title: 'Accessories Included', description: 'Helmets, locks, lights, panniers and clothing can be included', is_enabled: true, sort_order: 3 },

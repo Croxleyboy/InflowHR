@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
 import { seedBenefitDefaults } from '../lib/benefitDefaults'
+import { currencySymbol } from '../lib/formatters'
 
 interface BenefitOption {
   id: number
@@ -115,7 +116,8 @@ export default function Benefits() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { features } = useFeatures()
-  const { employeeId, companyUser } = useAuth()
+  const { employeeId, companyUser, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showError } = useToast()
   const companyId = companyUser?.company_id
   const payrollEnabled = features.payslips
@@ -431,7 +433,7 @@ export default function Benefits() {
             <div className="benefits-confirm-icon">&#9888;&#65039;</div>
             <h3>{t('benefits.confirm_title')}</h3>
             <p className="benefits-confirm-text">
-              {t('benefits.confirm_text_1')} <strong>{confirmEnroll.title}</strong> {t('benefits.confirm_text_2')} <strong>&pound;{confirmEnroll.cost.toFixed(2)}/{t('benefits.confirm_per_month')}</strong>.
+              {t('benefits.confirm_text_1')} <strong>{confirmEnroll.title}</strong> {t('benefits.confirm_text_2')} <strong>{currencySymbol(currency)}{confirmEnroll.cost.toFixed(2)}/{t('benefits.confirm_per_month')}</strong>.
             </p>
             <p className="benefits-confirm-lock">
               {t('benefits.confirm_lock')} <strong>{confirmEnroll.until}</strong>.

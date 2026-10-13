@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useFeatures } from '../../context/FeatureContext'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
+import { currencySymbol } from '../../lib/formatters'
 
 type Module = 'overview' | 'timeoff' | 'assets' | 'benefits' | 'dependents' | 'education' | 'grievances' | 'performance' | 'elearning' | 'onboarding' | 'expenses' | 'timesheets' | 'documents' | 'shift_skills' | 'custom_fields'
 
@@ -139,7 +140,8 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function EmployeeRecordModules({ employee, companyId, lieuDays, maskValue, toggleReveal, formatDate, contractedDays }: Props) {
   const { features } = useFeatures()
-  const { employeeName } = useAuth()
+  const { employeeName, company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [activeModule, setActiveModule] = useState<Module>('overview')
   const [moduleData, setModuleData] = useState<Record<string, any>>({})
@@ -361,7 +363,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
         <div style={cardStyle}>
           <h4 style={headingStyle}>Payroll & Banking</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', fontSize: 13 }}>
-            <div><span style={labelStyle}>Annual Salary</span>{employee.annual_salary ? `£${Number(employee.annual_salary).toLocaleString()}` : '—'}</div>
+            <div><span style={labelStyle}>Annual Salary</span>{employee.annual_salary ? `${currencySymbol(currency)}${Number(employee.annual_salary).toLocaleString()}` : '—'}</div>
             <div><span style={labelStyle}>Tax Code</span>{employee.tax_code || '—'}</div>
             <div><span style={labelStyle}>Payroll ID</span>{employee.payroll_id || '—'}</div>
             <div><span style={labelStyle}>Bank Account</span>{employee.bank_account_name || '—'}</div>
@@ -479,7 +481,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
                 <tr key={s.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                   <td style={{ padding: '8px 8px 8px 0', fontWeight: 500 }}>{s.benefit_type?.title || '—'}</td>
                   <td style={{ padding: 8 }}>{fmtUK(s.enrolled_at)}</td>
-                  <td style={{ padding: 8, textAlign: 'right' }}>{s.benefit_type?.monthly_cost ? `£${Number(s.benefit_type.monthly_cost).toFixed(2)}` : '—'}</td>
+                  <td style={{ padding: 8, textAlign: 'right' }}>{s.benefit_type?.monthly_cost ? `${currencySymbol(currency)}${Number(s.benefit_type.monthly_cost).toFixed(2)}` : '—'}</td>
                   <td style={{ padding: 8 }}>{s.benefit_type?.lock_period === 'none' ? 'None' : s.benefit_type?.lock_period || '—'}</td>
                 </tr>
               ))}
@@ -804,11 +806,11 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
             <div style={{ fontSize: 12, color: '#666' }}>Total Claims</div>
           </div>
           <div style={{ padding: 16, borderRadius: 8, background: '#e8f5e9', textAlign: 'center' }}>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#2e7d32' }}>£{totalApproved.toFixed(2)}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#2e7d32' }}>{currencySymbol(currency)}{totalApproved.toFixed(2)}</div>
             <div style={{ fontSize: 12, color: '#388e3c' }}>Approved</div>
           </div>
           <div style={{ padding: 16, borderRadius: 8, background: '#fff3e0', textAlign: 'center' }}>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#e65100' }}>£{totalPending.toFixed(2)}</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: '#e65100' }}>{currencySymbol(currency)}{totalPending.toFixed(2)}</div>
             <div style={{ fontSize: 12, color: '#ef6c00' }}>Pending</div>
           </div>
         </div>
@@ -827,7 +829,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
                   <tr key={c.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                     <td style={{ padding: '8px 8px 8px 0' }}>{fmtUK(c.submitted_at || c.created_at)}</td>
                     <td style={{ padding: 8, maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.description || c.title || '—'}</td>
-                    <td style={{ padding: 8, textAlign: 'right', fontWeight: 500 }}>£{Number(c.amount || 0).toFixed(2)}</td>
+                    <td style={{ padding: 8, textAlign: 'right', fontWeight: 500 }}>{currencySymbol(currency)}{Number(c.amount || 0).toFixed(2)}</td>
                     <td style={{ padding: 8 }}><StatusBadge status={c.status} /></td>
                   </tr>
                 ))}

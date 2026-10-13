@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { currencySymbol } from '../lib/formatters'
 
 const MONTH_NAMES_EN = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTH_NAMES_DE = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']
@@ -63,6 +64,7 @@ export default function Payslips() {
   const navigate = useNavigate()
   const { t, lang } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName, avatarUrl, company, companyUser } = useAuth()
+  const currency = company?.currency || 'GBP'
   const [monthPayslips, setMonthPayslips] = useState<PayslipData[]>([])
   const [selectedPayslipIdx, setSelectedPayslipIdx] = useState(0)
   const payslip = monthPayslips[selectedPayslipIdx] || null
@@ -331,36 +333,36 @@ export default function Payslips() {
               return (
                 <>
                   <div className="payslips-row">
-                    <span>Regular Hours ({regHours}h &times; &pound;{fmt(rate)}/hr)</span>
-                    <span>&pound;{fmt(regAmount)}</span>
+                    <span>Regular Hours ({regHours}h &times; {currencySymbol(currency)}{fmt(rate)}/hr)</span>
+                    <span>{currencySymbol(currency)}{fmt(regAmount)}</span>
                   </div>
                   {periodReview.overtime_hours > 0 && (
                     <div className="payslips-row">
-                      <span>Overtime ({periodReview.overtime_hours}h &times; &pound;{fmt(otRate)}/hr, {otMultiplier}&times;)</span>
-                      <span>&pound;{fmt(otAmount)}</span>
+                      <span>Overtime ({periodReview.overtime_hours}h &times; {currencySymbol(currency)}{fmt(otRate)}/hr, {otMultiplier}&times;)</span>
+                      <span>{currencySymbol(currency)}{fmt(otAmount)}</span>
                     </div>
                   )}
                   {(payslip.holiday_pay || 0) > 0 && (
                     <div className="payslips-row">
                       <span>Holiday Pay Uplift</span>
-                      <span>&pound;{fmt(payslip.holiday_pay)}</span>
+                      <span>{currencySymbol(currency)}{fmt(payslip.holiday_pay)}</span>
                     </div>
                   )}
                   {(payslip.cancellation_compensation || 0) > 0 && (
                     <div className="payslips-row">
                       <span>Shift Cancellation Compensation</span>
-                      <span>&pound;{fmt(payslip.cancellation_compensation)}</span>
+                      <span>{currencySymbol(currency)}{fmt(payslip.cancellation_compensation)}</span>
                     </div>
                   )}
                   {(payslip.adjustments || 0) !== 0 && (
                     <div className="payslips-row">
                       <span>{t('payslips.adjustments')}</span>
-                      <span>&pound;{fmt(payslip.adjustments || 0)}</span>
+                      <span>{currencySymbol(currency)}{fmt(payslip.adjustments || 0)}</span>
                     </div>
                   )}
                   <div className="payslips-row payslips-row-total">
                     <span>{t('payslips.total_earnings')}</span>
-                    <span>&pound;{fmt(payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0))}</span>
+                    <span>{currencySymbol(currency)}{fmt(payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0))}</span>
                   </div>
                 </>
               )
@@ -368,21 +370,21 @@ export default function Payslips() {
               <>
                 <div className="payslips-row">
                   <span>{t('payslips.basic_salary')}</span>
-                  <span>&pound;{fmt(payslip.gross_pay)}</span>
+                  <span>{currencySymbol(currency)}{fmt(payslip.gross_pay)}</span>
                 </div>
                 <div className="payslips-row">
                   <span>{t('payslips.overtime')}</span>
-                  <span>&pound;{fmt(payslip.overtime || 0)}</span>
+                  <span>{currencySymbol(currency)}{fmt(payslip.overtime || 0)}</span>
                 </div>
                 {(payslip.adjustments || 0) !== 0 && (
                   <div className="payslips-row">
                     <span>{t('payslips.adjustments')}</span>
-                    <span>&pound;{fmt(payslip.adjustments || 0)}</span>
+                    <span>{currencySymbol(currency)}{fmt(payslip.adjustments || 0)}</span>
                   </div>
                 )}
                 <div className="payslips-row payslips-row-total">
                   <span>{t('payslips.total_earnings')}</span>
-                  <span>&pound;{fmt(payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0))}</span>
+                  <span>{currencySymbol(currency)}{fmt(payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0))}</span>
                 </div>
               </>
             )}
@@ -392,49 +394,49 @@ export default function Payslips() {
             <div className="payslips-section-header payslips-section-deductions">{t('payslips.deductions')}</div>
             <div className="payslips-row">
               <span>{t('payslips.income_tax')}</span>
-              <span>&pound;{fmt(payslip.tax)}</span>
+              <span>{currencySymbol(currency)}{fmt(payslip.tax)}</span>
             </div>
             <div className="payslips-row">
               <span>{t('payslips.national_insurance')}</span>
-              <span>&pound;{fmt(payslip.national_insurance)}</span>
+              <span>{currencySymbol(currency)}{fmt(payslip.national_insurance)}</span>
             </div>
             <div className="payslips-row">
               <span>{t('payslips.pension')}</span>
-              <span>&pound;{fmt(payslip.pension)}</span>
+              <span>{currencySymbol(currency)}{fmt(payslip.pension)}</span>
             </div>
             {(payslip.other_deductions || 0) > 0 && (
               <div className="payslips-row">
                 <span>{t('payslips.other_deductions')}</span>
-                <span>&pound;{fmt(payslip.other_deductions)}</span>
+                <span>{currencySymbol(currency)}{fmt(payslip.other_deductions)}</span>
               </div>
             )}
             {benefitDeductions.map((bd, i) => (
               <div key={i} className="payslips-row payslips-row-benefit">
                 <span>{bd.title}</span>
-                <span>&pound;{fmt(bd.monthly_cost)}</span>
+                <span>{currencySymbol(currency)}{fmt(bd.monthly_cost)}</span>
               </div>
             ))}
             <div className="payslips-row payslips-row-total">
               <span>{t('payslips.total_deductions')}</span>
-              <span>&pound;{fmt(totalDeductions)}</span>
+              <span>{currencySymbol(currency)}{fmt(totalDeductions)}</span>
             </div>
           </div>
 
           <div className="payslips-net-pay">
             <span>{t('payslips.net_pay')}</span>
-            <span>&pound;{fmt(adjustedNetPay)}</span>
+            <span>{currencySymbol(currency)}{fmt(adjustedNetPay)}</span>
           </div>
 
           <div className="payslips-footer-info">
             {workerType === 'zero_hours' ? (
               <div className="payslips-info-item">
                 <span className="payslips-info-label">Hourly Rate</span>
-                <span className="payslips-info-value">&pound;{fmt(periodReview?.hourly_rate || empHourlyRate)}/hr</span>
+                <span className="payslips-info-value">{currencySymbol(currency)}{fmt(periodReview?.hourly_rate || empHourlyRate)}/hr</span>
               </div>
             ) : (
               <div className="payslips-info-item">
                 <span className="payslips-info-label">{t('payslips.annual_salary')}</span>
-                <span className="payslips-info-value">&pound;{fmt(payslip.annual_salary || 0)}</span>
+                <span className="payslips-info-value">{currencySymbol(currency)}{fmt(payslip.annual_salary || 0)}</span>
               </div>
             )}
             <div className="payslips-info-item">

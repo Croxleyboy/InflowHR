@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { supabase } from '../../lib/supabase'
+import { formatCurrency, currencySymbol } from '../../lib/formatters'
 
 function getFYRange(fyStartMonth: number) {
   const now = new Date()
@@ -78,6 +80,8 @@ const CATEGORY_ORDER = ['leave', 'people', 'finance', 'compliance', 'engagement'
 
 export default function AdminReports() {
   const { selectedCompanyId, selectedCompany } = useAdminCompany()
+  const { company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { features } = useFeatures()
   const [activeReport, setActiveReport] = useState<ReportKey | null>(null)
   const [loading, setLoading] = useState(false)
@@ -383,20 +387,20 @@ export default function AdminReports() {
     const { data } = await supabase.from('expense_claims').select('*, employee:employees!expense_claims_employee_id_fkey(first_name, last_name, department)').eq('company_id', selectedCompanyId).eq('status', 'pending').order('created_at', { ascending: true })
     const rows = (data || []).map(r => {
       const days = Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000)
-      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', Description: r.description || '', Amount: `£${Number(r.amount || 0).toFixed(2)}`, 'Days Waiting': days, Submitted: fmtDate(r.created_at?.split('T')[0]) }
+      return { Employee: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : '', Department: r.employee?.department || '', Description: r.description || '', Amount: formatCurrency(Number(r.amount || 0), currency), 'Days Waiting': days, Submitted: fmtDate(r.created_at?.split('T')[0]) }
     })
     setReportColumns([{ key: 'Employee', label: 'Employee' }, { key: 'Department', label: 'Department' }, { key: 'Description', label: 'Description' }, { key: 'Amount', label: 'Amount' }, { key: 'Days Waiting', label: 'Days Waiting' }, { key: 'Submitted', label: 'Submitted' }])
     setReportData(rows)
-    const total = rows.reduce((s, r) => s + parseFloat((r.Amount as string).replace('£', '')), 0)
+    const total = rows.reduce((s, r) => s + parseFloat((r.Amount as string).replace(currencySymbol(currency), '')), 0)
     const avgWaiting = rows.length > 0 ? rows.reduce((s, r) => s + (r['Days Waiting'] as number), 0) / rows.length : 0
     const overWeek = rows.filter(r => (r['Days Waiting'] as number) > 7)
     setReportKPIs([
       { label: 'Pending Claims', value: rows.length, status: rows.length > 5 ? 'danger' : rows.length > 0 ? 'warning' : 'good' },
-      { label: 'Total Value', value: `£${total.toFixed(2)}`, status: total > 1000 ? 'danger' : total > 500 ? 'warning' : 'neutral' },
+      { label: 'Total Value', value: formatCurrency(total, currency), status: total > 1000 ? 'danger' : total > 500 ? 'warning' : 'neutral' },
       { label: 'Avg Wait (days)', value: avgWaiting.toFixed(0), status: avgWaiting > 7 ? 'danger' : avgWaiting > 3 ? 'warning' : 'good' },
       { label: 'Over 7 Days', value: overWeek.length, status: overWeek.length > 0 ? 'danger' : 'good' },
     ])
-    setReportSummary(`${rows.length} expense claims awaiting approval. Total value: £${total.toFixed(2)}. ${overWeek.length} waiting more than 7 days.`)
+    setReportSummary(`${rows.length} expense claims awaiting approval. Total value: ${formatCurrency(total, currency)}. ${overWeek.length} waiting more than 7 days.`)
   }
 
   async function loadPayrollVariance() {
@@ -416,7 +420,7 @@ export default function AdminReports() {
       const curr = byMonth[m]
       const prev = i > 0 ? byMonth[months[i - 1]] : null
       const variance = prev ? ((curr.gross - prev.gross) / prev.gross * 100).toFixed(1) : '—'
-      return { Period: m, Headcount: curr.count, 'Gross Pay': `£${curr.gross.toFixed(2)}`, 'Net Pay': `£${curr.net.toFixed(2)}`, Tax: `£${curr.tax.toFixed(2)}`, NI: `£${curr.ni.toFixed(2)}`, 'Variance %': variance }
+      return { Period: m, Headcount: curr.count, 'Gross Pay': formatCurrency(curr.gross, currency), 'Net Pay': formatCurrency(curr.net, currency), Tax: formatCurrency(curr.tax, currency), NI: formatCurrency(curr.ni, currency), 'Variance %': variance }
     })
     setReportColumns([{ key: 'Period', label: 'Period' }, { key: 'Headcount', label: 'Headcount' }, { key: 'Gross Pay', label: 'Gross Pay' }, { key: 'Net Pay', label: 'Net Pay' }, { key: 'Tax', label: 'Tax' }, { key: 'NI', label: 'NI' }, { key: 'Variance %', label: 'MoM Variance' }])
     setReportData(rows)
@@ -425,10 +429,10 @@ export default function AdminReports() {
     setReportKPIs([
       { label: 'Periods Processed', value: months.length, status: 'neutral' },
       { label: 'Total Payslips', value: (data || []).length, status: 'neutral' },
-      { label: 'Total Gross Pay', value: `£${totalGross.toFixed(2)}`, status: 'neutral' },
+      { label: 'Total Gross Pay', value: formatCurrency(totalGross, currency), status: 'neutral' },
       { label: 'Latest Headcount', value: latestMonth?.count || 0, status: 'neutral' },
     ])
-    setReportSummary(`${months.length} payroll periods this FY. ${(data || []).length} total payslips processed. Total gross: £${totalGross.toFixed(2)}.`)
+    setReportSummary(`${months.length} payroll periods this FY. ${(data || []).length} total payslips processed. Total gross: ${formatCurrency(totalGross, currency)}.`)
   }
 
   async function loadOvertimeAlerts() {
@@ -958,7 +962,7 @@ export default function AdminReports() {
                             'Short Hours': { bg: 'rgba(59,130,246,.1)', color: '#2563eb' },
                           }
                           const isStatus = (c.key === 'Status' || c.key === 'Urgency' || c.key === 'Risk Level' || c.key === 'Priority' || c.key === 'Discrepancy Type') && statusColors[val]
-                          const isNumeric = typeof row[c.key] === 'number' || /^[\d.]+$/.test(val) || /^£/.test(val)
+                          const isNumeric = typeof row[c.key] === 'number' || /^[\d.]+$/.test(val) || val.startsWith(currencySymbol(currency))
                           return (
                             <td key={c.key} style={{ padding: '9px 14px', textAlign: isNumeric && !isStatus ? 'right' : 'left' }}>
                               {isStatus ? (

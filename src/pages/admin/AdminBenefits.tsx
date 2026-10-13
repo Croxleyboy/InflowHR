@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useFeatures } from '../../context/FeatureContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
 import { seedBenefitDefaults } from '../../lib/benefitDefaults'
+import { formatCurrency, currencySymbol } from '../../lib/formatters'
 
 interface BenefitOption {
   id: number
@@ -68,6 +70,8 @@ interface BenefitDoc {
 export default function AdminBenefits() {
   const { features } = useFeatures()
   const { selectedCompanyId: companyId } = useAdminCompany()
+  const { company } = useAuth()
+  const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const payrollEnabled = features.payslips
   const [benefits, setBenefits] = useState<BenefitType[]>([])
@@ -78,7 +82,7 @@ export default function AdminBenefits() {
   const [editingOptionId, setEditingOptionId] = useState<number | null>(null)
   const [optionForm, setOptionForm] = useState<Record<string, any>>({})
   const [showNewBenefit, setShowNewBenefit] = useState(false)
-  const [newBenefit, setNewBenefit] = useState({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: '£0', monthly_cost: 0, lock_period: 'none' as 'none' | 'month' | 'year', benefit_category: 'allowance' as BenefitCategory, pay_impact: 'no_impact' as PayImpact, tax_treatment: 'taxable' as TaxTreatment, ni_treatment: 'subject_to_ni' as NITreatment, pension_treatment: 'non_pensionable' as PensionTreatment, xero_pay_item_id: '', xero_pay_item_category: '' as string })
+  const [newBenefit, setNewBenefit] = useState({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: `${currencySymbol(currency)}0`, monthly_cost: 0, lock_period: 'none' as 'none' | 'month' | 'year', benefit_category: 'allowance' as BenefitCategory, pay_impact: 'no_impact' as PayImpact, tax_treatment: 'taxable' as TaxTreatment, ni_treatment: 'subject_to_ni' as NITreatment, pension_treatment: 'non_pensionable' as PensionTreatment, xero_pay_item_id: '', xero_pay_item_category: '' as string })
   const [showNewOption, setShowNewOption] = useState<number | null>(null)
   const [newOption, setNewOption] = useState({ icon: '✨', title: '', description: '' })
   const [tab, setTab] = useState<'types' | 'subscriptions' | 'documents'>('types')
@@ -304,7 +308,7 @@ export default function AdminBenefits() {
     if (inserted) {
       setBenefits(prev => [...prev, { ...inserted, options: [] } as BenefitType])
     }
-    setNewBenefit({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: '£0', monthly_cost: 0, lock_period: 'none', benefit_category: 'allowance', pay_impact: 'no_impact', tax_treatment: 'taxable', ni_treatment: 'subject_to_ni', pension_treatment: 'non_pensionable', xero_pay_item_id: '', xero_pay_item_category: '' })
+    setNewBenefit({ title: '', description: '', icon: '🎁', color: '#4f46e5', intro: '', eligibility: '', cost_description: `${currencySymbol(currency)}0`, monthly_cost: 0, lock_period: 'none', benefit_category: 'allowance', pay_impact: 'no_impact', tax_treatment: 'taxable', ni_treatment: 'subject_to_ni', pension_treatment: 'non_pensionable', xero_pay_item_id: '', xero_pay_item_category: '' })
     setShowNewBenefit(false)
   }
 
@@ -450,7 +454,7 @@ export default function AdminBenefits() {
                 <div className="admin-form-field" style={{gridColumn:'1/-1'}}><label>Introduction Text</label><textarea className="admin-input" rows={2} value={newBenefit.intro} onChange={e => setNewBenefit(p => ({...p, intro: e.target.value}))} /></div>
                 <div className="admin-form-field"><label>Eligibility</label><input className="admin-input" value={newBenefit.eligibility} onChange={e => setNewBenefit(p => ({...p, eligibility: e.target.value}))} /></div>
                 <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={newBenefit.cost_description} onChange={e => setNewBenefit(p => ({...p, cost_description: e.target.value}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
-                <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={newBenefit.monthly_cost} onChange={e => setNewBenefit(p => ({...p, monthly_cost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
+                <div className="admin-form-field"><label>Monthly Cost ({currencySymbol(currency)})</label><input type="number" min="0" step="0.01" className="admin-input" value={newBenefit.monthly_cost} onChange={e => setNewBenefit(p => ({...p, monthly_cost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
                 <div className="admin-form-field"><label>Lock Period</label>
                   <select className="admin-input" value={newBenefit.lock_period} onChange={e => setNewBenefit(p => ({...p, lock_period: e.target.value as 'none' | 'month' | 'year'}))}>
                     <option value="none">None</option>
@@ -581,7 +585,7 @@ export default function AdminBenefits() {
                                   <div className="admin-form-field" style={{gridColumn:'1/-1'}}><label>Introduction</label><textarea className="admin-input" rows={2} value={editForm.intro} onChange={e => setEditForm(f => ({...f, intro: e.target.value}))} /></div>
                                   <div className="admin-form-field"><label>Eligibility</label><input className="admin-input" value={editForm.eligibility} onChange={e => setEditForm(f => ({...f, eligibility: e.target.value}))} /></div>
                                   <div className="admin-form-field"><label>Cost Description</label><input className="admin-input" value={editForm.cost_description} onChange={e => setEditForm(f => ({...f, cost_description: e.target.value}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
-                                  <div className="admin-form-field"><label>Monthly Cost (£)</label><input type="number" min="0" step="0.01" className="admin-input" value={editForm.monthly_cost ?? 0} onChange={e => setEditForm(f => ({...f, monthly_cost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
+                                  <div className="admin-form-field"><label>Monthly Cost ({currencySymbol(currency)})</label><input type="number" min="0" step="0.01" className="admin-input" value={editForm.monthly_cost ?? 0} onChange={e => setEditForm(f => ({...f, monthly_cost: parseFloat(e.target.value) || 0}))} disabled={!payrollEnabled} style={!payrollEnabled ? {opacity: 0.5, cursor: 'not-allowed'} : undefined} /></div>
                                   <div className="admin-form-field"><label>Lock Period</label>
                                     <select className="admin-input" value={editForm.lock_period ?? 'none'} onChange={e => setEditForm(f => ({...f, lock_period: e.target.value}))}>
                                       <option value="none">None</option>
@@ -651,7 +655,7 @@ export default function AdminBenefits() {
                               <div className="admin-benefit-meta">
                                 <div><strong>Eligibility:</strong> {b.eligibility}</div>
                                 <div><strong>Cost:</strong> {b.cost_description}</div>
-                                <div><strong>Monthly Cost:</strong> £{(b.monthly_cost ?? 0).toFixed(2)}</div>
+                                <div><strong>Monthly Cost:</strong> {formatCurrency(b.monthly_cost ?? 0, currency)}</div>
                                 <div><strong>Lock Period:</strong> {(b.lock_period ?? 'none') === 'none' ? 'None' : b.lock_period === 'month' ? 'Monthly' : 'Financial Year'}</div>
                                 {payrollEnabled && (
                                   <div style={{marginTop:'8px', paddingTop:'8px', borderTop:'1px solid #eee'}}>
@@ -737,7 +741,7 @@ export default function AdminBenefits() {
             <div className="admin-mini-stat"><span className="admin-mini-value">{subscriptions.length}</span><span>Subscriptions</span></div>
             <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#43a047'}}>{new Set(subscriptions.map(s => s.employee_id)).size}</span><span>Employees</span></div>
             <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#5b9bd5'}}>{new Set(subscriptions.map(s => s.benefit_type_id)).size}</span><span>Benefit Types</span></div>
-            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>£{subscriptions.reduce((s, x) => s + x.monthly_cost, 0).toFixed(2)}</span><span>Monthly Total</span></div>
+            <div className="admin-mini-stat"><span className="admin-mini-value" style={{color:'#ff9800'}}>{formatCurrency(subscriptions.reduce((s, x) => s + x.monthly_cost, 0), currency)}</span><span>Monthly Total</span></div>
           </div>
 
           {subsLoading ? (
@@ -754,7 +758,7 @@ export default function AdminBenefits() {
                       <td>{new Date(s.enrolled_at).toLocaleDateString('en-GB')}</td>
                       <td>{s.lock_period === 'none' ? 'None' : s.lock_period === 'month' ? 'Monthly' : 'Financial Year'}</td>
                       <td>{getEndDate(s.enrolled_at, s.lock_period)}</td>
-                      <td>£{s.monthly_cost.toFixed(2)}</td>
+                      <td>{formatCurrency(s.monthly_cost, currency)}</td>
                     </tr>
                   ))}
                 </tbody>

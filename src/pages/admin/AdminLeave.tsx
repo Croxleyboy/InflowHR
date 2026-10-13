@@ -4,7 +4,8 @@ import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
-import { formatDate, getFYYear } from '../../lib/formatters'
+import { formatDate, getFYYear, currencySymbol } from '../../lib/formatters'
+import { useAuth } from '../../context/AuthContext'
 
 interface LeaveRequest {
   id: number
@@ -31,8 +32,10 @@ const PAGE_SIZE = 30
 
 export default function AdminLeave() {
   const { selectedCompanyId } = useAdminCompany()
+  const { company } = useAuth()
   const { t } = useLanguage()
   const { showError } = useToast()
+  const currency = company?.currency || 'GBP'
   const [requests, setRequests] = useState<LeaveRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [filterEmployee, setFilterEmployee] = useState('')
@@ -1019,9 +1022,9 @@ export default function AdminLeave() {
                   <div className="admin-form-field" style={{ flex: 1, minWidth: 200 }}>
                     <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, display: 'block' }}>Pension Auto-Enrolment Threshold</label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 12 }}>£</span>
+                      <span style={{ fontSize: 12 }}>{currencySymbol(currency)}</span>
                       <input className="admin-inline-input" type="number" min="0" step="100" value={zhcPensionThreshold} onChange={e => setZhcPensionThreshold(parseFloat(e.target.value) || 10000)} style={{ width: 100, textAlign: 'center' }} />
-                      <span style={{ fontSize: 11, color: '#6b7280' }}>per year (statutory: £10,000)</span>
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>per year (statutory: {currencySymbol(currency)}10,000)</span>
                     </div>
                   </div>
                   <div className="admin-form-field" style={{ flex: 1, minWidth: 200 }}>
@@ -1154,7 +1157,7 @@ export default function AdminLeave() {
                           <td>{c.shift_start?.substring(0, 5)} – {c.shift_end?.substring(0, 5)}</td>
                           <td style={{ textAlign: 'right' }}>{Number(c.shift_hours).toFixed(1)}</td>
                           <td style={{ textAlign: 'right' }}>{Number(c.notice_hours).toFixed(0)}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 600 }}>£{Number(c.compensation_amount).toFixed(2)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{currencySymbol(currency)}{Number(c.compensation_amount).toFixed(2)}</td>
                           <td>
                             <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 8, background: '#fee2e2', color: '#991b1b' }}>
                               {c.cancellation_type}
@@ -1181,7 +1184,7 @@ export default function AdminLeave() {
                     <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#ede9fe', color: '#5b21b6', fontWeight: 600 }}>Workplace Pensions</span>
                   </div>
                   <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px' }}>
-                    Zero hours workers earning above £{zhcPensionThreshold.toLocaleString()} per year must be auto-enrolled into a workplace pension.
+                    Zero hours workers earning above {currencySymbol(currency)}{zhcPensionThreshold.toLocaleString()} per year must be auto-enrolled into a workplace pension.
                     Mark workers as enrolled once their pension has been set up with your pension provider.
                   </p>
                   <table className="admin-table" style={{ fontSize: 12 }}>
@@ -1200,8 +1203,8 @@ export default function AdminLeave() {
                         return (
                           <tr key={pw.id} style={aboveThreshold && !pw.enrolled ? { background: '#fef2f2' } : undefined}>
                             <td style={{ fontWeight: 500 }}>{pw.name}</td>
-                            <td style={{ textAlign: 'right' }}>£{pw.ytd_earnings.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td style={{ textAlign: 'right' }}>£{pw.threshold.toLocaleString()}</td>
+                            <td style={{ textAlign: 'right' }}>{currencySymbol(currency)}{pw.ytd_earnings.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td style={{ textAlign: 'right' }}>{currencySymbol(currency)}{pw.threshold.toLocaleString()}</td>
                             <td>
                               {pw.enrolled ? (
                                 <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontWeight: 600 }}>

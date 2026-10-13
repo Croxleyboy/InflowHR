@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -113,7 +113,7 @@ export default function CourseContent() {
   const externalUrl = toEmbedUrl(rawUrl)
 
   const sections = generateSections(courseTitle, courseDesc, type)
-  const quizQuestions = type === 'quiz' ? generateQuiz(courseTitle) : []
+  const quizQuestions = useMemo(() => type === 'quiz' ? generateQuiz(courseTitle) : [], [type, courseTitle])
 
   const [currentSection, setCurrentSection] = useState(0)
   const [quizAnswers, setQuizAnswers] = useState<Record<number, number>>({})

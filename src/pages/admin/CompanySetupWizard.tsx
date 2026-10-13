@@ -4,7 +4,8 @@ import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import * as XLSX from 'xlsx'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
-import { toLocalDateStr } from '../../lib/formatters'
+import { toLocalDateStr, currencySymbol } from '../../lib/formatters'
+import { useAuth } from '../../context/AuthContext'
 
 interface CompanyRow {
   id: string
@@ -162,6 +163,8 @@ interface CompanySetupWizardProps {
 export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWizardProps) {
   const { t } = useLanguage()
   const { showError, showSuccess } = useToast()
+  const { company } = useAuth()
+  const currency = company?.currency || 'GBP'
 
   const [companies, setCompanies] = useState<CompanyRow[]>([])
   const [setupStep, setSetupStep] = useState(0)
@@ -854,7 +857,7 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
                     <td>{row.user_email}</td>
                     <td>{row.job_title || '—'}</td>
                     <td>{row.department || '—'}</td>
-                    <td style={{ fontFamily: 'monospace' }}>&pound;{Number(row.annual_salary).toLocaleString()}</td>
+                    <td style={{ fontFamily: 'monospace' }}>{currencySymbol(currency)}{Number(row.annual_salary).toLocaleString()}</td>
                     <td>{row.tax_code || '1257L'}</td>
                     <td>
                       <span className={`admin-badge ${row.user_email === adminEmail ? 'admin-badge-approved' : 'admin-badge-pending'}`}>
