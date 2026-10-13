@@ -762,6 +762,7 @@ export default function Dashboard() {
         .eq('employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
         .in('status', ['processed', 'paid'])
+        .eq('released', true)
         .order('payment_date', { ascending: false })
         .limit(1)
         .maybeSingle()

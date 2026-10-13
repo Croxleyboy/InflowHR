@@ -330,7 +330,7 @@ export default function DashboardDetailed() {
       })
     supabase.from('payslips')
       .select('net_pay, payment_date, pay_period_start, pay_period_end, frequency')
-      .eq('employee_id', employeeId).eq('company_id', cid).in('status', ['processed', 'paid'])
+      .eq('employee_id', employeeId).eq('company_id', cid).in('status', ['processed', 'paid']).eq('released', true)
       .order('pay_period_end', { ascending: false }).limit(1).maybeSingle()
       .then(({ data }) => {
         if (data) {
