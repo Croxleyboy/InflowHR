@@ -6,6 +6,27 @@ import { useFeatures } from '../../context/FeatureContext'
 import { useToast } from '../../context/ToastContext'
 import type { CourseType } from '../ELearning'
 
+function toEmbedUrl(url: string): string {
+  if (!url) return ''
+  try {
+    const u = new URL(url)
+    if (u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') {
+      const v = u.searchParams.get('v')
+      if (v) return `https://www.youtube.com/embed/${v}`
+    }
+    if (u.hostname === 'youtu.be') return `https://www.youtube.com/embed${u.pathname}`
+    if (u.hostname === 'vimeo.com' && /^\/\d+/.test(u.pathname)) return `https://player.vimeo.com/video${u.pathname}`
+  } catch {}
+  return url
+}
+
+function isVideoEmbeddable(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return ['www.youtube.com', 'youtube.com', 'youtu.be', 'vimeo.com'].includes(u.hostname)
+  } catch { return false }
+}
+
 interface DbCourse {
   id: string
   title: string
@@ -1470,6 +1491,17 @@ function CoursePreviewPanel({ course, enabled, targetDepts, departments, onToggl
             </div>
           )}
 
+          {course.external_url && isVideoEmbeddable(course.external_url) && (
+            <div style={{ position: 'relative', width: '100%', maxWidth: 560, aspectRatio: '16/9', marginBottom: 14, borderRadius: 8, overflow: 'hidden', background: '#000' }}>
+              <iframe
+                src={toEmbedUrl(course.external_url)}
+                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title={course.title}
+              />
+            </div>
+          )}
           {course.external_url && (
             <div style={{ fontSize: 13, marginBottom: 14 }}>
               <span style={{ color: 'var(--text-muted, #8b8fa3)' }}>External link:</span>{' '}

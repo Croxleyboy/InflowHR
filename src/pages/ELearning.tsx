@@ -4,6 +4,27 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 
+function toEmbedUrl(url: string): string {
+  if (!url) return ''
+  try {
+    const u = new URL(url)
+    if (u.hostname === 'www.youtube.com' || u.hostname === 'youtube.com') {
+      const v = u.searchParams.get('v')
+      if (v) return `https://www.youtube.com/embed/${v}`
+    }
+    if (u.hostname === 'youtu.be') return `https://www.youtube.com/embed${u.pathname}`
+    if (u.hostname === 'vimeo.com' && /^\/\d+/.test(u.pathname)) return `https://player.vimeo.com/video${u.pathname}`
+  } catch {}
+  return url
+}
+
+function isVideoEmbeddable(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return ['www.youtube.com', 'youtube.com', 'youtu.be', 'vimeo.com'].includes(u.hostname)
+  } catch { return false }
+}
+
 const STORAGE_KEY = 'inflowhr-elearning'
 
 interface CourseProgress {
@@ -550,6 +571,17 @@ export default function ELearning() {
               {isExpanded && (
                 <div className="elearning-card-body">
                   <p className="elearning-card-desc">{t(course.descKey)}</p>
+                  {course.externalUrl && isVideoEmbeddable(course.externalUrl) && (
+                    <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', marginBottom: 14, borderRadius: 8, overflow: 'hidden', background: '#000' }}>
+                      <iframe
+                        src={toEmbedUrl(course.externalUrl)}
+                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                        title={t(course.titleKey)}
+                      />
+                    </div>
+                  )}
                   {course.required && (
                     <div className="elearning-card-required-badge">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
