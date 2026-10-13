@@ -305,21 +305,10 @@ export default function ELearning() {
       progress_pct: 0,
       enrolled_at: new Date().toISOString(),
     }))
-    supabase.from('course_enrolments').upsert(rows, { onConflict: 'employee_id,course_id' }).then(() => {
+    supabase.from('course_enrolments').upsert(rows, { onConflict: 'company_id,employee_id,course_id' }).then(() => {
       fetchEnrolmentDates()
     })
   }, [companyUser?.company_id, EMPLOYEE_ID, enabledCourseIds, enrolmentDates, fetchEnrolmentDates])
-
-  useEffect(() => {
-    if (!companyUser?.company_id || !EMPLOYEE_ID || progress.completed.length === 0) return
-    const rows = progress.completed.map(cid => ({
-      company_id: companyUser.company_id,
-      employee_id: EMPLOYEE_ID,
-      course_id: cid,
-      completed_at: progress.completedDates[cid] || new Date().toISOString(),
-    }))
-    supabase.from('elearning_completions').upsert(rows, { onConflict: 'company_id,employee_id,course_id' })
-  }, [companyUser?.company_id, EMPLOYEE_ID])
 
   const visibleCourses = enabledCourseIds !== null
     ? allCourses.filter(c => enabledCourseIds.has(c.id))

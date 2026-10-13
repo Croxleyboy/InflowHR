@@ -316,13 +316,15 @@ export default function Dashboard() {
 
         // E-learning — outstanding courses assigned to this employee
         if (features.elearning) {
-          const [enabledRes, completedRes, empDeptRes] = await Promise.all([
+          const [activeCourseRes, enabledRes, completedRes, empDeptRes] = await Promise.all([
+            supabase.from('elearning_courses').select('id').eq('is_active', true),
             supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', companyUser.company_id).eq('is_enabled', true),
             supabase.from('elearning_completions').select('course_id').eq('employee_id', employeeId).eq('company_id', companyUser.company_id),
             supabase.from('employees').select('department').eq('id', employeeId).maybeSingle(),
           ])
+          const activeCourseIds = new Set((activeCourseRes.data || []).map((r: any) => r.id))
           const myDept = (empDeptRes.data as any)?.department || ''
-          const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
+          const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id).filter((id: string) => activeCourseIds.has(id))
           const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
           const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
           count += outstandingIds.length
@@ -641,21 +643,36 @@ export default function Dashboard() {
         })
 
       ;(async () => {
-        const [enabledRes, completedRes, empDeptRes] = await Promise.all([
+        const [activeCourseRes, enabledRes, completedRes, empDeptRes, enrolRes] = await Promise.all([
+          supabase.from('elearning_courses').select('id').eq('is_active', true),
           supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', companyUser.company_id).eq('is_enabled', true),
           supabase.from('elearning_completions').select('course_id').eq('employee_id', employeeId).eq('company_id', companyUser.company_id),
           supabase.from('employees').select('department').eq('id', employeeId).maybeSingle(),
+          supabase.from('course_enrolments').select('course_id, enrolled_at').eq('employee_id', employeeId).eq('company_id', companyUser.company_id),
         ])
+        const activeCourseIds = new Set((activeCourseRes.data || []).map((r: any) => r.id))
         const myDept = (empDeptRes.data as any)?.department || ''
-        const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
+        const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id).filter((id: string) => activeCourseIds.has(id))
         const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+        const enrolDates: Record<string, string> = {}
+        ;(enrolRes.data || []).forEach((r: any) => { if (r.enrolled_at) enrolDates[r.course_id] = r.enrolled_at })
         const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
         if (outstandingIds.length > 0) {
-          const { data: courses } = await supabase.from('elearning_courses').select('id, title, deadline').in('id', outstandingIds)
+          const { data: courses } = await supabase.from('elearning_courses').select('id, title, deadline, days_to_complete').in('id', outstandingIds)
           if (courses && courses.length > 0) {
-            const withDeadline = courses.filter((c: any) => c.deadline).sort((a: any, b: any) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+            const withDeadline = courses.map((c: any) => {
+              let dl: Date | null = null
+              if (c.days_to_complete && enrolDates[c.id]) {
+                dl = new Date(enrolDates[c.id])
+                dl.setDate(dl.getDate() + c.days_to_complete)
+              } else if (c.deadline) {
+                dl = new Date(c.deadline)
+              }
+              return { ...c, computedDeadline: dl }
+            }).filter((c: any) => c.computedDeadline).sort((a: any, b: any) => a.computedDeadline.getTime() - b.computedDeadline.getTime())
             const next = withDeadline.length > 0 ? withDeadline[0] : courses[0]
-            setNextElearning({ title: next.title, deadline: next.deadline })
+            const nextDl = withDeadline.length > 0 ? withDeadline[0].computedDeadline?.toISOString().split('T')[0] : next.deadline
+            setNextElearning({ title: next.title, deadline: nextDl || null })
           }
         }
       })()

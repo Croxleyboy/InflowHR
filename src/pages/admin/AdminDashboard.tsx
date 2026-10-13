@@ -121,8 +121,8 @@ export default function AdminDashboard() {
     const monthAgoEnd = new Date(new Date().getFullYear(), new Date().getMonth(), 0).toISOString().slice(0, 10)
 
     const [enrolAll, enrolDone, upShifts, totalSpaces, bookedSpaces, assetsNow, assetsPrev] = await Promise.all([
-      eq(supabase.from('course_enrolments').select('id', { count: 'exact', head: true })),
-      eq(supabase.from('course_enrolments').select('id', { count: 'exact', head: true }).eq('status', 'completed')),
+      eq(supabase.from('elearning_completions').select('course_id', { count: 'exact', head: true })),
+      eq(supabase.from('elearning_completions').select('course_id', { count: 'exact', head: true }).not('completed_at', 'is', null)),
       eq(supabase.from('shift_assignments').select('id', { count: 'exact', head: true }).gte('shift_date', todayStr)),
       eq(supabase.from('spaces').select('id', { count: 'exact', head: true }).eq('is_active', true)),
       eq(supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('booking_date', todayStr)),
