@@ -701,6 +701,8 @@ export default function AdminLegalTimesheets() {
     showSuccess(`Invoice ${invoiceNumber} created — ${lines.length} entries, £${total.toFixed(2)}`)
     setShowCreateInvoice(false)
     setInvClient('')
+    setInvPeriodStart('')
+    setInvPeriodEnd('')
     setInvNotes('')
     setInvCreating(false)
     loadInvoices()
@@ -711,6 +713,21 @@ export default function AdminLegalTimesheets() {
     const { error } = await supabase.from('legal_invoices').update({ status, updated_at: new Date().toISOString() }).eq('id', id)
     if (error) showError('Failed to update: ' + error.message)
     else { showSuccess(`Invoice marked as ${status}`); loadInvoices() }
+  }
+
+  async function deleteInvoice(inv: LegalInvoice) {
+    if (!window.confirm(`Delete invoice ${inv.invoice_number}? This will unbill the associated time entries.`)) return
+    const { data: lns } = await supabase.from('legal_invoice_lines').select('entry_id').eq('invoice_id', inv.id)
+    if (lns && lns.length > 0) {
+      const entryIds = lns.map((l: any) => l.entry_id).filter(Boolean)
+      if (entryIds.length > 0) {
+        await supabase.from('legal_timesheet_entries').update({ status: 'approved' }).in('id', entryIds)
+      }
+    }
+    await supabase.from('legal_invoice_lines').delete().eq('invoice_id', inv.id)
+    const { error } = await supabase.from('legal_invoices').delete().eq('id', inv.id)
+    if (error) showError('Failed to delete: ' + error.message)
+    else { showSuccess(`Invoice ${inv.invoice_number} deleted`); loadInvoices(); loadEntries() }
   }
 
   function generateInvoicePDF(invoice: LegalInvoice, lines: LegalInvoiceLine[]) {
@@ -1497,6 +1514,7 @@ export default function AdminLegalTimesheets() {
                           }}>Sage</button>
                           {inv.status === 'draft' && <button className="admin-btn-sm" style={{ color: '#1565c0' }} onClick={() => updateInvoiceStatus(inv.id, 'sent')}>Mark Sent</button>}
                           {(inv.status === 'sent' || inv.status === 'overdue') && <button className="admin-btn-sm" style={{ color: '#2e7d32' }} onClick={() => updateInvoiceStatus(inv.id, 'paid')}>Mark Paid</button>}
+                          {(inv.status === 'draft' || inv.status === 'cancelled') && <button className="admin-btn-sm" style={{ color: '#c62828' }} onClick={() => deleteInvoice(inv)}>Delete</button>}
                         </div>
                       </td>
                     </tr>
