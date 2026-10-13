@@ -523,13 +523,6 @@ export default function DashboardDetailed() {
           .map((r: any) => r.course_id)
           .filter((id: string) => activeCourseIds.has(id))
         const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
-        try {
-          const raw = localStorage.getItem('inflowhr-elearning')
-          if (raw) {
-            const parsed = JSON.parse(raw)
-            if (Array.isArray(parsed.completed)) parsed.completed.forEach((id: string) => completedIds.add(id))
-          }
-        } catch { /* empty */ }
         const enabledSet = new Set(enabledIds)
         const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
         setElearningCompleted([...completedIds].filter(id => enabledSet.has(id)).length)
@@ -540,6 +533,9 @@ export default function DashboardDetailed() {
           if (courses) courses.forEach((c: any) => { if (c.deadline && new Date(c.deadline) < now) overdue++ })
           setElearningOverdue(overdue)
           setElearningOutstanding(outstandingIds.length - overdue)
+        } else {
+          setElearningOutstanding(0)
+          setElearningOverdue(0)
         }
       })()
     }
@@ -1066,6 +1062,7 @@ export default function DashboardDetailed() {
             })}
           </ul>
         )}
+        {pendingCount > 0 && <div className="dd2-notif-outstanding">{pendingCount} outstanding action{pendingCount !== 1 ? 's' : ''} requiring your attention</div>}
         <div className="dd2-card-link">View all notifications →</div>
       </div>
     </section>
@@ -1494,6 +1491,11 @@ export default function DashboardDetailed() {
               ) : (
                 <div className="dd2-profile-avatar dd2-profile-avatar-initials">{initials}</div>
               )}
+              {reminders.length > 0 && (
+                <span className="dd2-hero-reminder-lozenge" onClick={(ev) => { ev.stopPropagation(); navigate('/notifications') }}>
+                  {reminders.length} reminder{reminders.length !== 1 ? 's' : ''}
+                </span>
+              )}
             </div>
             <div className="dd2-profile-info">
               <h2 className="dd2-profile-name">{employeeName}</h2>
@@ -1627,12 +1629,6 @@ export default function DashboardDetailed() {
               <span className="dd2-summary-sub">No expenses yet</span>
             </>
           )}
-        </div>
-        {/* Card 5: Reminders */}
-        <div className="dd2-summary-card dd2-summary-reminders" onClick={() => navigate('/notifications')}>
-          <span className="dd2-summary-value">{reminders.length}</span>
-          <span className="dd2-summary-label">Reminders</span>
-          <span className="dd2-summary-sub">{reminders.length === 0 ? 'All caught up' : `${reminders.length} action${reminders.length !== 1 ? 's' : ''} pending`}</span>
         </div>
       </div>
 

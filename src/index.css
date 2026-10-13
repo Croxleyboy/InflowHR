@@ -7162,6 +7162,9 @@ body {
 }
 .dd2-profile-avatar-wrap {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 .dd2-profile-avatar {
   width: 60px;
@@ -7443,9 +7446,41 @@ body {
   background: linear-gradient(135deg, #e0f2f1, #b2dfdb);
   color: #004d40;
 }
-.dd2-summary-reminders {
-  background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+.dd2-hero-reminder-lozenge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(255, 152, 0, 0.85);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s;
+}
+.dd2-hero-reminder-lozenge:hover { background: rgba(245, 124, 0, 0.95); }
+.dd2-notif-outstanding {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #fff3e0;
   color: #e65100;
+  font-size: 12px;
+  font-weight: 600;
+}
+[data-theme="dark"] .dd2-notif-outstanding {
+  background: rgba(230, 81, 0, 0.15);
+  color: #ffb74d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .dd2-notif-outstanding {
+    background: rgba(230, 81, 0, 0.15);
+    color: #ffb74d;
+  }
 }
 [data-theme="dark"] .dd2-summary-remaining {
   background: linear-gradient(135deg, #0d47a1, #1565c0);
@@ -7471,10 +7506,6 @@ body {
   background: linear-gradient(135deg, #004d40, #00695c);
   color: #b2dfdb;
 }
-[data-theme="dark"] .dd2-summary-reminders {
-  background: linear-gradient(135deg, #e65100, #ef6c00);
-  color: #fff3e0;
-}
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .dd2-summary-remaining {
     background: linear-gradient(135deg, #0d47a1, #1565c0);
@@ -7499,10 +7530,6 @@ body {
   :root:not([data-theme="light"]) .dd2-summary-lastexp {
     background: linear-gradient(135deg, #004d40, #00695c);
     color: #b2dfdb;
-  }
-  :root:not([data-theme="light"]) .dd2-summary-reminders {
-    background: linear-gradient(135deg, #e65100, #ef6c00);
-    color: #fff3e0;
   }
 }
 .dd2-summary-value {

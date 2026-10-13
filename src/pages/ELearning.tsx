@@ -253,6 +253,28 @@ export default function ELearning() {
   useEffect(() => { saveProgress(progress) }, [progress])
 
   useEffect(() => {
+    if (!companyUser?.company_id || !EMPLOYEE_ID) return
+    supabase.from('elearning_completions')
+      .select('course_id, completed_at')
+      .eq('employee_id', EMPLOYEE_ID)
+      .eq('company_id', companyUser.company_id)
+      .then(({ data }) => {
+        if (!data || data.length === 0) return
+        setProgress(prev => {
+          const merged = new Set(prev.completed)
+          const dates = { ...prev.completedDates }
+          let changed = false
+          data.forEach((r: any) => {
+            if (!merged.has(r.course_id)) { merged.add(r.course_id); changed = true }
+            if (r.completed_at && !dates[r.course_id]) { dates[r.course_id] = r.completed_at; changed = true }
+          })
+          if (!changed) return prev
+          return { ...prev, completed: [...merged], completedDates: dates }
+        })
+      })
+  }, [companyUser?.company_id, EMPLOYEE_ID])
+
+  useEffect(() => {
     if (!companyUser?.company_id || !EMPLOYEE_ID || enabledCourseIds === null || Object.keys(enrolmentDates).length > 0) return
     if (enabledCourseIds.size === 0) return
     const missing = [...enabledCourseIds].filter(id => !enrolmentDates[id])
