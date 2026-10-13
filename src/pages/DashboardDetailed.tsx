@@ -184,6 +184,7 @@ export default function DashboardDetailed() {
   const [attendancePresent, setAttendancePresent] = useState(0)
   const [attendanceLate, setAttendanceLate] = useState(0)
   const [attendanceAbsent, setAttendanceAbsent] = useState(0)
+  const [attendanceLeave, setAttendanceLeave] = useState(0)
   const [jobTitle, setJobTitle] = useState<string | null>(null)
   const [lastPayNet, setLastPayNet] = useState<number | null>(null)
   const [lastPayDate, setLastPayDate] = useState<string | null>(null)
@@ -535,31 +536,55 @@ export default function DashboardDetailed() {
     })()
 
     // Attendance — shift workers: last 7 shift assignments; employed: timesheet hours this week
+    // Both paths also query approved leave to mark "on leave" days
     if (isShiftWorker) {
       ;(async () => {
         const now = new Date()
         const sevenDaysAgo = new Date(now)
         sevenDaysAgo.setDate(now.getDate() - 6)
-        const { data: shifts } = await supabase.from('shift_assignments')
-          .select('date, check_in_status')
-          .eq('employee_id', employeeId).eq('company_id', cid)
-          .gte('date', toLocalDateStr(sevenDaysAgo)).lte('date', today)
-          .order('date', { ascending: true })
+        const rangeStart = toLocalDateStr(sevenDaysAgo)
+        const [{ data: shifts }, { data: leaveRows }] = await Promise.all([
+          supabase.from('shift_assignments')
+            .select('date, check_in_status')
+            .eq('employee_id', employeeId).eq('company_id', cid)
+            .gte('date', rangeStart).lte('date', today)
+            .order('date', { ascending: true }),
+          supabase.from('leave_requests')
+            .select('start_date, end_date')
+            .eq('employee_id', employeeId).eq('company_id', cid)
+            .eq('status', 'approved')
+            .lte('start_date', today).gte('end_date', rangeStart),
+        ])
+
+        const leaveDates = new Set<string>()
+        if (leaveRows) {
+          for (const lr of leaveRows) {
+            const s = new Date(lr.start_date + 'T00:00')
+            const e = new Date(lr.end_date + 'T00:00')
+            for (let cur = new Date(s); cur <= e; cur.setDate(cur.getDate() + 1)) {
+              leaveDates.add(toLocalDateStr(cur))
+            }
+          }
+        }
 
         const days: AttendanceDay[] = []
-        let present = 0, late = 0, absent = 0
+        let present = 0, late = 0, absent = 0, onLeave = 0
         for (let i = 0; i < 7; i++) {
           const d = new Date(sevenDaysAgo)
           d.setDate(sevenDaysAgo.getDate() + i)
           const dateStr = toLocalDateStr(d)
-          const shift = shifts?.find((s: any) => s.date === dateStr)
           let status: AttendanceDay['status'] = 'no_shift'
-          if (shift) {
-            const cis = shift.check_in_status
-            if (cis === 'checked_in' || cis === 'checked_out') { status = 'present'; present++ }
-            else if (cis === 'late') { status = 'late'; late++ }
-            else if (dateStr < today) { status = 'absent'; absent++ }
-            else { status = 'no_shift' }
+          if (leaveDates.has(dateStr)) {
+            status = 'leave'; onLeave++
+          } else {
+            const shift = shifts?.find((s: any) => s.date === dateStr)
+            if (shift) {
+              const cis = shift.check_in_status
+              if (cis === 'checked_in' || cis === 'checked_out') { status = 'present'; present++ }
+              else if (cis === 'late') { status = 'late'; late++ }
+              else if (dateStr < today) { status = 'absent'; absent++ }
+              else { status = 'no_shift' }
+            }
           }
           days.push({ date: dateStr, status })
         }
@@ -567,6 +592,7 @@ export default function DashboardDetailed() {
         setAttendancePresent(present)
         setAttendanceLate(late)
         setAttendanceAbsent(absent)
+        setAttendanceLeave(onLeave)
       })()
     } else {
       ;(async () => {
@@ -577,28 +603,56 @@ export default function DashboardDetailed() {
         monday.setDate(now.getDate() + mondayOffset)
         const sunday = new Date(monday)
         sunday.setDate(monday.getDate() + 6)
-        const { data: tsEntries } = await supabase.from('timesheet_entries')
-          .select('hours, date')
-          .eq('employee_id', employeeId).eq('company_id', cid)
-          .gte('date', toLocalDateStr(monday)).lte('date', toLocalDateStr(sunday))
+        const mondayStr = toLocalDateStr(monday)
+        const sundayStr = toLocalDateStr(sunday)
+        const [{ data: tsEntries }, { data: leaveRows }] = await Promise.all([
+          supabase.from('timesheet_entries')
+            .select('hours, date')
+            .eq('employee_id', employeeId).eq('company_id', cid)
+            .gte('date', mondayStr).lte('date', sundayStr),
+          supabase.from('leave_requests')
+            .select('start_date, end_date')
+            .eq('employee_id', employeeId).eq('company_id', cid)
+            .eq('status', 'approved')
+            .lte('start_date', sundayStr).gte('end_date', mondayStr),
+        ])
+
+        const leaveDates = new Set<string>()
+        if (leaveRows) {
+          for (const lr of leaveRows) {
+            const s = new Date(lr.start_date + 'T00:00')
+            const e = new Date(lr.end_date + 'T00:00')
+            for (let cur = new Date(s); cur <= e; cur.setDate(cur.getDate() + 1)) {
+              leaveDates.add(toLocalDateStr(cur))
+            }
+          }
+        }
 
         if (tsEntries) {
           const total = tsEntries.reduce((s: number, e: any) => s + Number(e.hours || 0), 0)
           setTsHoursThisWeek(total)
           const days: AttendanceDay[] = []
-          let present = 0
+          let present = 0, onLeave = 0
           for (let i = 0; i < 7; i++) {
             const d = new Date(monday)
             d.setDate(monday.getDate() + i)
             const dateStr = toLocalDateStr(d)
+            let status: AttendanceDay['status']
+            if (leaveDates.has(dateStr)) {
+              status = 'leave'; onLeave++
+            } else {
+              const dayEntries = tsEntries.filter((e: any) => e.date === dateStr)
+              const hrs = dayEntries.reduce((s: number, e: any) => s + Number(e.hours || 0), 0)
+              status = hrs > 0 ? 'present' : (d <= now && i < 5 ? 'absent' : 'no_shift')
+              if (hrs > 0) present++
+            }
             const dayEntries = tsEntries.filter((e: any) => e.date === dateStr)
             const hrs = dayEntries.reduce((s: number, e: any) => s + Number(e.hours || 0), 0)
-            const status: AttendanceDay['status'] = hrs > 0 ? 'present' : (d <= now && i < 5 ? 'absent' : 'no_shift')
-            if (hrs > 0) present++
             days.push({ date: dateStr, status, hours: hrs })
           }
           setAttendanceDays(days)
           setAttendancePresent(present)
+          setAttendanceLeave(onLeave)
         }
       })()
     }
@@ -766,6 +820,7 @@ export default function DashboardDetailed() {
               <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#43a047' }} />{attendancePresent} Present</span>
               <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#ff9800' }} />{attendanceLate} Late</span>
               <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#e53935' }} />{attendanceAbsent} Absent</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#7e57c2' }} />{attendanceLeave} On Leave</span>
             </div>
           </>
         ) : (
@@ -781,6 +836,11 @@ export default function DashboardDetailed() {
             <div className="dd2-att-hours-summary">
               <span className="dd2-att-hours-big">{tsHoursThisWeek !== null ? tsHoursThisWeek.toFixed(1) : '--'}h</span>
               <span className="dd2-att-hours-label">of {tsExpectedHours}h this week</span>
+            </div>
+            <div className="dd2-att-legend">
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#43a047' }} />Logged</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#7e57c2' }} />On Leave</span>
+              <span className="dd2-att-legend-item"><span className="dd2-att-dot" style={{ background: '#e53935' }} />No Hours</span>
             </div>
           </>
         )}

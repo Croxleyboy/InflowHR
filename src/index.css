@@ -7796,7 +7796,9 @@ body {
   background: var(--border);
 }
 .dd2-att-week-dot-present { background: #43a047; }
+.dd2-att-week-dot-late { background: #ff9800; }
 .dd2-att-week-dot-absent { background: #e53935; }
+.dd2-att-week-dot-leave { background: #7e57c2; }
 .dd2-att-week-dot-no_shift { background: var(--border); }
 .dd2-att-hours-summary {
   display: flex;
