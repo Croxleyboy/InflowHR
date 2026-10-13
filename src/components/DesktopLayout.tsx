@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
@@ -15,6 +16,17 @@ export default function DesktopLayout() {
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
   const isAdmin = companyUser && ['admin', 'hr'].includes(companyUser.role)
   const hasPortalAccess = isAdmin || !!portalRole
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('inflowhr-sidebar-collapsed') === '1' } catch { return false }
+  })
+
+  function toggleSidebarCollapse() {
+    setSidebarCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('inflowhr-sidebar-collapsed', next ? '1' : '0') } catch { /* */ }
+      return next
+    })
+  }
 
   const isShiftWorker = employmentCategory === 'shift_worker'
   const allNavItems: { to: string; icon: string; label: string; end?: boolean; badge?: number; feature?: keyof Features; pattern?: 'fixed' | 'variable' }[] = [
@@ -84,27 +96,29 @@ export default function DesktopLayout() {
 
   return (
     <div className="desktop-shell">
-      <aside className="desktop-sidebar">
+      <aside className={`desktop-sidebar ${sidebarCollapsed ? 'desktop-sidebar-collapsed' : ''}`}>
         <div className="desktop-sidebar-brand" onClick={() => navigate('/')}>
           {company?.logo_url ? (
             <img className="desktop-brand-logo" src={company.logo_url} alt={company.name} />
           ) : (
-            <span className="desktop-brand-text">InflowHR</span>
+            <span className="desktop-brand-text">{sidebarCollapsed ? 'I' : 'InflowHR'}</span>
           )}
-          {company?.name && <span className="desktop-brand-company">{company.name}</span>}
+          {!sidebarCollapsed && company?.name && <span className="desktop-brand-company">{company.name}</span>}
         </div>
 
-        <div className="desktop-sidebar-profile">
-          {avatarUrl ? (
-            <img className="desktop-profile-avatar-img" src={avatarUrl} alt={initials} />
-          ) : (
-            <div className="desktop-profile-avatar">{initials}</div>
-          )}
-          <div className="desktop-profile-info">
-            <span className="desktop-profile-name">{employeeName}</span>
-            <span className="desktop-profile-email">{employeeEmail}</span>
+        {!sidebarCollapsed && (
+          <div className="desktop-sidebar-profile">
+            {avatarUrl ? (
+              <img className="desktop-profile-avatar-img" src={avatarUrl} alt={initials} />
+            ) : (
+              <div className="desktop-profile-avatar">{initials}</div>
+            )}
+            <div className="desktop-profile-info">
+              <span className="desktop-profile-name">{employeeName}</span>
+              <span className="desktop-profile-email">{employeeEmail}</span>
+            </div>
           </div>
-        </div>
+        )}
 
         <nav className="desktop-nav">
           {navItems.map(item => (
@@ -113,23 +127,30 @@ export default function DesktopLayout() {
               to={item.to}
               end={item.end}
               className={({ isActive }) => `desktop-nav-item ${isActive ? 'desktop-nav-active' : ''}`}
+              title={sidebarCollapsed ? item.label : undefined}
             >
               <span className="desktop-nav-icon">{renderIcon(item.icon)}</span>
-              <span className="desktop-nav-label">{item.label}</span>
+              {!sidebarCollapsed && <span className="desktop-nav-label">{item.label}</span>}
               {item.badge && item.badge > 0 ? (
-                <span className="desktop-nav-badge">{item.badge}</span>
+                <span className={`desktop-nav-badge ${sidebarCollapsed ? 'desktop-nav-badge-collapsed' : ''}`}>{item.badge}</span>
               ) : null}
             </NavLink>
           ))}
         </nav>
 
         <div className="desktop-sidebar-footer">
+          <button className="desktop-sidebar-toggle" onClick={toggleSidebarCollapse} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: sidebarCollapsed ? 'rotate(180deg)' : undefined, transition: 'transform 0.2s' }}>
+              <polyline points="11 17 6 12 11 7" /><polyline points="18 17 13 12 18 7" />
+            </svg>
+            {!sidebarCollapsed && <span>Collapse</span>}
+          </button>
           {hasPortalAccess && (
-            <button className="desktop-admin-btn" onClick={() => navigate('/admin')}>
+            <button className="desktop-admin-btn" onClick={() => navigate('/admin')} title={sidebarCollapsed ? 'Admin Portal' : undefined}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
-              Admin Portal
+              {!sidebarCollapsed && 'Admin Portal'}
             </button>
           )}
           <div className="desktop-sidebar-actions">
@@ -146,7 +167,7 @@ export default function DesktopLayout() {
                 <polyline points="16 17 21 12 16 7" />
                 <line x1="21" y1="12" x2="9" y2="12" />
               </svg>
-              Sign out
+              {!sidebarCollapsed && 'Sign out'}
             </button>
           </div>
         </div>
