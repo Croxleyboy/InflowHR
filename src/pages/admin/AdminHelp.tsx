@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import { supabase } from '../../lib/supabase'
+import { formatDate } from '../../lib/formatters'
 
 interface HelpArticle {
   id: number
@@ -17,7 +18,16 @@ interface HelpArticle {
   updated_at: string
 }
 
-const CATEGORIES = ['leave', 'pay', 'shifts', 'benefits', 'general', 'onboarding', 'performance', 'policies']
+interface SearchLog {
+  id: number
+  query: string
+  matched: boolean
+  result_count: number
+  top_article_id: number | null
+  created_at: string
+}
+
+const CATEGORIES = ['leave', 'pay', 'shifts', 'timesheets', 'benefits', 'rooms', 'elearning', 'kudos', 'meetings', 'performance', 'onboarding', 'policies', 'general']
 const DATA_QUERY_OPTIONS = [
   { value: '', label: 'None (static answer)' },
   { value: 'leave_balance', label: 'Leave Balance' },
@@ -32,7 +42,7 @@ const DATA_QUERY_OPTIONS = [
 export default function AdminHelp() {
   const { selectedCompanyId } = useAdminCompany()
   const { showToast } = useToast()
-  const [tab, setTab] = useState<'company' | 'global'>('company')
+  const [tab, setTab] = useState<'company' | 'global' | 'metrics'>('company')
   const [articles, setArticles] = useState<HelpArticle[]>([])
   const [globalArticles, setGlobalArticles] = useState<HelpArticle[]>([])
   const [loading, setLoading] = useState(true)
@@ -48,6 +58,10 @@ export default function AdminHelp() {
     data_query: '',
     is_active: true,
   })
+
+  const [searchLogs, setSearchLogs] = useState<SearchLog[]>([])
+  const [metricsLoading, setMetricsLoading] = useState(false)
+  const [metricsPeriod, setMetricsPeriod] = useState<'7' | '30' | '90'>('30')
 
   const loadArticles = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -71,7 +85,24 @@ export default function AdminHelp() {
     setLoading(false)
   }, [selectedCompanyId])
 
+  const loadMetrics = useCallback(async () => {
+    if (!selectedCompanyId) return
+    setMetricsLoading(true)
+    const since = new Date()
+    since.setDate(since.getDate() - parseInt(metricsPeriod))
+    const { data } = await supabase
+      .from('help_search_logs')
+      .select('id, query, matched, result_count, top_article_id, created_at')
+      .eq('company_id', selectedCompanyId)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(500)
+    setSearchLogs(data || [])
+    setMetricsLoading(false)
+  }, [selectedCompanyId, metricsPeriod])
+
   useEffect(() => { loadArticles() }, [loadArticles])
+  useEffect(() => { if (tab === 'metrics') loadMetrics() }, [tab, loadMetrics])
 
   function resetForm() {
     setForm({ category: 'general', question: '', answer: '', keywords: '', sort_order: 0, data_query: '', is_active: true })
@@ -141,6 +172,38 @@ export default function AdminHelp() {
     ? globalArticles.filter(a => a.category === filterCategory)
     : globalArticles
 
+  const totalSearches = searchLogs.length
+  const matchedSearches = searchLogs.filter(l => l.matched).length
+  const unmatchedSearches = totalSearches - matchedSearches
+  const matchRate = totalSearches > 0 ? Math.round((matchedSearches / totalSearches) * 100) : 0
+
+  const unmatchedQueries = searchLogs
+    .filter(l => !l.matched)
+    .reduce((acc, l) => {
+      const key = l.query.toLowerCase().trim()
+      acc[key] = (acc[key] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+  const topUnmatched = Object.entries(unmatchedQueries)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+
+  const topArticleHits = searchLogs
+    .filter(l => l.top_article_id)
+    .reduce((acc, l) => {
+      acc[l.top_article_id!] = (acc[l.top_article_id!] || 0) + 1
+      return acc
+    }, {} as Record<number, number>)
+  const allArticles = [...articles, ...globalArticles]
+  const topHitArticles = Object.entries(topArticleHits)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([id, count]) => ({
+      article: allArticles.find(a => a.id === parseInt(id)),
+      count,
+    }))
+    .filter(h => h.article)
+
   return (
     <div className="admin-page">
       <div className="admin-page-header">
@@ -154,6 +217,9 @@ export default function AdminHelp() {
         </button>
         <button className={`admin-tab ${tab === 'global' ? 'active' : ''}`} onClick={() => setTab('global')}>
           Built-in Articles ({globalArticles.length})
+        </button>
+        <button className={`admin-tab ${tab === 'metrics' ? 'active' : ''}`} onClick={() => setTab('metrics')}>
+          Search Metrics
         </button>
       </div>
 
@@ -284,6 +350,124 @@ export default function AdminHelp() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'metrics' && (
+        <div className="admin-help-section">
+          <div className="admin-help-toolbar">
+            <select value={metricsPeriod} onChange={e => setMetricsPeriod(e.target.value as '7' | '30' | '90')} className="admin-help-filter">
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+            <button className="admin-btn admin-btn-sm" onClick={loadMetrics}>Refresh</button>
+          </div>
+
+          {metricsLoading ? (
+            <p className="admin-help-loading">Loading metrics...</p>
+          ) : totalSearches === 0 ? (
+            <div className="admin-help-empty">
+              <p>No search data yet. Metrics will appear here once employees start using the help chat.</p>
+            </div>
+          ) : (
+            <>
+              <div className="admin-help-metrics-cards">
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{totalSearches}</div>
+                  <div className="admin-help-metric-label">Total Searches</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value" style={{ color: 'var(--success, #22c55e)' }}>{matchedSearches}</div>
+                  <div className="admin-help-metric-label">Matched</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value" style={{ color: 'var(--error, #ef4444)' }}>{unmatchedSearches}</div>
+                  <div className="admin-help-metric-label">No Match</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value">{matchRate}%</div>
+                  <div className="admin-help-metric-label">Match Rate</div>
+                </div>
+              </div>
+
+              {topUnmatched.length > 0 && (
+                <div className="admin-help-metrics-section">
+                  <h3>Top Unanswered Questions</h3>
+                  <p className="admin-page-subtitle">These queries returned no results — consider adding articles to cover them.</p>
+                  <table className="admin-help-table">
+                    <thead>
+                      <tr>
+                        <th>Question</th>
+                        <th>Times Asked</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topUnmatched.map(([query, count]) => (
+                        <tr key={query}>
+                          <td>{query}</td>
+                          <td>{count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {topHitArticles.length > 0 && (
+                <div className="admin-help-metrics-section">
+                  <h3>Most Searched Articles</h3>
+                  <p className="admin-page-subtitle">Articles most frequently returned as the top result.</p>
+                  <table className="admin-help-table">
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Question</th>
+                        <th>Hits</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topHitArticles.map(h => (
+                        <tr key={h.article!.id}>
+                          <td><span className="admin-help-category-badge">{h.article!.category}</span></td>
+                          <td>{h.article!.question}</td>
+                          <td>{h.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="admin-help-metrics-section">
+                <h3>Recent Searches</h3>
+                <table className="admin-help-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Query</th>
+                      <th>Matched</th>
+                      <th>Results</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {searchLogs.slice(0, 50).map(log => (
+                      <tr key={log.id}>
+                        <td>{formatDate(log.created_at)}</td>
+                        <td>{log.query}</td>
+                        <td>
+                          <span className={`admin-help-toggle ${log.matched ? 'active' : ''}`}>
+                            {log.matched ? 'Yes' : 'No'}
+                          </span>
+                        </td>
+                        <td>{log.result_count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       )}
