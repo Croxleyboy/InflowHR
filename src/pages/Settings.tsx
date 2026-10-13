@@ -408,20 +408,26 @@ export default function Settings() {
         <h2>Dashboard Style</h2>
         <div className="settings-info">
           <div className="settings-row">
-            <span className="settings-label">Card style</span>
-            <div className="language-selector">
+            <span className="settings-label">View</span>
+            <div className="language-selector" style={{ flexWrap: 'wrap' }}>
+              {isDesktop && (
+                <button
+                  className={`lang-btn ${dashLayout === 'detailed' ? 'lang-active' : ''}`}
+                  onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'detailed'); setDashLayout('detailed') }}
+                >Full Dashboard</button>
+              )}
               <button
-                className={`lang-btn ${dashMode === 'plain' ? 'lang-active' : ''}`}
-                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'plain'); setDashMode('plain') }}
-              >Plain Simple</button>
+                className={`lang-btn ${(isDesktop ? dashLayout === 'cards' && dashMode === 'plain' : dashMode === 'plain') ? 'lang-active' : ''}`}
+                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'plain'); setDashMode('plain'); if (isDesktop) { localStorage.setItem('inflowhr-dashboard-layout', 'cards'); setDashLayout('cards') } }}
+              >Plain Simple{isDesktop ? ' (Mobile)' : ''}</button>
               <button
-                className={`lang-btn ${dashMode === 'simple' ? 'lang-active' : ''}`}
-                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'simple'); setDashMode('simple') }}
-              >Coloured Simple</button>
+                className={`lang-btn ${(isDesktop ? dashLayout === 'cards' && dashMode === 'simple' : dashMode === 'simple') ? 'lang-active' : ''}`}
+                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'simple'); setDashMode('simple'); if (isDesktop) { localStorage.setItem('inflowhr-dashboard-layout', 'cards'); setDashLayout('cards') } }}
+              >Coloured Simple{isDesktop ? ' (Mobile)' : ''}</button>
               <button
-                className={`lang-btn ${dashMode === 'info' ? 'lang-active' : ''}`}
-                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'info'); setDashMode('info') }}
-              >Info Cards</button>
+                className={`lang-btn ${(isDesktop ? dashLayout === 'cards' && dashMode === 'info' : dashMode === 'info') ? 'lang-active' : ''}`}
+                onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'info'); setDashMode('info'); if (isDesktop) { localStorage.setItem('inflowhr-dashboard-layout', 'cards'); setDashLayout('cards') } }}
+              >Info Cards{isDesktop ? ' (Mobile)' : ''}</button>
             </div>
           </div>
         </div>
@@ -503,26 +509,6 @@ export default function Settings() {
         </section>
       )}
 
-      {isDesktop && (
-        <section className="settings-section">
-          <h2>Dashboard Layout</h2>
-          <div className="settings-info">
-            <div className="settings-row">
-              <span className="settings-label">Default view</span>
-              <div className="language-selector">
-                <button
-                  className={`lang-btn ${dashLayout === 'cards' ? 'lang-active' : ''}`}
-                  onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'cards'); setDashLayout('cards') }}
-                >Cards</button>
-                <button
-                  className={`lang-btn ${dashLayout === 'detailed' ? 'lang-active' : ''}`}
-                  onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'detailed'); setDashLayout('detailed') }}
-                >Detailed</button>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
 
       <section className="settings-section">
         <h2>Your Data</h2>
