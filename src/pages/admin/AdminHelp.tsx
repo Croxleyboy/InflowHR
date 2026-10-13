@@ -31,7 +31,7 @@ const DATA_QUERY_OPTIONS = [
 
 export default function AdminHelp() {
   const { selectedCompanyId } = useAdminCompany()
-  const { addToast } = useToast()
+  const { showToast } = useToast()
   const [tab, setTab] = useState<'company' | 'global'>('company')
   const [articles, setArticles] = useState<HelpArticle[]>([])
   const [globalArticles, setGlobalArticles] = useState<HelpArticle[]>([])
@@ -95,7 +95,7 @@ export default function AdminHelp() {
 
   async function handleSave() {
     if (!selectedCompanyId || !form.question.trim() || !form.answer.trim()) {
-      addToast('Please fill in the question and answer fields.', 'error')
+      showToast('Please fill in the question and answer fields.', 'error')
       return
     }
 
@@ -113,12 +113,12 @@ export default function AdminHelp() {
 
     if (editingId) {
       const { error } = await supabase.from('help_articles').update(payload).eq('id', editingId)
-      if (error) { addToast('Failed to update article.', 'error'); return }
-      addToast('Article updated.', 'success')
+      if (error) { showToast('Failed to update article.', 'error'); return }
+      showToast('Article updated.', 'success')
     } else {
       const { error } = await supabase.from('help_articles').insert(payload)
-      if (error) { addToast('Failed to create article.', 'error'); return }
-      addToast('Article created.', 'success')
+      if (error) { showToast('Failed to create article.', 'error'); return }
+      showToast('Article created.', 'success')
     }
     resetForm()
     loadArticles()
@@ -127,8 +127,8 @@ export default function AdminHelp() {
   async function handleDelete(id: number) {
     if (!confirm('Are you sure you want to delete this article?')) return
     const { error } = await supabase.from('help_articles').delete().eq('id', id)
-    if (error) { addToast('Failed to delete article.', 'error'); return }
-    addToast('Article deleted.', 'success')
+    if (error) { showToast('Failed to delete article.', 'error'); return }
+    showToast('Article deleted.', 'success')
     loadArticles()
   }
 
