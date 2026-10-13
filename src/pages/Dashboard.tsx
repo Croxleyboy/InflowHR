@@ -314,7 +314,7 @@ export default function Dashboard() {
           ).length
         }
 
-        // E-learning — check both DB and localStorage for completions (matches Notifications)
+        // E-learning — outstanding courses assigned to this employee
         if (features.elearning) {
           const [enabledRes, completedRes, empDeptRes] = await Promise.all([
             supabase.from('company_elearning_courses').select('course_id, target_departments').eq('company_id', companyUser.company_id).eq('is_enabled', true),
@@ -324,15 +324,6 @@ export default function Dashboard() {
           const myDept = (empDeptRes.data as any)?.department || ''
           const enabledIds = (enabledRes.data || []).filter((r: any) => { const d: string[] = r.target_departments || []; return d.length === 0 || d.includes(myDept) }).map((r: any) => r.course_id)
           const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
-          try {
-            const raw = localStorage.getItem('inflowhr-elearning')
-            if (raw) {
-              const parsed = JSON.parse(raw)
-              if (Array.isArray(parsed.completed)) {
-                parsed.completed.forEach((id: string) => completedIds.add(id))
-              }
-            }
-          } catch {}
           const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
           count += outstandingIds.length
         }

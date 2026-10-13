@@ -25,8 +25,6 @@ function isVideoEmbeddable(url: string): boolean {
   } catch { return false }
 }
 
-const STORAGE_KEY = 'inflowhr-elearning'
-
 interface CourseProgress {
   completed: string[]
   bookmarked: string[]
@@ -34,20 +32,7 @@ interface CourseProgress {
   completedDates: Record<string, string>
 }
 
-function loadProgress(): CourseProgress {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      return { ...parsed, completedDates: parsed.completedDates || {} }
-    }
-  } catch {}
-  return { completed: [], bookmarked: [], inProgress: {}, completedDates: {} }
-}
-
-function saveProgress(p: CourseProgress) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(p))
-}
+const EMPTY_PROGRESS: CourseProgress = { completed: [], bookmarked: [], inProgress: {}, completedDates: {} }
 
 export type CourseType = 'video' | 'article' | 'quiz' | 'policy'
 type Category = 'all' | 'required' | 'recommended' | 'bookmarked'
@@ -170,7 +155,7 @@ export default function ELearning() {
   const location = useLocation()
   const { t } = useLanguage()
   const { companyUser, employeeId: EMPLOYEE_ID } = useAuth()
-  const [progress, setProgress] = useState<CourseProgress>(loadProgress)
+  const [progress, setProgress] = useState<CourseProgress>(EMPTY_PROGRESS)
   const [filter, setFilter] = useState<Category>('all')
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
 
@@ -250,7 +235,6 @@ export default function ELearning() {
   useEffect(() => { fetchCourses() }, [fetchCourses])
   useEffect(() => { fetchEnabledCourses() }, [fetchEnabledCourses])
   useEffect(() => { fetchEnrolmentDates() }, [fetchEnrolmentDates])
-  useEffect(() => { saveProgress(progress) }, [progress])
 
   // Load completions from elearning_completions + bookmarks/progress from elearning_progress
   useEffect(() => {
@@ -265,30 +249,26 @@ export default function ELearning() {
         .eq('employee_id', EMPLOYEE_ID)
         .eq('company_id', companyUser.company_id),
     ]).then(([completionsRes, progressRes]) => {
-      setProgress(prev => {
-        const merged = new Set(prev.completed)
-        const dates = { ...prev.completedDates }
-        const bookmarks = new Set(prev.bookmarked)
-        const inProg = { ...prev.inProgress }
-        let changed = false
+      const completed: string[] = []
+      const completedDates: Record<string, string> = {}
+      const bookmarked: string[] = []
+      const inProgress: Record<string, number> = {}
 
-        if (completionsRes.data) {
-          completionsRes.data.forEach((r: any) => {
-            if (!merged.has(r.course_id)) { merged.add(r.course_id); changed = true }
-            if (r.completed_at && !dates[r.course_id]) { dates[r.course_id] = r.completed_at; changed = true }
-          })
-        }
+      if (completionsRes.data) {
+        completionsRes.data.forEach((r: any) => {
+          completed.push(r.course_id)
+          if (r.completed_at) completedDates[r.course_id] = r.completed_at
+        })
+      }
 
-        if (progressRes.data) {
-          progressRes.data.forEach((r: any) => {
-            if (r.is_bookmarked && !bookmarks.has(r.course_id)) { bookmarks.add(r.course_id); changed = true }
-            if (r.progress_pct > 0 && (inProg[r.course_id] ?? 0) < r.progress_pct) { inProg[r.course_id] = r.progress_pct; changed = true }
-          })
-        }
+      if (progressRes.data) {
+        progressRes.data.forEach((r: any) => {
+          if (r.is_bookmarked) bookmarked.push(r.course_id)
+          if (r.progress_pct > 0) inProgress[r.course_id] = r.progress_pct
+        })
+      }
 
-        if (!changed) return prev
-        return { completed: [...merged], completedDates: dates, bookmarked: [...bookmarks], inProgress: inProg }
-      })
+      setProgress({ completed, completedDates, bookmarked, inProgress })
     })
   }, [companyUser?.company_id, EMPLOYEE_ID])
 

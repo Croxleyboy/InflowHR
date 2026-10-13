@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 type CourseType = 'video' | 'article' | 'quiz' | 'policy' | 'how-to'
 
@@ -33,22 +35,6 @@ function toEmbedUrl(url: string): string {
   return url
 }
 
-const STORAGE_KEY = 'inflowhr-elearning'
-
-function loadProgress() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      return { ...parsed, completedDates: parsed.completedDates || {} }
-    }
-  } catch {}
-  return { completed: [], bookmarked: [], inProgress: {}, completedDates: {} }
-}
-
-function saveProgress(p: any) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(p))
-}
 
 function generateSections(_title: string, description: string, type: CourseType): Section[] {
   if (type === 'quiz') return []
@@ -100,6 +86,7 @@ export default function CourseContent() {
   const navigate = useNavigate()
   const { courseId } = useParams<{ courseId: string }>()
   const { t } = useLanguage()
+  const { companyUser, employeeId } = useAuth()
 
   const title = courseId ? t(`elearning.c_${courseId.replace(/^(onb|comp|pol|role|dev|wellbeing|legal|edu|acc)-/, (_, p) => `${p}_`).replace(/-/g, '_')}_title`.replace(/_title$/, '_title')) : ''
   const rawTitle = courseId || ''
@@ -120,13 +107,14 @@ export default function CourseContent() {
   const [quizSubmitted, setQuizSubmitted] = useState(false)
   const [completed, setCompleted] = useState(false)
 
-  function handleComplete() {
-    if (!courseId) return
-    const progress = loadProgress()
-    progress.completed = [...progress.completed.filter((c: string) => c !== courseId), courseId]
-    progress.inProgress = { ...progress.inProgress, [courseId]: 100 }
-    progress.completedDates = { ...progress.completedDates, [courseId]: new Date().toISOString() }
-    saveProgress(progress)
+  async function handleComplete() {
+    if (!courseId || !companyUser?.company_id || !employeeId) return
+    await supabase.from('elearning_completions').upsert({
+      company_id: companyUser.company_id,
+      employee_id: employeeId,
+      course_id: courseId,
+      completed_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,employee_id,course_id' })
     setCompleted(true)
     setTimeout(() => navigate('/elearning'), 1500)
   }

@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import { useFeatures, type Features } from '../context/FeatureContext'
+import { useAuth } from '../context/AuthContext'
 
-const STORAGE_KEY = 'inflowhr-elearning'
 const COURSE_ID = 'onb-getting-started'
 
 interface FAQ {
@@ -160,6 +161,7 @@ const SECTIONS: FeatureSection[] = [
 
 export default function GettingStartedCourse() {
   const navigate = useNavigate()
+  const { companyUser, employeeId } = useAuth()
   const { companyFeatures } = useFeatures()
   const [expandedSection, setExpandedSection] = useState<number>(0)
   const [expandedFaqs, setExpandedFaqs] = useState<Set<string>>(new Set())
@@ -183,15 +185,14 @@ export default function GettingStartedCourse() {
     })
   }
 
-  function handleComplete() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      const progress = raw ? JSON.parse(raw) : { completed: [], bookmarked: [], inProgress: {}, completedDates: {} }
-      progress.completed = [...progress.completed.filter((c: string) => c !== COURSE_ID), COURSE_ID]
-      progress.inProgress = { ...progress.inProgress, [COURSE_ID]: 100 }
-      progress.completedDates = { ...progress.completedDates, [COURSE_ID]: new Date().toISOString() }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(progress))
-    } catch {}
+  async function handleComplete() {
+    if (!companyUser?.company_id || !employeeId) return
+    await supabase.from('elearning_completions').upsert({
+      company_id: companyUser.company_id,
+      employee_id: employeeId,
+      course_id: COURSE_ID,
+      completed_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,employee_id,course_id' })
     setCompleted(true)
     setTimeout(() => navigate('/elearning'), 1500)
   }
