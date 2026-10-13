@@ -528,6 +528,13 @@ export default function DashboardDetailed() {
           .map((r: any) => r.course_id)
           .filter((id: string) => activeCourseIds.has(id))
         const completedIds = new Set((completedRes.data || []).map((r: any) => r.course_id))
+        try {
+          const raw = localStorage.getItem('inflowhr-elearning')
+          if (raw) {
+            const parsed = JSON.parse(raw)
+            if (Array.isArray(parsed.completed)) parsed.completed.forEach((id: string) => completedIds.add(id))
+          }
+        } catch {}
         const enabledSet = new Set(enabledIds)
         const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
         setElearningCompleted([...completedIds].filter(id => enabledSet.has(id)).length)
