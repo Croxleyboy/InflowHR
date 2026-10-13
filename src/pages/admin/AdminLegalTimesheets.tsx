@@ -643,10 +643,10 @@ export default function AdminLegalTimesheets() {
     const dueDate = new Date(invoiceDate)
     dueDate.setDate(dueDate.getDate() + paymentDays)
 
-    const { data: countData } = await supabase.from('legal_invoices')
+    const { count: invoiceCount } = await supabase.from('legal_invoices')
       .select('id', { count: 'exact', head: true })
       .eq('company_id', selectedCompanyId)
-    const seq = ((countData as any) || 0) + 1
+    const seq = (invoiceCount || 0) + 1
     const invoiceNumber = `INV-${invoiceDate.getFullYear()}${String(invoiceDate.getMonth() + 1).padStart(2, '0')}-${String(seq).padStart(4, '0')}`
 
     const lines: { entry: typeof billableEntries[0]; rate: number; amount: number }[] = billableEntries.map(e => {
