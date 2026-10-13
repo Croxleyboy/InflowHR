@@ -14,6 +14,7 @@ import AccessDenied from './pages/AccessDenied'
 import InitialSetup from './pages/InitialSetup'
 import Footer from './components/Footer'
 import DesktopLayout from './components/DesktopLayout'
+import HelpChatBubble from './components/HelpChatBubble'
 import Dashboard from './pages/Dashboard'
 import Settings from './pages/Settings'
 import Expenses from './pages/Expenses'
@@ -84,6 +85,7 @@ import AdminXeroTest from './pages/admin/AdminXeroTest'
 import AdminIntegrations from './pages/admin/AdminIntegrations'
 import AdminReports from './pages/admin/AdminReports'
 import AdminSurveys from './pages/admin/AdminSurveys'
+import AdminHelp from './pages/admin/AdminHelp'
 import SurveyInsights from './pages/admin/SurveyInsights'
 import MySurveys from './pages/MySurveys'
 import UserGuide from './pages/UserGuide'
@@ -101,6 +103,7 @@ const ROUTE_PERM_MAP: Record<string, string> = {
   'legal-timesheets': 'legal_timesheets', 'space-management': 'space_management', assets: 'assets',
   'talent-intelligence': 'talent_intelligence', surveys: 'surveys', reports: 'reports',
   integrations: 'integrations', access: 'access', 'user-guides': 'user_guides',
+  help: 'employee_help',
 }
 
 function AdminGate() {
@@ -245,6 +248,7 @@ function AuthGate() {
             <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
             <Route path="surveys" element={<AdminSurveys />} />
             <Route path="surveys/insights" element={<SurveyInsights />} />
+            <Route path="help" element={<AdminHelp />} />
             <Route path="reports" element={<AdminReports />} />
             <Route path="user-guides" element={<AdminUserGuides />} />
             <Route path="integrations" element={<AdminIntegrations />} />
@@ -263,6 +267,7 @@ function AuthGate() {
           <Route path="*" element={<EmployeeRoutes />} />
         </Route>
       </Routes>
+      <HelpChatBubble />
       </CheckInProvider>
     )
   }
@@ -299,6 +304,7 @@ function AuthGate() {
           <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
           <Route path="surveys" element={<AdminSurveys />} />
           <Route path="surveys/insights" element={<SurveyInsights />} />
+          <Route path="help" element={<AdminHelp />} />
           <Route path="reports" element={<AdminReports />} />
           <Route path="user-guides" element={<AdminUserGuides />} />
           <Route path="integrations" element={<AdminIntegrations />} />
@@ -325,6 +331,7 @@ function AuthGate() {
         </>
       } />
     </Routes>
+    <HelpChatBubble />
     </CheckInProvider>
   )
 }

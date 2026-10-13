@@ -22,9 +22,10 @@ export interface Features {
   sage_integration: boolean
   modulr_integration: boolean
   surveys: boolean
+  employee_help: boolean
 }
 
-const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management', 'benefits', 'xero_integration', 'sage_integration', 'payslips', 'surveys']
+const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management', 'benefits', 'xero_integration', 'sage_integration', 'payslips', 'surveys', 'employee_help']
 const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   timesheets: 'timesheets',
   performance: 'performance',
@@ -61,6 +62,7 @@ const defaultFeatures: Features = {
   sage_integration: false,
   modulr_integration: false,
   surveys: true,
+  employee_help: true,
 }
 
 interface FeatureContextType {
