@@ -761,7 +761,7 @@ export default function Dashboard() {
         .select('net_pay, pay_period_start, pay_period_end, pay_period_type')
         .eq('employee_id', employeeId)
         .eq('company_id', companyUser.company_id)
-        .in('status', ['processed', 'paid'])
+        .not('status', 'eq', 'generating')
         .eq('released', true)
         .order('payment_date', { ascending: false })
         .limit(1)

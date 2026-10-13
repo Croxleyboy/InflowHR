@@ -94,7 +94,7 @@ export default function Payslips() {
       .eq('company_id', companyUser?.company_id)
       .gte('pay_period_start', startOfMonth)
       .lte('pay_period_start', endStr)
-      .in('status', ['processed', 'paid'])
+      .not('status', 'eq', 'generating')
       .eq('released', true)
       .order('pay_period_start', { ascending: true })
       .limit(10)
