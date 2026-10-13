@@ -109,35 +109,6 @@ function DonutChart({ segments, size = 100 }: { segments: { value: number; color
   )
 }
 
-function AttendanceBarChart({ days }: { days: AttendanceDay[] }) {
-  const statusColors: Record<string, string> = {
-    present: '#43a047',
-    late: '#ff9800',
-    absent: '#e53935',
-    leave: '#7e57c2',
-    no_shift: 'var(--border)',
-  }
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  const display = days.length > 0 ? days.slice(-7) : Array(7).fill({ date: '', status: 'no_shift', hours: 0 })
-  return (
-    <div className="dd2-attendance-bars">
-      {display.map((d: AttendanceDay, i: number) => (
-        <div key={i} className="dd2-att-bar-col">
-          <div className="dd2-att-bar-track">
-            <div
-              className="dd2-att-bar-fill"
-              style={{
-                height: d.status === 'no_shift' ? '10%' : d.status === 'present' ? '100%' : d.status === 'late' ? '70%' : d.status === 'absent' ? '30%' : '50%',
-                background: statusColors[d.status] || 'var(--border)',
-              }}
-            />
-          </div>
-          <span className="dd2-att-bar-label">{dayLabels[i] || ''}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 export default function DashboardDetailed() {
   const { dark, toggle } = useTheme()
