@@ -226,6 +226,47 @@ export default function DashboardDetailed() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
 
+  function toggleLtTimer(id: string) {
+    setLtTimers(prev => {
+      const next = prev.map(tmr => {
+        if (tmr.id === id) {
+          if (tmr.running) return { ...tmr, running: false, elapsed: getLtElapsed(tmr), startedAt: null }
+          return { ...tmr, running: true, startedAt: Date.now() }
+        }
+        if (tmr.running) return { ...tmr, running: false, elapsed: getLtElapsed(tmr), startedAt: null }
+        return tmr
+      })
+      try { localStorage.setItem(ltTimerKey, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+
+  function stopLtTimer(id: string) {
+    setLtTimers(prev => {
+      const next = prev.filter(tmr => tmr.id !== id)
+      try { localStorage.setItem(ltTimerKey, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+
+  async function logLtTimer(timer: LTTimer) {
+    const elapsed = getLtElapsed(timer)
+    const hrs = parseFloat((elapsed / 3600).toFixed(2))
+    if (hrs <= 0) return
+    const { error } = await supabase.from('legal_timesheet_entries').insert({
+      company_id: companyUser?.company_id,
+      employee_id: employeeId,
+      date: new Date().toISOString().slice(0, 10),
+      client_id: timer.clientId,
+      matter_id: timer.matterId,
+      task_code: timer.taskCode,
+      duration_hrs: hrs,
+      narrative: '',
+      status: 'draft',
+    })
+    if (!error) stopLtTimer(timer.id)
+  }
+
   const initials = employeeName.split(' ').map(n => n[0]).join('').toUpperCase() || '?'
   const firstName = employeeName.split(' ')[0] || employeeName
 
@@ -1575,8 +1616,8 @@ export default function DashboardDetailed() {
 
       {/* Active legal timesheet timers */}
       {ltTimers.length > 0 && features.legal_timesheets && (
-        <div className="dd2-lt-timer-bar" onClick={() => navigate('/legal-timesheets')}>
-          <div className="dd2-lt-timer-icon">
+        <div className="dd2-lt-timer-bar">
+          <div className="dd2-lt-timer-icon" onClick={() => navigate('/legal-timesheets')} style={{ cursor: 'pointer' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2" /><path d="M5 3l2 2" /><path d="M19 3l-2 2" /><line x1="12" y1="1" x2="12" y2="3" /></svg>
           </div>
           <div className="dd2-lt-timer-items">
@@ -1587,11 +1628,26 @@ export default function DashboardDetailed() {
                   <span className="dd2-lt-timer-name">{timer.clientName} — {timer.matterName}</span>
                   <span className="dd2-lt-timer-time">{fmtLtElapsed(elapsed)}</span>
                   {timer.running && <span className="dd2-lt-timer-pulse" />}
+                  <div className="dd2-lt-timer-controls">
+                    <button className="dd2-lt-timer-btn dd2-lt-timer-play" onClick={() => toggleLtTimer(timer.id)}>
+                      {timer.running ? (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
+                      ) : (
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                      )}
+                    </button>
+                    <button className="dd2-lt-timer-btn dd2-lt-timer-log" onClick={() => logLtTimer(timer)}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
+                    </button>
+                    <button className="dd2-lt-timer-btn dd2-lt-timer-stop" onClick={() => stopLtTimer(timer.id)}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    </button>
+                  </div>
                 </div>
               )
             })}
           </div>
-          <span className="dd2-lt-timer-link">View Timesheets</span>
+          <span className="dd2-lt-timer-link" onClick={() => navigate('/legal-timesheets')} style={{ cursor: 'pointer' }}>View Timesheets</span>
         </div>
       )}
 
