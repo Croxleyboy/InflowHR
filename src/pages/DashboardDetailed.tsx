@@ -128,6 +128,7 @@ export default function DashboardDetailed() {
   const [leaveTotal, setLeaveTotal] = useState<number | null>(null)
   const [upcomingLeave, setUpcomingLeave] = useState<LeaveRequest[]>([])
   const [recentNotifications, setRecentNotifications] = useState<WorkflowNotif[]>([])
+  const [totalPendingCount, setTotalPendingCount] = useState(0)
   const [birthdays, setBirthdays] = useState<Colleague[]>([])
   const [anniversaries, setAnniversaries] = useState<Colleague[]>([])
   const [, setRecentExpenses] = useState<ExpenseClaim[]>([])
@@ -330,8 +331,8 @@ export default function DashboardDetailed() {
       })
     supabase.from('payslips')
       .select('net_pay, payment_date, pay_period_start, pay_period_end, frequency')
-      .eq('employee_id', employeeId).eq('company_id', cid).not('status', 'eq', 'generating').eq('released', true)
-      .order('pay_period_end', { ascending: false }).limit(1).maybeSingle()
+      .eq('employee_id', employeeId).eq('company_id', cid).eq('released', true)
+      .order('id', { ascending: false }).limit(1).maybeSingle()
       .then(({ data }) => {
         if (data) {
           setLastPayNet(Number((data as any).net_pay))
@@ -361,19 +362,20 @@ export default function DashboardDetailed() {
           .ilike('assigned_to', `%${employeeEmail}%`)
           .eq('status', 'Pending')
           .eq('company_id', cid)
-          .order('created_at', { ascending: false })
-          .limit(5),
+          .order('created_at', { ascending: false }),
         supabase.from('workflow_tracker')
           .select('id, action, task_description, record_type, approval_status, status, emp_display_name, created_at')
           .or(`assigned_to.ilike.%${employeeEmail}%,employee_email.ilike.%${employeeEmail}%`)
           .eq('status', 'Complete')
           .eq('company_id', cid)
           .order('created_at', { ascending: false })
-          .limit(5),
+          .limit(20),
       ]).then(([pendingRes, completeRes]) => {
-        const combined = [...(pendingRes.data || []), ...(completeRes.data || [])]
+        const pending = pendingRes.data || []
+        setTotalPendingCount(pending.length)
+        const combined = [...pending, ...(completeRes.data || [])]
           .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-          .slice(0, 5)
+          .slice(0, 10)
         setRecentNotifications(combined as WorkflowNotif[])
       })
     }
@@ -522,7 +524,8 @@ export default function DashboardDetailed() {
           }
         } catch { /* empty */ }
         const outstandingIds = enabledIds.filter((id: string) => !completedIds.has(id))
-        setElearningCompleted(completedIds.size)
+        const enabledSet = new Set(enabledIds)
+        setElearningCompleted([...completedIds].filter(id => enabledSet.has(id)).length)
         if (outstandingIds.length > 0) {
           const { data: courses } = await supabase.from('elearning_courses').select('id, deadline').in('id', outstandingIds)
           const now = new Date()
@@ -922,7 +925,7 @@ export default function DashboardDetailed() {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
 
-  const pendingCount = recentNotifications.filter(n => n.status === 'Pending').length
+  const pendingCount = totalPendingCount
 
 
   const newsPerPage = 3
