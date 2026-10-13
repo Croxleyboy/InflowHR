@@ -7443,6 +7443,10 @@ body {
   background: linear-gradient(135deg, #e0f2f1, #b2dfdb);
   color: #004d40;
 }
+.dd2-summary-reminders {
+  background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+  color: #e65100;
+}
 [data-theme="dark"] .dd2-summary-remaining {
   background: linear-gradient(135deg, #0d47a1, #1565c0);
   color: #bbdefb;
@@ -7466,6 +7470,10 @@ body {
 [data-theme="dark"] .dd2-summary-lastexp {
   background: linear-gradient(135deg, #004d40, #00695c);
   color: #b2dfdb;
+}
+[data-theme="dark"] .dd2-summary-reminders {
+  background: linear-gradient(135deg, #e65100, #ef6c00);
+  color: #fff3e0;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .dd2-summary-remaining {
@@ -7491,6 +7499,10 @@ body {
   :root:not([data-theme="light"]) .dd2-summary-lastexp {
     background: linear-gradient(135deg, #004d40, #00695c);
     color: #b2dfdb;
+  }
+  :root:not([data-theme="light"]) .dd2-summary-reminders {
+    background: linear-gradient(135deg, #e65100, #ef6c00);
+    color: #fff3e0;
   }
 }
 .dd2-summary-value {
