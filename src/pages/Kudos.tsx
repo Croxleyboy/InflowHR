@@ -70,8 +70,6 @@ const QUALITIES = [
   { value: 'good_luck', key: 'kudos.quality_good_luck' },
 ]
 
-const WATCHLIST_KEY = 'inflowhr-kudos-watchlist'
-const COLLEAGUES_ONLY_KEY = 'inflowhr-kudos-colleagues-only'
 const PAGE_SIZE = 8
 
 function timeAgo(dateStr: string): string {

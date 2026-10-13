@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useFeatures } from '../context/FeatureContext'
@@ -244,7 +244,7 @@ export default function DashboardDetailed() {
         if (tmr.running) return { ...tmr, running: false, elapsed: getLtElapsed(tmr), startedAt: null }
         return tmr
       })
-      try { localStorage.setItem(ltTimerKey, JSON.stringify(next)) } catch { /* ignore */ }
+      try { localStorage.setItem('inflowhr-lt-timers', JSON.stringify(next)) } catch { /* ignore */ }
       return next
     })
   }
@@ -252,7 +252,7 @@ export default function DashboardDetailed() {
   function stopLtTimer(id: string) {
     setLtTimers(prev => {
       const next = prev.filter(tmr => tmr.id !== id)
-      try { localStorage.setItem(ltTimerKey, JSON.stringify(next)) } catch { /* ignore */ }
+      try { localStorage.setItem('inflowhr-lt-timers', JSON.stringify(next)) } catch { /* ignore */ }
       return next
     })
   }
