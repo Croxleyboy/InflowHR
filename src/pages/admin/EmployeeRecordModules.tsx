@@ -79,7 +79,7 @@ const MODULES: { key: Module; label: string; icon: string }[] = [
   { key: 'performance', label: 'Performance & Goals', icon: 'M22 11.08V12a10 10 0 1 1-5.93-9.14|M22 4L12 14.01l-3-3' },
   { key: 'elearning', label: 'E-Learning', icon: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z|M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z' },
   { key: 'onboarding', label: 'Onboarding', icon: 'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2|M9 12l2 2 4-4|M15 2H9v2h6V2z' },
-  { key: 'expenses', label: 'Expenses', icon: 'M12 1v22|M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6' },
+  { key: 'expenses', label: 'Expenses', icon: 'M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z|M12 12m-2.5 0a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0|M6 12h.01M18 12h.01' },
   { key: 'timesheets', label: 'Timesheets', icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z|M12 6v6l4 2' },
   { key: 'documents', label: 'Documents', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z|M14 2v6h6|M12 18v-6|M9 15h6' },
   { key: 'shift_skills', label: 'Shift Skills', icon: 'M22 11.08V12a10 10 0 1 1-5.93-9.14|M9 11l3 3L22 4' },

@@ -2704,7 +2704,7 @@ export default function AdminPayrollNew() {
             </div>
             <div className="admin-stat-card" style={{ minWidth: 200 }}>
               <div className="admin-stat-icon" style={{ background: '#1e88e5' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
               </div>
               <div className="admin-stat-info">
                 <span className="admin-stat-value">{currencySymbol(currency)}{stats.totalNet.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>

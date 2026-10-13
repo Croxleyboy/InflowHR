@@ -1196,7 +1196,7 @@ export default function DashboardDetailed() {
   allCards.push({ id: 'expenses', el: (
     <section className="dd2-card" onClick={() => navigate('/payslips')}>
       <div className="dd2-card-header">
-        <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
         <h2 className="dd2-card-title">My Pay</h2>
         <button className="dd2-pay-toggle" title={payHidden ? 'Show amount' : 'Hide amount'} onClick={(ev) => { ev.stopPropagation(); updatePref('dd2_hide_pay', !payHidden) }}>
           {payHidden ? (
@@ -1536,7 +1536,7 @@ export default function DashboardDetailed() {
             )}
             {lastPayNet !== null && (
               <div className="dd2-profile-detail dd2-profile-detail-pay" onClick={(ev) => { ev.stopPropagation(); navigate('/payslips') }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/></svg>
                 <span>{formatCurrency(lastPayNet, currency)}{lastPayDate ? ` · ${new Date(lastPayDate + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}</span>
               </div>
             )}

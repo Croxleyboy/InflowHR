@@ -37,7 +37,7 @@ const SETUP_STEPS: SetupStep[] = [
     title: 'Configure Expense Settings',
     summary: 'Set up cost centres and expense types for your company.',
     details: 'Go to the Expenses page and select the Settings tab. Review the default cost centres and expense types — add any that are specific to your company and remove those that do not apply. These settings control the dropdown options your employees see when submitting expense claims and line items.',
-    icon: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+    icon: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
     page: '/admin/expenses',
     feature: 'expenses',
   },
