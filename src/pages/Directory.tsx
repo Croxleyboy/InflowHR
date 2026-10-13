@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
 import { toLocalDateStr } from '../lib/formatters'
+import { useUserPreferences } from '../hooks/useUserPreferences'
 
 interface DirectoryEntry {
   id: number
@@ -31,26 +32,18 @@ interface TeamCheckinRow {
   yesterday: { check_in_at: string; check_out_at: string | null } | null
 }
 
-const WATCHLIST_KEY = 'inflowhr-kudos-watchlist'
-const COLLEAGUES_ONLY_KEY = 'inflowhr-kudos-colleagues-only'
-
-function getWatchlist(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]')
-  } catch { return [] }
-}
-
 export default function Directory() {
   const navigate = useNavigate()
   const { t } = useLanguage()
   const { companyUser, employeeId: currentEmployeeId, isManager } = useAuth()
   const { features } = useFeatures()
+  const { prefs, updatePref } = useUserPreferences()
   const [entries, setEntries] = useState<DirectoryEntry[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<DirectoryEntry | null>(null)
   const [onLeaveIds, setOnLeaveIds] = useState<Set<string>>(new Set())
-  const [watchlist, setWatchlist] = useState<string[]>(getWatchlist)
+  const watchlist = prefs.kudos_watchlist || []
   const [showWatchlistPrompt, setShowWatchlistPrompt] = useState(false)
   const [selectedSkills, setSelectedSkills] = useState<{ name: string; proficiency: number }[]>([])
   const [selectedLangs, setSelectedLangs] = useState<{ language: string; proficiency: string }[]>([])
@@ -102,11 +95,10 @@ export default function Directory() {
     })) as DirectoryEntry[]
     setEntries(entriesWithUuid)
 
-    const stored = getWatchlist()
+    const stored = prefs.kudos_watchlist || []
     const cleaned = stored.filter(id => validEmpIds.has(id) && id !== currentEmployeeId)
     if (cleaned.length !== stored.length) {
-      setWatchlist(cleaned)
-      localStorage.setItem(WATCHLIST_KEY, JSON.stringify(cleaned))
+      updatePref('kudos_watchlist', cleaned)
     }
 
     const leaveSet = new Set<string>()
@@ -283,17 +275,15 @@ export default function Directory() {
       updated = watchlist.filter(w => w !== id)
     } else {
       updated = [...watchlist, id]
-      const colleaguesOnly = localStorage.getItem(COLLEAGUES_ONLY_KEY) === 'true'
-      if (!colleaguesOnly) {
+      if (!prefs.kudos_colleagues_only) {
         setShowWatchlistPrompt(true)
       }
     }
-    setWatchlist(updated)
-    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(updated))
+    updatePref('kudos_watchlist', updated)
   }
 
   function enableColleaguesOnly() {
-    localStorage.setItem(COLLEAGUES_ONLY_KEY, 'true')
+    updatePref('kudos_colleagues_only', true)
     setShowWatchlistPrompt(false)
   }
 

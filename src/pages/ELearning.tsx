@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
@@ -252,27 +252,65 @@ export default function ELearning() {
   useEffect(() => { fetchEnrolmentDates() }, [fetchEnrolmentDates])
   useEffect(() => { saveProgress(progress) }, [progress])
 
+  // Load completions from elearning_completions + bookmarks/progress from elearning_progress
   useEffect(() => {
     if (!companyUser?.company_id || !EMPLOYEE_ID) return
-    supabase.from('elearning_completions')
-      .select('course_id, completed_at')
-      .eq('employee_id', EMPLOYEE_ID)
-      .eq('company_id', companyUser.company_id)
-      .then(({ data }) => {
-        if (!data || data.length === 0) return
-        setProgress(prev => {
-          const merged = new Set(prev.completed)
-          const dates = { ...prev.completedDates }
-          let changed = false
-          data.forEach((r: any) => {
+    Promise.all([
+      supabase.from('elearning_completions')
+        .select('course_id, completed_at')
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('company_id', companyUser.company_id),
+      supabase.from('elearning_progress')
+        .select('course_id, is_bookmarked, progress_pct')
+        .eq('employee_id', EMPLOYEE_ID)
+        .eq('company_id', companyUser.company_id),
+    ]).then(([completionsRes, progressRes]) => {
+      setProgress(prev => {
+        const merged = new Set(prev.completed)
+        const dates = { ...prev.completedDates }
+        const bookmarks = new Set(prev.bookmarked)
+        const inProg = { ...prev.inProgress }
+        let changed = false
+
+        if (completionsRes.data) {
+          completionsRes.data.forEach((r: any) => {
             if (!merged.has(r.course_id)) { merged.add(r.course_id); changed = true }
             if (r.completed_at && !dates[r.course_id]) { dates[r.course_id] = r.completed_at; changed = true }
           })
-          if (!changed) return prev
-          return { ...prev, completed: [...merged], completedDates: dates }
-        })
+        }
+
+        if (progressRes.data) {
+          progressRes.data.forEach((r: any) => {
+            if (r.is_bookmarked && !bookmarks.has(r.course_id)) { bookmarks.add(r.course_id); changed = true }
+            if (r.progress_pct > 0 && (inProg[r.course_id] ?? 0) < r.progress_pct) { inProg[r.course_id] = r.progress_pct; changed = true }
+          })
+        }
+
+        if (!changed) return prev
+        return { completed: [...merged], completedDates: dates, bookmarked: [...bookmarks], inProgress: inProg }
       })
+    })
   }, [companyUser?.company_id, EMPLOYEE_ID])
+
+  // Sync bookmarks and progress to elearning_progress table
+  const elSyncRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!companyUser?.company_id || !EMPLOYEE_ID) return
+    if (elSyncRef.current) clearTimeout(elSyncRef.current)
+    elSyncRef.current = setTimeout(() => {
+      const courseIds = new Set([...progress.bookmarked, ...Object.keys(progress.inProgress).filter(id => progress.inProgress[id] > 0)])
+      if (courseIds.size === 0) return
+      const rows = [...courseIds].map(cid => ({
+        company_id: companyUser.company_id,
+        employee_id: EMPLOYEE_ID,
+        course_id: cid,
+        is_bookmarked: progress.bookmarked.includes(cid),
+        progress_pct: progress.inProgress[cid] || 0,
+        updated_at: new Date().toISOString(),
+      }))
+      supabase.from('elearning_progress').upsert(rows, { onConflict: 'company_id,employee_id,course_id' })
+    }, 1500)
+  }, [progress.bookmarked, progress.inProgress, companyUser?.company_id, EMPLOYEE_ID])
 
   useEffect(() => {
     if (!companyUser?.company_id || !EMPLOYEE_ID || enabledCourseIds === null || Object.keys(enrolmentDates).length > 0) return

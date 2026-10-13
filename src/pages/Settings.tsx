@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../context/ToastContext'
 import { getExportCategories, getDateRange, buildEmployeeExportZip } from '../lib/employeeDataExport'
+import { useUserPreferences } from '../hooks/useUserPreferences'
 import type { Lang } from '../lib/translations'
 
 const INFO_CARD_LABELS: { key: string; label: string; featureKey?: keyof Features }[] = [
@@ -57,6 +58,7 @@ export default function Settings() {
   const { employeeName, employeeEmail, companyUser, isSuperAdmin, portalRole, company, signOut } = useAuth()
   const { dark, toggle } = useTheme()
   const { showError, showSuccess } = useToast()
+  const { prefs, updatePref } = useUserPreferences()
   const navigate = useNavigate()
   const [draft, setDraft] = useState<Features>({ ...features })
   const [draftLang, setDraftLang] = useState<Lang>(lang)
@@ -69,27 +71,17 @@ export default function Settings() {
     dateRange: { earliest: string; latest: string }
     companyName: string
   } | null>(null)
-  const [dashLayout, setDashLayout] = useState(localStorage.getItem('inflowhr-dashboard-layout') || 'cards')
-  const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
-  const [cardOrder, setCardOrder] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem('inflowhr-info-card-order')
-      if (stored) {
-        const parsed = JSON.parse(stored) as string[]
-        const valid = parsed.filter(k => DEFAULT_INFO_KEYS.includes(k))
-        const missing = DEFAULT_INFO_KEYS.filter(k => !valid.includes(k))
-        return [...valid, ...missing]
-      }
-    } catch { /* empty */ }
+  const dashLayout = prefs.dashboard_layout
+  const dashMode = prefs.dashboard_mode
+  const cardOrder = (() => {
+    if (prefs.info_card_order && prefs.info_card_order.length > 0) {
+      const valid = prefs.info_card_order.filter(k => DEFAULT_INFO_KEYS.includes(k))
+      const missing = DEFAULT_INFO_KEYS.filter(k => !valid.includes(k))
+      return [...valid, ...missing]
+    }
     return [...DEFAULT_INFO_KEYS]
-  })
-  const [cardHidden, setCardHidden] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem('inflowhr-info-card-hidden')
-      if (stored) return new Set(JSON.parse(stored))
-    } catch { /* empty */ }
-    return new Set()
-  })
+  })()
+  const cardHidden = new Set(prefs.info_card_hidden || [])
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768)
   const [consents, setConsents] = useState<Record<string, boolean>>({})
   const [consentsLoading, setConsentsLoading] = useState(true)
@@ -413,11 +405,11 @@ export default function Settings() {
               <div className="language-selector">
                 <button
                   className={`lang-btn ${dashLayout === 'detailed' ? 'lang-active' : ''}`}
-                  onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'detailed'); setDashLayout('detailed') }}
+                  onClick={() => updatePref('dashboard_layout', 'detailed')}
                 >Detailed</button>
                 <button
                   className={`lang-btn ${dashLayout === 'cards' ? 'lang-active' : ''}`}
-                  onClick={() => { localStorage.setItem('inflowhr-dashboard-layout', 'cards'); setDashLayout('cards') }}
+                  onClick={() => updatePref('dashboard_layout', 'cards')}
                 >Cards</button>
               </div>
             </div>
@@ -437,15 +429,15 @@ export default function Settings() {
                 <>
                   <button
                     className={`lang-btn ${dashMode === 'plain' ? 'lang-active' : ''}`}
-                    onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'plain'); setDashMode('plain') }}
+                    onClick={() => updatePref('dashboard_mode', 'plain')}
                   >Plain</button>
                   <button
                     className={`lang-btn ${dashMode === 'simple' ? 'lang-active' : ''}`}
-                    onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'simple'); setDashMode('simple') }}
+                    onClick={() => updatePref('dashboard_mode', 'simple')}
                   >Coloured</button>
                   <button
                     className={`lang-btn ${dashMode === 'info' ? 'lang-active' : ''}`}
-                    onClick={() => { localStorage.setItem('inflowhr-dashboard-mode', 'info'); setDashMode('info') }}
+                    onClick={() => updatePref('dashboard_mode', 'info')}
                   >Info Cards</button>
                 </>
               )}
@@ -483,8 +475,7 @@ export default function Settings() {
                         const prevFullIdx = newOrder.indexOf(prevKey)
                         newOrder[prevFullIdx] = key
                         newOrder[fullIdx] = prevKey
-                        setCardOrder(newOrder)
-                        localStorage.setItem('inflowhr-info-card-order', JSON.stringify(newOrder))
+                        updatePref('info_card_order', newOrder)
                       }}
                       aria-label="Move up"
                     >
@@ -499,8 +490,7 @@ export default function Settings() {
                         const nextFullIdx = newOrder.indexOf(nextKey)
                         newOrder[nextFullIdx] = key
                         newOrder[fullIdx] = nextKey
-                        setCardOrder(newOrder)
-                        localStorage.setItem('inflowhr-info-card-order', JSON.stringify(newOrder))
+                        updatePref('info_card_order', newOrder)
                       }}
                       aria-label="Move down"
                     >
@@ -514,8 +504,7 @@ export default function Settings() {
                       const newHidden = new Set(cardHidden)
                       if (hidden) newHidden.delete(key)
                       else newHidden.add(key)
-                      setCardHidden(newHidden)
-                      localStorage.setItem('inflowhr-info-card-hidden', JSON.stringify([...newHidden]))
+                      updatePref('info_card_hidden', [...newHidden])
                     }}
                     role="switch"
                     aria-checked={!hidden}

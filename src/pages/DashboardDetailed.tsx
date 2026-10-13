@@ -8,6 +8,7 @@ import { useCheckIn } from '../context/CheckInContext'
 import { useToast } from '../context/ToastContext'
 import { supabase } from '../lib/supabase'
 import { formatDate, toLocalDateStr, getFYRange } from '../lib/formatters'
+import { useUserPreferences } from '../hooks/useUserPreferences'
 
 interface LeaveRequest {
   id: number
@@ -117,6 +118,7 @@ export default function DashboardDetailed() {
   const { signOut, employeeId, employeeName, employeeEmail, company, avatarUrl, companyUser, employmentCategory } = useAuth()
   const { activeCheckin, activeBreak, checkIn, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
   const { showSuccess, showError } = useToast()
+  const { prefs, updatePref } = useUserPreferences()
   const navigate = useNavigate()
 
   const isShiftWorker = employmentCategory === 'shift_worker'
@@ -163,9 +165,7 @@ export default function DashboardDetailed() {
   const [lastPayDate, setLastPayDate] = useState<string | null>(null)
   const [lastPayPeriod, setLastPayPeriod] = useState<string | null>(null)
   const [nextPayday, setNextPayday] = useState<string | null>(null)
-  const [payHidden, setPayHidden] = useState(() => {
-    try { return localStorage.getItem('inflowhr-dd2-hide-pay') === '1' } catch { return false }
-  })
+  const payHidden = prefs.dd2_hide_pay
   const [empEmail, setEmpEmail] = useState<string | null>(null)
   const [empPhone, setEmpPhone] = useState<string | null>(null)
   const [empStartDate, setEmpStartDate] = useState<string | null>(null)
@@ -173,9 +173,7 @@ export default function DashboardDetailed() {
 
   // Hero background image switcher
   const heroImages = ['/images/hero-landscape.jpg', '/images/hero-mountains.jpg', '/images/hero-sunset.jpg']
-  const [heroImageIdx, setHeroImageIdx] = useState(() => {
-    try { const saved = localStorage.getItem('inflowhr-dd2-hero-img'); return saved ? Math.min(Number(saved), 2) : 0 } catch { return 0 }
-  })
+  const heroImageIdx = prefs.dd2_hero_img
 
   // Shift check-in state for hero bar
   const [heroShift, setHeroShift] = useState<{ id: string; start_time: string; end_time: string; template_name: string } | null>(null)
@@ -183,27 +181,35 @@ export default function DashboardDetailed() {
   const [ciActing, setCiActing] = useState(false)
   const ciTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Legal timesheet timer (read from localStorage, shared with LegalTimesheets page)
+  // Legal timesheet timer (Supabase-backed, shared with LegalTimesheets page)
   interface LTTimer { id: string; clientId: string; clientName: string; matterId: string; matterName: string; taskCode: string; elapsed: number; running: boolean; startedAt: number | null }
-  const ltTimerKey = `lt-timers-${companyUser?.company_id}-${employeeId}`
   const [ltTimers, setLtTimers] = useState<LTTimer[]>([])
   const [, setLtTick] = useState(0)
   const ltTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const loadLtTimers = useCallback(() => {
-    try {
-      const saved = localStorage.getItem(ltTimerKey)
-      if (saved) setLtTimers(JSON.parse(saved) as LTTimer[])
-      else setLtTimers([])
-    } catch { setLtTimers([]) }
-  }, [ltTimerKey])
-
   useEffect(() => {
-    loadLtTimers()
-    const onStorage = (e: StorageEvent) => { if (e.key === ltTimerKey) loadLtTimers() }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [ltTimerKey, loadLtTimers])
+    if (!companyUser?.company_id || !employeeId) return
+    supabase
+      .from('legal_timesheet_timers')
+      .select('*')
+      .eq('company_id', companyUser.company_id)
+      .eq('employee_id', employeeId)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setLtTimers(data.map(row => ({
+            id: row.id,
+            clientId: row.client_id,
+            clientName: row.client_name,
+            matterId: row.matter_id,
+            matterName: row.matter_name,
+            taskCode: row.task_code || 'L110',
+            elapsed: row.elapsed_seconds || 0,
+            running: row.is_running || false,
+            startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
+          })))
+        }
+      })
+  }, [companyUser?.company_id, employeeId])
 
   useEffect(() => {
     const hasRunning = ltTimers.some(t => t.running)
@@ -383,8 +389,7 @@ export default function DashboardDetailed() {
     }
 
     // Birthdays & anniversaries
-    let watchlistIds: string[] = []
-    try { watchlistIds = JSON.parse(localStorage.getItem('inflowhr-kudos-watchlist') || '[]') } catch { /* empty */ }
+    const watchlistIds: string[] = prefs.kudos_watchlist || []
 
     supabase.from('employees')
       .select('id, first_name, last_name, date_of_birth, start_date, avatar_url, department')
@@ -1181,7 +1186,7 @@ export default function DashboardDetailed() {
       <div className="dd2-card-header">
         <svg className="dd2-card-hicon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <h2 className="dd2-card-title">My Pay</h2>
-        <button className="dd2-pay-toggle" title={payHidden ? 'Show amount' : 'Hide amount'} onClick={(ev) => { ev.stopPropagation(); setPayHidden(h => { const v = !h; try { localStorage.setItem('inflowhr-dd2-hide-pay', v ? '1' : '0') } catch { /* empty */ }; return v }) }}>
+        <button className="dd2-pay-toggle" title={payHidden ? 'Show amount' : 'Hide amount'} onClick={(ev) => { ev.stopPropagation(); updatePref('dd2_hide_pay', !payHidden) }}>
           {payHidden ? (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
           ) : (
@@ -1403,13 +1408,8 @@ export default function DashboardDetailed() {
   const cardMap = Object.fromEntries(allCards.map(c => [c.id, c]))
 
   const [columns, setColumns] = useState<[string[], string[], string[]]>(() => {
-    try {
-      const saved = localStorage.getItem('inflowhr-dd2-columns')
-      if (saved) {
-        const parsed = JSON.parse(saved) as [string[], string[], string[]]
-        if (Array.isArray(parsed) && parsed.length === 3) return parsed
-      }
-    } catch { /* empty */ }
+    const saved = prefs.dd2_columns as unknown as [string[], string[], string[]] | null
+    if (saved && Array.isArray(saved) && saved.length === 3) return saved
     return [[], [], []]
   })
 
@@ -1428,7 +1428,7 @@ export default function DashboardDetailed() {
 
   function saveColumns(cols: [string[], string[], string[]]) {
     setColumns(cols)
-    try { localStorage.setItem('inflowhr-dd2-columns', JSON.stringify(cols)) } catch { /* empty */ }
+    updatePref('dd2_columns', cols as unknown as Record<string, boolean>)
   }
 
   function handleColDrop(col: number, pos: number) {
@@ -1478,7 +1478,7 @@ export default function DashboardDetailed() {
             <button
               key={i}
               className={`dd2-hero-dot${i === heroImageIdx ? ' dd2-hero-dot-active' : ''}`}
-              onClick={() => { setHeroImageIdx(i); try { localStorage.setItem('inflowhr-dd2-hero-img', String(i)) } catch { /* empty */ } }}
+              onClick={() => updatePref('dd2_hero_img', i)}
               aria-label={`Background ${i + 1}`}
             />
           ))}

@@ -5,6 +5,7 @@ import { sendFeatureEmail } from '../lib/emailNotifications'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { useUserPreferences } from '../hooks/useUserPreferences'
 
 interface KudosEntry {
   id: number
@@ -88,6 +89,7 @@ export default function Kudos() {
   const { t } = useLanguage()
   const { employeeId: EMPLOYEE_ID, employeeName: currentUserName, companyUser } = useAuth()
   const { showError, showSuccess } = useToast()
+  const { prefs, updatePref } = useUserPreferences()
   const [tab, setTab] = useState<'feed' | 'new' | 'history'>('feed')
   const [entries, setEntries] = useState<KudosEntry[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -105,26 +107,12 @@ export default function Kudos() {
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   const [leaderboard, setLeaderboard] = useState<{ name: string; points: number }[]>([])
 
-  // Colleague watchlist filter
-  const [colleaguesOnly, setColleaguesOnly] = useState(() =>
-    localStorage.getItem(COLLEAGUES_ONLY_KEY) === 'true'
-  )
-  const [watchlist, setWatchlist] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(WATCHLIST_KEY) || '[]') }
-    catch { return [] }
-  })
-
-  useEffect(() => {
-    const stored = localStorage.getItem(WATCHLIST_KEY)
-    if (stored) {
-      try { setWatchlist(JSON.parse(stored)) } catch {}
-    }
-  }, [tab])
+  // Colleague watchlist filter (Supabase-backed via user_preferences)
+  const colleaguesOnly = prefs.kudos_colleagues_only
+  const watchlist = prefs.kudos_watchlist || []
 
   function toggleColleaguesOnly() {
-    const next = !colleaguesOnly
-    setColleaguesOnly(next)
-    localStorage.setItem(COLLEAGUES_ONLY_KEY, String(next))
+    updatePref('kudos_colleagues_only', !colleaguesOnly)
     setFeedPage(1)
   }
 

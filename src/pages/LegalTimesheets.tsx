@@ -149,8 +149,7 @@ export default function LegalTimesheets() {
   const [entries, setEntries] = useState<TimesheetEntry[]>([])
   const [loading, setLoading] = useState(true)
 
-  // ── Timer state (persisted to localStorage) ──
-  const TIMER_STORAGE_KEY = `lt-timers-${companyId}-${employeeId}`
+  // ── Timer state (Supabase-backed, localStorage cache) ──
   const [timers, setTimers] = useState<TimerState[]>(() => {
     try {
       const saved = localStorage.getItem(`lt-timers-${companyId}-${employeeId}`)
@@ -250,12 +249,61 @@ export default function LegalTimesheets() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  // Persist timers to localStorage
+  // Load timers from Supabase on mount, merge with localStorage cache
   useEffect(() => {
-    try {
-      localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(timers))
-    } catch { /* ignore */ }
-  }, [timers, TIMER_STORAGE_KEY])
+    if (!companyId || !employeeId) return
+    supabase
+      .from('legal_timesheet_timers')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('employee_id', employeeId)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const dbTimers: TimerState[] = data.map(row => ({
+            id: row.id,
+            clientId: row.client_id,
+            clientName: row.client_name,
+            matterId: row.matter_id,
+            matterName: row.matter_name,
+            taskCode: row.task_code || 'L110',
+            elapsed: row.elapsed_seconds || 0,
+            running: row.is_running || false,
+            startedAt: row.started_at ? new Date(row.started_at).getTime() : null,
+          }))
+          setTimers(dbTimers)
+          try { localStorage.setItem(`lt-timers-${companyId}-${employeeId}`, JSON.stringify(dbTimers)) } catch { /* empty */ }
+        }
+      })
+  }, [companyId, employeeId])
+
+  // Sync timers to Supabase + localStorage cache on change
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    try { localStorage.setItem(`lt-timers-${companyId}-${employeeId}`, JSON.stringify(timers)) } catch { /* empty */ }
+
+    if (!companyId || !employeeId) return
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current)
+    syncTimeoutRef.current = setTimeout(async () => {
+      await supabase.from('legal_timesheet_timers').delete().eq('company_id', companyId).eq('employee_id', employeeId)
+      if (timers.length > 0) {
+        await supabase.from('legal_timesheet_timers').insert(
+          timers.map(t => ({
+            id: t.id.startsWith('timer-') ? undefined : t.id,
+            company_id: companyId,
+            employee_id: employeeId,
+            client_id: t.clientId,
+            client_name: t.clientName,
+            matter_id: t.matterId,
+            matter_name: t.matterName,
+            task_code: t.taskCode,
+            elapsed_seconds: t.running && t.startedAt ? t.elapsed + Math.floor((Date.now() - t.startedAt) / 1000) : t.elapsed,
+            is_running: t.running,
+            started_at: t.startedAt ? new Date(t.startedAt).toISOString() : null,
+          }))
+        )
+      }
+    }, 1000)
+  }, [timers, companyId, employeeId])
 
   // Timer tick
   useEffect(() => {

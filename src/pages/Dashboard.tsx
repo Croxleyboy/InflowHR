@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import { useCheckIn } from '../context/CheckInContext'
 import { supabase } from '../lib/supabase'
 import { toLocalDateStr } from '../lib/formatters'
+import { useUserPreferences } from '../hooks/useUserPreferences'
 import Chevron from '../components/Chevron'
 import DashboardDetailed from './DashboardDetailed'
 
@@ -74,27 +75,6 @@ const INFO_CARD_FEATURE_MAP: Record<string, string | null> = {
   notifications: null,
 }
 
-function getInfoCardOrder(): InfoCardKey[] {
-  try {
-    const stored = localStorage.getItem('inflowhr-info-card-order')
-    if (stored) {
-      const parsed = JSON.parse(stored) as string[]
-      const valid = parsed.filter(k => (INFO_CARD_KEYS as readonly string[]).includes(k)) as InfoCardKey[]
-      const missing = INFO_CARD_KEYS.filter(k => !valid.includes(k))
-      return [...valid, ...missing]
-    }
-  } catch { /* empty */ }
-  return [...INFO_CARD_KEYS]
-}
-
-function getInfoCardHidden(): Set<string> {
-  try {
-    const stored = localStorage.getItem('inflowhr-info-card-hidden')
-    if (stored) return new Set(JSON.parse(stored))
-  } catch { /* empty */ }
-  return new Set()
-}
-
 export default function Dashboard() {
   const { dark, toggle } = useTheme()
   const { features, dashboardStyle } = useFeatures()
@@ -102,6 +82,7 @@ export default function Dashboard() {
   const { signOut, employeeId, employeeName, employeeEmail, avatarUrl, company, companyUser, employmentCategory, isSuperAdmin } = useAuth()
   const navigate = useNavigate()
   const { activeCheckin, activeBreak, checkOut, startBreak, endBreak, settings: ciSettings } = useCheckIn()
+  const { prefs } = useUserPreferences()
   const [latest, setLatest] = useState<LatestAnnouncement | null>(null)
   const [kudosUnread, setKudosUnread] = useState(0)
   const [pendingOneToOnes, setPendingOneToOnes] = useState(0)
@@ -146,18 +127,20 @@ export default function Dashboard() {
   const [colleagueBirthdays, setColleagueBirthdays] = useState<{ name: string; date: string; isToday: boolean; type: 'birthday' | 'anniversary'; years?: number }[]>([])
   const [nextOneToOne, setNextOneToOne] = useState<{ date: string; time: string | null; with_name: string } | null>(null)
   const [newGoals, setNewGoals] = useState<{ title: string; due_date: string | null }[]>([])
-  const [dashMode, setDashMode] = useState(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
-  useEffect(() => {
-    const handler = () => setDashMode(localStorage.getItem('inflowhr-dashboard-mode') || 'simple')
-    window.addEventListener('storage', handler)
-    return () => window.removeEventListener('storage', handler)
-  }, [])
+  const dashMode = prefs.dashboard_mode
   useEffect(() => {
     const iv = setInterval(() => setNowTick(Date.now()), 60000)
     return () => clearInterval(iv)
   }, [])
-  const infoCardOrder = getInfoCardOrder()
-  const infoCardHidden = getInfoCardHidden()
+  const infoCardOrder: InfoCardKey[] = (() => {
+    if (prefs.info_card_order && prefs.info_card_order.length > 0) {
+      const valid = prefs.info_card_order.filter(k => (INFO_CARD_KEYS as readonly string[]).includes(k)) as InfoCardKey[]
+      const missing = INFO_CARD_KEYS.filter(k => !valid.includes(k))
+      return [...valid, ...missing]
+    }
+    return [...INFO_CARD_KEYS]
+  })()
+  const infoCardHidden = new Set(prefs.info_card_hidden || [])
 
   const [isDesktop, setIsDesktop] = useState(window.innerWidth >= 768)
   useEffect(() => {
@@ -203,12 +186,7 @@ export default function Dashboard() {
   const [quickMenuOpen, setQuickMenuOpen] = useState(false)
 
   const desktopDefault = window.innerWidth >= 768 ? 'detailed' : 'cards'
-  const [dashPref, setDashPref] = useState(localStorage.getItem('inflowhr-dashboard-layout') || desktopDefault)
-  useEffect(() => {
-    const handler = () => setDashPref(localStorage.getItem('inflowhr-dashboard-layout') || desktopDefault)
-    window.addEventListener('storage', handler)
-    return () => window.removeEventListener('storage', handler)
-  }, [desktopDefault])
+  const dashPref = prefs.dashboard_layout || desktopDefault
 
   useEffect(() => {
     if (companyUser?.company_id) {
