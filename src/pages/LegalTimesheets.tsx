@@ -104,7 +104,7 @@ function formatElapsed(seconds: number): string {
 }
 
 function elapsedToHrs(seconds: number, incrementMins: number): number {
-  return roundUp(seconds / 3600, incrementMins)
+  return parseFloat(roundUp(seconds / 3600, incrementMins).toFixed(2))
 }
 
 function todayStr(): string {

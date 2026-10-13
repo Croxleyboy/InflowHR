@@ -7527,7 +7527,6 @@ body {
   margin-bottom: 16px;
   background: linear-gradient(135deg, #1565c0, #0d47a1);
   border-radius: 12px;
-  cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s;
   color: #fff;
 }
@@ -7544,7 +7543,16 @@ body {
   animation: dd2-lt-pulse 1.5s ease-in-out infinite;
 }
 @keyframes dd2-lt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-.dd2-lt-timer-link { flex-shrink: 0; font-size: 12px; font-weight: 600; opacity: 0.7; white-space: nowrap; }
+.dd2-lt-timer-controls { display: flex; gap: 4px; margin-left: 4px; }
+.dd2-lt-timer-btn {
+  width: 26px; height: 26px; border: none; border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: opacity 0.15s, transform 0.1s;
+}
+.dd2-lt-timer-btn:hover { opacity: 0.85; transform: scale(1.1); }
+.dd2-lt-timer-play { background: rgba(255,255,255,0.25); }
+.dd2-lt-timer-log { background: rgba(76,175,80,0.7); }
+.dd2-lt-timer-stop { background: rgba(229,57,53,0.7); }
+.dd2-lt-timer-link { flex-shrink: 0; font-size: 12px; font-weight: 600; opacity: 0.7; white-space: nowrap; cursor: pointer; }
 
 /* 3-column card layout */
 .dd2-columns {
