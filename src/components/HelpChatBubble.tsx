@@ -11,6 +11,7 @@ interface HelpArticle {
   category: string
   question: string
   answer: string
+  keywords: string
   data_query: string | null
 }
 
@@ -25,12 +26,39 @@ const CATEGORIES = [
   { key: 'leave', label: 'Leave' },
   { key: 'pay', label: 'Pay' },
   { key: 'shifts', label: 'Shifts' },
+  { key: 'timesheets', label: 'Timesheets' },
   { key: 'benefits', label: 'Benefits' },
-  { key: 'general', label: 'General' },
-  { key: 'onboarding', label: 'Onboarding' },
+  { key: 'rooms', label: 'Room Booking' },
+  { key: 'elearning', label: 'Training' },
+  { key: 'kudos', label: 'Kudos' },
+  { key: 'meetings', label: '1:1 Meetings' },
   { key: 'performance', label: 'Performance' },
+  { key: 'onboarding', label: 'Onboarding' },
   { key: 'policies', label: 'Policies' },
+  { key: 'general', label: 'General' },
 ]
+
+const STOP_WORDS = new Set([
+  'i', 'me', 'my', 'we', 'our', 'you', 'your', 'it', 'its', 'the', 'a', 'an',
+  'is', 'are', 'was', 'were', 'be', 'been', 'am', 'do', 'does', 'did', 'has',
+  'have', 'had', 'will', 'would', 'can', 'could', 'should', 'may', 'might',
+  'shall', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'and',
+  'or', 'not', 'but', 'if', 'so', 'as', 'that', 'this', 'what', 'which',
+  'who', 'how', 'when', 'where', 'why', 'all', 'each', 'any', 'some', 'no',
+  'about', 'up', 'out', 'get', 'got', 'just', 'than', 'then', 'also', 'very',
+  'too', 'much', 'many', 'more', 'most', 'other', 'into', 'here', 'there',
+])
+
+function getSignificantWords(text: string): string[] {
+  return text.toLowerCase().split(/\s+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ''))
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w))
+}
+
+function articleMatchesQuery(article: HelpArticle, queryWords: string[]): boolean {
+  const searchText = `${article.question} ${article.keywords}`.toLowerCase()
+  return queryWords.some(w => searchText.includes(w))
+}
 
 async function executeDataQuery(queryKey: string, employeeId: string, companyId: string, currency: string): Promise<string> {
   switch (queryKey) {
@@ -177,6 +205,7 @@ export default function HelpChatBubble() {
   const [loading, setLoading] = useState(false)
   const [expandedArticle, setExpandedArticle] = useState<number | null>(null)
   const [resolvedAnswers, setResolvedAnswers] = useState<Record<number, string>>({})
+  const [showChips, setShowChips] = useState(true)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -197,51 +226,109 @@ export default function HelpChatBubble() {
         role: 'bot',
         text: `Hi ${firstName}! How can I help you today? Choose a topic below or type your question.`,
       }])
+      setShowChips(true)
     }
     setTimeout(() => inputRef.current?.focus(), 200)
+  }
+
+  function handleNewQuestion() {
+    const firstName = employeeName?.split(' ')[0] || ''
+    setMessages([{
+      role: 'bot',
+      text: `Hi ${firstName}! How can I help you today? Choose a topic below or type your question.`,
+    }])
+    setExpandedArticle(null)
+    setResolvedAnswers({})
+    setShowChips(true)
+    setQuery('')
+    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
   async function searchArticles(searchQuery: string): Promise<HelpArticle[]> {
     if (!companyId) return []
 
+    const queryWords = getSignificantWords(searchQuery)
+    if (queryWords.length === 0) return []
+
     const { data } = await supabase
       .from('help_articles')
-      .select('id, category, question, answer, data_query')
+      .select('id, category, question, answer, keywords, data_query')
       .or(`company_id.is.null,company_id.eq.${companyId}`)
       .eq('is_active', true)
       .textSearch('search_vector', searchQuery, { type: 'websearch' })
       .order('sort_order')
-      .limit(5)
+      .limit(10)
 
-    if (data && data.length > 0) return data
+    if (data && data.length > 0) {
+      const relevant = data.filter(a => articleMatchesQuery(a, queryWords))
+      if (relevant.length > 0) return relevant.slice(0, 5)
+    }
 
-    const words = searchQuery.split(/\s+/).filter(w => w.length > 2)
-    if (words.length === 0) return []
-    const ilikeFilters = words.map(w =>
+    if (queryWords.length === 0) return []
+
+    const ilikeFilters = queryWords.map(w =>
       `question.ilike.%${w}%,keywords.ilike.%${w}%`
-    ).join(',')
+    )
 
-    const { data: fallback } = await supabase
-      .from('help_articles')
-      .select('id, category, question, answer, data_query')
-      .or(`company_id.is.null,company_id.eq.${companyId}`)
-      .eq('is_active', true)
-      .or(ilikeFilters)
-      .order('sort_order')
-      .limit(5)
+    let fallbackArticles: HelpArticle[] = []
 
-    return fallback || []
+    if (queryWords.length <= 3) {
+      for (const filter of ilikeFilters) {
+        const { data: partial } = await supabase
+          .from('help_articles')
+          .select('id, category, question, answer, keywords, data_query')
+          .or(`company_id.is.null,company_id.eq.${companyId}`)
+          .eq('is_active', true)
+          .or(filter)
+          .order('sort_order')
+          .limit(8)
+        if (partial) fallbackArticles.push(...partial)
+      }
+    } else {
+      const { data: partial } = await supabase
+        .from('help_articles')
+        .select('id, category, question, answer, keywords, data_query')
+        .or(`company_id.is.null,company_id.eq.${companyId}`)
+        .eq('is_active', true)
+        .or(ilikeFilters.join(','))
+        .order('sort_order')
+        .limit(10)
+      if (partial) fallbackArticles = partial
+    }
+
+    const seen = new Set<number>()
+    const unique = fallbackArticles.filter(a => {
+      if (seen.has(a.id)) return false
+      seen.add(a.id)
+      return true
+    })
+
+    const scored = unique.map(a => {
+      const text = `${a.question} ${a.keywords}`.toLowerCase()
+      const matchCount = queryWords.filter(w => text.includes(w)).length
+      return { article: a, score: matchCount }
+    })
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5)
+
+    if (scored.length > 0 && scored[0].score < Math.ceil(queryWords.length / 2) && queryWords.length > 2) {
+      return []
+    }
+
+    return scored.map(s => s.article)
   }
 
   async function handleCategoryClick(category: string) {
     if (!companyId) return
     setLoading(true)
+    setShowChips(false)
 
-    setMessages(prev => [...prev, { role: 'user', text: category.charAt(0).toUpperCase() + category.slice(1) }])
+    setMessages(prev => [...prev, { role: 'user', text: CATEGORIES.find(c => c.key === category)?.label || category }])
 
     const { data } = await supabase
       .from('help_articles')
-      .select('id, category, question, answer, data_query')
+      .select('id, category, question, answer, keywords, data_query')
       .or(`company_id.is.null,company_id.eq.${companyId}`)
       .eq('is_active', true)
       .eq('category', category)
@@ -252,7 +339,7 @@ export default function HelpChatBubble() {
     if (articles.length > 0) {
       setMessages(prev => [...prev, {
         role: 'bot',
-        text: `Here are the most common ${category} questions:`,
+        text: `Here are the most common ${CATEGORIES.find(c => c.key === category)?.label?.toLowerCase() || category} questions:`,
         articles,
       }])
     } else {
@@ -265,16 +352,31 @@ export default function HelpChatBubble() {
     scrollToBottom()
   }
 
+  async function logSearch(searchQuery: string, matched: boolean, resultCount: number, topArticleId: number | null) {
+    if (!companyId || !employeeId) return
+    supabase.from('help_search_logs').insert({
+      company_id: companyId,
+      employee_id: employeeId,
+      query: searchQuery.slice(0, 500),
+      matched,
+      result_count: resultCount,
+      top_article_id: topArticleId,
+    }).then()
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const q = query.trim()
     if (!q || loading) return
     setQuery('')
     setLoading(true)
+    setShowChips(false)
 
     setMessages(prev => [...prev, { role: 'user', text: q }])
 
     const articles = await searchArticles(q)
+
+    logSearch(q, articles.length > 0, articles.length, articles[0]?.id || null)
 
     if (articles.length > 0) {
       setMessages(prev => [...prev, {
@@ -285,8 +387,9 @@ export default function HelpChatBubble() {
     } else {
       setMessages(prev => [...prev, {
         role: 'bot',
-        text: "I couldn't find an answer to that. Try different keywords, or contact HR for help.",
+        text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
       }])
+      setShowChips(true)
     }
     setLoading(false)
     scrollToBottom()
@@ -318,11 +421,20 @@ export default function HelpChatBubble() {
               </svg>
               <span>{t('help.title') === 'help.title' ? 'Employee Help' : t('help.title')}</span>
             </div>
-            <button className="help-chat-close" onClick={() => setIsOpen(false)} aria-label="Close">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-              </svg>
-            </button>
+            <div className="help-chat-header-actions">
+              {messages.length > 1 && (
+                <button className="help-chat-new-btn" onClick={handleNewQuestion} aria-label="New question" title="Start new question">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                  </svg>
+                </button>
+              )}
+              <button className="help-chat-close" onClick={() => setIsOpen(false)} aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
           <div className="help-chat-messages">
@@ -369,7 +481,7 @@ export default function HelpChatBubble() {
               </div>
             ))}
 
-            {messages.length === 1 && (
+            {showChips && (
               <div className="help-chat-chips">
                 {CATEGORIES.map(cat => (
                   <button key={cat.key} className="help-chat-chip" onClick={() => handleCategoryClick(cat.key)}>

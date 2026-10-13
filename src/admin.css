@@ -2030,3 +2030,39 @@
 .admin-help-global-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .admin-help-global-card h4 { margin: 0 0 6px; font-size: 14px; color: var(--text); }
 .admin-help-global-card p { margin: 0; font-size: 13px; color: var(--text-muted); line-height: 1.5; white-space: pre-line; }
+
+.admin-help-metrics-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.admin-help-metric-card {
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+}
+.admin-help-metric-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.admin-help-metric-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.admin-help-metrics-section {
+  margin-top: 24px;
+}
+.admin-help-metrics-section h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+.admin-help-metrics-section .admin-page-subtitle {
+  margin-bottom: 12px;
+}

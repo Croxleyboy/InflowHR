@@ -10113,6 +10113,12 @@ body {
   font-weight: 600;
   font-size: 15px;
 }
+.help-chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.help-chat-new-btn,
 .help-chat-close {
   background: none;
   border: none;
@@ -10123,6 +10129,7 @@ body {
   display: flex;
   align-items: center;
 }
+.help-chat-new-btn:hover,
 .help-chat-close:hover { background: rgba(255,255,255,0.2); }
 
 .help-chat-messages {
