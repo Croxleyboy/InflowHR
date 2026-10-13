@@ -130,9 +130,8 @@ export default function DashboardDetailed() {
   const [recentNotifications, setRecentNotifications] = useState<WorkflowNotif[]>([])
   const [birthdays, setBirthdays] = useState<Colleague[]>([])
   const [anniversaries, setAnniversaries] = useState<Colleague[]>([])
-  const [recentExpenses, setRecentExpenses] = useState<ExpenseClaim[]>([])
+  const [, setRecentExpenses] = useState<ExpenseClaim[]>([])
   const [expenseTotal, setExpenseTotal] = useState(0)
-  const [expensePage, setExpensePage] = useState(0)
   const [expenseFYSubmitted, setExpenseFYSubmitted] = useState(0)
   const [expenseFYApproved, setExpenseFYApproved] = useState(0)
   const [lastExpense, setLastExpense] = useState<ExpenseClaim | null>(null)
@@ -155,9 +154,9 @@ export default function DashboardDetailed() {
   const [attendanceAbsent, setAttendanceAbsent] = useState(0)
   const [attendanceLeave, setAttendanceLeave] = useState(0)
   const [attendanceSubmitted, setAttendanceSubmitted] = useState(0)
-  const [attendanceNotContracted, setAttendanceNotContracted] = useState(0)
+  const [, setAttendanceNotContracted] = useState(0)
   const [attendanceScore, setAttendanceScore] = useState<number | null>(null)
-  const [contractedDays, setContractedDays] = useState<boolean[]>([true, true, true, true, true, false, false])
+  const [, setContractedDays] = useState<boolean[]>([true, true, true, true, true, false, false])
   const [jobTitle, setJobTitle] = useState<string | null>(null)
   const [lastPayNet, setLastPayNet] = useState<number | null>(null)
   const [lastPayDate, setLastPayDate] = useState<string | null>(null)
@@ -186,7 +185,7 @@ export default function DashboardDetailed() {
   interface LTTimer { id: string; clientId: string; clientName: string; matterId: string; matterName: string; taskCode: string; elapsed: number; running: boolean; startedAt: number | null }
   const ltTimerKey = `lt-timers-${companyUser?.company_id}-${employeeId}`
   const [ltTimers, setLtTimers] = useState<LTTimer[]>([])
-  const [ltTick, setLtTick] = useState(0)
+  const [, setLtTick] = useState(0)
   const ltTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const loadLtTimers = useCallback(() => {
@@ -672,9 +671,6 @@ export default function DashboardDetailed() {
         thisSunday.setDate(thisMonday.getDate() + 6)
         const rangeStart = toLocalDateStr(threeWeeksAgoMonday)
         const rangeEnd = toLocalDateStr(thisSunday)
-        const lastSunday = new Date(thisMonday)
-        lastSunday.setDate(thisMonday.getDate() - 1)
-        const scoreEnd = toLocalDateStr(lastSunday)
 
         const [{ data: tsRows }, { data: legalRows }, { data: leaveRows }] = await Promise.all([
           supabase.from('timesheets')
@@ -881,9 +877,6 @@ export default function DashboardDetailed() {
 
   const pendingCount = recentNotifications.filter(n => n.status === 'Pending').length
 
-  const expensesPerPage = 3
-  const expensePages = Math.ceil(recentExpenses.length / expensesPerPage)
-  const expenseSlice = recentExpenses.slice(expensePage * expensesPerPage, (expensePage + 1) * expensesPerPage)
 
   const newsPerPage = 3
   const newsPages = Math.ceil(announcements.length / newsPerPage)
