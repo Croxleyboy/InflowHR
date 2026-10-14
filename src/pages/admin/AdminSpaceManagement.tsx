@@ -512,7 +512,7 @@ export default function AdminSpaceManagement() {
 
     const bookingsBySpace = new Map<string, ReportBooking[]>()
     for (const b of bookingRows || []) {
-      const emp = b.employees as { first_name: string; last_name: string } | null
+      const emp = b.employees as unknown as { first_name: string; last_name: string } | null
       const entry: ReportBooking = {
         space_id: b.space_id,
         booking_date: b.booking_date,
