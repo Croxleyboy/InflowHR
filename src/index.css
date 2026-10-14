@@ -6378,8 +6378,10 @@ body {
   .lc-mini-avatar-init { font-size: 6px; }
   .lc-mini-more { font-size: 7px; }
   .lc-month-title { font-size: 16px; min-width: 140px; }
-  .lc-controls { flex-direction: column; gap: 8px; }
-  .lc-search-wrap { width: 100%; }
+  .lc-controls { gap: 8px; }
+  .lc-search-wrap { min-width: 0; }
+  .lc-search { font-size: 12px; }
+  .lc-watchlist-label { font-size: 11px; }
   .lc-legend { gap: 10px; flex-wrap: wrap; }
   .lc-slide-panel { width: 100%; max-width: 100vw; }
   .lc-days { gap: 3px; }
