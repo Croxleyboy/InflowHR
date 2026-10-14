@@ -2944,117 +2944,224 @@ body {
   font-size: 26px; font-weight: 800; line-height: 1; flex-shrink: 0;
 }
 
-.leave-calendar-week {
-  padding: 8px 16px 16px;
+/* Controls row: search + watchlist toggle */
+.lc-controls {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px;
 }
-.leave-calendar-month {
-  font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 8px;
+.lc-search-wrap {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 12px; min-width: 0;
+  color: var(--text-muted);
+}
+.lc-search {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-family: var(--sans); font-size: 14px; color: var(--text);
+  min-width: 0;
+}
+.lc-search::placeholder { color: var(--text-muted); }
+.lc-search-clear {
+  background: none; border: none; cursor: pointer; padding: 0;
+  color: var(--text-muted); display: flex;
+}
+.lc-watchlist-toggle {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; flex-shrink: 0;
+}
+.lc-switch {
+  width: 40px; height: 22px; border-radius: 11px;
+  background: #ccc; position: relative; cursor: pointer;
+  transition: background 0.2s;
+}
+[data-theme="dark"] .lc-switch { background: #555; }
+.lc-switch-on { background: #43a047 !important; }
+.lc-switch-thumb {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; position: absolute; top: 2px; left: 2px;
+  transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.lc-switch-on .lc-switch-thumb { transform: translateX(18px); }
+.lc-watchlist-label { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; }
+
+/* Month nav */
+.lc-month-nav {
+  display: flex; align-items: center; justify-content: center; gap: 16px;
+  padding: 8px 16px 4px;
+}
+.lc-nav-arrow {
+  background: none; border: 1px solid var(--border); border-radius: 8px;
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text); transition: background 0.15s;
+}
+.lc-nav-arrow:hover:not(:disabled) { background: rgba(67, 160, 71, 0.08); }
+.lc-nav-arrow:disabled { opacity: 0.3; cursor: not-allowed; }
+.lc-month-title {
+  font-size: 18px; font-weight: 800; color: var(--text); margin: 0;
+  min-width: 180px; text-align: center;
 }
 
-.leave-calendar-grid {
-  background: var(--bg-card);
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  overflow: hidden;
-  margin-bottom: 8px;
+/* Calendar grid */
+.lc-grid {
+  padding: 4px 16px 8px;
 }
-.leave-calendar-row {
-  display: flex; align-items: center;
+.lc-day-headers {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+  margin-bottom: 4px;
 }
-.leave-calendar-row-header {
-  border-bottom: 1px solid var(--border);
-}
-.leave-calendar-row-label {
-  width: 120px; min-width: 120px;
-  display: flex; align-items: center; gap: 8px;
-  padding: 0 10px;
-  flex-shrink: 0;
-}
-.leave-calendar-row-label-header {
-  font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px;
-}
-.leave-calendar-row-days {
-  flex: 1;
-  display: grid; grid-template-columns: repeat(7, 1fr);
-}
-.leave-calendar-day-header {
-  text-align: center;
-  font-size: 12px; font-weight: 700; color: var(--text-muted);
+.lc-day-header {
+  text-align: center; font-size: 12px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
   padding: 6px 0;
 }
-.leave-calendar-day-cell {
-  text-align: center;
-  font-size: 14px; font-weight: 700; color: var(--text);
-  padding: 10px 0;
-  border-radius: 8px;
-}
-.leave-calendar-today {
-  background: #e8f5e9; color: #2e7d32;
-}
-[data-theme="dark"] .leave-calendar-today { background: #1b5e20; color: #a5d6a7; }
-.leave-calendar-weekend {
-  color: var(--text-muted); opacity: 0.6;
-}
-.leave-calendar-day-has-leave {
-  background: #fff3e0; color: #e65100;
-}
-[data-theme="dark"] .leave-calendar-day-has-leave { background: #3e2723; color: #ffab91; }
-.leave-calendar-day-has-leave.leave-calendar-today {
-  background: linear-gradient(135deg, #e8f5e9 50%, #fff3e0 50%); color: #2e7d32;
-}
-[data-theme="dark"] .leave-calendar-day-has-leave.leave-calendar-today { background: linear-gradient(135deg, #1b5e20 50%, #3e2723 50%); color: #a5d6a7; }
-
-.leave-calendar-no-leave {
-  text-align: center;
-  font-size: 14px; color: var(--text-muted);
-  padding: 16px 0;
+.lc-days {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
 }
 
-.leave-calendar-person-row {
-  display: flex; align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+/* Day cubes */
+.lc-cube {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-start; gap: 2px;
+  border: none; border-radius: 10px;
+  padding: 6px 2px 4px; min-height: 68px;
+  cursor: default; font-family: var(--sans);
+  transition: transform 0.1s, box-shadow 0.15s;
+  position: relative;
 }
-.leave-calendar-person-row:last-child { border-bottom: none; }
-.leave-calendar-person-avatar {
-  width: 28px; height: 28px; border-radius: 50%;
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: #fff; font-size: 10px; font-weight: 700;
+.lc-cube-empty {
+  background: #f0f4f0;
+}
+[data-theme="dark"] .lc-cube-empty { background: #2a2e2a; }
+.lc-cube-full {
+  background: #c8e6c9; cursor: pointer;
+}
+[data-theme="dark"] .lc-cube-full { background: #1b4332; }
+.lc-cube-half {
+  background: #bbdefb; cursor: pointer;
+}
+[data-theme="dark"] .lc-cube-half { background: #1a3a5c; }
+.lc-cube-other {
+  opacity: 0.4;
+}
+.lc-cube-today {
+  box-shadow: inset 0 0 0 2px #43a047;
+}
+.lc-cube-weekend:not(.lc-cube-full):not(.lc-cube-half) {
+  opacity: 0.5;
+}
+.lc-cube-full:hover, .lc-cube-half:hover {
+  transform: scale(1.04);
+  box-shadow: 0 2px 8px rgba(67, 160, 71, 0.25);
+}
+.lc-cube-date {
+  font-size: 13px; font-weight: 700; color: var(--text); line-height: 1;
+}
+
+/* Mini avatars in cubes */
+.lc-cube-avatars {
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0;
+  margin-top: auto; padding-top: 2px;
 }
-.leave-calendar-person-name {
-  font-size: 12px; font-weight: 600; color: var(--text);
+.lc-mini-avatar {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid #fff; object-fit: cover;
+  flex-shrink: 0; position: relative;
+}
+[data-theme="dark"] .lc-mini-avatar { border-color: #2a2e2a; }
+.lc-mini-avatar-init {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff; font-size: 7px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.lc-mini-more {
+  background: #e0e0e0; color: #555;
+  font-size: 8px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+[data-theme="dark"] .lc-mini-more { background: #555; color: #ccc; }
+
+/* Legend */
+.lc-legend {
+  display: flex; align-items: center; gap: 16px; justify-content: center;
+  padding: 8px 16px 16px;
+}
+.lc-legend-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+}
+.lc-legend-dot {
+  width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0;
+}
+.lc-legend-full { background: #c8e6c9; }
+[data-theme="dark"] .lc-legend-full { background: #1b4332; }
+.lc-legend-half { background: #bbdefb; }
+[data-theme="dark"] .lc-legend-half { background: #1a3a5c; }
+.lc-legend-none { background: #f0f4f0; }
+[data-theme="dark"] .lc-legend-none { background: #2a2e2a; }
+
+/* Slide-out panel */
+.lc-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+  z-index: 900; animation: lcFadeIn 0.2s ease;
+}
+.lc-slide-panel {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: 340px; max-width: 90vw;
+  background: var(--bg-card); z-index: 901;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+  display: flex; flex-direction: column;
+  animation: lcSlideIn 0.25s ease;
+}
+@keyframes lcSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes lcFadeIn { from { opacity: 0; } to { opacity: 1; } }
+.lc-slide-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 16px; border-bottom: 1px solid var(--border);
+}
+.lc-slide-title {
+  flex: 1; font-size: 16px; font-weight: 700; color: var(--text); margin: 0;
+}
+.lc-slide-close {
+  background: none; border: none; cursor: pointer; color: var(--text-muted);
+  padding: 4px; display: flex;
+}
+.lc-slide-count {
+  padding: 8px 16px; margin: 0;
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
+}
+.lc-slide-list {
+  flex: 1; overflow-y: auto; padding: 0 16px 16px;
+}
+.lc-slide-person {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.lc-slide-person:last-child { border-bottom: none; }
+.lc-slide-avatar {
+  width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+}
+.lc-slide-avatar-init {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.lc-slide-person-info {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.lc-slide-person-name {
+  font-size: 14px; font-weight: 600; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.leave-calendar-person-row .leave-calendar-row-days {
-  gap: 4px;
+.lc-slide-person-type {
+  font-size: 12px; font-weight: 600; border-radius: 6px;
+  padding: 2px 8px; display: inline-block; width: fit-content;
 }
-.leave-calendar-person-dot {
-  width: 100%; aspect-ratio: 1;
-  border-radius: 50%;
-  background: #e0e0e0;
-  max-width: 24px;
-  margin: 0 auto;
+.lc-slide-full { background: #c8e6c9; color: #2e7d32; }
+[data-theme="dark"] .lc-slide-full { background: #1b4332; color: #a5d6a7; }
+.lc-slide-half { background: #bbdefb; color: #1565c0; }
+[data-theme="dark"] .lc-slide-half { background: #1a3a5c; color: #90caf9; }
+.lc-slide-empty {
+  text-align: center; font-size: 14px; color: var(--text-muted); padding: 24px 0;
 }
-[data-theme="dark"] .leave-calendar-person-dot { background: #3a3a55; }
-.leave-calendar-dot-off {
-  background: #43a047;
-}
-.leave-calendar-dot-half {
-  background: linear-gradient(to right, var(--dot-colour) 50%, #e0e0e0 50%);
-}
-[data-theme="dark"] .leave-calendar-dot-half {
-  background: linear-gradient(to right, var(--dot-colour) 50%, #3a3a55 50%);
-}
-.leave-calendar-expand-btn {
-  display: flex; align-items: center; gap: 6px; justify-content: center;
-  width: 100%; padding: 8px 0; margin-top: 4px;
-  background: none; border: 1px solid var(--border); border-radius: 8px;
-  cursor: pointer; font-family: var(--sans); font-size: 12px; font-weight: 600;
-  color: #43a047; transition: background 0.15s;
-}
-.leave-calendar-expand-btn:hover { background: rgba(67, 160, 71, 0.06); }
 
 /* ── My Profile Page ── */
 .my-profile-page { padding: 0 0 100px; }
@@ -6247,17 +6354,20 @@ body {
   width: 56px; height: 56px; border-radius: 50%;
   object-fit: cover;
 }
-.leave-calendar-person-avatar-img {
-  width: 28px; height: 28px; border-radius: 50%;
-  object-fit: cover; flex-shrink: 0;
-}
+/* Leave Calendar mobile */
 @media (max-width: 480px) {
-  .leave-calendar-row-label { width: 90px; min-width: 90px; padding: 0 6px; }
-  .leave-calendar-person-name { font-size: 11px; }
-  .leave-calendar-day-header { font-size: 10px; }
-  .leave-calendar-day-cell { font-size: 12px; padding: 8px 0; }
-  .leave-calendar-person-avatar, .leave-calendar-person-avatar-img { width: 24px; height: 24px; font-size: 9px; }
-  .leave-calendar-row-label-header { font-size: 10px; }
+  .lc-cube { min-height: 52px; border-radius: 8px; padding: 4px 1px 3px; }
+  .lc-cube-date { font-size: 11px; }
+  .lc-mini-avatar { width: 16px; height: 16px; border-width: 1px; }
+  .lc-mini-avatar-init { font-size: 6px; }
+  .lc-mini-more { font-size: 7px; }
+  .lc-month-title { font-size: 16px; min-width: 140px; }
+  .lc-controls { flex-direction: column; gap: 8px; }
+  .lc-search-wrap { width: 100%; }
+  .lc-legend { gap: 10px; flex-wrap: wrap; }
+  .lc-slide-panel { width: 100%; max-width: 100vw; }
+  .lc-days { gap: 3px; }
+  .lc-day-headers { gap: 3px; }
 }
 .oto-employee-option-avatar-img {
   width: 40px; height: 40px; border-radius: 50%;
