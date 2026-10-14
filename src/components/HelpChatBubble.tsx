@@ -196,7 +196,7 @@ async function resolveAnswer(article: HelpArticle, employeeId: string, companyId
 
 export default function HelpChatBubble() {
   const { features } = useFeatures()
-  const { employeeId, employeeName, companyUser, company } = useAuth()
+  const { employeeId, employeeName, companyUser, company, session } = useAuth()
   const { t } = useLanguage()
   const location = useLocation()
   const [isOpen, setIsOpen] = useState(false)
@@ -352,7 +352,7 @@ export default function HelpChatBubble() {
     scrollToBottom()
   }
 
-  async function logSearch(searchQuery: string, matched: boolean, resultCount: number, topArticleId: number | null) {
+  async function logSearch(searchQuery: string, matched: boolean, resultCount: number, topArticleId: number | null, aiGenerated = false) {
     if (!companyId || !employeeId) return
     supabase.from('help_search_logs').insert({
       company_id: companyId,
@@ -361,6 +361,7 @@ export default function HelpChatBubble() {
       matched,
       result_count: resultCount,
       top_article_id: topArticleId,
+      ai_generated: aiGenerated,
     }).then()
   }
 
@@ -376,15 +377,43 @@ export default function HelpChatBubble() {
 
     const articles = await searchArticles(q)
 
-    logSearch(q, articles.length > 0, articles.length, articles[0]?.id || null)
-
     if (articles.length > 0) {
+      logSearch(q, true, articles.length, articles[0]?.id || null)
       setMessages(prev => [...prev, {
         role: 'bot',
         text: `I found ${articles.length} result${articles.length > 1 ? 's' : ''} that might help:`,
         articles,
       }])
+    } else if (features.ai_help_agent && session) {
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+        const res = await fetch(`${supabaseUrl}/functions/v1/ai-help-agent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+          body: JSON.stringify({ company_id: companyId, query: q }),
+        })
+        const data = await res.json()
+        if (res.ok && data.answer) {
+          logSearch(q, true, 0, null, true)
+          setMessages(prev => [...prev, { role: 'bot', text: data.answer }])
+        } else {
+          logSearch(q, false, 0, null)
+          setMessages(prev => [...prev, {
+            role: 'bot',
+            text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
+          }])
+          setShowChips(true)
+        }
+      } catch {
+        logSearch(q, false, 0, null)
+        setMessages(prev => [...prev, {
+          role: 'bot',
+          text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
+        }])
+        setShowChips(true)
+      }
     } else {
+      logSearch(q, false, 0, null)
       setMessages(prev => [...prev, {
         role: 'bot',
         text: "Sorry, I couldn't find a related answer for that question. Try rephrasing with different keywords, browse a topic below, or contact your HR team directly for help.",
@@ -405,7 +434,10 @@ export default function HelpChatBubble() {
       const resolved = await resolveAnswer(article, employeeId, companyId, currency)
       setResolvedAnswers(prev => ({ ...prev, [article.id]: resolved }))
     }
-    scrollToBottom()
+    setTimeout(() => {
+      const el = document.querySelector(`[data-article-id="${article.id}"]`)
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 100)
   }
 
   return (
@@ -454,6 +486,7 @@ export default function HelpChatBubble() {
                       {msg.articles.map(article => (
                         <button
                           key={article.id}
+                          data-article-id={article.id}
                           className={`help-chat-article-card ${expandedArticle === article.id ? 'expanded' : ''}`}
                           onClick={() => handleArticleClick(article)}
                         >

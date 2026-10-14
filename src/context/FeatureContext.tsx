@@ -23,6 +23,7 @@ export interface Features {
   modulr_integration: boolean
   surveys: boolean
   employee_help: boolean
+  ai_help_agent: boolean
 }
 
 const STANDARD_FEATURES: (keyof Features)[] = ['expenses', 'leave', 'profile', 'kudos', 'asset_management', 'benefits', 'xero_integration', 'sage_integration', 'payslips', 'surveys', 'employee_help']
@@ -39,7 +40,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   email_notifications: 'email_notifications',
 }
 const PACK_A_FEATURES: (keyof Features)[] = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
-const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport', 'modulr_integration']
+const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport', 'modulr_integration', 'ai_help_agent']
 
 const defaultFeatures: Features = {
   expenses: true,
@@ -63,6 +64,7 @@ const defaultFeatures: Features = {
   modulr_integration: false,
   surveys: true,
   employee_help: true,
+  ai_help_agent: false,
 }
 
 interface FeatureContextType {
