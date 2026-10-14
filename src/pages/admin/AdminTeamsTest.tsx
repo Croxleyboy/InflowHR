@@ -83,7 +83,7 @@ export default function AdminTeamsTest() {
   const { session } = useAuth()
   const { selectedCompany } = useAdminCompany()
 
-  const [activeTab, setActiveTab] = useState<'teams' | 'email'>('teams')
+  const [activeTab, setActiveTab] = useState<'teams' | 'email' | 'openai'>('teams')
 
   const [employees, setEmployees] = useState<Employee[]>([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -115,6 +115,18 @@ export default function AdminTeamsTest() {
   const [brevoDiagLoading, setBrevoDiagLoading] = useState(false)
   const [brevoDiagError, setBrevoDiagError] = useState('')
 
+  const [openaiKey, setOpenaiKey] = useState('')
+  const [openaiKeyPreview, setOpenaiKeyPreview] = useState<string | null>(null)
+  const [openaiKeyUpdatedAt, setOpenaiKeyUpdatedAt] = useState<string | null>(null)
+  const [openaiHasDbKey, setOpenaiHasDbKey] = useState(false)
+  const [openaiHasEnvKey, setOpenaiHasEnvKey] = useState(false)
+  const [openaiShowKey, setOpenaiShowKey] = useState(false)
+  const [openaiSaving, setOpenaiSaving] = useState(false)
+  const [openaiTesting, setOpenaiTesting] = useState(false)
+  const [openaiTestResult, setOpenaiTestResult] = useState<{ connected: boolean; model_available?: boolean; model?: string; error?: string } | null>(null)
+  const [openaiPlatformStats, setOpenaiPlatformStats] = useState<{ total: number; today: number; companies: number } | null>(null)
+  const [openaiLoading, setOpenaiLoading] = useState(false)
+
   const providerToken = session?.provider_token || null
   const companyDomain = selectedCompany?.domain || ''
 
@@ -143,6 +155,104 @@ export default function AdminTeamsTest() {
         setEmailLoading(false)
       })
   }, [selectedCompany?.id])
+
+  useEffect(() => {
+    if (activeTab !== 'openai' || !session) return
+    setOpenaiLoading(true)
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+    ;(async () => {
+      try {
+        const keyStatusRes = await fetch(`${supabaseUrl}/functions/v1/test-openai-connection`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+          body: JSON.stringify({ action: 'get_key_status' }),
+        })
+        if (keyStatusRes.ok) {
+          const ks = await keyStatusRes.json()
+          setOpenaiHasDbKey(ks.has_db_key)
+          setOpenaiHasEnvKey(ks.has_env_key)
+          setOpenaiKeyPreview(ks.key_preview)
+          setOpenaiKeyUpdatedAt(ks.updated_at)
+        }
+      } catch { /* edge function not deployed yet */ }
+
+      const today = new Date().toISOString().slice(0, 10)
+      const [aiPlatformTotal, aiPlatformToday] = await Promise.all([
+        supabase.from('ai_help_usage').select('query_count', { count: 'exact' }),
+        supabase.from('ai_help_usage').select('query_count').eq('query_date', today),
+      ])
+      const totalQueries = (aiPlatformTotal.data || []).reduce((sum: number, r: any) => sum + (r.query_count || 0), 0)
+      const todayQueries = (aiPlatformToday.data || []).reduce((sum: number, r: any) => sum + (r.query_count || 0), 0)
+      const { count: companyCount } = await supabase.from('company_features')
+        .select('id', { count: 'exact', head: true }).eq('feature_key', 'ai_help_agent').eq('is_enabled', true)
+      setOpenaiPlatformStats({ total: totalQueries, today: todayQueries, companies: companyCount || 0 })
+      setOpenaiLoading(false)
+    })()
+  }, [activeTab, session])
+
+  async function saveOpenaiKey() {
+    if (!session || !openaiKey.trim()) return
+    setOpenaiSaving(true)
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/test-openai-connection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ action: 'save_key', api_key: openaiKey.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setOpenaiKey('')
+        setOpenaiHasDbKey(true)
+        setOpenaiKeyPreview(`sk-...${openaiKey.trim().slice(-4)}`)
+        setOpenaiKeyUpdatedAt(new Date().toISOString())
+      } else {
+        alert(data.error || 'Failed to save key')
+      }
+    } catch {
+      alert('Failed to save key')
+    }
+    setOpenaiSaving(false)
+  }
+
+  async function testOpenaiConnection() {
+    if (!session) return
+    setOpenaiTesting(true)
+    setOpenaiTestResult(null)
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/test-openai-connection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ action: 'test', api_key: openaiKey.trim() || undefined }),
+      })
+      const data = await res.json()
+      setOpenaiTestResult(data)
+    } catch {
+      setOpenaiTestResult({ connected: false, error: 'Connection test failed' })
+    }
+    setOpenaiTesting(false)
+  }
+
+  async function deleteOpenaiKey() {
+    if (!session || !confirm('Remove the saved OpenAI API key? The AI Help Agent will stop working unless an environment variable is set.')) return
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
+    try {
+      const res = await fetch(`${supabaseUrl}/functions/v1/test-openai-connection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ action: 'delete_key' }),
+      })
+      if (res.ok) {
+        setOpenaiHasDbKey(false)
+        setOpenaiKeyPreview(null)
+        setOpenaiKeyUpdatedAt(null)
+        setOpenaiTestResult(null)
+      }
+    } catch {
+      alert('Failed to remove key')
+    }
+  }
 
   async function sendTestEmail() {
     if (!emailTestEmployee || !selectedCompany?.id) return
@@ -482,6 +592,7 @@ export default function AdminTeamsTest() {
       <div className="admin-tabs" style={{ marginBottom: 24 }}>
         <button className={`admin-tab ${activeTab === 'teams' ? 'active' : ''}`} onClick={() => setActiveTab('teams')}>Microsoft Teams</button>
         <button className={`admin-tab ${activeTab === 'email' ? 'active' : ''}`} onClick={() => setActiveTab('email')}>Email Notifications</button>
+        <button className={`admin-tab ${activeTab === 'openai' ? 'active' : ''}`} onClick={() => setActiveTab('openai')}>OpenAI</button>
       </div>
 
       {activeTab === 'email' && (
@@ -1120,6 +1231,143 @@ export default function AdminTeamsTest() {
         </div>
       </div>
       </>}
+
+      {activeTab === 'openai' && (
+        <>
+          <div className="teams-test-section">
+            <h3 className="teams-test-heading">OpenAI Configuration</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted, #8b8fa3)', margin: '0 0 16px' }}>
+              Platform-wide API key and connection status for the AI Help Agent — applies to all companies.
+            </p>
+
+            {openaiLoading ? (
+              <p style={{ color: 'var(--text-muted, #888)', fontSize: 14 }}>Loading...</p>
+            ) : (
+              <>
+                {/* API Key Status */}
+                <div style={{ padding: 14, borderRadius: 8, marginBottom: 16, background: openaiHasDbKey ? 'rgba(232,245,233,.5)' : 'rgba(255,248,225,.5)', border: `1px solid ${openaiHasDbKey ? '#a5d6a7' : '#ffe0b2'}` }}>
+                  <strong style={{ fontSize: 13, color: openaiHasDbKey ? '#2e7d32' : '#e65100' }}>API Key Status</strong>
+                  <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text, #333)' }}>
+                    {openaiHasDbKey && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span>Saved key: <code style={{ background: 'var(--bg, #f5f5f5)', padding: '2px 6px', borderRadius: 4 }}>{openaiKeyPreview}</code></span>
+                        {openaiKeyUpdatedAt && (
+                          <span style={{ color: 'var(--text-muted, #888)', fontSize: 12 }}>
+                            Updated: {new Date(openaiKeyUpdatedAt).toLocaleString('en-GB')}
+                          </span>
+                        )}
+                        <button className="admin-btn" style={{ fontSize: 12, padding: '4px 10px' }} onClick={deleteOpenaiKey}>Remove</button>
+                      </div>
+                    )}
+                    {!openaiHasDbKey && openaiHasEnvKey && (
+                      <p style={{ margin: 0 }}>Using environment variable (OPENAI_API_KEY). You can override it by saving a key below.</p>
+                    )}
+                    {!openaiHasDbKey && !openaiHasEnvKey && (
+                      <p style={{ margin: 0 }}>No API key configured. Enter your OpenAI API key below to enable the AI Help Agent.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* API key input */}
+                <div style={{ padding: 14, borderRadius: 8, border: '1px solid var(--border, #e2e8f0)' }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text, #333)' }}>OpenAI API Key</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={openaiShowKey ? 'text' : 'password'}
+                      value={openaiKey}
+                      onChange={e => setOpenaiKey(e.target.value)}
+                      placeholder="sk-..."
+                      className="admin-input"
+                      style={{ width: '100%', paddingRight: 50 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setOpenaiShowKey(!openaiShowKey)}
+                      style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted, #888)' }}
+                    >
+                      {openaiShowKey ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                    Get your API key from <span style={{ fontWeight: 600 }}>platform.openai.com/api-keys</span>
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      onClick={saveOpenaiKey}
+                      disabled={openaiSaving || !openaiKey.trim()}
+                      style={{ minWidth: 120 }}
+                    >
+                      {openaiSaving ? 'Saving...' : 'Save Key'}
+                    </button>
+                    <button
+                      className="admin-btn"
+                      onClick={testOpenaiConnection}
+                      disabled={openaiTesting}
+                      style={{ minWidth: 160 }}
+                    >
+                      {openaiTesting ? 'Testing...' : 'Test Connection'}
+                    </button>
+                  </div>
+
+                  {openaiTestResult && (
+                    <div style={{
+                      marginTop: 12, padding: 12, borderRadius: 8, fontSize: 13,
+                      background: openaiTestResult.connected ? 'rgba(232,245,233,.5)' : 'rgba(255,235,238,.5)',
+                      border: `1px solid ${openaiTestResult.connected ? '#a5d6a7' : '#ef9a9a'}`,
+                      color: openaiTestResult.connected ? '#2e7d32' : '#c62828',
+                    }}>
+                      {openaiTestResult.connected ? (
+                        <div>
+                          <strong>Connection successful</strong>
+                          <p style={{ margin: '4px 0 0' }}>
+                            Model: {openaiTestResult.model} — {openaiTestResult.model_available ? 'Available' : 'Not available'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <strong>Connection failed</strong>
+                          {openaiTestResult.error && <p style={{ margin: '4px 0 0' }}>{openaiTestResult.error}</p>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Platform-wide usage stats */}
+                {openaiPlatformStats && (
+                  <div style={{ padding: 14, borderRadius: 8, border: '1px solid var(--border, #e2e8f0)', background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
+                    <strong style={{ fontSize: 13, color: '#7c3aed' }}>Platform Usage (All Companies)</strong>
+                    <div style={{ display: 'flex', gap: 24, marginTop: 8, flexWrap: 'wrap' }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{openaiPlatformStats.total}</p>
+                        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Total AI Queries</p>
+                      </div>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{openaiPlatformStats.today}</p>
+                        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Today</p>
+                      </div>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>{openaiPlatformStats.companies}</p>
+                        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Companies with AI enabled</p>
+                      </div>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>~${(openaiPlatformStats.total * 0.00015).toFixed(2)}</p>
+                        <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>Estimated cost (all time)</p>
+                      </div>
+                    </div>
+                    <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                      Cost estimate based on GPT-4o Mini at ~$0.00015/query. For actual billing check{' '}
+                      <span style={{ fontWeight: 600 }}>platform.openai.com/usage</span>
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
