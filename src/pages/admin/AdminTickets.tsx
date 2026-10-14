@@ -23,6 +23,10 @@ interface Ticket {
   company_id: string
   created_at: string
   updated_at: string
+  admin_response: string | null
+  responded_by: string | null
+  responded_at: string | null
+  employee_email: string | null
 }
 
 const ASSIGN_OPTIONS = [
@@ -68,6 +72,9 @@ export default function AdminTickets() {
   const [newTicket, setNewTicket] = useState(EMPTY_NEW_TICKET)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [respondingId, setRespondingId] = useState<string | null>(null)
+  const [responseText, setResponseText] = useState('')
+  const [sendingResponse, setSendingResponse] = useState(false)
 
   async function load() {
     if (!isSuperAdmin && !selectedCompanyId) { setLoading(false); return }
@@ -152,6 +159,41 @@ export default function AdminTickets() {
     const { error } = await supabase.from('hr_tickets').delete().eq('id', id)
     if (error) { showError('Failed to delete ticket: ' + error.message); return }
     showSuccess('Ticket deleted')
+    load()
+  }
+
+  async function sendResponse(ticket: Ticket) {
+    if (!responseText.trim()) return
+    setSendingResponse(true)
+    const responder = employeeName || 'Admin'
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('hr_tickets').update({
+      admin_response: responseText.trim(),
+      responded_by: responder,
+      responded_at: now,
+      updated_at: now,
+    }).eq('id', ticket.id)
+    if (error) { showError('Failed to send response: ' + error.message); setSendingResponse(false); return }
+
+    if (ticket.employee_email) {
+      await supabase.from('workflow_tracker').insert({
+        emp_display_name: ticket.submitted_by,
+        step: 1,
+        status: 'Pending',
+        record_type: 'HR Response',
+        action: `Response to ${ticket.ref}: ${ticket.title}`,
+        employee_email: ticket.employee_email,
+        assigned_to: ticket.employee_email,
+        task_description: responseText.trim(),
+        approval_status: null,
+        company_id: ticket.company_id,
+      })
+    }
+
+    setRespondingId(null)
+    setResponseText('')
+    setSendingResponse(false)
+    showSuccess('Response sent')
     load()
   }
 
@@ -341,7 +383,7 @@ export default function AdminTickets() {
                     <tr className="admin-expanded-row">
                       <td colSpan={isSuperAdmin ? 8 : 7}>
                         <div className="admin-expanded-content">
-                          <p><strong>{isEn ? 'Description' : 'Beschreibung'}:</strong> {editingId === t.id ? <textarea className="admin-inline-textarea" value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} /> : t.description}</p>
+                          <p style={{ whiteSpace: 'pre-wrap' }}><strong>{isEn ? 'Description' : 'Beschreibung'}:</strong> {editingId === t.id ? <textarea className="admin-inline-textarea" value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))} /> : t.description}</p>
                           <div className="admin-detail-grid">
                             <div><strong>{isEn ? 'Category' : 'Kategorie'}:</strong> <span className="admin-badge admin-badge-info">{t.category.replace('-', ' ')}</span></div>
                             <div><strong>{isEn ? 'Submitted by' : 'Eingereicht von'}:</strong> {t.submitted_by}</div>
@@ -349,6 +391,46 @@ export default function AdminTickets() {
                             <div><strong>{isEn ? 'Created' : 'Erstellt'}:</strong> {new Date(t.created_at).toLocaleDateString('en-GB')}</div>
                             <div><strong>{isEn ? 'Updated' : 'Aktualisiert'}:</strong> {new Date(t.updated_at).toLocaleDateString('en-GB')}</div>
                           </div>
+
+                          {t.admin_response && (
+                            <div style={{ marginTop: 12, padding: 12, background: '#e8f5e9', borderRadius: 8, border: '1px solid #a5d6a7' }}>
+                              <p style={{ margin: 0, fontWeight: 600, fontSize: 13, color: '#2e7d32', marginBottom: 4 }}>
+                                {isEn ? 'Response' : 'Antwort'} — {t.responded_by} ({t.responded_at ? new Date(t.responded_at).toLocaleDateString('en-GB') : ''})
+                              </p>
+                              <p style={{ margin: 0, fontSize: 13, whiteSpace: 'pre-wrap' }}>{t.admin_response}</p>
+                            </div>
+                          )}
+
+                          {t.status !== 'closed' && (
+                            <div style={{ marginTop: 12 }}>
+                              {respondingId === t.id ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                  <textarea
+                                    className="admin-textarea"
+                                    placeholder={isEn ? 'Type your response to the employee...' : 'Antwort an den Mitarbeiter eingeben...'}
+                                    value={responseText}
+                                    onChange={e => setResponseText(e.target.value)}
+                                    style={{ minHeight: 80 }}
+                                  />
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button className="admin-btn admin-btn-primary" disabled={!responseText.trim() || sendingResponse} onClick={() => sendResponse(t)}>
+                                      {sendingResponse ? (isEn ? 'Sending...' : 'Senden...') : (isEn ? 'Send Response' : 'Antwort senden')}
+                                    </button>
+                                    <button className="admin-btn" style={{ background: '#e5e7eb', color: '#4a4a68' }} onClick={() => { setRespondingId(null); setResponseText('') }}>
+                                      {isEn ? 'Cancel' : 'Abbrechen'}
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button className="admin-btn admin-btn-primary" onClick={() => { setRespondingId(t.id); setResponseText(t.admin_response || '') }}>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 4, verticalAlign: 'middle' }}>
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                  </svg>
+                                  {t.admin_response ? (isEn ? 'Update Response' : 'Antwort aktualisieren') : (isEn ? 'Respond' : 'Antworten')}
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

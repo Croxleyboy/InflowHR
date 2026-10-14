@@ -255,11 +255,13 @@ export default function MyProfile() {
     { value: 'emergency-contact', label: 'Emergency Contact' },
     { value: 'bank-details', label: 'Bank Details' },
     { value: 'marital-status', label: 'Marital Status' },
-    { value: 'other', label: 'Other' },
+    { value: 'other', label: 'Other Profile Request' },
+    { value: 'other-issue', label: 'Other Issue' },
   ]
 
   async function submitChangeRequest() {
-    if (!changeType || !currentInfo.trim() || !newInfo.trim() || !companyUser?.company_id) return
+    const isOtherIssue = changeType === 'other-issue'
+    if (!changeType || (!isOtherIssue && (!currentInfo.trim() || !newInfo.trim())) || (isOtherIssue && !additionalDetails.trim()) || !companyUser?.company_id) return
     setSubmitting(true)
 
     const { data: allRefs } = await supabase
@@ -273,8 +275,10 @@ export default function MyProfile() {
     const ref = `HR-${String(maxNum + 1).padStart(3, '0')}`
 
     const typeLabel = CHANGE_TYPES.find(c => c.value === changeType)?.label || changeType
-    const title = `Profile Change: ${typeLabel}`
-    const description = `Change Type: ${typeLabel}\n\nCurrent Info: ${currentInfo.trim()}\n\nChange To: ${newInfo.trim()}${additionalDetails.trim() ? `\n\nAdditional Details: ${additionalDetails.trim()}` : ''}`
+    const title = isOtherIssue ? `HR Request: Other Issue` : `Profile Change: ${typeLabel}`
+    const description = isOtherIssue
+      ? additionalDetails.trim()
+      : `Change Type: ${typeLabel}\n\nCurrent Info: ${currentInfo.trim()}\n\nChange To: ${newInfo.trim()}${additionalDetails.trim() ? `\n\nAdditional Details: ${additionalDetails.trim()}` : ''}`
 
     const fullName = profile?.display_name || `${profile?.firstname} ${profile?.surname}`
 
@@ -282,13 +286,14 @@ export default function MyProfile() {
       ref,
       title,
       description,
-      category: 'user-request',
+      category: isOtherIssue ? 'hr-query' : 'user-request',
       priority: 'medium',
       status: 'open',
       submitted_by: fullName || 'Employee',
       assigned_to: 'HR Team',
       assigned_to_provider: false,
       company_id: companyUser.company_id,
+      employee_email: EMPLOYEE_EMAIL || null,
     })
 
     if (error) {
@@ -599,44 +604,61 @@ export default function MyProfile() {
                 </select>
               </div>
 
-              <div className="my-profile-cr-field">
-                <label className="my-profile-cr-label">What's Wrong / Current Info <span className="my-profile-cr-req">*</span></label>
-                <input
-                  className="my-profile-cr-input"
-                  type="text"
-                  placeholder="e.g. My surname is shown as Smith"
-                  value={currentInfo}
-                  onChange={e => setCurrentInfo(e.target.value)}
-                />
-              </div>
+              {changeType === 'other-issue' ? (
+                <div className="my-profile-cr-field">
+                  <label className="my-profile-cr-label">Please describe your request <span className="my-profile-cr-req">*</span></label>
+                  <textarea
+                    className="my-profile-cr-textarea"
+                    placeholder="Describe what you need help with..."
+                    value={additionalDetails}
+                    onChange={e => { if (e.target.value.length <= 500) setAdditionalDetails(e.target.value) }}
+                    maxLength={500}
+                    style={{ minHeight: 100 }}
+                  />
+                  <span className="my-profile-cr-charcount">{additionalDetails.length}/500</span>
+                </div>
+              ) : (
+                <>
+                  <div className="my-profile-cr-field">
+                    <label className="my-profile-cr-label">What's Wrong / Current Info <span className="my-profile-cr-req">*</span></label>
+                    <input
+                      className="my-profile-cr-input"
+                      type="text"
+                      placeholder="e.g. My surname is shown as Smith"
+                      value={currentInfo}
+                      onChange={e => setCurrentInfo(e.target.value)}
+                    />
+                  </div>
 
-              <div className="my-profile-cr-field">
-                <label className="my-profile-cr-label">Change To / Correct Info <span className="my-profile-cr-req">*</span></label>
-                <input
-                  className="my-profile-cr-input"
-                  type="text"
-                  placeholder="e.g. It should be Jones"
-                  value={newInfo}
-                  onChange={e => setNewInfo(e.target.value)}
-                />
-              </div>
+                  <div className="my-profile-cr-field">
+                    <label className="my-profile-cr-label">Change To / Correct Info <span className="my-profile-cr-req">*</span></label>
+                    <input
+                      className="my-profile-cr-input"
+                      type="text"
+                      placeholder="e.g. It should be Jones"
+                      value={newInfo}
+                      onChange={e => setNewInfo(e.target.value)}
+                    />
+                  </div>
 
-              <div className="my-profile-cr-field">
-                <label className="my-profile-cr-label">Additional Details <span className="my-profile-cr-optional">(optional)</span></label>
-                <textarea
-                  className="my-profile-cr-textarea"
-                  placeholder="Any extra context to help HR process this faster"
-                  value={additionalDetails}
-                  onChange={e => { if (e.target.value.length <= 150) setAdditionalDetails(e.target.value) }}
-                  maxLength={150}
-                />
-                <span className="my-profile-cr-charcount">{additionalDetails.length}/150</span>
-              </div>
+                  <div className="my-profile-cr-field">
+                    <label className="my-profile-cr-label">Additional Details <span className="my-profile-cr-optional">(optional)</span></label>
+                    <textarea
+                      className="my-profile-cr-textarea"
+                      placeholder="Any extra context to help HR process this faster"
+                      value={additionalDetails}
+                      onChange={e => { if (e.target.value.length <= 150) setAdditionalDetails(e.target.value) }}
+                      maxLength={150}
+                    />
+                    <span className="my-profile-cr-charcount">{additionalDetails.length}/150</span>
+                  </div>
+                </>
+              )}
 
               <button
                 className="my-profile-cr-submit"
                 onClick={submitChangeRequest}
-                disabled={submitting || !changeType || !currentInfo.trim() || !newInfo.trim()}
+                disabled={submitting || !changeType || (changeType === 'other-issue' ? !additionalDetails.trim() : (!currentInfo.trim() || !newInfo.trim()))}
               >
                 {submitting ? 'Submitting...' : 'Submit Request'}
               </button>

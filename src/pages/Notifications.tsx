@@ -723,6 +723,7 @@ export default function Notifications() {
 
   const [conflictActionItem, setConflictActionItem] = useState<WorkflowItem | null>(null)
   const [conflictResolving, setConflictResolving] = useState(false)
+  const [hrResponseItem, setHrResponseItem] = useState<WorkflowItem | null>(null)
 
   async function handleConflictResolve(item: WorkflowItem, action: 'cancel_leave' | 'acknowledge') {
     setConflictResolving(true)
@@ -797,6 +798,10 @@ export default function Notifications() {
   }
 
   function handleActionClick(item: WorkflowItem) {
+    if (item.record_type === 'HR Response') {
+      setHrResponseItem(item)
+      return
+    }
     if (item.record_type === 'Missed Check-In') {
       if (confirm('Acknowledge this missed check-in?')) {
         handleAcknowledgeMissedCheckin(item)
@@ -875,6 +880,7 @@ export default function Notifications() {
     if (item.record_type === 'Conflict') return 'Leave/Shift Conflict'
     if (item.record_type === 'Missed Check-In') return 'Missed Check-In'
     if (item.record_type === 'Meeting Reminder') return '1:1 Meeting — Tomorrow'
+    if (item.record_type === 'HR Response') return 'HR Ticket Response'
     return item.action
   }
 
@@ -1143,6 +1149,40 @@ export default function Notifications() {
                   {conflictResolving ? 'Processing...' : 'Acknowledge (No Change Needed)'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hrResponseItem && (
+        <div className="my-profile-modal-overlay" onClick={() => setHrResponseItem(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: '#1565c0', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>HR Ticket Response</span>
+              <button onClick={() => setHrResponseItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{hrResponseItem.action}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
+                {new Date(hrResponseItem.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </div>
+              <div style={{ padding: 14, background: '#e3f2fd', borderRadius: 10, border: '1px solid #90caf9', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: 16 }}>
+                {hrResponseItem.task_description}
+              </div>
+              <button
+                onClick={async () => {
+                  await supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: 'Acknowledged' }).eq('id', hrResponseItem.id).eq('company_id', companyUser?.company_id)
+                  setActions(prev => prev.filter(a => a.id !== hrResponseItem.id))
+                  setHrResponseItem(null)
+                  window.dispatchEvent(new Event('notifications-updated'))
+                  showSuccess('Response acknowledged')
+                }}
+                style={{ width: '100%', padding: '10px 0', borderRadius: 10, border: 'none', background: '#1565c0', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+              >
+                Acknowledge
+              </button>
             </div>
           </div>
         </div>
