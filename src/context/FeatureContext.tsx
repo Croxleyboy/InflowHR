@@ -38,6 +38,7 @@ const ADDON_FEATURE_KEYS: Record<string, keyof Features> = {
   skills_passport: 'skills_passport',
   teams_integration: 'teams_integration',
   email_notifications: 'email_notifications',
+  ai_help_agent: 'ai_help_agent',
 }
 const PACK_A_FEATURES: (keyof Features)[] = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
 const PACK_B_FEATURES: (keyof Features)[] = ['teams_integration', 'skills_passport', 'modulr_integration', 'ai_help_agent']
