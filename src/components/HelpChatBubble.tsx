@@ -20,6 +20,7 @@ interface ChatMessage {
   text: string
   articles?: HelpArticle[]
   loading?: boolean
+  askAiQuery?: string
 }
 
 const CATEGORIES = [
@@ -383,6 +384,7 @@ export default function HelpChatBubble() {
         role: 'bot',
         text: `I found ${articles.length} result${articles.length > 1 ? 's' : ''} that might help:`,
         articles,
+        askAiQuery: features.ai_help_agent && session ? q : undefined,
       }])
     } else if (features.ai_help_agent && session) {
       try {
@@ -438,6 +440,38 @@ export default function HelpChatBubble() {
       const el = document.querySelector(`[data-article-id="${article.id}"]`)
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 100)
+  }
+
+  async function handleAskAi(originalQuery: string, msgIndex: number) {
+    if (loading || !session || !companyId) return
+    setLoading(true)
+    setMessages(prev => prev.map((m, i) => i === msgIndex ? { ...m, askAiQuery: undefined } : m))
+
+    try {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+      const res = await fetch(`${supabaseUrl}/functions/v1/ai-help-agent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+        body: JSON.stringify({ company_id: companyId, query: originalQuery }),
+      })
+      const data = await res.json()
+      if (res.ok && data.answer) {
+        logSearch(originalQuery, true, 0, null, true)
+        setMessages(prev => [...prev, { role: 'bot', text: data.answer }])
+      } else {
+        setMessages(prev => [...prev, {
+          role: 'bot',
+          text: "Sorry, the HR AI couldn't find a better answer. Try rephrasing your question or contact your HR team directly for help.",
+        }])
+      }
+    } catch {
+      setMessages(prev => [...prev, {
+        role: 'bot',
+        text: "Sorry, the HR AI couldn't find a better answer. Try rephrasing your question or contact your HR team directly for help.",
+      }])
+    }
+    setLoading(false)
+    scrollToBottom()
   }
 
   return (
@@ -509,6 +543,21 @@ export default function HelpChatBubble() {
                         </button>
                       ))}
                     </div>
+                  )}
+                  {msg.askAiQuery && (
+                    <button
+                      className="help-chat-ask-ai-btn"
+                      onClick={() => handleAskAi(msg.askAiQuery!, i)}
+                      disabled={loading}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93"/>
+                        <path d="M8.24 4.77A4 4 0 0 1 12 2"/>
+                        <path d="M14 10.5V19a2 2 0 0 1-4 0v-8.5"/>
+                        <circle cx="12" cy="6" r="1"/>
+                      </svg>
+                      Not what you need? Ask HR AI
+                    </button>
                   )}
                 </div>
               </div>

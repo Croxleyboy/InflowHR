@@ -35,30 +35,35 @@ Deno.serve(async (req) => {
     const { company_id, query } = await req.json()
     if (!company_id || !query) return json({ error: 'Missing company_id or query' }, 400)
 
+    const { data: superAdmin } = await sb.from('super_admins')
+      .select('id').eq('email', user.email).maybeSingle()
+
     const { data: cu } = await sb.from('company_users')
       .select('id').eq('auth_user_id', user.id).eq('company_id', company_id).maybeSingle()
-    if (!cu) return json({ error: 'Not a member of this company' }, 403)
+    if (!cu && !superAdmin) return json({ error: 'Not a member of this company' }, 403)
 
     const { data: emp } = await sb.from('employees')
       .select('id').eq('auth_user_id', user.id).eq('company_id', company_id).maybeSingle()
-    if (!emp) return json({ error: 'Employee not found' }, 404)
+    if (!emp && !superAdmin) return json({ error: 'Employee not found' }, 404)
 
     const { data: feature } = await sb.from('company_features')
       .select('is_enabled').eq('company_id', company_id).eq('feature_key', 'ai_help_agent').maybeSingle()
     if (!feature?.is_enabled) return json({ error: 'AI Help Agent is not enabled for this company' }, 403)
 
-    const today = new Date().toISOString().slice(0, 10)
-    const { data: usage } = await sb.from('ai_help_usage')
-      .select('query_count').eq('company_id', company_id).eq('employee_id', emp.id).eq('query_date', today).maybeSingle()
+    if (emp) {
+      const today = new Date().toISOString().slice(0, 10)
+      const { data: usage } = await sb.from('ai_help_usage')
+        .select('query_count').eq('company_id', company_id).eq('employee_id', emp.id).eq('query_date', today).maybeSingle()
 
-    if (usage && usage.query_count >= DAILY_LIMIT) {
-      return json({ error: 'Daily AI query limit reached. Please try again tomorrow or browse the help topics.' }, 429)
+      if (usage && usage.query_count >= DAILY_LIMIT) {
+        return json({ error: 'Daily AI query limit reached. Please try again tomorrow or browse the help topics.' }, 429)
+      }
+
+      await sb.from('ai_help_usage').upsert(
+        { company_id, employee_id: emp.id, query_date: today, query_count: (usage?.query_count || 0) + 1 },
+        { onConflict: 'company_id,employee_id,query_date' },
+      )
     }
-
-    await sb.from('ai_help_usage').upsert(
-      { company_id, employee_id: emp.id, query_date: today, query_count: (usage?.query_count || 0) + 1 },
-      { onConflict: 'company_id,employee_id,query_date' },
-    )
 
     const { data: secretRow } = await sb.from('platform_secrets')
       .select('key_value').eq('key_name', 'openai_api_key').maybeSingle()

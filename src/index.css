@@ -10249,6 +10249,31 @@ body {
 .help-chat-article-answer p { margin: 0 0 4px; }
 .help-chat-loading-data { font-style: italic; opacity: 0.7; }
 
+.help-chat-ask-ai-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: var(--primary-light, #ede9fe);
+  color: var(--primary, #6c47ff);
+  border: 1px solid var(--primary, #6c47ff);
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  width: fit-content;
+}
+.help-chat-ask-ai-btn:hover:not(:disabled) {
+  background: var(--primary, #6c47ff);
+  color: #fff;
+}
+.help-chat-ask-ai-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .help-chat-typing {
   display: flex;
   gap: 4px;
