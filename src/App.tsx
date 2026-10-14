@@ -86,6 +86,7 @@ import AdminIntegrations from './pages/admin/AdminIntegrations'
 import AdminReports from './pages/admin/AdminReports'
 import AdminSurveys from './pages/admin/AdminSurveys'
 import AdminHelp from './pages/admin/AdminHelp'
+import AdminGDPR from './pages/admin/AdminGDPR'
 import SurveyInsights from './pages/admin/SurveyInsights'
 import MySurveys from './pages/MySurveys'
 import UserGuide from './pages/UserGuide'
@@ -253,6 +254,7 @@ function AuthGate() {
             <Route path="user-guides" element={<AdminUserGuides />} />
             <Route path="integrations" element={<AdminIntegrations />} />
             <Route path="access" element={<AdminAccess />} />
+            <Route path="gdpr" element={<AdminGDPR />} />
             <Route element={<SuperAdminGate />}>
               <Route path="companies" element={<AdminCompanies />} />
               <Route path="subscriptions" element={<AdminSubscriptions />} />
@@ -309,6 +311,7 @@ function AuthGate() {
           <Route path="user-guides" element={<AdminUserGuides />} />
           <Route path="integrations" element={<AdminIntegrations />} />
           <Route path="access" element={<AdminAccess />} />
+          <Route path="gdpr" element={<AdminGDPR />} />
           <Route element={<SuperAdminGate />}>
             <Route path="companies" element={<AdminCompanies />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />

@@ -97,7 +97,29 @@ interface AnalyticsData {
   totalEmployees: number
 }
 
-type SubTab = 'locations' | 'spaces' | 'bookings' | 'analytics' | 'settings'
+type SubTab = 'locations' | 'spaces' | 'bookings' | 'reports' | 'analytics' | 'settings'
+
+interface ReportBooking {
+  space_id: string
+  booking_date: string
+  start_time: string | null
+  end_time: string | null
+  status: string
+  employee_name: string
+}
+
+interface ReportSpace {
+  id: string
+  name: string
+  space_type: 'desk' | 'room'
+  capacity: number
+  status: string
+  floor_name: string
+  location_name: string
+  bookings: ReportBooking[]
+}
+
+const REPORT_PAGE_SIZE = 24
 
 function generateTimeSlots(): string[] {
   const slots: string[] = []
@@ -176,6 +198,12 @@ export default function AdminSpaceManagement() {
   const [savingBooking, setSavingBooking] = useState(false)
   const [bookingSearch, setBookingSearch] = useState('')
   const [bookingPage, setBookingPage] = useState(1)
+
+  // Reports state
+  const [reportSpaces, setReportSpaces] = useState<ReportSpace[]>([])
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportPage, setReportPage] = useState(1)
+  const [reportLocationFilter, setReportLocationFilter] = useState<string>('all')
 
   const loadAll = useCallback(async () => {
     if (!companyId) return
@@ -456,8 +484,69 @@ export default function AdminSpaceManagement() {
     setAnalyticsLoading(false)
   }, [companyId, analyticsRange, spaces])
 
+  const loadReports = useCallback(async () => {
+    if (!companyId) return
+    setReportLoading(true)
+    const today = new Date().toISOString().slice(0, 10)
+
+    const { data: spaceRows } = await supabase
+      .from('spaces')
+      .select('id, name, space_type, capacity, status, floors!inner(name, locations!inner(name, company_id))')
+      .eq('floors.locations.company_id', companyId)
+      .order('name')
+
+    if (!spaceRows || spaceRows.length === 0) {
+      setReportSpaces([])
+      setReportLoading(false)
+      return
+    }
+
+    const spaceIds = spaceRows.map(s => s.id)
+    const { data: bookingRows } = await supabase
+      .from('space_bookings')
+      .select('space_id, booking_date, start_time, end_time, status, employees(first_name, last_name)')
+      .in('space_id', spaceIds)
+      .gte('booking_date', today)
+      .in('status', ['confirmed', 'checked_in'])
+      .order('booking_date')
+
+    const bookingsBySpace = new Map<string, ReportBooking[]>()
+    for (const b of bookingRows || []) {
+      const emp = b.employees as { first_name: string; last_name: string } | null
+      const entry: ReportBooking = {
+        space_id: b.space_id,
+        booking_date: b.booking_date,
+        start_time: b.start_time,
+        end_time: b.end_time,
+        status: b.status,
+        employee_name: emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown',
+      }
+      const list = bookingsBySpace.get(b.space_id) || []
+      list.push(entry)
+      bookingsBySpace.set(b.space_id, list)
+    }
+
+    const mapped: ReportSpace[] = spaceRows.map(s => {
+      const floor = s.floors as unknown as { name: string; locations: { name: string } }
+      return {
+        id: s.id,
+        name: s.name,
+        space_type: s.space_type,
+        capacity: s.capacity,
+        status: s.status,
+        floor_name: floor.name,
+        location_name: floor.locations.name,
+        bookings: bookingsBySpace.get(s.id) || [],
+      }
+    })
+
+    setReportSpaces(mapped)
+    setReportLoading(false)
+  }, [companyId])
+
   useEffect(() => { if (subTab === 'bookings') loadBookings() }, [loadBookings, subTab])
   useEffect(() => { if (subTab === 'analytics') loadAnalytics() }, [loadAnalytics, subTab])
+  useEffect(() => { if (subTab === 'reports') loadReports() }, [loadReports, subTab])
 
   function editBooking(b: AdminBooking) {
     setEditingBookingId(b.id)
@@ -568,6 +657,7 @@ export default function AdminSpaceManagement() {
         <button className={`admin-sub-tab ${subTab === 'locations' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('locations')}>Locations &amp; Floors</button>
         <button className={`admin-sub-tab ${subTab === 'spaces' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('spaces')}>Spaces Directory</button>
         <button className={`admin-sub-tab ${subTab === 'bookings' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('bookings')}>Bookings</button>
+        <button className={`admin-sub-tab ${subTab === 'reports' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('reports')}>Reports</button>
         <button className={`admin-sub-tab ${subTab === 'analytics' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('analytics')}>Analytics</button>
         <button className={`admin-sub-tab ${subTab === 'settings' ? 'admin-sub-tab-active' : ''}`} onClick={() => setSubTab('settings')}>Booking Settings</button>
       </div>
@@ -867,6 +957,106 @@ export default function AdminSpaceManagement() {
               <button className="admin-action-btn" disabled={bookingPage >= bookingTotalPages} onClick={() => setBookingPage(p => p + 1)}>Next</button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ---- REPORTS ---- */}
+      {subTab === 'reports' && (
+        <div className="admin-section">
+          <div className="admin-section-header">
+            <h2>Space Reports</h2>
+            {locations.length > 1 && (
+              <select className="admin-input" style={{ width: 180 }} value={reportLocationFilter} onChange={e => { setReportLocationFilter(e.target.value); setReportPage(1) }}>
+                <option value="all">All Locations</option>
+                {locations.filter(l => l.is_active).map(l => (
+                  <option key={l.id} value={l.name}>{l.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          {reportLoading ? <p style={{ padding: 16, color: '#888' }}>Loading...</p> : (() => {
+            const today = new Date().toISOString().slice(0, 10)
+            const filtered = reportLocationFilter === 'all'
+              ? reportSpaces
+              : reportSpaces.filter(s => s.location_name === reportLocationFilter)
+
+            const grouped = new Map<string, Map<string, ReportSpace[]>>()
+            for (const s of filtered) {
+              if (!grouped.has(s.location_name)) grouped.set(s.location_name, new Map())
+              const floors = grouped.get(s.location_name)!
+              if (!floors.has(s.floor_name)) floors.set(s.floor_name, [])
+              floors.get(s.floor_name)!.push(s)
+            }
+
+            const allSpaces = filtered
+            const totalPages = Math.max(1, Math.ceil(allSpaces.length / REPORT_PAGE_SIZE))
+            const paged = allSpaces.slice((reportPage - 1) * REPORT_PAGE_SIZE, reportPage * REPORT_PAGE_SIZE)
+
+            const pagedGrouped = new Map<string, Map<string, ReportSpace[]>>()
+            for (const s of paged) {
+              if (!pagedGrouped.has(s.location_name)) pagedGrouped.set(s.location_name, new Map())
+              const floors = pagedGrouped.get(s.location_name)!
+              if (!floors.has(s.floor_name)) floors.set(s.floor_name, [])
+              floors.get(s.floor_name)!.push(s)
+            }
+
+            if (filtered.length === 0) return <p style={{ padding: 16, color: '#888' }}>No spaces configured.</p>
+
+            return (
+              <>
+                {Array.from(pagedGrouped.entries()).map(([locName, floors]) => (
+                  <div key={locName} style={{ marginBottom: 24 }}>
+                    <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 600 }}>{locName}</h3>
+                    {Array.from(floors.entries()).map(([floorName, floorSpaces]) => (
+                      <div key={floorName} style={{ marginBottom: 16 }}>
+                        <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 500, color: '#666' }}>{floorName}</h4>
+                        <div className="space-report-grid">
+                          {floorSpaces.map(space => {
+                            const bookedToday = space.bookings.some(b => b.booking_date === today)
+                            const bookedFuture = !bookedToday && space.bookings.length > 0
+                            const cubeClass = bookedToday ? 'space-report-cube booked-today' : bookedFuture ? 'space-report-cube booked-future' : 'space-report-cube available'
+                            return (
+                              <div key={space.id} className={cubeClass} title={space.bookings.length > 0 ? `${space.bookings.length} booking(s)` : 'Available'}>
+                                <div className="space-cube-icon">{space.space_type === 'room' ? '🚪' : '🖥️'}</div>
+                                <div className="space-cube-name">{space.name}</div>
+                                <div className="space-cube-type">{space.space_type === 'room' ? `Room (${space.capacity})` : 'Desk'}</div>
+                                {bookedToday && <div className="space-cube-badge">Booked today</div>}
+                                {bookedFuture && <div className="space-cube-badge future">Future booking</div>}
+                                {space.bookings.length > 0 && (
+                                  <div className="space-cube-bookings">
+                                    {space.bookings.slice(0, 3).map((b, i) => (
+                                      <div key={i} className="space-cube-booking-line">
+                                        {new Date(b.booking_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                                        {b.start_time && ` ${b.start_time.slice(0, 5)}`}
+                                        {' — '}{b.employee_name}
+                                      </div>
+                                    ))}
+                                    {space.bookings.length > 3 && <div className="space-cube-booking-line" style={{ fontStyle: 'italic' }}>+{space.bookings.length - 3} more</div>}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, padding: '12px 0' }}>
+                    <button className="admin-action-btn" disabled={reportPage <= 1} onClick={() => setReportPage(p => p - 1)}>Prev</button>
+                    <span style={{ fontSize: 13 }}>Page {reportPage} of {totalPages}</span>
+                    <button className="admin-action-btn" disabled={reportPage >= totalPages} onClick={() => setReportPage(p => p + 1)}>Next</button>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 16, padding: '8px 0', fontSize: 12, color: '#666' }}>
+                  <span><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#e8f5e9', border: '1px solid #a5d6a7', marginRight: 4, verticalAlign: 'middle' }}></span> Available</span>
+                  <span><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#fff3e0', border: '1px solid #ffcc80', marginRight: 4, verticalAlign: 'middle' }}></span> Booked today</span>
+                  <span><span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#e3f2fd', border: '1px solid #90caf9', marginRight: 4, verticalAlign: 'middle' }}></span> Future booking</span>
+                </div>
+              </>
+            )
+          })()}
         </div>
       )}
 

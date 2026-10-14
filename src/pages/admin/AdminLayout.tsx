@@ -98,6 +98,7 @@ const MENU_GROUPS: (MenuItem | MenuGroup)[] = [
       { path: '/admin/access', label: 'Access', svg: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', permKey: 'access' },
       { path: '/admin/notifications', label: 'Notifications', svg: '<path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>', permKey: 'notifications' },
       { path: '/admin/user-guides', label: 'User Guides', svg: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>', permKey: 'user_guides' },
+      { path: '/admin/gdpr', label: 'GDPR & Compliance', svg: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>' },
     ],
   },
 ]
