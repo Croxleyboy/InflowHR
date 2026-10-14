@@ -294,8 +294,10 @@ export default function LeaveCalendar() {
               if (!isCurrentMonth) cubeClass += ' lc-cube-other'
               if (isToday) cubeClass += ' lc-cube-today'
               if (isWeekend && !info?.hasFullDay && !info?.hasHalfDayOnly) cubeClass += ' lc-cube-weekend'
-              if (info?.hasFullDay) cubeClass += ' lc-cube-full'
-              else if (info?.hasHalfDayOnly) cubeClass += ' lc-cube-half'
+              if (info?.hasFullDay) {
+                cubeClass += ' lc-cube-full'
+                if (people.length > 1) cubeClass += ' lc-cube-multi'
+              } else if (info?.hasHalfDayOnly) cubeClass += ' lc-cube-half'
               else cubeClass += ' lc-cube-empty'
 
               return (
@@ -330,6 +332,7 @@ export default function LeaveCalendar() {
 
       <div className="lc-legend">
         <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-full" />{isEn ? 'Full day leave' : 'Ganzer Tag'}</div>
+        <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-multi" />{isEn ? 'Multiple people' : 'Mehrere Personen'}</div>
         <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-half" />{isEn ? 'Half day only' : 'Halber Tag'}</div>
         <div className="lc-legend-item"><span className="lc-legend-dot lc-legend-none" />{isEn ? 'No leave' : 'Kein Urlaub'}</div>
       </div>

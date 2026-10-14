@@ -3048,6 +3048,14 @@ body {
 .lc-cube-weekend:not(.lc-cube-full):not(.lc-cube-half) {
   opacity: 0.5;
 }
+.lc-cube-multi {
+  background: linear-gradient(135deg, #a5d6a7 25%, #c8e6c9 25%, #c8e6c9 50%, #a5d6a7 50%, #a5d6a7 75%, #c8e6c9 75%);
+  background-size: 8px 8px;
+}
+[data-theme="dark"] .lc-cube-multi {
+  background: linear-gradient(135deg, #2d6a4f 25%, #1b4332 25%, #1b4332 50%, #2d6a4f 50%, #2d6a4f 75%, #1b4332 75%);
+  background-size: 8px 8px;
+}
 .lc-cube-full:hover, .lc-cube-half:hover {
   transform: scale(1.04);
   box-shadow: 0 2px 8px rgba(67, 160, 71, 0.25);
@@ -3093,6 +3101,14 @@ body {
 }
 .lc-legend-full { background: #c8e6c9; }
 [data-theme="dark"] .lc-legend-full { background: #1b4332; }
+.lc-legend-multi {
+  background: linear-gradient(135deg, #a5d6a7 25%, #c8e6c9 25%, #c8e6c9 50%, #a5d6a7 50%, #a5d6a7 75%, #c8e6c9 75%);
+  background-size: 6px 6px;
+}
+[data-theme="dark"] .lc-legend-multi {
+  background: linear-gradient(135deg, #2d6a4f 25%, #1b4332 25%, #1b4332 50%, #2d6a4f 50%, #2d6a4f 75%, #1b4332 75%);
+  background-size: 6px 6px;
+}
 .lc-legend-half { background: #bbdefb; }
 [data-theme="dark"] .lc-legend-half { background: #1a3a5c; }
 .lc-legend-none { background: #f0f4f0; }
