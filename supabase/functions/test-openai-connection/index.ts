@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
     const { data: superAdmin } = await sb.from('super_admins')
-      .select('id').eq('auth_user_id', user.id).maybeSingle()
+      .select('id').eq('email', user.email).maybeSingle()
     if (!superAdmin) return json({ error: 'Super admin access required' }, 403)
 
     const { action, api_key } = await req.json()
