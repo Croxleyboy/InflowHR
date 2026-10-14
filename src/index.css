@@ -6383,7 +6383,7 @@ body {
   .lc-search { font-size: 12px; }
   .lc-watchlist-label { font-size: 11px; }
   .lc-legend { gap: 10px; flex-wrap: wrap; }
-  .lc-slide-panel { width: 85vw; max-width: 85vw; }
+  .lc-slide-panel { width: 50vw; max-width: 50vw; }
   .lc-days { gap: 3px; }
   .lc-day-headers { gap: 3px; }
 }
