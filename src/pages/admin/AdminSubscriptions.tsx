@@ -49,10 +49,10 @@ const CORE_FEATURES = [
 ]
 
 const PACK_A_FEATURE_KEYS = ['shifts', 'legal_timesheets', 'space_booking', 'asset_management']
-const PACK_B_FEATURE_KEYS = ['teams_integration', 'skills_passport', 'modulr_integration']
+const PACK_B_FEATURE_KEYS = ['teams_integration', 'skills_passport', 'modulr_integration', 'ai_help_agent']
 
 const PACK_A_LABELS = ['Shifts & Rotas', 'Legal Timesheets', 'Space & Desk Booking', 'Asset Management']
-const PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligence', 'Modulr Payments & BACS Export']
+const PACK_B_LABELS = ['Teams & Presence', 'Skills Passport & Talent Intelligence', 'Modulr Payments & BACS Export', 'AI Help Agent']
 
 export default function AdminSubscriptions() {
   const { isSuperAdmin, company } = useAuth()

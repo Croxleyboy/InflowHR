@@ -24,6 +24,7 @@ interface SearchLog {
   matched: boolean
   result_count: number
   top_article_id: number | null
+  ai_generated: boolean
   created_at: string
 }
 
@@ -92,7 +93,7 @@ export default function AdminHelp() {
     since.setDate(since.getDate() - parseInt(metricsPeriod))
     const { data } = await supabase
       .from('help_search_logs')
-      .select('id, query, matched, result_count, top_article_id, created_at')
+      .select('id, query, matched, result_count, top_article_id, ai_generated, created_at')
       .eq('company_id', selectedCompanyId)
       .gte('created_at', since.toISOString())
       .order('created_at', { ascending: false })
@@ -175,6 +176,8 @@ export default function AdminHelp() {
   const totalSearches = searchLogs.length
   const matchedSearches = searchLogs.filter(l => l.matched).length
   const unmatchedSearches = totalSearches - matchedSearches
+  const aiAnsweredSearches = searchLogs.filter(l => l.ai_generated).length
+  const faqMatchedSearches = matchedSearches - aiAnsweredSearches
   const matchRate = totalSearches > 0 ? Math.round((matchedSearches / totalSearches) * 100) : 0
 
   const unmatchedQueries = searchLogs
@@ -379,8 +382,12 @@ export default function AdminHelp() {
                   <div className="admin-help-metric-label">Total Searches</div>
                 </div>
                 <div className="admin-help-metric-card">
-                  <div className="admin-help-metric-value" style={{ color: 'var(--success, #22c55e)' }}>{matchedSearches}</div>
-                  <div className="admin-help-metric-label">Matched</div>
+                  <div className="admin-help-metric-value" style={{ color: 'var(--success, #22c55e)' }}>{faqMatchedSearches}</div>
+                  <div className="admin-help-metric-label">FAQ Matched</div>
+                </div>
+                <div className="admin-help-metric-card">
+                  <div className="admin-help-metric-value" style={{ color: '#7c3aed' }}>{aiAnsweredSearches}</div>
+                  <div className="admin-help-metric-label">AI Answered</div>
                 </div>
                 <div className="admin-help-metric-card">
                   <div className="admin-help-metric-value" style={{ color: 'var(--error, #ef4444)' }}>{unmatchedSearches}</div>
@@ -447,6 +454,7 @@ export default function AdminHelp() {
                     <tr>
                       <th>Date</th>
                       <th>Query</th>
+                      <th>Source</th>
                       <th>Matched</th>
                       <th>Results</th>
                     </tr>
@@ -456,6 +464,11 @@ export default function AdminHelp() {
                       <tr key={log.id}>
                         <td>{formatDate(log.created_at)}</td>
                         <td>{log.query}</td>
+                        <td>
+                          <span className="admin-help-category-badge" style={log.ai_generated ? { background: '#7c3aed', color: '#fff' } : undefined}>
+                            {log.ai_generated ? 'AI' : 'FAQ'}
+                          </span>
+                        </td>
                         <td>
                           <span className={`admin-help-toggle ${log.matched ? 'active' : ''}`}>
                             {log.matched ? 'Yes' : 'No'}
