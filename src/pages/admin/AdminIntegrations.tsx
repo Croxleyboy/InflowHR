@@ -161,7 +161,7 @@ export default function AdminIntegrations() {
   const [openaiShowKey, setOpenaiShowKey] = useState(false)
   const [openaiSaving, setOpenaiSaving] = useState(false)
   const [openaiTesting, setOpenaiTesting] = useState(false)
-  const [openaiTestResult, setOpenaiTestResult] = useState<{ connected: boolean; model_available?: boolean; error?: string } | null>(null)
+  const [openaiTestResult, setOpenaiTestResult] = useState<{ connected: boolean; model_available?: boolean; model?: string; error?: string } | null>(null)
   const [openaiExpanded, setOpenaiExpanded] = useState(false)
   const [openaiPlatformStats, setOpenaiPlatformStats] = useState<{ total: number; today: number; companies: number } | null>(null)
 
@@ -230,7 +230,6 @@ export default function AdminIntegrations() {
       ])
       const totalQueries = (aiPlatformTotal.data || []).reduce((sum, r) => sum + (r.query_count || 0), 0)
       const todayQueries = (aiPlatformToday.data || []).reduce((sum, r) => sum + (r.query_count || 0), 0)
-      const companiesUsingAi = new Set((aiPlatformTotal.data || []).map(() => 'x')).size
       const { count: companyCount } = await supabase.from('company_features')
         .select('id', { count: 'exact', head: true }).eq('feature_key', 'ai_help_agent').eq('is_enabled', true)
       setOpenaiPlatformStats({ total: totalQueries, today: todayQueries, companies: companyCount || 0 })
