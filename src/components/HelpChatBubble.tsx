@@ -61,9 +61,10 @@ function articleMatchesQuery(article: HelpArticle, queryWords: string[]): boolea
   return queryWords.some(w => searchText.includes(w))
 }
 
-async function executeDataQuery(queryKey: string, employeeId: string, companyId: string, currency: string): Promise<string> {
+async function executeDataQuery(queryKey: string, employeeId: string, companyId: string, currency: string, params: Record<string, unknown> = {}): Promise<string> {
   switch (queryKey) {
-    case 'leave_balance': {
+    case 'leave_balance':
+    case 'get_leave_balance': {
       const { data } = await supabase
         .from('leave_balances')
         .select('total_allowance, used, carried_over, leave_type:leave_type_id(name)')
@@ -76,86 +77,131 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         return `${name}: ${remaining} days remaining (${b.used || 0} used of ${(b.total_allowance || 0) + (b.carried_over || 0)})`
       }).join('\n')
     }
-    case 'leave_requests': {
-      const today = new Date().toISOString().split('T')[0]
-      const { data } = await supabase
+    case 'leave_requests':
+    case 'get_leave_requests': {
+      let q = supabase
         .from('leave_requests')
         .select('start_date, end_date, status, days_requested, leave_type:leave_type_id(name)')
         .eq('employee_id', employeeId)
         .eq('company_id', companyId)
-        .gte('end_date', today)
-        .order('start_date')
-        .limit(5)
-      if (!data || data.length === 0) return 'No upcoming leave requests.'
-      return data.map((r: any) => {
+      if (params.start_date) q = q.gte('start_date', params.start_date as string)
+      if (params.end_date) q = q.lte('end_date', params.end_date as string)
+      if (params.status) q = q.eq('status', params.status as string)
+      if (params.upcoming_only) q = q.gte('end_date', new Date().toISOString().split('T')[0])
+      const { data } = await q.order('start_date').limit(10)
+      if (!data || data.length === 0) return 'No leave requests found for that period.'
+      const totalDays = data.reduce((sum: number, r: any) => sum + (Number(r.days_requested) || 0), 0)
+      const lines = data.map((r: any) => {
         const name = r.leave_type?.name || 'Leave'
         return `${name}: ${formatDate(r.start_date)} to ${formatDate(r.end_date)} — ${r.status} (${r.days_requested} days)`
-      }).join('\n')
+      })
+      lines.push(`Total: ${totalDays} days across ${data.length} request${data.length !== 1 ? 's' : ''}`)
+      return lines.join('\n')
     }
-    case 'next_shift': {
+    case 'get_expense_claims': {
+      let q = supabase
+        .from('expense_claims')
+        .select('description, amount, status, submitted_at, category')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyId)
+      if (params.start_date) q = q.gte('submitted_at', params.start_date as string)
+      if (params.end_date) q = q.lte('submitted_at', (params.end_date as string) + 'T23:59:59')
+      if (params.status) q = q.eq('status', params.status as string)
+      const { data } = await q.order('submitted_at', { ascending: false }).limit(10)
+      if (!data || data.length === 0) return 'No expense claims found.'
+      const total = data.reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0)
+      const lines = data.map((e: any) =>
+        `${e.description || e.category || 'Expense'}: ${formatCurrency(Number(e.amount), currency)} — ${e.status}${e.submitted_at ? ` (${formatDate(e.submitted_at.split('T')[0])})` : ''}`
+      )
+      lines.push(`Total: ${formatCurrency(total, currency)} across ${data.length} claim${data.length !== 1 ? 's' : ''}`)
+      return lines.join('\n')
+    }
+    case 'next_shift':
+    case 'get_next_shifts': {
       const today = new Date().toISOString().split('T')[0]
+      const limit = Number(params.limit) || 5
       const { data } = await supabase
         .from('shift_assignments')
         .select('date, shift_template:shift_template_id(name, start_time, end_time)')
         .eq('employee_id', employeeId)
         .gte('date', today)
         .order('date')
-        .limit(1)
-        .single()
-      if (!data) return 'No upcoming shifts found.'
-      const t = data.shift_template as any
-      return `${formatDate(data.date)} — ${t?.name || 'Shift'} (${t?.start_time?.slice(0, 5) || '?'} to ${t?.end_time?.slice(0, 5) || '?'})`
+        .limit(limit)
+      if (!data || data.length === 0) return 'No upcoming shifts found.'
+      return data.map((s: any) => {
+        const t = s.shift_template as any
+        return `${formatDate(s.date)} — ${t?.name || 'Shift'} (${t?.start_time?.slice(0, 5) || '?'} to ${t?.end_time?.slice(0, 5) || '?'})`
+      }).join('\n')
     }
-    case 'hours_worked': {
-      const now = new Date()
-      const dayOfWeek = now.getDay()
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
-      const monday = new Date(now)
-      monday.setDate(now.getDate() + mondayOffset)
-      const startOfWeek = monday.toISOString().split('T')[0]
+    case 'hours_worked':
+    case 'get_hours_worked': {
+      let startDate = params.start_date as string | undefined
+      let endDate = params.end_date as string | undefined
+      if (!startDate) {
+        const now = new Date()
+        const dayOfWeek = now.getDay()
+        const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+        const monday = new Date(now)
+        monday.setDate(now.getDate() + mondayOffset)
+        startDate = monday.toISOString().split('T')[0]
+      }
+      if (!endDate) endDate = new Date().toISOString().split('T')[0]
       const { data } = await supabase
         .from('timesheets')
         .select('date, hours')
         .eq('employee_id', employeeId)
-        .gte('date', startOfWeek)
+        .gte('date', startDate)
+        .lte('date', endDate)
         .order('date')
-      if (!data || data.length === 0) return 'No timesheet entries this week.'
+      if (!data || data.length === 0) return 'No timesheet entries found for that period.'
       const total = data.reduce((sum: number, t: any) => sum + (Number(t.hours) || 0), 0)
-      return `${total.toFixed(1)} hours logged this week (${data.length} entries)`
+      return `${total.toFixed(1)} hours logged (${data.length} entries from ${formatDate(startDate)} to ${formatDate(endDate)})`
     }
-    case 'last_payslip': {
+    case 'last_payslip':
+    case 'get_payslip_summary': {
+      const count = Math.min(Number(params.count) || 1, 3)
       const { data } = await supabase
         .from('payslips')
         .select('pay_period_start, pay_period_end, gross_pay, net_pay, payment_date, tax, national_insurance, pension')
         .eq('employee_id', employeeId)
         .order('payment_date', { ascending: false })
-        .limit(1)
-        .single()
-      if (!data) return 'No payslip data found.'
-      return [
-        `Period: ${formatDate(data.pay_period_start)} to ${formatDate(data.pay_period_end)}`,
-        `Gross Pay: ${formatCurrency(Number(data.gross_pay), currency)}`,
-        `Tax: ${formatCurrency(Number(data.tax), currency)}`,
-        `NI: ${formatCurrency(Number(data.national_insurance), currency)}`,
-        `Pension: ${formatCurrency(Number(data.pension), currency)}`,
-        `Net Pay: ${formatCurrency(Number(data.net_pay), currency)}`,
-        `Paid: ${formatDate(data.payment_date)}`,
-      ].join('\n')
+        .limit(count)
+      if (!data || data.length === 0) return 'No payslip data found.'
+      return data.map((p: any) => [
+        `Period: ${formatDate(p.pay_period_start)} to ${formatDate(p.pay_period_end)}`,
+        `Gross Pay: ${formatCurrency(Number(p.gross_pay), currency)}`,
+        `Tax: ${formatCurrency(Number(p.tax), currency)}`,
+        `NI: ${formatCurrency(Number(p.national_insurance), currency)}`,
+        `Pension: ${formatCurrency(Number(p.pension), currency)}`,
+        `Net Pay: ${formatCurrency(Number(p.net_pay), currency)}`,
+        `Paid: ${formatDate(p.payment_date)}`,
+      ].join('\n')).join('\n\n')
     }
-    case 'my_manager': {
+    case 'my_manager':
+    case 'get_my_profile': {
       const { data } = await supabase
         .from('employees')
-        .select('manager_id')
+        .select('first_name, last_name, job_title, department, start_date, manager_id')
         .eq('id', employeeId)
         .single()
-      if (!data?.manager_id) return 'No manager assigned.'
-      const { data: mgr } = await supabase
-        .from('employees')
-        .select('first_name, last_name, job_title')
-        .eq('id', data.manager_id)
-        .single()
-      if (!mgr) return 'Manager information not available.'
-      return `${mgr.first_name} ${mgr.last_name}${mgr.job_title ? ` (${mgr.job_title})` : ''}`
+      if (!data) return 'Profile information not available.'
+      const lines = [
+        `Name: ${data.first_name} ${data.last_name}`,
+        `Job Title: ${data.job_title || 'Not set'}`,
+        `Department: ${data.department || 'Not set'}`,
+        data.start_date ? `Start Date: ${formatDate(data.start_date)}` : null,
+      ]
+      if (data.manager_id) {
+        const { data: mgr } = await supabase
+          .from('employees')
+          .select('first_name, last_name, job_title')
+          .eq('id', data.manager_id)
+          .single()
+        if (mgr) lines.push(`Manager: ${mgr.first_name} ${mgr.last_name}${mgr.job_title ? ` (${mgr.job_title})` : ''}`)
+      } else {
+        lines.push('Manager: Not assigned')
+      }
+      return lines.filter(Boolean).join('\n')
     }
     case 'my_department': {
       const { data } = await supabase
@@ -170,6 +216,41 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         `Department: ${data.department || 'Not set'}`,
         data.start_date ? `Start Date: ${formatDate(data.start_date)}` : null,
       ].filter(Boolean).join('\n')
+    }
+    case 'get_benefits': {
+      const { data } = await supabase
+        .from('employee_benefits')
+        .select('benefit:benefit_id(name, description), enrolled_at')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyId)
+      if (!data || data.length === 0) return 'No benefits enrolled.'
+      return data.map((b: any) => {
+        const name = b.benefit?.name || 'Benefit'
+        return `${name}${b.benefit?.description ? ` — ${b.benefit.description}` : ''}`
+      }).join('\n')
+    }
+    case 'get_elearning_progress': {
+      const { data } = await supabase
+        .from('elearning_enrolments')
+        .select('status, progress_pct, course:course_id(title)')
+        .eq('employee_id', employeeId)
+        .eq('company_id', companyId)
+      if (!data || data.length === 0) return 'No e-learning courses assigned.'
+      return data.map((e: any) => {
+        const title = e.course?.title || 'Course'
+        const pct = e.progress_pct != null ? `${e.progress_pct}%` : e.status
+        return `${title}: ${pct}`
+      }).join('\n')
+    }
+    case 'get_upcoming_holidays': {
+      let q = supabase
+        .from('company_holidays')
+        .select('name, date')
+        .eq('company_id', companyId)
+      if (params.upcoming_only !== false) q = q.gte('date', new Date().toISOString().split('T')[0])
+      const { data } = await q.order('date').limit(10)
+      if (!data || data.length === 0) return 'No upcoming company holidays found.'
+      return data.map((h: any) => `${formatDate(h.date)} — ${h.name}`).join('\n')
     }
     default:
       return ''
@@ -395,7 +476,16 @@ export default function HelpChatBubble() {
           body: JSON.stringify({ company_id: companyId, query: q }),
         })
         const data = await res.json()
-        if (res.ok && data.answer) {
+        if (res.ok && data.tool_call && employeeId && companyId) {
+          const result = await executeDataQuery(data.tool_call, employeeId, companyId, currency, data.params || {})
+          if (result) {
+            logSearch(q, true, 0, null, true)
+            setMessages(prev => [...prev, { role: 'bot', text: result }])
+          } else {
+            logSearch(q, false, 0, null, true)
+            setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
+          }
+        } else if (res.ok && data.answer) {
           logSearch(q, true, 0, null, true)
           setMessages(prev => [...prev, { role: 'bot', text: data.answer }])
         } else {
@@ -455,7 +545,15 @@ export default function HelpChatBubble() {
         body: JSON.stringify({ company_id: companyId, query: originalQuery }),
       })
       const data = await res.json()
-      if (res.ok && data.answer) {
+      if (res.ok && data.tool_call && employeeId && companyId) {
+        const result = await executeDataQuery(data.tool_call, employeeId, companyId, currency, data.params || {})
+        if (result) {
+          logSearch(originalQuery, true, 0, null, true)
+          setMessages(prev => [...prev, { role: 'bot', text: result }])
+        } else {
+          setMessages(prev => [...prev, { role: 'bot', text: "I looked that up but couldn't find any data. Try rephrasing your question or contact your HR team for help." }])
+        }
+      } else if (res.ok && data.answer) {
         logSearch(originalQuery, true, 0, null, true)
         setMessages(prev => [...prev, { role: 'bot', text: data.answer }])
       } else {

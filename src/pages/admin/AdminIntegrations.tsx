@@ -874,21 +874,34 @@ export default function AdminIntegrations() {
 
               <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
                 <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>How it works</p>
-                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
-                  <li>When an employee's question has no FAQ match, AI generates an answer using your company's help articles as context</li>
-                  <li>Answers are grounded in your published help articles only — the AI will not invent policies or information</li>
-                  <li>No employee personal data is sent to the AI provider — only the question text and your FAQ content</li>
-                  <li>Rate limited to 20 AI queries per employee per day</li>
-                  <li>Seamless experience — employees see AI answers in the same chat flow as FAQ results</li>
-                  <li>Search analytics track AI vs FAQ responses separately in Admin &gt; Employee Help</li>
-                </ul>
+                <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.9, color: 'var(--text, #444)' }}>
+                  <li><strong>Employee asks a question</strong> — e.g. "How many days leave did I take in December?"</li>
+                  <li><strong>FAQ search runs first</strong> — if an article matches, it's shown instantly (free, no AI cost)</li>
+                  <li><strong>AI analyses the question</strong> — only the question text and your FAQ articles are sent to the AI. It decides whether to answer from policy or look up personal data</li>
+                  <li><strong>Personal data queries run locally</strong> — if the AI identifies it's a personal question (leave, pay, shifts, etc.), the actual data lookup runs entirely inside your Supabase database. No personal data ever leaves the platform</li>
+                  <li><strong>Answer appears in chat</strong> — the employee sees the result in the same chat bubble. Seamless experience with no "AI generated" labels</li>
+                </ol>
+              </div>
+
+              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>Supported personal data queries</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  {['Leave balance', 'Leave requests by date', 'Expense claims', 'Upcoming shifts', 'Hours worked', 'Payslip summary', 'My profile & manager', 'Benefits', 'E-learning progress', 'Company holidays'].map(t => (
+                    <span key={t} style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 12, fontSize: 12, background: 'rgba(124,58,237,.08)', color: '#7c3aed', fontWeight: 500 }}>{t}</span>
+                  ))}
+                </div>
               </div>
 
               <div style={{ ...sectionStyle, background: 'rgba(255,248,225,.5)', borderColor: '#ffe0b2', marginTop: 16 }}>
-                <p style={{ margin: '0 0 4px', fontSize: 13, fontWeight: 600, color: '#e65100' }}>Data Privacy</p>
-                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.6, color: 'var(--text, #444)' }}>
-                  Only the employee's question and your company's FAQ article content are sent to OpenAI. No employee names, leave balances, payslip data, or any personal information is shared. Data-aware answers (leave balance, next shift, etc.) continue to be resolved locally from your database.
-                </p>
+                <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#e65100' }}>🔒 GDPR &amp; Data Privacy</p>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                  <li><strong>No personal data leaves the platform</strong> — employee names, leave balances, payslips, shift data and all other personal information stay entirely within your Supabase database in the UK/EU</li>
+                  <li><strong>Only the question text and FAQ articles are sent externally</strong> — the AI receives the employee's question and your company's published help articles, nothing else</li>
+                  <li><strong>Personal data queries execute locally</strong> — when the AI identifies a personal question, it returns a data tool instruction. The actual database lookup happens inside your platform, not on AI servers</li>
+                  <li><strong>Rate limited</strong> — 20 AI queries per employee per day to control costs and usage</li>
+                  <li><strong>One API call per question</strong> — same cost whether it's a policy answer or a personal data lookup</li>
+                  <li><strong>Search analytics</strong> — track AI vs FAQ responses separately in Admin &gt; Employee Help</li>
+                </ul>
               </div>
             </div>
           )}

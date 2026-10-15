@@ -16,6 +16,131 @@ function json(body: Record<string, unknown>, status = 200) {
   })
 }
 
+const DATA_TOOLS = [
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_leave_balance',
+      description: 'Get the employee\'s current leave balance — total allowance, days used, days remaining, and carried over, broken down by leave type (Annual Leave, Sick Leave, etc.). Use for questions like "how many days do I have left", "what is my leave balance".',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_leave_requests',
+      description: 'Get the employee\'s leave requests. Can filter by date range and/or status. Use for "how many days did I take in December", "show my approved leave", "when is my next holiday".',
+      parameters: {
+        type: 'object',
+        properties: {
+          start_date: { type: 'string', description: 'Start of date range (YYYY-MM-DD). If month mentioned, use first day of that month.' },
+          end_date: { type: 'string', description: 'End of date range (YYYY-MM-DD). If month mentioned, use last day of that month.' },
+          status: { type: 'string', enum: ['approved', 'pending', 'rejected', 'cancelled'], description: 'Filter by status. Omit to return all statuses.' },
+          upcoming_only: { type: 'boolean', description: 'If true, only return requests from today onwards.' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_expense_claims',
+      description: 'Get the employee\'s expense claims. Can filter by date range and/or status. Use for "what expenses did I submit", "how much am I owed", "pending expenses".',
+      parameters: {
+        type: 'object',
+        properties: {
+          start_date: { type: 'string', description: 'Start of date range (YYYY-MM-DD).' },
+          end_date: { type: 'string', description: 'End of date range (YYYY-MM-DD).' },
+          status: { type: 'string', enum: ['submitted', 'approved', 'rejected', 'paid'], description: 'Filter by status.' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_next_shifts',
+      description: 'Get the employee\'s upcoming shift assignments. Use for "when is my next shift", "what shifts do I have this week", "am I working tomorrow".',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Number of upcoming shifts to return (default 5).' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_hours_worked',
+      description: 'Get the employee\'s timesheet hours for a date range. Use for "how many hours did I work this week", "hours logged in October".',
+      parameters: {
+        type: 'object',
+        properties: {
+          start_date: { type: 'string', description: 'Start of date range (YYYY-MM-DD). Defaults to start of current week.' },
+          end_date: { type: 'string', description: 'End of date range (YYYY-MM-DD). Defaults to today.' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_payslip_summary',
+      description: 'Get the employee\'s recent payslip(s). Use for "what was my last pay", "how much tax did I pay", "show my payslip".',
+      parameters: {
+        type: 'object',
+        properties: {
+          count: { type: 'number', description: 'Number of recent payslips to return (default 1, max 3).' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_my_profile',
+      description: 'Get the employee\'s own profile information — name, job title, department, start date, manager. Use for "who is my manager", "what department am I in", "when did I start".',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_benefits',
+      description: 'Get the employee\'s enrolled benefits. Use for "what benefits do I have", "am I enrolled in anything".',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_elearning_progress',
+      description: 'Get the employee\'s e-learning course progress. Use for "what courses do I have", "have I completed my training", "e-learning progress".',
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_upcoming_holidays',
+      description: 'Get company public/bank holidays. Use for "when is the next bank holiday", "company holidays", "days off this year".',
+      parameters: {
+        type: 'object',
+        properties: {
+          upcoming_only: { type: 'boolean', description: 'If true, only return holidays from today onwards (default true).' },
+        },
+        required: [],
+      },
+    },
+  },
+]
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -81,16 +206,21 @@ Deno.serve(async (req) => {
       .map((a, i) => `[${i + 1}] Category: ${a.category}\nQ: ${a.question}\nA: ${a.answer}`)
       .join('\n\n')
 
-    const systemPrompt = `You are a friendly, professional HR assistant for a company's employee help service. Your role is to answer employee questions using ONLY the FAQ articles provided below.
+    const systemPrompt = `You are a friendly, professional HR assistant for a company's employee help service.
+
+You have two capabilities:
+1. Answer policy/general HR questions using the FAQ articles provided below.
+2. Look up the employee's personal HR data using the available tools (leave balance, leave requests, expenses, shifts, payslips, etc.).
 
 Rules:
-- Answer conversationally, as if you are an experienced HR colleague
-- Be concise — keep answers under 150 words
-- Use ONLY information from the FAQ articles below. Do not invent policies, dates, or procedures
-- If the FAQ articles do not cover the employee's question, respond: "I'm not able to help with that specific question. I'd suggest contacting your HR team directly — they'll be able to assist you."
-- Never mention that you are AI, a chatbot, or that you are reading FAQ articles
-- Never reference article numbers or say things like "according to article 3"
-- Use a warm, helpful tone
+- If the employee is asking about their own data (leave taken, days remaining, expenses, shifts, payslips, manager, hours worked, benefits, training), use the appropriate tool. Always prefer a tool call over a generic FAQ answer when the question is about the employee's personal information.
+- For policy, process, or general questions, answer using ONLY the FAQ articles below. Do not invent policies.
+- Be concise — keep answers under 150 words.
+- If neither tools nor FAQ articles can help, respond: "I'm not able to help with that specific question. I'd suggest contacting your HR team directly — they'll be able to assist you."
+- Never mention that you are AI, a chatbot, or that you are reading FAQ articles.
+- Never reference article numbers.
+- Use a warm, helpful tone. Use day-month-year date format (e.g. 15 December 2025).
+- When a question references relative dates like "last month" or "this year", calculate the correct date range based on today's date: ${new Date().toISOString().slice(0, 10)}.
 
 FAQ Articles:
 ${faqContext}`
@@ -107,6 +237,8 @@ ${faqContext}`
           { role: 'system', content: systemPrompt },
           { role: 'user', content: query },
         ],
+        tools: DATA_TOOLS,
+        tool_choice: 'auto',
         max_tokens: 300,
         temperature: 0.3,
       }),
@@ -118,8 +250,18 @@ ${faqContext}`
     }
 
     const openaiData = await openaiRes.json()
-    const answer = openaiData.choices?.[0]?.message?.content?.trim()
+    const msg = openaiData.choices?.[0]?.message
 
+    if (!msg) return json({ error: 'No response from AI service' }, 502)
+
+    if (msg.tool_calls && msg.tool_calls.length > 0) {
+      const tc = msg.tool_calls[0]
+      let params: Record<string, unknown> = {}
+      try { params = JSON.parse(tc.function.arguments || '{}') } catch { /* empty */ }
+      return json({ tool_call: tc.function.name, params })
+    }
+
+    const answer = msg.content?.trim()
     if (!answer) return json({ error: 'No response from AI service' }, 502)
 
     return json({ answer })
