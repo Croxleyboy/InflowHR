@@ -182,14 +182,18 @@ export default function DashboardDetailed() {
   const [ciActing, setCiActing] = useState(false)
   const ciTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Legal timesheet timer (Supabase-backed, shared with LegalTimesheets page)
+  // Legal timesheet timer (reads localStorage for instant display, then syncs from Supabase)
   interface LTTimer { id: string; clientId: string; clientName: string; matterId: string; matterName: string; taskCode: string; elapsed: number; running: boolean; startedAt: number | null }
-  const [ltTimers, setLtTimers] = useState<LTTimer[]>([])
+  const ltKey = `lt-timers-${companyUser?.company_id}-${employeeId}`
+  const [ltTimers, setLtTimers] = useState<LTTimer[]>(() => {
+    try { const s = localStorage.getItem(ltKey); if (s) return JSON.parse(s) as LTTimer[] } catch { /* empty */ }
+    return []
+  })
   const [, setLtTick] = useState(0)
   const ltTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    if (!companyUser?.company_id || !employeeId) return
+    if (!companyUser?.company_id || !employeeId || !features.legal_timesheets) return
     supabase
       .from('legal_timesheet_timers')
       .select('*')
@@ -210,7 +214,7 @@ export default function DashboardDetailed() {
           })))
         }
       })
-  }, [companyUser?.company_id, employeeId])
+  }, [companyUser?.company_id, employeeId, features.legal_timesheets])
 
   useEffect(() => {
     const hasRunning = ltTimers.some(t => t.running)
