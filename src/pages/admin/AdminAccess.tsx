@@ -5,6 +5,18 @@ import { useAuth } from '../../context/AuthContext'
 import { useFeatures } from '../../context/FeatureContext'
 import { useToast } from '../../context/ToastContext'
 
+interface GuestUser {
+  id: string
+  email: string
+  role_key: string
+  read_only: boolean
+  is_active: boolean
+  otp_expires_at: string
+  created_by: string | null
+  created_at: string
+  last_login_at: string | null
+}
+
 interface Employee {
   id: string
   first_name: string
@@ -84,7 +96,7 @@ export default function AdminAccess() {
   const { companyFeatures } = useFeatures()
   const { showError, showSuccess } = useToast()
 
-  const [tab, setTab] = useState<'access' | 'permissions'>('access')
+  const [tab, setTab] = useState<'access' | 'permissions' | 'guests'>('access')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [accessList, setAccessList] = useState<AccessRow[]>([])
   const [roles, setRoles] = useState<RolePerms[]>([])
@@ -96,12 +108,19 @@ export default function AdminAccess() {
   const [supportAccessAuthorised, setSupportAccessAuthorised] = useState(false)
   const [supportAccessLoading, setSupportAccessLoading] = useState(false)
 
+  const [guestUsers, setGuestUsers] = useState<GuestUser[]>([])
+  const [guestEmail, setGuestEmail] = useState('')
+  const [guestRole, setGuestRole] = useState('read_only')
+  const [guestReadOnly, setGuestReadOnly] = useState(true)
+  const [guestSaving, setGuestSaving] = useState(false)
+  const [showOtp, setShowOtp] = useState<{ id: string; otp: string } | null>(null)
+
   const isCompanyAdmin = isSuperAdmin || companyUser?.role === 'admin'
 
   const loadData = useCallback(async () => {
     if (!selectedCompanyId) return
     setLoading(true)
-    const [empRes, accessRes, rolesRes, companyRes] = await Promise.all([
+    const [empRes, accessRes, rolesRes, companyRes, guestRes] = await Promise.all([
       supabase.from('employees')
         .select('id, first_name, last_name, email, avatar_url, department, job_title')
         .eq('company_id', selectedCompanyId).eq('is_active', true)
@@ -117,9 +136,14 @@ export default function AdminAccess() {
         .select('support_access_authorised')
         .eq('id', selectedCompanyId)
         .single(),
+      supabase.from('guest_users')
+        .select('*')
+        .eq('company_id', selectedCompanyId)
+        .order('created_at', { ascending: false }),
     ])
     setEmployees((empRes.data as Employee[]) || [])
     setAccessList((accessRes.data as AccessRow[]) || [])
+    setGuestUsers((guestRes.data as GuestUser[]) || [])
     if (companyRes.data) setSupportAccessAuthorised(companyRes.data.support_access_authorised ?? false)
 
     const existing = (rolesRes.data || []) as { id: number; role_key: string; role_label: string; permissions: Record<string, boolean> }[]
@@ -261,6 +285,108 @@ export default function AdminAccess() {
     setSupportAccessLoading(false)
   }
 
+  async function createGuest() {
+    if (!guestEmail || !selectedCompanyId) return
+    setGuestSaving(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/manage-guest-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          action: 'create',
+          email: guestEmail,
+          company_id: selectedCompanyId,
+          role_key: guestRole,
+          read_only: guestReadOnly,
+        }),
+      })
+      const result = await res.json()
+      if (!res.ok) { showError(result.error || 'Failed to create guest'); setGuestSaving(false); return }
+      setShowOtp({ id: result.guest.id, otp: result.otp })
+      setGuestEmail('')
+      setGuestRole('read_only')
+      setGuestReadOnly(true)
+      showSuccess('Guest account created')
+      loadData()
+    } catch { showError('Failed to create guest account') }
+    setGuestSaving(false)
+  }
+
+  async function regenerateOtp(guestId: string) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/manage-guest-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ action: 'regenerate', guest_id: guestId, company_id: selectedCompanyId }),
+      })
+      const result = await res.json()
+      if (!res.ok) { showError(result.error || 'Failed to regenerate OTP'); return }
+      setShowOtp({ id: guestId, otp: result.otp })
+      showSuccess('New passcode generated — valid for 48 hours')
+      loadData()
+    } catch { showError('Failed to regenerate passcode') }
+  }
+
+  async function revokeGuest(guestId: string) {
+    if (!confirm('Revoke this guest account? They will no longer be able to sign in.')) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await fetch(`${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/manage-guest-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ action: 'revoke', guest_id: guestId, company_id: selectedCompanyId }),
+      })
+      showSuccess('Guest access revoked')
+      setShowOtp(null)
+      loadData()
+    } catch { showError('Failed to revoke guest') }
+  }
+
+  async function deleteGuest(guestId: string) {
+    if (!confirm('Permanently delete this guest account? This cannot be undone.')) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await fetch(`${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/manage-guest-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ action: 'delete', guest_id: guestId, company_id: selectedCompanyId }),
+      })
+      showSuccess('Guest account deleted')
+      setShowOtp(null)
+      loadData()
+    } catch { showError('Failed to delete guest') }
+  }
+
+  async function updateGuestAccess(guestId: string, field: 'role_key' | 'read_only', value: string | boolean) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      await fetch(`${import.meta.env.VITE_SUPABASE_URL || ''}/functions/v1/manage-guest-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ action: 'update', guest_id: guestId, company_id: selectedCompanyId, [field]: value }),
+      })
+      showSuccess('Guest access updated')
+      loadData()
+    } catch { showError('Failed to update guest') }
+  }
+
   const subscribedFeatures = useMemo(() => {
     const featureMap: Record<string, string> = {
       expenses: 'expenses', leave: 'leave', payroll: 'payslips',
@@ -287,6 +413,7 @@ export default function AdminAccess() {
       <div className="admin-tabs">
         <button className={`admin-tab ${tab === 'access' ? 'admin-tab-active' : ''}`} onClick={() => setTab('access')}>Access</button>
         <button className={`admin-tab ${tab === 'permissions' ? 'admin-tab-active' : ''}`} onClick={() => setTab('permissions')}>Permissions</button>
+        <button className={`admin-tab ${tab === 'guests' ? 'admin-tab-active' : ''}`} onClick={() => setTab('guests')}>Guest Access</button>
       </div>
 
       {loading && <div className="admin-loading">Loading...</div>}
@@ -480,6 +607,189 @@ export default function AdminAccess() {
             </button>
           )}
         </div>
+      )}
+
+      {!loading && tab === 'guests' && (
+        <>
+          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
+            Create temporary guest accounts for external users such as accountants, auditors or consultants. Guest users sign in with a one-time passcode that expires after 48 hours.
+          </p>
+
+          {isCompanyAdmin && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 20, padding: 16, background: '#f8fafc', borderRadius: 12, border: '1px solid #e5e7eb' }}>
+              <div style={{ flex: 2, minWidth: 200 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Email Address</label>
+                <input
+                  type="email"
+                  value={guestEmail}
+                  onChange={e => setGuestEmail(e.target.value)}
+                  className="admin-select"
+                  placeholder="guest@example.com"
+                  style={{ width: '100%' }}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Role</label>
+                <select
+                  value={guestRole}
+                  onChange={e => setGuestRole(e.target.value)}
+                  className="admin-select"
+                  style={{ width: '100%' }}
+                >
+                  {ROLE_KEYS.map(rk => (
+                    <option key={rk} value={rk}>{ROLE_LABELS[rk]}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ flex: 0, minWidth: 120 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Permissions</label>
+                <select
+                  value={guestReadOnly ? 'read_only' : 'full'}
+                  onChange={e => setGuestReadOnly(e.target.value === 'read_only')}
+                  className="admin-select"
+                  style={{ width: '100%' }}
+                >
+                  <option value="read_only">Read Only</option>
+                  <option value="full">Full Access</option>
+                </select>
+              </div>
+              <button
+                className="admin-btn-sm admin-btn-save"
+                onClick={createGuest}
+                disabled={guestSaving || !guestEmail}
+                style={{ height: 38 }}
+              >
+                {guestSaving ? 'Creating…' : 'Create Guest'}
+              </button>
+            </div>
+          )}
+
+          {showOtp && (
+            <div style={{ marginBottom: 20, padding: 16, background: '#f0fdf4', borderRadius: 12, border: '1px solid #bbf7d0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                <strong style={{ color: '#059669', fontSize: 14 }}>One-Time Passcode</strong>
+              </div>
+              <p style={{ fontSize: 13, color: '#374151', marginBottom: 8 }}>
+                Share this passcode with the guest user. It expires after 48 hours.
+              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <code style={{ fontSize: 22, fontWeight: 700, letterSpacing: '0.2em', padding: '8px 16px', background: '#fff', border: '2px solid #059669', borderRadius: 8, color: '#059669' }}>
+                  {showOtp.otp}
+                </code>
+                <button
+                  className="admin-btn-sm"
+                  onClick={() => { navigator.clipboard.writeText(showOtp.otp); showSuccess('Passcode copied') }}
+                  style={{ fontSize: 12 }}
+                >
+                  Copy
+                </button>
+                <button
+                  className="admin-btn-sm"
+                  onClick={() => setShowOtp(null)}
+                  style={{ fontSize: 12, background: 'transparent', color: '#64748b' }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
+          {guestUsers.length === 0 ? (
+            <div className="admin-empty">No guest accounts have been created yet</div>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Permissions</th>
+                    <th>Status</th>
+                    <th>Expires</th>
+                    <th>Last Login</th>
+                    <th>Created By</th>
+                    {isCompanyAdmin && <th>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {guestUsers.map(g => {
+                    const expired = new Date(g.otp_expires_at) < new Date()
+                    const status = !g.is_active ? 'Revoked' : expired ? 'Expired' : 'Active'
+                    const statusClass = status === 'Active' ? 'admin-badge-approved' : status === 'Expired' ? 'admin-badge-pending' : 'admin-badge-declined'
+                    return (
+                      <tr key={g.id}>
+                        <td style={{ fontWeight: 600, fontSize: 13 }}>{g.email}</td>
+                        <td>
+                          {isCompanyAdmin ? (
+                            <select
+                              value={g.role_key}
+                              onChange={e => updateGuestAccess(g.id, 'role_key', e.target.value)}
+                              className="admin-inline-select"
+                            >
+                              {ROLE_KEYS.map(rk => (
+                                <option key={rk} value={rk}>{ROLE_LABELS[rk]}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="admin-badge admin-badge-pending">{ROLE_LABELS[g.role_key] || g.role_key}</span>
+                          )}
+                        </td>
+                        <td>
+                          {isCompanyAdmin ? (
+                            <select
+                              value={g.read_only ? 'read_only' : 'full'}
+                              onChange={e => updateGuestAccess(g.id, 'read_only', e.target.value === 'read_only')}
+                              className="admin-inline-select"
+                            >
+                              <option value="read_only">Read Only</option>
+                              <option value="full">Full Access</option>
+                            </select>
+                          ) : (
+                            <span style={{ fontSize: 13, color: '#64748b' }}>{g.read_only ? 'Read Only' : 'Full Access'}</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className={`admin-badge ${statusClass}`}>{status}</span>
+                        </td>
+                        <td style={{ fontSize: 13, color: '#64748b' }}>{new Date(g.otp_expires_at).toLocaleDateString('en-GB')} {new Date(g.otp_expires_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</td>
+                        <td style={{ fontSize: 13, color: '#64748b' }}>{g.last_login_at ? new Date(g.last_login_at).toLocaleDateString('en-GB') : '—'}</td>
+                        <td style={{ fontSize: 13, color: '#64748b' }}>{g.created_by || '—'}</td>
+                        {isCompanyAdmin && (
+                          <td className="admin-actions" style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              className="admin-btn-icon"
+                              title="Regenerate passcode"
+                              onClick={() => regenerateOtp(g.id)}
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                            </button>
+                            {g.is_active && (
+                              <button
+                                className="admin-btn-icon admin-btn-danger"
+                                title="Revoke access"
+                                onClick={() => revokeGuest(g.id)}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                              </button>
+                            )}
+                            <button
+                              className="admin-btn-icon admin-btn-danger"
+                              title="Delete guest"
+                              onClick={() => deleteGuest(g.id)}
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

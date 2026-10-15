@@ -7,12 +7,16 @@ export default function Login() {
   const { signInWithMicrosoft, signInWithGoogle, signInWithPassword } = useAuth()
   const { t } = useLanguage()
 
-  const [loginMode, setLoginMode] = useState<'sso' | 'account'>('sso')
+  const [loginMode, setLoginMode] = useState<'sso' | 'account' | 'guest'>('sso')
   const [showBreakGlass, setShowBreakGlass] = useState(false)
   const [bgEmail, setBgEmail] = useState('')
   const [bgPassword, setBgPassword] = useState('')
   const [bgError, setBgError] = useState('')
   const [bgLoading, setBgLoading] = useState(false)
+  const [guestEmail, setGuestEmail] = useState('')
+  const [guestOtp, setGuestOtp] = useState('')
+  const [guestError, setGuestError] = useState('')
+  const [guestLoading, setGuestLoading] = useState(false)
 
   async function handleAccountLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -32,6 +36,16 @@ export default function Login() {
     const err = await signInWithPassword(bgEmail.trim(), bgPassword)
     if (err) setBgError(err)
     setBgLoading(false)
+  }
+
+  async function handleGuestLogin(e: React.FormEvent) {
+    e.preventDefault()
+    if (!guestEmail || !guestOtp) return
+    setGuestLoading(true)
+    setGuestError('')
+    const err = await signInWithPassword(guestEmail.trim().toLowerCase(), guestOtp.trim().toUpperCase())
+    if (err) setGuestError('Invalid email or passcode. Please check your details and try again.')
+    setGuestLoading(false)
   }
 
   return (
@@ -91,9 +105,60 @@ export default function Login() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               Account Login
             </button>
+            <button
+              className={`login-mode-tab ${loginMode === 'guest' ? 'login-mode-tab-active' : ''}`}
+              onClick={() => { setLoginMode('guest'); setGuestError('') }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+              Guest Access
+            </button>
           </div>
 
-          {loginMode === 'sso' ? (
+          {loginMode === 'guest' ? (
+            <>
+              <form className="login-account-form" onSubmit={handleGuestLogin}>
+                <p className="login-account-info">
+                  Enter the email address and one-time passcode provided by your company administrator.
+                </p>
+                <input
+                  type="email"
+                  className="login-account-input"
+                  placeholder="Email Address"
+                  value={guestEmail}
+                  onChange={e => setGuestEmail(e.target.value)}
+                  autoComplete="email"
+                />
+                <input
+                  type="text"
+                  className="login-account-input"
+                  placeholder="One-Time Passcode"
+                  value={guestOtp}
+                  onChange={e => setGuestOtp(e.target.value.toUpperCase())}
+                  autoComplete="one-time-code"
+                  style={{ letterSpacing: '0.15em', fontFamily: 'monospace' }}
+                />
+                {guestError && <p className="login-account-error">{guestError}</p>}
+                <button
+                  type="submit"
+                  className="login-account-btn"
+                  disabled={guestLoading || !guestEmail || !guestOtp}
+                >
+                  {guestLoading ? 'Verifying...' : 'Sign In as Guest'}
+                </button>
+              </form>
+
+              <div className="login-trust-badges" style={{ marginTop: 24 }}>
+                <div className="login-trust-badge">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <span>48-hour access window</span>
+                </div>
+                <div className="login-trust-badge">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span>View-only access</span>
+                </div>
+              </div>
+            </>
+          ) : loginMode === 'sso' ? (
             <>
               <div className="login-sso-buttons">
                 <button className="login-microsoft-btn" onClick={signInWithMicrosoft}>

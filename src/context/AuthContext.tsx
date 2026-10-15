@@ -45,6 +45,9 @@ interface AuthState {
   updateAvatarUrl: (url: string) => void
   setupComplete: boolean | null
   markSetupComplete: () => void
+  isGuest: boolean
+  guestReadOnly: boolean
+  guestCompanyId: string | null
   signInWithMicrosoft: () => Promise<void>
   signInWithGoogle: () => Promise<void>
   signInWithPassword: (email: string, password: string) => Promise<string | null>
@@ -76,6 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [portalPermissions, setPortalPermissions] = useState<Record<string, boolean> | null>(null)
   const [workPatternType, setWorkPatternType] = useState<'fixed' | 'variable' | null>(null)
   const [employmentCategory, setEmploymentCategory] = useState<string | null>(null)
+  const [isGuest, setIsGuest] = useState(false)
+  const [guestReadOnly, setGuestReadOnly] = useState(false)
+  const [guestCompanyId, setGuestCompanyId] = useState<string | null>(null)
 
   async function loadCompanyData(userId: string, email: string) {
     // Check super admin status server-side
@@ -258,6 +264,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
       }
+
+      // Check if user is a guest
+      const { data: guestRow } = await supabase
+        .from('guest_users')
+        .select('id, company_id, role_key, read_only, is_active, otp_expires_at')
+        .eq('auth_user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (guestRow && new Date(guestRow.otp_expires_at) > new Date()) {
+        setIsGuest(true)
+        setGuestReadOnly(guestRow.read_only)
+        setGuestCompanyId(guestRow.company_id)
+
+        const { data: co } = await supabase
+          .from('companies')
+          .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
+          .eq('id', guestRow.company_id)
+          .single()
+        if (co) {
+          setCompany(co as Company)
+        }
+
+        setPortalRole(guestRow.role_key)
+        const { data: roleData } = await supabase
+          .from('admin_portal_roles')
+          .select('permissions')
+          .eq('company_id', guestRow.company_id)
+          .eq('role_key', guestRow.role_key)
+          .maybeSingle()
+        setPortalPermissions(roleData?.permissions || null)
+
+        await supabase
+          .from('guest_users')
+          .update({ last_login_at: new Date().toISOString() })
+          .eq('id', guestRow.id)
+
+        setSetupComplete(true)
+        return
+      }
+
       setSetupComplete(null)
     }
   }
@@ -290,6 +337,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCompanyUser(null)
         setCompany(null)
         setIsSuperAdmin(false)
+        setIsGuest(false)
+        setGuestReadOnly(false)
+        setGuestCompanyId(null)
         setLoading(false)
       }
     })
@@ -339,6 +389,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsSuperAdmin(false)
     setCanPostNotifications(false)
     setPortalRole(null)
+    setIsGuest(false)
+    setGuestReadOnly(false)
+    setGuestCompanyId(null)
   }
 
   const INACTIVITY_TIMEOUT = 15 * 60 * 1000
@@ -357,6 +410,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsSuperAdmin(false)
     setCanPostNotifications(false)
     setPortalRole(null)
+    setIsGuest(false)
+    setGuestReadOnly(false)
+    setGuestCompanyId(null)
     window.location.href = '/'
   }, [])
 
@@ -395,7 +451,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const employeeEmail = user?.email || ''
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, portalPermissions, workPatternType, employmentCategory, setupComplete, markSetupComplete, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, portalPermissions, workPatternType, employmentCategory, setupComplete, markSetupComplete, isGuest, guestReadOnly, guestCompanyId, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
       {children}
     </AuthContext.Provider>
   )
