@@ -1587,7 +1587,6 @@ export default function Dashboard() {
         <div className="dash-lt-timer-banner">
           {ltTimers.map(timer => {
             const elapsed = ltGetElapsed(timer)
-            const m = Math.floor(elapsed / 60); const s = elapsed % 60
             return (
               <div key={timer.id} className={`dash-lt-timer-row${timer.running ? ' dash-lt-timer-running' : ''}`} onClick={() => navigate('/legal-timesheets')}>
                 <div className="dash-lt-timer-info">
