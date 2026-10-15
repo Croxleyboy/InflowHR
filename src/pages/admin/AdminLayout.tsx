@@ -113,15 +113,21 @@ function AdminLayoutInner() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set())
   const navigate = useNavigate()
   const location = useLocation()
-  const { isSuperAdmin, employeeEmail, companyUser, portalRole, portalPermissions, isGuest, guestReadOnly } = useAuth()
+  const { isSuperAdmin, employeeEmail, companyUser, portalRole, portalPermissions, isGuest, guestReadOnly, company: authCompany } = useAuth()
   const { features } = useFeatures()
   const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany } = useAdminCompany()
+  const displayCompany = selectedCompany || (isGuest && authCompany ? { name: authCompany.name } : null)
 
   const isFullAccess = isSuperAdmin || companyUser?.role === 'admin' || portalRole === 'company_admin'
 
   const isItemVisible = (item: MenuItem) => {
+    if (isGuest) {
+      if (item.superAdminOnly) return false
+      if (!item.permKey) return false
+      if (!portalPermissions) return false
+      return portalPermissions[item.permKey] === true
+    }
     if (item.superAdminOnly && !isSuperAdmin) return false
-    if (item.superAdminOnly && isGuest) return false
     if (item.feature && !isSuperAdmin && !features[item.feature]) return false
     if (item.permKey && !isFullAccess && portalPermissions && portalPermissions[item.permKey] === false) return false
     return true
@@ -189,12 +195,12 @@ function AdminLayoutInner() {
           </div>
         )}
 
-        {!isSuperAdmin && selectedCompany && (
-          <span className="admin-company-label">{selectedCompany.name}</span>
+        {!isSuperAdmin && displayCompany && (
+          <span className="admin-company-label">{displayCompany.name}{isGuest ? ' (Guest)' : ''}</span>
         )}
 
         <div className="admin-topbar-user">
-          <span className="admin-topbar-role">{isSuperAdmin ? 'Super Admin' : companyUser?.role === 'admin' ? 'Company Admin' : 'Admin'}</span>
+          <span className="admin-topbar-role">{isSuperAdmin ? 'Super Admin' : isGuest ? `Guest — ${portalRole || 'Read Only'}` : companyUser?.role === 'admin' ? 'Company Admin' : 'Admin'}</span>
           <span className="admin-topbar-email">{employeeEmail}</span>
         </div>
 
