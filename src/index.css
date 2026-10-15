@@ -181,6 +181,30 @@ body {
 }
 .dash-reminder-pill:hover { background: #641717; }
 
+/* Legal timesheet timer banner on dashboard */
+.dash-lt-timer-banner { margin: 6px 16px 0; display: flex; flex-direction: column; gap: 4px; }
+.dash-lt-timer-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: #4338ca; color: #fff; border-radius: 10px; padding: 10px 14px;
+  cursor: pointer; font-family: inherit; flex-wrap: nowrap;
+}
+.dash-lt-timer-row:hover { background: #3730a3; }
+.dash-lt-timer-running { background: #6d28d9; }
+.dash-lt-timer-running:hover { background: #5b21b6; }
+.dash-lt-timer-info { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.dash-lt-timer-text { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-lt-timer-text strong { font-weight: 700; }
+.dash-lt-timer-time { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.dash-lt-timer-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.dash-lt-timer-btn {
+  background: rgba(255,255,255,0.2); border: none; border-radius: 6px;
+  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0;
+}
+.dash-lt-timer-btn:hover { background: rgba(255,255,255,0.35); }
+.dash-lt-timer-discard { background: rgba(255,255,255,0.1); }
+.dash-lt-timer-discard:hover { background: rgba(255,0,0,0.3); }
+
 .header-avatar {
   width: 40px; height: 40px;
   border-radius: 50%;

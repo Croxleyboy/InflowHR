@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../context/ThemeContext'
 import { useFeatures } from '../context/FeatureContext'
@@ -128,6 +128,79 @@ export default function Dashboard() {
   const [colleagueBirthdays, setColleagueBirthdays] = useState<{ name: string; date: string; isToday: boolean; type: 'birthday' | 'anniversary'; years?: number }[]>([])
   const [nextOneToOne, setNextOneToOne] = useState<{ date: string; time: string | null; with_name: string } | null>(null)
   const [newGoals, setNewGoals] = useState<{ title: string; due_date: string | null }[]>([])
+
+  // ── Legal timesheet timer (reads same localStorage/Supabase as LegalTimesheets) ──
+  interface LtTimer { id: string; clientId: string; clientName: string; matterId: string; matterName: string; taskCode: string; elapsed: number; running: boolean; startedAt: number | null }
+  const ltKey = `lt-timers-${companyUser?.company_id}-${employeeId}`
+  const [ltTimers, setLtTimers] = useState<LtTimer[]>(() => {
+    try { const s = localStorage.getItem(ltKey); if (s) return JSON.parse(s) as LtTimer[] } catch { /* empty */ }
+    return []
+  })
+  const [, setLtTick] = useState(0)
+  const ltTickRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const ltSyncRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const ltGetElapsed = useCallback((t: LtTimer) => {
+    if (!t.running || !t.startedAt) return t.elapsed
+    return t.elapsed + Math.floor((Date.now() - t.startedAt) / 1000)
+  }, [])
+
+  useEffect(() => {
+    if (!companyUser?.company_id || !employeeId || !features.legal_timesheets) return
+    supabase.from('legal_timesheet_timers').select('*').eq('company_id', companyUser.company_id).eq('employee_id', employeeId)
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const db: LtTimer[] = data.map(r => ({ id: r.id, clientId: r.client_id, clientName: r.client_name, matterId: r.matter_id, matterName: r.matter_name, taskCode: r.task_code || 'L110', elapsed: r.elapsed_seconds || 0, running: r.is_running || false, startedAt: r.started_at ? new Date(r.started_at).getTime() : null }))
+          setLtTimers(db)
+        }
+      })
+  }, [companyUser?.company_id, employeeId, features.legal_timesheets])
+
+  useEffect(() => {
+    const hasRunning = ltTimers.some(t => t.running)
+    if (hasRunning && !ltTickRef.current) {
+      ltTickRef.current = setInterval(() => setLtTick(n => n + 1), 1000)
+    } else if (!hasRunning && ltTickRef.current) {
+      clearInterval(ltTickRef.current); ltTickRef.current = null
+    }
+    return () => { if (ltTickRef.current) { clearInterval(ltTickRef.current); ltTickRef.current = null } }
+  }, [ltTimers])
+
+  useEffect(() => {
+    try { localStorage.setItem(ltKey, JSON.stringify(ltTimers)) } catch { /* empty */ }
+    if (!companyUser?.company_id || !employeeId) return
+    if (ltSyncRef.current) clearTimeout(ltSyncRef.current)
+    const cid = companyUser.company_id
+    ltSyncRef.current = setTimeout(async () => {
+      await supabase.from('legal_timesheet_timers').delete().eq('company_id', cid).eq('employee_id', employeeId)
+      if (ltTimers.length > 0) {
+        await supabase.from('legal_timesheet_timers').insert(
+          ltTimers.map(t => ({ id: t.id.startsWith('timer-') ? undefined : t.id, company_id: cid, employee_id: employeeId, client_id: t.clientId, client_name: t.clientName, matter_id: t.matterId, matter_name: t.matterName, task_code: t.taskCode, elapsed_seconds: t.running && t.startedAt ? t.elapsed + Math.floor((Date.now() - t.startedAt) / 1000) : t.elapsed, is_running: t.running, started_at: t.startedAt ? new Date(t.startedAt).toISOString() : null }))
+        )
+      }
+    }, 1000)
+  }, [ltTimers, ltKey, companyUser?.company_id, employeeId])
+
+  function ltToggle(id: string) {
+    setLtTimers(prev => prev.map(t => {
+      if (t.id === id) {
+        if (t.running) return { ...t, running: false, elapsed: ltGetElapsed(t), startedAt: null }
+        return { ...t, running: true, startedAt: Date.now() }
+      }
+      if (t.running) return { ...t, running: false, elapsed: ltGetElapsed(t), startedAt: null }
+      return t
+    }))
+  }
+
+  function ltDiscard(id: string) {
+    setLtTimers(prev => prev.filter(t => t.id !== id))
+  }
+
+  function ltFormatElapsed(seconds: number): string {
+    const m = Math.floor(seconds / 60); const s = seconds % 60
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+
   const dashMode = prefs.dashboard_mode
   useEffect(() => {
     const iv = setInterval(() => setNowTick(Date.now()), 60000)
@@ -1509,6 +1582,38 @@ export default function Dashboard() {
           </div>
         )
       })()}
+
+      {features.legal_timesheets && ltTimers.length > 0 && (
+        <div className="dash-lt-timer-banner">
+          {ltTimers.map(timer => {
+            const elapsed = ltGetElapsed(timer)
+            const m = Math.floor(elapsed / 60); const s = elapsed % 60
+            return (
+              <div key={timer.id} className={`dash-lt-timer-row${timer.running ? ' dash-lt-timer-running' : ''}`} onClick={() => navigate('/legal-timesheets')}>
+                <div className="dash-lt-timer-info">
+                  <span className={`dash-checkin-dot${timer.running ? '' : ' dash-checkin-dot-break'}`} />
+                  <span className="dash-lt-timer-text">
+                    <strong>{timer.clientName}</strong> · {timer.matterName}
+                  </span>
+                </div>
+                <div className="dash-lt-timer-time">{ltFormatElapsed(elapsed)}</div>
+                <div className="dash-lt-timer-actions">
+                  <button className="dash-lt-timer-btn" title={timer.running ? 'Pause' : 'Resume'} onClick={(e) => { e.stopPropagation(); ltToggle(timer.id) }}>
+                    {timer.running ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><polygon points="6,4 20,12 6,20"/></svg>
+                    )}
+                  </button>
+                  <button className="dash-lt-timer-btn dash-lt-timer-discard" title="Discard" onClick={(e) => { e.stopPropagation(); ltDiscard(timer.id) }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {(() => {
         const checkinEnabled = !activeCheckin && (ciSettings?.timesheets_checkin_enabled || ciSettings?.shifts_checkin_enabled)
