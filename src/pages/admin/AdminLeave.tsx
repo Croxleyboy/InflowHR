@@ -74,6 +74,7 @@ export default function AdminLeave() {
   const [zhcActionLoading, setZhcActionLoading] = useState<number | null>(null)
   const [zhcCancellations, setZhcCancellations] = useState<{ id: number; employee_name: string; shift_date: string; shift_start: string; shift_end: string; shift_hours: number; notice_hours: number; compensation_amount: number; cancellation_type: string; compensation_included_in_payrun: boolean; cancelled_at: string }[]>([])
   const [zhcPensionWorkers, setZhcPensionWorkers] = useState<{ id: string; name: string; ytd_earnings: number; threshold: number; enrolled: boolean; enrolled_date: string | null }[]>([])
+  const [leaveBalances, setLeaveBalances] = useState<Record<string, { total: number; used: number }>>({})
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -351,6 +352,19 @@ export default function AdminLeave() {
       setManagerNames(names)
     } else {
       setManagerNames({})
+    }
+
+    const fyYear = getFYYear(new Date(), fyStartMonth)
+    const { data: ltData } = await supabase.from('leave_types').select('id').eq('name', 'Annual Leave').eq('company_id', selectedCompanyId).single()
+    if (ltData) {
+      const { data: bals } = await supabase.from('leave_balances')
+        .select('employee_id, total_allowance, used')
+        .eq('company_id', selectedCompanyId)
+        .eq('leave_type_id', ltData.id)
+        .eq('year', fyYear)
+      const balMap: Record<string, { total: number; used: number }> = {}
+      ;(bals || []).forEach((b: any) => { balMap[b.employee_id] = { total: Number(b.total_allowance), used: Number(b.used) } })
+      setLeaveBalances(balMap)
     }
 
     setLoading(false)
@@ -697,15 +711,21 @@ export default function AdminLeave() {
     latestCreatedAt: string
     pendingCount: number
     approvedCount: number
+    usedDays: number
+    remainingDays: number
+    bookedDays: number
+    hasBalance: boolean
   }
 
   const grouped = useMemo<EmployeeGroup[]>(() => {
+    const today = new Date().toISOString().slice(0, 10)
     const map = new Map<string, EmployeeGroup>()
     for (const r of filtered) {
       if (!r.employee) continue
       const key = r.employee_id
       let g = map.get(key)
       if (!g) {
+        const bal = leaveBalances[key]
         g = {
           employeeId: key,
           name: `${r.employee.first_name} ${r.employee.last_name}`,
@@ -715,16 +735,23 @@ export default function AdminLeave() {
           latestCreatedAt: r.created_at,
           pendingCount: 0,
           approvedCount: 0,
+          usedDays: bal ? bal.used : 0,
+          remainingDays: bal ? bal.total - bal.used : 0,
+          bookedDays: 0,
+          hasBalance: !!bal,
         }
         map.set(key, g)
       }
       g.requests.push(r)
       if (r.created_at > g.latestCreatedAt) g.latestCreatedAt = r.created_at
       if (r.status === 'pending') g.pendingCount++
-      if (r.status === 'approved') g.approvedCount++
+      if (r.status === 'approved') {
+        g.approvedCount++
+        if (r.start_date >= today) g.bookedDays += Number(r.days_requested)
+      }
     }
     return Array.from(map.values()).sort((a, b) => b.latestCreatedAt.localeCompare(a.latestCreatedAt))
-  }, [filtered])
+  }, [filtered, leaveBalances])
 
   const totalPages = Math.max(1, Math.ceil(grouped.length / PAGE_SIZE))
   const paginatedGroups = grouped.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -1452,6 +1479,22 @@ export default function AdminLeave() {
                           <span style={{ fontSize: 11, fontWeight: 600, background: '#e8f5e9', color: '#2e7d32', padding: '2px 7px', borderRadius: 10 }}>
                             {g.approvedCount} approved
                           </span>
+                        )}
+                        {g.hasBalance && (
+                          <>
+                            <span className="admin-hide-mobile" style={{ color: '#ccc', fontSize: 11 }}>|</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, background: '#e3f2fd', color: '#1565c0', padding: '2px 7px', borderRadius: 10 }}>
+                              Used: {g.usedDays}d
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 600, background: '#e0f2f1', color: '#00695c', padding: '2px 7px', borderRadius: 10 }}>
+                              Left: {g.remainingDays}d
+                            </span>
+                            {g.bookedDays > 0 && (
+                              <span style={{ fontSize: 11, fontWeight: 600, background: '#f3e5f5', color: '#7b1fa2', padding: '2px 7px', borderRadius: 10 }}>
+                                Booked: {g.bookedDays}d
+                              </span>
+                            )}
+                          </>
                         )}
                       </span>
                     </div>
