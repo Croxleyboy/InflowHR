@@ -938,6 +938,7 @@ export default function MyShifts() {
                   <span className="schedule-day-num">{dayNum}</span>
                   <span className="schedule-day-name">{dayName}</span>
                   {isToday && <span className="schedule-day-badge">Today</span>}
+                  {isPast && hasContent && <span className="schedule-day-badge" style={{ background: '#90a4ae' }}>Completed</span>}
                 </div>
 
                 {!hasContent ? (
@@ -951,7 +952,7 @@ export default function MyShifts() {
                     return (
                       <div
                         key={`${g.date}-${g.templateId}`}
-                        className="sc-block"
+                        className={`sc-block${isPast ? ' sc-block-past' : ''}`}
                         style={{ background: cardColor.bg, borderLeftColor: cardColor.border }}
                       >
                         <div className="sc-block-top">
@@ -1014,7 +1015,7 @@ export default function MyShifts() {
                     return (
                       <div
                         key={s.id}
-                        className="sc-block"
+                        className={`sc-block${isPast ? ' sc-block-past' : ''}`}
                         style={{ background: cardColor.bg, borderLeftColor: cardColor.border }}
                       >
                         <div className="sc-block-top">

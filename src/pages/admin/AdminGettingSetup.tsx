@@ -26,6 +26,14 @@ const SETUP_STEPS: SetupStep[] = [
   },
   {
     number: 2,
+    title: 'Enter Company Details',
+    summary: 'Add your company registration, address, and contact information.',
+    details: 'Navigate to Settings > Company Details and fill in your company name, registered business number, VAT number, office address, phone number, website, and number of staff. This information is used across the platform for invoicing, legal compliance, and company identification. You can update these details at any time.',
+    icon: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
+    page: '/admin/company-details',
+  },
+  {
+    number: 3,
     title: 'Review Employee Data',
     summary: 'Check and update all imported employee records.',
     details: 'On the Onboard / Offboard page, switch to the All Records view to see every employee. Review each record for accuracy — check names, job titles, departments, email addresses, start dates, and manager assignments. Update any fields that need correcting. This is your master employee directory and feeds into all other features.',
@@ -33,7 +41,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/onboarding',
   },
   {
-    number: 3,
+    number: 4,
     title: 'Configure Expense Settings',
     summary: 'Set up cost centres and expense types for your company.',
     details: 'Go to the Expenses page and select the Settings tab. Review the default cost centres and expense types — add any that are specific to your company and remove those that do not apply. These settings control the dropdown options your employees see when submitting expense claims and line items.',
@@ -42,7 +50,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'expenses',
   },
   {
-    number: 4,
+    number: 5,
     title: 'Set Up Leave Policies',
     summary: 'Configure leave allowances, weekend rules, and carryover.',
     details: 'On the Leave page, review and adjust the leave allowance deductions for each leave type. Decide whether your company counts weekends as working days (most do not). Set your carryover policy — whether unused leave days roll over to the next year and if so, how many. These settings apply to all employees and determine how leave balances are calculated.',
@@ -51,7 +59,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'leave',
   },
   {
-    number: 5,
+    number: 6,
     title: 'Connect Payroll Provider',
     summary: 'Link Xero or Sage for payslips, or run payroll in standalone mode.',
     details: 'Navigate to Admin > Integrations and connect your payroll provider — Xero or Sage — using the Configure button on the relevant card. Both are included in the Core subscription at no extra cost. Once connected, the payroll wizard enters Connected mode automatically: it pushes overtime and variable hours to your provider and guides you through manual items. If you do not connect a provider, the wizard runs in Standalone mode and generates estimate payslips with approximate tax/NI (not HMRC-certified). See the User Guide Payroll section for the full connected vs standalone walkthrough.',
@@ -61,7 +69,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'payslips',
   },
   {
-    number: 6,
+    number: 7,
     title: 'Set Up E-Learning Courses',
     summary: 'Select core courses, assign departments, and create company-specific content.',
     details: 'On the E-Learning page, browse the catalogue of core courses available. Enable the courses you want your employees to complete, and for each course select which departments should be assigned. You can also create new company-specific courses tailored to your organisation — these appear alongside the core catalogue for your employees.',
@@ -70,7 +78,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'elearning',
   },
   {
-    number: 7,
+    number: 8,
     title: 'Create Company Announcements',
     summary: 'Post announcements and remove any default messages.',
     details: 'Navigate to the Announcements page to create a new announcement for your team. This is a good place to welcome employees to the platform, communicate company news, or share important updates. Review any default announcement messages that were pre-populated and delete those that are not relevant to your company.',
@@ -78,7 +86,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/announcements',
   },
   {
-    number: 8,
+    number: 9,
     title: 'Familiarise with HR Tickets',
     summary: 'Understand the ticketing system for employee and service provider queries.',
     details: 'The HR Tickets page is where employees can raise queries and requests. As an admin, you can view and respond to all tickets. Note that only tickets directed to the service provider channel will be visible to the InflowHR support team — internal tickets stay within your company. Use this system for structured issue tracking and resolution.',
@@ -86,7 +94,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/tickets',
   },
   {
-    number: 9,
+    number: 10,
     title: 'Configure Timesheets & Check-In',
     summary: 'Enable time monitoring, create projects, and set up check-in locations.',
     details: 'On the Timesheets page, decide whether to enable time monitoring for your company. Create your company projects on the Customer Projects tab so employees can log time against them. If you want to use the check-in feature, enable it and then create your office locations by entering site coordinates — employees will use these to check in when arriving at work.',
@@ -96,7 +104,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'timesheets',
   },
   {
-    number: 10,
+    number: 11,
     title: 'Assign Managers & Build Org Chart',
     summary: 'Set up reporting lines to create your company organisation chart.',
     details: 'On the Performance page, review the Overview tab showing all employees and their current manager assignments. Use the Reassign button to set or change each employee\'s line manager. Once all reporting lines are in place, switch to the Org Chart tab to see the visual organisation diagram — this is automatically built from the manager assignments you configure here.',
@@ -104,7 +112,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/performance',
   },
   {
-    number: 11,
+    number: 12,
     title: 'Set Up Legal Timesheets',
     summary: 'Configure clients, matters, and auto-rounding for legal time recording.',
     details: 'If legal timesheets are available on your subscription, navigate to the Legal Timesheets page. Add the clients and matters that your employees will book time against. On the Settings page, select the auto-rounding increment that applies to your company — this determines how recorded time is rounded up for billing purposes. This is a specialist feature for professional services firms.',
@@ -114,7 +122,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'legal_timesheets',
   },
   {
-    number: 12,
+    number: 13,
     title: 'Configure Talent Intelligence',
     summary: 'Set up skill categories for employee skills passports.',
     details: 'If the Talent Intelligence feature is available, go to the Talent Intelligence page. You can seed the default skill categories or create your own custom categories relevant to your company. Remove any default categories that do not apply. Your employees will see these categories on their Skills Passport within their My Profile page, where they can self-assess and track their professional development.',
@@ -124,7 +132,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'skills_passport',
   },
   {
-    number: 13,
+    number: 14,
     title: 'Manage Access & Permissions',
     summary: 'Grant admin roles and configure service provider access.',
     details: 'On the Access Management page, select key company personnel and grant them the appropriate admin role. This determines who can access the admin portal and what they can do. You also have the option to authorise the service provider (InflowHR) to access your HR data for support purposes using the Service Provider Support Access switch — this can be toggled on and off at any time.',
@@ -132,7 +140,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/access',
   },
   {
-    number: 14,
+    number: 15,
     title: 'Review Billing & Charges',
     summary: 'View your subscription summary and monthly breakdown.',
     details: 'The Billing page provides a summary of your company\'s contracted services and any add-on features. Review the monthly breakdown of charges to ensure everything matches your agreement. This page is for reference — if you need to make changes to your subscription, contact the InflowHR team through the HR Tickets page.',
@@ -140,7 +148,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/billing',
   },
   {
-    number: 15,
+    number: 16,
     title: 'Read the User Guides',
     summary: 'Detailed feature guides for end users and administrators.',
     details: 'The User Guides page contains comprehensive documentation covering every feature available to both employees and administrators. Refer to these guides for detailed walkthroughs, tips, and best practices. Share relevant sections with your team as they begin using the platform.',
@@ -150,11 +158,11 @@ const SETUP_STEPS: SetupStep[] = [
 ]
 
 const PHASE_MAP: { label: string; color: string; bg: string; range: [number, number] }[] = [
-  { label: 'Foundation', color: '#2563eb', bg: '#dbeafe', range: [1, 2] },
-  { label: 'Core Services', color: '#059669', bg: '#dcfce7', range: [3, 6] },
-  { label: 'Communications', color: '#d97706', bg: '#fef3c7', range: [7, 8] },
-  { label: 'Advanced Features', color: '#7c3aed', bg: '#ede9fe', range: [9, 12] },
-  { label: 'Administration', color: '#dc2626', bg: '#fee2e2', range: [13, 15] },
+  { label: 'Foundation', color: '#2563eb', bg: '#dbeafe', range: [1, 3] },
+  { label: 'Core Services', color: '#059669', bg: '#dcfce7', range: [4, 7] },
+  { label: 'Communications', color: '#d97706', bg: '#fef3c7', range: [8, 9] },
+  { label: 'Advanced Features', color: '#7c3aed', bg: '#ede9fe', range: [10, 13] },
+  { label: 'Administration', color: '#dc2626', bg: '#fee2e2', range: [14, 16] },
 ]
 
 function getPhase(stepNum: number) {
