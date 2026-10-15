@@ -25,11 +25,12 @@ CREATE INDEX idx_guest_users_auth_user ON guest_users(auth_user_id);
 
 ALTER TABLE guest_users ENABLE ROW LEVEL SECURITY;
 
--- Authenticated users can read guest_users for their company
+-- Authenticated users can read guest_users for their company, or their own guest entries
 CREATE POLICY guest_users_select ON guest_users FOR SELECT TO authenticated
   USING (
     company_id = get_my_company_id()
     OR is_super_admin()
+    OR auth_user_id = auth.uid()
   );
 
 -- Only admins can insert/update/delete guest users
@@ -39,10 +40,12 @@ CREATE POLICY guest_users_insert ON guest_users FOR INSERT TO authenticated
     OR is_super_admin()
   );
 
+-- Admins can update any guest in their company; guests can update their own row (for last_login_at)
 CREATE POLICY guest_users_update ON guest_users FOR UPDATE TO authenticated
   USING (
     company_id = get_my_company_id()
     OR is_super_admin()
+    OR auth_user_id = auth.uid()
   );
 
 CREATE POLICY guest_users_delete ON guest_users FOR DELETE TO authenticated
