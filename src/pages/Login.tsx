@@ -43,7 +43,9 @@ export default function Login() {
     if (!guestEmail || !guestOtp) return
     setGuestLoading(true)
     setGuestError('')
+    try { sessionStorage.setItem('inflowhr_guest_session', 'true') } catch {}
     const err = await signInWithPassword(guestEmail.trim().toLowerCase(), guestOtp.trim().toUpperCase())
+    if (err) { try { sessionStorage.removeItem('inflowhr_guest_session') } catch {} }
     if (err) setGuestError('Invalid email or passcode. Please check your details and try again.')
     setGuestLoading(false)
   }
