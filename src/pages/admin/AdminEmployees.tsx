@@ -257,7 +257,11 @@ export default function AdminEmployees() {
       }
     }
     if (lieuDays[id]?.balanceId) {
-      await supabase.from('leave_balances').update({ lieu_days: editLieuDays }).eq('id', lieuDays[id].balanceId)
+      const balUpdate: Record<string, any> = { lieu_days: editLieuDays }
+      if (editForm.leave_allowance != null && editForm.leave_allowance !== '') {
+        balUpdate.total_allowance = parseFloat(editForm.leave_allowance)
+      }
+      await supabase.from('leave_balances').update(balUpdate).eq('id', lieuDays[id].balanceId)
     }
 
     setEditingId(null)
