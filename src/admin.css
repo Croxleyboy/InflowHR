@@ -2066,3 +2066,12 @@
 .admin-help-metrics-section .admin-page-subtitle {
   margin-bottom: 12px;
 }
+
+/* Guest read-only mode: hide destructive/write action buttons */
+.guest-read-only .admin-btn-save,
+.guest-read-only .admin-btn-danger,
+.guest-read-only button[title="Delete"],
+.guest-read-only button[title="Remove"],
+.guest-read-only .admin-bulk-actions {
+  display: none !important;
+}

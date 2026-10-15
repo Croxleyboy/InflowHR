@@ -124,11 +124,33 @@ function AdminGate() {
   if (isGuest && portalPermissions) {
     const seg = location.pathname.replace('/admin/', '').split('/')[0]
     const permKey = ROUTE_PERM_MAP[seg]
-    if (permKey && portalPermissions[permKey] === false) {
-      return <Navigate to="/admin" replace />
+    if (permKey && portalPermissions[permKey] !== true) {
+      const first = GUEST_ROUTE_ORDER.find(r => portalPermissions[r.permKey] === true)
+      return <Navigate to={first ? `/admin/${first.route}` : '/admin'} replace />
     }
   }
   return <Outlet />
+}
+
+const GUEST_ROUTE_ORDER: { route: string; permKey: string }[] = [
+  { route: 'expenses', permKey: 'expenses' },
+  { route: 'payroll', permKey: 'payroll' },
+  { route: 'timesheets', permKey: 'timesheets' },
+  { route: 'employees', permKey: 'employees' },
+  { route: 'leave', permKey: 'leave' },
+  { route: 'benefits', permKey: 'benefits' },
+  { route: 'shifts', permKey: 'shifts' },
+  { route: 'reports', permKey: 'reports' },
+  { route: 'billing', permKey: 'billing' },
+]
+
+function GuestDashboardRedirect() {
+  const { portalPermissions } = useAuth()
+  if (portalPermissions) {
+    const first = GUEST_ROUTE_ORDER.find(r => portalPermissions[r.permKey] === true)
+    if (first) return <Navigate to={`/admin/${first.route}`} replace />
+  }
+  return <AdminDashboardModern />
 }
 
 function AdminDashboardIndex() {
@@ -228,7 +250,7 @@ function AuthGate() {
         <Routes>
           <Route path="/admin" element={<AdminGate />}>
             <Route element={<AdminLayout />}>
-              <Route index element={<AdminDashboardIndex />} />
+              <Route index element={<GuestDashboardRedirect />} />
               <Route path="dashboard-classic" element={<AdminDashboard />} />
               <Route path="getting-setup" element={<AdminGettingSetup />} />
               <Route path="expenses" element={<AdminExpenses />} />
