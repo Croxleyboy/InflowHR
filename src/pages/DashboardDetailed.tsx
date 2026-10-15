@@ -191,6 +191,7 @@ export default function DashboardDetailed() {
   })
   const [, setLtTick] = useState(0)
   const ltTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const ltSyncRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if (!companyUser?.company_id || !employeeId || !features.legal_timesheets) return
@@ -227,6 +228,21 @@ export default function DashboardDetailed() {
     return () => { if (ltTimerRef.current) { clearInterval(ltTimerRef.current); ltTimerRef.current = null } }
   }, [ltTimers])
 
+  useEffect(() => {
+    try { localStorage.setItem(ltKey, JSON.stringify(ltTimers)) } catch { /* empty */ }
+    if (!companyUser?.company_id || !employeeId) return
+    if (ltSyncRef.current) clearTimeout(ltSyncRef.current)
+    const cid = companyUser.company_id
+    ltSyncRef.current = setTimeout(async () => {
+      await supabase.from('legal_timesheet_timers').delete().eq('company_id', cid).eq('employee_id', employeeId)
+      if (ltTimers.length > 0) {
+        await supabase.from('legal_timesheet_timers').insert(
+          ltTimers.map(t => ({ id: t.id.startsWith('timer-') ? undefined : t.id, company_id: cid, employee_id: employeeId, client_id: t.clientId, client_name: t.clientName, matter_id: t.matterId, matter_name: t.matterName, task_code: t.taskCode, elapsed_seconds: t.running && t.startedAt ? t.elapsed + Math.floor((Date.now() - t.startedAt) / 1000) : t.elapsed, is_running: t.running, started_at: t.startedAt ? new Date(t.startedAt).toISOString() : null }))
+        )
+      }
+    }, 1000)
+  }, [ltTimers, ltKey, companyUser?.company_id, employeeId])
+
   function getLtElapsed(timer: LTTimer): number {
     if (timer.running && timer.startedAt) return timer.elapsed + Math.floor((Date.now() - timer.startedAt) / 1000)
     return timer.elapsed
@@ -240,26 +256,18 @@ export default function DashboardDetailed() {
   }
 
   function toggleLtTimer(id: string) {
-    setLtTimers(prev => {
-      const next = prev.map(tmr => {
-        if (tmr.id === id) {
-          if (tmr.running) return { ...tmr, running: false, elapsed: getLtElapsed(tmr), startedAt: null }
-          return { ...tmr, running: true, startedAt: Date.now() }
-        }
+    setLtTimers(prev => prev.map(tmr => {
+      if (tmr.id === id) {
         if (tmr.running) return { ...tmr, running: false, elapsed: getLtElapsed(tmr), startedAt: null }
-        return tmr
-      })
-      try { localStorage.setItem('inflowhr-lt-timers', JSON.stringify(next)) } catch { /* ignore */ }
-      return next
-    })
+        return { ...tmr, running: true, startedAt: Date.now() }
+      }
+      if (tmr.running) return { ...tmr, running: false, elapsed: getLtElapsed(tmr), startedAt: null }
+      return tmr
+    }))
   }
 
   function stopLtTimer(id: string) {
-    setLtTimers(prev => {
-      const next = prev.filter(tmr => tmr.id !== id)
-      try { localStorage.setItem('inflowhr-lt-timers', JSON.stringify(next)) } catch { /* ignore */ }
-      return next
-    })
+    setLtTimers(prev => prev.filter(tmr => tmr.id !== id))
   }
 
   async function logLtTimer(timer: LTTimer) {
