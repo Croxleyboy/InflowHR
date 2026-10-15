@@ -71,11 +71,16 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .eq('employee_id', employeeId)
         .eq('company_id', companyId)
       if (!data || data.length === 0) return 'No leave balance data found.'
-      return data.map((b: any) => {
-        const remaining = (b.total_allowance || 0) + (b.carried_over || 0) - (b.used || 0)
+      const lines = data.map((b: any) => {
+        const total = (b.total_allowance || 0) + (b.carried_over || 0)
+        const remaining = total - (b.used || 0)
         const name = b.leave_type?.name || 'Leave'
-        return `${name}: ${remaining} days remaining (${b.used || 0} used of ${(b.total_allowance || 0) + (b.carried_over || 0)})`
-      }).join('\n')
+        return `${name}: ${remaining} days remaining (${b.used || 0} used of ${total})`
+      })
+      const totalRemaining = data.reduce((sum: number, b: any) => sum + ((b.total_allowance || 0) + (b.carried_over || 0) - (b.used || 0)), 0)
+      const totalUsed = data.reduce((sum: number, b: any) => sum + (b.used || 0), 0)
+      lines.push(`\nTotal: ${totalRemaining} days remaining across all types (${totalUsed} used)`)
+      return lines.join('\n')
     }
     case 'leave_requests':
     case 'get_leave_requests': {
@@ -95,7 +100,7 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         const name = r.leave_type?.name || 'Leave'
         return `${name}: ${formatDate(r.start_date)} to ${formatDate(r.end_date)} — ${r.status} (${r.days_requested} days)`
       })
-      lines.push(`Total: ${totalDays} days across ${data.length} request${data.length !== 1 ? 's' : ''}`)
+      lines.push(`\nTotal: ${totalDays} days across ${data.length} request${data.length !== 1 ? 's' : ''}`)
       return lines.join('\n')
     }
     case 'get_expense_claims': {
@@ -113,7 +118,7 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
       const lines = data.map((e: any) =>
         `${e.description || e.category || 'Expense'}: ${formatCurrency(Number(e.amount), currency)} — ${e.status}${e.submitted_at ? ` (${formatDate(e.submitted_at.split('T')[0])})` : ''}`
       )
-      lines.push(`Total: ${formatCurrency(total, currency)} across ${data.length} claim${data.length !== 1 ? 's' : ''}`)
+      lines.push(`\nTotal: ${formatCurrency(total, currency)} across ${data.length} claim${data.length !== 1 ? 's' : ''}`)
       return lines.join('\n')
     }
     case 'next_shift':
@@ -169,12 +174,15 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .from('timesheets')
         .select('date, hours')
         .eq('employee_id', employeeId)
+        .eq('company_id', companyId)
         .gte('date', startDate)
         .lte('date', endDate)
         .order('date')
       if (!data || data.length === 0) return 'No timesheet entries found for that period.'
       const total = data.reduce((sum: number, t: any) => sum + (Number(t.hours) || 0), 0)
-      return `${total.toFixed(1)} hours logged (${data.length} entries from ${formatDate(startDate)} to ${formatDate(endDate)})`
+      const lines = data.map((t: any) => `${formatDate(t.date)} — ${Number(t.hours).toFixed(1)} hours`)
+      lines.push(`\nTotal: ${total.toFixed(1)} hours across ${data.length} ${data.length !== 1 ? 'entries' : 'entry'} (${formatDate(startDate)} to ${formatDate(endDate)})`)
+      return lines.join('\n')
     }
     case 'last_payslip':
     case 'get_payslip_summary': {
@@ -183,18 +191,22 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .from('payslips')
         .select('pay_period_start, pay_period_end, gross_pay, net_pay, payment_date, tax, national_insurance, pension')
         .eq('employee_id', employeeId)
+        .eq('company_id', companyId)
         .order('payment_date', { ascending: false })
         .limit(count)
       if (!data || data.length === 0) return 'No payslip data found.'
-      return data.map((p: any) => [
-        `Period: ${formatDate(p.pay_period_start)} to ${formatDate(p.pay_period_end)}`,
-        `Gross Pay: ${formatCurrency(Number(p.gross_pay), currency)}`,
-        `Tax: ${formatCurrency(Number(p.tax), currency)}`,
-        `NI: ${formatCurrency(Number(p.national_insurance), currency)}`,
-        `Pension: ${formatCurrency(Number(p.pension), currency)}`,
-        `Net Pay: ${formatCurrency(Number(p.net_pay), currency)}`,
-        `Paid: ${formatDate(p.payment_date)}`,
-      ].join('\n')).join('\n\n')
+      return data.map((p: any, i: number) => {
+        const header = data.length > 1 ? `Payslip ${i + 1}:\n` : ''
+        return header + [
+          `Period: ${formatDate(p.pay_period_start)} to ${formatDate(p.pay_period_end)}`,
+          `Gross Pay: ${formatCurrency(Number(p.gross_pay), currency)}`,
+          `Tax: ${formatCurrency(Number(p.tax), currency)}`,
+          `NI: ${formatCurrency(Number(p.national_insurance), currency)}`,
+          `Pension: ${formatCurrency(Number(p.pension), currency)}`,
+          `Net Pay: ${formatCurrency(Number(p.net_pay), currency)}`,
+          `Paid: ${formatDate(p.payment_date)}`,
+        ].join('\n')
+      }).join('\n\n')
     }
     case 'my_manager':
     case 'get_my_profile': {
@@ -202,6 +214,7 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .from('employees')
         .select('first_name, last_name, job_title, department, start_date, manager_id')
         .eq('id', employeeId)
+        .eq('company_id', companyId)
         .single()
       if (!data) return 'Profile information not available.'
       const lines = [
@@ -227,6 +240,7 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .from('employees')
         .select('department, job_title, first_name, last_name, start_date')
         .eq('id', employeeId)
+        .eq('company_id', companyId)
         .single()
       if (!data) return 'Profile information not available.'
       return [
@@ -243,10 +257,13 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .eq('employee_id', employeeId)
         .eq('company_id', companyId)
       if (!data || data.length === 0) return 'No benefits enrolled.'
-      return data.map((b: any) => {
+      const lines = data.map((b: any) => {
         const name = b.benefit?.name || 'Benefit'
-        return `${name}${b.benefit?.description ? ` — ${b.benefit.description}` : ''}`
-      }).join('\n')
+        const enrolled = b.enrolled_at ? ` (enrolled ${formatDate(b.enrolled_at.split('T')[0])})` : ''
+        return `${name}${b.benefit?.description ? ` — ${b.benefit.description}` : ''}${enrolled}`
+      })
+      lines.push(`\nTotal: ${data.length} benefit${data.length !== 1 ? 's' : ''} enrolled`)
+      return lines.join('\n')
     }
     case 'get_elearning_progress': {
       const { data } = await supabase
@@ -255,11 +272,14 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .eq('employee_id', employeeId)
         .eq('company_id', companyId)
       if (!data || data.length === 0) return 'No e-learning courses assigned.'
-      return data.map((e: any) => {
+      const lines = data.map((e: any) => {
         const title = e.course?.title || 'Course'
         const pct = e.progress_pct != null ? `${e.progress_pct}%` : e.status
-        return `${title}: ${pct}`
-      }).join('\n')
+        return `${title}: ${pct} (${e.status || 'enrolled'})`
+      })
+      const completed = data.filter((e: any) => e.status === 'completed').length
+      lines.push(`\n${completed} of ${data.length} course${data.length !== 1 ? 's' : ''} completed`)
+      return lines.join('\n')
     }
     case 'get_upcoming_holidays': {
       let q = supabase
@@ -269,7 +289,9 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
       if (params.upcoming_only !== false) q = q.gte('date', new Date().toISOString().split('T')[0])
       const { data } = await q.order('date').limit(10)
       if (!data || data.length === 0) return 'No upcoming company holidays found.'
-      return data.map((h: any) => `${formatDate(h.date)} — ${h.name}`).join('\n')
+      const lines = data.map((h: any) => `${formatDate(h.date)} — ${h.name}`)
+      lines.push(`\n${data.length} holiday${data.length !== 1 ? 's' : ''} listed`)
+      return lines.join('\n')
     }
     default:
       return ''
@@ -631,7 +653,7 @@ export default function HelpChatBubble() {
                   </div>
                 )}
                 <div className="help-chat-bubble">
-                  <p>{msg.text}</p>
+                  <p style={{ whiteSpace: 'pre-line' }}>{msg.text}</p>
                   {msg.articles && msg.articles.length > 0 && (
                     <div className="help-chat-articles">
                       {msg.articles.map(article => (
