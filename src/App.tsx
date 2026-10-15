@@ -229,7 +229,35 @@ function AuthGate() {
           <Route path="/admin" element={<AdminGate />}>
             <Route element={<AdminLayout />}>
               <Route index element={<AdminDashboardIndex />} />
-              <Route path="*" element={<AdminRoutes />} />
+              <Route path="dashboard-classic" element={<AdminDashboard />} />
+              <Route path="getting-setup" element={<AdminGettingSetup />} />
+              <Route path="expenses" element={<AdminExpenses />} />
+              <Route path="leave" element={<AdminLeave />} />
+              <Route path="payroll" element={<AdminPayrollNew />} />
+              <Route path="employees" element={<AdminEmployees />} />
+              <Route path="kudos" element={<AdminKudos />} />
+              <Route path="elearning" element={<AdminELearning />} />
+              <Route path="announcements" element={<AdminAnnouncements />} />
+              <Route path="onboarding" element={<AdminOnboarding />} />
+              <Route path="tickets" element={<AdminTickets />} />
+              <Route path="benefits" element={<AdminBenefits />} />
+              <Route path="timesheets" element={<AdminTimesheets />} />
+              <Route path="performance" element={<AdminPerformance />} />
+              <Route path="shifts" element={<AdminShiftsRotas />} />
+              <Route path="notifications" element={<AdminNotifications />} />
+              <Route path="billing" element={<AdminBilling />} />
+              <Route path="legal-timesheets" element={<AdminLegalTimesheets />} />
+              <Route path="space-management" element={<AdminSpaceManagement />} />
+              <Route path="assets" element={<AdminAssetManagement />} />
+              <Route path="talent-intelligence" element={<AdminTalentIntelligence />} />
+              <Route path="surveys" element={<AdminSurveys />} />
+              <Route path="surveys/insights" element={<SurveyInsights />} />
+              <Route path="help" element={<AdminHelp />} />
+              <Route path="reports" element={<AdminReports />} />
+              <Route path="user-guides" element={<AdminUserGuides />} />
+              <Route path="integrations" element={<AdminIntegrations />} />
+              <Route path="access" element={<AdminAccess />} />
+              <Route path="gdpr" element={<AdminGDPR />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/admin" replace />} />
