@@ -108,13 +108,20 @@ const ROUTE_PERM_MAP: Record<string, string> = {
 }
 
 function AdminGate() {
-  const { companyUser, isSuperAdmin, portalRole, portalPermissions } = useAuth()
+  const { companyUser, isSuperAdmin, portalRole, portalPermissions, isGuest } = useAuth()
   const location = useLocation()
-  if (!isSuperAdmin && (!companyUser || (!['admin', 'hr'].includes(companyUser.role) && !portalRole))) {
+  if (!isSuperAdmin && !isGuest && (!companyUser || (!['admin', 'hr'].includes(companyUser.role) && !portalRole))) {
     return <Navigate to="/" replace />
   }
   const isFullAccess = isSuperAdmin || companyUser?.role === 'admin' || portalRole === 'company_admin'
   if (!isFullAccess && portalPermissions) {
+    const seg = location.pathname.replace('/admin/', '').split('/')[0]
+    const permKey = ROUTE_PERM_MAP[seg]
+    if (permKey && portalPermissions[permKey] === false) {
+      return <Navigate to="/admin" replace />
+    }
+  }
+  if (isGuest && portalPermissions) {
     const seg = location.pathname.replace('/admin/', '').split('/')[0]
     const permKey = ROUTE_PERM_MAP[seg]
     if (permKey && portalPermissions[permKey] === false) {
@@ -189,16 +196,17 @@ function EmployeeRoutes() {
 }
 
 function FeatureLoader() {
-  const { companyUser } = useAuth()
+  const { companyUser, guestCompanyId } = useAuth()
   const { loadCompanyFeatures } = useFeatures()
+  const companyId = companyUser?.company_id || guestCompanyId
   useEffect(() => {
-    if (companyUser?.company_id) loadCompanyFeatures(companyUser.company_id)
-  }, [companyUser?.company_id, loadCompanyFeatures])
+    if (companyId) loadCompanyFeatures(companyId)
+  }, [companyId, loadCompanyFeatures])
   return null
 }
 
 function AuthGate() {
-  const { user, loading, companyUser, setupComplete, isSuperAdmin } = useAuth()
+  const { user, loading, companyUser, setupComplete, isSuperAdmin, isGuest } = useAuth()
   const isDesktop = useMediaQuery('(min-width: 769px)')
 
   if (loading) {
@@ -209,8 +217,25 @@ function AuthGate() {
     return <Login />
   }
 
-  if (!companyUser && !isSuperAdmin) {
+  if (!companyUser && !isSuperAdmin && !isGuest) {
     return <AccessDenied />
+  }
+
+  if (isGuest) {
+    return (
+      <>
+        <FeatureLoader />
+        <Routes>
+          <Route path="/admin" element={<AdminGate />}>
+            <Route element={<AdminLayout />}>
+              <Route index element={<AdminDashboardIndex />} />
+              <Route path="*" element={<AdminRoutes />} />
+            </Route>
+          </Route>
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Routes>
+      </>
+    )
   }
 
   if (setupComplete === false) {
