@@ -5292,10 +5292,17 @@ body {
 .login-privacy-link:hover { color: #6C4FBF; text-decoration: underline; }
 
 @media (max-width: 900px) {
+  html:has(.login-page),
+  html:has(.login-page) body,
+  html:has(.login-page) #root {
+    height: auto;
+    overflow: visible;
+  }
   .login-page {
     flex-direction: column;
     height: auto;
-    min-height: 100%;
+    min-height: 100dvh;
+    overflow: visible;
   }
   .login-hero {
     flex: 0 0 auto;
