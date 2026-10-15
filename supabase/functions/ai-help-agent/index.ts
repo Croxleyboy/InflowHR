@@ -62,11 +62,13 @@ const DATA_TOOLS = [
     type: 'function' as const,
     function: {
       name: 'get_next_shifts',
-      description: 'Get the employee\'s upcoming shift assignments. Use for "when is my next shift", "what shifts do I have this week", "am I working tomorrow".',
+      description: 'Get the employee\'s shift assignments. Supports both past and future shifts. Use for "when is my next shift", "what shifts do I have this week", "am I working tomorrow", "how many shifts did I work in September", "shifts last month".',
       parameters: {
         type: 'object',
         properties: {
-          limit: { type: 'number', description: 'Number of upcoming shifts to return (default 5).' },
+          start_date: { type: 'string', description: 'Start of date range (YYYY-MM-DD). If a month is mentioned, use first day of that month. If omitted, defaults to today (upcoming shifts only).' },
+          end_date: { type: 'string', description: 'End of date range (YYYY-MM-DD). If a month is mentioned, use last day of that month. If omitted, defaults to no upper limit.' },
+          limit: { type: 'number', description: 'Maximum number of shifts to return (default 50).' },
         },
         required: [],
       },

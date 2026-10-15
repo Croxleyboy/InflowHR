@@ -791,7 +791,22 @@ body {
 .schedule-day-badge { background: #1565c0; color: #fff; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; }
 
 /* Colorful shift blocks */
-.sc-block { border-left: 4px solid; border-radius: 10px; padding: 7px 10px; margin-bottom: 5px; transition: transform 0.1s; }
+.sc-block { border-left: 4px solid; border-radius: 10px; padding: 7px 10px; margin-bottom: 5px; transition: transform 0.1s; position: relative; overflow: hidden; }
+.sc-block.sc-block-past::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 4px,
+    rgba(0,0,0,0.06) 4px,
+    rgba(0,0,0,0.06) 7px
+  );
+}
+.sc-block.sc-block-past { opacity: 0.7; }
 .sc-block:hover { transform: translateY(-1px); }
 .sc-block-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .sc-block-info { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }

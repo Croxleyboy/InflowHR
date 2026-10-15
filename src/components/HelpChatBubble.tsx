@@ -118,20 +118,39 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
     }
     case 'next_shift':
     case 'get_next_shifts': {
-      const today = new Date().toISOString().split('T')[0]
-      const limit = Number(params.limit) || 5
-      const { data } = await supabase
+      const startDate = (params.start_date as string) || new Date().toISOString().split('T')[0]
+      const endDate = params.end_date as string | undefined
+      const limit = Number(params.limit) || 50
+      let query = supabase
         .from('shift_assignments')
-        .select('date, shift_template:shift_template_id(name, start_time, end_time)')
+        .select('date, rota_id, shift_template:shift_template_id(name, start_time, end_time)')
         .eq('employee_id', employeeId)
-        .gte('date', today)
+        .eq('company_id', companyId)
+        .gte('date', startDate)
         .order('date')
         .limit(limit)
-      if (!data || data.length === 0) return 'No upcoming shifts found.'
-      return data.map((s: any) => {
+      if (endDate) query = query.lte('date', endDate)
+      const { data: rawShifts } = await query
+      if (!rawShifts || rawShifts.length === 0) return `No shifts found from ${formatDate(startDate)}${endDate ? ` to ${formatDate(endDate)}` : ''}.`
+      const rotaIds = [...new Set(rawShifts.map((s: any) => s.rota_id).filter(Boolean))]
+      let publishedRotaIds = new Set<string>()
+      if (rotaIds.length > 0) {
+        const { data: rotas } = await supabase
+          .from('rotas')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('status', 'published')
+          .in('id', rotaIds)
+        publishedRotaIds = new Set((rotas || []).map((r: any) => r.id))
+      }
+      const data = rawShifts.filter((s: any) => !s.rota_id || publishedRotaIds.has(s.rota_id))
+      if (data.length === 0) return `No published shifts found from ${formatDate(startDate)}${endDate ? ` to ${formatDate(endDate)}` : ''}.`
+      const lines = data.map((s: any) => {
         const t = s.shift_template as any
         return `${formatDate(s.date)} — ${t?.name || 'Shift'} (${t?.start_time?.slice(0, 5) || '?'} to ${t?.end_time?.slice(0, 5) || '?'})`
-      }).join('\n')
+      })
+      lines.push(`\nTotal: ${data.length} shift${data.length !== 1 ? 's' : ''} from ${formatDate(startDate)}${endDate ? ` to ${formatDate(endDate)}` : ''}`)
+      return lines.join('\n')
     }
     case 'hours_worked':
     case 'get_hours_worked': {
