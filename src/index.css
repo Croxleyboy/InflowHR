@@ -5294,10 +5294,12 @@ body {
 @media (max-width: 900px) {
   .login-page {
     flex-direction: column;
+    height: auto;
+    min-height: 100%;
   }
   .login-hero {
     flex: 0 0 auto;
-    padding: 40px 32px;
+    padding: 32px 24px;
     min-height: auto;
   }
   .login-hero-tagline {
@@ -5313,13 +5315,29 @@ body {
     font-size: 13px;
   }
   .login-form-side {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     width: 100%;
     min-height: auto;
-    padding: 40px 24px;
+    padding: 32px 24px;
+    overflow-y: visible;
+  }
+  .login-sso-buttons {
+    flex-direction: row;
+  }
+  .login-microsoft-btn,
+  .login-google-btn {
+    padding: 12px 10px;
+    font-size: 13px;
+    gap: 6px;
   }
   .login-hero-decoration { display: none; }
   .login-hero-logo-img { height: 64px; }
+  .login-mode-tab {
+    padding: 10px 8px;
+    font-size: 12px;
+    gap: 4px;
+  }
+  .login-mode-tab svg { width: 14px; height: 14px; }
 }
 .auth-loading {
   min-height: 100vh;
