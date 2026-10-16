@@ -389,13 +389,21 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
           <div style={cardStyle}>
             <h4 style={headingStyle}>Leave Balances ({new Date().getFullYear()})</h4>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-              {balances.map((b: any) => (
-                <div key={b.id} style={{ padding: 12, borderRadius: 8, background: '#f8f9fa', border: '1px solid #eee' }}>
-                  <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{b.leave_type?.name || 'Leave'}</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: '#1a1a1a' }}>{b.used ?? 0} <span style={{ fontSize: 12, fontWeight: 400, color: '#999' }}>/ {b.allowance ?? employee.leave_allowance ?? 0} days used</span></div>
-                  {(b.lieu_days ?? 0) > 0 && <div style={{ fontSize: 11, color: '#1565c0', marginTop: 4 }}>+{b.lieu_days} lieu days</div>}
-                </div>
-              ))}
+              {balances.map((b: any) => {
+                const allowance = b.allowance ?? employee.leave_allowance ?? 0
+                const used = b.used ?? 0
+                const remaining = Math.max(0, allowance - used + (b.lieu_days ?? 0))
+                return (
+                  <div key={b.id} style={{ padding: 12, borderRadius: 8, background: '#f8f9fa', border: '1px solid #eee' }}>
+                    <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>{b.leave_type?.name || 'Leave'}</div>
+                    <div style={{ display: 'flex', gap: 16, alignItems: 'baseline' }}>
+                      <div><span style={{ fontSize: 20, fontWeight: 700, color: '#1a1a1a' }}>{used}</span><span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>used</span></div>
+                      <div><span style={{ fontSize: 20, fontWeight: 700, color: remaining > 0 ? '#2e7d32' : '#c62828' }}>{remaining}</span><span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>remaining</span></div>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>Allowance: {allowance}{(b.lieu_days ?? 0) > 0 ? ` (+${b.lieu_days} lieu)` : ''}</div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
