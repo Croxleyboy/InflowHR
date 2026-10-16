@@ -1580,6 +1580,17 @@ export default function AdminPayrollNew() {
           }
         })
 
+      const sickLeaveManualItems = wizSickLeave.filter(s => isEmpInScope(s.employee_id) && (s.deduction > 0 || s.ssp_added > 0)).map(s => {
+        const typeLabel = s.sick_pay_status === 'csp_half' ? 'CSP (Half Pay)' : s.sick_pay_status === 'ssp' ? 'SSP' : 'Unpaid Sick Leave'
+        const netAmount = -s.deduction + s.ssp_added
+        return {
+          employee: s.employee_name,
+          type: 'sick_leave' as const,
+          description: `Sick Leave — ${s.days} day${s.days !== 1 ? 's' : ''} ${typeLabel}. Deduct ${currencySymbol(currency)}${s.deduction.toFixed(2)} from gross${s.ssp_added > 0 ? `, add ${currencySymbol(currency)}${s.ssp_added.toFixed(2)} SSP` : ''}. Net adjustment: ${currencySymbol(currency)}${netAmount.toFixed(2)}`,
+          amount: netAmount,
+        }
+      })
+
       let xeroPushData: any = null
       if (connectedProvider === 'xero') {
         // Xero: push regular hours + overtime via API, flag unpaid leave + benefits as manual
@@ -4623,6 +4634,24 @@ export default function AdminPayrollNew() {
                 </div>
               )}
 
+              {!providerConnected && wizSickLeave.length > 0 && (
+                <div style={{ marginBottom: 16 }}>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#c62828' }}>Sick Leave Adjustments</h4>
+                  <div style={{ background: 'var(--bg-subtle, #f8f9fa)', borderRadius: 8, padding: 12 }}>
+                    {wizSickLeave.map((s, i) => {
+                      const typeLabel = s.sick_pay_status === 'csp_full' ? 'CSP (Full Pay — no deduction)' : s.sick_pay_status === 'csp_half' ? 'CSP (Half Pay)' : s.sick_pay_status === 'ssp' ? 'SSP' : 'Unpaid Sick Leave'
+                      return (
+                        <div key={i} style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 4 }}>
+                          <strong>{s.employee_name}</strong>: {s.days} day{s.days !== 1 ? 's' : ''} — {typeLabel}
+                          {s.deduction > 0 && ` (deduction: ${currencySymbol(currency)}${s.deduction.toFixed(2)})`}
+                          {s.ssp_added > 0 && ` + SSP: ${currencySymbol(currency)}${s.ssp_added.toFixed(2)}`}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               {providerConnected && (
                 <div style={{ marginBottom: 16 }}>
                   <h4 style={{ margin: '0 0 8px', fontSize: 14, color: '#1565c0' }}>Adjustments Summary</h4>
@@ -4940,16 +4969,19 @@ export default function AdminPayrollNew() {
                               : item.type === 'deduction' ? 'Deduction'
                               : item.type === 'benefit_removal' ? 'Benefit Removal'
                               : item.type === 'holiday_pay' ? 'Holiday Pay'
+                              : item.type === 'sick_leave' ? 'Sick Leave'
                               : item.type
                             const typeBg = item.type === 'unpaid_leave' ? '#e3f2fd'
                               : item.type === 'bonus' ? '#e8f5e9'
                               : item.type === 'deduction' ? '#ffebee'
                               : item.type === 'holiday_pay' ? '#fff8e1'
+                              : item.type === 'sick_leave' ? '#fce4ec'
                               : '#f3e5f5'
                             const typeColor = item.type === 'unpaid_leave' ? '#1565c0'
                               : item.type === 'bonus' ? '#2e7d32'
                               : item.type === 'deduction' ? '#c62828'
                               : item.type === 'holiday_pay' ? '#f57f17'
+                              : item.type === 'sick_leave' ? '#c62828'
                               : '#7b1fa2'
                             const xeroPath = item.type === 'unpaid_leave'
                               ? 'Payroll → Pay Runs → select employee → Leave tab → add Unpaid Leave for ' + (item.days || '') + ' day(s)'
@@ -4957,6 +4989,8 @@ export default function AdminPayrollNew() {
                               ? 'Payroll → Pay Runs → select employee → Earnings/Deductions → add line'
                               : item.type === 'holiday_pay'
                               ? 'Payroll → Pay Runs → select employee → Earnings → add Holiday Pay line'
+                              : item.type === 'sick_leave'
+                              ? 'Payroll → Pay Runs → select employee → Leave tab → adjust Sick Leave deduction/SSP'
                               : 'Payroll → Pay Runs → select employee → Benefits tab → add/remove benefit'
                             return (
                               <div key={i} style={{
