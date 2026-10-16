@@ -287,7 +287,7 @@ export default function AdminPayrollNew() {
   const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
   const [wizBonusEntries, setWizBonusEntries] = useState<{ employee_id: string; employee_name: string; amount: number; description: string; type: 'bonus' | 'deduction' }[]>([])
   const [wizSickLeave, setWizSickLeave] = useState<{ employee_id: string; employee_name: string; days: number; sick_pay_status: string; daily_rate: number; deduction: number; ssp_added: number }[]>([])
-  const [wizSickPaySettings, setWizSickPaySettings] = useState<{ enabled: boolean; csp_full_pay_days: number; csp_half_pay_days: number; ssp_weekly_rate: number; ssp_max_weeks: number } | null>(null)
+  const [, setWizSickPaySettings] = useState<{ enabled: boolean; csp_full_pay_days: number; csp_half_pay_days: number; ssp_weekly_rate: number; ssp_max_weeks: number } | null>(null)
   const [lastPayRuns, setLastPayRuns] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }>>({})
   const [processingRuns, setProcessingRuns] = useState<{ id: string; worker_types: string[]; status: string; period_start: string; period_end: string; created_at: string }[]>([])
   const [wizPeriodByType, setWizPeriodByType] = useState<Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }>>({})
@@ -1640,7 +1640,7 @@ export default function AdminPayrollNew() {
           skipped: data.skipped || 0,
           api: 'xero',
           timesheet_results: data.timesheet_results || [],
-          manual_items: [...(data.manual_items || []), ...bonusManualItems, ...holidayManualItems, ...cancManualItems],
+          manual_items: [...(data.manual_items || []), ...bonusManualItems, ...holidayManualItems, ...cancManualItems, ...sickLeaveManualItems],
           skipped_details: data.skipped_details || [],
           provider: 'xero',
         })
@@ -1677,7 +1677,7 @@ export default function AdminPayrollNew() {
           pushed: 0, failed: 0, skipped: 0, api: 'csv',
           csv_exported: rowCount, csv_items: items,
           provider: 'sage',
-          timesheet_results: [], manual_items: [...holidayManualItems, ...cancManualItems], skipped_details: [],
+          timesheet_results: [], manual_items: [...holidayManualItems, ...cancManualItems, ...sickLeaveManualItems], skipped_details: [],
         })
       }
 
