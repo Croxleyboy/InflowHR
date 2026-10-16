@@ -1,8 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://app.inflowhr.com',
   'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 function json(data: unknown, status = 200) {
@@ -12,15 +13,92 @@ function json(data: unknown, status = 200) {
   })
 }
 
+const ALLOWED_SERVICE_URLS = [
+  'https://smba.trafficmanager.net/',
+  'https://europe.ng.msg.teams.microsoft.com/',
+  'https://americas.ng.msg.teams.microsoft.com/',
+  'https://asia.ng.msg.teams.microsoft.com/',
+  'https://uk.ng.msg.teams.microsoft.com/',
+]
+
+const BOT_FRAMEWORK_OPENID_URL =
+  'https://login.botframework.com/v1/.well-known/openidconfiguration'
+
+let cachedJwks: { keys: JsonWebKey[]; fetchedAt: number } | null = null
+const JWKS_CACHE_MS = 60 * 60 * 1000
+
+async function getJwks(): Promise<JsonWebKey[]> {
+  if (cachedJwks && Date.now() - cachedJwks.fetchedAt < JWKS_CACHE_MS) {
+    return cachedJwks.keys
+  }
+  const openIdRes = await fetch(BOT_FRAMEWORK_OPENID_URL)
+  if (!openIdRes.ok) throw new Error('Failed to fetch Bot Framework OpenID config')
+  const openIdConfig = await openIdRes.json()
+  const jwksRes = await fetch(openIdConfig.jwks_uri)
+  if (!jwksRes.ok) throw new Error('Failed to fetch Bot Framework JWKS')
+  const jwks = await jwksRes.json()
+  cachedJwks = { keys: jwks.keys, fetchedAt: Date.now() }
+  return jwks.keys
+}
+
+function base64UrlDecode(str: string): Uint8Array {
+  const padded = str.replace(/-/g, '+').replace(/_/g, '/') +
+    '='.repeat((4 - (str.length % 4)) % 4)
+  const binary = atob(padded)
+  return Uint8Array.from(binary, c => c.charCodeAt(0))
+}
+
+async function verifyBotToken(authHeader: string, expectedAudience: string): Promise<boolean> {
+  if (!authHeader.startsWith('Bearer ')) return false
+  const token = authHeader.slice(7)
+  const parts = token.split('.')
+  if (parts.length !== 3) return false
+
+  const headerJson = JSON.parse(new TextDecoder().decode(base64UrlDecode(parts[0])))
+  const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(parts[1])))
+
+  const allowedIssuers = [
+    'https://api.botframework.com',
+    'https://sts.windows.net/d6d49420-f39b-4df7-a1dc-d59a935871db/',
+    'https://login.microsoftonline.com/d6d49420-f39b-4df7-a1dc-d59a935871db/v2.0',
+  ]
+  if (!allowedIssuers.includes(payload.iss)) return false
+
+  if (payload.aud !== expectedAudience) return false
+
+  const now = Math.floor(Date.now() / 1000)
+  if (payload.exp && payload.exp < now) return false
+  if (payload.nbf && payload.nbf > now + 300) return false
+
+  const jwks = await getJwks()
+  const kid = headerJson.kid
+  const jwk = jwks.find((k: Record<string, unknown>) => k.kid === kid)
+  if (!jwk) return false
+
+  try {
+    const key = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['verify'],
+    )
+    const signedContent = new TextEncoder().encode(parts[0] + '.' + parts[1])
+    const signature = base64UrlDecode(parts[2])
+    return await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, signature, signedContent)
+  } catch {
+    return false
+  }
+}
+
+function isAllowedServiceUrl(url: string): boolean {
+  return ALLOWED_SERVICE_URLS.some(allowed => url.startsWith(allowed))
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const sb = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    )
-
     const activity = await req.json()
 
     if (activity.type !== 'conversationUpdate' || !activity.membersAdded?.length) {
@@ -47,6 +125,15 @@ Deno.serve(async (req) => {
       return json({ error: 'Missing conversation data' }, 400)
     }
 
+    if (!isAllowedServiceUrl(serviceUrl)) {
+      return json({ error: 'Untrusted service URL' }, 403)
+    }
+
+    const sb = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
     const { data: configs } = await sb
       .from('company_teams_config')
       .select('company_id, bot_app_id, bot_app_secret_encrypted, azure_tenant_id')
@@ -61,6 +148,16 @@ Deno.serve(async (req) => {
     )
     if (!config) {
       return json({ error: 'No matching company for tenant' }, 404)
+    }
+
+    const authHeader = req.headers.get('Authorization') || ''
+    if (!authHeader) {
+      return json({ error: 'Missing Authorization header' }, 401)
+    }
+
+    const isValid = await verifyBotToken(authHeader, config.bot_app_id)
+    if (!isValid) {
+      return json({ error: 'Invalid Bot Framework token' }, 401)
     }
 
     const tokenRes = await fetch(
@@ -111,11 +208,11 @@ Deno.serve(async (req) => {
       )
 
     if (upsertErr) {
-      return json({ error: 'Failed to store conversation: ' + upsertErr.message }, 500)
+      return json({ error: 'Failed to store conversation' }, 500)
     }
 
     return json({ ok: true, user_email: userEmail })
-  } catch (err) {
-    return json({ error: (err as Error).message || 'Internal error' }, 500)
+  } catch {
+    return json({ error: 'Internal error' }, 500)
   }
 })
