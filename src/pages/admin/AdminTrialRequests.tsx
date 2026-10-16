@@ -10,9 +10,7 @@ interface TrialRequest {
   status: string
   company_name: string | null
   company_id: string | null
-  admin_password: string | null
   employee_email: string | null
-  employee_password: string | null
   created_at: string
   processed_at: string | null
 }
@@ -24,6 +22,8 @@ export default function AdminTrialRequests() {
   const [companyNames, setCompanyNames] = useState<Record<string, string>>({})
   const [creating, setCreating] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [oneTimeCredentials, setOneTimeCredentials] = useState<Record<string, { admin_email: string; admin_password: string; employee_email: string; employee_password: string }>>({})
+
 
   useEffect(() => { loadRequests() }, [])
 
@@ -44,7 +44,7 @@ export default function AdminTrialRequests() {
       return
     }
     setCreating(request.id)
-    const { error } = await callRpcDirect('create_trial_data', {
+    const { data, error } = await callRpcDirect('create_trial_data', {
       p_request_id: request.id,
       p_company_name: name,
     })
@@ -53,7 +53,16 @@ export default function AdminTrialRequests() {
       setCreating(null)
       return
     }
-    showSuccess('Trial company created successfully')
+    if (data && typeof data === 'object') {
+      const d = data as Record<string, string>
+      setOneTimeCredentials(prev => ({ ...prev, [request.id]: {
+        admin_email: d.admin_email || request.work_email,
+        admin_password: d.admin_password || '',
+        employee_email: d.employee_email || '',
+        employee_password: d.employee_password || '',
+      }}))
+    }
+    showSuccess('Trial company created — credentials shown below (one-time only)')
     setCreating(null)
     loadRequests()
   }
@@ -159,28 +168,58 @@ export default function AdminTrialRequests() {
 
           {r.status === 'approved' && (
             <div className="trial-request-credentials">
-              <div className="trial-request-cred-section">
-                <h4>Admin Login</h4>
-                <div className="trial-request-cred-row">
-                  <span>Email: {r.work_email}</span>
-                  <button onClick={() => copyText(r.work_email)} className="trial-request-copy-btn">Copy</button>
-                </div>
-                <div className="trial-request-cred-row">
-                  <span>Password: {r.admin_password}</span>
-                  <button onClick={() => copyText(r.admin_password || '')} className="trial-request-copy-btn">Copy</button>
-                </div>
-              </div>
-              <div className="trial-request-cred-section">
-                <h4>Employee Test Login (Sarah Mitchell)</h4>
-                <div className="trial-request-cred-row">
-                  <span>Email: {r.employee_email}</span>
-                  <button onClick={() => copyText(r.employee_email || '')} className="trial-request-copy-btn">Copy</button>
-                </div>
-                <div className="trial-request-cred-row">
-                  <span>Password: {r.employee_password}</span>
-                  <button onClick={() => copyText(r.employee_password || '')} className="trial-request-copy-btn">Copy</button>
-                </div>
-              </div>
+              {oneTimeCredentials[r.id] ? (
+                <>
+                  <div style={{ background: '#fff3e0', border: '1px solid #ffb74d', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#e65100' }}>
+                    These credentials are shown one time only. Copy them now — they will not be available after you leave this page.
+                  </div>
+                  <div className="trial-request-cred-section">
+                    <h4>Admin Login</h4>
+                    <div className="trial-request-cred-row">
+                      <span>Email: {oneTimeCredentials[r.id].admin_email}</span>
+                      <button onClick={() => copyText(oneTimeCredentials[r.id].admin_email)} className="trial-request-copy-btn">Copy</button>
+                    </div>
+                    <div className="trial-request-cred-row">
+                      <span>Password: {oneTimeCredentials[r.id].admin_password}</span>
+                      <button onClick={() => copyText(oneTimeCredentials[r.id].admin_password)} className="trial-request-copy-btn">Copy</button>
+                    </div>
+                  </div>
+                  <div className="trial-request-cred-section">
+                    <h4>Employee Test Login (Sarah Mitchell)</h4>
+                    <div className="trial-request-cred-row">
+                      <span>Email: {oneTimeCredentials[r.id].employee_email}</span>
+                      <button onClick={() => copyText(oneTimeCredentials[r.id].employee_email)} className="trial-request-copy-btn">Copy</button>
+                    </div>
+                    <div className="trial-request-cred-row">
+                      <span>Password: {oneTimeCredentials[r.id].employee_password}</span>
+                      <button onClick={() => copyText(oneTimeCredentials[r.id].employee_password)} className="trial-request-copy-btn">Copy</button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="trial-request-cred-section">
+                    <h4>Admin Login</h4>
+                    <div className="trial-request-cred-row">
+                      <span>Email: {r.work_email}</span>
+                      <button onClick={() => copyText(r.work_email)} className="trial-request-copy-btn">Copy</button>
+                    </div>
+                    <div className="trial-request-cred-row" style={{ color: '#999', fontStyle: 'italic' }}>
+                      <span>Password was provided at creation time</span>
+                    </div>
+                  </div>
+                  <div className="trial-request-cred-section">
+                    <h4>Employee Test Login (Sarah Mitchell)</h4>
+                    <div className="trial-request-cred-row">
+                      <span>Email: {r.employee_email}</span>
+                      <button onClick={() => copyText(r.employee_email || '')} className="trial-request-copy-btn">Copy</button>
+                    </div>
+                    <div className="trial-request-cred-row" style={{ color: '#999', fontStyle: 'italic' }}>
+                      <span>Password was provided at creation time</span>
+                    </div>
+                  </div>
+                </>
+              )}
               <div className="trial-request-cred-row" style={{ marginTop: 8 }}>
                 <span>Company: {r.company_name}</span>
               </div>
