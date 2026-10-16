@@ -549,7 +549,7 @@ export default function AdminLeave() {
 
     if (req && newStatus === 'approved') {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
-      if (!typeSetting || typeSetting.deducts_from_allowance) {
+      if (req.leave_type?.name !== 'Sick Leave' && (!typeSetting || typeSetting.deducts_from_allowance)) {
         const wasApproved = oldStatus === 'approved'
         const oldDays = Number(req.days_requested)
         const newDays = Number(editForm.days_requested)
@@ -582,7 +582,7 @@ export default function AdminLeave() {
 
     if (req) {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
-      if (!typeSetting || typeSetting.deducts_from_allowance) {
+      if (req.leave_type?.name !== 'Sick Leave' && (!typeSetting || typeSetting.deducts_from_allowance)) {
         const wasApproved = oldStatus === 'approved'
         const nowApproved = newStatus === 'approved'
         const oldDays = Number(req.days_requested)
@@ -722,7 +722,7 @@ export default function AdminLeave() {
 
     if (action === 'approved') {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
-      if (!typeSetting || typeSetting.deducts_from_allowance) {
+      if (req.leave_type?.name !== 'Sick Leave' && (!typeSetting || typeSetting.deducts_from_allowance)) {
         const year = getFYYear(new Date(req.start_date + 'T00:00:00'), fyStartMonth)
         const { data: balance } = await supabase.from('leave_balances')
           .select('used, total_days').eq('employee_id', req.employee_id).eq('year', year).limit(1).single()
@@ -746,7 +746,7 @@ export default function AdminLeave() {
 
     if (action === 'approved') {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
-      if (!typeSetting || typeSetting.deducts_from_allowance) {
+      if (req.leave_type?.name !== 'Sick Leave' && (!typeSetting || typeSetting.deducts_from_allowance)) {
         const year = getFYYear(new Date(req.start_date + 'T00:00:00'), fyStartMonth)
         await supabase.rpc('adjust_leave_balance', {
           p_employee_id: req.employee_id,
@@ -846,7 +846,7 @@ export default function AdminLeave() {
 
     if (req && req.status === 'approved') {
       const typeSetting = leaveTypeSettings.find(t => t.name === req.leave_type?.name)
-      if (!typeSetting || typeSetting.deducts_from_allowance) {
+      if (req.leave_type?.name !== 'Sick Leave' && (!typeSetting || typeSetting.deducts_from_allowance)) {
         const year = getFYYear(new Date(req.start_date + 'T00:00:00'), fyStartMonth)
         await supabase.rpc('adjust_leave_balance', {
           p_employee_id: req.employee_id,
@@ -1152,7 +1152,7 @@ export default function AdminLeave() {
               <span className="admin-toggle-hint" style={{ marginBottom: 12, display: 'block' }}>
                 {t('leave.deductions_hint')}
               </span>
-              {leaveTypeSettings.filter(lt => ['Sick Leave', 'Jury Duty', 'Compassionate Leave', 'Bereavement', 'Exam Leave', 'Carers Leave'].includes(lt.name)).map(lt => (
+              {leaveTypeSettings.filter(lt => ['Jury Duty', 'Compassionate Leave', 'Bereavement', 'Exam Leave', 'Carers Leave'].includes(lt.name)).map(lt => (
                   <label key={lt.id} className="admin-toggle-label" style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
                     <input
                       type="checkbox"

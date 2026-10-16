@@ -101,7 +101,7 @@ export default function LeaveDetail() {
       .eq('company_id', companyUser?.company_id)
     if (error) { showError('Failed to cancel: ' + error.message); setCancelling(false); return }
 
-    if (request.status === 'approved' && leaveType.deducts_from_allowance !== false) {
+    if (request.status === 'approved' && leaveType.name !== 'Sick Leave' && leaveType.deducts_from_allowance !== false) {
       const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyUser?.company_id).single()
       const year = getFYYear(new Date(request.start_date + 'T00:00:00'), co?.fy_start_month || 4)
       await supabase.rpc('adjust_leave_balance', {

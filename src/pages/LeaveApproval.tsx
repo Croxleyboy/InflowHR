@@ -117,7 +117,7 @@ export default function LeaveApproval() {
     const { data: co } = await supabase.from('companies').select('fy_start_month').eq('id', companyUser?.company_id).single()
     const fyMonth = co?.fy_start_month || 4
 
-    if (approved && leaveType?.deducts_from_allowance !== false) {
+    if (approved && leaveType?.name !== 'Sick Leave' && leaveType?.deducts_from_allowance !== false) {
       const year = getFYYear(new Date(request.start_date + 'T00:00:00'), fyMonth)
       const { data: balance } = await supabase.from('leave_balances')
         .select('used, total_days').eq('employee_id', request.employee_id)
@@ -141,7 +141,7 @@ export default function LeaveApproval() {
     }).eq('id', id).eq('company_id', companyUser?.company_id)
     if (error) { showError('Failed to update leave request: ' + error.message); setProcessing(false); return }
 
-    if (approved && leaveType?.deducts_from_allowance !== false) {
+    if (approved && leaveType?.name !== 'Sick Leave' && leaveType?.deducts_from_allowance !== false) {
       const year = getFYYear(new Date(request.start_date + 'T00:00:00'), fyMonth)
       const { error: errBal } = await supabase.rpc('adjust_leave_balance', {
         p_employee_id: request.employee_id,
