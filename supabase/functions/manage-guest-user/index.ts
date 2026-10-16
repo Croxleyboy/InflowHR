@@ -17,6 +17,12 @@ function generateOtp(): string {
   return otp
 }
 
+async function hashOtp(otp: string): Promise<string> {
+  const encoded = new TextEncoder().encode(otp)
+  const digest = await crypto.subtle.digest('SHA-256', encoded)
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -107,13 +113,15 @@ Deno.serve(async (req) => {
         authUserId = newAuth.user.id
       }
 
+      const otpHashed = await hashOtp(otp)
+
       // Insert guest_users row
       const { data: guest, error: insertErr } = await supabase
         .from('guest_users')
         .insert({
           company_id,
           email: normalEmail,
-          otp_hash: otp,
+          otp_hash: otpHashed,
           role_key: role_key || 'read_only',
           read_only: read_only !== false,
           is_active: true,
@@ -154,9 +162,11 @@ Deno.serve(async (req) => {
         await supabase.auth.admin.updateUserById(guest.auth_user_id, { password: otp })
       }
 
+      const regenHashed = await hashOtp(otp)
+
       await supabase
         .from('guest_users')
-        .update({ otp_hash: otp, otp_expires_at: expiresAt, is_active: true, updated_at: new Date().toISOString() })
+        .update({ otp_hash: regenHashed, otp_expires_at: expiresAt, is_active: true, updated_at: new Date().toISOString() })
         .eq('id', guest_id)
         .eq('company_id', company_id)
 
