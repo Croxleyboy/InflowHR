@@ -189,6 +189,7 @@ interface Employee {
   weekly_hours: number | null
   bonus_amount: number | null; bonus_frequency: string | null
   guaranteed_hours_approved: boolean | null; guaranteed_weekly_hours: number | null
+  sick_pay_status: 'normal' | 'csp_full' | 'csp_half' | 'ssp' | 'unpaid' | null
 }
 
 interface AuditLogEntry {
@@ -285,6 +286,8 @@ export default function AdminPayrollNew() {
   const [wizUnpaidLeave, setWizUnpaidLeave] = useState<{ employee_id: string; days: number; employee_name: string }[]>([])
   const [wizBenefitChanges, setWizBenefitChanges] = useState<{ employee_id: string; employee_name: string; benefit: string; action: string; monthly_cost: number }[]>([])
   const [wizBonusEntries, setWizBonusEntries] = useState<{ employee_id: string; employee_name: string; amount: number; description: string; type: 'bonus' | 'deduction' }[]>([])
+  const [wizSickLeave, setWizSickLeave] = useState<{ employee_id: string; employee_name: string; days: number; sick_pay_status: string; daily_rate: number; deduction: number; ssp_added: number }[]>([])
+  const [wizSickPaySettings, setWizSickPaySettings] = useState<{ enabled: boolean; csp_full_pay_days: number; csp_half_pay_days: number; ssp_weekly_rate: number; ssp_max_weeks: number } | null>(null)
   const [lastPayRuns, setLastPayRuns] = useState<Record<string, { id: string; period_start: string; period_end: string; status: string; completed_at: string | null; total_gross: number }>>({})
   const [processingRuns, setProcessingRuns] = useState<{ id: string; worker_types: string[]; status: string; period_start: string; period_end: string; created_at: string }[]>([])
   const [wizPeriodByType, setWizPeriodByType] = useState<Record<string, { start: string; end: string; freq: PayFrequency; freqLabel: string; overtimeLabel: string }>>({})
@@ -322,6 +325,8 @@ export default function AdminPayrollNew() {
     setWizUnpaidLeave([])
     setWizBenefitChanges([])
     setWizBonusEntries([])
+    setWizSickLeave([])
+    setWizSickPaySettings(null)
     setWizPayRunId(null)
     setWizPayslipsFetched(false)
     setLastXeroPayRun(null)
@@ -483,7 +488,7 @@ export default function AdminPayrollNew() {
     const fyEnd = localDateStr(fyRange.endDate)
     const [pRes, eRes, xRes, sRes, mRes] = await Promise.all([
       supabase.from('payslips').select('*, employee:employees!payslips_employee_id_fkey(id, first_name, last_name)').eq('company_id', selectedCompanyId).gte('pay_period_start', fyStart).lte('pay_period_start', fyEnd).order('payment_date', { ascending: false }),
-      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception, weekly_hours, bonus_amount, bonus_frequency, guaranteed_hours_approved, guaranteed_weekly_hours').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
+      supabase.from('employees').select('id, first_name, last_name, job_title, department, annual_salary, hourly_rate, pay_frequency, overtime_rate_multiplier, tax_code, payroll_id, employment_category, contract_type, bank_sort_code, bank_account_number, bank_account_name, pay_pattern_override, overtime_handling_override, time_recording_override, is_payroll_exception, weekly_hours, bonus_amount, bonus_frequency, guaranteed_hours_approved, guaranteed_weekly_hours, sick_pay_status').eq('company_id', selectedCompanyId).eq('is_active', true).order('last_name'),
       supabase.from('xero_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status').eq('company_id', selectedCompanyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, status').eq('company_id', selectedCompanyId).maybeSingle(),
@@ -900,6 +905,75 @@ export default function AdminPayrollNew() {
       }
     }
     setWizBenefitChanges(changes)
+
+    // Load sick pay settings and sick leave adjustments
+    const { data: sickSettings } = await supabase.from('sick_pay_settings')
+      .select('enabled, csp_full_pay_days, csp_half_pay_days, ssp_weekly_rate, ssp_max_weeks')
+      .eq('company_id', selectedCompanyId)
+      .maybeSingle()
+    setWizSickPaySettings(sickSettings || null)
+
+    if (sickSettings?.enabled) {
+      const { data: sickLeaveData } = await supabase.from('leave_requests')
+        .select('employee_id, days_requested, start_date, end_date, employees!leave_requests_employee_id_fkey(first_name, last_name, sick_pay_status, annual_salary, hourly_rate, weekly_hours, employment_category, contract_type)')
+        .eq('company_id', selectedCompanyId)
+        .eq('status', 'approved')
+        .eq('leave_type', 'Sick Leave')
+        .lte('start_date', monthEnd)
+        .gte('end_date', monthStart)
+
+      const sickItems: typeof wizSickLeave = []
+      if (sickLeaveData) {
+        for (const r of sickLeaveData as any[]) {
+          if (!targetEmpIds.has(r.employee_id)) continue
+          const empData = r.employees
+          if (!empData || !empData.sick_pay_status || empData.sick_pay_status === 'normal') continue
+
+          const sickDays = Number(r.days_requested) || 1
+          const empName = `${empData.first_name} ${empData.last_name}`
+          const status = empData.sick_pay_status as string
+
+          // Calculate daily rate
+          let dailyRate = 0
+          const isShift = empData.employment_category === 'shift_worker'
+          if (isShift && empData.hourly_rate > 0) {
+            const weeklyHrs = empData.weekly_hours || 37.5
+            const contractedDays = 5
+            dailyRate = Math.round((empData.hourly_rate * weeklyHrs / contractedDays) * 100) / 100
+          } else if (empData.annual_salary > 0) {
+            dailyRate = Math.round((empData.annual_salary / 260) * 100) / 100
+          }
+
+          let deduction = 0
+          let sspAdded = 0
+          const sspDailyRate = sickSettings.ssp_weekly_rate / 5 // qualifying days typically 5
+
+          if (status === 'csp_full') {
+            deduction = 0 // full pay maintained
+          } else if (status === 'csp_half') {
+            deduction = Math.round(dailyRate * 0.5 * sickDays * 100) / 100
+          } else if (status === 'ssp') {
+            deduction = Math.round(dailyRate * sickDays * 100) / 100
+            sspAdded = Math.round(sspDailyRate * sickDays * 100) / 100
+          } else if (status === 'unpaid') {
+            deduction = Math.round(dailyRate * sickDays * 100) / 100
+          }
+
+          sickItems.push({
+            employee_id: r.employee_id,
+            employee_name: empName,
+            days: sickDays,
+            sick_pay_status: status,
+            daily_rate: dailyRate,
+            deduction,
+            ssp_added: sspAdded,
+          })
+        }
+      }
+      setWizSickLeave(sickItems)
+    } else {
+      setWizSickLeave([])
+    }
   }
 
   async function logPayrollAction(action: string, detail: string, status: 'success' | 'error' = 'success') {
@@ -1078,7 +1152,23 @@ export default function AdminPayrollNew() {
           }
         }
 
-        const effectiveGross = reviewGross + holidayPayAmount + cancellationCompensation
+        // Sick pay adjustment for shift/zero-hours workers
+        const empSickAdj = wizSickLeave.find(s => s.employee_id === emp.id)
+        let sickPayDeduction = 0
+        let sickPayAmount = 0
+        let sickPayType: string | null = null
+        let sickDaysInPeriod = 0
+        if (empSickAdj && empSickAdj.deduction > 0) {
+          sickPayDeduction = empSickAdj.deduction
+          sickPayAmount = empSickAdj.ssp_added
+          sickPayType = empSickAdj.sick_pay_status
+          sickDaysInPeriod = empSickAdj.days
+          if (isZeroHours && empSickAdj.sick_pay_status === 'ssp') {
+            errors.push(`${emp.first_name} ${emp.last_name}: Zero hours worker on SSP — may not qualify. Please verify eligibility.`)
+          }
+        }
+
+        const effectiveGross = reviewGross + holidayPayAmount + cancellationCompensation - sickPayDeduction + sickPayAmount
         const annualised = effectiveGross * getPeriodsPerYear(freq)
         const annualAfterSacrifice = annualised - (benefitMonthly * 12)
         const tax = calcTax(annualAfterSacrifice, freq)
@@ -1120,6 +1210,9 @@ export default function AdminPayrollNew() {
             overtime: Number(empReview.overtime_hours) || 0,
             holiday_pay: holidayPayAmount,
             cancellation_compensation: cancellationCompensation,
+            sick_pay: sickPayAmount > 0 ? sickPayAmount : sickPayDeduction > 0 ? -sickPayDeduction : 0,
+            sick_pay_type: sickPayType,
+            sick_days_in_period: sickDaysInPeriod,
           }).select('id').maybeSingle()
           if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
 
@@ -1159,6 +1252,19 @@ export default function AdminPayrollNew() {
         const hourlyFromSalary = wizOvertimeRates[emp.id] || getDerivedHourlyRate(emp) || salary / (52 * (emp.weekly_hours || 37.5))
         const overtimePay = empOvertimeHrs > 0 ? Math.round(empOvertimeHrs * hourlyFromSalary * multiplier * 100) / 100 : 0
 
+        // Sick pay adjustment for employed (salaried) workers
+        const empSickAdj = wizSickLeave.find(s => s.employee_id === emp.id)
+        let sickPayDeductionEmp = 0
+        let sickPayAmountEmp = 0
+        let sickPayTypeEmp: string | null = null
+        let sickDaysInPeriodEmp = 0
+        if (empSickAdj && empSickAdj.deduction > 0) {
+          sickPayDeductionEmp = empSickAdj.deduction
+          sickPayAmountEmp = empSickAdj.ssp_added
+          sickPayTypeEmp = empSickAdj.sick_pay_status
+          sickDaysInPeriodEmp = empSickAdj.days
+        }
+
         // TOIL: credit lieu_days for employed staff overtime
         if (overtimeHandling === 'toil' && empOvertimeHrs > 0) {
           const dailyHours = (emp.weekly_hours || 37.5) / 5
@@ -1188,13 +1294,16 @@ export default function AdminPayrollNew() {
             pay_run_id: payRunId,
             gross_pay: gross, tax, national_insurance: ni, pension: pen, other_deductions: 0,
             monthly_deductions: benefitPeriod,
-            net_pay: (gross - benefitPeriod) + overtimePay - tax - ni - pen,
+            net_pay: (gross - benefitPeriod) + overtimePay - sickPayDeductionEmp + sickPayAmountEmp - tax - ni - pen,
             payment_date: localDateStr(paymentDate),
             status: missing.length > 0 ? 'flagged' : 'draft',
             tax_code: emp.tax_code || latest?.tax_code || '1257L',
             annual_salary: salary, payroll_id: emp.payroll_id,
             payroll_office: missing.length > 0 ? `Missing: ${missing.join(', ')}` : '',
             overtime: overtimePay,
+            sick_pay: sickPayAmountEmp > 0 ? sickPayAmountEmp : sickPayDeductionEmp > 0 ? -sickPayDeductionEmp : 0,
+            sick_pay_type: sickPayTypeEmp,
+            sick_days_in_period: sickDaysInPeriodEmp,
           })
           if (error) errors.push(`${emp.first_name} ${emp.last_name}: ${error.message}`)
           if (freq === 'monthly') break
@@ -1289,6 +1398,23 @@ export default function AdminPayrollNew() {
         days: 0,
         amount: b.type === 'bonus' ? b.amount : -b.amount,
       })
+    })
+
+    wizSickLeave.filter(s => isEmpInScope(s.employee_id)).forEach(s => {
+      const typeLabel = s.sick_pay_status === 'csp_full' ? 'CSP (Full Pay)' : s.sick_pay_status === 'csp_half' ? 'CSP (Half Pay)' : s.sick_pay_status === 'ssp' ? 'SSP' : 'Unpaid Sick'
+      const netAmount = -s.deduction + s.ssp_added
+      if (netAmount !== 0 || s.days > 0) {
+        items.push({
+          employee: s.employee_name,
+          type: 'Sick Leave Adjustment',
+          description: `${s.days} day${s.days !== 1 ? 's' : ''} sick leave — ${typeLabel}${s.ssp_added > 0 ? ` (SSP: ${s.ssp_added.toFixed(2)})` : ''}`,
+          hours: 0,
+          rate: s.daily_rate,
+          multiplier: 0,
+          days: s.days,
+          amount: Math.round(netAmount * 100) / 100,
+        })
+      }
     })
 
     const sanitise = (s: string) => s.replace(/[=+\-@\t\r]/g, "'$&").replace(/"/g, '""')
@@ -2071,7 +2197,7 @@ export default function AdminPayrollNew() {
       loadWizPeriodReviews(periodMap)
     }
     loadWizTimesheets(periodMap)
-    if (providerConnected) loadWizAdjustments(periodMap)
+    loadWizAdjustments(periodMap)
     loadWizBonuses()
     setWizStep(2)
   }
@@ -2102,7 +2228,7 @@ export default function AdminPayrollNew() {
     setWizPeriodByType(updated)
     if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) loadWizPeriodReviews(updated)
     loadWizTimesheets(updated)
-    if (providerConnected) loadWizAdjustments(updated)
+    loadWizAdjustments(updated)
   }
 
   async function startPayrollForType(type: 'employed' | 'shift' | 'zero_hours') {
@@ -3722,7 +3848,7 @@ export default function AdminPayrollNew() {
                         <input type="date" value={p.end} onChange={e => {
                           setWizPeriodByType(prev => ({ ...prev, [wt]: { ...prev[wt], end: e.target.value } }))
                         }} style={{ fontSize: 11, padding: '2px 4px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.15)', color: '#fff' }} />
-                        <button onClick={() => { setWizPeriodEditType(null); if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) loadWizPeriodReviews(wizPeriodByType); loadWizTimesheets(wizPeriodByType); if (providerConnected) loadWizAdjustments(wizPeriodByType) }} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.25)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apply</button>
+                        <button onClick={() => { setWizPeriodEditType(null); if (wizWorkerTypes.has('shift') || wizWorkerTypes.has('zero_hours')) loadWizPeriodReviews(wizPeriodByType); loadWizTimesheets(wizPeriodByType); loadWizAdjustments(wizPeriodByType) }} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.25)', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apply</button>
                         <button onClick={() => setWizPeriodEditType(null)} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', cursor: 'pointer', opacity: 0.7 }}>Cancel</button>
                       </>
                     ) : (
@@ -4514,6 +4640,12 @@ export default function AdminPayrollNew() {
                         <span className="pn-worker-metric-value">{wizUnpaidLeave.length}</span>
                         <span className="pn-worker-metric-label">Unpaid leave deductions</span>
                       </div>
+                      {wizSickLeave.length > 0 && (
+                        <div className="pn-worker-metric">
+                          <span className="pn-worker-metric-value">{wizSickLeave.length}</span>
+                          <span className="pn-worker-metric-label">Sick leave adjustments</span>
+                        </div>
+                      )}
                       <div className="pn-worker-metric">
                         <span className="pn-worker-metric-value">{wizBenefitChanges.length}</span>
                         <span className="pn-worker-metric-label">Benefit changes</span>
@@ -4542,7 +4674,23 @@ export default function AdminPayrollNew() {
                       </div>
                     )}
 
-                    {Object.values(allOvertimeHours).every(h => h === 0) && wizUnpaidLeave.length === 0 && wizBenefitChanges.length === 0 && (
+                    {wizSickLeave.length > 0 && (
+                      <div style={{ borderTop: '1px solid var(--border, #e5e7eb)', paddingTop: 8, marginTop: 4, marginBottom: 8 }}>
+                        <p style={{ fontSize: 12, fontWeight: 600, margin: '0 0 4px', color: '#c62828' }}>Sick Leave Adjustments</p>
+                        {wizSickLeave.map((s, i) => {
+                          const typeLabel = s.sick_pay_status === 'csp_full' ? 'CSP (Full Pay — no deduction)' : s.sick_pay_status === 'csp_half' ? 'CSP (Half Pay)' : s.sick_pay_status === 'ssp' ? 'SSP' : 'Unpaid Sick Leave'
+                          return (
+                            <div key={i} style={{ fontSize: 12, color: 'var(--text-muted, #6b7280)', marginBottom: 2 }}>
+                              {s.employee_name}: {s.days} day{s.days !== 1 ? 's' : ''} — {typeLabel}
+                              {s.deduction > 0 && ` (deduction: ${currencySymbol(currency)}${s.deduction.toFixed(2)})`}
+                              {s.ssp_added > 0 && ` + SSP: ${currencySymbol(currency)}${s.ssp_added.toFixed(2)}`}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {Object.values(allOvertimeHours).every(h => h === 0) && wizUnpaidLeave.length === 0 && wizBenefitChanges.length === 0 && wizSickLeave.length === 0 && (
                       <p style={{ fontSize: 12, color: '#558b2f', margin: 0, fontStyle: 'italic' }}>
                         No adjustments detected — a clean pay run. You can skip the push step and go straight to syncing payslips from your provider.
                       </p>
@@ -4614,7 +4762,7 @@ export default function AdminPayrollNew() {
                           <span className="pn-worker-metric-label">{connectedProvider === 'xero' ? 'Timesheets to push' : 'Overtime entries'}</span>
                         </div>
                         <div className="pn-worker-metric">
-                          <span className="pn-worker-metric-value">{wizUnpaidLeave.length + wizBenefitChanges.length}</span>
+                          <span className="pn-worker-metric-value">{wizUnpaidLeave.length + wizBenefitChanges.length + wizSickLeave.length}</span>
                           <span className="pn-worker-metric-label">{connectedProvider === 'xero' ? 'Manual items' : 'Other adjustments'}</span>
                         </div>
                         <div className="pn-worker-metric">
@@ -4656,7 +4804,7 @@ export default function AdminPayrollNew() {
                           return emp && emp.contract_type === 'Zero hours shift worker' && Number(r.adjusted_hours ?? r.total_hours ?? 0) > 0
                         }).length : 0
                         const pushCount = otCount + zhRegularCount
-                        const manualCount = wizUnpaidLeave.length + wizBenefitChanges.length + wizBonusEntries.length
+                        const manualCount = wizUnpaidLeave.length + wizBenefitChanges.length + wizBonusEntries.length + wizSickLeave.length
                         const totalCount = pushCount + manualCount + toilCount
                         return totalCount === 0 ? (
                           <button className="admin-btn admin-btn-primary" onClick={() => setWizStep(providerConnected ? 5 : 4)}>

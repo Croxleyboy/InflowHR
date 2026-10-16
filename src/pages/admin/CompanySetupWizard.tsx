@@ -590,8 +590,9 @@ export default function CompanySetupWizard({ onSetupComplete }: CompanySetupWiza
         const allowance = isZh ? 0 : (row.leave_allowance ?? 15)
         const { data: leaveTypes } = await supabase.from('leave_types').select('id, name, deducts_from_allowance').eq('company_id', setupCompanyId)
         if (leaveTypes && leaveTypes.length > 0) {
+          const balanceTypes = leaveTypes.filter(lt => lt.name !== 'Sick Leave')
           const { error: leaveBalErr } = await supabase.from('leave_balances').insert(
-            leaveTypes.map(lt => {
+            balanceTypes.map(lt => {
               const bal: Record<string, unknown> = {
                 employee_id: employeeId,
                 leave_type_id: lt.id,

@@ -46,6 +46,9 @@ interface PayslipData {
   source_review_id: string | null
   holiday_pay: number
   cancellation_compensation: number
+  sick_pay: number
+  sick_pay_type: 'csp_full' | 'csp_half' | 'ssp' | 'unpaid' | null
+  sick_days_in_period: number
 }
 
 interface PeriodReview {
@@ -360,6 +363,18 @@ export default function Payslips() {
                       <span>{currencySymbol(currency)}{fmt(payslip.adjustments || 0)}</span>
                     </div>
                   )}
+                  {(payslip.sick_days_in_period || 0) > 0 && (
+                    <div className="payslips-row">
+                      <span>
+                        {payslip.sick_pay_type === 'csp_full' ? 'Company Sick Pay (Full)'
+                          : payslip.sick_pay_type === 'csp_half' ? 'Company Sick Pay (Half)'
+                          : payslip.sick_pay_type === 'ssp' ? 'Statutory Sick Pay (SSP)'
+                          : 'Unpaid Sick Leave'}
+                        <span style={{ display: 'block', fontSize: 11, opacity: 0.7 }}>{payslip.sick_days_in_period} sick days in period</span>
+                      </span>
+                      <span>{currencySymbol(currency)}{fmt(payslip.sick_pay || 0)}</span>
+                    </div>
+                  )}
                   <div className="payslips-row payslips-row-total">
                     <span>{t('payslips.total_earnings')}</span>
                     <span>{currencySymbol(currency)}{fmt(payslip.gross_pay + (payslip.overtime || 0) + (payslip.adjustments || 0))}</span>
@@ -380,6 +395,18 @@ export default function Payslips() {
                   <div className="payslips-row">
                     <span>{t('payslips.adjustments')}</span>
                     <span>{currencySymbol(currency)}{fmt(payslip.adjustments || 0)}</span>
+                  </div>
+                )}
+                {(payslip.sick_days_in_period || 0) > 0 && (
+                  <div className="payslips-row">
+                    <span>
+                      {payslip.sick_pay_type === 'csp_full' ? 'Company Sick Pay (Full)'
+                        : payslip.sick_pay_type === 'csp_half' ? 'Company Sick Pay (Half)'
+                        : payslip.sick_pay_type === 'ssp' ? 'Statutory Sick Pay (SSP)'
+                        : 'Unpaid Sick Leave'}
+                      <span style={{ display: 'block', fontSize: 11, opacity: 0.7 }}>{payslip.sick_days_in_period} sick days in period</span>
+                    </span>
+                    <span>{currencySymbol(currency)}{fmt(payslip.sick_pay || 0)}</span>
                   </div>
                 )}
                 <div className="payslips-row payslips-row-total">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
 import { sendFeatureEmail } from '../../lib/emailNotifications'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
@@ -51,7 +51,7 @@ export default function AdminLeave() {
   const [savingDeduct, setSavingDeduct] = useState<number | null>(null)
   const [savingCarry, setSavingCarry] = useState<number | null>(null)
   const [fyStartMonth, setFyStartMonth] = useState(4)
-  const [activeTab, setActiveTab] = useState<'requests' | 'settings' | 'compliance'>('requests')
+  const [activeTab, setActiveTab] = useState<'requests' | 'settings' | 'compliance' | 'sickness'>('requests')
   const [managerNames, setManagerNames] = useState<Record<string, string>>({})
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -75,6 +75,26 @@ export default function AdminLeave() {
   const [zhcCancellations, setZhcCancellations] = useState<{ id: number; employee_name: string; shift_date: string; shift_start: string; shift_end: string; shift_hours: number; notice_hours: number; compensation_amount: number; cancellation_type: string; compensation_included_in_payrun: boolean; cancelled_at: string }[]>([])
   const [zhcPensionWorkers, setZhcPensionWorkers] = useState<{ id: string; name: string; ytd_earnings: number; threshold: number; enrolled: boolean; enrolled_date: string | null }[]>([])
   const [leaveBalances, setLeaveBalances] = useState<Record<string, { total: number; used: number }>>({})
+
+  // Sickness management state
+  const [sickPayEnabled, setSickPayEnabled] = useState(false)
+  const [sickPaySettings, setSickPaySettings] = useState<{
+    csp_full_pay_days: number; csp_half_pay_days: number; ssp_weekly_rate: number; ssp_max_weeks: number;
+    bradford_green_threshold: number; bradford_amber_threshold: number;
+    absence_trigger_spells: number; absence_trigger_months: number; fit_note_days_threshold: number;
+  }>({ csp_full_pay_days: 10, csp_half_pay_days: 10, ssp_weekly_rate: 123.25, ssp_max_weeks: 28, bradford_green_threshold: 50, bradford_amber_threshold: 200, absence_trigger_spells: 3, absence_trigger_months: 6, fit_note_days_threshold: 7 })
+  const [sickPaySaving, setSickPaySaving] = useState(false)
+  const [sicknessSummary, setSicknessSummary] = useState<{
+    employee_id: string; name: string; days_lost: number; spells: number; bradford: number;
+    sick_pay_status: string; ssp_weeks_used: number; fit_note_pending: boolean;
+    episodes: { id: number; episode_start: string; episode_end: string | null; working_days_lost: number; is_open: boolean;
+      fit_note_required: boolean; fit_note_received: boolean; fit_note_expiry: string | null;
+      return_to_work_completed: boolean; return_to_work_date: string | null; return_to_work_notes: string | null;
+      csp_days_used: number; ssp_weeks_used: number; }[];
+  }[]>([])
+  const [sicknessLoading, setSicknessLoading] = useState(false)
+  const [expandedSickEmployee, setExpandedSickEmployee] = useState<string | null>(null)
+  const [sickPayStatusSaving, setSickPayStatusSaving] = useState<string | null>(null)
 
   const loadWeekendSetting = useCallback(async () => {
     if (!selectedCompanyId) return
@@ -188,6 +208,117 @@ export default function AdminLeave() {
     }, { onConflict: 'company_id' })
     if (error) showError('Failed to save: ' + error.message)
     setZhcSaving(false)
+  }
+
+  const loadSickPaySettings = useCallback(async () => {
+    if (!selectedCompanyId) return
+    const { data } = await supabase.from('sick_pay_settings').select('*').eq('company_id', selectedCompanyId).maybeSingle()
+    if (data) {
+      setSickPayEnabled(data.enabled ?? false)
+      setSickPaySettings({
+        csp_full_pay_days: data.csp_full_pay_days ?? 10,
+        csp_half_pay_days: data.csp_half_pay_days ?? 10,
+        ssp_weekly_rate: data.ssp_weekly_rate ?? 123.25,
+        ssp_max_weeks: data.ssp_max_weeks ?? 28,
+        bradford_green_threshold: data.bradford_green_threshold ?? 50,
+        bradford_amber_threshold: data.bradford_amber_threshold ?? 200,
+        absence_trigger_spells: data.absence_trigger_spells ?? 3,
+        absence_trigger_months: data.absence_trigger_months ?? 6,
+        fit_note_days_threshold: data.fit_note_days_threshold ?? 7,
+      })
+    }
+  }, [selectedCompanyId])
+
+  async function saveSickPaySettings() {
+    if (!selectedCompanyId) return
+    setSickPaySaving(true)
+    const { error } = await supabase.from('sick_pay_settings').upsert({
+      company_id: selectedCompanyId,
+      enabled: sickPayEnabled,
+      ...sickPaySettings,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id' })
+    if (error) showError('Failed to save sick pay settings: ' + error.message)
+    setSickPaySaving(false)
+  }
+
+  const loadSicknessData = useCallback(async () => {
+    if (!selectedCompanyId || !sickPayEnabled) return
+    setSicknessLoading(true)
+    const fyStart = new Date()
+    fyStart.setMonth(fyStartMonth - 1, 1)
+    if (fyStart > new Date()) fyStart.setFullYear(fyStart.getFullYear() - 1)
+    const fyStartStr = fyStart.toISOString().slice(0, 10)
+    const fyEnd = new Date(fyStart)
+    fyEnd.setFullYear(fyEnd.getFullYear() + 1)
+    fyEnd.setDate(fyEnd.getDate() - 1)
+    const fyEndStr = fyEnd.toISOString().slice(0, 10)
+
+    const { data: emps } = await supabase.from('employees')
+      .select('id, first_name, last_name, sick_pay_status')
+      .eq('company_id', selectedCompanyId).eq('is_active', true)
+      .order('last_name')
+
+    if (!emps || emps.length === 0) { setSicknessSummary([]); setSicknessLoading(false); return }
+
+    const empIds = emps.map(e => e.id)
+    const { data: episodes } = await supabase.from('sick_leave_episodes')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .in('employee_id', empIds)
+      .gte('episode_start', fyStartStr)
+      .lte('episode_start', fyEndStr)
+      .order('episode_start', { ascending: false })
+
+    const summary = emps.map(emp => {
+      const empEpisodes = (episodes || []).filter(ep => ep.employee_id === emp.id)
+      const daysLost = empEpisodes.reduce((s, ep) => s + (ep.working_days_lost || 0), 0)
+      const spells = empEpisodes.length
+      const bradford = spells * spells * daysLost
+      const sspWeeks = empEpisodes.reduce((s, ep) => s + Number(ep.ssp_weeks_used || 0), 0)
+      const fitNotePending = empEpisodes.some(ep => ep.fit_note_required && !ep.fit_note_received)
+      return {
+        employee_id: emp.id,
+        name: `${emp.first_name} ${emp.last_name}`,
+        days_lost: daysLost,
+        spells,
+        bradford,
+        sick_pay_status: emp.sick_pay_status || 'normal',
+        ssp_weeks_used: sspWeeks,
+        fit_note_pending: fitNotePending,
+        episodes: empEpisodes.map(ep => ({
+          id: ep.id, episode_start: ep.episode_start, episode_end: ep.episode_end,
+          working_days_lost: ep.working_days_lost || 0, is_open: ep.is_open,
+          fit_note_required: ep.fit_note_required, fit_note_received: ep.fit_note_received,
+          fit_note_expiry: ep.fit_note_expiry,
+          return_to_work_completed: ep.return_to_work_completed, return_to_work_date: ep.return_to_work_date,
+          return_to_work_notes: ep.return_to_work_notes,
+          csp_days_used: ep.csp_days_used || 0, ssp_weeks_used: Number(ep.ssp_weeks_used || 0),
+        })),
+      }
+    }).filter(s => s.days_lost > 0 || s.sick_pay_status !== 'normal' || s.episodes.length > 0)
+
+    setSicknessSummary(summary)
+    setSicknessLoading(false)
+  }, [selectedCompanyId, sickPayEnabled, fyStartMonth])
+
+  async function updateSickPayStatus(employeeId: string, newStatus: string) {
+    setSickPayStatusSaving(employeeId)
+    const { error } = await supabase.from('employees').update({ sick_pay_status: newStatus }).eq('id', employeeId)
+    if (error) { showError('Failed to update sick pay status: ' + error.message); setSickPayStatusSaving(null); return }
+    setSicknessSummary(prev => prev.map(s => s.employee_id === employeeId ? { ...s, sick_pay_status: newStatus } : s))
+    setSickPayStatusSaving(null)
+  }
+
+  async function updateEpisodeField(episodeId: number, field: string, value: any) {
+    const updates: Record<string, any> = { [field]: value, updated_at: new Date().toISOString() }
+    if (field === 'return_to_work_completed' && value === true) {
+      updates.return_to_work_date = new Date().toISOString().slice(0, 10)
+      updates.is_open = false
+    }
+    const { error } = await supabase.from('sick_leave_episodes').update(updates).eq('id', episodeId)
+    if (error) { showError('Failed to update episode: ' + error.message); return }
+    await loadSicknessData()
   }
 
   const loadZhcCompliance = useCallback(async () => {
@@ -321,15 +452,19 @@ export default function AdminLeave() {
 
   useEffect(() => {
     if (selectedCompanyId) {
-      load(); loadWeekendSetting(); loadLeaveTypeSettings(); loadZhSettings(); loadZhcSettings()
+      load(); loadWeekendSetting(); loadLeaveTypeSettings(); loadZhSettings(); loadZhcSettings(); loadSickPaySettings()
       supabase.from('companies').select('fy_start_month').eq('id', selectedCompanyId).single()
         .then(({ data }) => { if (data?.fy_start_month) setFyStartMonth(data.fy_start_month) })
     }
-  }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings, loadZhSettings, loadZhcSettings])
+  }, [selectedCompanyId, loadWeekendSetting, loadLeaveTypeSettings, loadZhSettings, loadZhcSettings, loadSickPaySettings])
 
   useEffect(() => {
     if (activeTab === 'compliance' && zhcEnabled && selectedCompanyId) loadZhcCompliance()
   }, [activeTab, zhcEnabled, selectedCompanyId, loadZhcCompliance])
+
+  useEffect(() => {
+    if (activeTab === 'sickness' && sickPayEnabled && selectedCompanyId) loadSicknessData()
+  }, [activeTab, sickPayEnabled, selectedCompanyId, loadSicknessData])
 
   async function load() {
     setLoading(true)
@@ -373,6 +508,38 @@ export default function AdminLeave() {
   function startEdit(r: LeaveRequest) {
     setEditingId(r.id)
     setEditForm({ status: r.status, days_requested: r.days_requested, start_date: r.start_date, end_date: r.end_date, reason: r.reason || '' })
+  }
+
+  async function checkSickPayNotification(employeeId: string, employeeName: string, totalDaysLost: number, managerId: string | null) {
+    if (!selectedCompanyId) return
+    const cspTotal = sickPaySettings.csp_full_pay_days + sickPaySettings.csp_half_pay_days
+    const threshold = cspTotal - 2
+    if (totalDaysLost >= threshold && totalDaysLost - threshold < 5) {
+      const assignTo = managerId || employeeId
+      const { data: existing } = await supabase.from('workflow_tracker')
+        .select('id').eq('record_type', 'SickPayReview').eq('approval_id', 0)
+        .ilike('emp_display_name', employeeName).eq('status', 'Pending').eq('company_id', selectedCompanyId).limit(1).maybeSingle()
+      if (!existing) {
+        await supabase.from('workflow_tracker').insert({
+          emp_display_name: employeeName,
+          step: 1, status: 'Pending', record_type: 'SickPayReview',
+          action: 'Review sick pay status',
+          assigned_to: assignTo, approval_id: 0,
+          task_description: `${employeeName} has used ${totalDaysLost} of ${cspTotal} Company Sick Pay days. Please review and update their sick pay status if they should move to SSP.`,
+          company_id: selectedCompanyId,
+        })
+        if (managerId) {
+          await supabase.from('notifications').insert({
+            employee_id: managerId,
+            company_id: selectedCompanyId,
+            title: 'Sick Pay Review Required',
+            message: `${employeeName} has used ${totalDaysLost} of ${cspTotal} CSP days. Review their sick pay status.`,
+            type: 'alert',
+            link: '/admin/leave',
+          })
+        }
+      }
+    }
   }
 
   async function saveEdit(id: number) {
@@ -502,6 +669,49 @@ export default function AdminLeave() {
       window.dispatchEvent(new Event('notifications-updated'))
     }
 
+    if (req && sickPayEnabled && req.leave_type?.name === 'Sick Leave' && oldStatus !== 'approved' && newStatus === 'approved' && selectedCompanyId) {
+      const startDate = editForm.start_date || req.start_date
+      const endDate = editForm.end_date || req.end_date
+      const daysRequested = Number(editForm.days_requested || req.days_requested)
+      const calendarDays = Math.ceil((new Date(endDate + 'T00:00:00').getTime() - new Date(startDate + 'T00:00:00').getTime()) / 86400000) + 1
+      const fitNoteRequired = calendarDays >= sickPaySettings.fit_note_days_threshold
+
+      const { data: openEp } = await supabase.from('sick_leave_episodes')
+        .select('id, episode_end, working_days_lost, calendar_days')
+        .eq('employee_id', req.employee_id).eq('company_id', selectedCompanyId).eq('is_open', true)
+        .order('episode_start', { ascending: false }).limit(1).maybeSingle()
+
+      const empName = req.employee ? `${req.employee.first_name} ${req.employee.last_name}` : 'Employee'
+      if (openEp) {
+        const newEnd = endDate > (openEp.episode_end || '') ? endDate : openEp.episode_end
+        const newDaysLost = (openEp.working_days_lost || 0) + daysRequested
+        await supabase.from('sick_leave_episodes').update({
+          episode_end: newEnd,
+          calendar_days: (openEp.calendar_days || 0) + calendarDays,
+          working_days_lost: newDaysLost,
+          fit_note_required: fitNoteRequired || openEp.calendar_days + calendarDays >= sickPaySettings.fit_note_days_threshold,
+          updated_at: new Date().toISOString(),
+        }).eq('id', openEp.id)
+        await supabase.from('sick_leave_episode_requests').insert({ episode_id: openEp.id, leave_request_id: id })
+        await checkSickPayNotification(req.employee_id, empName, newDaysLost, req.employee?.manager_id || null)
+      } else {
+        const { data: newEp } = await supabase.from('sick_leave_episodes').insert({
+          company_id: selectedCompanyId,
+          employee_id: req.employee_id,
+          episode_start: startDate,
+          episode_end: endDate,
+          calendar_days: calendarDays,
+          working_days_lost: daysRequested,
+          is_open: true,
+          fit_note_required: fitNoteRequired,
+        }).select('id').single()
+        if (newEp) {
+          await supabase.from('sick_leave_episode_requests').insert({ episode_id: newEp.id, leave_request_id: id })
+        }
+        await checkSickPayNotification(req.employee_id, empName, daysRequested, req.employee?.manager_id || null)
+      }
+    }
+
     setEditingId(null)
     load()
   }
@@ -584,6 +794,48 @@ export default function AdminLeave() {
     }
 
     window.dispatchEvent(new Event('notifications-updated'))
+
+    if (sickPayEnabled && req.leave_type?.name === 'Sick Leave' && action === 'approved' && selectedCompanyId) {
+      const calendarDays = Math.ceil((new Date(req.end_date + 'T00:00:00').getTime() - new Date(req.start_date + 'T00:00:00').getTime()) / 86400000) + 1
+      const daysRequested = Number(req.days_requested)
+      const fitNoteRequired = calendarDays >= sickPaySettings.fit_note_days_threshold
+      const qEmpName = req.employee ? `${req.employee.first_name} ${req.employee.last_name}` : 'Employee'
+
+      const { data: openEp } = await supabase.from('sick_leave_episodes')
+        .select('id, episode_end, working_days_lost, calendar_days')
+        .eq('employee_id', req.employee_id).eq('company_id', selectedCompanyId).eq('is_open', true)
+        .order('episode_start', { ascending: false }).limit(1).maybeSingle()
+
+      if (openEp) {
+        const newEnd = req.end_date > (openEp.episode_end || '') ? req.end_date : openEp.episode_end
+        const newDaysLost = (openEp.working_days_lost || 0) + daysRequested
+        await supabase.from('sick_leave_episodes').update({
+          episode_end: newEnd,
+          calendar_days: (openEp.calendar_days || 0) + calendarDays,
+          working_days_lost: newDaysLost,
+          fit_note_required: fitNoteRequired || (openEp.calendar_days || 0) + calendarDays >= sickPaySettings.fit_note_days_threshold,
+          updated_at: new Date().toISOString(),
+        }).eq('id', openEp.id)
+        await supabase.from('sick_leave_episode_requests').insert({ episode_id: openEp.id, leave_request_id: id })
+        await checkSickPayNotification(req.employee_id, qEmpName, newDaysLost, req.employee?.manager_id || null)
+      } else {
+        const { data: newEp } = await supabase.from('sick_leave_episodes').insert({
+          company_id: selectedCompanyId,
+          employee_id: req.employee_id,
+          episode_start: req.start_date,
+          episode_end: req.end_date,
+          calendar_days: calendarDays,
+          working_days_lost: daysRequested,
+          is_open: true,
+          fit_note_required: fitNoteRequired,
+        }).select('id').single()
+        if (newEp) {
+          await supabase.from('sick_leave_episode_requests').insert({ episode_id: newEp.id, leave_request_id: id })
+        }
+        await checkSickPayNotification(req.employee_id, qEmpName, daysRequested, req.employee?.manager_id || null)
+      }
+    }
+
     load()
   }
 
@@ -821,6 +1073,11 @@ export default function AdminLeave() {
         {zhcEnabled && (
           <button className={`admin-tab${activeTab === 'compliance' ? ' active' : ''}`} onClick={() => setActiveTab('compliance')}>
             Zero Hours Compliance
+          </button>
+        )}
+        {sickPayEnabled && (
+          <button className={`admin-tab${activeTab === 'sickness' ? ' active' : ''}`} onClick={() => setActiveTab('sickness')}>
+            Sickness
           </button>
         )}
       </div>
@@ -1075,6 +1332,112 @@ export default function AdminLeave() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
                 <button className="admin-btn admin-btn-primary" disabled={zhcSaving} onClick={() => { setZhcEnabled(true) }} style={{ fontSize: 12 }}>
                   Enable Compliance Engine
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="admin-weekend-toggle" style={{ marginTop: 20, padding: 16, background: '#fff5f5', borderRadius: 8, border: '1px solid #feb2b2' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Sick Pay Policy</h4>
+              <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#fed7d7', color: '#9b2c2c', fontWeight: 600 }}>UK Statutory</span>
+            </div>
+            <p style={{ fontSize: 12, color: '#374151', margin: '0 0 14px', lineHeight: 1.5 }}>
+              Configure Company Sick Pay (CSP) and Statutory Sick Pay (SSP) phases. When enabled, a Sickness tab will appear
+              with Bradford Factor monitoring and manual sick pay status controls that integrate with payroll.
+            </p>
+
+            <label className="admin-toggle-label" style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <input type="checkbox" checked={sickPayEnabled} onChange={e => setSickPayEnabled(e.target.checked)} />
+              <span style={{ fontWeight: 600 }}>Enable Sick Pay Management</span>
+            </label>
+
+            {sickPayEnabled && (
+              <>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <h5 style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Company Sick Pay (CSP)</h5>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, minWidth: 100 }}>Full pay days</span>
+                      <input className="admin-inline-input" type="number" min="0" max="365" value={sickPaySettings.csp_full_pay_days}
+                        onChange={e => setSickPaySettings(p => ({ ...p, csp_full_pay_days: Math.max(0, Number(e.target.value) || 0) }))}
+                        style={{ width: 70, textAlign: 'center' }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12, minWidth: 100 }}>Half pay days</span>
+                      <input className="admin-inline-input" type="number" min="0" max="365" value={sickPaySettings.csp_half_pay_days}
+                        onChange={e => setSickPaySettings(p => ({ ...p, csp_half_pay_days: Math.max(0, Number(e.target.value) || 0) }))}
+                        style={{ width: 70, textAlign: 'center' }} />
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <h5 style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Statutory Sick Pay (SSP)</h5>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, minWidth: 100 }}>Weekly rate</span>
+                      <span style={{ fontSize: 12 }}>{currencySymbol(currency)}</span>
+                      <input className="admin-inline-input" type="number" step="0.01" min="0" value={sickPaySettings.ssp_weekly_rate}
+                        onChange={e => setSickPaySettings(p => ({ ...p, ssp_weekly_rate: Math.max(0, Number(e.target.value) || 0) }))}
+                        style={{ width: 80, textAlign: 'center' }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12, minWidth: 100 }}>Max weeks</span>
+                      <input className="admin-inline-input" type="number" min="0" max="52" value={sickPaySettings.ssp_max_weeks}
+                        onChange={e => setSickPaySettings(p => ({ ...p, ssp_max_weeks: Math.max(0, Number(e.target.value) || 0) }))}
+                        style={{ width: 70, textAlign: 'center' }} />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <h5 style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Bradford Factor Thresholds</h5>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, minWidth: 100 }}>Green/Amber</span>
+                      <input className="admin-inline-input" type="number" min="0" value={sickPaySettings.bradford_green_threshold}
+                        onChange={e => setSickPaySettings(p => ({ ...p, bradford_green_threshold: Math.max(0, Number(e.target.value) || 0) }))}
+                        style={{ width: 70, textAlign: 'center' }} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12, minWidth: 100 }}>Amber/Red</span>
+                      <input className="admin-inline-input" type="number" min="0" value={sickPaySettings.bradford_amber_threshold}
+                        onChange={e => setSickPaySettings(p => ({ ...p, bradford_amber_threshold: Math.max(0, Number(e.target.value) || 0) }))}
+                        style={{ width: 70, textAlign: 'center' }} />
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <h5 style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Absence Triggers</h5>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, minWidth: 100 }}>Spells limit</span>
+                      <input className="admin-inline-input" type="number" min="1" max="20" value={sickPaySettings.absence_trigger_spells}
+                        onChange={e => setSickPaySettings(p => ({ ...p, absence_trigger_spells: Math.max(1, Number(e.target.value) || 3) }))}
+                        style={{ width: 70, textAlign: 'center' }} />
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>in</span>
+                      <input className="admin-inline-input" type="number" min="1" max="24" value={sickPaySettings.absence_trigger_months}
+                        onChange={e => setSickPaySettings(p => ({ ...p, absence_trigger_months: Math.max(1, Number(e.target.value) || 6) }))}
+                        style={{ width: 70, textAlign: 'center' }} />
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>months</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12, minWidth: 100 }}>Fit note after</span>
+                      <input className="admin-inline-input" type="number" min="1" max="30" value={sickPaySettings.fit_note_days_threshold}
+                        onChange={e => setSickPaySettings(p => ({ ...p, fit_note_days_threshold: Math.max(1, Number(e.target.value) || 7) }))}
+                        style={{ width: 70, textAlign: 'center' }} />
+                      <span style={{ fontSize: 11, color: '#6b7280' }}>calendar days</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button className="admin-btn admin-btn-primary" disabled={sickPaySaving} onClick={saveSickPaySettings} style={{ fontSize: 12 }}>
+                    {sickPaySaving ? 'Saving...' : 'Save Sick Pay Settings'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {!sickPayEnabled && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <button className="admin-btn admin-btn-primary" disabled={sickPaySaving} onClick={() => { setSickPayEnabled(true) }} style={{ fontSize: 12 }}>
+                  Enable Sick Pay Management
                 </button>
               </div>
             )}
@@ -1386,6 +1749,171 @@ export default function AdminLeave() {
                   </table>
                 </div>
               )}
+            </>
+          )}
+        </>
+      )}
+
+      {activeTab === 'sickness' && sickPayEnabled && (
+        <>
+          {sicknessLoading && <div style={{ padding: 20, textAlign: 'center', color: '#6b7280' }}>Loading sickness data…</div>}
+
+          {!sicknessLoading && (
+            <>
+              <div style={{ background: '#fff5f5', border: '1px solid #feb2b2', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Sickness Absence Dashboard</h4>
+                  <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#fed7d7', color: '#9b2c2c', fontWeight: 600 }}>UK Statutory</span>
+                </div>
+                <p style={{ fontSize: 12, color: '#374151', margin: '0 0 14px', lineHeight: 1.5 }}>
+                  Bradford Factor = S² × D (Spells squared × Days). Employees exceeding thresholds are highlighted for review.
+                  Set each employee's sick pay status using the dropdown — payroll reads this flag to adjust pay.
+                </p>
+
+                {sicknessSummary.length === 0 && (
+                  <p style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>No sickness absence recorded this financial year.</p>
+                )}
+
+                {sicknessSummary.length > 0 && (
+                  <div className="admin-table-wrap">
+                    <table className="admin-table" style={{ fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th>Employee</th>
+                          <th style={{ textAlign: 'right' }}>Days Lost</th>
+                          <th style={{ textAlign: 'right' }}>Spells</th>
+                          <th style={{ textAlign: 'right' }}>Bradford</th>
+                          <th>Sick Pay Status</th>
+                          <th>SSP Progress</th>
+                          <th>Fit Note</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sicknessSummary.map(s => {
+                          const ragColor = s.bradford >= sickPaySettings.bradford_amber_threshold ? '#e53935'
+                            : s.bradford >= sickPaySettings.bradford_green_threshold ? '#f59e0b' : '#43a047'
+                          const ragLabel = s.bradford >= sickPaySettings.bradford_amber_threshold ? 'High'
+                            : s.bradford >= sickPaySettings.bradford_green_threshold ? 'Medium' : 'Low'
+                          const sspPct = Math.min(100, (s.ssp_weeks_used / sickPaySettings.ssp_max_weeks) * 100)
+                          const triggerExceeded = s.spells >= sickPaySettings.absence_trigger_spells
+                          const isExpanded = expandedSickEmployee === s.employee_id
+                          return (
+                            <Fragment key={s.employee_id}>
+                              <tr style={triggerExceeded ? { background: '#fef2f2' } : undefined}>
+                                <td style={{ fontWeight: 500 }}>
+                                  {s.name}
+                                  {triggerExceeded && (
+                                    <span style={{ display: 'block', fontSize: 10, color: '#dc2626', fontWeight: 600 }}>
+                                      ⚠ Absence trigger: {s.spells} spells in {sickPaySettings.absence_trigger_months} months
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ textAlign: 'right', fontWeight: 600 }}>{s.days_lost}</td>
+                                <td style={{ textAlign: 'right' }}>{s.spells}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, background: ragColor + '20', color: ragColor }}>
+                                    {s.bradford} ({ragLabel})
+                                  </span>
+                                </td>
+                                <td>
+                                  <select
+                                    className="admin-inline-select"
+                                    value={s.sick_pay_status}
+                                    onChange={e => updateSickPayStatus(s.employee_id, e.target.value)}
+                                    disabled={sickPayStatusSaving === s.employee_id}
+                                    style={{ fontSize: 11, padding: '3px 6px', minWidth: 100,
+                                      background: s.sick_pay_status === 'ssp' ? '#fef3c7' : s.sick_pay_status === 'unpaid' ? '#fee2e2' : s.sick_pay_status === 'csp_half' ? '#e0f2fe' : undefined,
+                                      fontWeight: s.sick_pay_status !== 'normal' ? 600 : 400,
+                                    }}
+                                  >
+                                    <option value="normal">Normal</option>
+                                    <option value="csp_full">CSP Full Pay</option>
+                                    <option value="csp_half">CSP Half Pay</option>
+                                    <option value="ssp">SSP</option>
+                                    <option value="unpaid">Unpaid</option>
+                                  </select>
+                                </td>
+                                <td style={{ minWidth: 120 }}>
+                                  {s.sick_pay_status === 'ssp' || s.ssp_weeks_used > 0 ? (
+                                    <div>
+                                      <div style={{ background: '#e5e7eb', borderRadius: 4, height: 8, overflow: 'hidden', marginBottom: 2 }}>
+                                        <div style={{
+                                          width: `${sspPct}%`, height: '100%', borderRadius: 4,
+                                          background: sspPct >= 90 ? '#e53935' : sspPct >= 75 ? '#f59e0b' : '#3b82f6',
+                                        }} />
+                                      </div>
+                                      <span style={{ fontSize: 10, color: '#6b7280' }}>{s.ssp_weeks_used}/{sickPaySettings.ssp_max_weeks} weeks</span>
+                                    </div>
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: '#9ca3af' }}>—</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {s.fit_note_pending ? (
+                                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Required</span>
+                                  ) : s.episodes.some(ep => ep.fit_note_received) ? (
+                                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#d1fae5', color: '#065f46', fontWeight: 600 }}>Received</span>
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: '#9ca3af' }}>—</span>
+                                  )}
+                                </td>
+                                <td>
+                                  <button
+                                    className="admin-btn-icon"
+                                    title={isExpanded ? 'Collapse' : 'View episodes'}
+                                    onClick={() => setExpandedSickEmployee(isExpanded ? null : s.employee_id)}
+                                    style={{ transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
+                                  >
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                                  </button>
+                                </td>
+                              </tr>
+                              {isExpanded && s.episodes.map(ep => (
+                                <tr key={ep.id} style={{ background: '#fafafa', fontSize: 11 }}>
+                                  <td colSpan={2} style={{ paddingLeft: 28 }}>
+                                    <span style={{ fontWeight: 500 }}>
+                                      {new Date(ep.episode_start).toLocaleDateString('en-GB')}
+                                      {ep.episode_end ? ` – ${new Date(ep.episode_end).toLocaleDateString('en-GB')}` : ' – ongoing'}
+                                    </span>
+                                    {ep.is_open && <span style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#fee2e2', color: '#dc2626', fontWeight: 600 }}>Open</span>}
+                                  </td>
+                                  <td style={{ textAlign: 'right' }}>{ep.working_days_lost}d</td>
+                                  <td style={{ textAlign: 'right', fontSize: 10, color: '#6b7280' }}>CSP: {ep.csp_days_used}d / SSP: {ep.ssp_weeks_used}w</td>
+                                  <td colSpan={2}>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                                      {ep.fit_note_required && (
+                                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
+                                          <input type="checkbox" checked={ep.fit_note_received} onChange={e => updateEpisodeField(ep.id, 'fit_note_received', e.target.checked)} />
+                                          Fit note received
+                                        </label>
+                                      )}
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
+                                        <input type="checkbox" checked={ep.return_to_work_completed} onChange={e => updateEpisodeField(ep.id, 'return_to_work_completed', e.target.checked)} />
+                                        Return to work
+                                      </label>
+                                    </div>
+                                  </td>
+                                  <td colSpan={2}>
+                                    {ep.return_to_work_completed && ep.return_to_work_date && (
+                                      <span style={{ fontSize: 10, color: '#065f46' }}>Returned {new Date(ep.return_to_work_date).toLocaleDateString('en-GB')}</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                              {isExpanded && s.episodes.length === 0 && (
+                                <tr style={{ background: '#fafafa' }}>
+                                  <td colSpan={8} style={{ paddingLeft: 28, fontSize: 11, color: '#9ca3af', fontStyle: 'italic' }}>No episodes recorded</td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </>
           )}
         </>
