@@ -159,8 +159,13 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await sb.auth.getUser(jwt)
     if (authErr || !user) return json({ error: 'Unauthorized' }, 401)
 
-    const { company_id, query } = await req.json()
-    if (!company_id || !query) return json({ error: 'Missing company_id or query' }, 400)
+    const { company_id, query: rawQuery } = await req.json()
+    if (!company_id || !rawQuery) return json({ error: 'Missing company_id or query' }, 400)
+
+    if (typeof rawQuery !== 'string') return json({ error: 'Query must be a string' }, 400)
+    const query = rawQuery.trim()
+    if (query.length === 0) return json({ error: 'Query cannot be empty' }, 400)
+    if (query.length > 500) return json({ error: 'Query too long — please keep your question under 500 characters.' }, 400)
 
     const { data: superAdmin } = await sb.from('super_admins')
       .select('id').eq('email', user.email).maybeSingle()
@@ -258,9 +263,20 @@ ${faqContext}`
 
     if (msg.tool_calls && msg.tool_calls.length > 0) {
       const tc = msg.tool_calls[0]
+      const VALID_TOOLS = DATA_TOOLS.map(t => t.function.name)
+      if (!VALID_TOOLS.includes(tc.function.name)) {
+        return json({ error: 'The AI returned an unrecognised action. Please rephrase your question.' }, 400)
+      }
       let params: Record<string, unknown> = {}
       try { params = JSON.parse(tc.function.arguments || '{}') } catch { /* empty */ }
-      return json({ tool_call: tc.function.name, params })
+
+      const toolDef = DATA_TOOLS.find(t => t.function.name === tc.function.name)!
+      const allowedKeys = Object.keys(toolDef.function.parameters.properties || {})
+      const sanitised: Record<string, unknown> = {}
+      for (const key of allowedKeys) {
+        if (key in params) sanitised[key] = params[key]
+      }
+      return json({ tool_call: tc.function.name, params: sanitised })
     }
 
     const answer = msg.content?.trim()

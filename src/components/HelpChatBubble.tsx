@@ -744,6 +744,7 @@ export default function HelpChatBubble() {
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Type your question..."
+              maxLength={500}
               disabled={loading}
             />
             <button type="submit" disabled={!query.trim() || loading} aria-label="Send">
