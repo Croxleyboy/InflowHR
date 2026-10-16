@@ -46,13 +46,13 @@ const DATA_TOOLS = [
     type: 'function' as const,
     function: {
       name: 'get_expense_claims',
-      description: 'Get the employee\'s expense claims. Can filter by date range and/or status. Use for "what expenses did I submit", "how much am I owed", "pending expenses".',
+      description: 'Get the employee\'s expense claims. Can filter by date range and/or status. Use for "what expenses did I submit", "how much am I owed", "pending expenses". For "how much am I owed" or "outstanding expenses", use status "owed" which returns approved and processing claims not yet paid.',
       parameters: {
         type: 'object',
         properties: {
           start_date: { type: 'string', description: 'Start of date range (YYYY-MM-DD).' },
           end_date: { type: 'string', description: 'End of date range (YYYY-MM-DD).' },
-          status: { type: 'string', enum: ['submitted', 'approved', 'rejected', 'paid'], description: 'Filter by status.' },
+          status: { type: 'string', enum: ['submitted', 'approved', 'rejected', 'paid', 'owed'], description: 'Filter by status. Use "owed" for approved + processing claims not yet paid.' },
         },
         required: [],
       },

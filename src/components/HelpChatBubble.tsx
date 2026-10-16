@@ -67,17 +67,20 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
     case 'get_leave_balance': {
       const { data } = await supabase
         .from('leave_balances')
-        .select('total_allowance, used, carried_over, leave_type:leave_type_id(name)')
+        .select('total_allowance, used, carried_over, lieu_days, leave_type:leave_type_id(name)')
         .eq('employee_id', employeeId)
         .eq('company_id', companyId)
       if (!data || data.length === 0) return 'No leave balance data found.'
       const lines = data.map((b: any) => {
-        const total = (b.total_allowance || 0) + (b.carried_over || 0)
+        const total = (b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0)
         const remaining = total - (b.used || 0)
         const name = b.leave_type?.name || 'Leave'
-        return `${name}: ${remaining} days remaining (${b.used || 0} used of ${total})`
+        const parts = [`${b.total_allowance || 0} allowance`]
+        if (b.carried_over) parts.push(`${b.carried_over} carried over`)
+        if (b.lieu_days) parts.push(`${b.lieu_days} in lieu`)
+        return `${name}: ${remaining} days remaining (${b.used || 0} used of ${total} — ${parts.join(', ')})`
       })
-      const totalRemaining = data.reduce((sum: number, b: any) => sum + ((b.total_allowance || 0) + (b.carried_over || 0) - (b.used || 0)), 0)
+      const totalRemaining = data.reduce((sum: number, b: any) => sum + ((b.total_allowance || 0) + (b.carried_over || 0) + (b.lieu_days || 0) - (b.used || 0)), 0)
       const totalUsed = data.reduce((sum: number, b: any) => sum + (b.used || 0), 0)
       lines.push(`\nTotal: ${totalRemaining} days remaining across all types (${totalUsed} used)`)
       return lines.join('\n')
@@ -111,8 +114,12 @@ async function executeDataQuery(queryKey: string, employeeId: string, companyId:
         .eq('company_id', companyId)
       if (params.start_date) q = q.gte('submitted_at', params.start_date as string)
       if (params.end_date) q = q.lte('submitted_at', (params.end_date as string) + 'T23:59:59')
-      if (params.status) q = q.eq('status', params.status as string)
-      const { data } = await q.order('submitted_at', { ascending: false }).limit(10)
+      if (params.status === 'owed') {
+        q = q.in('status', ['approved', 'processing'])
+      } else if (params.status) {
+        q = q.eq('status', params.status as string)
+      }
+      const { data } = await q.order('submitted_at', { ascending: false }).limit(20)
       if (!data || data.length === 0) return 'No expense claims found.'
       const total = data.reduce((sum: number, e: any) => sum + (Number(e.amount) || 0), 0)
       const lines = data.map((e: any) =>
