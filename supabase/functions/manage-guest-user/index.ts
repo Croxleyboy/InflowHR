@@ -140,6 +140,7 @@ Deno.serve(async (req) => {
         .from('guest_users')
         .select('id, auth_user_id, company_id')
         .eq('id', guest_id)
+        .eq('company_id', company_id)
         .single()
 
       if (!guest) {
@@ -157,6 +158,7 @@ Deno.serve(async (req) => {
         .from('guest_users')
         .update({ otp_hash: otp, otp_expires_at: expiresAt, is_active: true, updated_at: new Date().toISOString() })
         .eq('id', guest_id)
+        .eq('company_id', company_id)
 
       return new Response(JSON.stringify({ otp, expires_at: expiresAt }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -170,6 +172,7 @@ Deno.serve(async (req) => {
         .from('guest_users')
         .update({ is_active: false, updated_at: new Date().toISOString() })
         .eq('id', guest_id)
+        .eq('company_id', company_id)
 
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -187,6 +190,7 @@ Deno.serve(async (req) => {
         .from('guest_users')
         .update(updates)
         .eq('id', guest_id)
+        .eq('company_id', company_id)
 
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -200,9 +204,14 @@ Deno.serve(async (req) => {
         .from('guest_users')
         .select('auth_user_id')
         .eq('id', guest_id)
+        .eq('company_id', company_id)
         .single()
 
-      await supabase.from('guest_users').delete().eq('id', guest_id)
+      if (!guest) {
+        return new Response(JSON.stringify({ error: 'Guest not found' }), { status: 404, headers: corsHeaders })
+      }
+
+      await supabase.from('guest_users').delete().eq('id', guest_id).eq('company_id', company_id)
 
       if (guest?.auth_user_id) {
         const { data: otherGuests } = await supabase
