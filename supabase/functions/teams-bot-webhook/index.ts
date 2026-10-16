@@ -13,12 +13,9 @@ function json(data: unknown, status = 200) {
   })
 }
 
-const ALLOWED_SERVICE_URLS = [
-  'https://smba.trafficmanager.net/',
-  'https://europe.ng.msg.teams.microsoft.com/',
-  'https://americas.ng.msg.teams.microsoft.com/',
-  'https://asia.ng.msg.teams.microsoft.com/',
-  'https://uk.ng.msg.teams.microsoft.com/',
+const ALLOWED_SERVICE_URL_PATTERNS = [
+  /^https:\/\/smba\.trafficmanager\.net\//,
+  /^https:\/\/[a-z]+\.ng\.msg\.teams\.microsoft\.com\//,
 ]
 
 const BOT_FRAMEWORK_OPENID_URL =
@@ -92,7 +89,7 @@ async function verifyBotToken(authHeader: string, expectedAudience: string): Pro
 }
 
 function isAllowedServiceUrl(url: string): boolean {
-  return ALLOWED_SERVICE_URLS.some(allowed => url.startsWith(allowed))
+  return ALLOWED_SERVICE_URL_PATTERNS.some(pattern => pattern.test(url))
 }
 
 Deno.serve(async (req) => {
