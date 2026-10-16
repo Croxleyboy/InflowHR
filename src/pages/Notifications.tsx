@@ -739,7 +739,7 @@ export default function Notifications() {
       if (lr) {
         await supabase.from('leave_requests').update({ status: 'cancelled' }).eq('id', info.leave_id).eq('company_id', companyUser?.company_id)
 
-        if (lr.status === 'approved' && (lr as any).leave_types?.deducts_from_allowance !== false) {
+        if (lr.status === 'approved' && (lr as any).leave_types?.name !== 'Sick Leave' && (lr as any).leave_types?.deducts_from_allowance !== false) {
           const year = new Date(lr.start_date).getFullYear()
           await supabase.rpc('adjust_leave_balance', {
             p_employee_id: lr.employee_id,
