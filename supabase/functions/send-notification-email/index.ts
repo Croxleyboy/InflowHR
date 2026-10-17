@@ -88,14 +88,15 @@ Deno.serve(async (req) => {
       .eq('id', notificationId)
       .single()
 
-    const { data: caller } = await supabase
+    const { data: caller } = record ? await supabase
       .from('company_users')
       .select('company_id')
       .eq('auth_user_id', user.id)
+      .eq('company_id', record.company_id)
       .eq('is_active', true)
-      .maybeSingle()
+      .maybeSingle() : { data: null }
 
-    let authorised = caller && record && record.company_id === caller.company_id
+    let authorised = !!caller
     if (!authorised && record) {
       const { data: sa } = await supabase.from('super_admins')
         .select('id').eq('email', user.email).maybeSingle()
