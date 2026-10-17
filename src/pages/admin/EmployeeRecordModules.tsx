@@ -983,7 +983,7 @@ export default function EmployeeRecordModules({ employee, companyId, lieuDays, m
             'Content-Type': 'application/json',
             apikey: (supabase as any).supabaseKey,
           },
-          body: JSON.stringify({ storagePath, documentId: insertData.id }),
+          body: JSON.stringify({ storagePath, documentId: insertData.id, company_id: companyId }),
         }).then(async () => {
           setModuleData(prev => { const copy = { ...prev }; delete copy[cacheKey]; return copy })
           loadModuleData('documents', cacheKey)

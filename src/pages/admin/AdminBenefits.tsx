@@ -380,6 +380,7 @@ export default function AdminBenefits() {
           body: JSON.stringify({
             storagePath: filePath,
             documentId: inserted.id,
+            company_id: companyId,
             bucket: 'benefit-documents',
             tableName: 'benefit_documents',
           }),

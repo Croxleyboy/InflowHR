@@ -44,12 +44,12 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const { storagePath, documentId } = body
+    const { storagePath, documentId, company_id } = body
     const bucket = body.bucket || 'employee-documents'
     const tableName = body.tableName || 'employee_documents'
 
-    if (!storagePath || !documentId) {
-      return new Response(JSON.stringify({ error: 'Missing storagePath or documentId' }), {
+    if (!storagePath || !documentId || !company_id) {
+      return new Response(JSON.stringify({ error: 'Missing storagePath, documentId, or company_id' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
@@ -69,11 +69,29 @@ Deno.serve(async (req) => {
       })
     }
 
+    const sbAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
+    const { data: cu } = await sbAdmin.from('company_users')
+      .select('role')
+      .eq('auth_user_id', user.id)
+      .eq('company_id', company_id)
+      .maybeSingle()
+    if (!cu || !['admin', 'hr'].includes(cu.role)) {
+      return new Response(JSON.stringify({ error: 'Forbidden — admin or HR role required' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     const updateStatus = async (status: string) => {
       if (tableName === 'sage-payslips') return
-      await supabase.from(tableName)
+      await sbAdmin.from(tableName)
         .update({ scan_status: status })
         .eq('id', documentId)
+        .eq('company_id', company_id)
     }
 
     if (!VIRUSTOTAL_API_KEY) {
