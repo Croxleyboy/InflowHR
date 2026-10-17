@@ -42,7 +42,6 @@ Deno.serve(async (req) => {
       timestamp: new Date().toISOString(),
       configured_sender: SENDER_EMAIL,
       api_key_set: !!BREVO_API_KEY,
-      api_key_prefix: BREVO_API_KEY ? BREVO_API_KEY.substring(0, 12) + '...' : '(not set)',
     }
 
     if (!BREVO_API_KEY) {
