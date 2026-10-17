@@ -89,47 +89,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: saResult } = await supabase.rpc('is_super_admin' as any)
     setIsSuperAdmin(saResult === true)
 
-    // If logged in via Guest tab, prioritise guest_users lookup and skip company_users entirely
-    let isGuestSession = false
-    try { isGuestSession = sessionStorage.getItem('inflowhr_guest_session') === 'true' } catch {}
-    if (isGuestSession) {
-      const { data: guestRow } = await supabase
-        .from('guest_users')
-        .select('id, company_id, role_key, read_only, is_active, otp_expires_at')
-        .eq('auth_user_id', userId)
-        .eq('is_active', true)
+    // Check guest_users server-side first — no client-side sessionStorage dependency
+    const { data: guestRow } = await supabase
+      .from('guest_users')
+      .select('id, company_id, role_key, read_only, is_active, otp_expires_at')
+      .eq('auth_user_id', userId)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (guestRow && new Date(guestRow.otp_expires_at) > new Date()) {
+      setIsGuest(true)
+      setGuestReadOnly(guestRow.read_only)
+      setGuestCompanyId(guestRow.company_id)
+
+      const { data: co } = await supabase
+        .from('companies')
+        .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
+        .eq('id', guestRow.company_id)
+        .single()
+      if (co) setCompany(co as Company)
+
+      setPortalRole(guestRow.role_key)
+      const { data: roleData } = await supabase
+        .from('admin_portal_roles')
+        .select('permissions')
+        .eq('company_id', guestRow.company_id)
+        .eq('role_key', guestRow.role_key)
         .maybeSingle()
+      setPortalPermissions(roleData?.permissions || null)
 
-      if (guestRow && new Date(guestRow.otp_expires_at) > new Date()) {
-        setIsGuest(true)
-        setGuestReadOnly(guestRow.read_only)
-        setGuestCompanyId(guestRow.company_id)
+      await supabase
+        .from('guest_users')
+        .update({ last_login_at: new Date().toISOString() })
+        .eq('id', guestRow.id)
 
-        const { data: co } = await supabase
-          .from('companies')
-          .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
-          .eq('id', guestRow.company_id)
-          .single()
-        if (co) setCompany(co as Company)
-
-        setPortalRole(guestRow.role_key)
-        const { data: roleData } = await supabase
-          .from('admin_portal_roles')
-          .select('permissions')
-          .eq('company_id', guestRow.company_id)
-          .eq('role_key', guestRow.role_key)
-          .maybeSingle()
-        setPortalPermissions(roleData?.permissions || null)
-
-        await supabase
-          .from('guest_users')
-          .update({ last_login_at: new Date().toISOString() })
-          .eq('id', guestRow.id)
-
-        setSetupComplete(true)
-        return
-      }
-      try { sessionStorage.removeItem('inflowhr_guest_session') } catch {}
+      setSetupComplete(true)
+      return
     }
 
     // Step 1: RPC ensures company_users row exists, claims orphans, resolves employee by local-part match
@@ -308,46 +303,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Check if user is a guest
-      const { data: guestRow } = await supabase
-        .from('guest_users')
-        .select('id, company_id, role_key, read_only, is_active, otp_expires_at')
-        .eq('auth_user_id', userId)
-        .eq('is_active', true)
-        .maybeSingle()
-
-      if (guestRow && new Date(guestRow.otp_expires_at) > new Date()) {
-        setIsGuest(true)
-        setGuestReadOnly(guestRow.read_only)
-        setGuestCompanyId(guestRow.company_id)
-
-        const { data: co } = await supabase
-          .from('companies')
-          .select('id, name, domain, logo_url, login_disabled, is_trial, trial_end_date, cancellation_status, timezone, date_format, currency')
-          .eq('id', guestRow.company_id)
-          .single()
-        if (co) {
-          setCompany(co as Company)
-        }
-
-        setPortalRole(guestRow.role_key)
-        const { data: roleData } = await supabase
-          .from('admin_portal_roles')
-          .select('permissions')
-          .eq('company_id', guestRow.company_id)
-          .eq('role_key', guestRow.role_key)
-          .maybeSingle()
-        setPortalPermissions(roleData?.permissions || null)
-
-        await supabase
-          .from('guest_users')
-          .update({ last_login_at: new Date().toISOString() })
-          .eq('id', guestRow.id)
-
-        setSetupComplete(true)
-        return
-      }
-
       setSetupComplete(null)
     }
   }
@@ -422,7 +377,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
-    try { sessionStorage.removeItem('inflowhr_guest_session') } catch {}
     await supabase.auth.signOut()
     setUser(null)
     setSession(null)
@@ -444,7 +398,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOutInactive = useCallback(async () => {
     sessionStorage.removeItem(ACTIVITY_STORAGE_KEY)
-    try { sessionStorage.removeItem('inflowhr_guest_session') } catch {}
     await supabase.auth.signOut()
     setUser(null)
     setSession(null)
