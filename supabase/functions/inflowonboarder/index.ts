@@ -264,12 +264,15 @@ function handleEngineError(
     return json({ error: friendlyError('run_exists'), run_id: errData?.error?.runId }, 409)
   }
 
-  if (res.status === 400 && errData?.error?.issues) {
-    const issueDetails = errData.error.issues.map((i: any) => `${i.path?.join('.')}: ${i.message}`).join('; ')
-    return json({ error: `Validation failed: ${issueDetails}` }, 400)
+  if (res.status === 400) {
+    if (errData?.error?.issues) {
+      const issueDetails = errData.error.issues.map((i: any) => `${i.path?.join('.')}: ${i.message}`).join('; ')
+      return json({ error: `Validation failed: ${issueDetails}`, engineError: errData.error }, 400)
+    }
+    return json({ error: friendlyError(code, errData?.error?.message), engineError: errData?.error }, 400)
   }
 
-  return json({ error: friendlyError(code, errData?.error?.message) }, res.status)
+  return json({ error: friendlyError(code, errData?.error?.message), engineError: errData?.error }, res.status)
 }
 
 // ── Main handler ────────────────────────────────────────────────────────────
