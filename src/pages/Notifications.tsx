@@ -883,7 +883,7 @@ export default function Notifications() {
     setM365Approving(true)
     try {
       const now = new Date().toISOString()
-      const approverName = companyUser ? `${companyUser.first_name || ''} ${companyUser.last_name || ''}`.trim() : 'Unknown'
+      const approverName = HARDCODED_EMAIL || 'Unknown'
       await supabase.from('workflow_tracker').update({
         status: 'Complete',
         approval_status: approve ? 'Approved' : 'Declined'
