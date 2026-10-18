@@ -504,7 +504,7 @@ Deno.serve(async (req) => {
       if (keyResult instanceof Response) return keyResult
       const { config } = keyResult
 
-      const idempotencyKey = `starter-${onboarding_id}-start-run-${attempt || 0}`
+      const idempotencyKey = `starter-${onboarding_id}-start-run-${attempt || 0}-${Date.now()}`
       let runId: string
       let runStatus: string
 

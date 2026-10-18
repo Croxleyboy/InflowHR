@@ -754,6 +754,15 @@ export default function AdminOnboarding() {
         group_name: ifo.group_name,
       })
     }
+    if (data?.run_id && ['checking_licence', 'provisioning'].includes(data?.run_status)) {
+      const freshStatus = await callIfo('check-run', { run_id: data.run_id, onboarding_id: onboardingId })
+      if (freshStatus?.status && freshStatus.status !== data.run_status) {
+        const { data: refreshed } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
+        setM365Actions(refreshed as M365Actions | null)
+      } else if (freshStatus?.status === 'checking_licence') {
+        m365PollRun(data.run_id, onboardingId)
+      }
+    }
   }
 
   async function m365StartRun(record: OnboardRecord) {
