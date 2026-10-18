@@ -796,8 +796,8 @@ export default function AdminOnboarding() {
 
   async function m365PollRun(runId: string, onboardingId: number) {
     setM365RunPolling(true)
-    for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 2000))
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, 5000))
       const result = await callIfo('check-run', { run_id: runId, onboarding_id: onboardingId })
       if (!result) break
       if (['ready_for_approval', 'licence_unavailable', 'completed', 'failed'].includes(result.status)) {
@@ -807,6 +807,19 @@ export default function AdminOnboarding() {
         setM365RunPolling(false)
         return
       }
+    }
+    await loadM365Actions(onboardingId)
+    setM365RunPolling(false)
+  }
+
+  async function m365RefreshStatus(runId: string, onboardingId: number) {
+    setM365RunPolling(true)
+    const result = await callIfo('check-run', { run_id: runId, onboarding_id: onboardingId })
+    if (result?.status) {
+      if (result.status === 'completed') showSuccess('M365 provisioning complete')
+      else if (result.status === 'failed') showError(result.friendlyError || 'Workflow failed')
+      else if (result.status === 'ready_for_approval') showSuccess('Licence available — ready for approval')
+      else if (result.status === 'licence_unavailable') showError(result.friendlyError || 'No licence seats available')
     }
     await loadM365Actions(onboardingId)
     setM365RunPolling(false)
@@ -1758,8 +1771,14 @@ export default function AdminOnboarding() {
 
                             {/* Checking licence */}
                             {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'checking_licence' && (
-                              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 13, color: '#1976d2' }}>Checking licence availability...</span>
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                  <span style={{ fontSize: 13, color: '#1976d2' }}>Checking licence availability...</span>
+                                </div>
+                                <button className="admin-btn-sm" disabled={m365RunPolling}
+                                  onClick={e => { e.stopPropagation(); m365RefreshStatus(m365Actions!.run_id!, selectedRecord.id) }}>
+                                  {m365RunPolling ? 'Checking...' : 'Refresh Status'}
+                                </button>
                               </div>
                             )}
 
