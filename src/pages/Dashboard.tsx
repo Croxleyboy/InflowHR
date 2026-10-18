@@ -1832,12 +1832,14 @@ export default function Dashboard() {
                       : t.record_type === 'Conflict' ? 'Leave/Shift Conflict'
                       : t.record_type === 'Missed Check-In' ? 'Missed Check-In'
                       : t.record_type === 'Meeting Reminder' ? '1:1 Meeting — Tomorrow'
+                      : t.record_type === 'M365 Provisioning' ? 'M365 Provisioning Approval'
                       : t.action
                     const detail = t.record_type === 'Leave' ? t.task_description?.split(' - ').slice(1).join(' - ')
                       : t.record_type === 'Expense' ? t.task_description
                       : t.record_type === 'Conflict' ? t.task_description
                       : t.record_type === 'Missed Check-In' ? t.task_description
                       : t.record_type === 'Meeting Reminder' ? t.task_description
+                      : t.record_type === 'M365 Provisioning' ? t.task_description
                       : null
                     return (
                       <button key={t.id} className="info-card-task-line" onClick={() => navigate(nav)}>

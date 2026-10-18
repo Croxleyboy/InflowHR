@@ -271,6 +271,13 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'M365 Provisioning') {
+    return (
+      <div className="notif-icon" style={{ background: '#0078D4' }}>
+        <svg width="20" height="20" viewBox="0 0 512 512"><rect width="512" height="512" rx="64" fill="none"/><circle cx="256" cy="256" r="100" fill="none" stroke="#fff" strokeWidth="32"/><circle cx="256" cy="256" r="16" fill="#fff"/></svg>
+      </div>
+    )
+  }
   return (
     <div className="notif-icon notif-icon-default">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
@@ -723,6 +730,8 @@ export default function Notifications() {
 
   const [conflictActionItem, setConflictActionItem] = useState<WorkflowItem | null>(null)
   const [conflictResolving, setConflictResolving] = useState(false)
+  const [m365ActionItem, setM365ActionItem] = useState<WorkflowItem | null>(null)
+  const [m365Approving, setM365Approving] = useState(false)
   const [hrResponseItem, setHrResponseItem] = useState<WorkflowItem | null>(null)
 
   async function handleConflictResolve(item: WorkflowItem, action: 'cancel_leave' | 'acknowledge') {
@@ -840,6 +849,10 @@ export default function Notifications() {
       setSkillActionItem(item)
       return
     }
+    if (item.record_type === 'M365 Provisioning') {
+      setM365ActionItem(item)
+      return
+    }
     if (!item.approval_id) {
       alert('This action has no linked record. Please re-seed demo data to fix.')
       return
@@ -866,6 +879,34 @@ export default function Notifications() {
     window.dispatchEvent(new Event('notifications-updated'))
   }
 
+  async function handleM365Approval(item: WorkflowItem, approve: boolean) {
+    setM365Approving(true)
+    try {
+      const now = new Date().toISOString()
+      const approverName = companyUser ? `${companyUser.first_name || ''} ${companyUser.last_name || ''}`.trim() : 'Unknown'
+      await supabase.from('workflow_tracker').update({
+        status: 'Complete',
+        approval_status: approve ? 'Approved' : 'Declined'
+      }).eq('id', item.id).eq('company_id', companyUser?.company_id)
+      const onboardId = item.extra_info ? parseInt(item.extra_info) : item.approval_id
+      if (onboardId) {
+        await supabase.from('onboarding_m365_actions').update({
+          approval_status: approve ? 'approved' : 'declined',
+          approved_by: approverName,
+          approved_at: now
+        }).eq('onboarding_id', onboardId).eq('company_id', companyUser?.company_id)
+      }
+      showSuccess(approve ? 'M365 provisioning approved' : 'M365 provisioning declined')
+      setM365ActionItem(null)
+      setActions(prev => prev.filter(a => a.id !== item.id))
+      window.dispatchEvent(new Event('notifications-updated'))
+    } catch {
+      showError('Failed to process approval')
+    } finally {
+      setM365Approving(false)
+    }
+  }
+
   function getActionTitle(item: WorkflowItem) {
     if (item.record_type === 'Expense') return t('notifications.expense_review')
     if (item.record_type === 'Leave') {
@@ -881,6 +922,7 @@ export default function Notifications() {
     if (item.record_type === 'Missed Check-In') return 'Missed Check-In'
     if (item.record_type === 'Meeting Reminder') return '1:1 Meeting — Tomorrow'
     if (item.record_type === 'HR Response') return 'HR Ticket Response'
+    if (item.record_type === 'M365 Provisioning') return 'M365 Provisioning Approval'
     return item.action
   }
 
@@ -920,7 +962,9 @@ export default function Notifications() {
       if (item.record_type === 'Expense') return t('notifications.expense_declined')
       if (item.record_type === 'Leave') return t('notifications.leave_declined')
       if (item.record_type === 'Skill Validation') return 'Skill Validation Rejected'
+      if (item.record_type === 'M365 Provisioning') return 'M365 Provisioning Declined'
     }
+    if (item.record_type === 'M365 Provisioning') return 'M365 Provisioning Request'
     return item.action
   }
 
@@ -1052,7 +1096,7 @@ export default function Notifications() {
           ))}
           {actions.map(item => (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
-              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : 'bar-grey'}`} />
+              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : item.record_type === 'M365 Provisioning' ? 'bar-blue' : 'bar-grey'}`} />
               <NotifIcon type={item.record_type} />
               <div className="notif-action-content">
                 <span className="notif-action-title">{getActionTitle(item)}</span>
@@ -1073,7 +1117,7 @@ export default function Notifications() {
                 </div>
               </div>
               <svg width="28" height="28" viewBox="0 0 32 32" fill="none" className="notif-action-arrow">
-                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' || item.record_type === 'Skill Validation' ? '#7c3aed' : item.record_type === 'Skills Mapping' ? '#0891b2' : item.record_type === 'Conflict' ? '#e65100' : item.record_type === 'Missed Check-In' ? '#e53935' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 6l10 10-10 10" stroke={item.record_type === 'Leave' ? '#43a047' : item.record_type === 'Timesheet' ? '#1565c0' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' || item.record_type === 'Skill Validation' ? '#7c3aed' : item.record_type === 'Skills Mapping' ? '#0891b2' : item.record_type === 'Conflict' ? '#e65100' : item.record_type === 'Missed Check-In' ? '#e53935' : item.record_type === 'M365 Provisioning' ? '#0078D4' : '#c62828'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
           ))}
@@ -1147,6 +1191,39 @@ export default function Notifications() {
                   style={{ padding: '10px 0', borderRadius: 10, border: '1.5px solid #999', background: 'transparent', color: '#666', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
                 >
                   {conflictResolving ? 'Processing...' : 'Acknowledge (No Change Needed)'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {m365ActionItem && (
+        <div className="my-profile-modal-overlay" onClick={() => setM365ActionItem(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: '#0078D4', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>M365 Provisioning Approval</span>
+              <button onClick={() => setM365ActionItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{m365ActionItem.emp_display_name}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>New starter M365 account provisioning</div>
+              {m365ActionItem.task_description && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>{m365ActionItem.task_description}</div>
+              )}
+              <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #90caf9', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#1565c0' }}>
+                Please confirm whether to proceed with creating the M365 account for this new starter.
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => handleM365Approval(m365ActionItem, true)} disabled={m365Approving}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365Approving ? 0.6 : 1 }}>
+                  {m365Approving ? 'Processing...' : 'Approve'}
+                </button>
+                <button onClick={() => handleM365Approval(m365ActionItem, false)} disabled={m365Approving}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365Approving ? 0.6 : 1 }}>
+                  {m365Approving ? 'Processing...' : 'Decline'}
                 </button>
               </div>
             </div>

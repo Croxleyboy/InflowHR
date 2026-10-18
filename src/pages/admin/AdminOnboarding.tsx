@@ -180,31 +180,46 @@ export default function AdminOnboarding() {
 
   const activeSteps: CustomStep[] = hasCustomSteps ? customSteps : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
 
-  // M365 provisioning state (InflowOnboarder)
+  // M365 provisioning state (InflowOnboarder v2)
   interface M365Actions {
     onboarding_id: number
-    create_account_status: string
-    create_account_error: any
+    run_id: string | null
+    run_status: string | null
+    run_error: any
+    run_result: any
     m365_user_id: string | null
     m365_upn: string | null
-    attempt_count_create: number
-    licence_status: string
-    licence_error: any
+    approval_sent_at: string | null
+    approval_status: string | null
+    approved_by: string | null
+    approved_at: string | null
+    attempt_count_run: number
+    is_v1_legacy: boolean
+    create_account_status: string | null
+    create_account_job_id: string | null
+    licence_status: string | null
     licence_sku_id: string | null
-    licence_flag: string | null
-    attempt_count_licence: number
+  }
+  interface IfoSettings {
+    approver_mode: 'manager' | 'nominated'
+    approver_name: string | null
+    approver_email: string | null
+    account_domain: string | null
+    licence_sku_id: string | null
+    licence_sku_name: string | null
+    licence_manager_name: string | null
+    group_name: string | null
   }
   const [m365Actions, setM365Actions] = useState<M365Actions | null>(null)
   const [m365Upn, setM365Upn] = useState('')
   const [m365DisplayName, setM365DisplayName] = useState('')
   const [m365Location, setM365Location] = useState('GB')
-  const [m365Creating, setM365Creating] = useState(false)
-  const [m365Polling, setM365Polling] = useState(false)
-  const [m365Licences, setM365Licences] = useState<{ skuId: string; name: string; available: number }[]>([])
-  const [m365SelectedSku, setM365SelectedSku] = useState('')
-  const [m365Assigning, setM365Assigning] = useState(false)
-  const [m365LicenceLoading, setM365LicenceLoading] = useState(false)
+  const [m365RunPolling, setM365RunPolling] = useState(false)
+  const [m365Starting, setM365Starting] = useState(false)
+  const [m365ApprovalSending, setM365ApprovalSending] = useState(false)
+  const [m365Proceeding, setM365Proceeding] = useState(false)
   const [ifoConnected, setIfoConnected] = useState(false)
+  const [ifoSettings, setIfoSettings] = useState<IfoSettings | null>(null)
 
 
   const COLUMN_MAP: Record<string, string> = {
@@ -705,7 +720,7 @@ export default function AdminOnboarding() {
     showSuccess('Record deleted')
   }
 
-  // ── M365 provisioning helpers ───────────────────────────────────────────
+  // ── M365 provisioning helpers (v2 workflow runs) ────────────────────────
 
   async function callIfo(action: string, body: Record<string, unknown> = {}) {
     if (!session || !selectedCompanyId) return null
@@ -723,16 +738,30 @@ export default function AdminOnboarding() {
   async function loadM365Actions(onboardingId: number) {
     const { data } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
     setM365Actions(data as M365Actions | null)
-    const { data: ifo } = await supabase.from('inflowonboarder_integrations').select('status').eq('company_id', selectedCompanyId).maybeSingle()
+    const { data: ifo } = await supabase.from('inflowonboarder_integrations')
+      .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name')
+      .eq('company_id', selectedCompanyId).maybeSingle()
     setIfoConnected(ifo?.status === 'connected_ready')
+    if (ifo) {
+      setIfoSettings({
+        approver_mode: ifo.approver_mode || 'manager',
+        approver_name: ifo.approver_name,
+        approver_email: ifo.approver_email,
+        account_domain: ifo.account_domain,
+        licence_sku_id: ifo.licence_sku_id,
+        licence_sku_name: ifo.licence_sku_name,
+        licence_manager_name: ifo.licence_manager_name,
+        group_name: ifo.group_name,
+      })
+    }
   }
 
-  async function m365CreateAccount(record: OnboardRecord) {
-    setM365Creating(true)
+  async function m365StartRun(record: OnboardRecord) {
+    setM365Starting(true)
     const upn = m365Upn || record.user_email
-    const result = await callIfo('create-account', {
+    const result = await callIfo('start-run', {
       onboarding_id: record.id,
-      attempt: m365Actions?.attempt_count_create || 0,
+      attempt: m365Actions?.attempt_count_run || 0,
       input: {
         givenName: record.firstname,
         surname: record.surname,
@@ -741,65 +770,133 @@ export default function AdminOnboarding() {
         usageLocation: m365Location || 'GB',
       },
     })
-    setM365Creating(false)
-    if (result?.jobId) {
-      showSuccess('M365 account creation started')
-      m365PollJob(result.jobId, record.id, 'create-account')
+    setM365Starting(false)
+    if (result?.run_id) {
+      showSuccess('M365 provisioning workflow started')
+      await loadM365Actions(record.id)
+      if (result.status === 'checking_licence') {
+        m365PollRun(result.run_id, record.id)
+      }
     }
   }
 
-  async function m365PollJob(jobId: string, onboardingId: number, jobType: string) {
-    setM365Polling(true)
+  async function m365PollRun(runId: string, onboardingId: number) {
+    setM365RunPolling(true)
     for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 3000))
-      const result = await callIfo('check-job', { job_id: jobId, onboarding_id: onboardingId, job_type: jobType })
+      await new Promise(r => setTimeout(r, 2000))
+      const result = await callIfo('check-run', { run_id: runId, onboarding_id: onboardingId })
       if (!result) break
-      if (result.status === 'succeeded') {
-        showSuccess(jobType === 'create-account' ? 'M365 account created' : 'Licence assigned')
+      if (['ready_for_approval', 'licence_unavailable', 'completed', 'failed'].includes(result.status)) {
+        if (result.status === 'completed') showSuccess('M365 provisioning complete')
+        else if (result.status === 'failed') showError(result.friendlyError || 'Workflow failed')
         await loadM365Actions(onboardingId)
-        setM365Polling(false)
-        return
-      }
-      if (result.status === 'failed') {
-        showError(result.friendlyError || 'Action failed')
-        await loadM365Actions(onboardingId)
-        setM365Polling(false)
+        setM365RunPolling(false)
         return
       }
     }
-    showError('Action is still running. Check back shortly.')
     await loadM365Actions(onboardingId)
-    setM365Polling(false)
+    setM365RunPolling(false)
   }
 
-  async function m365LoadLicences(onboardingId: number) {
-    setM365LicenceLoading(true)
-    const result = await callIfo('list-licences', { onboarding_id: onboardingId })
-    setM365LicenceLoading(false)
-    if (result?.result?.licences) {
-      setM365Licences(result.result.licences.filter((l: any) => l.available > 0).map((l: any) => ({
-        skuId: l.skuId,
-        name: l.name || l.skuPartNumber,
-        available: l.available,
-      })))
-    } else if (result?.jobId) {
-      showSuccess('Loading licences... this may take a moment')
+  async function m365RecheckRun(runId: string, onboardingId: number) {
+    setM365RunPolling(true)
+    const result = await callIfo('recheck-run', { run_id: runId, onboarding_id: onboardingId, attempt: (m365Actions?.attempt_count_run || 0) + 1 })
+    if (result) {
+      if (result.status === 'ready_for_approval') showSuccess('Licence now available — ready for approval')
+      else if (result.status === 'licence_unavailable') showError(result.friendlyError || 'Still no seats available')
+      await loadM365Actions(onboardingId)
+    }
+    setM365RunPolling(false)
+  }
+
+  async function m365SendApproval(record: OnboardRecord) {
+    if (!ifoSettings) return
+    setM365ApprovalSending(true)
+
+    let approverEmail = ifoSettings.approver_email
+    let approverName = ifoSettings.approver_name
+    if (ifoSettings.approver_mode === 'manager') {
+      approverEmail = (record as any).manager_email
+      approverName = (record as any).manager
+      if (!approverEmail) {
+        showError('This starter has no manager set. Set a manager first, or switch to a nominated approver in the Integrations settings.')
+        setM365ApprovalSending(false)
+        return
+      }
+    }
+
+    const taskDesc = JSON.stringify({
+      starter_name: `${record.firstname} ${record.surname}`,
+      upn: m365Actions?.m365_upn || m365Upn || record.user_email,
+      job_title: record.job_title,
+      start_date: record.start_date,
+    })
+
+    await supabase.from('workflow_tracker').insert({
+      company_id: selectedCompanyId,
+      record_type: 'M365 Provisioning',
+      record_id: record.id,
+      onboard_id: record.id,
+      assigned_to: approverEmail,
+      status: 'Pending',
+      approval_status: 'pending',
+      task_description: taskDesc,
+    })
+
+    await supabase.from('notifications').insert({
+      company_id: selectedCompanyId,
+      user_email: approverEmail,
+      type: 'action',
+      notification_type: 'm365_approval',
+      title: 'M365 Provisioning Approval',
+      message: `Please approve M365 account provisioning for ${record.firstname} ${record.surname}`,
+      send_email: true,
+    })
+
+    await supabase.from('onboarding_m365_actions').update({
+      approval_sent_at: new Date().toISOString(),
+      approval_status: 'pending',
+      updated_at: new Date().toISOString(),
+    }).eq('onboarding_id', record.id)
+
+    try {
+      await callIfo('check-run', { run_id: m365Actions?.run_id, onboarding_id: record.id })
+    } catch (_) {}
+
+    showSuccess(`Approval request sent to ${approverName || approverEmail}`)
+    await loadM365Actions(record.id)
+    setM365ApprovalSending(false)
+  }
+
+  async function m365ProceedRun(record: OnboardRecord) {
+    if (!m365Actions?.run_id) return
+    setM365Proceeding(true)
+    const result = await callIfo('proceed-run', {
+      run_id: m365Actions.run_id,
+      onboarding_id: record.id,
+      approval_evidence: { approved_by: m365Actions.approved_by, approved_at: m365Actions.approved_at },
+      attempt: (m365Actions?.attempt_count_run || 0) + 1,
+    })
+    setM365Proceeding(false)
+    if (result) {
+      if (result.status === 'completed') {
+        showSuccess('M365 provisioning complete')
+      } else if (result.status === 'provisioning' || result.status === 'checking_licence') {
+        showSuccess('Provisioning started — polling for completion...')
+        m365PollRun(m365Actions.run_id, record.id)
+        return
+      } else if (result.status === 'failed') {
+        showError(result.friendlyError || 'Provisioning failed')
+      }
+      await loadM365Actions(record.id)
     }
   }
 
-  async function m365AssignLicence(onboardingId: number) {
-    if (!m365Actions?.m365_user_id || !m365SelectedSku) { showError('Select a licence first'); return }
-    setM365Assigning(true)
-    const result = await callIfo('assign-licence', {
-      onboarding_id: onboardingId,
-      user_id: m365Actions.m365_user_id,
-      sku_id: m365SelectedSku,
-      attempt: m365Actions?.attempt_count_licence || 0,
-    })
-    setM365Assigning(false)
-    if (result?.jobId) {
-      showSuccess('Licence assignment started')
-      m365PollJob(result.jobId, onboardingId, 'licence')
+  async function m365MarkCompleteManual(onboardingId: number) {
+    const result = await callIfo('mark-complete-manual', { onboarding_id: onboardingId })
+    if (result) {
+      showSuccess('Marked as manually completed')
+      await loadM365Actions(onboardingId)
     }
   }
 
@@ -827,11 +924,10 @@ export default function AdminOnboarding() {
     setTab('workflow')
     if (features.inflowonboarder_integration) {
       setM365Actions(null)
-      setM365Upn(record.user_email)
+      const domain = ifoSettings?.account_domain
+      setM365Upn(domain ? `${record.firstname.toLowerCase()}.${record.surname.toLowerCase()}@${domain}` : record.user_email)
       setM365DisplayName(`${record.firstname} ${record.surname}`)
       setM365Location('GB')
-      setM365Licences([])
-      setM365SelectedSku('')
       loadM365Actions(record.id)
     }
   }
@@ -1585,18 +1681,31 @@ export default function AdminOnboarding() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                               <svg width="20" height="20" viewBox="0 0 512 512"><rect width="512" height="512" rx="64" fill="#0078D4"/><circle cx="256" cy="256" r="100" fill="none" stroke="#fff" strokeWidth="32"/><circle cx="256" cy="256" r="16" fill="#fff"/></svg>
                               <strong style={{ fontSize: 14, color: '#0078D4' }}>Microsoft 365 Provisioning</strong>
-                              {m365Polling && <span style={{ fontSize: 12, color: '#1976d2', marginLeft: 8 }}>Polling...</span>}
+                              {m365RunPolling && <span style={{ fontSize: 12, color: '#1976d2', marginLeft: 8 }}>Polling...</span>}
                             </div>
 
-                            {/* Step 1: Create Account */}
-                            {(!m365Actions || m365Actions.create_account_status === 'pending' || m365Actions.create_account_status === 'failed') && (
-                              <div style={{ marginBottom: 12 }}>
-                                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>1. Create M365 Account</p>
-                                {m365Actions?.create_account_status === 'failed' && m365Actions.create_account_error && (
-                                  <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 8, marginBottom: 8, fontSize: 12, color: '#c62828' }}>
-                                    {m365Actions.create_account_error.code}: {m365Actions.create_account_error.message}
-                                  </div>
+                            {/* V1 legacy starters */}
+                            {m365Actions?.is_v1_legacy && (
+                              <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10, marginBottom: 12 }}>
+                                <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Legacy provisioning (v1)</p>
+                                <p style={{ margin: '4px 0 8px', fontSize: 12, color: '#bf360c' }}>
+                                  This starter was created before the automated workflow. Account: {m365Actions.m365_upn || 'unknown'}.
+                                </p>
+                                {m365Actions.run_status !== 'completed' && (
+                                  <button className="admin-btn-sm" onClick={e => { e.stopPropagation(); m365MarkCompleteManual(selectedRecord.id) }}
+                                    style={{ alignSelf: 'flex-start' }}>
+                                    Mark Complete Manually
+                                  </button>
                                 )}
+                                {m365Actions.run_status === 'completed' && (
+                                  <p style={{ margin: 0, fontSize: 12, color: '#2e7d32', fontWeight: 600 }}>Marked as complete</p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* No run yet — start form */}
+                            {!m365Actions?.is_v1_legacy && (!m365Actions || (!m365Actions.run_id && !m365Actions.run_status)) && (
+                              <div style={{ marginBottom: 12 }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                     <div style={{ flex: 1, minWidth: 200 }}>
@@ -1612,78 +1721,155 @@ export default function AdminOnboarding() {
                                       <input className="admin-input" value={m365Location} onChange={e => setM365Location(e.target.value)} style={{ fontSize: 13 }} maxLength={2} />
                                     </div>
                                   </div>
-                                  <button className="admin-btn-sm admin-btn-save" disabled={m365Creating || m365Polling || !m365Upn}
-                                    onClick={e => { e.stopPropagation(); m365CreateAccount(selectedRecord) }}
+                                  <button className="admin-btn-sm admin-btn-save" disabled={m365Starting || m365RunPolling || !m365Upn}
+                                    onClick={e => { e.stopPropagation(); m365StartRun(selectedRecord) }}
                                     style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
-                                    {m365Creating ? 'Creating...' : m365Actions?.create_account_status === 'failed' ? 'Retry Create Account' : 'Create M365 Account'}
+                                    {m365Starting ? 'Starting...' : 'Start M365 Provisioning'}
                                   </button>
                                 </div>
                               </div>
                             )}
 
-                            {/* Step 1 in progress */}
-                            {m365Actions?.create_account_status === 'queued' || m365Actions?.create_account_status === 'running' ? (
+                            {/* Checking licence */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'checking_licence' && (
                               <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ fontSize: 13, color: '#1976d2' }}>Account creation in progress...</span>
-                              </div>
-                            ) : null}
-
-                            {/* Step 1 succeeded */}
-                            {m365Actions?.create_account_status === 'succeeded' && (
-                              <div style={{ marginBottom: 12, background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10 }}>
-                                <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>M365 account created</p>
-                                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>UPN: {m365Actions.m365_upn} · User ID: {m365Actions.m365_user_id}</p>
+                                <span style={{ fontSize: 13, color: '#1976d2' }}>Checking licence availability...</span>
                               </div>
                             )}
 
-                            {/* Step 2: Assign Licence */}
-                            {m365Actions?.create_account_status === 'succeeded' && (
-                              <div>
-                                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600 }}>2. Assign M365 Licence</p>
-                                {m365Actions.licence_status === 'succeeded' ? (
-                                  <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10 }}>
-                                    <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Licence assigned</p>
-                                    <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>SKU: {m365Actions.licence_sku_id}</p>
-                                  </div>
-                                ) : (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    {m365Actions.licence_status === 'failed' && m365Actions.licence_error && (
-                                      <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 8, fontSize: 12, color: '#c62828' }}>
-                                        {m365Actions.licence_error.code}: {m365Actions.licence_error.message}
-                                        {m365Actions.licence_flag === 'licence_needed' && (
-                                          <p style={{ margin: '4px 0 0', fontWeight: 600 }}>No free seats — purchase more, then click Re-check.</p>
-                                        )}
-                                      </div>
+                            {/* Licence unavailable */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'licence_unavailable' && (
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                  <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>No licence seats available</p>
+                                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
+                                    {m365Actions.run_error?.message || 'Purchase more seats then click Re-check.'}
+                                    {ifoSettings?.licence_manager_name && (
+                                      <> Contact {ifoSettings.licence_manager_name} to add seats.</>
                                     )}
-                                    {m365Licences.length === 0 ? (
-                                      <button className="admin-btn-sm" disabled={m365LicenceLoading || m365Polling}
-                                        onClick={e => { e.stopPropagation(); m365LoadLicences(selectedRecord.id) }}
-                                        style={{ alignSelf: 'flex-start' }}>
-                                        {m365LicenceLoading ? 'Loading...' : 'Load Available Licences'}
-                                      </button>
-                                    ) : (
-                                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                                        <div style={{ flex: 1, minWidth: 200 }}>
-                                          <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Select Licence</label>
-                                          <select className="admin-select" value={m365SelectedSku} onChange={e => setM365SelectedSku(e.target.value)} style={{ fontSize: 13 }}>
-                                            <option value="">Choose a licence...</option>
-                                            {m365Licences.map(l => (
-                                              <option key={l.skuId} value={l.skuId}>{l.name} ({l.available} available)</option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <button className="admin-btn-sm admin-btn-save" disabled={m365Assigning || m365Polling || !m365SelectedSku}
-                                          onClick={e => { e.stopPropagation(); m365AssignLicence(selectedRecord.id) }}
-                                          style={{ background: '#0078D4' }}>
-                                          {m365Assigning ? 'Assigning...' : 'Assign Licence'}
-                                        </button>
-                                      </div>
-                                    )}
-                                    {(m365Actions.licence_status === 'queued' || m365Actions.licence_status === 'running') && (
-                                      <span style={{ fontSize: 13, color: '#1976d2' }}>Licence assignment in progress...</span>
-                                    )}
-                                  </div>
-                                )}
+                                  </p>
+                                </div>
+                                <button className="admin-btn-sm" disabled={m365RunPolling}
+                                  onClick={e => { e.stopPropagation(); m365RecheckRun(m365Actions!.run_id!, selectedRecord.id) }}
+                                  style={{ alignSelf: 'flex-start' }}>
+                                  {m365RunPolling ? 'Re-checking...' : 'Done — Re-check'}
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Ready for approval — not yet sent */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'ready_for_approval' && !m365Actions.approval_status && (
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #90caf9', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                  <p style={{ margin: 0, fontSize: 13, color: '#1565c0', fontWeight: 600 }}>Licence available — ready for approval</p>
+                                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#1976d2' }}>
+                                    Approver: {ifoSettings?.approver_mode === 'manager'
+                                      ? ((selectedRecord as any).manager || 'Joiner\'s manager')
+                                      : (ifoSettings?.approver_name || ifoSettings?.approver_email || 'Nominated person')}
+                                  </p>
+                                </div>
+                                <button className="admin-btn-sm admin-btn-save" disabled={m365ApprovalSending}
+                                  onClick={e => { e.stopPropagation(); m365SendApproval(selectedRecord) }}
+                                  style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
+                                  {m365ApprovalSending ? 'Sending...' : 'Send for Approval'}
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Approval pending */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.approval_status === 'pending' && (
+                              <div style={{ marginBottom: 12, background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
+                                <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Waiting for approval</p>
+                                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
+                                  Sent to {ifoSettings?.approver_mode === 'manager'
+                                    ? ((selectedRecord as any).manager_email || 'manager')
+                                    : (ifoSettings?.approver_email || 'approver')}
+                                  {m365Actions.approval_sent_at && <> on {new Date(m365Actions.approval_sent_at).toLocaleString('en-GB')}</>}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Approval approved — proceed */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.approval_status === 'approved' && m365Actions?.run_status === 'ready_for_approval' && (
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                  <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Approved by {m365Actions.approved_by}</p>
+                                  {m365Actions.approved_at && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>{new Date(m365Actions.approved_at).toLocaleString('en-GB')}</p>}
+                                </div>
+                                <button className="admin-btn-sm admin-btn-save" disabled={m365Proceeding}
+                                  onClick={e => { e.stopPropagation(); m365ProceedRun(selectedRecord) }}
+                                  style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
+                                  {m365Proceeding ? 'Proceeding...' : 'Proceed — Create Account'}
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Approval declined */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.approval_status === 'declined' && (
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                  <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Approval declined</p>
+                                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
+                                    Declined by {m365Actions.approved_by}
+                                    {m365Actions.approved_at && <> on {new Date(m365Actions.approved_at).toLocaleString('en-GB')}</>}
+                                  </p>
+                                </div>
+                                <button className="admin-btn-sm admin-btn-save" disabled={m365ApprovalSending}
+                                  onClick={e => { e.stopPropagation(); m365SendApproval(selectedRecord) }}
+                                  style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
+                                  Re-send for Approval
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Provisioning in progress */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'provisioning' && (
+                              <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontSize: 13, color: '#1976d2' }}>Provisioning in progress — creating account, assigning licence and adding to group...</span>
+                              </div>
+                            )}
+
+                            {/* Awaiting approval (engine-side) */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'awaiting_approval' && (
+                              <div style={{ marginBottom: 12, background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
+                                <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Awaiting approval in InflowOnboarder</p>
+                                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
+                                  The engine is waiting for approval. This will update automatically.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Completed */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'completed' && (
+                              <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 12 }}>
+                                <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>M365 provisioning complete</p>
+                                {m365Actions.m365_upn && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>UPN: {m365Actions.m365_upn}</p>}
+                                {m365Actions.m365_user_id && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>User ID: {m365Actions.m365_user_id}</p>}
+                                {m365Actions.run_result?.manual && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>Completed manually by {m365Actions.run_result.completedBy}</p>}
+                              </div>
+                            )}
+
+                            {/* Failed */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'failed' && (
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                  <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Provisioning failed</p>
+                                  {m365Actions.run_error && (
+                                    <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
+                                      {m365Actions.run_error.code}: {m365Actions.run_error.message}
+                                    </p>
+                                  )}
+                                </div>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  <button className="admin-btn-sm" disabled={m365RunPolling}
+                                    onClick={e => { e.stopPropagation(); m365RecheckRun(m365Actions!.run_id!, selectedRecord.id) }}>
+                                    Re-check
+                                  </button>
+                                  <button className="admin-btn-sm"
+                                    onClick={e => { e.stopPropagation(); m365MarkCompleteManual(selectedRecord.id) }}>
+                                    Mark Complete Manually
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </div>
