@@ -130,69 +130,46 @@ function mockJobStatus(jobId: string) {
   return mockJobs[jobId] || { id: jobId, action: 'unknown', status: 'failed', result: null, error: { code: 'not_found', message: 'Job not found' } }
 }
 
-// ── Mock workflow run state machine ─────────────────────────────────────────
+// ── Mock workflow run state machine (DB-backed) ─────────────────────────────
+// Edge functions are stateless — each invocation may run in a fresh isolate,
+// so mock runs read/write their state from the onboarding_m365_actions row.
 
-let mockRunCounter = 0
-const mockRuns: Record<string, {
-  id: string
-  externalRef: string
-  status: string
-  result: unknown
-  error: unknown
-  createdAt: string
-  updatedAt: string
-}> = {}
-
-function mockStartRun(externalRef: string): { id: string; status: string } {
-  const existing = Object.values(mockRuns).find(r => r.externalRef === externalRef && r.status !== 'failed' && r.status !== 'completed')
-  if (existing) return { id: existing.id, status: existing.status }
-
-  mockRunCounter++
-  const id = `mock-run-${mockRunCounter}`
+function mockStartRun(onboardingId: number): { id: string; status: string; error?: unknown } {
+  const id = `mock-run-${onboardingId}`
   const status = MOCK_NO_LICENCE ? 'licence_unavailable' : 'ready_for_approval'
-  mockRuns[id] = {
+  return {
     id,
-    externalRef,
     status,
-    result: null,
-    error: MOCK_NO_LICENCE ? { code: 'no_free_licences', message: 'No free seats for ENTERPRISEPACK' } : null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    ...(MOCK_NO_LICENCE ? { error: { code: 'no_free_licences', message: 'No free seats for ENTERPRISEPACK' } } : {}),
   }
-  return { id, status }
 }
 
-function mockCheckRun(runId: string): unknown {
-  const run = mockRuns[runId]
-  if (!run) return { id: runId, status: 'failed', error: { code: 'not_found', message: 'Run not found' } }
-  return { ...run }
+async function mockCheckRun(sb: ReturnType<typeof getSupabase>, runId: string, onboardingId: number): Promise<unknown> {
+  const { data: row } = await sb.from('onboarding_m365_actions').select('run_status, run_error, run_result, m365_upn, m365_user_id').eq('onboarding_id', onboardingId).maybeSingle()
+  if (!row) return { id: runId, status: 'failed', error: { code: 'not_found', message: 'Run not found' } }
+  return { id: runId, status: row.run_status, error: row.run_error, result: row.run_result }
 }
 
-function mockRecheckRun(runId: string): unknown {
-  const run = mockRuns[runId]
-  if (!run) return { id: runId, status: 'failed', error: { code: 'not_found', message: 'Run not found' } }
-  if (run.status === 'licence_unavailable') {
-    run.status = 'ready_for_approval'
-    run.error = null
-    run.updatedAt = new Date().toISOString()
+function mockRecheckRun(currentStatus: string): unknown {
+  if (currentStatus === 'licence_unavailable') {
+    return { status: 'ready_for_approval', error: null }
   }
-  return { ...run }
+  return { status: currentStatus }
 }
 
-function mockProceedRun(runId: string): unknown {
-  const run = mockRuns[runId]
-  if (!run) return { id: runId, status: 'failed', error: { code: 'not_found', message: 'Run not found' } }
-  if (run.status === 'ready_for_approval' || run.status === 'awaiting_approval') {
-    run.status = 'completed'
-    run.result = {
-      userId: `mock-user-${runId.replace('mock-run-', '')}`,
-      userPrincipalName: `newstarter${runId.replace('mock-run-', '')}@contoso.com`,
-      temporaryPassword: `Tmp${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`,
+function mockProceedRun(runId: string, onboardingId: number, currentStatus: string): unknown {
+  if (currentStatus === 'ready_for_approval' || currentStatus === 'awaiting_approval') {
+    return {
+      status: 'completed',
+      result: {
+        userId: `mock-user-${onboardingId}`,
+        userPrincipalName: `newstarter${onboardingId}@contoso.com`,
+        temporaryPassword: `Tmp${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`,
+      },
+      error: null,
     }
-    run.error = null
-    run.updatedAt = new Date().toISOString()
   }
-  return { ...run }
+  return { status: currentStatus }
 }
 
 // ── Audit helper ────────────────────────────────────────────────────────────
@@ -523,10 +500,12 @@ Deno.serve(async (req) => {
       let runId: string
       let runStatus: string
 
+      let runError: unknown = null
       if (MOCK_MODE) {
         const mock = mockStartRun(onboarding_id)
         runId = mock.id
         runStatus = mock.status
+        if (mock.error) runError = mock.error
       } else {
         const apiKey = keyResult.apiKey
         const engineBody = {
@@ -567,7 +546,7 @@ Deno.serve(async (req) => {
         company_id,
         run_id: runId,
         run_status: runStatus,
-        run_error: null,
+        run_error: runError || null,
         run_result: null,
         approval_status: null,
         attempt_count_run: (attempt || 0) + 1,
@@ -587,7 +566,7 @@ Deno.serve(async (req) => {
       let runData: any
 
       if (MOCK_MODE) {
-        runData = mockCheckRun(run_id)
+        runData = await mockCheckRun(sb, run_id, onboarding_id)
       } else {
         const keyResult = await getApiKey(sb, company_id)
         if (keyResult instanceof Response) return keyResult
@@ -629,7 +608,8 @@ Deno.serve(async (req) => {
       let runData: any
 
       if (MOCK_MODE) {
-        runData = mockRecheckRun(run_id)
+        const { data: row } = await sb.from('onboarding_m365_actions').select('run_status').eq('onboarding_id', onboarding_id).maybeSingle()
+        runData = mockRecheckRun(row?.run_status || 'licence_unavailable')
       } else {
         const keyResult = await getApiKey(sb, company_id)
         if (keyResult instanceof Response) return keyResult
@@ -661,7 +641,8 @@ Deno.serve(async (req) => {
       let runData: any
 
       if (MOCK_MODE) {
-        runData = mockProceedRun(run_id)
+        const { data: row } = await sb.from('onboarding_m365_actions').select('run_status').eq('onboarding_id', onboarding_id).maybeSingle()
+        runData = mockProceedRun(run_id, onboarding_id, row?.run_status || 'ready_for_approval')
       } else {
         const keyResult = await getApiKey(sb, company_id)
         if (keyResult instanceof Response) return keyResult
