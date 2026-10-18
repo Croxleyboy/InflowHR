@@ -543,14 +543,26 @@ Deno.serve(async (req) => {
           const errData = res.data as any
           const existingRunId = errData?.error?.runId
           if (existingRunId) {
-            await sb.from('onboarding_m365_actions').upsert({
+            const checkRes = await engineFetch(apiKey, 'GET', `/v1/workflows/runs/${existingRunId}`)
+            const existingStatus = checkRes.ok ? (checkRes.data as any).status || 'checking_licence' : 'checking_licence'
+            const existingError = checkRes.ok ? (checkRes.data as any).error || null : null
+            const existingResult = checkRes.ok ? (checkRes.data as any).result || null : null
+            const updates: Record<string, unknown> = {
               onboarding_id,
               company_id,
               run_id: existingRunId,
+              run_status: existingStatus,
+              run_error: existingError,
               attempt_count_run: (attempt || 0) + 1,
               updated_at: new Date().toISOString(),
-            }, { onConflict: 'onboarding_id' })
-            return json({ run_id: existingRunId, status: 'exists', message: 'A run already exists for this starter. Polling will resume.' })
+            }
+            if (existingStatus === 'completed' && existingResult) {
+              updates.run_result = existingResult
+              updates.m365_user_id = existingResult.userId
+              updates.m365_upn = existingResult.userPrincipalName
+            }
+            await sb.from('onboarding_m365_actions').upsert(updates, { onConflict: 'onboarding_id' })
+            return json({ run_id: existingRunId, status: existingStatus, message: 'A run already exists for this starter.' })
           }
         }
 

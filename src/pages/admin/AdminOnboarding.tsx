@@ -756,7 +756,7 @@ export default function AdminOnboarding() {
         group_name: ifo.group_name,
       })
     }
-    if (data?.run_id && ['checking_licence', 'provisioning'].includes(data?.run_status)) {
+    if (data?.run_id && (!data?.run_status || ['checking_licence', 'provisioning'].includes(data?.run_status))) {
       const freshStatus = await callIfo('check-run', { run_id: data.run_id, onboarding_id: onboardingId })
       if (freshStatus?.status && freshStatus.status !== data.run_status) {
         const { data: refreshed } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
@@ -1769,8 +1769,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Checking licence */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'checking_licence' && (
+                            {/* Checking licence (or unknown status with a run_id) */}
+                            {!m365Actions?.is_v1_legacy && (m365Actions?.run_status === 'checking_licence' || (m365Actions?.run_id && !m365Actions?.run_status)) && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                   <span style={{ fontSize: 13, color: '#1976d2' }}>Checking licence availability...</span>
