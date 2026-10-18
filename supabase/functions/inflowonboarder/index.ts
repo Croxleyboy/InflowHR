@@ -637,7 +637,7 @@ Deno.serve(async (req) => {
       const { run_id, onboarding_id, attempt } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
 
-      const idempotencyKey = `starter-${onboarding_id}-recheck-${attempt || 0}`
+      const idempotencyKey = `starter-${onboarding_id}-recheck-${attempt || 0}-${Date.now()}`
       let runData: any
 
       if (MOCK_MODE) {
@@ -670,7 +670,7 @@ Deno.serve(async (req) => {
       const { run_id, onboarding_id, attempt } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
 
-      const idempotencyKey = `starter-${onboarding_id}-proceed-${attempt || 0}`
+      const idempotencyKey = `starter-${onboarding_id}-proceed-${attempt || 0}-${Date.now()}`
       let runData: any
 
       if (MOCK_MODE) {
