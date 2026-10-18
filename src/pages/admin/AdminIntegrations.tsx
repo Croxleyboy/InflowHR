@@ -54,6 +54,25 @@ interface InflowOnboarderIntegration {
   status_detail: Record<string, unknown>
   status_checked_at: string | null
   connected_at: string | null
+  approver_mode: 'nominated' | 'manager'
+  approver_name: string | null
+  approver_email: string | null
+  licence_manager_name: string | null
+  licence_manager_email: string | null
+  licence_sku_id: string | null
+  licence_sku_name: string | null
+  group_name: string | null
+  account_domain: string | null
+  settings_updated_at: string | null
+}
+
+interface IfoLicence {
+  skuId: string
+  skuPartNumber: string
+  name: string
+  total: number
+  assigned: number
+  available: number
 }
 
 // ── Official brand logos as inline SVGs ──────────────────────────────────────
@@ -176,6 +195,19 @@ export default function AdminIntegrations() {
   const [ifoConnecting, setIfoConnecting] = useState(false)
   const [ifoChecking, setIfoChecking] = useState(false)
   const [showIfoModal, setShowIfoModal] = useState(false)
+  const [ifoSettingsOpen, setIfoSettingsOpen] = useState(false)
+  const [ifoSettingsSaving, setIfoSettingsSaving] = useState(false)
+  const [ifoApproverMode, setIfoApproverMode] = useState<'manager' | 'nominated'>('manager')
+  const [ifoApproverName, setIfoApproverName] = useState('')
+  const [ifoApproverEmail, setIfoApproverEmail] = useState('')
+  const [ifoLicenceManagerName, setIfoLicenceManagerName] = useState('')
+  const [ifoLicenceManagerEmail, setIfoLicenceManagerEmail] = useState('')
+  const [ifoLicenceSkuId, setIfoLicenceSkuId] = useState('')
+  const [ifoLicenceSkuName, setIfoLicenceSkuName] = useState('')
+  const [ifoGroupName, setIfoGroupName] = useState('')
+  const [ifoAccountDomain, setIfoAccountDomain] = useState('')
+  const [ifoLicences, setIfoLicences] = useState<IfoLicence[]>([])
+  const [ifoLicencesLoading, setIfoLicencesLoading] = useState(false)
 
   const [modulrApiKey, setModulrApiKey] = useState('')
   const [modulrHmacSecret, setModulrHmacSecret] = useState('')
@@ -208,7 +240,7 @@ export default function AdminIntegrations() {
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
-      supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at').eq('company_id', companyId).maybeSingle(),
+      supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at').eq('company_id', companyId).maybeSingle(),
     ])
 
     if (featuresRes.data) {
@@ -242,7 +274,19 @@ export default function AdminIntegrations() {
     const sage = sageRes.data as SageIntegration | null
     setSageIntegration(sage)
     setModulrIntegration(modulrRes.data as ModulrIntegration | null)
-    setIfoIntegration(ifoRes.data as InflowOnboarderIntegration | null)
+    const ifoData = ifoRes.data as InflowOnboarderIntegration | null
+    setIfoIntegration(ifoData)
+    if (ifoData) {
+      setIfoApproverMode(ifoData.approver_mode || 'manager')
+      setIfoApproverName(ifoData.approver_name || '')
+      setIfoApproverEmail(ifoData.approver_email || '')
+      setIfoLicenceManagerName(ifoData.licence_manager_name || '')
+      setIfoLicenceManagerEmail(ifoData.licence_manager_email || '')
+      setIfoLicenceSkuId(ifoData.licence_sku_id || '')
+      setIfoLicenceSkuName(ifoData.licence_sku_name || '')
+      setIfoGroupName(ifoData.group_name || '')
+      setIfoAccountDomain(ifoData.account_domain || '')
+    }
 
     // Load Xero employee sync status
     if (xeroRes.data && (xeroRes.data as XeroIntegration).sync_status === 'connected') {
@@ -270,6 +314,8 @@ export default function AdminIntegrations() {
     setModulrExpanded(false)
     setAiHelpExpanded(false)
     setIfoExpanded(false)
+    setIfoSettingsOpen(false)
+    setIfoLicences([])
     loadAll()
   }, [companyId])
 
@@ -542,6 +588,44 @@ export default function AdminIntegrations() {
       setIfoIntegration(null)
       showSuccess('InflowOnboarder disconnected')
       loadAll()
+    }
+  }
+
+  async function saveIfoSettings() {
+    if (!companyId) return
+    if (ifoApproverMode === 'nominated' && (!ifoApproverName.trim() || !ifoApproverEmail.trim())) {
+      showError('Nominated approver requires a name and email')
+      return
+    }
+    setIfoSettingsSaving(true)
+    const result = await callEdgeFunction('inflowonboarder', {
+      action: 'save-settings',
+      approver_mode: ifoApproverMode,
+      approver_name: ifoApproverMode === 'nominated' ? ifoApproverName.trim() : null,
+      approver_email: ifoApproverMode === 'nominated' ? ifoApproverEmail.trim() : null,
+      licence_manager_name: ifoLicenceManagerName.trim() || null,
+      licence_manager_email: ifoLicenceManagerEmail.trim() || null,
+      licence_sku_id: ifoLicenceSkuId || null,
+      licence_sku_name: ifoLicenceSkuName || null,
+      group_name: ifoGroupName.trim() || null,
+      account_domain: ifoAccountDomain.trim() || null,
+    })
+    setIfoSettingsSaving(false)
+    if (result?.saved) {
+      showSuccess('Onboarding settings saved')
+      loadAll()
+    }
+  }
+
+  async function loadIfoLicences() {
+    if (!companyId) return
+    setIfoLicencesLoading(true)
+    const result = await callEdgeFunction('inflowonboarder', { action: 'list-licences' })
+    setIfoLicencesLoading(false)
+    if (result?.result?.licences) {
+      setIfoLicences(result.result.licences)
+    } else if (result?.status === 'running') {
+      showError('Licences are still loading. Try again in a few seconds.')
     }
   }
 
@@ -1144,6 +1228,130 @@ export default function AdminIntegrations() {
                 </div>
               )}
 
+              {ifoIntegration?.status === 'connected_ready' && (
+                <div style={{ ...sectionStyle, marginTop: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                    onClick={() => setIfoSettingsOpen(!ifoSettingsOpen)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <strong style={{ fontSize: 14, color: 'var(--text, #1a1a2e)' }}>Onboarding Settings</strong>
+                      {!ifoIntegration.account_domain && (
+                        <span style={{ fontSize: 11, color: '#e65100', background: 'rgba(255,152,0,.12)', padding: '2px 8px', borderRadius: 6, fontWeight: 600 }}>
+                          Settings incomplete
+                        </span>
+                      )}
+                      {ifoIntegration.settings_updated_at && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                          Last saved: {new Date(ifoIntegration.settings_updated_at).toLocaleString('en-GB')}
+                        </span>
+                      )}
+                    </div>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(ifoSettingsOpen)}>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </div>
+
+                  {ifoSettingsOpen && (
+                    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+                      {/* Approver */}
+                      <div>
+                        <label style={{ ...labelStyle, marginBottom: 8, display: 'block' }}>Provisioning Approver</label>
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text, #333)' }}>
+                            <input type="radio" name="ifo-approver" checked={ifoApproverMode === 'manager'} onChange={() => setIfoApproverMode('manager')} />
+                            Joiner&rsquo;s manager
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text, #333)' }}>
+                            <input type="radio" name="ifo-approver" checked={ifoApproverMode === 'nominated'} onChange={() => setIfoApproverMode('nominated')} />
+                            Nominated person
+                          </label>
+                        </div>
+                        {ifoApproverMode === 'nominated' && (
+                          <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                            <input value={ifoApproverName} onChange={e => setIfoApproverName(e.target.value)} placeholder="Approver name" style={{ ...inputStyle, flex: 1, minWidth: 160 }} />
+                            <input value={ifoApproverEmail} onChange={e => setIfoApproverEmail(e.target.value)} placeholder="Approver email" style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
+                          </div>
+                        )}
+                        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                          This person must approve each M365 provisioning before the account is created.
+                        </p>
+                      </div>
+
+                      {/* Licence manager */}
+                      <div>
+                        <label style={{ ...labelStyle, marginBottom: 6, display: 'block' }}>Licence Manager (notified when seats run out)</label>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          <input value={ifoLicenceManagerName} onChange={e => setIfoLicenceManagerName(e.target.value)} placeholder="Name" style={{ ...inputStyle, flex: 1, minWidth: 160 }} />
+                          <input value={ifoLicenceManagerEmail} onChange={e => setIfoLicenceManagerEmail(e.target.value)} placeholder="Email" style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
+                        </div>
+                      </div>
+
+                      {/* Licence type */}
+                      <div>
+                        <label style={{ ...labelStyle, marginBottom: 6, display: 'block' }}>Default Licence Type</label>
+                        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <select
+                            value={ifoLicenceSkuId}
+                            onChange={e => {
+                              const sku = ifoLicences.find(l => l.skuId === e.target.value)
+                              setIfoLicenceSkuId(e.target.value)
+                              setIfoLicenceSkuName(sku?.name || '')
+                            }}
+                            style={{ ...inputStyle, flex: 1, minWidth: 200, fontFamily: 'inherit' }}
+                          >
+                            <option value="">— Select a licence —</option>
+                            {ifoLicences.map(l => (
+                              <option key={l.skuId} value={l.skuId}>
+                                {l.name} ({l.available} available of {l.total})
+                              </option>
+                            ))}
+                            {ifoLicenceSkuId && !ifoLicences.find(l => l.skuId === ifoLicenceSkuId) && (
+                              <option value={ifoLicenceSkuId}>{ifoLicenceSkuName || ifoLicenceSkuId} (saved)</option>
+                            )}
+                          </select>
+                          <button className="admin-btn" onClick={loadIfoLicences} disabled={ifoLicencesLoading} style={{ whiteSpace: 'nowrap' }}>
+                            {ifoLicencesLoading ? 'Loading...' : 'Load Licences'}
+                          </button>
+                        </div>
+                        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                          The licence assigned to each new joiner. Click &ldquo;Load Licences&rdquo; to refresh from M365.
+                        </p>
+                      </div>
+
+                      {/* Group + Domain */}
+                      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <label style={{ ...labelStyle, marginBottom: 6, display: 'block' }}>New Joiner Group</label>
+                          <input value={ifoGroupName} onChange={e => setIfoGroupName(e.target.value)} placeholder="e.g. All Staff" style={inputStyle} />
+                          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                            M365 group to add each new account to (optional).
+                          </p>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <label style={{ ...labelStyle, marginBottom: 6, display: 'block' }}>Account Domain</label>
+                          <input value={ifoAccountDomain} onChange={e => setIfoAccountDomain(e.target.value)} placeholder="e.g. contoso.com" style={inputStyle} />
+                          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                            Domain for new account email addresses.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Save button */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
+                        <button
+                          className="admin-btn admin-btn-primary"
+                          onClick={saveIfoSettings}
+                          disabled={ifoSettingsSaving}
+                          style={{ minWidth: 160, background: '#0078D4' }}
+                        >
+                          {ifoSettingsSaving ? 'Saving...' : 'Save Settings'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {ifoIntegration?.status === 'connected_not_ready' && (
                 <div style={{ ...sectionStyle, background: 'rgba(255,248,225,.5)', borderColor: '#ffe0b2' }}>
                   <strong style={{ fontSize: 13, color: '#e65100' }}>M365 Not Fully Ready</strong>
@@ -1192,11 +1400,11 @@ export default function AdminIntegrations() {
                 <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>How it works</p>
                 <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
                   <li>Connect using an API key from your InflowOnboarder dashboard</li>
-                  <li>When onboarding reaches the &ldquo;Create Accounts &amp; Licences&rdquo; step, M365 actions appear automatically</li>
-                  <li>Create a Microsoft 365 account for the new starter with one click</li>
-                  <li>Choose and assign a licence (E1, E3, E5 etc.) from your available pool</li>
+                  <li>Configure onboarding settings: approver, licence type, group and domain</li>
+                  <li>When onboarding reaches the &ldquo;Create Accounts &amp; Licences&rdquo; step, start a workflow run</li>
+                  <li>The engine checks licence availability, then waits for approval in InflowHR</li>
+                  <li>Once approved, the account is created, licensed and added to the group automatically</li>
                   <li>Full audit trail of every provisioning action in InflowHR</li>
-                  <li>Safe retries with idempotency — no duplicate accounts created</li>
                 </ul>
               </div>
             </div>

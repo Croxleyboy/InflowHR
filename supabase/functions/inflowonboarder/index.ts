@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const ALLOWED_ORIGIN = 'https://app.inflowhr.com'
 const ENGINE_URL = Deno.env.get('INFLOWONBOARDER_API_URL') || 'http://localhost:3001'
 const MOCK_MODE = Deno.env.get('INFLOWONBOARDER_MOCK') === 'true'
+const MOCK_NO_LICENCE = Deno.env.get('INFLOWONBOARDER_MOCK_NO_LICENCE') === 'true'
 const ENCRYPTION_KEY_HEX = Deno.env.get('INFLOWONBOARDER_ENCRYPTION_KEY') || ''
 
 const corsHeaders = {
@@ -18,7 +19,7 @@ function json(body: unknown, status = 200) {
   })
 }
 
-// ── AES-256-GCM encryption (same pattern as modulr shared) ──────────────────
+// ── AES-256-GCM encryption ─────────────────────────────────────────────────
 
 async function getEncryptionKey(): Promise<CryptoKey> {
   const keyBytes = new Uint8Array(ENCRYPTION_KEY_HEX.match(/.{1,2}/g)!.map(b => parseInt(b, 16)))
@@ -54,15 +55,15 @@ async function verifyAdmin(
   sb: ReturnType<typeof getSupabase>,
   authHeader: string | null,
   companyId: string,
-): Promise<{ userId: string } | Response> {
+): Promise<{ userId: string; userEmail: string } | Response> {
   if (!authHeader) return json({ error: 'Unauthorized' }, 401)
   const { data: { user }, error } = await sb.auth.getUser(authHeader.replace('Bearer ', ''))
   if (error || !user) return json({ error: 'Unauthorized' }, 401)
   const { data: sa } = await sb.from('super_admins').select('id').eq('email', user.email).maybeSingle()
-  if (sa) return { userId: user.id }
+  if (sa) return { userId: user.id, userEmail: user.email! }
   const { data: cu } = await sb.from('company_users').select('role').eq('auth_user_id', user.id).eq('company_id', companyId).eq('is_active', true).maybeSingle()
   if (!cu || (cu.role !== 'admin' && cu.role !== 'hr')) return json({ error: 'Admin access required' }, 403)
-  return { userId: user.id }
+  return { userId: user.id, userEmail: user.email! }
 }
 
 // ── Engine HTTP calls ───────────────────────────────────────────────────────
@@ -90,7 +91,7 @@ async function engineFetch(
   return { ok: res.ok, status: res.status, data }
 }
 
-// ── Mock engine responses ───────────────────────────────────────────────────
+// ── Mock engine ─────────────────────────────────────────────────────────────
 
 function mockConnections() {
   return {
@@ -110,13 +111,7 @@ function mockAction(action: string, input: Record<string, unknown>, idempotencyK
 
   mockJobCounter++
   const jobId = `mock-job-${mockJobCounter}`
-  if (action === 'm365.user.create') {
-    mockJobs[jobId] = {
-      id: jobId, action, status: 'succeeded', idempotencyKey,
-      result: { userId: `mock-user-${mockJobCounter}`, userPrincipalName: input.userPrincipalName },
-      error: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    }
-  } else if (action === 'm365.license.list') {
+  if (action === 'm365.license.list') {
     mockJobs[jobId] = {
       id: jobId, action, status: 'succeeded', idempotencyKey,
       result: {
@@ -127,18 +122,76 @@ function mockAction(action: string, input: Record<string, unknown>, idempotencyK
       },
       error: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     }
-  } else if (action === 'm365.license.assign') {
-    mockJobs[jobId] = {
-      id: jobId, action, status: 'succeeded', idempotencyKey,
-      result: { assigned: true, skuId: input.skuId },
-      error: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    }
   }
   return { jobId }
 }
 
 function mockJobStatus(jobId: string) {
   return mockJobs[jobId] || { id: jobId, action: 'unknown', status: 'failed', result: null, error: { code: 'not_found', message: 'Job not found' } }
+}
+
+// ── Mock workflow run state machine ─────────────────────────────────────────
+
+let mockRunCounter = 0
+const mockRuns: Record<string, {
+  id: string
+  externalRef: string
+  status: string
+  result: unknown
+  error: unknown
+  createdAt: string
+  updatedAt: string
+}> = {}
+
+function mockStartRun(externalRef: string): { id: string; status: string } {
+  const existing = Object.values(mockRuns).find(r => r.externalRef === externalRef && r.status !== 'failed' && r.status !== 'completed')
+  if (existing) return { id: existing.id, status: existing.status }
+
+  mockRunCounter++
+  const id = `mock-run-${mockRunCounter}`
+  const status = MOCK_NO_LICENCE ? 'licence_unavailable' : 'ready_for_approval'
+  mockRuns[id] = {
+    id,
+    externalRef,
+    status,
+    result: null,
+    error: MOCK_NO_LICENCE ? { code: 'no_free_licences', message: 'No free seats for ENTERPRISEPACK' } : null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+  return { id, status }
+}
+
+function mockCheckRun(runId: string): unknown {
+  const run = mockRuns[runId]
+  if (!run) return { id: runId, status: 'failed', error: { code: 'not_found', message: 'Run not found' } }
+  return { ...run }
+}
+
+function mockRecheckRun(runId: string): unknown {
+  const run = mockRuns[runId]
+  if (!run) return { id: runId, status: 'failed', error: { code: 'not_found', message: 'Run not found' } }
+  if (run.status === 'licence_unavailable') {
+    run.status = 'ready_for_approval'
+    run.error = null
+    run.updatedAt = new Date().toISOString()
+  }
+  return { ...run }
+}
+
+function mockProceedRun(runId: string): unknown {
+  const run = mockRuns[runId]
+  if (!run) return { id: runId, status: 'failed', error: { code: 'not_found', message: 'Run not found' } }
+  if (run.status === 'ready_for_approval' || run.status === 'awaiting_approval') {
+    run.status = 'completed'
+    run.result = {
+      userId: `mock-user-${runId.replace('mock-run-', '')}`,
+      userPrincipalName: `newstarter${runId.replace('mock-run-', '')}@contoso.com`,
+    }
+    run.error = null
+    run.updatedAt = new Date().toISOString()
+  }
+  return { ...run }
 }
 
 // ── Audit helper ────────────────────────────────────────────────────────────
@@ -189,10 +242,51 @@ const ERROR_MESSAGES: Record<string, string> = {
   connection_not_ready: 'Microsoft 365 is not fully connected in InflowOnboarder. Finish the setup there first.',
   rate_limited: 'Too many requests. Please try again shortly.',
   unauthenticated: 'Your InflowOnboarder API key is invalid or has been revoked.',
+  run_exists: 'A workflow run already exists for this starter.',
+  group_not_allowed: 'That group does not exist or is not allowed in your tenant.',
+  approval_evidence_required: 'Complete the approval in InflowHR first before proceeding.',
 }
 
 function friendlyError(code: string, fallbackMessage?: string): string {
   return ERROR_MESSAGES[code] || fallbackMessage || `An unexpected error occurred (${code}).`
+}
+
+// ── Helper: get decrypted API key for a company ─────────────────────────────
+
+async function getApiKey(sb: ReturnType<typeof getSupabase>, companyId: string): Promise<{ apiKey: string; config: any } | Response> {
+  const { data: config } = await sb.from('inflowonboarder_integrations').select('*').eq('company_id', companyId).maybeSingle()
+  if (!config || config.status === 'not_connected') return json({ error: 'InflowOnboarder is not connected' }, 400)
+  if (config.status !== 'connected_ready' && config.status !== 'connected_not_ready') {
+    return json({ error: 'InflowOnboarder connection needs attention. Re-check the connection on the Integrations page.' }, 400)
+  }
+  const apiKey = await decryptApiKey(config.api_key_encrypted, config.api_key_iv)
+  return { apiKey, config }
+}
+
+// ── Helper: handle engine error responses ───────────────────────────────────
+
+function handleEngineError(
+  sb: ReturnType<typeof getSupabase>,
+  companyId: string,
+  res: { ok: boolean; status: number; data: unknown },
+): Response | null {
+  if (res.ok) return null
+  const errData = res.data as any
+  const code = errData?.error?.code || 'unknown'
+
+  if (res.status === 401) {
+    sb.from('inflowonboarder_integrations').update({ status: 'needs_attention', updated_at: new Date().toISOString() }).eq('company_id', companyId)
+    return json({ error: friendlyError('unauthenticated') }, 401)
+  }
+  if (res.status === 403) return json({ error: friendlyError(code || 'forbidden_scope') }, 403)
+  if (res.status === 429) return json({ error: friendlyError('rate_limited') }, 429)
+  if (res.status >= 500) return json({ error: 'InflowOnboarder is temporarily unavailable. Please try again shortly.' }, 503)
+
+  if (res.status === 409 && code === 'run_exists') {
+    return json({ error: friendlyError('run_exists'), run_id: errData?.error?.runId }, 409)
+  }
+
+  return json({ error: friendlyError(code, errData?.error?.message) }, res.status)
 }
 
 // ── Main handler ────────────────────────────────────────────────────────────
@@ -210,7 +304,7 @@ Deno.serve(async (req) => {
 
     const authResult = await verifyAdmin(sb, authHeader, company_id)
     if (authResult instanceof Response) return authResult
-    const { userId } = authResult
+    const { userId, userEmail } = authResult
 
     // ── connect ─────────────────────────────────────────────────────────────
     if (action === 'connect') {
@@ -295,7 +389,21 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       }).eq('company_id', company_id)
 
-      return json({ status, status_detail: statusDetail, api_key_hint: config.api_key_hint })
+      return json({
+        status,
+        status_detail: statusDetail,
+        api_key_hint: config.api_key_hint,
+        approver_mode: config.approver_mode,
+        approver_name: config.approver_name,
+        approver_email: config.approver_email,
+        licence_manager_name: config.licence_manager_name,
+        licence_manager_email: config.licence_manager_email,
+        licence_sku_id: config.licence_sku_id,
+        licence_sku_name: config.licence_sku_name,
+        group_name: config.group_name,
+        account_domain: config.account_domain,
+        settings_updated_at: config.settings_updated_at,
+      })
     }
 
     // ── disconnect ──────────────────────────────────────────────────────────
@@ -305,55 +413,309 @@ Deno.serve(async (req) => {
       return json({ status: 'not_connected' })
     }
 
-    // ── create-account ──────────────────────────────────────────────────────
-    if (action === 'create-account') {
-      const { onboarding_id, input, attempt } = body
-      if (!onboarding_id || !input) return json({ error: 'Missing onboarding_id or input' }, 400)
+    // ── save-settings ───────────────────────────────────────────────────────
+    if (action === 'save-settings') {
+      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain } = body
 
-      const required = ['givenName', 'surname', 'displayName', 'userPrincipalName', 'usageLocation']
-      for (const f of required) {
-        if (!input[f]) return json({ error: `Missing required field: ${f}` }, 400)
+      if (approver_mode && !['nominated', 'manager'].includes(approver_mode)) {
+        return json({ error: 'approver_mode must be "nominated" or "manager"' }, 400)
+      }
+      if (approver_mode === 'nominated' && (!approver_name || !approver_email)) {
+        return json({ error: 'Nominated approver requires a name and email' }, 400)
+      }
+      if (approver_email && !approver_email.includes('@')) {
+        return json({ error: 'Invalid approver email address' }, 400)
+      }
+      if (licence_manager_email && !licence_manager_email.includes('@')) {
+        return json({ error: 'Invalid licence manager email address' }, 400)
       }
 
+      const updates: Record<string, unknown> = {
+        settings_updated_at: new Date().toISOString(),
+        settings_updated_by: userId,
+        updated_at: new Date().toISOString(),
+      }
+      if (approver_mode !== undefined) updates.approver_mode = approver_mode
+      if (approver_name !== undefined) updates.approver_name = approver_name
+      if (approver_email !== undefined) updates.approver_email = approver_email
+      if (licence_manager_name !== undefined) updates.licence_manager_name = licence_manager_name
+      if (licence_manager_email !== undefined) updates.licence_manager_email = licence_manager_email
+      if (licence_sku_id !== undefined) updates.licence_sku_id = licence_sku_id
+      if (licence_sku_name !== undefined) updates.licence_sku_name = licence_sku_name
+      if (group_name !== undefined) updates.group_name = group_name
+      if (account_domain !== undefined) updates.account_domain = account_domain
+
+      const { error: updateErr } = await sb.from('inflowonboarder_integrations').update(updates).eq('company_id', company_id)
+      if (updateErr) return json({ error: 'Failed to save settings: ' + updateErr.message }, 500)
+
+      await audit(sb, company_id, userId, 'inflowonboarder_save_settings', {
+        approver_mode, licence_sku_id, licence_sku_name, group_name, account_domain,
+      })
+
+      return json({ saved: true })
+    }
+
+    // ── load-settings ───────────────────────────────────────────────────────
+    if (action === 'load-settings') {
+      const { data: config } = await sb.from('inflowonboarder_integrations').select('*').eq('company_id', company_id).maybeSingle()
+      if (!config) return json({ error: 'Integration not configured' }, 400)
+
+      return json({
+        approver_mode: config.approver_mode,
+        approver_name: config.approver_name,
+        approver_email: config.approver_email,
+        licence_manager_name: config.licence_manager_name,
+        licence_manager_email: config.licence_manager_email,
+        licence_sku_id: config.licence_sku_id,
+        licence_sku_name: config.licence_sku_name,
+        group_name: config.group_name,
+        account_domain: config.account_domain,
+        settings_updated_at: config.settings_updated_at,
+      })
+    }
+
+    // ── list-licences ───────────────────────────────────────────────────────
+    if (action === 'list-licences') {
       const { data: config } = await sb.from('inflowonboarder_integrations').select('*').eq('company_id', company_id).maybeSingle()
       if (!config || config.status !== 'connected_ready') return json({ error: 'InflowOnboarder is not connected or M365 is not ready' }, 400)
 
-      const idempotencyKey = `starter-${onboarding_id}-create-account-${attempt || 0}`
-      let jobId: string
+      const idempotencyKey = `company-${company_id}-list-licences-${Date.now()}`
 
       if (MOCK_MODE) {
-        const mock = mockAction('m365.user.create', input, idempotencyKey)
-        jobId = mock.jobId
-      } else {
-        const apiKey = await decryptApiKey(config.api_key_encrypted, config.api_key_iv)
-        const res = await engineFetch(apiKey, 'POST', '/v1/actions/m365.user.create', { input }, idempotencyKey)
+        const mock = mockAction('m365.license.list', {}, idempotencyKey)
+        const jobData = mockJobStatus(mock.jobId)
+        return json(jobData)
+      }
 
-        if (res.status === 401) {
-          await sb.from('inflowonboarder_integrations').update({ status: 'needs_attention', updated_at: new Date().toISOString() }).eq('company_id', company_id)
-          return json({ error: friendlyError('unauthenticated') }, 401)
+      const apiKey = await decryptApiKey(config.api_key_encrypted, config.api_key_iv)
+      const res = await engineFetch(apiKey, 'POST', '/v1/actions/m365.license.list', { input: {} }, idempotencyKey)
+      if (!res.ok) {
+        const code = (res.data as any)?.error?.code
+        return json({ error: friendlyError(code || 'unknown') }, res.status)
+      }
+      const jobId = (res.data as any).jobId
+
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 3000))
+        const pollRes = await engineFetch(apiKey, 'GET', `/v1/jobs/${jobId}`)
+        if (pollRes.ok) {
+          const jd = pollRes.data as any
+          if (jd.status === 'succeeded' || jd.status === 'failed') return json(jd)
         }
-        if (res.status === 403) return json({ error: friendlyError((res.data as any)?.error?.code || 'forbidden_scope') }, 403)
-        if (res.status === 409) return json({ error: friendlyError((res.data as any)?.error?.code || 'connection_not_ready') }, 409)
-        if (res.status === 429) return json({ error: friendlyError('rate_limited') }, 429)
-        if (!res.ok) return json({ error: friendlyError((res.data as any)?.error?.code, (res.data as any)?.error?.message) }, res.status)
-        jobId = (res.data as any).jobId
+      }
+      return json({ jobId, status: 'running', message: 'Still loading licences. Try again shortly.' })
+    }
+
+    // ── start-run ───────────────────────────────────────────────────────────
+    if (action === 'start-run') {
+      const { onboarding_id, input, attempt } = body
+      if (!onboarding_id) return json({ error: 'Missing onboarding_id' }, 400)
+      if (!input?.displayName || !input?.userPrincipalName || !input?.usageLocation) {
+        return json({ error: 'Missing required fields: displayName, userPrincipalName, usageLocation' }, 400)
+      }
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+      const { config } = keyResult
+
+      const idempotencyKey = `starter-${onboarding_id}-start-run-${attempt || 0}`
+      let runId: string
+      let runStatus: string
+
+      if (MOCK_MODE) {
+        const mock = mockStartRun(onboarding_id)
+        runId = mock.id
+        runStatus = mock.status
+      } else {
+        const apiKey = keyResult.apiKey
+        const engineBody = {
+          externalRef: onboarding_id,
+          input: {
+            ...input,
+            licenceSkuId: config.licence_sku_id || undefined,
+            groupName: config.group_name || undefined,
+          },
+        }
+        const res = await engineFetch(apiKey, 'POST', '/v1/workflows/m365.joiner/runs', engineBody, idempotencyKey)
+
+        if (res.status === 409) {
+          const errData = res.data as any
+          const existingRunId = errData?.error?.runId
+          if (existingRunId) {
+            await sb.from('onboarding_m365_actions').upsert({
+              onboarding_id,
+              company_id,
+              run_id: existingRunId,
+              attempt_count_run: (attempt || 0) + 1,
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'onboarding_id' })
+            return json({ run_id: existingRunId, status: 'exists', message: 'A run already exists for this starter. Polling will resume.' })
+          }
+        }
+
+        const errResp = handleEngineError(sb, company_id, res)
+        if (errResp) return errResp
+
+        const resData = res.data as any
+        runId = resData.id || resData.runId
+        runStatus = resData.status || 'checking_licence'
       }
 
       await sb.from('onboarding_m365_actions').upsert({
         onboarding_id,
         company_id,
-        create_account_job_id: jobId,
-        create_account_status: 'queued',
-        create_account_error: null,
-        attempt_count_create: (attempt || 0) + 1,
+        run_id: runId,
+        run_status: runStatus,
+        run_error: null,
+        run_result: null,
+        approval_status: null,
+        attempt_count_run: (attempt || 0) + 1,
+        is_v1_legacy: false,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'onboarding_id' })
 
-      await audit(sb, company_id, userId, 'inflowonboarder_create_account', { onboarding_id, jobId })
-      return json({ jobId })
+      await audit(sb, company_id, userId, 'inflowonboarder_start_run', { onboarding_id, runId, runStatus })
+      return json({ run_id: runId, status: runStatus })
     }
 
-    // ── check-job ───────────────────────────────────────────────────────────
+    // ── check-run ───────────────────────────────────────────────────────────
+    if (action === 'check-run') {
+      const { run_id, onboarding_id } = body
+      if (!run_id) return json({ error: 'Missing run_id' }, 400)
+
+      let runData: any
+
+      if (MOCK_MODE) {
+        runData = mockCheckRun(run_id)
+      } else {
+        const keyResult = await getApiKey(sb, company_id)
+        if (keyResult instanceof Response) return keyResult
+        const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/workflows/runs/${run_id}`)
+        const errResp = handleEngineError(sb, company_id, res)
+        if (errResp) return errResp
+        runData = res.data
+      }
+
+      if (onboarding_id && runData.status) {
+        const updates: Record<string, unknown> = {
+          run_status: runData.status,
+          updated_at: new Date().toISOString(),
+        }
+        if (runData.status === 'completed' && runData.result) {
+          updates.run_result = runData.result
+          updates.m365_user_id = runData.result.userId
+          updates.m365_upn = runData.result.userPrincipalName
+        }
+        if (runData.status === 'failed' && runData.error) {
+          updates.run_error = runData.error
+        }
+        if (runData.status === 'licence_unavailable' && runData.error) {
+          updates.run_error = runData.error
+        }
+        await sb.from('onboarding_m365_actions').update(updates).eq('onboarding_id', onboarding_id)
+      }
+
+      const friendlyErrorMsg = runData.error ? friendlyError(runData.error.code, runData.error.message) : null
+      return json({ ...runData, friendlyError: friendlyErrorMsg })
+    }
+
+    // ── recheck-run ─────────────────────────────────────────────────────────
+    if (action === 'recheck-run') {
+      const { run_id, onboarding_id, attempt } = body
+      if (!run_id) return json({ error: 'Missing run_id' }, 400)
+
+      const idempotencyKey = `starter-${onboarding_id}-recheck-${attempt || 0}`
+      let runData: any
+
+      if (MOCK_MODE) {
+        runData = mockRecheckRun(run_id)
+      } else {
+        const keyResult = await getApiKey(sb, company_id)
+        if (keyResult instanceof Response) return keyResult
+        const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/workflows/runs/${run_id}/recheck`, {}, idempotencyKey)
+        const errResp = handleEngineError(sb, company_id, res)
+        if (errResp) return errResp
+        runData = res.data
+      }
+
+      if (onboarding_id && runData.status) {
+        await sb.from('onboarding_m365_actions').update({
+          run_status: runData.status,
+          run_error: runData.error || null,
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_recheck_run', { onboarding_id, run_id, newStatus: runData.status })
+      const friendlyErrorMsg = runData.error ? friendlyError(runData.error.code, runData.error.message) : null
+      return json({ ...runData, friendlyError: friendlyErrorMsg })
+    }
+
+    // ── proceed-run ─────────────────────────────────────────────────────────
+    if (action === 'proceed-run') {
+      const { run_id, onboarding_id, approval_evidence, attempt } = body
+      if (!run_id) return json({ error: 'Missing run_id' }, 400)
+
+      const idempotencyKey = `starter-${onboarding_id}-proceed-${attempt || 0}`
+      let runData: any
+
+      if (MOCK_MODE) {
+        runData = mockProceedRun(run_id)
+      } else {
+        const keyResult = await getApiKey(sb, company_id)
+        if (keyResult instanceof Response) return keyResult
+        const engineBody: Record<string, unknown> = {}
+        if (approval_evidence) engineBody.approvalEvidence = approval_evidence
+        const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/workflows/runs/${run_id}/proceed`, engineBody, idempotencyKey)
+
+        if (res.status === 400) {
+          const code = (res.data as any)?.error?.code
+          if (code === 'approval_evidence_required') {
+            return json({ error: friendlyError('approval_evidence_required') }, 400)
+          }
+        }
+
+        const errResp = handleEngineError(sb, company_id, res)
+        if (errResp) return errResp
+        runData = res.data
+      }
+
+      if (onboarding_id && runData.status) {
+        const updates: Record<string, unknown> = {
+          run_status: runData.status,
+          run_error: runData.error || null,
+          updated_at: new Date().toISOString(),
+        }
+        if (runData.status === 'completed' && runData.result) {
+          updates.run_result = runData.result
+          updates.m365_user_id = runData.result.userId
+          updates.m365_upn = runData.result.userPrincipalName
+        }
+        await sb.from('onboarding_m365_actions').update(updates).eq('onboarding_id', onboarding_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_proceed_run', { onboarding_id, run_id, newStatus: runData.status })
+      const friendlyErrorMsg = runData.error ? friendlyError(runData.error.code, runData.error.message) : null
+      return json({ ...runData, friendlyError: friendlyErrorMsg })
+    }
+
+    // ── mark-complete-manual ────────────────────────────────────────────────
+    if (action === 'mark-complete-manual') {
+      const { onboarding_id, notes } = body
+      if (!onboarding_id) return json({ error: 'Missing onboarding_id' }, 400)
+
+      await sb.from('onboarding_m365_actions').update({
+        run_status: 'completed',
+        run_result: { manual: true, notes: notes || 'Marked complete manually', completedBy: userEmail },
+        run_error: null,
+        updated_at: new Date().toISOString(),
+      }).eq('onboarding_id', onboarding_id)
+
+      await audit(sb, company_id, userId, 'inflowonboarder_mark_complete_manual', { onboarding_id, notes })
+      return json({ status: 'completed', manual: true })
+    }
+
+    // ── v1 legacy: check-job (kept for in-flight v1 starters) ───────────────
     if (action === 'check-job') {
       const { job_id, onboarding_id, job_type } = body
       if (!job_id) return json({ error: 'Missing job_id' }, 400)
@@ -382,17 +744,11 @@ Deno.serve(async (req) => {
           }
           if (jobData.status === 'failed' && jobData.error) {
             updates.create_account_error = jobData.error
-            if (jobData.error.code === 'connection_failed') {
-              await sb.from('inflowonboarder_integrations').update({ status: 'needs_attention', updated_at: new Date().toISOString() }).eq('company_id', company_id)
-            }
           }
         } else if (job_type === 'licence') {
           updates.licence_status = jobData.status
           if (jobData.status === 'failed' && jobData.error) {
             updates.licence_error = jobData.error
-            if (jobData.error.code === 'no_free_licences') {
-              updates.licence_flag = 'licence_needed'
-            }
           }
           if (jobData.status === 'succeeded') {
             updates.licence_flag = null
@@ -404,89 +760,6 @@ Deno.serve(async (req) => {
 
       const friendlyErrorMsg = jobData.error ? friendlyError(jobData.error.code, jobData.error.message) : null
       return json({ ...jobData, friendlyError: friendlyErrorMsg })
-    }
-
-    // ── list-licences ───────────────────────────────────────────────────────
-    if (action === 'list-licences') {
-      const { onboarding_id } = body
-
-      const { data: config } = await sb.from('inflowonboarder_integrations').select('*').eq('company_id', company_id).maybeSingle()
-      if (!config || config.status !== 'connected_ready') return json({ error: 'InflowOnboarder is not connected or M365 is not ready' }, 400)
-
-      const idempotencyKey = `starter-${onboarding_id}-list-licences-${Date.now()}`
-      let jobId: string
-
-      if (MOCK_MODE) {
-        const mock = mockAction('m365.license.list', {}, idempotencyKey)
-        jobId = mock.jobId
-      } else {
-        const apiKey = await decryptApiKey(config.api_key_encrypted, config.api_key_iv)
-        const res = await engineFetch(apiKey, 'POST', '/v1/actions/m365.license.list', { input: {} }, idempotencyKey)
-        if (!res.ok) {
-          const code = (res.data as any)?.error?.code
-          return json({ error: friendlyError(code || 'unknown') }, res.status)
-        }
-        jobId = (res.data as any).jobId
-      }
-
-      if (MOCK_MODE) {
-        const jobData = mockJobStatus(jobId)
-        return json(jobData)
-      }
-
-      // Poll for result (up to 30s in edge function, client will poll for longer jobs)
-      const apiKey = await decryptApiKey(config.api_key_encrypted, config.api_key_iv)
-      for (let i = 0; i < 10; i++) {
-        await new Promise(r => setTimeout(r, 3000))
-        const res = await engineFetch(apiKey, 'GET', `/v1/jobs/${jobId}`)
-        if (res.ok) {
-          const jd = res.data as any
-          if (jd.status === 'succeeded' || jd.status === 'failed') return json(jd)
-        }
-      }
-      return json({ jobId, status: 'running', message: 'Still loading licences. Poll with check-job.' })
-    }
-
-    // ── assign-licence ──────────────────────────────────────────────────────
-    if (action === 'assign-licence') {
-      const { onboarding_id, user_id: m365UserId, sku_id, attempt } = body
-      if (!onboarding_id || !m365UserId || !sku_id) return json({ error: 'Missing onboarding_id, user_id, or sku_id' }, 400)
-
-      const { data: config } = await sb.from('inflowonboarder_integrations').select('*').eq('company_id', company_id).maybeSingle()
-      if (!config || config.status !== 'connected_ready') return json({ error: 'InflowOnboarder is not connected or M365 is not ready' }, 400)
-
-      const idempotencyKey = `starter-${onboarding_id}-assign-licence-${attempt || 0}`
-      let jobId: string
-
-      if (MOCK_MODE) {
-        const mock = mockAction('m365.license.assign', { userId: m365UserId, skuId: sku_id }, idempotencyKey)
-        jobId = mock.jobId
-      } else {
-        const apiKey = await decryptApiKey(config.api_key_encrypted, config.api_key_iv)
-        const res = await engineFetch(apiKey, 'POST', '/v1/actions/m365.license.assign', { input: { userId: m365UserId, skuId: sku_id } }, idempotencyKey)
-        if (res.status === 401) {
-          await sb.from('inflowonboarder_integrations').update({ status: 'needs_attention', updated_at: new Date().toISOString() }).eq('company_id', company_id)
-          return json({ error: friendlyError('unauthenticated') }, 401)
-        }
-        if (!res.ok) {
-          const code = (res.data as any)?.error?.code
-          return json({ error: friendlyError(code || 'unknown', (res.data as any)?.error?.message) }, res.status)
-        }
-        jobId = (res.data as any).jobId
-      }
-
-      await sb.from('onboarding_m365_actions').update({
-        licence_job_id: jobId,
-        licence_status: 'queued',
-        licence_error: null,
-        licence_sku_id: sku_id,
-        licence_flag: null,
-        attempt_count_licence: (attempt || 0) + 1,
-        updated_at: new Date().toISOString(),
-      }).eq('onboarding_id', onboarding_id)
-
-      await audit(sb, company_id, userId, 'inflowonboarder_assign_licence', { onboarding_id, jobId, sku_id })
-      return json({ jobId })
     }
 
     return json({ error: `Unknown action: ${action}` }, 400)

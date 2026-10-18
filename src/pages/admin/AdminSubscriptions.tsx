@@ -242,6 +242,24 @@ export default function AdminSubscriptions() {
     setSavingFeature(null)
   }
 
+  async function toggleIndividualAddon(featureKey: string, currentlyEnabled: boolean) {
+    if (!selectedCompanyId) return
+    setSavingFeature(featureKey)
+    const { error } = await supabase
+      .from('company_features')
+      .upsert(
+        { company_id: selectedCompanyId, feature_key: featureKey, is_enabled: !currentlyEnabled, custom_price: null },
+        { onConflict: 'company_id,feature_key' }
+      )
+    if (error) {
+      showError('Failed to update add-on')
+    } else {
+      showSuccess(`Add-on ${!currentlyEnabled ? 'enabled' : 'disabled'}`)
+    }
+    await loadCompanyFeatures(selectedCompanyId)
+    setSavingFeature(null)
+  }
+
   async function saveAllCustomPrices() {
     if (!selectedCompanyId) return
     setSavingAllPrices(true)
@@ -339,6 +357,8 @@ export default function AdminSubscriptions() {
   const packAPricing = pricing.find(p => p.feature_key === 'pack_a')
   const packBPricing = pricing.find(p => p.feature_key === 'pack_b')
   const supportPackages = pricing.filter(p => p.is_support_package)
+  const PACK_ALL_KEYS = ['hr_core', 'pack_a', 'pack_b', ...PACK_A_FEATURE_KEYS, ...PACK_B_FEATURE_KEYS]
+  const individualAddons = pricing.filter(p => p.is_addon && !p.is_support_package && !PACK_ALL_KEYS.includes(p.feature_key))
 
   const packAEnabled = isFeatureEnabled('pack_a')
   const packBEnabled = isFeatureEnabled('pack_b')
@@ -350,8 +370,12 @@ export default function AdminSubscriptions() {
     if (!isFeatureEnabled(sp.feature_key)) return sum
     return sum + (sp.flat_price ?? 0)
   }, 0)
+  const addonCost = individualAddons.reduce((sum, a) => {
+    if (!isFeatureEnabled(a.feature_key)) return sum
+    return sum + (a.flat_price != null ? a.flat_price : a.default_price * employeeCount)
+  }, 0)
   const platformFee = parseFloat(monthlyPlatformFee) || 30
-  const totalCost = coreCost + packACost + packBCost + supportCost + platformFee
+  const totalCost = coreCost + packACost + packBCost + supportCost + addonCost + platformFee
 
   const tabStyle = (t: string) => ({
     padding: '10px 24px',
@@ -524,6 +548,41 @@ export default function AdminSubscriptions() {
                       </div>
                     ))}
                   </div>
+                </>
+              )}
+
+              {/* Individual Add-ons */}
+              {individualAddons.length > 0 && (
+                <>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#6a1b9a', marginTop: 8 }}>Individual Add-ons</div>
+                  {individualAddons.map(addon => (
+                    <div key={addon.id} className="sub-pricing-card sub-pricing-card-addon" style={{ borderLeft: '4px solid #8e24aa' }}>
+                      <div className="sub-pricing-name">{addon.display_name}</div>
+                      <div className="sub-pricing-desc">{addon.description}</div>
+                      <div className="sub-pricing-input-row">
+                        <label>Price</label>
+                        <span>{currencySymbol(currency)}</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          className="sub-pricing-input"
+                          value={editPrices[addon.id] || ''}
+                          onChange={e => setEditPrices(prev => ({ ...prev, [addon.id]: e.target.value }))}
+                        />
+                        <span>/user/month</span>
+                      </div>
+                      <div className="sub-pricing-actions">
+                        <label className="admin-toggle-switch">
+                          <input type="checkbox" checked={addon.is_active} onChange={() => togglePricingActive(addon)} />
+                          <span className="admin-toggle-slider" />
+                        </label>
+                        <button className="sub-pricing-save" onClick={() => savePricingItem(addon)} disabled={savingPricing === addon.id}>
+                          {savingPricing === addon.id ? 'Saving...' : 'Save'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </>
               )}
 
@@ -868,6 +927,36 @@ export default function AdminSubscriptions() {
                     </div>
                   )}
 
+                  {/* Individual Add-ons */}
+                  {individualAddons.length > 0 && (
+                    <div style={{ background: '#f3e5f5', border: '2px solid #8e24aa', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: '#6a1b9a', marginBottom: 10 }}>Individual Add-ons</div>
+                      {individualAddons.map(addon => {
+                        const enabled = isFeatureEnabled(addon.feature_key)
+                        return (
+                          <div key={addon.feature_key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid #ce93d8' }}>
+                            <label className="admin-toggle-switch">
+                              <input
+                                type="checkbox"
+                                checked={enabled}
+                                onChange={() => toggleIndividualAddon(addon.feature_key, enabled)}
+                                disabled={savingFeature === addon.feature_key}
+                              />
+                              <span className="admin-toggle-slider" />
+                            </label>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13 }}>{addon.display_name}</div>
+                              <div style={{ fontSize: 12, color: '#666' }}>{addon.description}</div>
+                            </div>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: '#6a1b9a' }}>
+                              {addon.flat_price != null ? formatCurrency(addon.flat_price, currency) : `${formatCurrency(addon.default_price, currency)}/user`}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
                   {/* Monthly Platform Fee */}
                   <div style={{ background: '#e3f2fd', border: '2px solid #1565c0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -944,6 +1033,14 @@ export default function AdminSubscriptions() {
                             <td>{formatCurrency(sp.flat_price ?? 0, currency)} flat</td>
                             <td>—</td>
                             <td>{formatCurrency(sp.flat_price ?? 0, currency)}</td>
+                          </tr>
+                        ))}
+                        {individualAddons.filter(a => isFeatureEnabled(a.feature_key)).map(a => (
+                          <tr key={a.feature_key}>
+                            <td>{a.display_name}</td>
+                            <td>{a.flat_price != null ? `${formatCurrency(a.flat_price, currency)} flat` : `${formatCurrency(a.default_price, currency)}/user`}</td>
+                            <td>{a.flat_price != null ? '—' : String(employeeCount)}</td>
+                            <td>{formatCurrency(a.flat_price != null ? a.flat_price : a.default_price * employeeCount, currency)}</td>
                           </tr>
                         ))}
                         <tr>
