@@ -667,7 +667,7 @@ Deno.serve(async (req) => {
 
     // ── proceed-run ─────────────────────────────────────────────────────────
     if (action === 'proceed-run') {
-      const { run_id, onboarding_id, approval_evidence, attempt } = body
+      const { run_id, onboarding_id, attempt } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
 
       const idempotencyKey = `starter-${onboarding_id}-proceed-${attempt || 0}`
@@ -679,16 +679,7 @@ Deno.serve(async (req) => {
       } else {
         const keyResult = await getApiKey(sb, company_id)
         if (keyResult instanceof Response) return keyResult
-        const engineBody: Record<string, unknown> = {}
-        if (approval_evidence) engineBody.approvalEvidence = approval_evidence
-        const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/workflows/runs/${run_id}/proceed`, engineBody, idempotencyKey)
-
-        if (res.status === 400) {
-          const code = (res.data as any)?.error?.code
-          if (code === 'approval_evidence_required') {
-            return json({ error: friendlyError('approval_evidence_required') }, 400)
-          }
-        }
+        const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/workflows/runs/${run_id}/proceed`, {}, idempotencyKey)
 
         const errResp = handleEngineError(sb, company_id, res)
         if (errResp) return errResp
