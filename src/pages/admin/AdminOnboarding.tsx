@@ -46,7 +46,7 @@ const OFFBOARD_STEPS = [
   { key: 'approve_resignation', label: 'Approve Resignation', icon: '📝', description: 'Review and formally approve the employee resignation or termination. Update HR records with the leaving reason and confirm final working date.', role: 'HR' },
   { key: 'recover_equipment', label: 'Recover Equipment', icon: '💻', description: 'Collect all company equipment — laptop, monitor, phone, building pass, keys, parking permit. Complete the asset return checklist and update the inventory register.', role: 'HR' },
   { key: 'leaving_meeting', label: 'Organise Leaving Meeting', icon: '🤝', description: 'Schedule an exit interview and farewell meeting with the line manager. Cover handover tasks, knowledge transfer, and gather feedback on their experience.', role: 'Manager' },
-  { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable Active Directory / Entra account, revoke Microsoft 365 licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
+  { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable Microsoft Entra ID account, revoke Microsoft 365 licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
   { key: 'reassign_reports', label: 'Reassign Direct Reports', icon: '👥', description: 'Reassign any employees who report to this person to a new manager. This also transfers all pending approval actions (leave, expenses, timesheets) to the new manager.', role: 'HR' },
   { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR' },
 ]
@@ -112,7 +112,7 @@ const WORKFLOW_STEPS = [
   { key: 'notify_manager', label: 'Notify Manager', icon: '📧', description: 'Inform the line manager of confirmed start date, equipment status and onboarding checklist. Share new starter profile.' },
   { key: 'plan_day1', label: 'Plan First Day', icon: '📅', description: 'Prepare day-one schedule: building access, desk assignment, welcome pack, team introductions and lunch arrangements.' },
   { key: 'inform_starter', label: 'Inform Starter', icon: '✉️', description: 'Send welcome email to the new starter with start date, office location, dress code, parking info and first day schedule.' },
-  { key: 'accounts', label: 'Create Accounts & Licences', icon: '🔐', description: 'Create Active Directory / Entra account, assign Microsoft 365 licence, add to security groups and distribution lists. Generate temporary password.' },
+  { key: 'accounts', label: 'Create Accounts & Licences', icon: '🔐', description: 'Create Microsoft Entra ID account, assign Microsoft 365 licence, add to security groups and distribution lists. Generate temporary password.' },
   { key: 'day1_access', label: 'Day 1 Access Verification', icon: '✅', description: 'Confirm the new starter can log in, access email, Teams, shared drives and all required business applications on their first day.' },
 ]
 
@@ -1708,18 +1708,18 @@ export default function AdminOnboarding() {
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                    <div style={{ flex: 1, minWidth: 200 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
                                       <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>UPN (email)</label>
-                                      <input className="admin-input" value={m365Upn} onChange={e => setM365Upn(e.target.value)} style={{ fontSize: 13 }} />
+                                      <input className="admin-input" value={m365Upn} onChange={e => setM365Upn(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
                                     </div>
-                                    <div style={{ flex: 1, minWidth: 200 }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
                                       <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Display Name</label>
-                                      <input className="admin-input" value={m365DisplayName} onChange={e => setM365DisplayName(e.target.value)} style={{ fontSize: 13 }} />
+                                      <input className="admin-input" value={m365DisplayName} onChange={e => setM365DisplayName(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
                                     </div>
-                                    <div style={{ width: 80 }}>
-                                      <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Country</label>
-                                      <input className="admin-input" value={m365Location} onChange={e => setM365Location(e.target.value)} style={{ fontSize: 13 }} maxLength={2} />
-                                    </div>
+                                  </div>
+                                  <div style={{ width: 100 }}>
+                                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Country</label>
+                                    <input className="admin-input" value={m365Location} onChange={e => setM365Location(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} maxLength={2} />
                                   </div>
                                   <button className="admin-btn-sm admin-btn-save" disabled={m365Starting || m365RunPolling || !m365Upn}
                                     onClick={e => { e.stopPropagation(); m365StartRun(selectedRecord) }}
@@ -1845,6 +1845,13 @@ export default function AdminOnboarding() {
                                 <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>M365 provisioning complete</p>
                                 {m365Actions.m365_upn && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>UPN: {m365Actions.m365_upn}</p>}
                                 {m365Actions.m365_user_id && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>User ID: {m365Actions.m365_user_id}</p>}
+                                {m365Actions.run_result?.temporaryPassword && (
+                                  <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(255,248,225,.7)', border: '1px solid #ffe0b2', borderRadius: 4 }}>
+                                    <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: '#e65100' }}>Temporary Password</p>
+                                    <p style={{ margin: '2px 0 0', fontSize: 13, fontFamily: 'monospace', color: '#bf360c', userSelect: 'all' }}>{m365Actions.run_result.temporaryPassword}</p>
+                                    <p style={{ margin: '4px 0 0', fontSize: 11, color: '#e65100' }}>Share securely with the new starter — they must change it on first sign-in.</p>
+                                  </div>
+                                )}
                                 {m365Actions.run_result?.manual && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>Completed manually by {m365Actions.run_result.completedBy}</p>}
                               </div>
                             )}
