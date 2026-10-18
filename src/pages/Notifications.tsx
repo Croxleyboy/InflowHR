@@ -884,7 +884,12 @@ export default function Notifications() {
     setM365Approving(true)
     try {
       const now = new Date().toISOString()
-      const approverDisplayName = employeeName || HARDCODED_EMAIL || 'Unknown'
+      let approverDisplayName = employeeName || ''
+      if (!approverDisplayName && HARDCODED_EMPLOYEE_ID && companyUser?.company_id) {
+        const { data: emp } = await supabase.from('employees').select('first_name, last_name').eq('id', HARDCODED_EMPLOYEE_ID).eq('company_id', companyUser.company_id).maybeSingle()
+        if (emp) approverDisplayName = `${emp.first_name} ${emp.last_name}`.trim()
+      }
+      if (!approverDisplayName) approverDisplayName = HARDCODED_EMAIL || 'Unknown'
       const approverEmail = HARDCODED_EMAIL || ''
       await supabase.from('workflow_tracker').update({
         status: 'Complete',
