@@ -32,6 +32,7 @@ interface WorkflowItem {
   employee_email: string
   assigned_to: string
   approval_id: number | null
+  onboard_id: number | null
   task_description: string | null
   approval_status: string | null
   extra_info: string | null
@@ -888,7 +889,7 @@ export default function Notifications() {
         status: 'Complete',
         approval_status: approve ? 'Approved' : 'Declined'
       }).eq('id', item.id).eq('company_id', companyUser?.company_id)
-      const onboardId = item.extra_info ? parseInt(item.extra_info) : item.approval_id
+      const onboardId = item.onboard_id || (item.extra_info ? parseInt(item.extra_info) : item.approval_id)
       if (onboardId) {
         await supabase.from('onboarding_m365_actions').update({
           approval_status: approve ? 'approved' : 'declined',
@@ -1209,10 +1210,13 @@ export default function Notifications() {
             </div>
             <div style={{ padding: 20 }}>
               <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{m365ActionItem.emp_display_name}</div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>New starter M365 account provisioning</div>
-              {m365ActionItem.task_description && (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, lineHeight: 1.5 }}>{m365ActionItem.task_description}</div>
-              )}
+              {(() => {
+                let desc = m365ActionItem.task_description || ''
+                try { const parsed = JSON.parse(desc); desc = `${parsed.starter_name || ''} — ${parsed.job_title || 'New Starter'}${parsed.start_date ? `, starting ${new Date(parsed.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}\nM365 account: ${parsed.upn || ''}` } catch {}
+                return desc.split('\n').map((line: string, i: number) => (
+                  <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: i === 0 ? 2 : 0, lineHeight: 1.5 }}>{line}</div>
+                ))
+              })()}
               <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #90caf9', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#1565c0' }}>
                 Please confirm whether to proceed with creating the M365 account for this new starter.
               </div>

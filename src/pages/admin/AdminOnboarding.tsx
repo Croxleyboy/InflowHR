@@ -852,12 +852,10 @@ export default function AdminOnboarding() {
       }
     }
 
-    const taskDesc = JSON.stringify({
-      starter_name: `${record.firstname} ${record.surname}`,
-      upn: m365Actions?.m365_upn || m365Upn || record.user_email,
-      job_title: record.job_title,
-      start_date: record.start_date,
-    })
+    const starterName = `${record.firstname} ${record.surname}`
+    const upn = m365Actions?.m365_upn || m365Upn || record.user_email
+    const startDateStr = record.start_date ? new Date(record.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+    const taskDesc = `${starterName} — ${record.job_title || 'New Starter'}${startDateStr ? `, starting ${startDateStr}` : ''}\nM365 account: ${upn}`
 
     const { error: wtErr } = await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,

@@ -1839,7 +1839,7 @@ export default function Dashboard() {
                       : t.record_type === 'Conflict' ? t.task_description
                       : t.record_type === 'Missed Check-In' ? t.task_description
                       : t.record_type === 'Meeting Reminder' ? t.task_description
-                      : t.record_type === 'M365 Provisioning' ? t.task_description
+                      : t.record_type === 'M365 Provisioning' ? (() => { try { const p = JSON.parse(t.task_description || ''); return `${p.starter_name} — ${p.job_title || 'New Starter'}` } catch { return t.task_description?.split('\n')[0] || '' } })()
                       : null
                     return (
                       <button key={t.id} className="info-card-task-line" onClick={() => navigate(nav)}>
