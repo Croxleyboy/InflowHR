@@ -768,6 +768,9 @@ export default function AdminOnboarding() {
         displayName: m365DisplayName || `${record.firstname} ${record.surname}`,
         userPrincipalName: upn,
         usageLocation: m365Location || 'GB',
+        ...(record.job_title ? { jobTitle: record.job_title } : {}),
+        ...(record.department ? { department: record.department } : {}),
+        ...(record.start_date ? { employeeHireDate: record.start_date.slice(0, 10) } : {}),
       },
     })
     setM365Starting(false)

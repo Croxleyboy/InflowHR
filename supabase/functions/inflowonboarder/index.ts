@@ -264,6 +264,11 @@ function handleEngineError(
     return json({ error: friendlyError('run_exists'), run_id: errData?.error?.runId }, 409)
   }
 
+  if (res.status === 400 && errData?.error?.issues) {
+    const issueDetails = errData.error.issues.map((i: any) => `${i.path?.join('.')}: ${i.message}`).join('; ')
+    return json({ error: `Validation failed: ${issueDetails}` }, 400)
+  }
+
   return json({ error: friendlyError(code, errData?.error?.message) }, res.status)
 }
 
@@ -508,13 +513,26 @@ Deno.serve(async (req) => {
         if (mock.error) runError = mock.error
       } else {
         const apiKey = keyResult.apiKey
-        const engineBody = {
-          externalRef: onboarding_id,
-          input: {
-            ...input,
-            licenceSkuId: config.licence_sku_id || undefined,
-            groupName: config.group_name || undefined,
-          },
+        const person: Record<string, string> = {
+          givenName: input.givenName,
+          surname: input.surname,
+          displayName: input.displayName,
+          userPrincipalName: input.userPrincipalName,
+          usageLocation: input.usageLocation,
+        }
+        if (input.jobTitle) person.jobTitle = input.jobTitle
+        if (input.department) person.department = input.department
+        if (input.employeeId) person.employeeId = input.employeeId
+        if (input.officeLocation) person.officeLocation = input.officeLocation
+        if (input.employeeHireDate) person.employeeHireDate = input.employeeHireDate
+        const engineBody: Record<string, unknown> = {
+          externalRef: String(onboarding_id),
+          person,
+        }
+        if (config.licence_sku_id) engineBody.licenceSkuId = config.licence_sku_id
+        if (config.group_name) engineBody.groupName = config.group_name
+        if (config.licence_manager_name && config.licence_manager_email) {
+          engineBody.licenceContact = { name: config.licence_manager_name, email: config.licence_manager_email }
         }
         const res = await engineFetch(apiKey, 'POST', '/v1/workflows/m365.joiner/runs', engineBody, idempotencyKey)
 
