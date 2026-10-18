@@ -187,6 +187,7 @@ function mockProceedRun(runId: string): unknown {
     run.result = {
       userId: `mock-user-${runId.replace('mock-run-', '')}`,
       userPrincipalName: `newstarter${runId.replace('mock-run-', '')}@contoso.com`,
+      temporaryPassword: `Tmp${Math.random().toString(36).slice(2, 8)}!${Math.floor(Math.random() * 90 + 10)}`,
     }
     run.error = null
     run.updatedAt = new Date().toISOString()
