@@ -667,7 +667,7 @@ Deno.serve(async (req) => {
 
     // ── proceed-run ─────────────────────────────────────────────────────────
     if (action === 'proceed-run') {
-      const { run_id, onboarding_id, attempt } = body
+      const { run_id, onboarding_id, attempt, approver_name, approver_email, approved_at } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
 
       const idempotencyKey = `starter-${onboarding_id}-proceed-${attempt || 0}-${Date.now()}`
@@ -679,7 +679,14 @@ Deno.serve(async (req) => {
       } else {
         const keyResult = await getApiKey(sb, company_id)
         if (keyResult instanceof Response) return keyResult
-        const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/workflows/runs/${run_id}/proceed`, {}, idempotencyKey)
+        const approvalBody = {
+          approval: {
+            approvedBy: { name: approver_name || 'InflowHR Approver', email: approver_email || userEmail },
+            approvedAt: approved_at || new Date().toISOString(),
+            reference: `inflowhr-approval-${onboarding_id}`,
+          },
+        }
+        const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/workflows/runs/${run_id}/proceed`, approvalBody, idempotencyKey)
 
         const errResp = handleEngineError(sb, company_id, res)
         if (errResp) return errResp

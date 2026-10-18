@@ -907,10 +907,16 @@ export default function AdminOnboarding() {
   async function m365ProceedRun(record: OnboardRecord) {
     if (!m365Actions?.run_id) return
     setM365Proceeding(true)
+    const approvedByRaw = m365Actions.approved_by || ''
+    const emailMatch = approvedByRaw.match(/<([^>]+)>/)
+    const approverEmail = emailMatch ? emailMatch[1] : approvedByRaw
+    const approverName = emailMatch ? approvedByRaw.replace(/<[^>]+>/, '').trim() : approvedByRaw
     const result = await callIfo('proceed-run', {
       run_id: m365Actions.run_id,
       onboarding_id: record.id,
-      approval_evidence: { approved_by: m365Actions.approved_by, approved_at: m365Actions.approved_at },
+      approver_name: approverName,
+      approver_email: approverEmail,
+      approved_at: m365Actions.approved_at,
       attempt: (m365Actions?.attempt_count_run || 0) + 1,
     })
     setM365Proceeding(false)
@@ -1835,7 +1841,7 @@ export default function AdminOnboarding() {
                             {!m365Actions?.is_v1_legacy && m365Actions?.approval_status === 'approved' && m365Actions?.run_status === 'ready_for_approval' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
-                                  <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Approved by {m365Actions.approved_by}</p>
+                                  <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Approved by {(m365Actions.approved_by || '').replace(/<[^>]+>/, '').trim() || m365Actions.approved_by}</p>
                                   {m365Actions.approved_at && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>{new Date(m365Actions.approved_at).toLocaleString('en-GB')}</p>}
                                 </div>
                                 <button className="admin-btn-sm admin-btn-save" disabled={m365Proceeding}
@@ -1852,7 +1858,7 @@ export default function AdminOnboarding() {
                                 <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Approval declined</p>
                                   <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
-                                    Declined by {m365Actions.approved_by}
+                                    Declined by {(m365Actions.approved_by || '').replace(/<[^>]+>/, '').trim() || m365Actions.approved_by}
                                     {m365Actions.approved_at && <> on {new Date(m365Actions.approved_at).toLocaleString('en-GB')}</>}
                                   </p>
                                 </div>

@@ -293,7 +293,7 @@ export default function Notifications() {
   const navigate = useNavigate()
   const location = useLocation()
   const { t } = useLanguage()
-  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, companyUser, isSuperAdmin, canPostNotifications: canPost } = useAuth()
+  const { employeeId: HARDCODED_EMPLOYEE_ID, employeeEmail: HARDCODED_EMAIL, employeeName, companyUser, isSuperAdmin, canPostNotifications: canPost } = useAuth()
   const { features } = useFeatures()
   const { showError, showSuccess } = useToast()
   const locState = location.state as { tab?: Tab; expandReminders?: boolean } | null
@@ -884,7 +884,8 @@ export default function Notifications() {
     setM365Approving(true)
     try {
       const now = new Date().toISOString()
-      const approverName = HARDCODED_EMAIL || 'Unknown'
+      const approverDisplayName = employeeName || HARDCODED_EMAIL || 'Unknown'
+      const approverEmail = HARDCODED_EMAIL || ''
       await supabase.from('workflow_tracker').update({
         status: 'Complete',
         approval_status: approve ? 'Approved' : 'Declined'
@@ -893,7 +894,7 @@ export default function Notifications() {
       if (onboardId) {
         await supabase.from('onboarding_m365_actions').update({
           approval_status: approve ? 'approved' : 'declined',
-          approved_by: approverName,
+          approved_by: `${approverDisplayName} <${approverEmail}>`,
           approved_at: now
         }).eq('onboarding_id', onboardId).eq('company_id', companyUser?.company_id)
       }
