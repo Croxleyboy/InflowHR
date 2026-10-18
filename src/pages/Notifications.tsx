@@ -891,10 +891,6 @@ export default function Notifications() {
       }
       if (!approverDisplayName) approverDisplayName = HARDCODED_EMAIL || 'Unknown'
       const approverEmail = HARDCODED_EMAIL || ''
-      await supabase.from('workflow_tracker').update({
-        status: 'Complete',
-        approval_status: approve ? 'Approved' : 'Declined'
-      }).eq('id', item.id).eq('company_id', companyUser?.company_id)
       const onboardId = item.onboard_id || (item.extra_info ? parseInt(item.extra_info) : item.approval_id)
       if (onboardId) {
         await supabase.from('onboarding_m365_actions').update({
@@ -903,6 +899,10 @@ export default function Notifications() {
           approved_at: now
         }).eq('onboarding_id', onboardId).eq('company_id', companyUser?.company_id)
       }
+      await supabase.from('workflow_tracker').update({
+        status: 'Complete',
+        approval_status: approve ? 'Approved' : 'Declined'
+      }).eq('id', item.id).eq('company_id', companyUser?.company_id)
       showSuccess(approve ? 'Account provisioning approved' : 'Account provisioning declined')
       setM365ActionItem(null)
       setActions(prev => prev.filter(a => a.id !== item.id))
