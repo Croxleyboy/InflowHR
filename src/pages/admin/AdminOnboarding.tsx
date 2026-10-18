@@ -844,7 +844,7 @@ export default function AdminOnboarding() {
       start_date: record.start_date,
     })
 
-    await supabase.from('workflow_tracker').insert({
+    const { error: wtErr } = await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,
       record_type: 'M365 Provisioning',
       record_id: record.id,
@@ -857,16 +857,25 @@ export default function AdminOnboarding() {
       approval_status: 'pending',
       task_description: taskDesc,
     })
+    if (wtErr) {
+      showError(`Failed to create approval task: ${wtErr.message}`)
+      setM365ApprovalSending(false)
+      return
+    }
 
-    await supabase.from('notifications').insert({
-      company_id: selectedCompanyId,
-      user_email: approverEmail,
-      type: 'action',
-      notification_type: 'm365_approval',
-      title: 'M365 Provisioning Approval',
-      message: `Please approve M365 account provisioning for ${record.firstname} ${record.surname}`,
-      send_email: true,
-    })
+    const { data: approverEmp } = await supabase.from('employees')
+      .select('id').eq('user_email', approverEmail).eq('company_id', selectedCompanyId).maybeSingle()
+    if (approverEmp) {
+      await supabase.from('notifications').insert({
+        company_id: selectedCompanyId,
+        employee_id: approverEmp.id,
+        type: 'action',
+        notification_type: 'm365_approval',
+        title: 'M365 Provisioning Approval',
+        message: `Please approve M365 account provisioning for ${record.firstname} ${record.surname}`,
+        send_email: true,
+      })
+    }
 
     await supabase.from('onboarding_m365_actions').update({
       approval_sent_at: new Date().toISOString(),
