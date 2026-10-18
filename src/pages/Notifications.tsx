@@ -903,7 +903,7 @@ export default function Notifications() {
           approved_at: now
         }).eq('onboarding_id', onboardId).eq('company_id', companyUser?.company_id)
       }
-      showSuccess(approve ? 'M365 provisioning approved' : 'M365 provisioning declined')
+      showSuccess(approve ? 'Account provisioning approved' : 'Account provisioning declined')
       setM365ActionItem(null)
       setActions(prev => prev.filter(a => a.id !== item.id))
       window.dispatchEvent(new Event('notifications-updated'))
@@ -929,7 +929,7 @@ export default function Notifications() {
     if (item.record_type === 'Missed Check-In') return 'Missed Check-In'
     if (item.record_type === 'Meeting Reminder') return '1:1 Meeting — Tomorrow'
     if (item.record_type === 'HR Response') return 'HR Ticket Response'
-    if (item.record_type === 'M365 Provisioning') return 'M365 Provisioning Approval'
+    if (item.record_type === 'M365 Provisioning') return 'New Starter Account Approval'
     return item.action
   }
 
@@ -969,9 +969,9 @@ export default function Notifications() {
       if (item.record_type === 'Expense') return t('notifications.expense_declined')
       if (item.record_type === 'Leave') return t('notifications.leave_declined')
       if (item.record_type === 'Skill Validation') return 'Skill Validation Rejected'
-      if (item.record_type === 'M365 Provisioning') return 'M365 Provisioning Declined'
+      if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Declined'
     }
-    if (item.record_type === 'M365 Provisioning') return 'M365 Provisioning Request'
+    if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Request'
     return item.action
   }
 
@@ -1209,7 +1209,7 @@ export default function Notifications() {
         <div className="my-profile-modal-overlay" onClick={() => setM365ActionItem(null)}>
           <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
             <div className="my-profile-modal-header" style={{ background: '#0078D4', justifyContent: 'space-between', padding: '14px 20px' }}>
-              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>M365 Provisioning Approval</span>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>New Starter Account Approval</span>
               <button onClick={() => setM365ActionItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
@@ -1218,13 +1218,13 @@ export default function Notifications() {
               <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{m365ActionItem.emp_display_name}</div>
               {(() => {
                 let desc = m365ActionItem.task_description || ''
-                try { const parsed = JSON.parse(desc); desc = `${parsed.starter_name || ''} — ${parsed.job_title || 'New Starter'}${parsed.start_date ? `, starting ${new Date(parsed.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}\nM365 account: ${parsed.upn || ''}` } catch {}
+                try { const parsed = JSON.parse(desc); desc = `${parsed.starter_name || ''} — ${parsed.job_title || 'New Starter'}${parsed.start_date ? `, starting ${new Date(parsed.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}\nAccount: ${parsed.upn || ''}` } catch {}
                 return desc.split('\n').map((line: string, i: number) => (
                   <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: i === 0 ? 2 : 0, lineHeight: 1.5 }}>{line}</div>
                 ))
               })()}
               <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #90caf9', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#1565c0' }}>
-                Please confirm whether to proceed with creating the M365 account for this new starter.
+                Please confirm whether to approve creating the Microsoft 365 account and licence for this new starter. Once approved, InflowOnboarder will provision the account automatically.
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => handleM365Approval(m365ActionItem, true)} disabled={m365Approving}

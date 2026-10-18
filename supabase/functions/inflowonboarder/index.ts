@@ -184,7 +184,7 @@ async function audit(sb: ReturnType<typeof getSupabase>, companyId: string, user
       action,
       metadata: details,
     })
-  } catch (_) {}
+  } catch (e) { console.error('[IFO] audit write failed:', e) }
 }
 
 // ── Status calculation ──────────────────────────────────────────────────────
@@ -267,12 +267,12 @@ function handleEngineError(
   if (res.status === 400) {
     if (errData?.error?.issues) {
       const issueDetails = errData.error.issues.map((i: any) => `${i.path?.join('.')}: ${i.message}`).join('; ')
-      return json({ error: `Validation failed: ${issueDetails}`, engineError: errData.error }, 400)
+      return json({ error: `Validation failed: ${issueDetails}` }, 400)
     }
-    return json({ error: friendlyError(code, errData?.error?.message), engineError: errData?.error }, 400)
+    return json({ error: friendlyError(code, errData?.error?.message) }, 400)
   }
 
-  return json({ error: friendlyError(code, errData?.error?.message), engineError: errData?.error }, res.status)
+  return json({ error: friendlyError(code, errData?.error?.message) }, res.status)
 }
 
 // ── Main handler ────────────────────────────────────────────────────────────
@@ -409,10 +409,11 @@ Deno.serve(async (req) => {
       if (approver_mode === 'nominated' && (!approver_name || !approver_email)) {
         return json({ error: 'Nominated approver requires a name and email' }, 400)
       }
-      if (approver_email && !approver_email.includes('@')) {
+      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (approver_email && !emailRe.test(approver_email)) {
         return json({ error: 'Invalid approver email address' }, 400)
       }
-      if (licence_manager_email && !licence_manager_email.includes('@')) {
+      if (licence_manager_email && !emailRe.test(licence_manager_email)) {
         return json({ error: 'Invalid licence manager email address' }, 400)
       }
 
@@ -480,16 +481,7 @@ Deno.serve(async (req) => {
         return json({ error: friendlyError(code || 'unknown') }, res.status)
       }
       const jobId = (res.data as any).jobId
-
-      for (let i = 0; i < 10; i++) {
-        await new Promise(r => setTimeout(r, 3000))
-        const pollRes = await engineFetch(apiKey, 'GET', `/v1/jobs/${jobId}`)
-        if (pollRes.ok) {
-          const jd = pollRes.data as any
-          if (jd.status === 'succeeded' || jd.status === 'failed') return json(jd)
-        }
-      }
-      return json({ jobId, status: 'running', message: 'Still loading licences. Try again shortly.' })
+      return json({ jobId, status: 'running' })
     }
 
     // ── start-run ───────────────────────────────────────────────────────────
@@ -504,7 +496,12 @@ Deno.serve(async (req) => {
       if (keyResult instanceof Response) return keyResult
       const { config } = keyResult
 
-      const idempotencyKey = `starter-${onboarding_id}-start-run-${attempt || 0}-${Date.now()}`
+      const upnRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!upnRe.test(input.userPrincipalName)) {
+        return json({ error: 'Invalid userPrincipalName format — must be user@domain.tld' }, 400)
+      }
+
+      const idempotencyKey = `starter-${onboarding_id}-start-run-${attempt || 0}`
       let runId: string
       let runStatus: string
 
@@ -595,6 +592,7 @@ Deno.serve(async (req) => {
     if (action === 'check-run') {
       const { run_id, onboarding_id } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
+      if (!/^[a-zA-Z0-9_-]+$/.test(run_id)) return json({ error: 'Invalid run_id format' }, 400)
 
       let runData: any
 
@@ -636,8 +634,9 @@ Deno.serve(async (req) => {
     if (action === 'recheck-run') {
       const { run_id, onboarding_id, attempt } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
+      if (!/^[a-zA-Z0-9_-]+$/.test(run_id)) return json({ error: 'Invalid run_id format' }, 400)
 
-      const idempotencyKey = `starter-${onboarding_id}-recheck-${attempt || 0}-${Date.now()}`
+      const idempotencyKey = `starter-${onboarding_id}-recheck-${attempt || 0}`
       let runData: any
 
       if (MOCK_MODE) {
@@ -669,8 +668,9 @@ Deno.serve(async (req) => {
     if (action === 'proceed-run') {
       const { run_id, onboarding_id, attempt, approver_name, approver_email, approved_at } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
+      if (!/^[a-zA-Z0-9_-]+$/.test(run_id)) return json({ error: 'Invalid run_id format' }, 400)
 
-      const idempotencyKey = `starter-${onboarding_id}-proceed-${attempt || 0}-${Date.now()}`
+      const idempotencyKey = `starter-${onboarding_id}-proceed-${attempt || 0}`
       let runData: any
 
       if (MOCK_MODE) {
@@ -778,9 +778,10 @@ Deno.serve(async (req) => {
     return json({ error: `Unknown action: ${action}` }, 400)
 
   } catch (err) {
-    if ((err as any)?.message?.includes('InflowOnboarder')) {
-      return json({ error: 'InflowOnboarder is unavailable. Actions are hidden until it comes back online.' }, 503)
+    if (err instanceof TypeError) {
+      return json({ error: 'InflowOnboarder is unavailable. Please try again shortly.' }, 503)
     }
+    console.error('[IFO] unhandled error:', err)
     return json({ error: 'Internal server error' }, 500)
   }
 })

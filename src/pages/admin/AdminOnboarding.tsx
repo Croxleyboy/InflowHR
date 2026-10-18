@@ -46,7 +46,7 @@ const OFFBOARD_STEPS = [
   { key: 'approve_resignation', label: 'Approve Resignation', icon: '📝', description: 'Review and formally approve the employee resignation or termination. Update HR records with the leaving reason and confirm final working date.', role: 'HR' },
   { key: 'recover_equipment', label: 'Recover Equipment', icon: '💻', description: 'Collect all company equipment — laptop, monitor, phone, building pass, keys, parking permit. Complete the asset return checklist and update the inventory register.', role: 'HR' },
   { key: 'leaving_meeting', label: 'Organise Leaving Meeting', icon: '🤝', description: 'Schedule an exit interview and farewell meeting with the line manager. Cover handover tasks, knowledge transfer, and gather feedback on their experience.', role: 'Manager' },
-  { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable Microsoft Entra ID account, revoke Microsoft 365 licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
+  { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable the Microsoft 365 account, revoke licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
   { key: 'reassign_reports', label: 'Reassign Direct Reports', icon: '👥', description: 'Reassign any employees who report to this person to a new manager. This also transfers all pending approval actions (leave, expenses, timesheets) to the new manager.', role: 'HR' },
   { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR' },
 ]
@@ -112,7 +112,7 @@ const WORKFLOW_STEPS = [
   { key: 'notify_manager', label: 'Notify Manager', icon: '📧', description: 'Inform the line manager of confirmed start date, equipment status and onboarding checklist. Share new starter profile.' },
   { key: 'plan_day1', label: 'Plan First Day', icon: '📅', description: 'Prepare day-one schedule: building access, desk assignment, welcome pack, team introductions and lunch arrangements.' },
   { key: 'inform_starter', label: 'Inform Starter', icon: '✉️', description: 'Send welcome email to the new starter with start date, office location, dress code, parking info and first day schedule.' },
-  { key: 'accounts', label: 'Create Accounts & Licences', icon: '🔐', description: 'Create Microsoft Entra ID account, assign Microsoft 365 licence, add to security groups and distribution lists. Generate temporary password.' },
+  { key: 'accounts', label: 'Create Accounts & Licences', icon: '🔐', description: 'Create the new starter\'s Microsoft 365 account via InflowOnboarder — checks licence availability, creates the account, assigns the licence and adds to groups. Generates a temporary password.' },
   { key: 'day1_access', label: 'Day 1 Access Verification', icon: '✅', description: 'Confirm the new starter can log in, access email, Teams, shared drives and all required business applications on their first day.' },
 ]
 
@@ -1896,7 +1896,13 @@ export default function AdminOnboarding() {
                                 {m365Actions.run_result?.temporaryPassword && (
                                   <div style={{ marginTop: 6, padding: '6px 10px', background: 'rgba(255,248,225,.7)', border: '1px solid #ffe0b2', borderRadius: 4 }}>
                                     <p style={{ margin: 0, fontSize: 11, fontWeight: 600, color: '#e65100' }}>Temporary Password</p>
-                                    <p style={{ margin: '2px 0 0', fontSize: 13, fontFamily: 'monospace', color: '#bf360c', userSelect: 'all' }}>{m365Actions.run_result.temporaryPassword}</p>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0 0' }}>
+                                      <p style={{ margin: 0, fontSize: 13, fontFamily: 'monospace', color: '#bf360c' }}>{'•'.repeat(12)}</p>
+                                      <button
+                                        style={{ background: 'none', border: '1px solid #e65100', borderRadius: 3, padding: '1px 6px', fontSize: 11, color: '#e65100', cursor: 'pointer' }}
+                                        onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(m365Actions.run_result.temporaryPassword) }}
+                                      >Copy</button>
+                                    </div>
                                     <p style={{ margin: '4px 0 0', fontSize: 11, color: '#e65100' }}>Share securely with the new starter — they must change it on first sign-in.</p>
                                   </div>
                                 )}
