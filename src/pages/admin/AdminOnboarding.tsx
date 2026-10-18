@@ -723,14 +723,16 @@ export default function AdminOnboarding() {
   // ── M365 provisioning helpers (v2 workflow runs) ────────────────────────
 
   async function callIfo(action: string, body: Record<string, unknown> = {}) {
-    if (!session || !selectedCompanyId) return null
+    if (!session || !selectedCompanyId) { console.log('[IFO] no session/company, skipping', action); return null }
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    console.log('[IFO] calling', action, body)
     const res = await fetch(`${supabaseUrl}/functions/v1/inflowonboarder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
       body: JSON.stringify({ company_id: selectedCompanyId, action, ...body }),
     })
     const data = await res.json()
+    console.log('[IFO]', action, 'response:', res.status, data)
     if (!res.ok) { showError(data.error || 'Request failed'); return null }
     return data
   }
