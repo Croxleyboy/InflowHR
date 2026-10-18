@@ -862,7 +862,6 @@ export default function AdminOnboarding() {
     const { error: wtErr } = await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,
       record_type: 'M365 Provisioning',
-      record_id: record.id,
       onboard_id: record.id,
       emp_display_name: `${record.firstname} ${record.surname}`,
       action: 'Approve',
