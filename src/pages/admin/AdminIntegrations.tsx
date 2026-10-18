@@ -47,6 +47,15 @@ interface ModulrIntegration {
   connected_at: string | null
 }
 
+interface InflowOnboarderIntegration {
+  company_id: string
+  api_key_hint: string
+  status: string
+  status_detail: Record<string, unknown>
+  status_checked_at: string | null
+  connected_at: string | null
+}
+
 // ── Official brand logos as inline SVGs ──────────────────────────────────────
 
 function TeamsLogo() {
@@ -107,6 +116,21 @@ function ModulrLogo() {
   )
 }
 
+function InflowOnboarderLogo() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+      <rect width="512" height="512" rx="64" fill="#0078D4"/>
+      <path d="M256 100c-86 0-156 70-156 156s70 156 156 156 156-70 156-156S342 100 256 100zm0 280c-68.5 0-124-55.5-124-124s55.5-124 124-124 124 55.5 124 124-55.5 124-124 124z" fill="#fff"/>
+      <path d="M256 180c-42 0-76 34-76 76s34 76 76 76 76-34 76-76-34-76-76-76zm0 120c-24.3 0-44-19.7-44-44s19.7-44 44-44 44 19.7 44 44-19.7 44-44 44z" fill="#fff"/>
+      <circle cx="256" cy="256" r="20" fill="#fff"/>
+      <rect x="248" y="120" width="16" height="40" rx="8" fill="#fff"/>
+      <rect x="248" y="352" width="16" height="40" rx="8" fill="#fff"/>
+      <rect x="352" y="248" width="40" height="16" rx="8" fill="#fff"/>
+      <rect x="120" y="248" width="40" height="16" rx="8" fill="#fff"/>
+    </svg>
+  )
+}
+
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function AdminIntegrations() {
@@ -145,6 +169,14 @@ export default function AdminIntegrations() {
   const [aiHelpEnabled, setAiHelpEnabled] = useState(false)
   const [aiHelpExpanded, setAiHelpExpanded] = useState(false)
   const [aiHelpStats, setAiHelpStats] = useState<{ total: number; today: number } | null>(null)
+  // InflowOnboarder state
+  const [ifoIntegration, setIfoIntegration] = useState<InflowOnboarderIntegration | null>(null)
+  const [ifoExpanded, setIfoExpanded] = useState(false)
+  const [ifoApiKey, setIfoApiKey] = useState('')
+  const [ifoConnecting, setIfoConnecting] = useState(false)
+  const [ifoChecking, setIfoChecking] = useState(false)
+  const [showIfoModal, setShowIfoModal] = useState(false)
+
   const [modulrApiKey, setModulrApiKey] = useState('')
   const [modulrHmacSecret, setModulrHmacSecret] = useState('')
   const [modulrSourceAccountId, setModulrSourceAccountId] = useState('')
@@ -169,13 +201,14 @@ export default function AdminIntegrations() {
     if (!companyId) return
     setLoading(true)
 
-    const [teamsRes, teamsBotRes, xeroRes, sageRes, modulrRes, featuresRes] = await Promise.all([
+    const [teamsRes, teamsBotRes, xeroRes, sageRes, modulrRes, featuresRes, ifoRes] = await Promise.all([
       supabase.from('company_teams_config').select('*').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_teams_bot_conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, sync_benefits_to_xero').eq('company_id', companyId).maybeSingle(),
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
+      supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at').eq('company_id', companyId).maybeSingle(),
     ])
 
     if (featuresRes.data) {
@@ -209,6 +242,7 @@ export default function AdminIntegrations() {
     const sage = sageRes.data as SageIntegration | null
     setSageIntegration(sage)
     setModulrIntegration(modulrRes.data as ModulrIntegration | null)
+    setIfoIntegration(ifoRes.data as InflowOnboarderIntegration | null)
 
     // Load Xero employee sync status
     if (xeroRes.data && (xeroRes.data as XeroIntegration).sync_status === 'connected') {
@@ -235,6 +269,7 @@ export default function AdminIntegrations() {
     setSageExpanded(false)
     setModulrExpanded(false)
     setAiHelpExpanded(false)
+    setIfoExpanded(false)
     loadAll()
   }, [companyId])
 
@@ -462,6 +497,59 @@ export default function AdminIntegrations() {
     setAiHelpEnabled(newState)
     setSaving(false)
     showSuccess(newState ? 'AI Help Agent enabled' : 'AI Help Agent disabled')
+  }
+
+  // ── InflowOnboarder handlers ───────────────────────────────────────────────
+
+  async function connectInflowOnboarder() {
+    if (!companyId || !ifoApiKey.trim()) { showError('API key is required'); return }
+    if (!ifoApiKey.trim().startsWith('ifo_')) { showError('Invalid API key format. Keys start with ifo_'); return }
+    setIfoConnecting(true)
+    const result = await callEdgeFunction('inflowonboarder', { action: 'connect', api_key: ifoApiKey.trim() })
+    setIfoConnecting(false)
+    if (result) {
+      if (result.status === 'connected_ready') {
+        showSuccess('InflowOnboarder connected — M365 ready')
+      } else if (result.status === 'connected_not_ready') {
+        showSuccess('InflowOnboarder connected, but M365 is not fully ready. Check your InflowOnboarder dashboard.')
+      } else if (result.status === 'needs_attention') {
+        showError(result.error || 'Connection needs attention')
+      }
+      setShowIfoModal(false)
+      setIfoApiKey('')
+      loadAll()
+    }
+  }
+
+  async function checkIfoStatus() {
+    if (!companyId) return
+    setIfoChecking(true)
+    const result = await callEdgeFunction('inflowonboarder', { action: 'check-status' })
+    setIfoChecking(false)
+    if (result) {
+      if (result.status === 'connected_ready') showSuccess('M365 connection healthy')
+      else if (result.status === 'needs_attention') showError('API key revoked or invalid — reconnect with a new key')
+      else if (result.unavailable) showError('InflowOnboarder is temporarily unavailable')
+      loadAll()
+    }
+  }
+
+  async function disconnectInflowOnboarder() {
+    if (!confirm('Disconnect InflowOnboarder? This will remove the API key. Pending M365 actions on in-progress onboardings will stop working.')) return
+    if (!companyId) return
+    const result = await callEdgeFunction('inflowonboarder', { action: 'disconnect' })
+    if (result) {
+      setIfoIntegration(null)
+      showSuccess('InflowOnboarder disconnected')
+      loadAll()
+    }
+  }
+
+  function ifoStatusBadge(status: string) {
+    if (status === 'connected_ready') return <span className="admin-badge admin-badge-approved">Connected</span>
+    if (status === 'connected_not_ready') return <span className="admin-badge admin-badge-pending">M365 Not Ready</span>
+    if (status === 'needs_attention') return <span className="admin-badge admin-badge-rejected">Needs Attention</span>
+    return <span className="admin-badge" style={{ background: 'var(--bg, #f1f5f9)', color: 'var(--text-muted, #64748b)' }}>Not Connected</span>
   }
 
   // ── Shared styles ─────────────────────────────────────────────────────────
@@ -1005,6 +1093,116 @@ export default function AdminIntegrations() {
           )}
         </div>
 
+        {/* ── InflowOnboarder Card ── */}
+        <div style={{ ...cardStyle(true), position: 'relative', opacity: features.inflowonboarder_integration ? 1 : 0.55, pointerEvents: features.inflowonboarder_integration ? 'auto' : 'none' }}>
+          {!features.inflowonboarder_integration && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
+              <span style={{ background: '#0078D4', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
+                Add-on subscription required
+              </span>
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, cursor: 'pointer' }}
+            onClick={() => setIfoExpanded(!ifoExpanded)}>
+            <InflowOnboarderLogo />
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>InflowOnboarder</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+                Automate Microsoft 365 account provisioning during onboarding
+              </p>
+            </div>
+            {ifoStatusBadge(ifoIntegration?.status || 'not_connected')}
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(ifoExpanded)}>
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </div>
+
+          {ifoExpanded && (
+            <div style={{ marginTop: 20 }}>
+              {ifoIntegration?.status === 'connected_ready' && (
+                <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                    <div>
+                      <strong style={{ fontSize: 13, color: '#2e7d32' }}>Connected to InflowOnboarder</strong>
+                      {ifoIntegration.connected_at && (
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>
+                          Connected: {new Date(ifoIntegration.connected_at).toLocaleString('en-GB')}
+                        </p>
+                      )}
+                      <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>
+                        API Key: ifo_…{ifoIntegration.api_key_hint}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="admin-btn" onClick={checkIfoStatus} disabled={ifoChecking}>
+                        {ifoChecking ? 'Checking...' : 'Re-check Status'}
+                      </button>
+                      <button className="admin-btn admin-btn-primary" onClick={() => setShowIfoModal(true)}>Reconnect</button>
+                      {canDisconnect && <button className="admin-btn" onClick={disconnectInflowOnboarder}>Disconnect</button>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {ifoIntegration?.status === 'connected_not_ready' && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,248,225,.5)', borderColor: '#ffe0b2' }}>
+                  <strong style={{ fontSize: 13, color: '#e65100' }}>M365 Not Fully Ready</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#e65100' }}>
+                    The API key is valid but Microsoft 365 read/write connections are not both healthy. Check your InflowOnboarder dashboard.
+                  </p>
+                  <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>
+                    API Key: ifo_…{ifoIntegration.api_key_hint}
+                  </p>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <button className="admin-btn" onClick={checkIfoStatus} disabled={ifoChecking}>
+                      {ifoChecking ? 'Checking...' : 'Re-check Status'}
+                    </button>
+                    <button className="admin-btn admin-btn-primary" onClick={() => setShowIfoModal(true)}>Reconnect</button>
+                    {canDisconnect && <button className="admin-btn" onClick={disconnectInflowOnboarder}>Remove</button>}
+                  </div>
+                </div>
+              )}
+
+              {ifoIntegration?.status === 'needs_attention' && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,235,238,.5)', borderColor: '#ef9a9a' }}>
+                  <strong style={{ fontSize: 13, color: '#c62828' }}>Needs Attention</strong>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
+                    Your API key is invalid or has been revoked. Reconnect with a new key.
+                  </p>
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                    <button className="admin-btn admin-btn-primary" onClick={() => setShowIfoModal(true)}>Reconnect</button>
+                    {canDisconnect && <button className="admin-btn" onClick={disconnectInflowOnboarder}>Remove</button>}
+                  </div>
+                </div>
+              )}
+
+              {(!ifoIntegration || ifoIntegration.status === 'not_connected') && (
+                <div style={{ ...sectionStyle, textAlign: 'center', padding: 24 }}>
+                  <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #1a1a2e)' }}>
+                    Connect your InflowOnboarder account to automate Microsoft 365 account creation and licence assignment during onboarding.
+                  </p>
+                  <button className="admin-btn admin-btn-primary" onClick={() => setShowIfoModal(true)}
+                    style={{ fontSize: 14, padding: '10px 24px', background: '#0078D4' }}>
+                    Configure InflowOnboarder
+                  </button>
+                </div>
+              )}
+
+              <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginTop: 16 }}>
+                <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>How it works</p>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                  <li>Connect using an API key from your InflowOnboarder dashboard</li>
+                  <li>When onboarding reaches the &ldquo;Create Accounts &amp; Licences&rdquo; step, M365 actions appear automatically</li>
+                  <li>Create a Microsoft 365 account for the new starter with one click</li>
+                  <li>Choose and assign a licence (E1, E3, E5 etc.) from your available pool</li>
+                  <li>Full audit trail of every provisioning action in InflowHR</li>
+                  <li>Safe retries with idempotency — no duplicate accounts created</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* ── Modulr Configuration Modal ── */}
@@ -1077,6 +1275,56 @@ export default function AdminIntegrations() {
                 style={{ minWidth: 180 }}
               >
                 {modulrConnecting ? 'Testing Connection...' : 'Save & Test Connection'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── InflowOnboarder Configuration Modal ── */}
+      {showIfoModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--bg-card, #fff)', borderRadius: 16, padding: 32, maxWidth: 520, width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>Configure InflowOnboarder</h3>
+              <button onClick={() => setShowIfoModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted, #888)' }}>&times;</button>
+            </div>
+
+            <div style={{ ...sectionStyle, background: 'rgba(248,249,255,.5)', marginBottom: 20 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}>Setup Instructions</p>
+              <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, lineHeight: 1.8, color: 'var(--text, #444)' }}>
+                <li>Log into your InflowOnboarder dashboard</li>
+                <li>Go to Settings &rarr; API Keys &rarr; Generate Key</li>
+                <li>Copy the key (starts with <code style={{ background: '#f1f5f9', padding: '1px 4px', borderRadius: 3 }}>ifo_</code>)</li>
+                <li>Paste it below and click &ldquo;Save &amp; Test Connection&rdquo;</li>
+              </ol>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={labelStyle}>API Key</label>
+                <input
+                  type="password"
+                  value={ifoApiKey}
+                  onChange={e => setIfoApiKey(e.target.value)}
+                  placeholder="ifo_xxxx_xxxxxxxxxxxxxxxxxxxx"
+                  style={inputStyle}
+                />
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                  The full key is encrypted at rest. Only the last 4 characters are stored for reference.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
+              <button className="admin-btn" onClick={() => setShowIfoModal(false)}>Cancel</button>
+              <button
+                className="admin-btn admin-btn-primary"
+                onClick={connectInflowOnboarder}
+                disabled={ifoConnecting || !ifoApiKey.trim()}
+                style={{ minWidth: 180, background: '#0078D4' }}
+              >
+                {ifoConnecting ? 'Testing Connection...' : 'Save & Test Connection'}
               </button>
             </div>
           </div>
