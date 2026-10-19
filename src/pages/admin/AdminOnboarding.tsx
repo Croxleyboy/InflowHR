@@ -1012,10 +1012,14 @@ export default function AdminOnboarding() {
   async function loadLeaverM365Actions(offboardingId: number) {
     setLeaverM365Refreshing(true)
     try {
-      const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
-      const { data: ifo } = await supabase.from('inflowonboarder_integrations')
-        .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email')
-        .eq('company_id', selectedCompanyId).maybeSingle()
+      const [{ data }, { data: ifo }, { data: wt }] = await Promise.all([
+        supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle(),
+        supabase.from('inflowonboarder_integrations')
+          .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email')
+          .eq('company_id', selectedCompanyId).maybeSingle(),
+        supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at, created_at')
+          .eq('onboard_id', offboardingId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      ])
       setIfoConnected(ifo?.status === 'connected_ready')
       if (ifo) {
         setIfoOffboardSettings({
@@ -1027,18 +1031,19 @@ export default function AdminOnboarding() {
           approver_email: ifo.approver_email,
         })
       }
-      if (data?.approval_sent_at) {
-        const { data: wt } = await supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at')
-          .eq('onboard_id', offboardingId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle()
-        if (wt && wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
-          const merged = { ...data } as LeaverM365Actions
+      if (data && wt) {
+        const merged = { ...data } as LeaverM365Actions
+        merged.approval_sent_at = merged.approval_sent_at || wt.created_at
+        if (wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
           merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
           merged.approved_by = wt.updated_by_name || 'Approver'
           merged.approved_at = wt.updated_at || new Date().toISOString()
-          setLeaverM365Actions(merged)
-          setLeaverM365Refreshing(false)
-          return
+        } else if (wt.status === 'Pending') {
+          merged.approval_status = 'pending'
         }
+        setLeaverM365Actions(merged)
+        setLeaverM365Refreshing(false)
+        return
       }
       setLeaverM365Actions(data as LeaverM365Actions | null)
       if (data?.run_id && (!data?.run_status || ['checking_account', 'deprovisioning'].includes(data?.run_status))) {
@@ -1122,20 +1127,23 @@ export default function AdminOnboarding() {
       || leaverM365Actions.run_status === 'deprovisioning'
     if (!needsPoll) return
     const timer = setInterval(async () => {
-      const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle()
-      if (data) {
-        if (data.approval_status === 'pending' && data.approval_sent_at) {
-          const { data: wt } = await supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at')
-            .eq('onboard_id', offboardSelectedId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle()
-          if (wt && wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
-            const merged = { ...data } as LeaverM365Actions
-            merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
-            merged.approved_by = wt.updated_by_name || 'Approver'
-            merged.approved_at = wt.updated_at || new Date().toISOString()
-            setLeaverM365Actions(merged)
-            return
-          }
+      const [{ data }, { data: wt }] = await Promise.all([
+        supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle(),
+        supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at, created_at')
+          .eq('onboard_id', offboardSelectedId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      ])
+      if (data && wt) {
+        const merged = { ...data } as LeaverM365Actions
+        merged.approval_sent_at = merged.approval_sent_at || wt.created_at
+        if (wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
+          merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+          merged.approved_by = wt.updated_by_name || 'Approver'
+          merged.approved_at = wt.updated_at || new Date().toISOString()
+        } else if (wt.status === 'Pending') {
+          merged.approval_status = 'pending'
         }
+        setLeaverM365Actions(merged)
+      } else if (data) {
         setLeaverM365Actions(data as LeaverM365Actions)
       }
     }, 10000)
@@ -1176,6 +1184,14 @@ export default function AdminOnboarding() {
       return
     }
 
+    const { data: existingWt } = await supabase.from('workflow_tracker')
+      .select('id, status').eq('onboard_id', record.id).eq('record_type', 'M365 Offboarding').eq('status', 'Pending').maybeSingle()
+    if (existingWt) {
+      showError('An approval request is already pending for this leaver. Use Refresh to check its status.')
+      setLeaverM365ApprovalSending(false)
+      return
+    }
+
     const leaverName = record.employee_name
     const upn = leaverM365Actions?.employee_upn || record.employee_email
     const endDateStr = record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
@@ -1212,12 +1228,6 @@ export default function AdminOnboarding() {
         send_email: true,
       })
     }
-
-    await supabase.from('offboarding_m365_actions').update({
-      approval_sent_at: new Date().toISOString(),
-      approval_status: 'pending',
-      updated_at: new Date().toISOString(),
-    }).eq('offboarding_id', record.id)
 
     try {
       await callIfoLeaver('check-leaver-run', { run_id: leaverM365Actions?.run_id, offboarding_id: record.id })
