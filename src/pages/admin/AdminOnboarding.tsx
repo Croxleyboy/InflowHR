@@ -925,6 +925,14 @@ export default function AdminOnboarding() {
       setTab('workflow')
       showSuccess('Starter created')
       load()
+      if (features.inflowonboarder_integration) {
+        setM365Actions(null)
+        const domain = ifoSettings?.account_domain
+        setM365Upn(domain ? `${data.firstname.toLowerCase()}.${data.surname.toLowerCase()}@${domain}` : data.user_email)
+        setM365DisplayName(`${data.firstname} ${data.surname}`)
+        setM365Location('GB')
+        loadM365Actions(data.id)
+      }
     }
   }
 
@@ -2512,7 +2520,7 @@ export default function AdminOnboarding() {
               const skipped = stepSkips[step.step_key]
               const isCurrent = i === workflowStep
               return (
-                <div key={step.step_key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => setWorkflowStep(i)}>
+                <div key={step.step_key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => { setWorkflowStep(i); if (step.step_key === 'accounts' && selectedId && features.inflowonboarder_integration) loadM365Actions(selectedId) }}>
                   <div className="admin-wf-connector" />
                   <div className="admin-wf-dot">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
                   <div className="admin-wf-content">
