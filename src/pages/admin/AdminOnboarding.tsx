@@ -779,7 +779,7 @@ export default function AdminOnboarding() {
   async function deleteEmployee(frozen: FrozenEmployee) {
     if (!confirm(`Permanently delete ${frozen.employee_name}? This will remove ALL data and generate a deletion certificate. This cannot be undone.`)) return
     const { data, error } = await callRpcDirect('delete_employee_permanently', { p_employee_id: frozen.employee_id })
-    if (error) { showError('Failed to delete: ' + error.message); return }
+    if (error) { showError('Failed to delete: ' + error); return }
     showSuccess(`${frozen.employee_name} has been permanently deleted. Deletion certificate generated: ${(data as any)?.certificate_ref || 'N/A'}`)
     loadOffboarding()
     load()
