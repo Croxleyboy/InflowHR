@@ -1031,8 +1031,8 @@ export default function AdminOnboarding() {
           approver_email: ifo.approver_email,
         })
       }
-      const engineActiveStatuses = ['checking_account', 'deprovisioning', 'awaiting_approval']
-      if (data?.run_id && engineActiveStatuses.includes(data?.run_status)) {
+      const terminalStatuses = ['completed', 'failed']
+      if (data?.run_id && data?.run_status && !terminalStatuses.includes(data.run_status)) {
         const freshStatus = await callIfoLeaver('check-leaver-run', { run_id: data.run_id, offboarding_id: offboardingId })
         if (freshStatus?.status && freshStatus.status !== data.run_status) {
           const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
@@ -1135,12 +1135,12 @@ export default function AdminOnboarding() {
 
   useEffect(() => {
     if (!leaverM365Actions?.run_id || !offboardSelectedId) return
-    const isEngineStatus = leaverM365Actions.run_status === 'checking_account'
-      || leaverM365Actions.run_status === 'deprovisioning'
-      || leaverM365Actions.run_status === 'awaiting_approval'
+    const isTerminal = leaverM365Actions.run_status === 'completed' || leaverM365Actions.run_status === 'failed'
+    const isEngineStatus = !!leaverM365Actions.run_status && !isTerminal
     const needsPoll = leaverM365Actions.approval_status === 'pending' || isEngineStatus
     if (!needsPoll) return
-    const pollInterval = leaverM365Actions.run_status === 'awaiting_approval' ? 60000 : 10000
+    const slowPollStatuses = ['ready_for_approval', 'awaiting_approval', 'account_blocked']
+    const pollInterval = slowPollStatuses.includes(leaverM365Actions.run_status || '') ? 60000 : 10000
     const timer = setInterval(async () => {
       if (isEngineStatus && leaverM365Actions?.run_id) {
         await callIfoLeaver('check-leaver-run', { run_id: leaverM365Actions.run_id, offboarding_id: offboardSelectedId })
