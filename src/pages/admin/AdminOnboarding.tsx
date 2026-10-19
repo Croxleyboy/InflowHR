@@ -278,6 +278,7 @@ export default function AdminOnboarding() {
   const [m365ScheduleMode, setM365ScheduleMode] = useState<'now' | 'schedule'>('now')
   const [m365SchedulingAvailable, setM365SchedulingAvailable] = useState(false)
   const [m365PrepareDays, setM365PrepareDays] = useState(3)
+  const [m365PrepareDate, setM365PrepareDate] = useState('')
   const [m365ScheduleCreating, setM365ScheduleCreating] = useState(false)
   const [m365ScheduleCancelling, setM365ScheduleCancelling] = useState(false)
   const [m365ScheduleRefreshing, setM365ScheduleRefreshing] = useState(false)
@@ -1380,6 +1381,7 @@ export default function AdminOnboarding() {
   const [leaverScheduleMode, setLeaverScheduleMode] = useState<'now' | 'schedule'>('now')
   const [leaverSchedulingAvailable, setLeaverSchedulingAvailable] = useState(false)
   const [leaverLicenceRemovalDays, setLeaverLicenceRemovalDays] = useState(30)
+  const [leaverRemovalDate, setLeaverRemovalDate] = useState('')
   const [leaverScheduleCreating, setLeaverScheduleCreating] = useState(false)
   const [leaverScheduleCancelling, setLeaverScheduleCancelling] = useState(false)
   const [leaverScheduleRefreshing, setLeaverScheduleRefreshing] = useState(false)
@@ -2664,10 +2666,10 @@ export default function AdminOnboarding() {
                                       <div style={{ width: 160 }}>
                                         <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Prepare account on</label>
                                         <input className="admin-input" type="date"
-                                          value={(() => { const d = new Date(new Date(selectedRecord.start_date).getTime() - m365PrepareDays * 86400000); return d.toISOString().split('T')[0] })()}
+                                          value={m365PrepareDate || (() => { const d = new Date(new Date(selectedRecord.start_date).getTime() - m365PrepareDays * 86400000); return d.toISOString().split('T')[0] })()}
                                           min={new Date().toISOString().split('T')[0]}
                                           max={new Date(new Date(selectedRecord.start_date).getTime() - 86400000).toISOString().split('T')[0]}
-                                          onChange={e => { const diff = Math.round((new Date(selectedRecord.start_date).getTime() - new Date(e.target.value).getTime()) / 86400000); setM365PrepareDays(Math.max(1, diff)) }}
+                                          onChange={e => { const v = e.target.value; setM365PrepareDate(v); if (v && selectedRecord.start_date) { const diff = Math.round((new Date(selectedRecord.start_date + 'T00:00:00').getTime() - new Date(v + 'T00:00:00').getTime()) / 86400000); setM365PrepareDays(Math.max(1, diff)) } }}
                                           style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
                                       </div>
                                     </div>
@@ -3295,9 +3297,9 @@ export default function AdminOnboarding() {
                                       <div style={{ width: 180 }}>
                                         <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Remove licence & groups on</label>
                                         <input className="admin-input" type="date"
-                                          value={(() => { if (!record.end_date) return ''; const d = new Date(new Date(record.end_date).getTime() + leaverLicenceRemovalDays * 86400000); return d.toISOString().split('T')[0] })()}
-                                          min={record.end_date ? new Date(record.end_date).toISOString().split('T')[0] : ''}
-                                          onChange={e => { if (!record.end_date) return; const diff = Math.round((new Date(e.target.value).getTime() - new Date(record.end_date).getTime()) / 86400000); setLeaverLicenceRemovalDays(Math.max(0, diff)) }}
+                                          value={leaverRemovalDate || (() => { if (!record.end_date) return ''; const d = new Date(new Date(record.end_date + 'T00:00:00').getTime() + leaverLicenceRemovalDays * 86400000); return d.toISOString().split('T')[0] })()}
+                                          min={record.end_date ? record.end_date.split('T')[0] : ''}
+                                          onChange={e => { const v = e.target.value; setLeaverRemovalDate(v); if (v && record.end_date) { const diff = Math.round((new Date(v + 'T00:00:00').getTime() - new Date(record.end_date.split('T')[0] + 'T00:00:00').getTime()) / 86400000); setLeaverLicenceRemovalDays(Math.max(0, diff)) } }}
                                           style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
                                       </div>
                                       <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #bbdefb', borderRadius: 6, padding: 10 }}>
@@ -3309,7 +3311,7 @@ export default function AdminOnboarding() {
                                           </div>
                                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                                             <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>2</span>
-                                            <span>Remove groups & licence — <strong>{record.end_date ? new Date(new Date(record.end_date).getTime() + leaverLicenceRemovalDays * 86400000).toLocaleDateString('en-GB') : `${leaverLicenceRemovalDays} days after`}</strong> at 17:00</span>
+                                            <span>Remove groups & licence — <strong>{leaverRemovalDate ? new Date(leaverRemovalDate + 'T00:00:00').toLocaleDateString('en-GB') : record.end_date ? new Date(new Date(record.end_date + 'T00:00:00').getTime() + leaverLicenceRemovalDays * 86400000).toLocaleDateString('en-GB') : `${leaverLicenceRemovalDays} days after`}</strong> at 17:00</span>
                                           </div>
                                         </div>
                                       </div>
