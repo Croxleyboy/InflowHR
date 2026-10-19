@@ -206,97 +206,153 @@ const SECTIONS: GuideSection[] = [
     ],
   },
   {
-    icon: '🚪', title: 'Leaving & Offboarding (Admin)',
+    icon: '🔗', title: 'InflowOnboarder (Admin)',
     features: [
-      { title: 'Overview', purpose: 'When an employee leaves, the M365 offboarding workflow automates the removal of their Microsoft 365 account — blocking sign-in, removing groups, and revoking licences.', steps: [
-        'This feature requires an active InflowOnboarder integration with the "Offboard leavers (workflow)" API key permission.',
-        'Configure your offboarding approver under Admin > Integrations > InflowOnboarder > Offboarding Settings.',
-      ], callout: { type: 'note', text: 'The offboarding workflow is only available to companies with an InflowOnboarder subscription.' } },
-      { title: 'Configure the Offboarding Approver', purpose: 'Choose who approves each offboarding request before the M365 account is deprovisioned.', steps: [
-        'Go to Admin > Integrations > InflowOnboarder and scroll to Offboarding Settings.',
-        'Choose an approver mode:',
-        '• Same as joiner — uses the same approver configured for new starter onboarding.',
+      { title: 'Overview', purpose: 'InflowOnboarder automates Microsoft 365 account provisioning for joiners and deprovisioning for leavers, with optional scheduling to run actions on future dates.', steps: [
+        'InflowOnboarder is an add-on integration. Your company must have an InflowOnboarder subscription enabled before you can connect.',
+        'Once connected, M365 automation appears on the onboarding workflow (accounts step) and the offboarding workflow (remove accounts step).',
+        'Follow the steps below in order to set up both joiners and leavers.',
+      ], callout: { type: 'note', text: 'You need an InflowOnboarder account with an API key before starting. Visit the InflowOnboarder dashboard to create one.' } },
+
+      { title: 'Step 1: Create Your API Key', purpose: 'Generate an API key in InflowOnboarder with the correct permissions for both joiners and leavers.', steps: [
+        'Sign in to the InflowOnboarder dashboard.',
+        'Go to API Keys and click Create Key.',
+        'Select the following scopes:',
+        '• m365.joiner — provision new joiner accounts.',
+        '• m365.leaver — deprovision leaver accounts.',
+        '• m365.license.list — read available licences.',
+        'If you also want scheduled (future-dated) provisioning, additionally select:',
+        '• hr.joiner — schedule new joiner provisioning.',
+        '• hr.leaver — schedule leaver deprovisioning.',
+        'Set approvals to "Approved in this service" — InflowHR handles its own approval workflow.',
+        'Copy the generated key (it starts with ifo_). You will not be able to see it again.',
+      ], callout: { type: 'tip', text: 'Scopes cannot be added to an existing key. If you need to add leavers or scheduling later, create a new key with all the scopes you need and reconnect.' } },
+
+      { title: 'Step 2: Connect the API Key', purpose: 'Paste your API key into InflowHR to establish the connection.', steps: [
+        'Go to Admin > Integrations and find the InflowOnboarder card.',
+        'Click the card to expand it, then click Connect (or Reconnect if replacing an existing key).',
+        'Paste your API key and click Connect.',
+        'If the connection succeeds, the status badge shows "Connected" in green.',
+        'If M365 read/write is not fully healthy, the status shows "Attention needed" — check your InflowOnboarder dashboard.',
+      ] },
+
+      { title: 'Step 3: Configure Onboarding Settings', purpose: 'Set the defaults that apply whenever a new joiner\'s M365 account is provisioned.', steps: [
+        'On the InflowOnboarder card, click Onboarding Settings to expand the panel.',
+        '',
+        'Provisioning Approver — choose who approves each M365 provisioning:',
+        '• Joiner\'s manager — the new starter\'s line manager approves.',
         '• Nominated person — enter a specific approver name and email.',
-        '• Line manager — the leaver\'s manager approves (falls back to nominated if no manager is set).',
-        'Save your settings.',
+        '',
+        'Licence Manager — enter the name and email of the person to notify if M365 licence seats run out.',
+        '',
+        'Default Licence Type — click "Load Licences" to fetch your M365 licence plans, then select the licence to assign to each new joiner (e.g. Microsoft 365 Business Basic).',
+        '',
+        'New Joiner Group — optionally enter the M365 group to add each new account to (e.g. "All Staff").',
+        '',
+        'Account Domain — enter the domain for new account email addresses (e.g. contoso.com).',
+        '',
+        'Click Save Settings.',
+      ], callout: { type: 'note', text: 'Account Domain is required. The card shows "Settings incomplete" until this is set.' } },
+
+      { title: 'Step 4: Configure Offboarding Settings', purpose: 'Set who approves M365 offboarding when an employee leaves.', steps: [
+        'On the InflowOnboarder card, click Offboarding Settings to expand the panel.',
+        '',
+        'Offboarding Approver — choose who approves each M365 offboarding:',
+        '• Same as joiner approver — uses the same approver you set in Onboarding Settings.',
+        '• Leaver\'s manager — the leaving employee\'s line manager approves.',
+        '• Nominated person — enter a specific approver name and email.',
+        '',
+        'Click Save Settings.',
+      ], callout: { type: 'tip', text: 'The approver must exist as an employee in InflowHR for the same company. If the approver cannot be found, check that their email matches their employee record.' } },
+
+      { title: 'Step 5: Verify the Connection', purpose: 'Confirm everything is working before you start using the integration.', steps: [
+        'Click Re-check Status on the InflowOnboarder card.',
+        'A successful check shows "M365 connection healthy".',
+        'If you added scheduling scopes (hr.joiner, hr.leaver), a green "Scheduling" badge appears next to the Connected badge.',
+        'If scheduling scopes are missing, an orange hint explains which scopes to add and how.',
       ] },
-      { title: 'Start an Offboarding Workflow', purpose: 'Initiate the automated M365 offboarding for a leaver.', steps: [
-        'Go to Admin > Onboarding > Offboarding tab and open the leaver\'s record.',
-        'In the M365 Offboarding panel, click Start M365 Offboarding.',
-        'The system checks the employee\'s M365 account status. This typically takes a few seconds.',
-        'If the account is protected (e.g. litigation hold), a warning is shown — resolve externally, then click Re-check.',
-        'Once the account check passes, the status moves to Ready for Approval.',
-      ] },
-      { title: 'Approval & Proceed', purpose: 'Send the offboarding for approval and then proceed once approved.', steps: [
-        'Click Send for Approval. The configured approver receives a notification and email.',
-        'The approver opens their Notifications > Actions tab and approves or declines.',
-        'Once approved, the panel shows Approved — click Proceed with Offboarding.',
-        'The system submits the approval to the InflowOnboarder engine and begins deprovisioning.',
+
+      { title: 'Using Joiners: Run Now', purpose: 'Provision a new starter\'s M365 account immediately.', steps: [
+        'Go to Admin > Onboarding and open a joiner\'s record.',
+        'In the workflow, open the accounts step.',
+        'Fill in the UPN (sign-in email), display name, and country.',
+        'Select a licence and group if different from the defaults.',
+        'Click Send for Approval. The configured approver receives a notification.',
+        'Once approved, click Proceed. The engine creates the account, assigns the licence, and adds the group.',
         'The panel auto-refreshes while the engine processes — no manual action needed.',
       ] },
-      { title: 'Workflow Statuses', purpose: 'Understand what each status means during the offboarding process.', steps: [
+
+      { title: 'Using Joiners: Schedule', purpose: 'Schedule the new starter\'s M365 account to be created ahead of their start date.', steps: [
+        'This requires the M365 Scheduling subscription add-on and hr.joiner scope on the API key.',
+        'Open the joiner\'s accounts step and switch the mode toggle to Schedule.',
+        'Set "Prepare days before" (1–14, default 3) — how many days before the start date the account is created with sign-in disabled.',
+        'Review the plan preview:',
+        '• Prepare account — N days before the start date at 09:00.',
+        '• Enable sign-in — on the start date at 08:00.',
+        'Click Send Schedule for Approval.',
+        'Once approved, click Create Schedule. The engine confirms the stages and runs automatically on the planned dates.',
+      ], callout: { type: 'note', text: 'If you don\'t see the Schedule toggle, check Admin > Integrations for a hint about missing API key permissions.' } },
+
+      { title: 'Using Leavers: Run Now', purpose: 'Deprovision a leaver\'s M365 account immediately.', steps: [
+        'Go to Admin > Onboarding > Offboarding tab and open the leaver\'s record.',
+        'In the remove accounts step, click Start M365 Offboarding.',
+        'The engine checks the employee\'s M365 account status.',
+        'If the account is protected (e.g. litigation hold), a warning is shown — resolve externally, then click Re-check.',
+        'Once the check passes, click Send for Approval.',
+        'Once approved, click Proceed with Offboarding. The engine blocks sign-in, removes groups, and revokes licences.',
+      ] },
+
+      { title: 'Using Leavers: Schedule', purpose: 'Schedule M365 account removal around the leave date.', steps: [
+        'This requires the M365 Scheduling subscription add-on and hr.leaver scope on the API key.',
+        'Open the leaver\'s remove accounts step and switch the mode toggle to Schedule.',
+        'Set "Licence removal delay" (0–90 days, default 30) — how long after the leave date groups and licences are removed.',
+        'Review the plan preview:',
+        '• Block access — blocks sign-in at 17:00 on the leave date.',
+        '• Remove groups & licence — N days after the leave date at 17:00.',
+        'Click Send Schedule for Approval.',
+        'Once approved, click Create Schedule. The engine runs automatically on the planned dates.',
+      ] },
+
+      { title: 'Workflow Statuses', purpose: 'Understand what each status means during joiner and leaver workflows.', steps: [
         'Checking Account — the engine is verifying the M365 account.',
-        'Account Blocked — the account is protected and cannot be offboarded automatically.',
-        'Ready for Approval — account check passed, waiting for you to send for approval.',
-        'Awaiting Approval — approval submitted, engine is processing asynchronously.',
-        'Deprovisioning — the engine is blocking sign-in, removing groups, and revoking licences.',
-        'Completed — all actions finished. Device recovery details are shown.',
+        'Account Blocked — the account is protected and cannot be processed automatically.',
+        'Ready for Approval — checks passed, waiting for you to send for approval.',
+        'Awaiting Approval — approval sent, waiting for the approver to respond.',
+        'Provisioning / Deprovisioning — the engine is creating or removing the account.',
+        'Completed — all actions finished successfully.',
         'Failed — something went wrong. Use Re-check or Mark Complete Manually.',
       ] },
-      { title: 'Manual Completion', purpose: 'Mark an offboarding as complete when the automated workflow cannot finish.', steps: [
-        'If the workflow fails or the account was handled outside the automated process, click Mark Complete Manually.',
-        'This updates the record to Completed without calling the InflowOnboarder engine.',
-      ], callout: { type: 'tip', text: 'Manual completion is always available as a fallback — the offboarding record is never stuck.' } },
-    ],
-  },
-  {
-    icon: '📅', title: 'M365 Scheduling (Admin)',
-    features: [
-      { title: 'Overview', purpose: 'Schedule M365 account provisioning and deprovisioning ahead of time, so accounts are created or removed automatically on the right dates.', steps: [
-        'This feature requires an M365 Scheduling subscription add-on AND an InflowOnboarder API key with scheduling permissions (hr.joiner / hr.leaver scopes).',
-        'When both are active, a "Run Now / Schedule" toggle appears on the accounts step (joiners) and remove accounts step (leavers).',
-      ], callout: { type: 'note', text: 'If you don\'t see the Schedule option, check Admin > Integrations for a hint about missing API key permissions.' } },
-      { title: 'Schedule a Joiner', purpose: 'Create the new starter\'s M365 account ahead of their start date.', steps: [
-        'Open the joiner\'s record in Admin > Onboarding and go to the accounts step.',
-        'Switch the mode toggle to Schedule.',
-        'Fill in the UPN, display name, and country — the same fields as "Run Now".',
-        'Set "Prepare days before" (1–14, default 3). This controls how many days before the start date the account is created with sign-in disabled.',
-        'Review the plan preview showing two stages:',
-        '• Prepare account — creates the account N days before the start date at 09:00.',
-        '• Enable sign-in — switches sign-in on at 08:00 on the start date.',
-        'Click Send Schedule for Approval. The configured approver receives a notification.',
-      ] },
-      { title: 'Schedule a Leaver', purpose: 'Automate M365 account removal around the leave date.', steps: [
-        'Open the leaver\'s record in Admin > Onboarding > Offboarding tab and go to the remove accounts step.',
-        'Switch the mode toggle to Schedule.',
-        'Set "Licence removal delay" (0–90 days, default 30). This controls how long after the leave date licences and groups are removed.',
-        'Review the plan preview showing two stages:',
-        '• Block access — blocks sign-in at 17:00 on the leave date.',
-        '• Remove access — removes groups and licences N days after the leave date at 17:00.',
-        'Click Send Schedule for Approval.',
-      ] },
-      { title: 'Approval Flow', purpose: 'Schedules must be approved before they are submitted to the engine.', steps: [
-        'The approver receives a notification in their Actions tab with the full schedule plan.',
-        'They can approve or decline. On approval, the admin sees an "Approved" badge and a Create Schedule button.',
-        'Clicking Create Schedule submits the plan to the InflowOnboarder engine, which confirms the stages and times.',
-        'Once created, the schedule runs automatically — no further action is needed unless something goes wrong.',
-      ] },
-      { title: 'Schedule Statuses', purpose: 'Understand what each status means during the schedule lifecycle.', steps: [
+
+      { title: 'Schedule Statuses', purpose: 'Understand what each status means during scheduled provisioning or deprovisioning.', steps: [
         'Pending Approval — waiting for the approver to approve or decline.',
         'Scheduled — the engine has accepted the schedule and will execute on the planned dates.',
-        'Running — a stage is currently being executed by the engine.',
-        'Blocked — something is preventing the next stage (e.g. no available licence). Use Check Again after resolving.',
+        'Running — a stage is currently being executed.',
+        'Blocked — something is preventing the next stage (e.g. no available licence). Resolve the issue, then click Check Again.',
         'Completed — all stages finished successfully.',
-        'Cancelled — an admin cancelled the schedule before it completed.',
-        'Failed — the engine encountered an error. Check the message and use Check Again or cancel.',
-        'Missed — a stage\'s planned time has passed without executing. Use Check Again to retry.',
+        'Cancelled — an admin cancelled the schedule.',
+        'Failed — the engine encountered an error. Check the message, then use Check Again or cancel.',
+        'Missed — a stage\'s planned time passed without executing. Use Check Again to retry.',
       ] },
+
       { title: 'Managing Active Schedules', purpose: 'Monitor, refresh, or cancel schedules after they are created.', steps: [
         'The schedule tracking panel shows a timeline with each stage, its planned date/time, and current status.',
         'Refresh — re-fetches the latest status from the engine.',
         'Check Again — retries a blocked or failed stage after you\'ve resolved the issue externally.',
         'Cancel — cancels the schedule with a reason. Any resources already provisioned (e.g. licences) are released.',
       ], callout: { type: 'tip', text: 'If a joiner\'s start date or leaver\'s end date changes, update the date on the record first, then cancel and re-create the schedule with the new dates.' } },
+
+      { title: 'Manual Completion', purpose: 'Mark a joiner or leaver as complete when the automated workflow cannot finish.', steps: [
+        'If the workflow fails or the account was handled outside the automated process, click Mark Complete Manually.',
+        'This updates the record to Completed without calling the InflowOnboarder engine.',
+      ], callout: { type: 'tip', text: 'Manual completion is always available as a fallback — no record is ever stuck.' } },
+
+      { title: 'Troubleshooting', purpose: 'Common issues and how to resolve them.', steps: [
+        '"Could not find the approver employee record" — the approver\'s email does not match any employee in your company. Check the approver email matches their employee record\'s email or user email.',
+        '"Scheduling not available" — the API key is missing the hr.joiner and hr.leaver scopes. Create a new key with all required scopes and reconnect.',
+        '"M365 Not Fully Ready" — the API key is valid but M365 read/write connections are not both healthy. Check your InflowOnboarder dashboard.',
+        '"Account Blocked" — the M365 account has a protection (e.g. litigation hold). Remove the hold in the Microsoft 365 admin centre, then click Re-check.',
+        '"Settings incomplete" — the Account Domain field is empty. Open Onboarding Settings and enter your domain.',
+      ] },
     ],
   },
   {
