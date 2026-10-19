@@ -248,6 +248,12 @@ export default function AdminOnboarding() {
     create_account_job_id: string | null
     licence_status: string | null
     licence_sku_id: string | null
+    schedule_id: string | null
+    schedule_status: string | null
+    schedule_message: string | null
+    schedule_stages: any[] | null
+    schedule_next_due_at: string | null
+    schedule_options: any | null
   }
   interface IfoSettings {
     approver_mode: 'manager' | 'nominated'
@@ -269,6 +275,12 @@ export default function AdminOnboarding() {
   const [m365Proceeding, setM365Proceeding] = useState(false)
   const [ifoConnected, setIfoConnected] = useState(false)
   const [ifoSettings, setIfoSettings] = useState<IfoSettings | null>(null)
+  const [m365ScheduleMode, setM365ScheduleMode] = useState<'now' | 'schedule'>('now')
+  const [m365SchedulingAvailable, setM365SchedulingAvailable] = useState(false)
+  const [m365PrepareDays, setM365PrepareDays] = useState(3)
+  const [m365ScheduleCreating, setM365ScheduleCreating] = useState(false)
+  const [m365ScheduleCancelling, setM365ScheduleCancelling] = useState(false)
+  const [m365ScheduleRefreshing, setM365ScheduleRefreshing] = useState(false)
 
 
   const COLUMN_MAP: Record<string, string> = {
@@ -966,7 +978,7 @@ export default function AdminOnboarding() {
     const { data } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
     setM365Actions(data as M365Actions | null)
     const { data: ifo } = await supabase.from('inflowonboarder_integrations')
-      .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name')
+      .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache')
       .eq('company_id', selectedCompanyId).maybeSingle()
     setIfoConnected(ifo?.status === 'connected_ready')
     if (ifo) {
@@ -980,6 +992,9 @@ export default function AdminOnboarding() {
         licence_manager_name: ifo.licence_manager_name,
         group_name: ifo.group_name,
       })
+      const templates = Array.isArray(ifo.schedule_templates_cache) ? ifo.schedule_templates_cache : []
+      const hasJoiner = templates.some((t: any) => t.id === 'hr.joiner' || t.templateId === 'hr.joiner')
+      setM365SchedulingAvailable(hasJoiner && features.m365_scheduling)
     }
     if (data?.run_id && (!data?.run_status || ['checking_licence', 'provisioning'].includes(data?.run_status))) {
       const freshStatus = await callIfo('check-run', { run_id: data.run_id, onboarding_id: onboardingId })
@@ -1167,6 +1182,121 @@ export default function AdminOnboarding() {
     }
   }
 
+  // ── M365 scheduling helpers (joiner) ────────────────────────────────────
+
+  async function m365SendScheduleApproval(record: OnboardRecord) {
+    if (!selectedCompanyId) return
+    setM365ApprovalSending(true)
+    const startDate = record.start_date
+    const prepDate = new Date(new Date(startDate).getTime() - m365PrepareDays * 86400000)
+    const planDesc = `Schedule M365 Account for ${record.firstname} ${record.surname}:\n` +
+      `• Prepare account: ${prepDate.toLocaleDateString('en-GB')} at 09:00\n` +
+      `• Enable sign-in: ${new Date(startDate).toLocaleDateString('en-GB')} at 08:00`
+    const approverMode = ifoSettings?.approver_mode || 'manager'
+    let approverEmpId: string | null = null
+    if (approverMode === 'manager' && record.manager_email) {
+      const { data: mgr } = await supabase.from('employees').select('id').eq('user_email', record.manager_email).eq('company_id', selectedCompanyId).maybeSingle()
+      approverEmpId = mgr?.id || null
+    } else if (approverMode === 'nominated' && ifoSettings?.approver_email) {
+      const { data: nom } = await supabase.from('employees').select('id').eq('user_email', ifoSettings.approver_email).eq('company_id', selectedCompanyId).maybeSingle()
+      approverEmpId = nom?.id || null
+    }
+    if (!approverEmpId) { showError('Could not find the approver. Check the approver settings on the Integrations page.'); setM365ApprovalSending(false); return }
+    await supabase.from('workflow_tracker').insert({
+      company_id: selectedCompanyId,
+      record_id: record.id,
+      record_type: 'M365 Scheduling',
+      task_description: planDesc,
+      assigned_to: approverEmpId,
+      status: 'pending',
+    })
+    await supabase.from('notifications').insert({
+      company_id: selectedCompanyId,
+      employee_id: approverEmpId,
+      type: 'action',
+      title: 'M365 Schedule Approval Required',
+      message: `Please approve the M365 account schedule for ${record.firstname} ${record.surname}.`,
+      is_read: false,
+      action_type: 'M365 Scheduling',
+      action_record_id: record.id,
+    })
+    await supabase.from('onboarding_m365_actions').upsert({
+      onboarding_id: record.id,
+      company_id: selectedCompanyId,
+      approval_sent_at: new Date().toISOString(),
+      approval_status: 'pending',
+      schedule_status: 'pending_approval',
+      schedule_options: { prepareDaysBefore: m365PrepareDays },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'onboarding_id' })
+    showSuccess('Schedule approval sent')
+    setM365ApprovalSending(false)
+    await loadM365Actions(record.id)
+  }
+
+  async function m365CreateSchedule(record: OnboardRecord) {
+    if (!selectedCompanyId || !m365Actions) return
+    setM365ScheduleCreating(true)
+    const upn = m365Upn || record.user_email
+    const result = await callIfo('create-schedule', {
+      onboarding_id: record.id,
+      input: {
+        givenName: record.firstname,
+        surname: record.surname,
+        displayName: m365DisplayName || `${record.firstname} ${record.surname}`,
+        userPrincipalName: upn,
+        usageLocation: m365Location || 'GB',
+        startDate: record.start_date,
+        jobTitle: record.job_title,
+        department: record.department,
+        employeeHireDate: record.start_date,
+      },
+      options: { prepareDaysBefore: m365Actions.schedule_options?.prepareDaysBefore || m365PrepareDays },
+      approver_name: m365Actions.approved_by || 'InflowHR Approver',
+      approver_email: ifoSettings?.approver_email || '',
+      approved_at: m365Actions.approved_at || new Date().toISOString(),
+      attempt: m365Actions.attempt_count_run || 0,
+    })
+    setM365ScheduleCreating(false)
+    if (result) {
+      if (result.use_run_now) {
+        showError(result.error || 'Start date is too close — use Run Now instead')
+        setM365ScheduleMode('now')
+      } else {
+        showSuccess('Schedule created')
+      }
+      await loadM365Actions(record.id)
+    }
+  }
+
+  async function m365RefreshSchedule(scheduleId: string, onboardingId: number) {
+    setM365ScheduleRefreshing(true)
+    await callIfo('get-schedule', { schedule_id: scheduleId, onboarding_id: onboardingId })
+    await loadM365Actions(onboardingId)
+    setM365ScheduleRefreshing(false)
+  }
+
+  async function m365CancelSchedule(scheduleId: string, onboardingId: number, reason: string) {
+    if (!confirm('Cancel this schedule? The engine will release any reserved licences and groups.')) return
+    setM365ScheduleCancelling(true)
+    const result = await callIfo('cancel-schedule', { schedule_id: scheduleId, onboarding_id: onboardingId, reason })
+    setM365ScheduleCancelling(false)
+    if (result) {
+      showSuccess('Schedule cancelled')
+      await loadM365Actions(onboardingId)
+    }
+  }
+
+  async function m365RecheckSchedule(scheduleId: string, onboardingId: number) {
+    setM365ScheduleRefreshing(true)
+    const result = await callIfo('recheck-schedule', { schedule_id: scheduleId, onboarding_id: onboardingId })
+    setM365ScheduleRefreshing(false)
+    if (result) {
+      showSuccess('Schedule rechecked')
+      await loadM365Actions(onboardingId)
+    }
+  }
+
   // ── M365 offboarding helpers (leaver workflow runs) ────────────────────
   interface LeaverM365Actions {
     offboarding_id: number
@@ -1180,6 +1310,12 @@ export default function AdminOnboarding() {
     approved_at: string | null
     employee_upn: string | null
     attempt_count_run: number
+    schedule_id: string | null
+    schedule_status: string | null
+    schedule_message: string | null
+    schedule_stages: any[] | null
+    schedule_next_due_at: string | null
+    schedule_options: any | null
   }
   interface IfoOffboardSettings {
     offboard_approver_mode: 'same_as_joiner' | 'nominated' | 'manager'
@@ -1196,6 +1332,12 @@ export default function AdminOnboarding() {
   const [leaverM365Proceeding, setLeaverM365Proceeding] = useState(false)
   const [leaverM365Refreshing, setLeaverM365Refreshing] = useState(false)
   const [ifoOffboardSettings, setIfoOffboardSettings] = useState<IfoOffboardSettings | null>(null)
+  const [leaverScheduleMode, setLeaverScheduleMode] = useState<'now' | 'schedule'>('now')
+  const [leaverSchedulingAvailable, setLeaverSchedulingAvailable] = useState(false)
+  const [leaverLicenceRemovalDays, setLeaverLicenceRemovalDays] = useState(30)
+  const [leaverScheduleCreating, setLeaverScheduleCreating] = useState(false)
+  const [leaverScheduleCancelling, setLeaverScheduleCancelling] = useState(false)
+  const [leaverScheduleRefreshing, setLeaverScheduleRefreshing] = useState(false)
 
   async function loadLeaverM365Actions(offboardingId: number) {
     setLeaverM365Refreshing(true)
@@ -1203,7 +1345,7 @@ export default function AdminOnboarding() {
       const [{ data }, { data: ifo }, { data: wt }] = await Promise.all([
         supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle(),
         supabase.from('inflowonboarder_integrations')
-          .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email')
+          .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email, schedule_templates_cache')
           .eq('company_id', selectedCompanyId).maybeSingle(),
         supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
           .eq('onboard_id', offboardingId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle(),
@@ -1218,6 +1360,9 @@ export default function AdminOnboarding() {
           approver_name: ifo.approver_name,
           approver_email: ifo.approver_email,
         })
+        const templates = Array.isArray(ifo.schedule_templates_cache) ? ifo.schedule_templates_cache : []
+        const hasLeaver = templates.some((t: any) => t.id === 'hr.leaver' || t.templateId === 'hr.leaver')
+        setLeaverSchedulingAvailable(hasLeaver && features.m365_scheduling)
       }
       const terminalStatuses = ['completed', 'failed']
       if (data?.run_id && data?.run_status && !terminalStatuses.includes(data.run_status)) {
@@ -1486,6 +1631,116 @@ export default function AdminOnboarding() {
     const result = await callIfoLeaver('mark-leaver-complete-manual', { offboarding_id: offboardingId })
     if (result) {
       showSuccess('Marked as manually completed')
+      await loadLeaverM365Actions(offboardingId)
+    }
+  }
+
+  async function leaverSendScheduleApproval(record: OffboardRecord) {
+    if (!selectedCompanyId || !ifoOffboardSettings) return
+    setLeaverM365ApprovalSending(true)
+    const leaveDate = record.end_date || new Date().toISOString().split('T')[0]
+    const removalDate = new Date(new Date(leaveDate).getTime() + leaverLicenceRemovalDays * 86400000)
+    const planDesc = `Schedule M365 Offboarding for ${record.employee_name}:\n` +
+      `• Block access: ${new Date(leaveDate).toLocaleDateString('en-GB')} at 17:00\n` +
+      `• Remove groups & licence: ${removalDate.toLocaleDateString('en-GB')} at 17:00`
+    let resolvedMode = ifoOffboardSettings.offboard_approver_mode
+    let approverEmail: string | null = null
+    if (resolvedMode === 'same_as_joiner') {
+      resolvedMode = ifoOffboardSettings.approver_mode
+      approverEmail = ifoOffboardSettings.approver_email
+    } else if (resolvedMode === 'nominated') {
+      approverEmail = ifoOffboardSettings.offboard_approver_email
+    }
+    if (resolvedMode === 'manager') {
+      const { data: emp } = await supabase.from('employees').select('manager_email').eq('id', record.employee_id).maybeSingle()
+      approverEmail = emp?.manager_email || null
+    }
+    if (!approverEmail) { showError('No approver found. Check the approver settings on the Integrations page.'); setLeaverM365ApprovalSending(false); return }
+    const { data: approverEmp } = await supabase.from('employees').select('id').eq('user_email', approverEmail).eq('company_id', selectedCompanyId).maybeSingle()
+    const approverEmpId = approverEmp?.id || null
+    if (!approverEmpId) { showError('Could not find the approver employee record. Check the approver settings.'); setLeaverM365ApprovalSending(false); return }
+    await supabase.from('workflow_tracker').insert({
+      company_id: selectedCompanyId,
+      record_id: record.id,
+      record_type: 'M365 Leaver Scheduling',
+      task_description: planDesc,
+      assigned_to: approverEmpId,
+      status: 'pending',
+    })
+    await supabase.from('notifications').insert({
+      company_id: selectedCompanyId,
+      employee_id: approverEmpId,
+      type: 'action',
+      title: 'M365 Leaver Schedule Approval Required',
+      message: `Please approve the M365 offboarding schedule for ${record.employee_name}.`,
+      is_read: false,
+      action_type: 'M365 Leaver Scheduling',
+      action_record_id: record.id,
+    })
+    await supabase.from('offboarding_m365_actions').upsert({
+      offboarding_id: record.id,
+      company_id: selectedCompanyId,
+      approval_sent_at: new Date().toISOString(),
+      approval_status: 'pending',
+      schedule_status: 'pending_approval',
+      schedule_options: { licenceRemovalDelayDays: leaverLicenceRemovalDays },
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'offboarding_id' })
+    showSuccess('Schedule approval sent')
+    setLeaverM365ApprovalSending(false)
+    await loadLeaverM365Actions(record.id)
+  }
+
+  async function leaverCreateSchedule(record: OffboardRecord) {
+    if (!selectedCompanyId || !leaverM365Actions) return
+    setLeaverScheduleCreating(true)
+    const result = await callIfoLeaver('create-leaver-schedule', {
+      offboarding_id: record.id,
+      user_principal_name: record.employee_email,
+      display_name: record.employee_name,
+      leave_date: record.end_date,
+      options: { licenceRemovalDelayDays: leaverM365Actions.schedule_options?.licenceRemovalDelayDays || leaverLicenceRemovalDays },
+      approver_name: leaverM365Actions.approved_by || 'InflowHR Approver',
+      approver_email: ifoOffboardSettings?.offboard_approver_email || ifoOffboardSettings?.approver_email || '',
+      approved_at: leaverM365Actions.approved_at || new Date().toISOString(),
+      attempt: leaverM365Actions.attempt_count_run || 0,
+    })
+    setLeaverScheduleCreating(false)
+    if (result) {
+      if (result.use_run_now) {
+        showError(result.error || 'Leave date is too close — use Run Now instead')
+        setLeaverScheduleMode('now')
+      } else {
+        showSuccess('Leaver schedule created')
+      }
+      await loadLeaverM365Actions(record.id)
+    }
+  }
+
+  async function leaverRefreshSchedule(scheduleId: string, offboardingId: number) {
+    setLeaverScheduleRefreshing(true)
+    await callIfoLeaver('get-leaver-schedule', { schedule_id: scheduleId, offboarding_id: offboardingId })
+    await loadLeaverM365Actions(offboardingId)
+    setLeaverScheduleRefreshing(false)
+  }
+
+  async function leaverCancelSchedule(scheduleId: string, offboardingId: number, reason: string) {
+    if (!confirm('Cancel this schedule? The engine will release any reserved resources.')) return
+    setLeaverScheduleCancelling(true)
+    const result = await callIfoLeaver('cancel-leaver-schedule', { schedule_id: scheduleId, offboarding_id: offboardingId, reason })
+    setLeaverScheduleCancelling(false)
+    if (result) {
+      showSuccess('Schedule cancelled')
+      await loadLeaverM365Actions(offboardingId)
+    }
+  }
+
+  async function leaverRecheckSchedule(scheduleId: string, offboardingId: number) {
+    setLeaverScheduleRefreshing(true)
+    const result = await callIfoLeaver('recheck-leaver-schedule', { schedule_id: scheduleId, offboarding_id: offboardingId })
+    setLeaverScheduleRefreshing(false)
+    if (result) {
+      showSuccess('Schedule rechecked')
       await loadLeaverM365Actions(offboardingId)
     }
   }
@@ -2293,30 +2548,186 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* No run yet — start form */}
-                            {!m365Actions?.is_v1_legacy && (!m365Actions || (!m365Actions.run_id && !m365Actions.run_status)) && (
+                            {/* No run yet — start form or schedule */}
+                            {!m365Actions?.is_v1_legacy && (!m365Actions || (!m365Actions.run_id && !m365Actions.run_status && !m365Actions.schedule_id)) && (
                               <div style={{ marginBottom: 12 }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>UPN (email)</label>
-                                      <input className="admin-input" value={m365Upn} onChange={e => setM365Upn(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
-                                    </div>
-                                    <div style={{ flex: 1, minWidth: 0 }}>
-                                      <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Display Name</label>
-                                      <input className="admin-input" value={m365DisplayName} onChange={e => setM365DisplayName(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
-                                    </div>
+                                {m365SchedulingAvailable && (
+                                  <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderRadius: 6, overflow: 'hidden', border: '1px solid #90caf9', width: 'fit-content' }}>
+                                    <button onClick={e => { e.stopPropagation(); setM365ScheduleMode('now') }}
+                                      style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                        background: m365ScheduleMode === 'now' ? '#0078D4' : '#fff', color: m365ScheduleMode === 'now' ? '#fff' : '#0078D4' }}>
+                                      Run Now
+                                    </button>
+                                    <button onClick={e => { e.stopPropagation(); setM365ScheduleMode('schedule') }}
+                                      style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                        background: m365ScheduleMode === 'schedule' ? '#0078D4' : '#fff', color: m365ScheduleMode === 'schedule' ? '#fff' : '#0078D4' }}>
+                                      Schedule
+                                    </button>
                                   </div>
-                                  <div style={{ width: 100 }}>
-                                    <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Country</label>
-                                    <input className="admin-input" value={m365Location} onChange={e => setM365Location(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} maxLength={2} />
+                                )}
+                                {(!m365SchedulingAvailable || m365ScheduleMode === 'now') && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>UPN (email)</label>
+                                        <input className="admin-input" value={m365Upn} onChange={e => setM365Upn(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Display Name</label>
+                                        <input className="admin-input" value={m365DisplayName} onChange={e => setM365DisplayName(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                                      </div>
+                                    </div>
+                                    <div style={{ width: 100 }}>
+                                      <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Country</label>
+                                      <input className="admin-input" value={m365Location} onChange={e => setM365Location(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} maxLength={2} />
+                                    </div>
+                                    <button className="admin-btn-sm admin-btn-save" disabled={m365Starting || m365RunPolling || !m365Upn}
+                                      onClick={e => { e.stopPropagation(); m365StartRun(selectedRecord) }}
+                                      style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
+                                      {m365Starting ? 'Starting...' : 'Start M365 Provisioning'}
+                                    </button>
                                   </div>
-                                  <button className="admin-btn-sm admin-btn-save" disabled={m365Starting || m365RunPolling || !m365Upn}
-                                    onClick={e => { e.stopPropagation(); m365StartRun(selectedRecord) }}
-                                    style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
-                                    {m365Starting ? 'Starting...' : 'Start M365 Provisioning'}
+                                )}
+                                {m365SchedulingAvailable && m365ScheduleMode === 'schedule' && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>UPN (email)</label>
+                                        <input className="admin-input" value={m365Upn} onChange={e => setM365Upn(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                                      </div>
+                                      <div style={{ flex: 1, minWidth: 0 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Display Name</label>
+                                        <input className="admin-input" value={m365DisplayName} onChange={e => setM365DisplayName(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                                      <div style={{ width: 100 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Country</label>
+                                        <input className="admin-input" value={m365Location} onChange={e => setM365Location(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} maxLength={2} />
+                                      </div>
+                                      <div style={{ width: 140 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Prepare days before</label>
+                                        <input className="admin-input" type="number" min={1} max={14} value={m365PrepareDays} onChange={e => setM365PrepareDays(Math.max(1, Math.min(14, parseInt(e.target.value) || 3)))}
+                                          style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                                      </div>
+                                    </div>
+                                    <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #bbdefb', borderRadius: 6, padding: 10 }}>
+                                      <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: '#1565c0' }}>Schedule plan</p>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                          <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>1</span>
+                                          <span>Prepare account — <strong>{new Date(new Date(selectedRecord.start_date).getTime() - m365PrepareDays * 86400000).toLocaleDateString('en-GB')}</strong> at 09:00</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                          <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>2</span>
+                                          <span>Enable sign-in — <strong>{new Date(selectedRecord.start_date).toLocaleDateString('en-GB')}</strong> at 08:00</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <button className="admin-btn-sm admin-btn-save" disabled={m365ApprovalSending || !m365Upn}
+                                      onClick={e => { e.stopPropagation(); m365SendScheduleApproval(selectedRecord) }}
+                                      style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
+                                      {m365ApprovalSending ? 'Sending...' : 'Send Schedule for Approval'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Schedule tracking panel */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.schedule_id && (
+                              <div style={{ marginBottom: 12 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                                    background: m365Actions.schedule_status === 'scheduled' ? '#e3f2fd' : m365Actions.schedule_status === 'running' ? '#fff3e0' : m365Actions.schedule_status === 'completed' ? '#e8f5e9' : m365Actions.schedule_status === 'cancelled' ? '#fafafa' : m365Actions.schedule_status === 'failed' || m365Actions.schedule_status === 'missed' ? '#fce4ec' : m365Actions.schedule_status === 'blocked' ? '#fff8e1' : '#f5f5f5',
+                                    color: m365Actions.schedule_status === 'scheduled' ? '#1565c0' : m365Actions.schedule_status === 'running' ? '#e65100' : m365Actions.schedule_status === 'completed' ? '#2e7d32' : m365Actions.schedule_status === 'cancelled' ? '#888' : m365Actions.schedule_status === 'failed' || m365Actions.schedule_status === 'missed' ? '#c62828' : m365Actions.schedule_status === 'blocked' ? '#f57f17' : '#666',
+                                  }}>
+                                    {(m365Actions.schedule_status || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                  </span>
+                                  <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 11 }}
+                                    disabled={m365ScheduleRefreshing}
+                                    onClick={e => { e.stopPropagation(); m365RefreshSchedule(m365Actions!.schedule_id!, selectedRecord.id) }}>
+                                    {m365ScheduleRefreshing ? 'Refreshing...' : '↻ Refresh'}
                                   </button>
                                 </div>
+                                {m365Actions.schedule_message && (
+                                  <p style={{ margin: '0 0 8px', fontSize: 12, color: '#555', background: 'rgba(0,0,0,.03)', padding: '6px 10px', borderRadius: 4 }}>{m365Actions.schedule_message}</p>
+                                )}
+                                {m365Actions.schedule_stages && Array.isArray(m365Actions.schedule_stages) && (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                                    {m365Actions.schedule_stages.map((stage: any, si: number) => (
+                                      <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                          background: stage.status === 'completed' ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
+                                        }} />
+                                        <span style={{ fontWeight: 600 }}>{(stage.name || '').replace(/_/g, ' ')}</span>
+                                        <span style={{ color: '#888' }}>{stage.scheduledAt ? new Date(stage.scheduledAt).toLocaleString('en-GB') : ''}</span>
+                                        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
+                                          color: stage.status === 'completed' ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
+                                        }}>{stage.status}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                  {m365Actions.schedule_status === 'blocked' && (
+                                    <button className="admin-btn-sm" disabled={m365ScheduleRefreshing}
+                                      onClick={e => { e.stopPropagation(); m365RecheckSchedule(m365Actions!.schedule_id!, selectedRecord.id) }}>
+                                      Check Again
+                                    </button>
+                                  )}
+                                  {!['completed', 'cancelled', 'failed'].includes(m365Actions.schedule_status || '') && (
+                                    <button className="admin-btn-sm admin-btn-cancel" disabled={m365ScheduleCancelling}
+                                      onClick={e => { e.stopPropagation(); m365CancelSchedule(m365Actions!.schedule_id!, selectedRecord.id, 'Cancelled by admin') }}>
+                                      {m365ScheduleCancelling ? 'Cancelling...' : 'Cancel Schedule'}
+                                    </button>
+                                  )}
+                                </div>
+                                {m365Actions.schedule_status === 'completed' && m365Actions.run_result && (
+                                  <div style={{ marginTop: 8, background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10 }}>
+                                    <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule completed</p>
+                                    {m365Actions.m365_upn && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>UPN: {m365Actions.m365_upn}</p>}
+                                    {m365Actions.m365_user_id && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>User ID: {m365Actions.m365_user_id}</p>}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Schedule pending approval */}
+                            {!m365Actions?.is_v1_legacy && m365Actions?.schedule_status === 'pending_approval' && !m365Actions.schedule_id && (
+                              <div style={{ marginBottom: 12 }}>
+                                {m365Actions.approval_status === 'pending' && (
+                                  <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
+                                    <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Schedule awaiting approval</p>
+                                    <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
+                                      Sent {m365Actions.approval_sent_at ? `on ${new Date(m365Actions.approval_sent_at).toLocaleString('en-GB')}` : ''}
+                                    </p>
+                                  </div>
+                                )}
+                                {m365Actions.approval_status === 'approved' && (
+                                  <div>
+                                    <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                      <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule approved — ready to create</p>
+                                    </div>
+                                    <button className="admin-btn-sm admin-btn-save" disabled={m365ScheduleCreating}
+                                      onClick={e => { e.stopPropagation(); m365CreateSchedule(selectedRecord) }}
+                                      style={{ background: '#0078D4' }}>
+                                      {m365ScheduleCreating ? 'Creating...' : 'Create Schedule'}
+                                    </button>
+                                  </div>
+                                )}
+                                {m365Actions.approval_status === 'declined' && (
+                                  <div>
+                                    <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                      <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Schedule approval declined</p>
+                                    </div>
+                                    <button className="admin-btn-sm admin-btn-save" disabled={m365ApprovalSending}
+                                      onClick={e => { e.stopPropagation(); m365SendScheduleApproval(selectedRecord) }}
+                                      style={{ background: '#0078D4' }}>
+                                      Re-send for Approval
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             )}
 
@@ -2791,16 +3202,167 @@ export default function AdminOnboarding() {
                                 </button>
                               </div>
 
-                              {/* No run yet — start */}
-                              {!leaverM365Actions?.run_id && (
+                              {/* No run yet — start or schedule */}
+                              {!leaverM365Actions?.run_id && !leaverM365Actions?.schedule_id && !leaverM365Actions?.schedule_status && (
                                 <div>
-                                  <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-muted, #666)' }}>
-                                    Block sign-in, remove from groups, and revoke licences for <strong>{record.employee_email}</strong>
-                                  </p>
-                                  <button className="admin-btn-sm admin-btn-save" disabled={leaverM365Starting}
-                                    onClick={e => { e.stopPropagation(); leaverM365StartRun(record) }}>
-                                    {leaverM365Starting ? 'Starting...' : 'Start M365 Offboarding'}
-                                  </button>
+                                  {leaverSchedulingAvailable && (
+                                    <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderRadius: 6, overflow: 'hidden', border: '1px solid #90caf9', width: 'fit-content' }}>
+                                      <button onClick={e => { e.stopPropagation(); setLeaverScheduleMode('now') }}
+                                        style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                          background: leaverScheduleMode === 'now' ? '#0078D4' : '#fff', color: leaverScheduleMode === 'now' ? '#fff' : '#0078D4' }}>
+                                        Run Now
+                                      </button>
+                                      <button onClick={e => { e.stopPropagation(); setLeaverScheduleMode('schedule') }}
+                                        style={{ padding: '5px 14px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer',
+                                          background: leaverScheduleMode === 'schedule' ? '#0078D4' : '#fff', color: leaverScheduleMode === 'schedule' ? '#fff' : '#0078D4' }}>
+                                        Schedule
+                                      </button>
+                                    </div>
+                                  )}
+                                  {(!leaverSchedulingAvailable || leaverScheduleMode === 'now') && (
+                                    <div>
+                                      <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-muted, #666)' }}>
+                                        Block sign-in, remove from groups, and revoke licences for <strong>{record.employee_email}</strong>
+                                      </p>
+                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverM365Starting}
+                                        onClick={e => { e.stopPropagation(); leaverM365StartRun(record) }}>
+                                        {leaverM365Starting ? 'Starting...' : 'Start M365 Offboarding'}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {leaverSchedulingAvailable && leaverScheduleMode === 'schedule' && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                      <div style={{ width: 180 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Licence removal delay (days)</label>
+                                        <input className="admin-input" type="number" min={0} max={90} value={leaverLicenceRemovalDays}
+                                          onChange={e => setLeaverLicenceRemovalDays(Math.max(0, Math.min(90, parseInt(e.target.value) || 30)))}
+                                          style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                                      </div>
+                                      <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #bbdefb', borderRadius: 6, padding: 10 }}>
+                                        <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 600, color: '#1565c0' }}>Schedule plan</p>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                            <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>1</span>
+                                            <span>Block access — <strong>{record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB') : 'leave date'}</strong> at 17:00</span>
+                                          </div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                                            <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#e3f2fd', border: '1px solid #90caf9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1565c0', flexShrink: 0 }}>2</span>
+                                            <span>Remove groups & licence — <strong>{record.end_date ? new Date(new Date(record.end_date).getTime() + leaverLicenceRemovalDays * 86400000).toLocaleDateString('en-GB') : `${leaverLicenceRemovalDays} days after`}</strong> at 17:00</span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
+                                        onClick={e => { e.stopPropagation(); leaverSendScheduleApproval(record) }}
+                                        style={{ background: '#0078D4', alignSelf: 'flex-start' }}>
+                                        {leaverM365ApprovalSending ? 'Sending...' : 'Send Schedule for Approval'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Schedule pending approval */}
+                              {leaverM365Actions?.schedule_status === 'pending_approval' && !leaverM365Actions.schedule_id && (
+                                <div style={{ marginBottom: 8 }}>
+                                  {leaverM365Actions.approval_status === 'pending' && (
+                                    <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
+                                      <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Schedule awaiting approval</p>
+                                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
+                                        Sent {leaverM365Actions.approval_sent_at ? `on ${new Date(leaverM365Actions.approval_sent_at).toLocaleString('en-GB')}` : ''}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {leaverM365Actions.approval_status === 'approved' && (
+                                    <div>
+                                      <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                        <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule approved — ready to create</p>
+                                      </div>
+                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverScheduleCreating}
+                                        onClick={e => { e.stopPropagation(); leaverCreateSchedule(record) }}
+                                        style={{ background: '#0078D4' }}>
+                                        {leaverScheduleCreating ? 'Creating...' : 'Create Schedule'}
+                                      </button>
+                                    </div>
+                                  )}
+                                  {leaverM365Actions.approval_status === 'declined' && (
+                                    <div>
+                                      <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                        <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Schedule approval declined</p>
+                                      </div>
+                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
+                                        onClick={e => { e.stopPropagation(); leaverSendScheduleApproval(record) }}
+                                        style={{ background: '#0078D4' }}>
+                                        Re-send for Approval
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Schedule tracking panel */}
+                              {leaverM365Actions?.schedule_id && (
+                                <div style={{ marginBottom: 8 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                    <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                                      background: leaverM365Actions.schedule_status === 'scheduled' ? '#e3f2fd' : leaverM365Actions.schedule_status === 'running' ? '#fff3e0' : leaverM365Actions.schedule_status === 'completed' ? '#e8f5e9' : leaverM365Actions.schedule_status === 'cancelled' ? '#fafafa' : leaverM365Actions.schedule_status === 'failed' || leaverM365Actions.schedule_status === 'missed' ? '#fce4ec' : leaverM365Actions.schedule_status === 'blocked' ? '#fff8e1' : '#f5f5f5',
+                                      color: leaverM365Actions.schedule_status === 'scheduled' ? '#1565c0' : leaverM365Actions.schedule_status === 'running' ? '#e65100' : leaverM365Actions.schedule_status === 'completed' ? '#2e7d32' : leaverM365Actions.schedule_status === 'cancelled' ? '#888' : leaverM365Actions.schedule_status === 'failed' || leaverM365Actions.schedule_status === 'missed' ? '#c62828' : leaverM365Actions.schedule_status === 'blocked' ? '#f57f17' : '#666',
+                                    }}>
+                                      {(leaverM365Actions.schedule_status || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                    </span>
+                                    <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 11 }}
+                                      disabled={leaverScheduleRefreshing}
+                                      onClick={e => { e.stopPropagation(); leaverRefreshSchedule(leaverM365Actions!.schedule_id!, record.id) }}>
+                                      {leaverScheduleRefreshing ? 'Refreshing...' : '↻ Refresh'}
+                                    </button>
+                                  </div>
+                                  {leaverM365Actions.schedule_message && (
+                                    <p style={{ margin: '0 0 8px', fontSize: 12, color: '#555', background: 'rgba(0,0,0,.03)', padding: '6px 10px', borderRadius: 4 }}>{leaverM365Actions.schedule_message}</p>
+                                  )}
+                                  {leaverM365Actions.schedule_stages && Array.isArray(leaverM365Actions.schedule_stages) && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                                      {leaverM365Actions.schedule_stages.map((stage: any, si: number) => (
+                                        <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
+                                          <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                            background: stage.status === 'completed' ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
+                                          }} />
+                                          <span style={{ fontWeight: 600 }}>{(stage.name || '').replace(/_/g, ' ')}</span>
+                                          <span style={{ color: '#888' }}>{stage.scheduledAt ? new Date(stage.scheduledAt).toLocaleString('en-GB') : ''}</span>
+                                          <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
+                                            color: stage.status === 'completed' ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
+                                          }}>{stage.status}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    {leaverM365Actions.schedule_status === 'blocked' && (
+                                      <button className="admin-btn-sm" disabled={leaverScheduleRefreshing}
+                                        onClick={e => { e.stopPropagation(); leaverRecheckSchedule(leaverM365Actions!.schedule_id!, record.id) }}>
+                                        Check Again
+                                      </button>
+                                    )}
+                                    {!['completed', 'cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
+                                      <button className="admin-btn-sm admin-btn-cancel" disabled={leaverScheduleCancelling}
+                                        onClick={e => { e.stopPropagation(); leaverCancelSchedule(leaverM365Actions!.schedule_id!, record.id, 'Cancelled by admin') }}>
+                                        {leaverScheduleCancelling ? 'Cancelling...' : 'Cancel Schedule'}
+                                      </button>
+                                    )}
+                                  </div>
+                                  {leaverM365Actions.schedule_status === 'completed' && leaverM365Actions.run_result && (
+                                    <div style={{ marginTop: 8, background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10 }}>
+                                      <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Offboarding schedule completed</p>
+                                      {leaverM365Actions.run_result?.devices?.length > 0 && (
+                                        <div style={{ marginTop: 6 }}>
+                                          <strong style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Devices to recover:</strong>
+                                          {leaverM365Actions.run_result.devices.map((d: any, di: number) => (
+                                            <div key={di} style={{ fontSize: 12, padding: '2px 0' }}>
+                                              <strong>{d.deviceName}</strong> — {d.operatingSystem}{d.serialNumber ? ` (S/N: ${d.serialNumber})` : ''}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               )}
 

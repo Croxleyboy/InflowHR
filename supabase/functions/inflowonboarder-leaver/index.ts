@@ -154,12 +154,17 @@ async function audit(sb: ReturnType<typeof getSupabase>, companyId: string, user
 
 // ── Error code mapping ──────────────────────────────────────────────────────
 
+const ENGINE_SCHEDULE_URL = Deno.env.get('INFLOWONBOARDER_API_URL') || 'http://localhost:3001'
+
 const ERROR_MESSAGES: Record<string, string> = {
   forbidden_scope: 'Your API key is missing the m365.leaver permission. Check the key scopes in InflowOnboarder.',
   rate_limited: 'Too many requests. Please try again shortly.',
   unauthenticated: 'Your InflowOnboarder API key is invalid or has been revoked.',
   run_exists: 'A workflow run already exists for this leaver.',
   approval_evidence_required: 'Complete the approval in InflowHR first before proceeding.',
+  schedule_exists: 'A schedule already exists for this leaver.',
+  stage_in_past: 'One or more schedule stages would fall in the past. Use "Run now" instead.',
+  schedule_busy: 'The schedule is currently running and cannot be changed.',
   account_protected: 'This account is protected and cannot be offboarded automatically. See InflowOnboarder Settings to manage protected accounts.',
   account_has_admin_role: 'This account has an admin role assigned. Remove the role in Microsoft 365 first.',
   account_synced_from_ad: 'This account is synced from Active Directory and cannot be offboarded here.',
@@ -449,6 +454,292 @@ Deno.serve(async (req) => {
 
       await audit(sb, company_id, userId, 'inflowonboarder_mark_leaver_complete_manual', { offboarding_id, notes })
       return json({ status: 'completed', manual: true })
+    }
+
+    // ── create-leaver-schedule ──────────────────────────────────────────
+    if (action === 'create-leaver-schedule') {
+      const { offboarding_id, user_principal_name, display_name, leave_date, options, approver_name, approver_email, approved_at, attempt } = body
+      if (!offboarding_id) return json({ error: 'Missing offboarding_id' }, 400)
+      if (!user_principal_name || !leave_date) return json({ error: 'Missing user_principal_name or leave_date' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-leaver-${offboarding_id}-schedule-${attempt || 0}`
+
+      const engineBody: Record<string, unknown> = {
+        templateId: 'hr.leaver',
+        externalRef: `leaver-${offboarding_id}`,
+        parameters: {
+          userPrincipalName: user_principal_name,
+          displayName: display_name || user_principal_name,
+          leaveDate: leave_date,
+        },
+        options: { licenceRemovalDelayDays: options?.licenceRemovalDelayDays ?? 30 },
+        timeZone: 'Europe/London',
+        approval: {
+          approvedBy: { name: approver_name || 'InflowHR Approver', email: approver_email || userEmail },
+          approvedAt: approved_at || new Date().toISOString(),
+          reference: `inflowhr-leaver-schedule-approval-${offboarding_id}`,
+        },
+      }
+
+      if (MOCK_MODE) {
+        const mockSchedule = {
+          id: `mock-schedule-leaver-${offboarding_id}`,
+          status: 'scheduled',
+          message: 'Leaver schedule created successfully',
+          stages: [
+            { name: 'block_access', status: 'pending', scheduledAt: leave_date + 'T17:00:00Z' },
+            { name: 'remove_access', status: 'pending', scheduledAt: new Date(new Date(leave_date).getTime() + 86400000 * (options?.licenceRemovalDelayDays ?? 30)).toISOString() },
+          ],
+          nextDueAt: leave_date + 'T17:00:00Z',
+        }
+        await sb.from('offboarding_m365_actions').upsert({
+          offboarding_id, company_id,
+          schedule_id: mockSchedule.id,
+          schedule_status: 'scheduled',
+          schedule_message: mockSchedule.message,
+          schedule_stages: mockSchedule.stages,
+          schedule_next_due_at: mockSchedule.nextDueAt,
+          schedule_updated_at: new Date().toISOString(),
+          schedule_options: { licenceRemovalDelayDays: options?.licenceRemovalDelayDays ?? 30 },
+          employee_upn: user_principal_name,
+          run_status: 'scheduled',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'offboarding_id' })
+        return json(mockSchedule)
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
+
+      if (res.status === 409) {
+        const errData = res.data as any
+        const existingId = errData?.error?.scheduleId
+        if (existingId) {
+          const checkRes = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${existingId}`)
+          if (checkRes.ok) {
+            const sched = checkRes.data as any
+            await sb.from('offboarding_m365_actions').upsert({
+              offboarding_id, company_id,
+              schedule_id: existingId,
+              schedule_status: sched.status,
+              schedule_message: sched.message,
+              schedule_stages: sched.stages,
+              schedule_next_due_at: sched.nextDueAt,
+              schedule_updated_at: sched.updatedAt,
+              employee_upn: user_principal_name,
+              run_status: 'scheduled',
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'offboarding_id' })
+            return json({ ...sched, message: 'A schedule already exists for this leaver.' })
+          }
+        }
+        return json({ error: friendlyError('schedule_exists') }, 409)
+      }
+
+      if (res.status === 422) {
+        const code = (res.data as any)?.error?.code
+        if (code === 'stage_in_past') {
+          return json({ error: friendlyError('stage_in_past'), use_run_now: true }, 422)
+        }
+      }
+
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      await sb.from('offboarding_m365_actions').upsert({
+        offboarding_id, company_id,
+        schedule_id: sched.id,
+        schedule_status: sched.status || 'scheduled',
+        schedule_message: sched.message,
+        schedule_stages: sched.stages,
+        schedule_next_due_at: sched.nextDueAt,
+        schedule_updated_at: sched.updatedAt || new Date().toISOString(),
+        schedule_options: { licenceRemovalDelayDays: options?.licenceRemovalDelayDays ?? 30 },
+        employee_upn: user_principal_name,
+        run_status: 'scheduled',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'offboarding_id' })
+
+      await audit(sb, company_id, userId, 'inflowonboarder_create_leaver_schedule', { offboarding_id, scheduleId: sched.id })
+      return json(sched)
+    }
+
+    // ── get-leaver-schedule ───────────────────────────────────────────────
+    if (action === 'get-leaver-schedule') {
+      const { schedule_id, offboarding_id } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      if (MOCK_MODE) {
+        const { data: row } = await sb.from('offboarding_m365_actions')
+          .select('schedule_status, schedule_message, schedule_stages, schedule_next_due_at')
+          .eq('offboarding_id', offboarding_id).maybeSingle()
+        return json({
+          id: schedule_id,
+          status: row?.schedule_status || 'scheduled',
+          message: row?.schedule_message,
+          stages: row?.schedule_stages,
+          nextDueAt: row?.schedule_next_due_at,
+        })
+      }
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+      const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${schedule_id}`)
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (offboarding_id) {
+        await sb.from('offboarding_m365_actions').update({
+          schedule_status: sched.status,
+          schedule_message: sched.message,
+          schedule_stages: sched.stages,
+          schedule_next_due_at: sched.nextDueAt,
+          schedule_updated_at: sched.updatedAt,
+          updated_at: new Date().toISOString(),
+        }).eq('offboarding_id', offboarding_id)
+      }
+      return json(sched)
+    }
+
+    // ── update-leaver-schedule (date change) ──────────────────────────────
+    if (action === 'update-leaver-schedule') {
+      const { schedule_id, offboarding_id, leave_date, attempt } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+      if (!leave_date) return json({ error: 'Missing leave_date' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-leaver-${offboarding_id}-update-${attempt || 0}`
+
+      if (MOCK_MODE) {
+        await sb.from('offboarding_m365_actions').update({
+          schedule_message: `Leave date updated to ${leave_date}`,
+          schedule_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('offboarding_id', offboarding_id)
+        return json({ status: 'scheduled', message: `Leave date updated to ${leave_date}` })
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'PATCH', `/v1/schedules/${schedule_id}`, {
+        parameters: { leaveDate: leave_date },
+      }, idempotencyKey)
+
+      if (res.status === 400) {
+        const code = (res.data as any)?.error?.code
+        if (code === 'approval_evidence_required') {
+          return json({ error: friendlyError('approval_evidence_required'), needs_reapproval: true }, 400)
+        }
+      }
+      if (res.status === 409) {
+        const code = (res.data as any)?.error?.code
+        if (code === 'schedule_busy') {
+          return json({ error: friendlyError('schedule_busy') }, 409)
+        }
+      }
+
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (offboarding_id) {
+        await sb.from('offboarding_m365_actions').update({
+          schedule_status: sched.status,
+          schedule_message: sched.message,
+          schedule_stages: sched.stages,
+          schedule_next_due_at: sched.nextDueAt,
+          schedule_updated_at: sched.updatedAt,
+          updated_at: new Date().toISOString(),
+        }).eq('offboarding_id', offboarding_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_update_leaver_schedule', { offboarding_id, schedule_id, leave_date })
+      return json(sched)
+    }
+
+    // ── cancel-leaver-schedule ────────────────────────────────────────────
+    if (action === 'cancel-leaver-schedule') {
+      const { schedule_id, offboarding_id, reason, attempt } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-leaver-${offboarding_id}-cancel-${attempt || 0}`
+
+      if (MOCK_MODE) {
+        await sb.from('offboarding_m365_actions').update({
+          schedule_status: 'cancelled',
+          schedule_message: reason || 'Schedule cancelled',
+          schedule_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('offboarding_id', offboarding_id)
+        return json({ status: 'cancelled', message: reason || 'Schedule cancelled' })
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/schedules/${schedule_id}/cancel`, {
+        reason: reason || 'Cancelled from InflowHR',
+      }, idempotencyKey)
+
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (offboarding_id) {
+        await sb.from('offboarding_m365_actions').update({
+          schedule_status: 'cancelled',
+          schedule_message: sched.message || reason,
+          schedule_updated_at: sched.updatedAt || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('offboarding_id', offboarding_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_cancel_leaver_schedule', { offboarding_id, schedule_id, reason })
+      return json(sched)
+    }
+
+    // ── recheck-leaver-schedule (retry after blocked) ─────────────────────
+    if (action === 'recheck-leaver-schedule') {
+      const { schedule_id, offboarding_id, attempt } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-leaver-${offboarding_id}-recheck-schedule-${attempt || 0}`
+
+      if (MOCK_MODE) {
+        await sb.from('offboarding_m365_actions').update({
+          schedule_status: 'scheduled',
+          schedule_message: 'Recheck successful',
+          schedule_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('offboarding_id', offboarding_id)
+        return json({ status: 'scheduled', message: 'Recheck successful' })
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/schedules/${schedule_id}/recheck`, {}, idempotencyKey)
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (offboarding_id) {
+        await sb.from('offboarding_m365_actions').update({
+          schedule_status: sched.status,
+          schedule_message: sched.message,
+          schedule_stages: sched.stages,
+          schedule_next_due_at: sched.nextDueAt,
+          schedule_updated_at: sched.updatedAt,
+          updated_at: new Date().toISOString(),
+        }).eq('offboarding_id', offboarding_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_recheck_leaver_schedule', { offboarding_id, schedule_id })
+      return json(sched)
     }
 
     return json({ error: `Unknown action: ${action}` }, 400)

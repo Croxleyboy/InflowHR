@@ -744,6 +744,8 @@ export default function Notifications() {
   const [m365Approving, setM365Approving] = useState(false)
   const [m365OffboardActionItem, setM365OffboardActionItem] = useState<WorkflowItem | null>(null)
   const [m365OffboardApproving, setM365OffboardApproving] = useState(false)
+  const [m365ScheduleActionItem, setM365ScheduleActionItem] = useState<WorkflowItem | null>(null)
+  const [m365ScheduleApproving, setM365ScheduleApproving] = useState(false)
   const [hrResponseItem, setHrResponseItem] = useState<WorkflowItem | null>(null)
 
   async function handleConflictResolve(item: WorkflowItem, action: 'cancel_leave' | 'acknowledge') {
@@ -869,6 +871,10 @@ export default function Notifications() {
       setM365OffboardActionItem(item)
       return
     }
+    if (item.record_type === 'M365 Scheduling' || item.record_type === 'M365 Leaver Scheduling') {
+      setM365ScheduleActionItem(item)
+      return
+    }
     if (!item.approval_id) {
       alert('This action has no linked record. Please re-seed demo data to fix.')
       return
@@ -966,6 +972,44 @@ export default function Notifications() {
     }
   }
 
+  async function handleM365ScheduleApproval(item: WorkflowItem, approve: boolean) {
+    setM365ScheduleApproving(true)
+    try {
+      const now = new Date().toISOString()
+      let approverDisplayName = employeeName || ''
+      if (!approverDisplayName && HARDCODED_EMPLOYEE_ID && companyUser?.company_id) {
+        const { data: emp } = await supabase.from('employees').select('first_name, last_name').eq('id', HARDCODED_EMPLOYEE_ID).eq('company_id', companyUser.company_id).maybeSingle()
+        if (emp) approverDisplayName = `${emp.first_name} ${emp.last_name}`.trim()
+      }
+      if (!approverDisplayName) approverDisplayName = HARDCODED_EMAIL || 'Unknown'
+      const approverEmail = HARDCODED_EMAIL || ''
+      const recordId = item.onboard_id || (item.extra_info ? parseInt(item.extra_info) : item.approval_id)
+      const isLeaver = item.record_type === 'M365 Leaver Scheduling'
+      const table = isLeaver ? 'offboarding_m365_actions' : 'onboarding_m365_actions'
+      const idCol = isLeaver ? 'offboarding_id' : 'onboarding_id'
+      if (recordId) {
+        await supabase.from(table).update({
+          approval_status: approve ? 'approved' : 'declined',
+          approved_by: `${approverDisplayName} <${approverEmail}>`,
+          approved_at: now
+        }).eq(idCol, recordId).eq('company_id', companyUser?.company_id)
+      }
+      await supabase.from('workflow_tracker').update({
+        status: 'Complete',
+        approval_status: approve ? 'Approved' : 'Declined',
+        updated_at: now,
+      }).eq('id', item.id).eq('company_id', companyUser?.company_id)
+      showSuccess(approve ? 'Schedule approved' : 'Schedule declined')
+      setM365ScheduleActionItem(null)
+      await fetchData()
+      window.dispatchEvent(new Event('notifications-updated'))
+    } catch {
+      showError('Failed to process approval')
+    } finally {
+      setM365ScheduleApproving(false)
+    }
+  }
+
   function getActionTitle(item: WorkflowItem) {
     if (item.record_type === 'Expense') return t('notifications.expense_review')
     if (item.record_type === 'Leave') {
@@ -983,6 +1027,8 @@ export default function Notifications() {
     if (item.record_type === 'HR Response') return 'HR Ticket Response'
     if (item.record_type === 'M365 Provisioning') return 'New Starter Account Approval'
     if (item.record_type === 'M365 Offboarding') return 'Leaver Account Offboarding Approval'
+    if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approval'
+    if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approval'
     return item.action
   }
 
@@ -1019,6 +1065,8 @@ export default function Notifications() {
       if (item.record_type === 'Skill Validation') return 'Skill Validated'
       if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Approved'
       if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Approved'
+      if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approved'
+      if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approved'
     }
     if (item.approval_status === 'Declined') {
       if (item.record_type === 'Expense') return t('notifications.expense_declined')
@@ -1026,9 +1074,13 @@ export default function Notifications() {
       if (item.record_type === 'Skill Validation') return 'Skill Validation Rejected'
       if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Declined'
       if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Declined'
+      if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Declined'
+      if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Declined'
     }
     if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Request'
     if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Request'
+    if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approval Request'
+    if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approval Request'
     return item.action
   }
 
@@ -1160,7 +1212,7 @@ export default function Notifications() {
           ))}
           {actions.map(item => (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
-              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : item.record_type === 'M365 Provisioning' ? 'bar-blue' : item.record_type === 'M365 Offboarding' ? 'bar-red' : 'bar-grey'}`} />
+              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : item.record_type === 'M365 Provisioning' ? 'bar-blue' : item.record_type === 'M365 Offboarding' ? 'bar-red' : item.record_type === 'M365 Scheduling' ? 'bar-blue' : item.record_type === 'M365 Leaver Scheduling' ? 'bar-red' : 'bar-grey'}`} />
               <NotifIcon type={item.record_type} />
               <div className="notif-action-content">
                 <span className="notif-action-title">{getActionTitle(item)}</span>
@@ -1327,6 +1379,38 @@ export default function Notifications() {
                 <button onClick={() => handleM365OffboardApproval(m365OffboardActionItem, false)} disabled={m365OffboardApproving}
                   style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365OffboardApproving ? 0.6 : 1 }}>
                   {m365OffboardApproving ? 'Processing...' : 'Decline'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {m365ScheduleActionItem && (
+        <div className="my-profile-modal-overlay" onClick={() => setM365ScheduleActionItem(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: m365ScheduleActionItem.record_type === 'M365 Leaver Scheduling' ? '#c62828' : '#0078D4', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>{m365ScheduleActionItem.record_type === 'M365 Leaver Scheduling' ? 'M365 Leaver Schedule Approval' : 'M365 Schedule Approval'}</span>
+              <button onClick={() => setM365ScheduleActionItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{m365ScheduleActionItem.emp_display_name}</div>
+              {(m365ScheduleActionItem.task_description || '').split('\n').map((line: string, i: number) => (
+                <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 2, lineHeight: 1.5 }}>{line}</div>
+              ))}
+              <div style={{ background: m365ScheduleActionItem.record_type === 'M365 Leaver Scheduling' ? 'rgba(255,235,238,.5)' : 'rgba(232,242,255,.5)', border: `1px solid ${m365ScheduleActionItem.record_type === 'M365 Leaver Scheduling' ? '#ef9a9a' : '#90caf9'}`, borderRadius: 8, padding: 12, margin: '12px 0 16px', fontSize: 13, color: m365ScheduleActionItem.record_type === 'M365 Leaver Scheduling' ? '#c62828' : '#1565c0' }}>
+                Once approved, this schedule will run automatically at the planned times. The engine will execute each stage on the dates shown above.
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => handleM365ScheduleApproval(m365ScheduleActionItem, true)} disabled={m365ScheduleApproving}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365ScheduleApproving ? 0.6 : 1 }}>
+                  {m365ScheduleApproving ? 'Processing...' : 'Approve'}
+                </button>
+                <button onClick={() => handleM365ScheduleApproval(m365ScheduleActionItem, false)} disabled={m365ScheduleApproving}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365ScheduleApproving ? 0.6 : 1 }}>
+                  {m365ScheduleApproving ? 'Processing...' : 'Decline'}
                 </button>
               </div>
             </div>

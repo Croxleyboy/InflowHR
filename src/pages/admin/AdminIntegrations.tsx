@@ -215,6 +215,7 @@ export default function AdminIntegrations() {
   const [ifoOffboardApproverMode, setIfoOffboardApproverMode] = useState<'same_as_joiner' | 'nominated' | 'manager'>('same_as_joiner')
   const [ifoOffboardApproverName, setIfoOffboardApproverName] = useState('')
   const [ifoOffboardApproverEmail, setIfoOffboardApproverEmail] = useState('')
+  const [ifoSchedulingAvailable, setIfoSchedulingAvailable] = useState(false)
 
   const [modulrApiKey, setModulrApiKey] = useState('')
   const [modulrHmacSecret, setModulrHmacSecret] = useState('')
@@ -586,6 +587,9 @@ export default function AdminIntegrations() {
       if (result.status === 'connected_ready') showSuccess('M365 connection healthy')
       else if (result.status === 'needs_attention') showError('API key revoked or invalid — reconnect with a new key')
       else if (result.unavailable) showError('InflowOnboarder is temporarily unavailable')
+      if (result.schedule_templates_available !== undefined) {
+        setIfoSchedulingAvailable(result.schedule_templates_available)
+      }
       loadAll()
     }
   }
@@ -1212,7 +1216,12 @@ export default function AdminIntegrations() {
                 Automate Microsoft 365 account provisioning during onboarding
               </p>
             </div>
-            {ifoStatusBadge(ifoIntegration?.status || 'not_connected')}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {ifoStatusBadge(ifoIntegration?.status || 'not_connected')}
+              {features.m365_scheduling && ifoSchedulingAvailable && ifoIntegration?.status === 'connected_ready' && (
+                <span style={{ fontSize: 11, fontWeight: 600, color: '#2e7d32', background: 'rgba(46,125,50,.1)', padding: '3px 10px', borderRadius: 6 }}>Scheduling</span>
+              )}
+            </div>
             <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(ifoExpanded)}>
               <polyline points="9 18 15 12 9 6" />
             </svg>
@@ -1220,6 +1229,13 @@ export default function AdminIntegrations() {
 
           {ifoExpanded && (
             <div style={{ marginTop: 20 }}>
+              {ifoIntegration?.status === 'connected_ready' && features.m365_scheduling && !ifoSchedulingAvailable && (
+                <div style={{ ...sectionStyle, background: 'rgba(255,243,224,.6)', borderColor: '#ffcc80', marginBottom: 16 }}>
+                  <p style={{ margin: 0, fontSize: 13, color: '#e65100', lineHeight: 1.5 }}>
+                    <strong>Scheduling not available</strong> — To schedule joiners and leavers, the InflowOnboarder key needs the &lsquo;Schedule new joiners&rsquo; and &lsquo;Schedule leavers&rsquo; permissions. Create a new key with these scopes (<code style={{ fontSize: 12 }}>m365.joiner, m365.leaver, m365.license.list, hr.joiner, hr.leaver</code>), keep approvals as &lsquo;Approved in this service&rsquo;, and paste it here.
+                  </p>
+                </div>
+              )}
               {ifoIntegration?.status === 'connected_ready' && (
                 <div style={{ ...sectionStyle, background: 'rgba(232,245,233,.5)', borderColor: '#a5d6a7' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>

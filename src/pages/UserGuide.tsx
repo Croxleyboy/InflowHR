@@ -250,6 +250,56 @@ const SECTIONS: GuideSection[] = [
     ],
   },
   {
+    icon: '📅', title: 'M365 Scheduling (Admin)',
+    features: [
+      { title: 'Overview', purpose: 'Schedule M365 account provisioning and deprovisioning ahead of time, so accounts are created or removed automatically on the right dates.', steps: [
+        'This feature requires an M365 Scheduling subscription add-on AND an InflowOnboarder API key with scheduling permissions (hr.joiner / hr.leaver scopes).',
+        'When both are active, a "Run Now / Schedule" toggle appears on the accounts step (joiners) and remove accounts step (leavers).',
+      ], callout: { type: 'note', text: 'If you don\'t see the Schedule option, check Admin > Integrations for a hint about missing API key permissions.' } },
+      { title: 'Schedule a Joiner', purpose: 'Create the new starter\'s M365 account ahead of their start date.', steps: [
+        'Open the joiner\'s record in Admin > Onboarding and go to the accounts step.',
+        'Switch the mode toggle to Schedule.',
+        'Fill in the UPN, display name, and country — the same fields as "Run Now".',
+        'Set "Prepare days before" (1–14, default 3). This controls how many days before the start date the account is created with sign-in disabled.',
+        'Review the plan preview showing two stages:',
+        '• Prepare account — creates the account N days before the start date at 09:00.',
+        '• Enable sign-in — switches sign-in on at 08:00 on the start date.',
+        'Click Send Schedule for Approval. The configured approver receives a notification.',
+      ] },
+      { title: 'Schedule a Leaver', purpose: 'Automate M365 account removal around the leave date.', steps: [
+        'Open the leaver\'s record in Admin > Onboarding > Offboarding tab and go to the remove accounts step.',
+        'Switch the mode toggle to Schedule.',
+        'Set "Licence removal delay" (0–90 days, default 30). This controls how long after the leave date licences and groups are removed.',
+        'Review the plan preview showing two stages:',
+        '• Block access — blocks sign-in at 17:00 on the leave date.',
+        '• Remove access — removes groups and licences N days after the leave date at 17:00.',
+        'Click Send Schedule for Approval.',
+      ] },
+      { title: 'Approval Flow', purpose: 'Schedules must be approved before they are submitted to the engine.', steps: [
+        'The approver receives a notification in their Actions tab with the full schedule plan.',
+        'They can approve or decline. On approval, the admin sees an "Approved" badge and a Create Schedule button.',
+        'Clicking Create Schedule submits the plan to the InflowOnboarder engine, which confirms the stages and times.',
+        'Once created, the schedule runs automatically — no further action is needed unless something goes wrong.',
+      ] },
+      { title: 'Schedule Statuses', purpose: 'Understand what each status means during the schedule lifecycle.', steps: [
+        'Pending Approval — waiting for the approver to approve or decline.',
+        'Scheduled — the engine has accepted the schedule and will execute on the planned dates.',
+        'Running — a stage is currently being executed by the engine.',
+        'Blocked — something is preventing the next stage (e.g. no available licence). Use Check Again after resolving.',
+        'Completed — all stages finished successfully.',
+        'Cancelled — an admin cancelled the schedule before it completed.',
+        'Failed — the engine encountered an error. Check the message and use Check Again or cancel.',
+        'Missed — a stage\'s planned time has passed without executing. Use Check Again to retry.',
+      ] },
+      { title: 'Managing Active Schedules', purpose: 'Monitor, refresh, or cancel schedules after they are created.', steps: [
+        'The schedule tracking panel shows a timeline with each stage, its planned date/time, and current status.',
+        'Refresh — re-fetches the latest status from the engine.',
+        'Check Again — retries a blocked or failed stage after you\'ve resolved the issue externally.',
+        'Cancel — cancels the schedule with a reason. Any resources already provisioned (e.g. licences) are released.',
+      ], callout: { type: 'tip', text: 'If a joiner\'s start date or leaver\'s end date changes, update the date on the record first, then cancel and re-create the schedule with the new dates.' } },
+    ],
+  },
+  {
     icon: '⚙️', title: 'Settings',
     features: [
       { title: 'Personalise Your Dashboard', purpose: 'Show or hide feature cards on your home screen.', steps: ['Navigate to Settings from the bottom bar.', 'Toggle features on or off. Hidden features are still accessible via direct links but won\'t appear on your dashboard.'], callout: { type: 'note', text: 'You can only hide features your company has enabled. If a feature is not listed, your company admin has not activated it.' } },

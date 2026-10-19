@@ -204,6 +204,14 @@ function calcStatus(connections: { connectorId: string; tier: string; status: st
 
 // ── Error code mapping ──────────────────────────────────────────────────────
 
+const WEBHOOK_URL = Deno.env.get('INFLOWONBOARDER_WEBHOOK_URL') || ''
+const WEBHOOK_EVENTS = [
+  'schedule.created', 'schedule.approved', 'schedule.updated',
+  'schedule.blocked', 'schedule.unblocked', 'schedule.stage_upcoming',
+  'schedule.stage_completed', 'schedule.completed', 'schedule.cancelled',
+  'schedule.missed', 'schedule.failed', 'workflow.run.updated',
+]
+
 const ERROR_MESSAGES: Record<string, string> = {
   upn_taken: 'An account with that email address already exists in Microsoft 365.',
   domain_not_allowed: 'That email domain is not allowed or not verified in your tenant.',
@@ -221,6 +229,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   run_exists: 'A workflow run already exists for this starter.',
   group_not_allowed: 'That group does not exist or is not allowed in your tenant.',
   approval_evidence_required: 'Complete the approval in InflowHR first before proceeding.',
+  schedule_exists: 'A schedule already exists for this starter.',
+  stage_in_past: 'One or more schedule stages would fall in the past. Use "Run now" instead.',
+  schedule_busy: 'The schedule is currently running and cannot be changed.',
 }
 
 function friendlyError(code: string, fallbackMessage?: string): string {
@@ -320,7 +331,38 @@ Deno.serve(async (req) => {
         statusDetail = calc.detail
       }
 
-      const { error: upsertErr } = await sb.from('inflowonboarder_integrations').upsert({
+      // Register or update webhook
+      let webhookId: string | null = null
+      let webhookSecret: string | null = null
+      if (WEBHOOK_URL && !MOCK_MODE) {
+        const { data: existingConfig } = await sb.from('inflowonboarder_integrations').select('webhook_id').eq('company_id', company_id).maybeSingle()
+        if (existingConfig?.webhook_id) {
+          await engineFetch(api_key, 'PATCH', `/v1/webhooks/${existingConfig.webhook_id}`, {
+            url: WEBHOOK_URL,
+            events: WEBHOOK_EVENTS,
+          })
+          webhookId = existingConfig.webhook_id
+        } else {
+          const whRes = await engineFetch(api_key, 'POST', '/v1/webhooks', {
+            url: WEBHOOK_URL,
+            events: WEBHOOK_EVENTS,
+          })
+          if (whRes.ok) {
+            const whData = whRes.data as any
+            webhookId = whData.id
+            webhookSecret = whData.secret
+          }
+        }
+      }
+
+      // Fetch schedule templates on connect
+      let scheduleTemplatesCache: unknown = null
+      if (!MOCK_MODE) {
+        const tplRes = await engineFetch(api_key, 'GET', '/v1/schedule-templates')
+        if (tplRes.ok) scheduleTemplatesCache = (tplRes.data as any).templates || tplRes.data
+      }
+
+      const upsertData: Record<string, unknown> = {
         company_id,
         api_key_encrypted: encrypted,
         api_key_iv: iv,
@@ -331,7 +373,15 @@ Deno.serve(async (req) => {
         connected_at: new Date().toISOString(),
         connected_by: userId,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'company_id' })
+      }
+      if (webhookId) upsertData.webhook_id = webhookId
+      if (webhookSecret) upsertData.webhook_secret = webhookSecret
+      if (scheduleTemplatesCache) {
+        upsertData.schedule_templates_cache = scheduleTemplatesCache
+        upsertData.schedule_templates_cached_at = new Date().toISOString()
+      }
+
+      const { error: upsertErr } = await sb.from('inflowonboarder_integrations').upsert(upsertData, { onConflict: 'company_id' })
 
       if (upsertErr) return json({ error: 'Failed to save integration: ' + upsertErr.message }, 500)
       await audit(sb, company_id, userId, 'inflowonboarder_connect', { status })
@@ -366,12 +416,35 @@ Deno.serve(async (req) => {
         }
       }
 
-      await sb.from('inflowonboarder_integrations').update({
+      // Refresh schedule templates if stale (>1 hour) or missing
+      let scheduleTemplates = config.schedule_templates_cache
+      let templatesCachedAt = config.schedule_templates_cached_at
+      const cacheAge = templatesCachedAt ? Date.now() - new Date(templatesCachedAt).getTime() : Infinity
+      if (!MOCK_MODE && status === 'connected_ready' && cacheAge > 3600000) {
+        const apiKey = await decryptApiKey(config.api_key_encrypted, config.api_key_iv)
+        const tplRes = await engineFetch(apiKey, 'GET', '/v1/schedule-templates')
+        if (tplRes.ok) {
+          scheduleTemplates = (tplRes.data as any).templates || tplRes.data
+          templatesCachedAt = new Date().toISOString()
+        }
+      }
+
+      const updateData: Record<string, unknown> = {
         status,
         status_detail: statusDetail,
         status_checked_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      }).eq('company_id', company_id)
+      }
+      if (scheduleTemplates !== config.schedule_templates_cache) {
+        updateData.schedule_templates_cache = scheduleTemplates
+        updateData.schedule_templates_cached_at = templatesCachedAt
+      }
+
+      await sb.from('inflowonboarder_integrations').update(updateData).eq('company_id', company_id)
+
+      const templates = Array.isArray(scheduleTemplates) ? scheduleTemplates : []
+      const hasJoinerTemplate = templates.some((t: any) => t.id === 'hr.joiner' || t.templateId === 'hr.joiner')
+      const hasLeaverTemplate = templates.some((t: any) => t.id === 'hr.leaver' || t.templateId === 'hr.leaver')
 
       return json({
         status,
@@ -390,6 +463,10 @@ Deno.serve(async (req) => {
         offboard_approver_mode: config.offboard_approver_mode,
         offboard_approver_name: config.offboard_approver_name,
         offboard_approver_email: config.offboard_approver_email,
+        schedule_templates_available: hasJoinerTemplate || hasLeaverTemplate,
+        schedule_templates: templates,
+        has_joiner_template: hasJoinerTemplate,
+        has_leaver_template: hasLeaverTemplate,
       })
     }
 
@@ -742,6 +819,340 @@ Deno.serve(async (req) => {
 
       await audit(sb, company_id, userId, 'inflowonboarder_mark_complete_manual', { onboarding_id, notes })
       return json({ status: 'completed', manual: true })
+    }
+
+    // ── list-templates ──────────────────────────────────────────────────────
+    if (action === 'list-templates') {
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      if (MOCK_MODE) {
+        const templates = [
+          { id: 'hr.joiner', name: 'Schedule new joiners', stages: ['prepare', 'enable_sign_in'] },
+          { id: 'hr.leaver', name: 'Schedule leavers', stages: ['block_access', 'remove_access'] },
+        ]
+        await sb.from('inflowonboarder_integrations').update({
+          schedule_templates_cache: templates,
+          schedule_templates_cached_at: new Date().toISOString(),
+        }).eq('company_id', company_id)
+        return json({ templates })
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'GET', '/v1/schedule-templates')
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const templates = (res.data as any).templates || res.data
+      await sb.from('inflowonboarder_integrations').update({
+        schedule_templates_cache: templates,
+        schedule_templates_cached_at: new Date().toISOString(),
+      }).eq('company_id', company_id)
+
+      return json({ templates })
+    }
+
+    // ── create-schedule (joiner) ──────────────────────────────────────────
+    if (action === 'create-schedule') {
+      const { onboarding_id, input, options, approver_name, approver_email, approved_at, attempt } = body
+      if (!onboarding_id) return json({ error: 'Missing onboarding_id' }, 400)
+      if (!input?.displayName || !input?.userPrincipalName || !input?.startDate) {
+        return json({ error: 'Missing required fields: displayName, userPrincipalName, startDate' }, 400)
+      }
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+      const { config } = keyResult
+
+      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-schedule-${attempt || 0}`
+
+      const person: Record<string, string> = {
+        givenName: input.givenName,
+        surname: input.surname,
+        displayName: input.displayName,
+        userPrincipalName: input.userPrincipalName,
+        usageLocation: input.usageLocation || 'GB',
+      }
+      if (input.jobTitle) person.jobTitle = input.jobTitle
+      if (input.department) person.department = input.department
+      if (input.employeeId) person.employeeId = input.employeeId
+      if (input.officeLocation) person.officeLocation = input.officeLocation
+      if (input.employeeHireDate) person.employeeHireDate = input.employeeHireDate
+
+      const engineBody: Record<string, unknown> = {
+        templateId: 'hr.joiner',
+        externalRef: `starter-${onboarding_id}`,
+        parameters: {
+          person,
+          startDate: input.startDate,
+          ...(config.licence_sku_id ? { licenceSkuId: config.licence_sku_id } : {}),
+          ...(config.group_name ? { groupName: config.group_name } : {}),
+          ...(config.licence_manager_name && config.licence_manager_email ? {
+            licenceContact: { name: config.licence_manager_name, email: config.licence_manager_email },
+          } : {}),
+        },
+        options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
+        timeZone: 'Europe/London',
+        approval: {
+          approvedBy: { name: approver_name || 'InflowHR Approver', email: approver_email || userEmail },
+          approvedAt: approved_at || new Date().toISOString(),
+          reference: `inflowhr-schedule-approval-${onboarding_id}`,
+        },
+      }
+
+      if (MOCK_MODE) {
+        const mockSchedule = {
+          id: `mock-schedule-joiner-${onboarding_id}`,
+          status: 'scheduled',
+          message: 'Schedule created successfully',
+          stages: [
+            { name: 'prepare', status: 'pending', scheduledAt: new Date(Date.now() + 86400000 * (options?.prepareDaysBefore || 3)).toISOString() },
+            { name: 'enable_sign_in', status: 'pending', scheduledAt: input.startDate + 'T08:00:00Z' },
+          ],
+          nextDueAt: new Date(Date.now() + 86400000).toISOString(),
+        }
+        await sb.from('onboarding_m365_actions').upsert({
+          onboarding_id,
+          company_id,
+          schedule_id: mockSchedule.id,
+          schedule_status: 'scheduled',
+          schedule_message: mockSchedule.message,
+          schedule_stages: mockSchedule.stages,
+          schedule_next_due_at: mockSchedule.nextDueAt,
+          schedule_updated_at: new Date().toISOString(),
+          schedule_options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
+          run_status: 'scheduled',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'onboarding_id' })
+        return json(mockSchedule)
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
+
+      if (res.status === 409) {
+        const errData = res.data as any
+        const existingId = errData?.error?.scheduleId
+        if (existingId) {
+          const checkRes = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${existingId}`)
+          if (checkRes.ok) {
+            const sched = checkRes.data as any
+            await sb.from('onboarding_m365_actions').upsert({
+              onboarding_id, company_id,
+              schedule_id: existingId,
+              schedule_status: sched.status,
+              schedule_message: sched.message,
+              schedule_stages: sched.stages,
+              schedule_next_due_at: sched.nextDueAt,
+              schedule_updated_at: sched.updatedAt,
+              run_status: 'scheduled',
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'onboarding_id' })
+            return json({ ...sched, message: 'A schedule already exists for this starter.' })
+          }
+        }
+        return json({ error: friendlyError('schedule_exists') }, 409)
+      }
+
+      if (res.status === 422) {
+        const code = (res.data as any)?.error?.code
+        if (code === 'stage_in_past') {
+          return json({ error: friendlyError('stage_in_past'), use_run_now: true }, 422)
+        }
+      }
+
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      await sb.from('onboarding_m365_actions').upsert({
+        onboarding_id, company_id,
+        schedule_id: sched.id,
+        schedule_status: sched.status || 'scheduled',
+        schedule_message: sched.message,
+        schedule_stages: sched.stages,
+        schedule_next_due_at: sched.nextDueAt,
+        schedule_updated_at: sched.updatedAt || new Date().toISOString(),
+        schedule_options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
+        run_status: 'scheduled',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'onboarding_id' })
+
+      await audit(sb, company_id, userId, 'inflowonboarder_create_schedule', { onboarding_id, scheduleId: sched.id })
+      return json(sched)
+    }
+
+    // ── get-schedule (joiner) ─────────────────────────────────────────────
+    if (action === 'get-schedule') {
+      const { schedule_id, onboarding_id } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      if (MOCK_MODE) {
+        const { data: row } = await sb.from('onboarding_m365_actions')
+          .select('schedule_status, schedule_message, schedule_stages, schedule_next_due_at')
+          .eq('onboarding_id', onboarding_id).maybeSingle()
+        return json({
+          id: schedule_id,
+          status: row?.schedule_status || 'scheduled',
+          message: row?.schedule_message,
+          stages: row?.schedule_stages,
+          nextDueAt: row?.schedule_next_due_at,
+        })
+      }
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+      const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${schedule_id}`)
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (onboarding_id) {
+        await sb.from('onboarding_m365_actions').update({
+          schedule_status: sched.status,
+          schedule_message: sched.message,
+          schedule_stages: sched.stages,
+          schedule_next_due_at: sched.nextDueAt,
+          schedule_updated_at: sched.updatedAt,
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+      }
+      return json(sched)
+    }
+
+    // ── update-schedule (joiner date change) ──────────────────────────────
+    if (action === 'update-schedule') {
+      const { schedule_id, onboarding_id, start_date, attempt } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+      if (!start_date) return json({ error: 'Missing start_date' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-update-${attempt || 0}`
+
+      if (MOCK_MODE) {
+        await sb.from('onboarding_m365_actions').update({
+          schedule_message: `Start date updated to ${start_date}`,
+          schedule_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+        return json({ status: 'scheduled', message: `Start date updated to ${start_date}` })
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'PATCH', `/v1/schedules/${schedule_id}`, {
+        parameters: { startDate: start_date },
+      }, idempotencyKey)
+
+      if (res.status === 400) {
+        const code = (res.data as any)?.error?.code
+        if (code === 'approval_evidence_required') {
+          return json({ error: friendlyError('approval_evidence_required'), needs_reapproval: true }, 400)
+        }
+      }
+      if (res.status === 409) {
+        const code = (res.data as any)?.error?.code
+        if (code === 'schedule_busy') {
+          return json({ error: friendlyError('schedule_busy') }, 409)
+        }
+      }
+
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (onboarding_id) {
+        await sb.from('onboarding_m365_actions').update({
+          schedule_status: sched.status,
+          schedule_message: sched.message,
+          schedule_stages: sched.stages,
+          schedule_next_due_at: sched.nextDueAt,
+          schedule_updated_at: sched.updatedAt,
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_update_schedule', { onboarding_id, schedule_id, start_date })
+      return json(sched)
+    }
+
+    // ── cancel-schedule (joiner) ──────────────────────────────────────────
+    if (action === 'cancel-schedule') {
+      const { schedule_id, onboarding_id, reason, attempt } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-cancel-${attempt || 0}`
+
+      if (MOCK_MODE) {
+        await sb.from('onboarding_m365_actions').update({
+          schedule_status: 'cancelled',
+          schedule_message: reason || 'Schedule cancelled',
+          schedule_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+        return json({ status: 'cancelled', message: reason || 'Schedule cancelled' })
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/schedules/${schedule_id}/cancel`, {
+        reason: reason || 'Cancelled from InflowHR',
+      }, idempotencyKey)
+
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (onboarding_id) {
+        await sb.from('onboarding_m365_actions').update({
+          schedule_status: 'cancelled',
+          schedule_message: sched.message || reason,
+          schedule_updated_at: sched.updatedAt || new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_cancel_schedule', { onboarding_id, schedule_id, reason })
+      return json(sched)
+    }
+
+    // ── recheck-schedule (joiner, retry after blocked) ────────────────────
+    if (action === 'recheck-schedule') {
+      const { schedule_id, onboarding_id, attempt } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-recheck-schedule-${attempt || 0}`
+
+      if (MOCK_MODE) {
+        await sb.from('onboarding_m365_actions').update({
+          schedule_status: 'scheduled',
+          schedule_message: 'Recheck successful',
+          schedule_updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+        return json({ status: 'scheduled', message: 'Recheck successful' })
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/schedules/${schedule_id}/recheck`, {}, idempotencyKey)
+      const errResp = handleEngineError(sb, company_id, res)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (onboarding_id) {
+        await sb.from('onboarding_m365_actions').update({
+          schedule_status: sched.status,
+          schedule_message: sched.message,
+          schedule_stages: sched.stages,
+          schedule_next_due_at: sched.nextDueAt,
+          schedule_updated_at: sched.updatedAt,
+          updated_at: new Date().toISOString(),
+        }).eq('onboarding_id', onboarding_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_recheck_schedule', { onboarding_id, schedule_id })
+      return json(sched)
     }
 
     // ── v1 legacy: check-job (kept for in-flight v1 starters) ───────────────
