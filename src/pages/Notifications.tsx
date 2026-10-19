@@ -942,16 +942,18 @@ export default function Notifications() {
       const approverEmail = HARDCODED_EMAIL || ''
       const offboardId = item.onboard_id || (item.extra_info ? parseInt(item.extra_info) : item.approval_id)
       if (offboardId) {
-        await supabase.from('offboarding_m365_actions').update({
+        const { error: m365Err } = await supabase.from('offboarding_m365_actions').update({
           approval_status: approve ? 'approved' : 'declined',
           approved_by: `${approverDisplayName} <${approverEmail}>`,
           approved_at: now
         }).eq('offboarding_id', offboardId).eq('company_id', companyUser?.company_id)
+        if (m365Err) console.warn('offboarding_m365_actions update failed:', m365Err.message)
       }
-      await supabase.from('workflow_tracker').update({
+      const { error: wtErr } = await supabase.from('workflow_tracker').update({
         status: 'Complete',
         approval_status: approve ? 'Approved' : 'Declined'
       }).eq('id', item.id).eq('company_id', companyUser?.company_id)
+      if (wtErr) throw new Error(wtErr.message)
       showSuccess(approve ? 'Account offboarding approved' : 'Account offboarding declined')
       setM365OffboardActionItem(null)
       await fetchData()

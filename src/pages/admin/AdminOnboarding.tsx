@@ -1006,33 +1006,53 @@ export default function AdminOnboarding() {
   const [leaverM365Starting, setLeaverM365Starting] = useState(false)
   const [leaverM365ApprovalSending, setLeaverM365ApprovalSending] = useState(false)
   const [leaverM365Proceeding, setLeaverM365Proceeding] = useState(false)
+  const [leaverM365Refreshing, setLeaverM365Refreshing] = useState(false)
   const [ifoOffboardSettings, setIfoOffboardSettings] = useState<IfoOffboardSettings | null>(null)
 
   async function loadLeaverM365Actions(offboardingId: number) {
-    const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
-    setLeaverM365Actions(data as LeaverM365Actions | null)
-    const { data: ifo } = await supabase.from('inflowonboarder_integrations')
-      .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email')
-      .eq('company_id', selectedCompanyId).maybeSingle()
-    setIfoConnected(ifo?.status === 'connected_ready')
-    if (ifo) {
-      setIfoOffboardSettings({
-        offboard_approver_mode: ifo.offboard_approver_mode || 'same_as_joiner',
-        offboard_approver_name: ifo.offboard_approver_name,
-        offboard_approver_email: ifo.offboard_approver_email,
-        approver_mode: ifo.approver_mode || 'manager',
-        approver_name: ifo.approver_name,
-        approver_email: ifo.approver_email,
-      })
-    }
-    if (data?.run_id && (!data?.run_status || ['checking_account', 'deprovisioning'].includes(data?.run_status))) {
-      const freshStatus = await callIfoLeaver('check-leaver-run', { run_id: data.run_id, offboarding_id: offboardingId })
-      if (freshStatus?.status && freshStatus.status !== data.run_status) {
-        const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
-        setLeaverM365Actions(refreshed as LeaverM365Actions | null)
-      } else if (freshStatus?.status === 'checking_account') {
-        leaverM365PollRun(data.run_id, offboardingId)
+    setLeaverM365Refreshing(true)
+    try {
+      const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
+      setLeaverM365Actions(data as LeaverM365Actions | null)
+      const { data: ifo } = await supabase.from('inflowonboarder_integrations')
+        .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email')
+        .eq('company_id', selectedCompanyId).maybeSingle()
+      setIfoConnected(ifo?.status === 'connected_ready')
+      if (ifo) {
+        setIfoOffboardSettings({
+          offboard_approver_mode: ifo.offboard_approver_mode || 'same_as_joiner',
+          offboard_approver_name: ifo.offboard_approver_name,
+          offboard_approver_email: ifo.offboard_approver_email,
+          approver_mode: ifo.approver_mode || 'manager',
+          approver_name: ifo.approver_name,
+          approver_email: ifo.approver_email,
+        })
       }
+      if (data?.approval_status === 'pending') {
+        const { data: wt } = await supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at')
+          .eq('onboard_id', offboardingId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (wt && wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
+          const synced = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+          await supabase.from('offboarding_m365_actions').update({
+            approval_status: synced,
+            approved_by: wt.updated_by_name || 'Approver',
+            approved_at: wt.updated_at || new Date().toISOString(),
+          }).eq('offboarding_id', offboardingId)
+          const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
+          if (refreshed) { setLeaverM365Actions(refreshed as LeaverM365Actions); setLeaverM365Refreshing(false); return }
+        }
+      }
+      if (data?.run_id && (!data?.run_status || ['checking_account', 'deprovisioning'].includes(data?.run_status))) {
+        const freshStatus = await callIfoLeaver('check-leaver-run', { run_id: data.run_id, offboarding_id: offboardingId })
+        if (freshStatus?.status && freshStatus.status !== data.run_status) {
+          const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
+          setLeaverM365Actions(refreshed as LeaverM365Actions | null)
+        } else if (freshStatus?.status === 'checking_account') {
+          leaverM365PollRun(data.run_id, offboardingId)
+        }
+      }
+    } finally {
+      setLeaverM365Refreshing(false)
     }
   }
 
@@ -1104,7 +1124,23 @@ export default function AdminOnboarding() {
     if (!needsPoll) return
     const timer = setInterval(async () => {
       const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle()
-      if (data) setLeaverM365Actions(data as LeaverM365Actions)
+      if (data) {
+        if (data.approval_status === 'pending') {
+          const { data: wt } = await supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at')
+            .eq('onboard_id', offboardSelectedId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle()
+          if (wt && wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
+            const synced = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+            await supabase.from('offboarding_m365_actions').update({
+              approval_status: synced,
+              approved_by: wt.updated_by_name || 'Approver',
+              approved_at: wt.updated_at || new Date().toISOString(),
+            }).eq('offboarding_id', offboardSelectedId)
+            const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle()
+            if (refreshed) { setLeaverM365Actions(refreshed as LeaverM365Actions); return }
+          }
+        }
+        setLeaverM365Actions(data as LeaverM365Actions)
+      }
     }, 10000)
     return () => clearInterval(timer)
   }, [leaverM365Actions?.run_id, leaverM365Actions?.approval_status, leaverM365Actions?.run_status, offboardSelectedId])
@@ -2467,11 +2503,11 @@ export default function AdminOnboarding() {
                                 </svg>
                                 <strong style={{ fontSize: 13, color: '#0078D4' }}>Microsoft 365 Offboarding</strong>
                                 {leaverM365RunPolling && <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>Checking...</span>}
-                                <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11 }}
-                                  disabled={leaverM365RunPolling}
+                                <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+                                  disabled={leaverM365RunPolling || leaverM365Refreshing}
                                   onClick={e => { e.stopPropagation(); loadLeaverM365Actions(record.id) }}
                                   title="Refresh M365 status">
-                                  ↻ Refresh
+                                  <span style={{ display: 'inline-block', animation: leaverM365Refreshing ? 'spin 0.8s linear infinite' : 'none' }}>↻</span> Refresh
                                 </button>
                               </div>
 
