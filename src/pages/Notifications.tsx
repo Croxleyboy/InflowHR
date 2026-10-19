@@ -951,7 +951,8 @@ export default function Notifications() {
       }
       const { error: wtErr } = await supabase.from('workflow_tracker').update({
         status: 'Complete',
-        approval_status: approve ? 'Approved' : 'Declined'
+        approval_status: approve ? 'Approved' : 'Declined',
+        updated_at: now,
       }).eq('id', item.id).eq('company_id', companyUser?.company_id)
       if (wtErr) throw new Error(wtErr.message)
       showSuccess(approve ? 'Account offboarding approved' : 'Account offboarding declined')

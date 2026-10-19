@@ -1017,7 +1017,7 @@ export default function AdminOnboarding() {
         supabase.from('inflowonboarder_integrations')
           .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email')
           .eq('company_id', selectedCompanyId).maybeSingle(),
-        supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at, created_at')
+        supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
           .eq('onboard_id', offboardingId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       ])
       setIfoConnected(ifo?.status === 'connected_ready')
@@ -1036,7 +1036,7 @@ export default function AdminOnboarding() {
         merged.approval_sent_at = merged.approval_sent_at || wt.created_at
         if (wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
           merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
-          merged.approved_by = wt.updated_by_name || 'Approver'
+          merged.approved_by = wt.assigned_to || 'Approver'
           merged.approved_at = wt.updated_at || new Date().toISOString()
         } else if (wt.status === 'Pending') {
           merged.approval_status = 'pending'
@@ -1129,7 +1129,7 @@ export default function AdminOnboarding() {
     const timer = setInterval(async () => {
       const [{ data }, { data: wt }] = await Promise.all([
         supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle(),
-        supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at, created_at')
+        supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
           .eq('onboard_id', offboardSelectedId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle(),
       ])
       if (data && wt) {
@@ -1137,7 +1137,7 @@ export default function AdminOnboarding() {
         merged.approval_sent_at = merged.approval_sent_at || wt.created_at
         if (wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
           merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
-          merged.approved_by = wt.updated_by_name || 'Approver'
+          merged.approved_by = wt.assigned_to || 'Approver'
           merged.approved_at = wt.updated_at || new Date().toISOString()
         } else if (wt.status === 'Pending') {
           merged.approval_status = 'pending'
@@ -1226,6 +1226,14 @@ export default function AdminOnboarding() {
         title: 'M365 Offboarding Approval',
         message: `Offboarding ${record.employee_name}'s Microsoft 365 account needs your approval. Please approve it in the InflowHR app.`,
         send_email: true,
+      })
+    }
+
+    if (leaverM365Actions) {
+      setLeaverM365Actions({
+        ...leaverM365Actions,
+        approval_sent_at: new Date().toISOString(),
+        approval_status: 'pending',
       })
     }
 
@@ -2571,12 +2579,7 @@ export default function AdminOnboarding() {
                                       {leaverM365Actions.run_result.message}
                                     </p>
                                   )}
-                                  {!leaverM365Actions.approval_sent_at ? (
-                                    <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
-                                      onClick={e => { e.stopPropagation(); leaverM365SendApproval(record) }}>
-                                      {leaverM365ApprovalSending ? 'Sending...' : 'Send for Approval'}
-                                    </button>
-                                  ) : leaverM365Actions.approval_status === 'pending' ? (
+                                  {leaverM365Actions.approval_status === 'pending' ? (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#e65100' }}>
                                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                       Waiting for approval
@@ -2600,7 +2603,12 @@ export default function AdminOnboarding() {
                                         Re-send for Approval
                                       </button>
                                     </div>
-                                  ) : null}
+                                  ) : (
+                                    <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
+                                      onClick={e => { e.stopPropagation(); leaverM365SendApproval(record) }}>
+                                      {leaverM365ApprovalSending ? 'Sending...' : 'Send for Approval'}
+                                    </button>
+                                  )}
                                 </div>
                               )}
 
