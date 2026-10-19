@@ -1031,6 +1031,29 @@ export default function AdminOnboarding() {
           approver_email: ifo.approver_email,
         })
       }
+      const engineActiveStatuses = ['checking_account', 'deprovisioning', 'awaiting_approval']
+      if (data?.run_id && engineActiveStatuses.includes(data?.run_status)) {
+        const freshStatus = await callIfoLeaver('check-leaver-run', { run_id: data.run_id, offboarding_id: offboardingId })
+        if (freshStatus?.status && freshStatus.status !== data.run_status) {
+          const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
+          if (refreshed && wt) {
+            const merged = { ...refreshed } as LeaverM365Actions
+            merged.approval_sent_at = merged.approval_sent_at || wt.created_at
+            if (wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
+              merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+              merged.approved_by = wt.assigned_to || 'Approver'
+              merged.approved_at = wt.updated_at || new Date().toISOString()
+            } else if (wt.status === 'Pending') {
+              merged.approval_status = 'pending'
+            }
+            setLeaverM365Actions(merged)
+          } else {
+            setLeaverM365Actions(refreshed as LeaverM365Actions | null)
+          }
+          setLeaverM365Refreshing(false)
+          return
+        }
+      }
       if (data && wt) {
         const merged = { ...data } as LeaverM365Actions
         merged.approval_sent_at = merged.approval_sent_at || wt.created_at
@@ -1042,18 +1065,8 @@ export default function AdminOnboarding() {
           merged.approval_status = 'pending'
         }
         setLeaverM365Actions(merged)
-        setLeaverM365Refreshing(false)
-        return
-      }
-      setLeaverM365Actions(data as LeaverM365Actions | null)
-      if (data?.run_id && (!data?.run_status || ['checking_account', 'deprovisioning'].includes(data?.run_status))) {
-        const freshStatus = await callIfoLeaver('check-leaver-run', { run_id: data.run_id, offboarding_id: offboardingId })
-        if (freshStatus?.status && freshStatus.status !== data.run_status) {
-          const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
-          setLeaverM365Actions(refreshed as LeaverM365Actions | null)
-        } else if (freshStatus?.status === 'checking_account') {
-          leaverM365PollRun(data.run_id, offboardingId)
-        }
+      } else {
+        setLeaverM365Actions(data as LeaverM365Actions | null)
       }
     } finally {
       setLeaverM365Refreshing(false)
