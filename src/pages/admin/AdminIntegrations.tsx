@@ -248,7 +248,7 @@ export default function AdminIntegrations() {
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
-      supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at').eq('company_id', companyId).maybeSingle(),
+      supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at, offboard_approver_mode, offboard_approver_name, offboard_approver_email, schedule_templates_cache').eq('company_id', companyId).maybeSingle(),
     ])
 
     if (featuresRes.data) {
@@ -297,6 +297,9 @@ export default function AdminIntegrations() {
       setIfoOffboardApproverMode(ifoData.offboard_approver_mode || 'same_as_joiner')
       setIfoOffboardApproverName(ifoData.offboard_approver_name || '')
       setIfoOffboardApproverEmail(ifoData.offboard_approver_email || '')
+      const templates = Array.isArray((ifoData as any).schedule_templates_cache) ? (ifoData as any).schedule_templates_cache : []
+      const hasScheduleTemplates = templates.some((t: any) => t.id === 'hr.joiner' || t.templateId === 'hr.joiner') || templates.some((t: any) => t.id === 'hr.leaver' || t.templateId === 'hr.leaver')
+      setIfoSchedulingAvailable(hasScheduleTemplates)
     }
 
     // Load Xero employee sync status
