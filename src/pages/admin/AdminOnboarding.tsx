@@ -1013,7 +1013,6 @@ export default function AdminOnboarding() {
     setLeaverM365Refreshing(true)
     try {
       const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
-      setLeaverM365Actions(data as LeaverM365Actions | null)
       const { data: ifo } = await supabase.from('inflowonboarder_integrations')
         .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email')
         .eq('company_id', selectedCompanyId).maybeSingle()
@@ -1028,20 +1027,20 @@ export default function AdminOnboarding() {
           approver_email: ifo.approver_email,
         })
       }
-      if (data?.approval_status === 'pending') {
+      if (data?.approval_sent_at) {
         const { data: wt } = await supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at')
           .eq('onboard_id', offboardingId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle()
         if (wt && wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
-          const synced = wt.approval_status === 'Approved' ? 'approved' : 'declined'
-          await supabase.from('offboarding_m365_actions').update({
-            approval_status: synced,
-            approved_by: wt.updated_by_name || 'Approver',
-            approved_at: wt.updated_at || new Date().toISOString(),
-          }).eq('offboarding_id', offboardingId)
-          const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
-          if (refreshed) { setLeaverM365Actions(refreshed as LeaverM365Actions); setLeaverM365Refreshing(false); return }
+          const merged = { ...data } as LeaverM365Actions
+          merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+          merged.approved_by = wt.updated_by_name || 'Approver'
+          merged.approved_at = wt.updated_at || new Date().toISOString()
+          setLeaverM365Actions(merged)
+          setLeaverM365Refreshing(false)
+          return
         }
       }
+      setLeaverM365Actions(data as LeaverM365Actions | null)
       if (data?.run_id && (!data?.run_status || ['checking_account', 'deprovisioning'].includes(data?.run_status))) {
         const freshStatus = await callIfoLeaver('check-leaver-run', { run_id: data.run_id, offboarding_id: offboardingId })
         if (freshStatus?.status && freshStatus.status !== data.run_status) {
@@ -1125,18 +1124,16 @@ export default function AdminOnboarding() {
     const timer = setInterval(async () => {
       const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle()
       if (data) {
-        if (data.approval_status === 'pending') {
+        if (data.approval_status === 'pending' && data.approval_sent_at) {
           const { data: wt } = await supabase.from('workflow_tracker').select('status, approval_status, updated_by_name, updated_at')
             .eq('onboard_id', offboardSelectedId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle()
           if (wt && wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
-            const synced = wt.approval_status === 'Approved' ? 'approved' : 'declined'
-            await supabase.from('offboarding_m365_actions').update({
-              approval_status: synced,
-              approved_by: wt.updated_by_name || 'Approver',
-              approved_at: wt.updated_at || new Date().toISOString(),
-            }).eq('offboarding_id', offboardSelectedId)
-            const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle()
-            if (refreshed) { setLeaverM365Actions(refreshed as LeaverM365Actions); return }
+            const merged = { ...data } as LeaverM365Actions
+            merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+            merged.approved_by = wt.updated_by_name || 'Approver'
+            merged.approved_at = wt.updated_at || new Date().toISOString()
+            setLeaverM365Actions(merged)
+            return
           }
         }
         setLeaverM365Actions(data as LeaverM365Actions)
@@ -2507,7 +2504,7 @@ export default function AdminOnboarding() {
                                   disabled={leaverM365RunPolling || leaverM365Refreshing}
                                   onClick={e => { e.stopPropagation(); loadLeaverM365Actions(record.id) }}
                                   title="Refresh M365 status">
-                                  <span style={{ display: 'inline-block', animation: leaverM365Refreshing ? 'spin 0.8s linear infinite' : 'none' }}>↻</span> Refresh
+                                  {leaverM365Refreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : '↻ Refresh'}
                                 </button>
                               </div>
 
@@ -2527,7 +2524,7 @@ export default function AdminOnboarding() {
                               {/* Checking account */}
                               {leaverM365Actions?.run_status === 'checking_account' && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <div className="admin-spinner" style={{ width: 16, height: 16 }} />
+                                  <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                                   <span style={{ fontSize: 13 }}>Checking account status...</span>
                                 </div>
                               )}
@@ -2600,7 +2597,7 @@ export default function AdminOnboarding() {
                               {/* Deprovisioning */}
                               {leaverM365Actions?.run_status === 'deprovisioning' && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <div className="admin-spinner" style={{ width: 16, height: 16 }} />
+                                  <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                                   <span style={{ fontSize: 13 }}>Deprovisioning in progress...</span>
                                   <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
                                     onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
