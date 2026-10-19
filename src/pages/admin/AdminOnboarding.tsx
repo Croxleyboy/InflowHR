@@ -1096,6 +1096,19 @@ export default function AdminOnboarding() {
     setLeaverM365RunPolling(false)
   }
 
+  useEffect(() => {
+    if (!leaverM365Actions?.run_id || !offboardSelectedId) return
+    const needsPoll = leaverM365Actions.approval_status === 'pending'
+      || leaverM365Actions.run_status === 'checking_account'
+      || leaverM365Actions.run_status === 'deprovisioning'
+    if (!needsPoll) return
+    const timer = setInterval(async () => {
+      const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle()
+      if (data) setLeaverM365Actions(data as LeaverM365Actions)
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [leaverM365Actions?.run_id, leaverM365Actions?.approval_status, leaverM365Actions?.run_status, offboardSelectedId])
+
   async function leaverM365SendApproval(record: OffboardRecord) {
     if (!ifoOffboardSettings) return
     setLeaverM365ApprovalSending(true)
@@ -2454,6 +2467,12 @@ export default function AdminOnboarding() {
                                 </svg>
                                 <strong style={{ fontSize: 13, color: '#0078D4' }}>Microsoft 365 Offboarding</strong>
                                 {leaverM365RunPolling && <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>Checking...</span>}
+                                <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11 }}
+                                  disabled={leaverM365RunPolling}
+                                  onClick={e => { e.stopPropagation(); loadLeaverM365Actions(record.id) }}
+                                  title="Refresh M365 status">
+                                  ↻ Refresh
+                                </button>
                               </div>
 
                               {/* No run yet — start */}
@@ -2518,10 +2537,7 @@ export default function AdminOnboarding() {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#e65100' }}>
                                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                                       Waiting for approval
-                                      <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
-                                        onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
-                                        Refresh
-                                      </button>
+                                      <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>(auto-refreshing)</span>
                                     </div>
                                   ) : leaverM365Actions.approval_status === 'approved' ? (
                                     <div>
