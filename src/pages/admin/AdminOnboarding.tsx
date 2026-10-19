@@ -281,6 +281,7 @@ export default function AdminOnboarding() {
   const [m365ScheduleCreating, setM365ScheduleCreating] = useState(false)
   const [m365ScheduleCancelling, setM365ScheduleCancelling] = useState(false)
   const [m365ScheduleRefreshing, setM365ScheduleRefreshing] = useState(false)
+  const [m365PanelRefreshing, setM365PanelRefreshing] = useState(false)
 
 
   const COLUMN_MAP: Record<string, string> = {
@@ -983,11 +984,15 @@ export default function AdminOnboarding() {
   }
 
   async function loadM365Actions(onboardingId: number) {
-    const { data } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
+    const [{ data }, { data: ifo }, { data: schedulingFlag }] = await Promise.all([
+      supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle(),
+      supabase.from('inflowonboarder_integrations')
+        .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache')
+        .eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('company_features').select('is_enabled').eq('company_id', selectedCompanyId).eq('feature_key', 'm365_scheduling').maybeSingle(),
+    ])
     setM365Actions(data as M365Actions | null)
-    const { data: ifo } = await supabase.from('inflowonboarder_integrations')
-      .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache')
-      .eq('company_id', selectedCompanyId).maybeSingle()
+    const m365SchedulingEnabled = schedulingFlag?.is_enabled === true
     setIfoConnected(ifo?.status === 'connected_ready')
     if (ifo) {
       setIfoSettings({
@@ -1002,7 +1007,7 @@ export default function AdminOnboarding() {
       })
       const templates = Array.isArray(ifo.schedule_templates_cache) ? ifo.schedule_templates_cache : []
       const hasJoiner = templates.some((t: any) => t.id === 'hr.joiner' || t.templateId === 'hr.joiner')
-      setM365SchedulingAvailable(hasJoiner && features.m365_scheduling)
+      setM365SchedulingAvailable(hasJoiner && m365SchedulingEnabled)
     }
     if (data?.run_id && (!data?.run_status || ['checking_licence', 'provisioning'].includes(data?.run_status))) {
       const freshStatus = await callIfo('check-run', { run_id: data.run_id, onboarding_id: onboardingId })
@@ -1382,14 +1387,16 @@ export default function AdminOnboarding() {
   async function loadLeaverM365Actions(offboardingId: number) {
     setLeaverM365Refreshing(true)
     try {
-      const [{ data }, { data: ifo }, { data: wt }] = await Promise.all([
+      const [{ data }, { data: ifo }, { data: wt }, { data: schedulingFlag }] = await Promise.all([
         supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle(),
         supabase.from('inflowonboarder_integrations')
           .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email, schedule_templates_cache')
           .eq('company_id', selectedCompanyId).maybeSingle(),
         supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
           .eq('onboard_id', offboardingId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('company_features').select('is_enabled').eq('company_id', selectedCompanyId).eq('feature_key', 'm365_scheduling').maybeSingle(),
       ])
+      const m365SchedulingEnabled = schedulingFlag?.is_enabled === true
       setIfoConnected(ifo?.status === 'connected_ready')
       if (ifo) {
         setIfoOffboardSettings({
@@ -1402,7 +1409,7 @@ export default function AdminOnboarding() {
         })
         const templates = Array.isArray(ifo.schedule_templates_cache) ? ifo.schedule_templates_cache : []
         const hasLeaver = templates.some((t: any) => t.id === 'hr.leaver' || t.templateId === 'hr.leaver')
-        setLeaverSchedulingAvailable(hasLeaver && features.m365_scheduling)
+        setLeaverSchedulingAvailable(hasLeaver && m365SchedulingEnabled)
       }
       const terminalStatuses = ['completed', 'failed']
       if (data?.run_id && data?.run_status && !terminalStatuses.includes(data.run_status)) {
@@ -2567,6 +2574,12 @@ export default function AdminOnboarding() {
                               <svg width="20" height="20" viewBox="0 0 512 512"><rect width="512" height="512" rx="64" fill="#0078D4"/><circle cx="256" cy="256" r="100" fill="none" stroke="#fff" strokeWidth="32"/><circle cx="256" cy="256" r="16" fill="#fff"/></svg>
                               <strong style={{ fontSize: 14, color: '#0078D4' }}>Microsoft 365 Provisioning</strong>
                               {m365RunPolling && <span style={{ fontSize: 12, color: '#1976d2', marginLeft: 8 }}>Polling...</span>}
+                              <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+                                disabled={m365RunPolling || m365PanelRefreshing}
+                                onClick={async e => { e.stopPropagation(); setM365PanelRefreshing(true); await loadM365Actions(selectedRecord.id); setM365PanelRefreshing(false) }}
+                                title="Refresh M365 status">
+                                {m365PanelRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
+                              </button>
                             </div>
 
                             {/* V1 legacy starters */}
@@ -2645,9 +2658,13 @@ export default function AdminOnboarding() {
                                         <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Country</label>
                                         <input className="admin-input" value={m365Location} onChange={e => setM365Location(e.target.value)} style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} maxLength={2} />
                                       </div>
-                                      <div style={{ width: 140 }}>
-                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Prepare days before</label>
-                                        <input className="admin-input" type="number" min={1} max={14} value={m365PrepareDays} onChange={e => setM365PrepareDays(Math.max(1, Math.min(14, parseInt(e.target.value) || 3)))}
+                                      <div style={{ width: 160 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Prepare account on</label>
+                                        <input className="admin-input" type="date"
+                                          value={(() => { const d = new Date(new Date(selectedRecord.start_date).getTime() - m365PrepareDays * 86400000); return d.toISOString().split('T')[0] })()}
+                                          min={new Date().toISOString().split('T')[0]}
+                                          max={new Date(new Date(selectedRecord.start_date).getTime() - 86400000).toISOString().split('T')[0]}
+                                          onChange={e => { const diff = Math.round((new Date(selectedRecord.start_date).getTime() - new Date(e.target.value).getTime()) / 86400000); setM365PrepareDays(Math.max(1, diff)) }}
                                           style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
                                       </div>
                                     </div>
@@ -2684,10 +2701,10 @@ export default function AdminOnboarding() {
                                   }}>
                                     {(m365Actions.schedule_status || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                   </span>
-                                  <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 11 }}
+                                  <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
                                     disabled={m365ScheduleRefreshing}
                                     onClick={e => { e.stopPropagation(); m365RefreshSchedule(m365Actions!.schedule_id!, selectedRecord.id) }}>
-                                    {m365ScheduleRefreshing ? 'Refreshing...' : '↻ Refresh'}
+                                    {m365ScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
                                   </button>
                                 </div>
                                 {m365Actions.schedule_message && (
@@ -2777,9 +2794,9 @@ export default function AdminOnboarding() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                   <span style={{ fontSize: 13, color: '#1976d2' }}>Checking licence availability...</span>
                                 </div>
-                                <button className="admin-btn-sm" disabled={m365RunPolling}
+                                <button className="admin-btn-sm" disabled={m365RunPolling} style={{ display: 'flex', alignItems: 'center', gap: 4 }}
                                   onClick={e => { e.stopPropagation(); m365RefreshStatus(m365Actions!.run_id!, selectedRecord.id) }}>
-                                  {m365RunPolling ? 'Checking...' : 'Refresh Status'}
+                                  {m365RunPolling ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Checking...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh Status</>}
                                 </button>
                               </div>
                             )}
@@ -3238,7 +3255,7 @@ export default function AdminOnboarding() {
                                   disabled={leaverM365RunPolling || leaverM365Refreshing}
                                   onClick={e => { e.stopPropagation(); loadLeaverM365Actions(record.id) }}
                                   title="Refresh M365 status">
-                                  {leaverM365Refreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : '↻ Refresh'}
+                                  {leaverM365Refreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
                                 </button>
                               </div>
 
@@ -3273,9 +3290,11 @@ export default function AdminOnboarding() {
                                   {leaverSchedulingAvailable && leaverScheduleMode === 'schedule' && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                       <div style={{ width: 180 }}>
-                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Licence removal delay (days)</label>
-                                        <input className="admin-input" type="number" min={0} max={90} value={leaverLicenceRemovalDays}
-                                          onChange={e => setLeaverLicenceRemovalDays(Math.max(0, Math.min(90, parseInt(e.target.value) || 30)))}
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Remove licence & groups on</label>
+                                        <input className="admin-input" type="date"
+                                          value={(() => { if (!record.end_date) return ''; const d = new Date(new Date(record.end_date).getTime() + leaverLicenceRemovalDays * 86400000); return d.toISOString().split('T')[0] })()}
+                                          min={record.end_date ? new Date(record.end_date).toISOString().split('T')[0] : ''}
+                                          onChange={e => { if (!record.end_date) return; const diff = Math.round((new Date(e.target.value).getTime() - new Date(record.end_date).getTime()) / 86400000); setLeaverLicenceRemovalDays(Math.max(0, diff)) }}
                                           style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
                                       </div>
                                       <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #bbdefb', borderRadius: 6, padding: 10 }}>
@@ -3349,10 +3368,10 @@ export default function AdminOnboarding() {
                                     }}>
                                       {(leaverM365Actions.schedule_status || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                     </span>
-                                    <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 8px', fontSize: 11 }}
+                                    <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
                                       disabled={leaverScheduleRefreshing}
                                       onClick={e => { e.stopPropagation(); leaverRefreshSchedule(leaverM365Actions!.schedule_id!, record.id) }}>
-                                      {leaverScheduleRefreshing ? 'Refreshing...' : '↻ Refresh'}
+                                      {leaverScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
                                     </button>
                                   </div>
                                   {leaverM365Actions.schedule_message && (
