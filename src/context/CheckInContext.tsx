@@ -120,6 +120,8 @@ export function CheckInProvider({ children }: { children: ReactNode }) {
   const checkIn = useCallback(async (source: 'timesheets' | 'shifts', shiftAssignmentId?: string, wfhOverride?: boolean) => {
     if (!companyId || !employeeId) return { ok: false, error: 'Not authenticated' }
     if (activeCheckin) return { ok: false, error: 'You are already checked in' }
+    const { data: empCheck } = await supabase.from('employees').select('is_active').eq('id', employeeId).single()
+    if (!empCheck?.is_active) return { ok: false, error: 'Your account is inactive — check-in is disabled' }
 
     let coords: Coords | null = null
     let location: WorkLocation | null = null

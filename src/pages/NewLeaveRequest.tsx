@@ -319,6 +319,8 @@ export default function NewLeaveRequest() {
   }
 
   async function handleSubmit() {
+    const { data: empCheck } = await supabase.from('employees').select('is_active').eq('id', employeeId).single()
+    if (!empCheck?.is_active) { setError('Your account is inactive — leave requests are disabled'); return }
     if (startDate < todayStr()) {
       setError(t('new_leave.error_past'))
       return

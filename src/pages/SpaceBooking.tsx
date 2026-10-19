@@ -274,6 +274,8 @@ export default function SpaceBooking() {
 
   async function handleBooking() {
     if (!bookingModal || !companyId || !employeeId) return
+    const { data: empCheck } = await supabase.from('employees').select('is_active').eq('id', employeeId).single()
+    if (!empCheck?.is_active) { setError('Your account is inactive — bookings are disabled'); return }
     setSubmitting(true)
     setError(null)
 

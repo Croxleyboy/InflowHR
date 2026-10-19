@@ -206,6 +206,50 @@ const SECTIONS: GuideSection[] = [
     ],
   },
   {
+    icon: '🚪', title: 'Leaving & Offboarding (Admin)',
+    features: [
+      { title: 'Overview', purpose: 'When an employee leaves, the M365 offboarding workflow automates the removal of their Microsoft 365 account — blocking sign-in, removing groups, and revoking licences.', steps: [
+        'This feature requires an active InflowOnboarder integration with the "Offboard leavers (workflow)" API key permission.',
+        'Configure your offboarding approver under Admin > Integrations > InflowOnboarder > Offboarding Settings.',
+      ], callout: { type: 'note', text: 'The offboarding workflow is only available to companies with an InflowOnboarder subscription.' } },
+      { title: 'Configure the Offboarding Approver', purpose: 'Choose who approves each offboarding request before the M365 account is deprovisioned.', steps: [
+        'Go to Admin > Integrations > InflowOnboarder and scroll to Offboarding Settings.',
+        'Choose an approver mode:',
+        '• Same as joiner — uses the same approver configured for new starter onboarding.',
+        '• Nominated person — enter a specific approver name and email.',
+        '• Line manager — the leaver\'s manager approves (falls back to nominated if no manager is set).',
+        'Save your settings.',
+      ] },
+      { title: 'Start an Offboarding Workflow', purpose: 'Initiate the automated M365 offboarding for a leaver.', steps: [
+        'Go to Admin > Onboarding > Offboarding tab and open the leaver\'s record.',
+        'In the M365 Offboarding panel, click Start M365 Offboarding.',
+        'The system checks the employee\'s M365 account status. This typically takes a few seconds.',
+        'If the account is protected (e.g. litigation hold), a warning is shown — resolve externally, then click Re-check.',
+        'Once the account check passes, the status moves to Ready for Approval.',
+      ] },
+      { title: 'Approval & Proceed', purpose: 'Send the offboarding for approval and then proceed once approved.', steps: [
+        'Click Send for Approval. The configured approver receives a notification and email.',
+        'The approver opens their Notifications > Actions tab and approves or declines.',
+        'Once approved, the panel shows Approved — click Proceed with Offboarding.',
+        'The system submits the approval to the InflowOnboarder engine and begins deprovisioning.',
+        'The panel auto-refreshes while the engine processes — no manual action needed.',
+      ] },
+      { title: 'Workflow Statuses', purpose: 'Understand what each status means during the offboarding process.', steps: [
+        'Checking Account — the engine is verifying the M365 account.',
+        'Account Blocked — the account is protected and cannot be offboarded automatically.',
+        'Ready for Approval — account check passed, waiting for you to send for approval.',
+        'Awaiting Approval — approval submitted, engine is processing asynchronously.',
+        'Deprovisioning — the engine is blocking sign-in, removing groups, and revoking licences.',
+        'Completed — all actions finished. Device recovery details are shown.',
+        'Failed — something went wrong. Use Re-check or Mark Complete Manually.',
+      ] },
+      { title: 'Manual Completion', purpose: 'Mark an offboarding as complete when the automated workflow cannot finish.', steps: [
+        'If the workflow fails or the account was handled outside the automated process, click Mark Complete Manually.',
+        'This updates the record to Completed without calling the InflowOnboarder engine.',
+      ], callout: { type: 'tip', text: 'Manual completion is always available as a fallback — the offboarding record is never stuck.' } },
+    ],
+  },
+  {
     icon: '⚙️', title: 'Settings',
     features: [
       { title: 'Personalise Your Dashboard', purpose: 'Show or hide feature cards on your home screen.', steps: ['Navigate to Settings from the bottom bar.', 'Toggle features on or off. Hidden features are still accessible via direct links but won\'t appear on your dashboard.'], callout: { type: 'note', text: 'You can only hide features your company has enabled. If a feature is not listed, your company admin has not activated it.' } },

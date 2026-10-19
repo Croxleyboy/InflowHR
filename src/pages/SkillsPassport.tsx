@@ -207,6 +207,8 @@ function MySkillsTab({ companyId, employeeId, categories, allSkills, mySkills, o
 
   async function addSkill() {
     if (!addSkillId) return
+    const { data: empCheck } = await supabase.from('employees').select('is_active').eq('id', employeeId).single()
+    if (!empCheck?.is_active) { alert('Your account is inactive — adding skills is disabled'); return }
     setSaving(true)
 
     const { data: emp } = await supabase.from('employees').select('manager_id, first_name, last_name, email').eq('id', employeeId).single()

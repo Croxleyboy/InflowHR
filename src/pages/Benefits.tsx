@@ -244,6 +244,8 @@ export default function Benefits() {
 
   async function doEnroll(bt: BenefitType) {
     if (!companyId || !employeeId) return
+    const { data: empCheck } = await supabase.from('employees').select('is_active').eq('id', employeeId).single()
+    if (!empCheck?.is_active) { alert('Your account is inactive — benefit enrolment is disabled'); return }
     const enrolled = isEnrolledInType(bt.id)
 
     if (enrolled) {

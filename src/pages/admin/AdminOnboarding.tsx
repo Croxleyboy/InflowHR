@@ -28,6 +28,13 @@ interface OffboardRecord {
   is_complete: boolean
   frozen_at: string | null
   created_at: string
+  data_export_url: string | null
+  data_exported_at: string | null
+  cleanup_bookings_done: boolean
+  cleanup_shifts_done: boolean
+  cleanup_benefits_done: boolean
+  cleanup_assets_done: boolean
+  custom_steps_completed: Record<string, boolean>
 }
 
 interface FrozenEmployee {
@@ -40,6 +47,28 @@ interface FrozenEmployee {
   deletion_date: string
   status: string
   recovered_at: string | null
+  extended_at: string | null
+  extension_days: number
+  data_export_url: string | null
+  payroll_cleared: boolean
+}
+
+interface DeletionCertificate {
+  id: string
+  company_id: string
+  employee_name: string
+  employee_email: string
+  employee_id: string
+  leaving_date: string | null
+  leaving_reason: string | null
+  frozen_at: string | null
+  deleted_at: string
+  retention_days: number
+  data_export_provided: boolean
+  data_categories_held: string[]
+  deletion_summary: Record<string, number>
+  certificate_reference: string
+  created_at: string
 }
 
 const OFFBOARD_STEPS = [
@@ -49,6 +78,11 @@ const OFFBOARD_STEPS = [
   { key: 'convert_shared_mailbox', label: 'Convert to Shared Mailbox', icon: '📬', description: 'Convert the leaver\'s mailbox to a shared mailbox so colleagues can continue to access their emails without consuming a licence. This step can be skipped if not required.', role: 'HR' },
   { key: 'forward_to_manager', label: 'Forward to Manager', icon: '📧', description: 'Set up email forwarding from the leaver\'s mailbox to their line manager so that incoming messages are not missed during the transition period. This step can be skipped if not required.', role: 'HR' },
   { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable the Microsoft 365 account, revoke licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
+  { key: 'review_shifts', label: 'Review Future Shifts', icon: '📅', description: 'Review and cancel any future shift assignments for this employee. Unassigned shifts can be reassigned to other team members via the rota.', role: 'HR' },
+  { key: 'review_bookings', label: 'Review Future Bookings', icon: '🏢', description: 'Review and cancel any future desk or room bookings made by this employee. This frees up the spaces for other team members.', role: 'HR' },
+  { key: 'review_benefits', label: 'Review Benefit Enrolments', icon: '🎁', description: 'Unenrol the employee from all active company benefits. If payroll is connected, benefit deductions will stop from the next pay run.', role: 'HR' },
+  { key: 'review_assets', label: 'Review Company Assets', icon: '📦', description: 'Confirm all company assets assigned to this employee have been accounted for and returned. Cross-reference with the asset register.', role: 'HR' },
+  { key: 'export_data', label: 'Export Employee Data (GDPR)', icon: '📥', description: 'Generate and download the GDPR data export pack containing all personal data held for this employee. This is also auto-generated when the account is frozen.', role: 'HR' },
   { key: 'reassign_reports', label: 'Reassign Direct Reports', icon: '👥', description: 'Reassign any employees who report to this person to a new manager. This also transfers all pending approval actions (leave, expenses, timesheets) to the new manager.', role: 'HR' },
   { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR' },
 ]
@@ -163,6 +197,19 @@ export default function AdminOnboarding() {
   const [offboardEmployeeSearch, setOffboardEmployeeSearch] = useState('')
   const [offboardEmployeeResults, setOffboardEmployeeResults] = useState<{ id: string; first_name: string; last_name: string; email: string; job_title: string; department: string }[]>([])
   const [offboardForm, setOffboardForm] = useState({ end_date: '', reason: '' })
+
+  // Leaver review step data
+  const [reviewShifts, setReviewShifts] = useState<{ id: number; date: string; shift_name: string; rota_name: string }[]>([])
+  const [reviewBookings, setReviewBookings] = useState<{ id: number; booking_date: string; space_name: string }[]>([])
+  const [reviewBenefits, setReviewBenefits] = useState<{ id: number; benefit_name: string; enrolled_at: string }[]>([])
+  const [reviewAssets, setReviewAssets] = useState<{ id: number; asset_name: string; asset_type: string; assigned_date: string }[]>([])
+  const [deletionCertificates, setDeletionCertificates] = useState<DeletionCertificate[]>([])
+
+  // Custom offboarding steps state
+  const [offboardCustomSteps, setOffboardCustomSteps] = useState<CustomStep[]>([])
+  const [offboardEditingSteps, setOffboardEditingSteps] = useState<CustomStep[]>([])
+  const [hasOffboardCustomSteps, setHasOffboardCustomSteps] = useState(false)
+  const [settingsWorkflowType, setSettingsWorkflowType] = useState<'onboarding' | 'offboarding'>('onboarding')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadRows, setUploadRows] = useState<Record<string, string>[]>([])
@@ -353,6 +400,7 @@ export default function AdminOnboarding() {
       load()
       loadOffboarding()
       loadCustomSteps()
+      loadOffboardCustomSteps()
     }
   }, [selectedCompanyId])
 
@@ -371,12 +419,41 @@ export default function AdminOnboarding() {
   }
 
   async function loadOffboarding() {
-    const [{ data: offData }, { data: frozenData }] = await Promise.all([
+    const [{ data: offData }, { data: frozenData }, { data: certData }] = await Promise.all([
       supabase.from('offboarding').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false }),
       supabase.from('frozen_employees').select('*').eq('company_id', selectedCompanyId).order('frozen_at', { ascending: false }),
+      supabase.from('deletion_certificates').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false }),
     ])
     setOffboardRecords((offData as OffboardRecord[]) || [])
     setFrozenEmployees((frozenData as FrozenEmployee[]) || [])
+    setDeletionCertificates((certData as DeletionCertificate[]) || [])
+  }
+
+  async function loadReviewData(employeeId: string) {
+    const today = new Date().toISOString().split('T')[0]
+    const [{ data: shifts }, { data: bookings }, { data: benefits }, { data: assets }] = await Promise.all([
+      supabase.from('shift_assignments').select('id, date, shift_name, rota:rotas(name)').eq('employee_id', employeeId).gte('date', today),
+      supabase.from('space_bookings').select('id, booking_date, space:spaces(name)').eq('employee_id', employeeId).gte('booking_date', today).neq('status', 'cancelled'),
+      supabase.from('employee_benefits').select('id, benefit:benefits(name), enrolled_at').eq('employee_id', employeeId).is('unenrolled_at', null),
+      supabase.from('company_assets').select('id, name, type, assigned_date').eq('assigned_to', employeeId),
+    ])
+    setReviewShifts((shifts || []).map((s: any) => ({ id: s.id, date: s.date, shift_name: s.shift_name || 'Shift', rota_name: s.rota?.name || '' })))
+    setReviewBookings((bookings || []).map((b: any) => ({ id: b.id, booking_date: b.booking_date, space_name: b.space?.name || 'Space' })))
+    setReviewBenefits((benefits || []).map((b: any) => ({ id: b.id, benefit_name: b.benefit?.name || 'Benefit', enrolled_at: b.enrolled_at })))
+    setReviewAssets((assets || []).map((a: any) => ({ id: a.id, asset_name: a.name || 'Asset', asset_type: a.type || '', assigned_date: a.assigned_date || '' })))
+  }
+
+  async function loadOffboardCustomSteps() {
+    if (!selectedCompanyId) return
+    const { data } = await supabase.from('offboard_workflow_steps')
+      .select('*').eq('company_id', selectedCompanyId).order('sort_order')
+    if (data && data.length > 0) {
+      setOffboardCustomSteps(data)
+      setHasOffboardCustomSteps(true)
+    } else {
+      setOffboardCustomSteps([])
+      setHasOffboardCustomSteps(false)
+    }
   }
 
   async function loadCustomSteps() {
@@ -490,6 +567,7 @@ export default function AdminOnboarding() {
     if (OFFBOARD_STEPS[nextStep]?.key === 'remove_accounts') {
       loadLeaverM365Actions(record.id)
     }
+    loadReviewData(record.employee_id)
     setTab('offboard-workflow')
   }
 
@@ -552,17 +630,22 @@ export default function AdminOnboarding() {
   }
 
   async function loadReassignData(record: OffboardRecord) {
-    const [reportsRes, pendingRes, candidatesRes] = await Promise.all([
+    const today = new Date().toISOString().split('T')[0]
+    const [reportsRes, pendingRes, candidatesRes, meetingsRes, validationsRes] = await Promise.all([
       supabase.from('employees').select('id, first_name, last_name, email')
         .eq('company_id', record.company_id).eq('manager_id', record.employee_id).eq('is_active', true),
       supabase.from('workflow_tracker').select('id', { count: 'exact', head: true })
         .eq('assigned_to', record.employee_email).eq('status', 'Pending').eq('company_id', record.company_id),
       supabase.from('employees').select('id, first_name, last_name, email')
         .eq('company_id', record.company_id).eq('is_active', true).neq('id', record.employee_id).order('first_name'),
+      supabase.from('one_to_one_meetings').select('id', { count: 'exact', head: true })
+        .eq('manager_id', record.employee_id).gte('scheduled_date', today),
+      supabase.from('skill_validations').select('id', { count: 'exact', head: true })
+        .eq('assigned_to', record.employee_id).eq('status', 'pending'),
     ])
     setReassignData({
       directReports: (reportsRes.data || []) as { id: string; first_name: string; last_name: string; email: string }[],
-      pendingActions: pendingRes.count || 0,
+      pendingActions: (pendingRes.count || 0) + (meetingsRes.count || 0) + (validationsRes.count || 0),
     })
     setReassignCandidates((candidatesRes.data || []) as { id: string; first_name: string; last_name: string; email: string }[])
     setReassignTargetId('')
@@ -616,8 +699,26 @@ export default function AdminOnboarding() {
       }
     }
 
+    const today = new Date().toISOString().split('T')[0]
+    const { data: futureMeetings } = await supabase.from('one_to_one_meetings')
+      .select('id').eq('manager_id', record.employee_id).gte('scheduled_date', today)
+    if (futureMeetings && futureMeetings.length > 0) {
+      await supabase.from('one_to_one_meetings')
+        .update({ manager_id: reassignTargetId })
+        .in('id', futureMeetings.map(m => m.id))
+    }
+
+    const { data: pendingValidations } = await supabase.from('skill_validations')
+      .select('id').eq('assigned_to', record.employee_id).eq('status', 'pending')
+    if (pendingValidations && pendingValidations.length > 0) {
+      await supabase.from('skill_validations')
+        .update({ assigned_to: reassignTargetId })
+        .in('id', pendingValidations.map(v => v.id))
+    }
+
+    const extras = (futureMeetings?.length || 0) + (pendingValidations?.length || 0)
     setReassignSaving(false)
-    showSuccess(`${reassignData.directReports.length} employee(s) and ${reassignData.pendingActions} pending action(s) reassigned to ${target.first_name} ${target.last_name}`)
+    showSuccess(`${reassignData.directReports.length} employee(s), ${reassignData.pendingActions} pending action(s)${extras > 0 ? `, ${extras} meeting(s)/validation(s)` : ''} reassigned to ${target.first_name} ${target.last_name}`)
     completeOffboardStep('reassign_reports')
   }
 
@@ -676,13 +777,100 @@ export default function AdminOnboarding() {
   }
 
   async function deleteEmployee(frozen: FrozenEmployee) {
-    if (!confirm(`Permanently delete ${frozen.employee_name}? This cannot be undone.`)) return
-    await supabase.from('frozen_employees').delete().eq('id', frozen.id)
-    await supabase.from('company_users').delete().eq('employee_id', frozen.employee_id).eq('company_id', selectedCompanyId)
-    await supabase.from('employees').delete().eq('id', frozen.employee_id)
-    showSuccess(`${frozen.employee_name} has been permanently deleted`)
+    if (!confirm(`Permanently delete ${frozen.employee_name}? This will remove ALL data and generate a deletion certificate. This cannot be undone.`)) return
+    const { data, error } = await callRpcDirect('delete_employee_permanently', { p_employee_id: frozen.employee_id })
+    if (error) { showError('Failed to delete: ' + error.message); return }
+    showSuccess(`${frozen.employee_name} has been permanently deleted. Deletion certificate generated: ${(data as any)?.certificate_ref || 'N/A'}`)
     loadOffboarding()
     load()
+  }
+
+  async function extendFrozenPeriod(frozen: FrozenEmployee) {
+    if (frozen.extended_at) { showError('Extension already applied — maximum one extension per employee'); return }
+    if (!confirm(`Extend deletion date for ${frozen.employee_name} by 15 days?`)) return
+    await supabase.from('frozen_employees').update({ extended_at: new Date().toISOString(), extension_days: 15 }).eq('id', frozen.id)
+    showSuccess(`Deletion date extended by 15 days for ${frozen.employee_name}`)
+    loadOffboarding()
+  }
+
+  async function cancelAllShifts(record: OffboardRecord) {
+    if (reviewShifts.length === 0) return
+    const ids = reviewShifts.map(s => s.id)
+    await supabase.from('shift_assignments').delete().in('id', ids)
+    await supabase.from('offboarding').update({ cleanup_shifts_done: true }).eq('id', record.id)
+    setReviewShifts([])
+    completeOffboardStep('review_shifts')
+    showSuccess(`${ids.length} future shift(s) cancelled`)
+  }
+
+  async function cancelAllBookings(record: OffboardRecord) {
+    if (reviewBookings.length === 0) return
+    const ids = reviewBookings.map(b => b.id)
+    await supabase.from('space_bookings').update({ status: 'cancelled' }).in('id', ids)
+    await supabase.from('offboarding').update({ cleanup_bookings_done: true }).eq('id', record.id)
+    setReviewBookings([])
+    completeOffboardStep('review_bookings')
+    showSuccess(`${ids.length} future booking(s) cancelled`)
+  }
+
+  async function unenrolAllBenefits(record: OffboardRecord) {
+    if (reviewBenefits.length === 0) return
+    const ids = reviewBenefits.map(b => b.id)
+    await supabase.from('employee_benefits').update({ unenrolled_at: new Date().toISOString(), unenrolled_reason: 'offboarding' }).in('id', ids)
+    await supabase.from('offboarding').update({ cleanup_benefits_done: true }).eq('id', record.id)
+    setReviewBenefits([])
+    completeOffboardStep('review_benefits')
+    showSuccess(`${ids.length} benefit enrolment(s) cancelled`)
+  }
+
+  async function confirmAssets(record: OffboardRecord) {
+    await supabase.from('offboarding').update({ cleanup_assets_done: true }).eq('id', record.id)
+    completeOffboardStep('review_assets')
+    showSuccess('Company assets confirmed as accounted for')
+  }
+
+  async function generateDataExport(record: OffboardRecord) {
+    try {
+      const { data: exportData, error } = await callRpcDirect('export_employee_data', { p_employee_id: record.employee_id })
+      if (error) throw error
+      const { generateLeaverExport } = await import('../../lib/employeeDataExport')
+      const blob = await generateLeaverExport(exportData as any, record.employee_name, record.end_date, record.reason)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${record.employee_name.replace(/\s+/g, '_')}_Leaver_Data_Export.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+      await supabase.from('offboarding').update({ data_exported_at: new Date().toISOString() }).eq('id', record.id)
+      completeOffboardStep('export_data')
+      showSuccess('Leaver data export downloaded successfully')
+    } catch (err: any) {
+      showError('Export failed: ' + (err?.message || 'Unknown error'))
+    }
+  }
+
+  async function saveOffboardCustomSteps() {
+    if (!selectedCompanyId) return
+    setSettingsSaving(true)
+    try {
+      await supabase.from('offboard_workflow_steps').delete().eq('company_id', selectedCompanyId)
+      const rows = offboardEditingSteps.map((s, i) => ({
+        company_id: selectedCompanyId,
+        step_key: s.step_key,
+        label: s.label,
+        icon: s.icon,
+        description: s.description,
+        sort_order: i,
+        is_default: s.is_default,
+      }))
+      const { error } = await supabase.from('offboard_workflow_steps').insert(rows)
+      if (error) { showError('Failed to save offboarding steps: ' + error.message); return }
+      await loadOffboardCustomSteps()
+      setSettingsDirty(false)
+      showSuccess('Offboarding workflow steps saved')
+    } finally {
+      setSettingsSaving(false)
+    }
   }
 
   function stripFormulaChars(val: string): string {
@@ -1314,7 +1502,7 @@ export default function AdminOnboarding() {
       accounts: record.elearning,
       day1_access: record.is_complete,
     }
-    const customCompleted = (record as any).custom_steps_completed || {}
+    const customCompleted = record.custom_steps_completed || {}
     Object.keys(customCompleted).forEach(k => { if (customCompleted[k]) checks[k] = true })
     setStepChecks(checks)
     const skipped = record.skipped_steps
@@ -2431,26 +2619,51 @@ export default function AdminOnboarding() {
             {frozenEmployees.length > 0 ? (
               <div className="admin-table-wrap">
                 <table className="admin-table">
-                  <thead><tr><th>Employee</th><th>Frozen Date</th><th>Deletion Date</th><th>Status</th><th>Actions</th></tr></thead>
+                  <thead><tr><th>Employee</th><th>Frozen Date</th><th>Deletion Countdown</th><th>Status</th><th>Actions</th></tr></thead>
                   <tbody>
                     {paginatedFrozen.map(f => {
                       const now = new Date()
-                      const delDate = new Date(f.deletion_date)
-                      const daysLeft = Math.ceil((delDate.getTime() - now.getTime()) / 86400000)
+                      const effectiveDelDate = new Date(f.deletion_date)
+                      if (f.extension_days) effectiveDelDate.setDate(effectiveDelDate.getDate() + f.extension_days)
+                      const daysLeft = Math.ceil((effectiveDelDate.getTime() - now.getTime()) / 86400000)
+                      const totalDays = 30 + (f.extension_days || 0)
+                      const elapsed = totalDays - Math.max(daysLeft, 0)
+                      const pct = Math.min(100, Math.max(0, (elapsed / totalDays) * 100))
+                      const barColor = daysLeft <= 7 ? '#c62828' : daysLeft <= 15 ? '#ff9800' : '#4caf50'
                       const statusLabel = f.status === 'recovered' ? 'Recovered' : daysLeft <= 0 ? 'Ready to Delete' : 'Awaiting Expiry'
                       const statusColor = f.status === 'recovered' ? '#43a047' : daysLeft <= 0 ? '#c62828' : '#ff9800'
                       return (
                         <tr key={f.id}>
                           <td><strong>{f.employee_name}</strong><br /><span style={{ fontSize: 12, color: '#888' }}>{f.employee_email}</span></td>
                           <td>{new Date(f.frozen_at).toLocaleDateString('en-GB')}</td>
-                          <td>{new Date(f.deletion_date).toLocaleDateString('en-GB')}{daysLeft > 0 && f.status !== 'recovered' && <span style={{ fontSize: 12, color: '#888', marginLeft: 4 }}>({daysLeft}d)</span>}</td>
+                          <td>
+                            {f.status !== 'recovered' ? (
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                                  <span style={{ fontWeight: 600, color: daysLeft <= 7 ? '#c62828' : '#333' }}>{daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} remaining` : 'Expired'}</span>
+                                  <span style={{ color: '#888' }}>{effectiveDelDate.toLocaleDateString('en-GB')}</span>
+                                </div>
+                                <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                                  <div style={{ background: barColor, height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s' }} />
+                                </div>
+                                {f.extended_at && <span style={{ fontSize: 11, color: '#2196f3', marginTop: 2, display: 'block' }}>+15 day extension applied</span>}
+                              </div>
+                            ) : <span style={{ color: '#888' }}>—</span>}
+                          </td>
                           <td><span className="admin-badge" style={{ background: statusColor, color: '#fff' }}>{statusLabel}</span></td>
                           <td className="admin-actions">
                             {f.status !== 'recovered' && (
-                              <>
-                                <button className="admin-btn-sm" style={{ background: '#43a047', color: '#fff', border: 'none' }} onClick={() => recoverEmployee(f)}>Recover</button>
-                                <button className="admin-btn-sm" style={{ background: '#c62828', color: '#fff', border: 'none' }} onClick={() => deleteEmployee(f)}>Delete</button>
-                              </>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                  <button className="admin-btn-sm" style={{ background: '#43a047', color: '#fff', border: 'none' }} onClick={() => recoverEmployee(f)}>Recover</button>
+                                  <button className="admin-btn-sm" style={{ background: '#c62828', color: '#fff', border: 'none' }} onClick={() => deleteEmployee(f)}>Delete Now</button>
+                                </div>
+                                {!f.extended_at && daysLeft > 0 && (
+                                  <button className="admin-btn-sm" style={{ background: '#2196f3', color: '#fff', border: 'none', fontSize: 11 }} onClick={() => extendFrozenPeriod(f)}>
+                                    Extend +15 Days
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -2469,7 +2682,41 @@ export default function AdminOnboarding() {
                 <button className="admin-action-btn" disabled={frozenPage >= frozenTotalPages} onClick={() => setFrozenPage(p => p + 1)}>Next</button>
               </div>
             )}
+            <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888', fontStyle: 'italic' }}>
+              After the retention period expires, ALL employee data is permanently deleted and a deletion certificate is produced for GDPR compliance.
+            </p>
           </div>
+
+          {/* Deletion Certificates */}
+          {deletionCertificates.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>Deletion Certificates</h3>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead><tr><th>Employee</th><th>Certificate Ref</th><th>Deleted</th><th>Retention</th><th>Data Categories</th></tr></thead>
+                  <tbody>
+                    {deletionCertificates.map(cert => (
+                      <tr key={cert.id}>
+                        <td><strong>{cert.employee_name}</strong><br /><span style={{ fontSize: 12, color: '#888' }}>{cert.employee_email}</span></td>
+                        <td><code style={{ fontSize: 12, background: '#f5f5f5', padding: '2px 6px', borderRadius: 4 }}>{cert.certificate_reference}</code></td>
+                        <td>{new Date(cert.deleted_at).toLocaleDateString('en-GB')}</td>
+                        <td>{cert.retention_days} days{cert.data_export_provided && <span style={{ fontSize: 11, color: '#4caf50', marginLeft: 4 }}>(export provided)</span>}</td>
+                        <td style={{ fontSize: 12 }}>
+                          {cert.data_categories_held.length > 0 ? (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {cert.data_categories_held.map((cat, i) => (
+                                <span key={i} style={{ background: '#e3f2fd', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>{cat.replace(/_/g, ' ')}</span>
+                              ))}
+                            </div>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Completed Offboarding */}
           {completedOffboardRecords.length > 0 && (
@@ -2723,6 +2970,119 @@ export default function AdminOnboarding() {
                             </div>
                           )}
 
+                          {/* Review Future Shifts panel */}
+                          {step.key === 'review_shifts' && !done && !skipped && (
+                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                              {reviewShifts.length === 0 ? (
+                                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No future shifts found. You can mark this step complete.</p>
+                              ) : (
+                                <>
+                                  <div style={{ background: '#e3f2fd', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
+                                    {reviewShifts.length} future shift{reviewShifts.length !== 1 ? 's' : ''}
+                                  </div>
+                                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
+                                    <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Date</th><th style={{ textAlign: 'left', padding: 6 }}>Shift</th><th style={{ textAlign: 'left', padding: 6 }}>Rota</th></tr></thead>
+                                    <tbody>{reviewShifts.map(s => (
+                                      <tr key={s.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{new Date(s.date).toLocaleDateString('en-GB')}</td><td style={{ padding: 6 }}>{s.shift_name}</td><td style={{ padding: 6 }}>{s.rota_name}</td></tr>
+                                    ))}</tbody>
+                                  </table>
+                                  <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); cancelAllShifts(record) }}>
+                                    Cancel All Future Shifts
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Review Future Bookings panel */}
+                          {step.key === 'review_bookings' && !done && !skipped && (
+                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                              {reviewBookings.length === 0 ? (
+                                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No future bookings found. You can mark this step complete.</p>
+                              ) : (
+                                <>
+                                  <div style={{ background: '#e8f5e9', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
+                                    {reviewBookings.length} future booking{reviewBookings.length !== 1 ? 's' : ''}
+                                  </div>
+                                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
+                                    <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Date</th><th style={{ textAlign: 'left', padding: 6 }}>Space</th></tr></thead>
+                                    <tbody>{reviewBookings.map(b => (
+                                      <tr key={b.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{new Date(b.booking_date).toLocaleDateString('en-GB')}</td><td style={{ padding: 6 }}>{b.space_name}</td></tr>
+                                    ))}</tbody>
+                                  </table>
+                                  <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); cancelAllBookings(record) }}>
+                                    Cancel All Future Bookings
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Review Benefits panel */}
+                          {step.key === 'review_benefits' && !done && !skipped && (
+                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                              {reviewBenefits.length === 0 ? (
+                                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No active benefit enrolments found. You can mark this step complete.</p>
+                              ) : (
+                                <>
+                                  <div style={{ background: '#fce4ec', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
+                                    {reviewBenefits.length} active enrolment{reviewBenefits.length !== 1 ? 's' : ''}
+                                  </div>
+                                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
+                                    <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Benefit</th><th style={{ textAlign: 'left', padding: 6 }}>Enrolled</th></tr></thead>
+                                    <tbody>{reviewBenefits.map(b => (
+                                      <tr key={b.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{b.benefit_name}</td><td style={{ padding: 6 }}>{new Date(b.enrolled_at).toLocaleDateString('en-GB')}</td></tr>
+                                    ))}</tbody>
+                                  </table>
+                                  <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); unenrolAllBenefits(record) }}>
+                                    Unenrol All Benefits
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Review Assets panel */}
+                          {step.key === 'review_assets' && !done && !skipped && (
+                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                              {reviewAssets.length === 0 ? (
+                                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>No company assets assigned. You can mark this step complete.</p>
+                              ) : (
+                                <>
+                                  <div style={{ background: '#fff3e0', padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, display: 'inline-block', marginBottom: 10 }}>
+                                    {reviewAssets.length} assigned asset{reviewAssets.length !== 1 ? 's' : ''}
+                                  </div>
+                                  <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse', marginBottom: 10 }}>
+                                    <thead><tr style={{ borderBottom: '1px solid #ddd' }}><th style={{ textAlign: 'left', padding: 6 }}>Asset</th><th style={{ textAlign: 'left', padding: 6 }}>Type</th></tr></thead>
+                                    <tbody>{reviewAssets.map(a => (
+                                      <tr key={a.id} style={{ borderBottom: '1px solid #eee' }}><td style={{ padding: 6 }}>{a.asset_name}</td><td style={{ padding: 6 }}>{a.asset_type}</td></tr>
+                                    ))}</tbody>
+                                  </table>
+                                  <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); confirmAssets(record) }}>
+                                    Confirm All Assets Accounted For
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Export Data panel */}
+                          {step.key === 'export_data' && !done && !skipped && (
+                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
+                              <p style={{ margin: '0 0 10px', fontSize: 13, color: '#666' }}>
+                                Generate a GDPR-compliant data export pack containing all personal data held for this employee. The export includes leave records, payslips, expenses, timesheets, shift history, and more.
+                              </p>
+                              {record.data_exported_at && (
+                                <p style={{ margin: '0 0 10px', fontSize: 12, color: '#4caf50', fontWeight: 600 }}>
+                                  Last exported: {new Date(record.data_exported_at!).toLocaleDateString('en-GB')}
+                                </p>
+                              )}
+                              <button className="admin-btn-sm admin-btn-save" onClick={e => { e.stopPropagation(); generateDataExport(record) }}>
+                                Download Data Export (ZIP)
+                              </button>
+                            </div>
+                          )}
+
                           {step.key === 'reassign_reports' && !done && !skipped && reassignData && (
                             <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
                               <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
@@ -2799,17 +3159,44 @@ export default function AdminOnboarding() {
       {/* Freeze Confirmation Modal */}
       {showFreezeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 440, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 480, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
               <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#fff3e0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#e65100" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                 </svg>
               </div>
               <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700 }}>Freeze Employee Account</h3>
-              <p style={{ margin: 0, color: '#666', fontSize: 14, lineHeight: 1.5 }}>
+              <p style={{ margin: '0 0 12px', color: '#666', fontSize: 14, lineHeight: 1.5 }}>
                 This will prevent <strong>{showFreezeModal.employee_name}</strong> from logging into the HR app and place them in the 30-day deletion queue.
               </p>
+            </div>
+            <div style={{ background: '#f9f9f9', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13 }}>
+              <p style={{ margin: '0 0 8px', fontWeight: 700, fontSize: 14 }}>What will happen:</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: '#4caf50' }}>✓</span> Employee login disabled</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: '#4caf50' }}>✓</span> GDPR data export auto-generated</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: '#4caf50' }}>✓</span> Employee marked as frozen</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: '#4caf50' }}>✓</span> 30-day deletion countdown starts</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: '#f57c00' }}>!</span> All data permanently deleted after 30 days</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ color: '#2196f3' }}>i</span> Deletion certificate produced on expiry</div>
+              </div>
+              {(() => {
+                const incompleteSteps = OFFBOARD_STEPS.filter(s => !offboardChecks[s.key] && !offboardSkips[s.key] && s.key !== 'confirm_payments')
+                if (incompleteSteps.length > 0) return (
+                  <div style={{ marginTop: 10, padding: 10, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                    <p style={{ margin: 0, fontSize: 12, color: '#e65100', fontWeight: 600 }}>{incompleteSteps.length} workflow step{incompleteSteps.length !== 1 ? 's' : ''} not yet completed:</p>
+                    <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>{incompleteSteps.map(s => s.label).join(', ')}</p>
+                  </div>
+                )
+                return null
+              })()}
+              {(features.xero_integration || features.sage_integration) && showFreezeModal.status !== 'final_run_complete' && (
+                <div style={{ marginTop: 10, padding: 10, background: '#fce4ec', borderRadius: 8, border: '1px solid #f8bbd0' }}>
+                  <p style={{ margin: 0, fontSize: 12, color: '#c62828', fontWeight: 600 }}>Payroll warning: Final pay run has not been confirmed</p>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#b71c1c' }}>Ensure the employee's final payslip is processed in {features.xero_integration ? 'Xero' : 'Sage'} before freezing. You can still proceed, but the final pay run must be handled separately.</p>
+                </div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333', border: 'none', padding: '10px 24px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={() => freezeEmployee(showFreezeModal, false)}>
@@ -2825,34 +3212,56 @@ export default function AdminOnboarding() {
 
       {tab === 'settings' && (
         <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-            <div>
-              <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700 }}>Onboarding Workflow Steps</h3>
-              <p style={{ margin: 0, fontSize: 13, color: '#888' }}>Customise the onboarding workflow for your company. Drag steps to reorder, edit titles and descriptions, or add new steps.</p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--admin-border, #e0e0e0)' }}>
+              <button
+                onClick={() => { setSettingsWorkflowType('onboarding'); initEditingSteps() }}
+                style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', background: settingsWorkflowType === 'onboarding' ? 'var(--admin-accent, #1976d2)' : 'transparent', color: settingsWorkflowType === 'onboarding' ? '#fff' : 'inherit' }}
+              >Onboarding Steps</button>
+              <button
+                onClick={() => {
+                  setSettingsWorkflowType('offboarding')
+                  const defaults = OFFBOARD_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
+                  setOffboardEditingSteps(hasOffboardCustomSteps ? offboardCustomSteps : defaults)
+                  setSettingsDirty(false)
+                }}
+                style={{ padding: '8px 18px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', background: settingsWorkflowType === 'offboarding' ? 'var(--admin-accent, #1976d2)' : 'transparent', color: settingsWorkflowType === 'offboarding' ? '#fff' : 'inherit' }}
+              >Offboarding Steps</button>
             </div>
             <button
               className="admin-btn-sm admin-btn-save"
               disabled={!settingsDirty || settingsSaving}
-              onClick={saveCustomSteps}
+              onClick={settingsWorkflowType === 'onboarding' ? saveCustomSteps : saveOffboardCustomSteps}
               style={{ minWidth: 100, opacity: settingsDirty ? 1 : 0.5 }}
             >
               {settingsSaving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
+          <div style={{ marginBottom: 20 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700 }}>{settingsWorkflowType === 'onboarding' ? 'Onboarding' : 'Offboarding'} Workflow Steps</h3>
+            <p style={{ margin: 0, fontSize: 13, color: '#888' }}>
+              {settingsWorkflowType === 'onboarding'
+                ? 'Customise the onboarding workflow for your company. Drag steps to reorder, edit titles and descriptions, or add new steps.'
+                : 'Customise the offboarding workflow. Add company-specific steps (e.g. redundancy consultation, exit survey, TUPE checklist) alongside the default steps.'}
+            </p>
+          </div>
 
+          {(() => {
+            const steps = settingsWorkflowType === 'onboarding' ? editingSteps : offboardEditingSteps
+            const setSteps = settingsWorkflowType === 'onboarding'
+              ? (u: CustomStep[]) => { setEditingSteps(u); setSettingsDirty(true) }
+              : (u: CustomStep[]) => { setOffboardEditingSteps(u); setSettingsDirty(true) }
+            return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>
-            {editingSteps.map((step, i) => (
+            {steps.map((step, i) => (
               <div key={step.step_key + '-' + i}>
-                {/* Add step button between steps */}
                 {i === 0 && (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
                     <button
                       onClick={() => {
                         const key = `custom_${Date.now()}`
                         const newStep: CustomStep = { step_key: key, label: 'New Step', icon: '📋', description: 'Describe this step...', sort_order: 0, is_default: false }
-                        const updated = [newStep, ...editingSteps]
-                        setEditingSteps(updated)
-                        setSettingsDirty(true)
+                        setSteps([newStep, ...steps])
                         setEditingIdx(0)
                       }}
                       style={{ background: 'none', border: '2px dashed #c7d2fe', borderRadius: 8, padding: '4px 16px', cursor: 'pointer', color: '#4f46e5', fontSize: 18, lineHeight: 1, fontWeight: 700 }}
@@ -2861,19 +3270,17 @@ export default function AdminOnboarding() {
                   </div>
                 )}
 
-                {/* Step card */}
                 <div
                   draggable
                   onDragStart={() => setDragIdx(i)}
                   onDragOver={e => { e.preventDefault() }}
                   onDrop={() => {
                     if (dragIdx === null || dragIdx === i) return
-                    const updated = [...editingSteps]
+                    const updated = [...steps]
                     const [moved] = updated.splice(dragIdx, 1)
                     updated.splice(i, 0, moved)
-                    setEditingSteps(updated)
+                    setSteps(updated)
                     setDragIdx(null)
-                    setSettingsDirty(true)
                   }}
                   onDragEnd={() => setDragIdx(null)}
                   style={{
@@ -2884,16 +3291,13 @@ export default function AdminOnboarding() {
                     borderLeft: `4px solid ${step.is_default ? '#4f46e5' : '#10b981'}`,
                   }}
                 >
-                  {/* Drag handle */}
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 2, color: '#bbb', fontSize: 16, userSelect: 'none' }}>
                     <span>⠿</span>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#aaa', width: 22, height: 22, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</span>
                   </div>
 
-                  {/* Icon */}
                   <div style={{ fontSize: 24, lineHeight: 1, paddingTop: 2 }}>{step.icon}</div>
 
-                  {/* Content */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {editingIdx === i ? (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2902,10 +3306,9 @@ export default function AdminOnboarding() {
                             className="admin-input"
                             value={step.icon}
                             onChange={e => {
-                              const updated = [...editingSteps]
+                              const updated = [...steps]
                               updated[i] = { ...updated[i], icon: e.target.value }
-                              setEditingSteps(updated)
-                              setSettingsDirty(true)
+                              setSteps(updated)
                             }}
                             style={{ width: 50, textAlign: 'center', fontSize: 18, padding: '4px 6px' }}
                             placeholder="📋"
@@ -2914,10 +3317,9 @@ export default function AdminOnboarding() {
                             className="admin-input"
                             value={step.label}
                             onChange={e => {
-                              const updated = [...editingSteps]
+                              const updated = [...steps]
                               updated[i] = { ...updated[i], label: e.target.value }
-                              setEditingSteps(updated)
-                              setSettingsDirty(true)
+                              setSteps(updated)
                             }}
                             style={{ flex: 1, fontWeight: 700, fontSize: 14 }}
                             placeholder="Step title"
@@ -2927,10 +3329,9 @@ export default function AdminOnboarding() {
                           className="admin-input"
                           value={step.description}
                           onChange={e => {
-                            const updated = [...editingSteps]
+                            const updated = [...steps]
                             updated[i] = { ...updated[i], description: e.target.value }
-                            setEditingSteps(updated)
-                            setSettingsDirty(true)
+                            setSteps(updated)
                           }}
                           rows={2}
                           style={{ resize: 'vertical', fontSize: 13 }}
@@ -2948,7 +3349,6 @@ export default function AdminOnboarding() {
                     )}
                   </div>
 
-                  {/* Actions */}
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     {editingIdx !== i && (
                       <button
@@ -2958,10 +3358,9 @@ export default function AdminOnboarding() {
                     )}
                     <button
                       onClick={() => {
-                        if (editingSteps.length <= 1) return
-                        const updated = editingSteps.filter((_, idx) => idx !== i)
-                        setEditingSteps(updated)
-                        setSettingsDirty(true)
+                        if (steps.length <= 1) return
+                        const updated = steps.filter((_, idx) => idx !== i)
+                        setSteps(updated)
                         if (editingIdx === i) setEditingIdx(null)
                       }}
                       style={{ background: 'none', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12, color: '#dc2626' }}
@@ -2970,16 +3369,14 @@ export default function AdminOnboarding() {
                   </div>
                 </div>
 
-                {/* Add step button after each step */}
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
                   <button
                     onClick={() => {
                       const key = `custom_${Date.now()}`
                       const newStep: CustomStep = { step_key: key, label: 'New Step', icon: '📋', description: 'Describe this step...', sort_order: i + 1, is_default: false }
-                      const updated = [...editingSteps]
+                      const updated = [...steps]
                       updated.splice(i + 1, 0, newStep)
-                      setEditingSteps(updated)
-                      setSettingsDirty(true)
+                      setSteps(updated)
                       setEditingIdx(i + 1)
                     }}
                     style={{ background: 'none', border: '2px dashed #c7d2fe', borderRadius: 8, padding: '4px 16px', cursor: 'pointer', color: '#4f46e5', fontSize: 18, lineHeight: 1, fontWeight: 700 }}
@@ -2989,15 +3386,27 @@ export default function AdminOnboarding() {
               </div>
             ))}
           </div>
+            )
+          })()}
 
-          {hasCustomSteps && (
+          {settingsWorkflowType === 'onboarding' && hasCustomSteps && (
             <div style={{ marginTop: 16, padding: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#166534' }}>
-              ✅ Custom workflow active — {customSteps.length} steps configured for this company.
+              Custom workflow active — {customSteps.length} steps configured for this company.
             </div>
           )}
-          {!hasCustomSteps && (
+          {settingsWorkflowType === 'onboarding' && !hasCustomSteps && (
             <div style={{ marginTop: 16, padding: 12, background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, fontSize: 13, color: '#4338ca' }}>
               Using default workflow ({WORKFLOW_STEPS.length} steps). Click Save Changes to customise for this company.
+            </div>
+          )}
+          {settingsWorkflowType === 'offboarding' && hasOffboardCustomSteps && (
+            <div style={{ marginTop: 16, padding: 12, background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 13, color: '#166534' }}>
+              Custom offboarding workflow active — {offboardCustomSteps.length} steps configured for this company.
+            </div>
+          )}
+          {settingsWorkflowType === 'offboarding' && !hasOffboardCustomSteps && (
+            <div style={{ marginTop: 16, padding: 12, background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, fontSize: 13, color: '#4338ca' }}>
+              Using default offboarding workflow ({OFFBOARD_STEPS.length} steps). Click Save Changes to customise for this company.
             </div>
           )}
         </div>

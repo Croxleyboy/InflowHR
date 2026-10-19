@@ -374,7 +374,11 @@ export default function ELearning() {
     navigate(`/elearning/${course.id}?${params.toString()}`)
   }
 
-  function completeCourse(id: string) {
+  async function completeCourse(id: string) {
+    if (EMPLOYEE_ID) {
+      const { data: empCheck } = await supabase.from('employees').select('is_active').eq('id', EMPLOYEE_ID).single()
+      if (!empCheck?.is_active) { alert('Your account is inactive — course completion is disabled'); return }
+    }
     setShowComplete(id)
     setTimeout(() => {
       const now = new Date().toISOString()

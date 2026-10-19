@@ -39,6 +39,8 @@ export default function NewExpenseClaim() {
       setError(t('new_claim.error_title'))
       return
     }
+    const { data: empCheck } = await supabase.from('employees').select('is_active').eq('id', EMPLOYEE_ID).single()
+    if (!empCheck?.is_active) { setError('Your account is inactive — expense submission is disabled'); return }
     setCreating(true)
     setError(null)
 

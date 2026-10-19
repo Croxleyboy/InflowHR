@@ -154,3 +154,44 @@ export async function buildEmployeeExportZip(data: ExportData, employeeName: str
 
   return zip.generateAsync({ type: 'blob' })
 }
+
+export async function generateLeaverExport(
+  data: ExportData,
+  employeeName: string,
+  leavingDate: string | null,
+  leavingReason: string | null
+): Promise<Blob> {
+  const zip = new JSZip()
+
+  if (data.employee) {
+    const wb = buildWorkbook('Personal Details', [data.employee as Record<string, unknown>])
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+    zip.file('Personal_Details.xlsx', buf)
+  }
+
+  for (const [key, val] of Object.entries(data)) {
+    if (key === 'export_metadata' || key === 'employee') continue
+    if (!Array.isArray(val) || val.length === 0) continue
+    const label = CATEGORY_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    const filename = label.replace(/\s+/g, '_') + '.xlsx'
+    const wb = buildWorkbook(label, val as Record<string, unknown>[])
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
+    zip.file(filename, buf)
+  }
+
+  const categories = getExportCategories(data)
+  const metadata = {
+    format: 'InflowHR Leaver Data Export v1',
+    exported_at: new Date().toISOString(),
+    employee_name: employeeName,
+    leaving_date: leavingDate,
+    leaving_reason: leavingReason,
+    gdpr_article: 'Art. 17 GDPR — Right to erasure / Leaver data pack',
+    retention_note: 'This data pack is provided as part of the offboarding process. The employer (data controller) is responsible for the data once exported. All data within InflowHR will be permanently deleted after the retention period.',
+    categories: categories.map(c => ({ name: c.label, records: c.count })),
+    total_records: categories.reduce((sum, c) => sum + c.count, 0),
+  }
+  zip.file('export_metadata.json', JSON.stringify(metadata, null, 2))
+
+  return zip.generateAsync({ type: 'blob' })
+}
