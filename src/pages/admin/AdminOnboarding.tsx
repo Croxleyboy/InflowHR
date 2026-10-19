@@ -1162,7 +1162,7 @@ export default function AdminOnboarding() {
     }
 
     const { data: approverEmp } = await supabase.from('employees')
-      .select('id').eq('user_email', approverEmail).eq('company_id', selectedCompanyId).maybeSingle()
+      .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
     if (approverEmp) {
       await supabase.from('notifications').insert({
         company_id: selectedCompanyId,
@@ -1616,7 +1616,7 @@ export default function AdminOnboarding() {
     }
 
     const { data: approverEmp } = await supabase.from('employees')
-      .select('id').eq('user_email', approverEmail).eq('company_id', selectedCompanyId).maybeSingle()
+      .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
     if (approverEmp) {
       await supabase.from('notifications').insert({
         company_id: selectedCompanyId,
@@ -1705,7 +1705,7 @@ export default function AdminOnboarding() {
       approverEmail = emp?.manager_email || null
     }
     if (!approverEmail) { showError('No approver found. Check the approver settings on the Integrations page.'); setLeaverM365ApprovalSending(false); return }
-    const { data: approverEmp } = await supabase.from('employees').select('id').eq('user_email', approverEmail).eq('company_id', selectedCompanyId).maybeSingle()
+    const { data: approverEmp } = await supabase.from('employees').select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
     const approverEmpId = approverEmp?.id || null
     if (!approverEmpId) { showError('Could not find the approver employee record. Check the approver settings.'); setLeaverM365ApprovalSending(false); return }
     await supabase.from('workflow_tracker').insert({
