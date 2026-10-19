@@ -56,7 +56,7 @@ Always use `src/lib/formatters.ts`: `formatDate()`, `formatDateFriendly()`, `for
 
 ## Edge function code delivery
 
-When any Supabase edge function is modified, **always provide the complete edge function code** in the response for the user to copy and deploy. Never provide partial diffs or snippets — show the full file contents.
+When any Supabase edge function is created or modified, **always provide the complete edge function code** in the response for the user to copy and manually deploy. Never provide partial diffs or snippets — show the full file contents. When detailing rollout/deployment steps, include the full edge function code as a copyable code block in those steps, not just a `supabase functions deploy` command.
 
 ## Edge function auth pattern
 

@@ -279,6 +279,15 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'M365 Offboarding') {
+    return (
+      <div className="notif-icon" style={{ background: '#c62828' }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="7" y1="10" x2="17" y2="10" strokeWidth="2.5"/>
+        </svg>
+      </div>
+    )
+  }
   return (
     <div className="notif-icon notif-icon-default">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
@@ -733,6 +742,8 @@ export default function Notifications() {
   const [conflictResolving, setConflictResolving] = useState(false)
   const [m365ActionItem, setM365ActionItem] = useState<WorkflowItem | null>(null)
   const [m365Approving, setM365Approving] = useState(false)
+  const [m365OffboardActionItem, setM365OffboardActionItem] = useState<WorkflowItem | null>(null)
+  const [m365OffboardApproving, setM365OffboardApproving] = useState(false)
   const [hrResponseItem, setHrResponseItem] = useState<WorkflowItem | null>(null)
 
   async function handleConflictResolve(item: WorkflowItem, action: 'cancel_leave' | 'acknowledge') {
@@ -854,6 +865,10 @@ export default function Notifications() {
       setM365ActionItem(item)
       return
     }
+    if (item.record_type === 'M365 Offboarding') {
+      setM365OffboardActionItem(item)
+      return
+    }
     if (!item.approval_id) {
       alert('This action has no linked record. Please re-seed demo data to fix.')
       return
@@ -914,6 +929,40 @@ export default function Notifications() {
     }
   }
 
+  async function handleM365OffboardApproval(item: WorkflowItem, approve: boolean) {
+    setM365OffboardApproving(true)
+    try {
+      const now = new Date().toISOString()
+      let approverDisplayName = employeeName || ''
+      if (!approverDisplayName && HARDCODED_EMPLOYEE_ID && companyUser?.company_id) {
+        const { data: emp } = await supabase.from('employees').select('first_name, last_name').eq('id', HARDCODED_EMPLOYEE_ID).eq('company_id', companyUser.company_id).maybeSingle()
+        if (emp) approverDisplayName = `${emp.first_name} ${emp.last_name}`.trim()
+      }
+      if (!approverDisplayName) approverDisplayName = HARDCODED_EMAIL || 'Unknown'
+      const approverEmail = HARDCODED_EMAIL || ''
+      const offboardId = item.onboard_id || (item.extra_info ? parseInt(item.extra_info) : item.approval_id)
+      if (offboardId) {
+        await supabase.from('offboarding_m365_actions').update({
+          approval_status: approve ? 'approved' : 'declined',
+          approved_by: `${approverDisplayName} <${approverEmail}>`,
+          approved_at: now
+        }).eq('offboarding_id', offboardId).eq('company_id', companyUser?.company_id)
+      }
+      await supabase.from('workflow_tracker').update({
+        status: 'Complete',
+        approval_status: approve ? 'Approved' : 'Declined'
+      }).eq('id', item.id).eq('company_id', companyUser?.company_id)
+      showSuccess(approve ? 'Account offboarding approved' : 'Account offboarding declined')
+      setM365OffboardActionItem(null)
+      setActions(prev => prev.filter(a => a.id !== item.id))
+      window.dispatchEvent(new Event('notifications-updated'))
+    } catch {
+      showError('Failed to process approval')
+    } finally {
+      setM365OffboardApproving(false)
+    }
+  }
+
   function getActionTitle(item: WorkflowItem) {
     if (item.record_type === 'Expense') return t('notifications.expense_review')
     if (item.record_type === 'Leave') {
@@ -930,6 +979,7 @@ export default function Notifications() {
     if (item.record_type === 'Meeting Reminder') return '1:1 Meeting — Tomorrow'
     if (item.record_type === 'HR Response') return 'HR Ticket Response'
     if (item.record_type === 'M365 Provisioning') return 'New Starter Account Approval'
+    if (item.record_type === 'M365 Offboarding') return 'Leaver Account Offboarding Approval'
     return item.action
   }
 
@@ -970,8 +1020,10 @@ export default function Notifications() {
       if (item.record_type === 'Leave') return t('notifications.leave_declined')
       if (item.record_type === 'Skill Validation') return 'Skill Validation Rejected'
       if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Declined'
+      if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Declined'
     }
     if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Request'
+    if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Request'
     return item.action
   }
 
@@ -1103,7 +1155,7 @@ export default function Notifications() {
           ))}
           {actions.map(item => (
             <button key={item.id} className="notif-action-card" onClick={() => handleActionClick(item)}>
-              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : item.record_type === 'M365 Provisioning' ? 'bar-blue' : 'bar-grey'}`} />
+              <div className={`notif-action-bar ${item.record_type === 'Expense' ? 'bar-blue' : item.record_type === 'Leave' ? 'bar-red' : item.record_type === 'Meeting' || item.record_type === 'Meeting Reminder' ? 'bar-purple' : item.record_type === 'Skill Validation' ? 'bar-purple' : item.record_type === 'Skills Mapping' ? 'bar-blue' : item.record_type === 'Conflict' ? 'bar-orange' : item.record_type === 'Missed Check-In' ? 'bar-red' : item.record_type === 'M365 Provisioning' ? 'bar-blue' : item.record_type === 'M365 Offboarding' ? 'bar-red' : 'bar-grey'}`} />
               <NotifIcon type={item.record_type} />
               <div className="notif-action-content">
                 <span className="notif-action-title">{getActionTitle(item)}</span>
@@ -1234,6 +1286,42 @@ export default function Notifications() {
                 <button onClick={() => handleM365Approval(m365ActionItem, false)} disabled={m365Approving}
                   style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365Approving ? 0.6 : 1 }}>
                   {m365Approving ? 'Processing...' : 'Decline'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {m365OffboardActionItem && (
+        <div className="my-profile-modal-overlay" onClick={() => setM365OffboardActionItem(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: '#c62828', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Leaver Account Offboarding Approval</span>
+              <button onClick={() => setM365OffboardActionItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{m365OffboardActionItem.emp_display_name}</div>
+              {(() => {
+                let desc = m365OffboardActionItem.task_description || ''
+                try { const parsed = JSON.parse(desc); desc = `${parsed.leaver_name || parsed.starter_name || ''} — ${parsed.job_title || 'Leaver'}${parsed.leave_date ? `, leaving ${new Date(parsed.leave_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}\nAccount: ${parsed.upn || ''}` } catch {}
+                return desc.split('\n').map((line: string, i: number) => (
+                  <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: i === 0 ? 2 : 0, lineHeight: 1.5 }}>{line}</div>
+                ))
+              })()}
+              <div style={{ background: 'rgba(255,235,238,.5)', border: '1px solid #ef9a9a', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#c62828' }}>
+                Please confirm whether to approve offboarding this leaver's Microsoft 365 account. Once approved, InflowOnboarder will block sign-in, remove groups, licences, and devices automatically.
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => handleM365OffboardApproval(m365OffboardActionItem, true)} disabled={m365OffboardApproving}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365OffboardApproving ? 0.6 : 1 }}>
+                  {m365OffboardApproving ? 'Processing...' : 'Approve'}
+                </button>
+                <button onClick={() => handleM365OffboardApproval(m365OffboardActionItem, false)} disabled={m365OffboardApproving}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365OffboardApproving ? 0.6 : 1 }}>
+                  {m365OffboardApproving ? 'Processing...' : 'Decline'}
                 </button>
               </div>
             </div>

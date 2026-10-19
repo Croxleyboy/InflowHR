@@ -64,6 +64,9 @@ interface InflowOnboarderIntegration {
   group_name: string | null
   account_domain: string | null
   settings_updated_at: string | null
+  offboard_approver_mode: 'same_as_joiner' | 'nominated' | 'manager'
+  offboard_approver_name: string | null
+  offboard_approver_email: string | null
 }
 
 interface IfoLicence {
@@ -208,6 +211,10 @@ export default function AdminIntegrations() {
   const [ifoAccountDomain, setIfoAccountDomain] = useState('')
   const [ifoLicences, setIfoLicences] = useState<IfoLicence[]>([])
   const [ifoLicencesLoading, setIfoLicencesLoading] = useState(false)
+  const [ifoOffboardSettingsOpen, setIfoOffboardSettingsOpen] = useState(false)
+  const [ifoOffboardApproverMode, setIfoOffboardApproverMode] = useState<'same_as_joiner' | 'nominated' | 'manager'>('same_as_joiner')
+  const [ifoOffboardApproverName, setIfoOffboardApproverName] = useState('')
+  const [ifoOffboardApproverEmail, setIfoOffboardApproverEmail] = useState('')
 
   const [modulrApiKey, setModulrApiKey] = useState('')
   const [modulrHmacSecret, setModulrHmacSecret] = useState('')
@@ -286,6 +293,9 @@ export default function AdminIntegrations() {
       setIfoLicenceSkuName(ifoData.licence_sku_name || '')
       setIfoGroupName(ifoData.group_name || '')
       setIfoAccountDomain(ifoData.account_domain || '')
+      setIfoOffboardApproverMode(ifoData.offboard_approver_mode || 'same_as_joiner')
+      setIfoOffboardApproverName(ifoData.offboard_approver_name || '')
+      setIfoOffboardApproverEmail(ifoData.offboard_approver_email || '')
     }
 
     // Load Xero employee sync status
@@ -594,7 +604,11 @@ export default function AdminIntegrations() {
   async function saveIfoSettings() {
     if (!companyId) return
     if (ifoApproverMode === 'nominated' && (!ifoApproverName.trim() || !ifoApproverEmail.trim())) {
-      showError('Nominated approver requires a name and email')
+      showError('Nominated joiner approver requires a name and email')
+      return
+    }
+    if (ifoOffboardApproverMode === 'nominated' && (!ifoOffboardApproverName.trim() || !ifoOffboardApproverEmail.trim())) {
+      showError('Nominated offboarding approver requires a name and email')
       return
     }
     setIfoSettingsSaving(true)
@@ -609,6 +623,9 @@ export default function AdminIntegrations() {
       licence_sku_name: ifoLicenceSkuName || null,
       group_name: ifoGroupName.trim() || null,
       account_domain: ifoAccountDomain.trim() || null,
+      offboard_approver_mode: ifoOffboardApproverMode,
+      offboard_approver_name: ifoOffboardApproverMode === 'nominated' ? ifoOffboardApproverName.trim() : null,
+      offboard_approver_email: ifoOffboardApproverMode === 'nominated' ? ifoOffboardApproverEmail.trim() : null,
     })
     setIfoSettingsSaving(false)
     if (result?.saved) {
@@ -1335,6 +1352,80 @@ export default function AdminIntegrations() {
                           </p>
                         </div>
                       </div>
+
+                      {/* Save button */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
+                        <button
+                          className="admin-btn admin-btn-primary"
+                          onClick={saveIfoSettings}
+                          disabled={ifoSettingsSaving}
+                          style={{ minWidth: 160, background: '#0078D4' }}
+                        >
+                          {ifoSettingsSaving ? 'Saving...' : 'Save Settings'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {ifoIntegration?.status === 'connected_ready' && (
+                <div style={{ ...sectionStyle, marginTop: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                    onClick={() => setIfoOffboardSettingsOpen(!ifoOffboardSettingsOpen)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <strong style={{ fontSize: 14, color: 'var(--text, #1a1a2e)' }}>Offboarding Settings</strong>
+                    </div>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(ifoOffboardSettingsOpen)}>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </div>
+
+                  {ifoOffboardSettingsOpen && (
+                    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+                      {/* Offboarding Approver */}
+                      <div>
+                        <label style={{ ...labelStyle, marginBottom: 8, display: 'block' }}>Offboarding Approver</label>
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text, #333)' }}>
+                            <input type="radio" name="ifo-offboard-approver" checked={ifoOffboardApproverMode === 'same_as_joiner'} onChange={() => setIfoOffboardApproverMode('same_as_joiner')} />
+                            Same as joiner approver
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text, #333)' }}>
+                            <input type="radio" name="ifo-offboard-approver" checked={ifoOffboardApproverMode === 'manager'} onChange={() => setIfoOffboardApproverMode('manager')} />
+                            Leaver&rsquo;s manager
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text, #333)' }}>
+                            <input type="radio" name="ifo-offboard-approver" checked={ifoOffboardApproverMode === 'nominated'} onChange={() => setIfoOffboardApproverMode('nominated')} />
+                            Nominated person
+                          </label>
+                        </div>
+                        {ifoOffboardApproverMode === 'nominated' && (
+                          <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                            <input value={ifoOffboardApproverName} onChange={e => setIfoOffboardApproverName(e.target.value)} placeholder="Approver name" style={{ ...inputStyle, flex: 1, minWidth: 160 }} />
+                            <input value={ifoOffboardApproverEmail} onChange={e => setIfoOffboardApproverEmail(e.target.value)} placeholder="Approver email" style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
+                          </div>
+                        )}
+                        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                          This person must approve each M365 offboarding before sign-in is blocked and groups/licences are removed.
+                        </p>
+                      </div>
+
+                      {/* Scope note */}
+                      <div style={{ background: 'rgba(0,120,212,.06)', borderRadius: 8, padding: '10px 14px' }}>
+                        <p style={{ margin: 0, fontSize: 12, color: 'var(--text, #333)' }}>
+                          <strong>API key scope:</strong> The API key needs the <strong>m365.leaver</strong> scope for offboarding.
+                          Scopes cannot be added to an existing key &mdash; create a new key in InflowOnboarder with
+                          <em> m365.joiner</em>, <em>m365.license.list</em> and <em>m365.leaver</em>, with approvals set
+                          to &ldquo;Approved in this service&rdquo;.
+                        </p>
+                      </div>
+
+                      {/* Protected accounts note */}
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                        Protected accounts (e.g. emergency admin accounts) are managed in InflowOnboarder&rsquo;s own Settings, not here.
+                      </p>
 
                       {/* Save button */}
                       <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>

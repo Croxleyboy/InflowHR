@@ -91,7 +91,7 @@ async function engineFetch(
   return { ok: res.ok, status: res.status, data }
 }
 
-// ── Mock engine ─────────────────────────────────────────────────────────────
+// ── Mock engine (joiner) ───────────────────────────────────────────────────
 
 function mockConnections() {
   return {
@@ -130,9 +130,7 @@ function mockJobStatus(jobId: string) {
   return mockJobs[jobId] || { id: jobId, action: 'unknown', status: 'failed', result: null, error: { code: 'not_found', message: 'Job not found' } }
 }
 
-// ── Mock workflow run state machine (DB-backed) ─────────────────────────────
-// Edge functions are stateless — each invocation may run in a fresh isolate,
-// so mock runs read/write their state from the onboarding_m365_actions row.
+// ── Mock workflow run state machine (joiner, DB-backed) ────────────────────
 
 function mockStartRun(onboardingId: number): { id: string; status: string; error?: unknown } {
   const id = `mock-run-${onboardingId}`
@@ -389,6 +387,9 @@ Deno.serve(async (req) => {
         group_name: config.group_name,
         account_domain: config.account_domain,
         settings_updated_at: config.settings_updated_at,
+        offboard_approver_mode: config.offboard_approver_mode,
+        offboard_approver_name: config.offboard_approver_name,
+        offboard_approver_email: config.offboard_approver_email,
       })
     }
 
@@ -401,7 +402,7 @@ Deno.serve(async (req) => {
 
     // ── save-settings ───────────────────────────────────────────────────────
     if (action === 'save-settings') {
-      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain } = body
+      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode, offboard_approver_name, offboard_approver_email } = body
 
       if (approver_mode && !['nominated', 'manager'].includes(approver_mode)) {
         return json({ error: 'approver_mode must be "nominated" or "manager"' }, 400)
@@ -409,12 +410,21 @@ Deno.serve(async (req) => {
       if (approver_mode === 'nominated' && (!approver_name || !approver_email)) {
         return json({ error: 'Nominated approver requires a name and email' }, 400)
       }
+      if (offboard_approver_mode && !['same_as_joiner', 'nominated', 'manager'].includes(offboard_approver_mode)) {
+        return json({ error: 'offboard_approver_mode must be "same_as_joiner", "nominated" or "manager"' }, 400)
+      }
+      if (offboard_approver_mode === 'nominated' && (!offboard_approver_name || !offboard_approver_email)) {
+        return json({ error: 'Nominated offboarding approver requires a name and email' }, 400)
+      }
       const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (approver_email && !emailRe.test(approver_email)) {
         return json({ error: 'Invalid approver email address' }, 400)
       }
       if (licence_manager_email && !emailRe.test(licence_manager_email)) {
         return json({ error: 'Invalid licence manager email address' }, 400)
+      }
+      if (offboard_approver_email && !emailRe.test(offboard_approver_email)) {
+        return json({ error: 'Invalid offboarding approver email address' }, 400)
       }
 
       const updates: Record<string, unknown> = {
@@ -431,12 +441,15 @@ Deno.serve(async (req) => {
       if (licence_sku_name !== undefined) updates.licence_sku_name = licence_sku_name
       if (group_name !== undefined) updates.group_name = group_name
       if (account_domain !== undefined) updates.account_domain = account_domain
+      if (offboard_approver_mode !== undefined) updates.offboard_approver_mode = offboard_approver_mode
+      if (offboard_approver_name !== undefined) updates.offboard_approver_name = offboard_approver_name
+      if (offboard_approver_email !== undefined) updates.offboard_approver_email = offboard_approver_email
 
       const { error: updateErr } = await sb.from('inflowonboarder_integrations').update(updates).eq('company_id', company_id)
       if (updateErr) return json({ error: 'Failed to save settings: ' + updateErr.message }, 500)
 
       await audit(sb, company_id, userId, 'inflowonboarder_save_settings', {
-        approver_mode, licence_sku_id, licence_sku_name, group_name, account_domain,
+        approver_mode, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode,
       })
 
       return json({ saved: true })
@@ -458,6 +471,9 @@ Deno.serve(async (req) => {
         group_name: config.group_name,
         account_domain: config.account_domain,
         settings_updated_at: config.settings_updated_at,
+        offboard_approver_mode: config.offboard_approver_mode,
+        offboard_approver_name: config.offboard_approver_name,
+        offboard_approver_email: config.offboard_approver_email,
       })
     }
 
@@ -484,7 +500,7 @@ Deno.serve(async (req) => {
       return json({ jobId, status: 'running' })
     }
 
-    // ── start-run ───────────────────────────────────────────────────────────
+    // ── start-run (joiner) ─────────────────────────────────────────────────
     if (action === 'start-run') {
       const { onboarding_id, input, attempt } = body
       if (!onboarding_id) return json({ error: 'Missing onboarding_id' }, 400)
@@ -588,7 +604,7 @@ Deno.serve(async (req) => {
       return json({ run_id: runId, status: runStatus })
     }
 
-    // ── check-run ───────────────────────────────────────────────────────────
+    // ── check-run (joiner) ─────────────────────────────────────────────────
     if (action === 'check-run') {
       const { run_id, onboarding_id } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
@@ -630,7 +646,7 @@ Deno.serve(async (req) => {
       return json({ ...runData, friendlyError: friendlyErrorMsg })
     }
 
-    // ── recheck-run ─────────────────────────────────────────────────────────
+    // ── recheck-run (joiner) ───────────────────────────────────────────────
     if (action === 'recheck-run') {
       const { run_id, onboarding_id, attempt } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
@@ -664,7 +680,7 @@ Deno.serve(async (req) => {
       return json({ ...runData, friendlyError: friendlyErrorMsg })
     }
 
-    // ── proceed-run ─────────────────────────────────────────────────────────
+    // ── proceed-run (joiner) ───────────────────────────────────────────────
     if (action === 'proceed-run') {
       const { run_id, onboarding_id, attempt, approver_name, approver_email, approved_at } = body
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
@@ -712,7 +728,7 @@ Deno.serve(async (req) => {
       return json({ ...runData, friendlyError: friendlyErrorMsg })
     }
 
-    // ── mark-complete-manual ────────────────────────────────────────────────
+    // ── mark-complete-manual (joiner) ──────────────────────────────────────
     if (action === 'mark-complete-manual') {
       const { onboarding_id, notes } = body
       if (!onboarding_id) return json({ error: 'Missing onboarding_id' }, 400)

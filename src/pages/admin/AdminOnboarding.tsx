@@ -46,6 +46,8 @@ const OFFBOARD_STEPS = [
   { key: 'approve_resignation', label: 'Approve Resignation', icon: '📝', description: 'Review and formally approve the employee resignation or termination. Update HR records with the leaving reason and confirm final working date.', role: 'HR' },
   { key: 'recover_equipment', label: 'Recover Equipment', icon: '💻', description: 'Collect all company equipment — laptop, monitor, phone, building pass, keys, parking permit. Complete the asset return checklist and update the inventory register.', role: 'HR' },
   { key: 'leaving_meeting', label: 'Organise Leaving Meeting', icon: '🤝', description: 'Schedule an exit interview and farewell meeting with the line manager. Cover handover tasks, knowledge transfer, and gather feedback on their experience.', role: 'Manager' },
+  { key: 'convert_shared_mailbox', label: 'Convert to Shared Mailbox', icon: '📬', description: 'Convert the leaver\'s mailbox to a shared mailbox so colleagues can continue to access their emails without consuming a licence. This step can be skipped if not required.', role: 'HR' },
+  { key: 'forward_to_manager', label: 'Forward to Manager', icon: '📧', description: 'Set up email forwarding from the leaver\'s mailbox to their line manager so that incoming messages are not missed during the transition period. This step can be skipped if not required.', role: 'HR' },
   { key: 'remove_accounts', label: 'Remove Accounts & Licences', icon: '🔐', description: 'Disable the Microsoft 365 account, revoke licence, remove from security groups and distribution lists. Archive mailbox if required.', role: 'HR' },
   { key: 'reassign_reports', label: 'Reassign Direct Reports', icon: '👥', description: 'Reassign any employees who report to this person to a new manager. This also transfers all pending approval actions (leave, expenses, timesheets) to the new manager.', role: 'HR' },
   { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR' },
@@ -485,6 +487,9 @@ export default function AdminOnboarding() {
     if (OFFBOARD_STEPS[nextStep]?.key === 'reassign_reports' && !record.workflow_steps?.reassign_reports && !record.skipped_steps?.reassign_reports) {
       loadReassignData(record)
     }
+    if (OFFBOARD_STEPS[nextStep]?.key === 'remove_accounts') {
+      loadLeaverM365Actions(record.id)
+    }
     setTab('offboard-workflow')
   }
 
@@ -737,6 +742,21 @@ export default function AdminOnboarding() {
     return data
   }
 
+  async function callIfoLeaver(action: string, body: Record<string, unknown> = {}) {
+    if (!session || !selectedCompanyId) { console.log('[IFO-LEAVER] no session/company, skipping', action); return null }
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    console.log('[IFO-LEAVER] calling', action, body)
+    const res = await fetch(`${supabaseUrl}/functions/v1/inflowonboarder-leaver`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ company_id: selectedCompanyId, action, ...body }),
+    })
+    const data = await res.json()
+    console.log('[IFO-LEAVER]', action, 'response:', res.status, data)
+    if (!res.ok) { showError(data.error || 'Request failed'); return null }
+    return data
+  }
+
   async function loadM365Actions(onboardingId: number) {
     const { data } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
     setM365Actions(data as M365Actions | null)
@@ -939,6 +959,247 @@ export default function AdminOnboarding() {
     if (result) {
       showSuccess('Marked as manually completed')
       await loadM365Actions(onboardingId)
+    }
+  }
+
+  // ── M365 offboarding helpers (leaver workflow runs) ────────────────────
+  interface LeaverM365Actions {
+    offboarding_id: number
+    run_id: string | null
+    run_status: string | null
+    run_error: any
+    run_result: any
+    approval_sent_at: string | null
+    approval_status: string | null
+    approved_by: string | null
+    approved_at: string | null
+    employee_upn: string | null
+    attempt_count_run: number
+  }
+  interface IfoOffboardSettings {
+    offboard_approver_mode: 'same_as_joiner' | 'nominated' | 'manager'
+    offboard_approver_name: string | null
+    offboard_approver_email: string | null
+    approver_mode: 'manager' | 'nominated'
+    approver_name: string | null
+    approver_email: string | null
+  }
+  const [leaverM365Actions, setLeaverM365Actions] = useState<LeaverM365Actions | null>(null)
+  const [leaverM365RunPolling, setLeaverM365RunPolling] = useState(false)
+  const [leaverM365Starting, setLeaverM365Starting] = useState(false)
+  const [leaverM365ApprovalSending, setLeaverM365ApprovalSending] = useState(false)
+  const [leaverM365Proceeding, setLeaverM365Proceeding] = useState(false)
+  const [ifoOffboardSettings, setIfoOffboardSettings] = useState<IfoOffboardSettings | null>(null)
+
+  async function loadLeaverM365Actions(offboardingId: number) {
+    const { data } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
+    setLeaverM365Actions(data as LeaverM365Actions | null)
+    const { data: ifo } = await supabase.from('inflowonboarder_integrations')
+      .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email')
+      .eq('company_id', selectedCompanyId).maybeSingle()
+    setIfoConnected(ifo?.status === 'connected_ready')
+    if (ifo) {
+      setIfoOffboardSettings({
+        offboard_approver_mode: ifo.offboard_approver_mode || 'same_as_joiner',
+        offboard_approver_name: ifo.offboard_approver_name,
+        offboard_approver_email: ifo.offboard_approver_email,
+        approver_mode: ifo.approver_mode || 'manager',
+        approver_name: ifo.approver_name,
+        approver_email: ifo.approver_email,
+      })
+    }
+    if (data?.run_id && (!data?.run_status || ['checking_account', 'deprovisioning'].includes(data?.run_status))) {
+      const freshStatus = await callIfoLeaver('check-leaver-run', { run_id: data.run_id, offboarding_id: offboardingId })
+      if (freshStatus?.status && freshStatus.status !== data.run_status) {
+        const { data: refreshed } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
+        setLeaverM365Actions(refreshed as LeaverM365Actions | null)
+      } else if (freshStatus?.status === 'checking_account') {
+        leaverM365PollRun(data.run_id, offboardingId)
+      }
+    }
+  }
+
+  async function leaverM365StartRun(record: OffboardRecord) {
+    setLeaverM365Starting(true)
+    const upn = record.employee_email
+    const result = await callIfoLeaver('start-leaver-run', {
+      offboarding_id: record.id,
+      user_principal_name: upn,
+      attempt: leaverM365Actions?.attempt_count_run || 0,
+    })
+    setLeaverM365Starting(false)
+    if (result?.run_id) {
+      showSuccess('M365 offboarding workflow started')
+      await loadLeaverM365Actions(record.id)
+      if (result.status === 'checking_account') {
+        leaverM365PollRun(result.run_id, record.id)
+      }
+    }
+  }
+
+  async function leaverM365PollRun(runId: string, offboardingId: number) {
+    setLeaverM365RunPolling(true)
+    for (let i = 0; i < 6; i++) {
+      await new Promise(r => setTimeout(r, 5000))
+      const result = await callIfoLeaver('check-leaver-run', { run_id: runId, offboarding_id: offboardingId })
+      if (!result) break
+      if (['ready_for_approval', 'account_blocked', 'completed', 'failed'].includes(result.status)) {
+        if (result.status === 'completed') showSuccess('M365 offboarding complete')
+        else if (result.status === 'failed') showError(result.friendlyError || 'Workflow failed')
+        await loadLeaverM365Actions(offboardingId)
+        setLeaverM365RunPolling(false)
+        return
+      }
+    }
+    await loadLeaverM365Actions(offboardingId)
+    setLeaverM365RunPolling(false)
+  }
+
+  async function leaverM365RefreshStatus(runId: string, offboardingId: number) {
+    setLeaverM365RunPolling(true)
+    const result = await callIfoLeaver('check-leaver-run', { run_id: runId, offboarding_id: offboardingId })
+    if (result?.status) {
+      if (result.status === 'completed') showSuccess('M365 offboarding complete')
+      else if (result.status === 'failed') showError(result.friendlyError || 'Offboarding failed')
+      else if (result.status === 'ready_for_approval') showSuccess('Ready for approval')
+      else if (result.status === 'account_blocked') showError(result.friendlyError || 'Account blocked — see details')
+    }
+    await loadLeaverM365Actions(offboardingId)
+    setLeaverM365RunPolling(false)
+  }
+
+  async function leaverM365RecheckRun(runId: string, offboardingId: number) {
+    setLeaverM365RunPolling(true)
+    const result = await callIfoLeaver('recheck-leaver-run', { run_id: runId, offboarding_id: offboardingId, attempt: (leaverM365Actions?.attempt_count_run || 0) + 1 })
+    if (result) {
+      if (result.status === 'ready_for_approval') showSuccess('Account now ready for offboarding approval')
+      else if (result.status === 'account_blocked') showError(result.friendlyError || 'Account still blocked')
+      await loadLeaverM365Actions(offboardingId)
+    }
+    setLeaverM365RunPolling(false)
+  }
+
+  async function leaverM365SendApproval(record: OffboardRecord) {
+    if (!ifoOffboardSettings) return
+    setLeaverM365ApprovalSending(true)
+
+    let resolvedMode = ifoOffboardSettings.offboard_approver_mode
+    let approverEmail: string | null = null
+    let approverName: string | null = null
+
+    if (resolvedMode === 'same_as_joiner') {
+      resolvedMode = ifoOffboardSettings.approver_mode
+      approverEmail = ifoOffboardSettings.approver_email
+      approverName = ifoOffboardSettings.approver_name
+    } else if (resolvedMode === 'nominated') {
+      approverEmail = ifoOffboardSettings.offboard_approver_email
+      approverName = ifoOffboardSettings.offboard_approver_name
+    }
+
+    if (resolvedMode === 'manager') {
+      const { data: emp } = await supabase.from('employees').select('manager_email').eq('id', record.employee_id).maybeSingle()
+      approverEmail = emp?.manager_email || null
+      approverName = null
+      if (!approverEmail) {
+        showError('This leaver has no manager set. Set a manager first, or switch to a nominated approver in the Integrations settings.')
+        setLeaverM365ApprovalSending(false)
+        return
+      }
+    }
+
+    if (!approverEmail) {
+      showError('No approver email configured. Check the Offboarding Approver setting in Integrations.')
+      setLeaverM365ApprovalSending(false)
+      return
+    }
+
+    const leaverName = record.employee_name
+    const upn = leaverM365Actions?.employee_upn || record.employee_email
+    const endDateStr = record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+    const taskDesc = `${leaverName} — ${record.job_title || 'Leaver'}${endDateStr ? `, last day ${endDateStr}` : ''}\nM365 account: ${upn}`
+
+    const { error: wtErr } = await supabase.from('workflow_tracker').insert({
+      company_id: selectedCompanyId,
+      record_type: 'M365 Offboarding',
+      onboard_id: record.id,
+      emp_display_name: leaverName,
+      action: 'Approve',
+      employee_email: approverEmail,
+      assigned_to: approverEmail,
+      status: 'Pending',
+      approval_status: 'pending',
+      task_description: taskDesc,
+    })
+    if (wtErr) {
+      showError(`Failed to create approval task: ${wtErr.message}`)
+      setLeaverM365ApprovalSending(false)
+      return
+    }
+
+    const { data: approverEmp } = await supabase.from('employees')
+      .select('id').eq('user_email', approverEmail).eq('company_id', selectedCompanyId).maybeSingle()
+    if (approverEmp) {
+      await supabase.from('notifications').insert({
+        company_id: selectedCompanyId,
+        employee_id: approverEmp.id,
+        type: 'action',
+        notification_type: 'm365_offboard_approval',
+        title: 'M365 Offboarding Approval',
+        message: `Offboarding ${record.employee_name}'s Microsoft 365 account needs your approval. Please approve it in the InflowHR app.`,
+        send_email: true,
+      })
+    }
+
+    await supabase.from('offboarding_m365_actions').update({
+      approval_sent_at: new Date().toISOString(),
+      approval_status: 'pending',
+      updated_at: new Date().toISOString(),
+    }).eq('offboarding_id', record.id)
+
+    try {
+      await callIfoLeaver('check-leaver-run', { run_id: leaverM365Actions?.run_id, offboarding_id: record.id })
+    } catch (_) {}
+
+    showSuccess(`Approval request sent to ${approverName || approverEmail}`)
+    await loadLeaverM365Actions(record.id)
+    setLeaverM365ApprovalSending(false)
+  }
+
+  async function leaverM365ProceedRun(record: OffboardRecord) {
+    if (!leaverM365Actions?.run_id) return
+    setLeaverM365Proceeding(true)
+    const approvedByRaw = leaverM365Actions.approved_by || ''
+    const emailMatch = approvedByRaw.match(/<([^>]+)>/)
+    const approverEmail = emailMatch ? emailMatch[1] : approvedByRaw
+    const approverName = emailMatch ? approvedByRaw.replace(/<[^>]+>/, '').trim() : approvedByRaw
+    const result = await callIfoLeaver('proceed-leaver-run', {
+      run_id: leaverM365Actions.run_id,
+      offboarding_id: record.id,
+      approver_name: approverName,
+      approver_email: approverEmail,
+      approved_at: leaverM365Actions.approved_at,
+      attempt: (leaverM365Actions?.attempt_count_run || 0) + 1,
+    })
+    setLeaverM365Proceeding(false)
+    if (result) {
+      if (result.status === 'completed') {
+        showSuccess('M365 offboarding complete')
+      } else if (result.status === 'deprovisioning' || result.status === 'checking_account') {
+        showSuccess('Deprovisioning started — polling for completion...')
+        leaverM365PollRun(leaverM365Actions.run_id, record.id)
+        return
+      } else if (result.status === 'failed') {
+        showError(result.friendlyError || 'Offboarding failed')
+      }
+      await loadLeaverM365Actions(record.id)
+    }
+  }
+
+  async function leaverM365MarkCompleteManual(offboardingId: number) {
+    const result = await callIfoLeaver('mark-leaver-complete-manual', { offboarding_id: offboardingId })
+    if (result) {
+      showSuccess('Marked as manually completed')
+      await loadLeaverM365Actions(offboardingId)
     }
   }
 
@@ -2158,7 +2419,7 @@ export default function AdminOnboarding() {
                 const skipped = offboardSkips[step.key]
                 const isCurrent = i === offboardStep
                 return (
-                  <div key={step.key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => { setOffboardStep(i); if (step.key === 'reassign_reports' && !done && !skipped && record) loadReassignData(record) }}>
+                  <div key={step.key} className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`} onClick={() => { setOffboardStep(i); if (step.key === 'reassign_reports' && !done && !skipped && record) loadReassignData(record); if (step.key === 'remove_accounts') loadLeaverM365Actions(record.id) }}>
                     <div className="admin-wf-connector" />
                     <div className="admin-wf-dot">{done ? '✓' : skipped ? '⏭' : step.icon}</div>
                     <div className="admin-wf-content">
@@ -2166,6 +2427,187 @@ export default function AdminOnboarding() {
                       {isCurrent && (
                         <div className="admin-wf-detail">
                           <p>{step.description}</p>
+
+                          {/* M365 Offboarding panel (InflowOnboarder leaver) */}
+                          {step.key === 'remove_accounts' && features.inflowonboarder_integration && ifoConnected && !done && !skipped && (
+                            <div style={{ margin: '12px 0', padding: 14, background: 'rgba(0,120,212,.06)', borderRadius: 10, border: '1px solid rgba(0,120,212,.15)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0078D4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                                </svg>
+                                <strong style={{ fontSize: 13, color: '#0078D4' }}>Microsoft 365 Offboarding</strong>
+                                {leaverM365RunPolling && <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>Checking...</span>}
+                              </div>
+
+                              {/* No run yet — start */}
+                              {!leaverM365Actions?.run_id && (
+                                <div>
+                                  <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text-muted, #666)' }}>
+                                    Block sign-in, remove from groups, and revoke licences for <strong>{record.employee_email}</strong>
+                                  </p>
+                                  <button className="admin-btn-sm admin-btn-save" disabled={leaverM365Starting}
+                                    onClick={e => { e.stopPropagation(); leaverM365StartRun(record) }}>
+                                    {leaverM365Starting ? 'Starting...' : 'Start M365 Offboarding'}
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Checking account */}
+                              {leaverM365Actions?.run_status === 'checking_account' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div className="admin-spinner" style={{ width: 16, height: 16 }} />
+                                  <span style={{ fontSize: 13 }}>Checking account status...</span>
+                                </div>
+                              )}
+
+                              {/* Account blocked */}
+                              {leaverM365Actions?.run_status === 'account_blocked' && (
+                                <div>
+                                  <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                    <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Account blocked</p>
+                                    {leaverM365Actions.run_error && (
+                                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
+                                        {leaverM365Actions.run_error.friendlyMessage || leaverM365Actions.run_error.message || leaverM365Actions.run_error.code}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button className="admin-btn-sm" disabled={leaverM365RunPolling}
+                                      onClick={e => { e.stopPropagation(); leaverM365RecheckRun(leaverM365Actions!.run_id!, record.id) }}>
+                                      Done — Re-check
+                                    </button>
+                                    <button className="admin-btn-sm"
+                                      onClick={e => { e.stopPropagation(); leaverM365MarkCompleteManual(record.id) }}>
+                                      Mark Complete Manually
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Ready for approval */}
+                              {leaverM365Actions?.run_status === 'ready_for_approval' && (
+                                <div>
+                                  {leaverM365Actions.run_result?.message && (
+                                    <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--text, #333)', background: 'rgba(255,255,255,.6)', padding: '8px 10px', borderRadius: 6, border: '1px solid #e0e0e0' }}>
+                                      {leaverM365Actions.run_result.message}
+                                    </p>
+                                  )}
+                                  {!leaverM365Actions.approval_sent_at ? (
+                                    <button className="admin-btn-sm admin-btn-save" disabled={leaverM365ApprovalSending}
+                                      onClick={e => { e.stopPropagation(); leaverM365SendApproval(record) }}>
+                                      {leaverM365ApprovalSending ? 'Sending...' : 'Send for Approval'}
+                                    </button>
+                                  ) : leaverM365Actions.approval_status === 'pending' ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#e65100' }}>
+                                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                      Waiting for approval
+                                      <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
+                                        onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
+                                        Refresh
+                                      </button>
+                                    </div>
+                                  ) : leaverM365Actions.approval_status === 'approved' ? (
+                                    <div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13, color: '#2e7d32' }}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                        Approved by {leaverM365Actions.approved_by}
+                                      </div>
+                                      <button className="admin-btn-sm admin-btn-save" disabled={leaverM365Proceeding}
+                                        onClick={e => { e.stopPropagation(); leaverM365ProceedRun(record) }}>
+                                        {leaverM365Proceeding ? 'Proceeding...' : 'Proceed with Offboarding'}
+                                      </button>
+                                    </div>
+                                  ) : leaverM365Actions.approval_status === 'declined' ? (
+                                    <div>
+                                      <p style={{ margin: '0 0 8px', fontSize: 12, color: '#c62828' }}>Approval declined</p>
+                                      <button className="admin-btn-sm" onClick={e => { e.stopPropagation(); leaverM365SendApproval(record) }}>
+                                        Re-send for Approval
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              )}
+
+                              {/* Deprovisioning */}
+                              {leaverM365Actions?.run_status === 'deprovisioning' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div className="admin-spinner" style={{ width: 16, height: 16 }} />
+                                  <span style={{ fontSize: 13 }}>Deprovisioning in progress...</span>
+                                  <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
+                                    onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
+                                    Refresh
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Completed */}
+                              {leaverM365Actions?.run_status === 'completed' && (
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                    M365 offboarding complete
+                                  </div>
+                                  {leaverM365Actions.run_result?.devices?.length > 0 && (
+                                    <div style={{ marginBottom: 8 }}>
+                                      <strong style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Devices to recover:</strong>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                        {leaverM365Actions.run_result.devices.map((d: any, di: number) => (
+                                          <div key={di} style={{ fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
+                                            <strong>{d.deviceName}</strong> — {d.operatingSystem}{d.serialNumber ? ` (S/N: ${d.serialNumber})` : ''}{d.ownership ? ` · ${d.ownership}` : ''}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {leaverM365Actions.run_result?.keptGroups?.length > 0 && (
+                                    <div style={{ marginBottom: 8 }}>
+                                      <strong style={{ fontSize: 12, display: 'block', marginBottom: 4, color: '#e65100' }}>Groups kept (may need manual follow-up):</strong>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        {leaverM365Actions.run_result.keptGroups.map((g: any, gi: number) => (
+                                          <span key={gi} style={{ fontSize: 12 }}>{g.name} — {g.reason}</span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {leaverM365Actions.run_result?.removedGroups?.length > 0 && (
+                                    <p style={{ margin: '0 0 4px', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                                      Removed from {leaverM365Actions.run_result.removedGroups.length} group{leaverM365Actions.run_result.removedGroups.length !== 1 ? 's' : ''}
+                                    </p>
+                                  )}
+                                  {leaverM365Actions.run_result?.removedLicences?.length > 0 && (
+                                    <p style={{ margin: '0 0 4px', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                                      Removed {leaverM365Actions.run_result.removedLicences.length} licence{leaverM365Actions.run_result.removedLicences.length !== 1 ? 's' : ''}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Failed */}
+                              {leaverM365Actions?.run_status === 'failed' && (
+                                <div>
+                                  <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
+                                    <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Offboarding failed</p>
+                                    {leaverM365Actions.run_error && (
+                                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#c62828' }}>
+                                        {leaverM365Actions.run_error.code}: {leaverM365Actions.run_error.message}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button className="admin-btn-sm" disabled={leaverM365RunPolling}
+                                      onClick={e => { e.stopPropagation(); leaverM365RecheckRun(leaverM365Actions!.run_id!, record.id) }}>
+                                      Re-check
+                                    </button>
+                                    <button className="admin-btn-sm"
+                                      onClick={e => { e.stopPropagation(); leaverM365MarkCompleteManual(record.id) }}>
+                                      Mark Complete Manually
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
                           {step.key === 'reassign_reports' && !done && !skipped && reassignData && (
                             <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10 }}>
                               <div style={{ display: 'flex', gap: 16, marginBottom: 10 }}>
