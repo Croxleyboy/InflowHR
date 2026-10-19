@@ -920,7 +920,7 @@ export default function Notifications() {
       }).eq('id', item.id).eq('company_id', companyUser?.company_id)
       showSuccess(approve ? 'Account provisioning approved' : 'Account provisioning declined')
       setM365ActionItem(null)
-      setActions(prev => prev.filter(a => a.id !== item.id))
+      await fetchData()
       window.dispatchEvent(new Event('notifications-updated'))
     } catch {
       showError('Failed to process approval')
@@ -954,7 +954,7 @@ export default function Notifications() {
       }).eq('id', item.id).eq('company_id', companyUser?.company_id)
       showSuccess(approve ? 'Account offboarding approved' : 'Account offboarding declined')
       setM365OffboardActionItem(null)
-      setActions(prev => prev.filter(a => a.id !== item.id))
+      await fetchData()
       window.dispatchEvent(new Event('notifications-updated'))
     } catch {
       showError('Failed to process approval')
@@ -1014,6 +1014,8 @@ export default function Notifications() {
       if (item.record_type === 'Expense') return t('notifications.expense_approved')
       if (item.record_type === 'Leave') return t('notifications.leave_approved')
       if (item.record_type === 'Skill Validation') return 'Skill Validated'
+      if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Approved'
+      if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Approved'
     }
     if (item.approval_status === 'Declined') {
       if (item.record_type === 'Expense') return t('notifications.expense_declined')
