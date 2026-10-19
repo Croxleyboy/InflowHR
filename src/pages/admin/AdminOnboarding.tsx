@@ -513,25 +513,42 @@ export default function AdminOnboarding() {
       status: 'in-progress',
     }).eq('id', record.id)
     loadOffboarding()
-    if (offboardStep < OFFBOARD_STEPS.length - 1) setOffboardStep(offboardStep + 1)
+    const nextIdx = offboardStep + 1
+    if (nextIdx < OFFBOARD_STEPS.length) {
+      setOffboardStep(nextIdx)
+      if (OFFBOARD_STEPS[nextIdx]?.key === 'remove_accounts') loadLeaverM365Actions(record.id)
+    }
   }
 
-  function skipOffboardStep(stepKey: string) {
+  async function skipOffboardStep(stepKey: string) {
     const record = offboardRecords.find(r => r.id === offboardSelectedId)
     if (!record) return
     const newSkips = { ...offboardSkips, [stepKey]: true }
     setOffboardSkips(newSkips)
-    supabase.from('offboarding').update({
+    await supabase.from('offboarding').update({
       skipped_steps: newSkips,
       status: 'in-progress',
     }).eq('id', record.id)
     loadOffboarding()
-    if (offboardStep < OFFBOARD_STEPS.length - 1) setOffboardStep(offboardStep + 1)
+    const nextIdx = offboardStep + 1
+    if (nextIdx < OFFBOARD_STEPS.length) {
+      setOffboardStep(nextIdx)
+      if (OFFBOARD_STEPS[nextIdx]?.key === 'remove_accounts') loadLeaverM365Actions(record.id)
+    }
   }
 
-  function uncompleteOffboardStep(stepKey: string) {
-    setOffboardChecks(prev => ({ ...prev, [stepKey]: false }))
-    setOffboardSkips(prev => ({ ...prev, [stepKey]: false }))
+  async function uncompleteOffboardStep(stepKey: string) {
+    const record = offboardRecords.find(r => r.id === offboardSelectedId)
+    if (!record) return
+    const newChecks = { ...offboardChecks, [stepKey]: false }
+    const newSkips = { ...offboardSkips, [stepKey]: false }
+    setOffboardChecks(newChecks)
+    setOffboardSkips(newSkips)
+    await supabase.from('offboarding').update({
+      workflow_steps: newChecks,
+      skipped_steps: newSkips,
+    }).eq('id', record.id)
+    loadOffboarding()
   }
 
   async function loadReassignData(record: OffboardRecord) {
