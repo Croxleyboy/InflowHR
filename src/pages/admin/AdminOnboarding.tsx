@@ -2076,7 +2076,7 @@ export default function AdminOnboarding() {
         <button className={`admin-tab ${tab === 'dashboard' ? 'admin-tab-active' : ''}`} onClick={() => setTab('dashboard')}>Dashboard</button>
         <button className={`admin-tab ${tab === 'new' ? 'admin-tab-active' : ''}`} onClick={() => setTab('new')}>New Starter</button>
         <button className={`admin-tab ${tab === 'upload' ? 'admin-tab-active' : ''}`} onClick={() => setTab('upload')}>Bulk Upload</button>
-        <button className={`admin-tab ${tab === 'list' ? 'admin-tab-active' : ''}`} onClick={() => setTab('list')}>All Records</button>
+        <button className={`admin-tab ${tab === 'list' ? 'admin-tab-active' : ''}`} onClick={() => setTab('list')}>Onboarding</button>
         {selectedId && <button className={`admin-tab ${tab === 'workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('workflow')}>Onboard Workflow</button>}
         <button className={`admin-tab ${tab === 'offboarding' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboarding')}>Offboarding</button>
         {offboardSelectedId && <button className={`admin-tab ${tab === 'offboard-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboard-workflow')}>Offboarding Workflow</button>}
@@ -2501,7 +2501,7 @@ export default function AdminOnboarding() {
           {loading ? <div className="admin-loading">Loading...</div> : (
             <div className="admin-table-wrap">
               <table className="admin-table">
-                <thead><tr><th>Name</th><th>Company</th><th>Role</th><th>Start Date</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Name</th><th>Company</th><th>Role</th><th>Start Date</th><th>Status</th><th>Status Update</th><th>Progress</th><th>Actions</th></tr></thead>
                 <tbody>
                   {paginatedFiltered.map(r => {
                     const skipped = r.skipped_steps || {}
@@ -2512,6 +2512,8 @@ export default function AdminOnboarding() {
                     const totalSteps = activeSteps.length
                     const totalDone = hasCustomSteps ? (defaultDone + customDoneCount + skippedCount) : (defaultDone + skippedCount)
                     const displayDone = Math.min(totalDone, totalSteps)
+                    const isOffboarded = offboardRecords.some(o => o.employee_email === r.user_email && o.is_complete)
+                    const isFrozen = frozenEmployees.some(f => f.employee_email === r.user_email && f.status !== 'recovered')
                     return (
                       <tr key={r.id}>
                         <td><strong>{r.firstname} {r.surname}</strong></td>
@@ -2519,6 +2521,7 @@ export default function AdminOnboarding() {
                         <td>{r.job_title || '—'}</td>
                         <td>{r.start_date ? new Date(r.start_date).toLocaleDateString('en-GB') : '—'}</td>
                         <td><span className={`admin-badge ${r.is_complete ? 'admin-badge-approved' : 'admin-badge-pending'}`}>{r.is_complete ? 'Onboarded' : r.status}</span></td>
+                        <td>{isFrozen ? <span style={{ color: '#1565c0', fontWeight: 600, fontSize: 12 }}>Frozen</span> : isOffboarded ? <span style={{ color: '#c62828', fontWeight: 600, fontSize: 12 }}>Offboarded</span> : '—'}</td>
                         <td>
                           <div className="admin-progress-bar"><div className="admin-progress-fill" style={{width: `${(displayDone / totalSteps) * 100}%`}} /></div>
                           <span className="admin-progress-text">{displayDone}/{totalSteps}{skippedCount > 0 ? ` (${skippedCount} skipped)` : ''}</span>
@@ -2569,7 +2572,7 @@ export default function AdminOnboarding() {
                         <p>{step.description}</p>
 
                         {step.step_key === 'accounts' && features.inflowonboarder_integration && ifoConnected && selectedRecord && !done && (
-                          <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: 'rgba(232,242,255,.5)' }}>
+                          <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: 'rgba(232,242,255,.5)' }} onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                               <svg width="20" height="20" viewBox="0 0 512 512"><rect width="512" height="512" rx="64" fill="#0078D4"/><circle cx="256" cy="256" r="100" fill="none" stroke="#fff" strokeWidth="32"/><circle cx="256" cy="256" r="16" fill="#fff"/></svg>
                               <strong style={{ fontSize: 14, color: '#0078D4' }}>Microsoft 365 Provisioning</strong>
@@ -3244,7 +3247,7 @@ export default function AdminOnboarding() {
 
                           {/* M365 Offboarding panel (InflowOnboarder leaver) */}
                           {step.key === 'remove_accounts' && features.inflowonboarder_integration && ifoConnected && !done && !skipped && (
-                            <div style={{ margin: '12px 0', padding: 14, background: 'rgba(0,120,212,.06)', borderRadius: 10, border: '1px solid rgba(0,120,212,.15)' }}>
+                            <div style={{ margin: '12px 0', padding: 14, background: 'rgba(0,120,212,.06)', borderRadius: 10, border: '1px solid rgba(0,120,212,.15)' }} onClick={e => e.stopPropagation()}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0078D4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
