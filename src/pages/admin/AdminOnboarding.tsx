@@ -1122,11 +1122,16 @@ export default function AdminOnboarding() {
 
   useEffect(() => {
     if (!leaverM365Actions?.run_id || !offboardSelectedId) return
-    const needsPoll = leaverM365Actions.approval_status === 'pending'
-      || leaverM365Actions.run_status === 'checking_account'
+    const isEngineStatus = leaverM365Actions.run_status === 'checking_account'
       || leaverM365Actions.run_status === 'deprovisioning'
+      || leaverM365Actions.run_status === 'awaiting_approval'
+    const needsPoll = leaverM365Actions.approval_status === 'pending' || isEngineStatus
     if (!needsPoll) return
+    const pollInterval = leaverM365Actions.run_status === 'awaiting_approval' ? 60000 : 10000
     const timer = setInterval(async () => {
+      if (isEngineStatus && leaverM365Actions?.run_id) {
+        await callIfoLeaver('check-leaver-run', { run_id: leaverM365Actions.run_id, offboarding_id: offboardSelectedId })
+      }
       const [{ data }, { data: wt }] = await Promise.all([
         supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardSelectedId).maybeSingle(),
         supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
@@ -1146,7 +1151,7 @@ export default function AdminOnboarding() {
       } else if (data) {
         setLeaverM365Actions(data as LeaverM365Actions)
       }
-    }, 10000)
+    }, pollInterval)
     return () => clearInterval(timer)
   }, [leaverM365Actions?.run_id, leaverM365Actions?.approval_status, leaverM365Actions?.run_status, offboardSelectedId])
 
@@ -1265,8 +1270,8 @@ export default function AdminOnboarding() {
     if (result) {
       if (result.status === 'completed') {
         showSuccess('M365 offboarding complete')
-      } else if (result.status === 'deprovisioning' || result.status === 'checking_account') {
-        showSuccess('Deprovisioning started — polling for completion...')
+      } else if (result.status === 'awaiting_approval' || result.status === 'deprovisioning' || result.status === 'checking_account') {
+        showSuccess(result.status === 'awaiting_approval' ? 'Approval submitted — processing offboarding...' : 'Deprovisioning started — polling for completion...')
         leaverM365PollRun(leaverM365Actions.run_id, record.id)
         return
       } else if (result.status === 'failed') {
@@ -2609,6 +2614,19 @@ export default function AdminOnboarding() {
                                       {leaverM365ApprovalSending ? 'Sending...' : 'Send for Approval'}
                                     </button>
                                   )}
+                                </div>
+                              )}
+
+                              {/* Awaiting approval (engine processing) */}
+                              {leaverM365Actions?.run_status === 'awaiting_approval' && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <div style={{ width: 16, height: 16, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                  <span style={{ fontSize: 13 }}>Processing offboarding...</span>
+                                  <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>(auto-refreshing)</span>
+                                  <button className="admin-btn-sm" style={{ marginLeft: 8 }} disabled={leaverM365RunPolling}
+                                    onClick={e => { e.stopPropagation(); leaverM365RefreshStatus(leaverM365Actions!.run_id!, record.id) }}>
+                                    Refresh
+                                  </button>
                                 </div>
                               )}
 
