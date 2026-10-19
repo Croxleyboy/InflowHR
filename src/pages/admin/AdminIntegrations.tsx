@@ -643,10 +643,15 @@ export default function AdminIntegrations() {
     setIfoLicencesLoading(true)
     const result = await callEdgeFunction('inflowonboarder', { action: 'list-licences' })
     setIfoLicencesLoading(false)
-    if (result?.result?.licences) {
-      setIfoLicences(result.result.licences)
+    const licences = result?.result?.licences || (Array.isArray(result?.result) ? result.result : null)
+    if (licences) {
+      setIfoLicences(licences)
     } else if (result?.status === 'running') {
       showError('Licences are still loading. Try again in a few seconds.')
+    } else if (result?.error) {
+      showError(result.error)
+    } else {
+      showError('Could not load licences. Check the API key has the m365.license.list permission.')
     }
   }
 

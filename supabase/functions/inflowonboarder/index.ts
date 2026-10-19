@@ -574,6 +574,21 @@ Deno.serve(async (req) => {
         return json({ error: friendlyError(code || 'unknown') }, res.status)
       }
       const jobId = (res.data as any).jobId
+      if (!jobId) return json({ error: 'No jobId returned from engine' }, 502)
+
+      const maxAttempts = 15
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(r => setTimeout(r, 1000))
+        const pollRes = await engineFetch(apiKey, 'GET', `/v1/jobs/${jobId}`)
+        if (!pollRes.ok) continue
+        const job = pollRes.data as any
+        if (job.status === 'succeeded') {
+          return json({ result: job.result || job, status: 'succeeded' })
+        }
+        if (job.status === 'failed') {
+          return json({ error: job.error?.message || 'Licence fetch failed', status: 'failed' }, 500)
+        }
+      }
       return json({ jobId, status: 'running' })
     }
 
