@@ -1015,6 +1015,38 @@ export default function AdminOnboarding() {
     }
   }
 
+  useEffect(() => {
+    if (!selectedId || !m365Actions) return
+    const isTerminal = m365Actions.run_status === 'completed' || m365Actions.run_status === 'failed'
+    const isEngineStatus = !!m365Actions.run_status && !isTerminal
+    const needsPoll = m365Actions.approval_status === 'pending' || (isEngineStatus && !['checking_licence', 'provisioning'].includes(m365Actions.run_status || ''))
+    if (!needsPoll) return
+    const slowPollStatuses = ['ready_for_approval', 'awaiting_approval']
+    const pollInterval = slowPollStatuses.includes(m365Actions.run_status || '') || m365Actions.approval_status === 'pending' ? 5000 : 10000
+    const timer = setInterval(async () => {
+      const [{ data }, { data: wt }] = await Promise.all([
+        supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', selectedId).maybeSingle(),
+        supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
+          .eq('onboard_id', selectedId).eq('record_type', 'M365 Provisioning').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      ])
+      if (data) {
+        const merged = { ...data } as M365Actions
+        if (wt) {
+          merged.approval_sent_at = merged.approval_sent_at || wt.created_at
+          if (wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
+            merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+            merged.approved_by = wt.assigned_to || 'Approver'
+            merged.approved_at = wt.updated_at || new Date().toISOString()
+          } else if (wt.status === 'Pending') {
+            merged.approval_status = 'pending'
+          }
+        }
+        setM365Actions(merged)
+      }
+    }, pollInterval)
+    return () => clearInterval(timer)
+  }, [m365Actions?.run_id, m365Actions?.approval_status, m365Actions?.run_status, selectedId])
+
   async function m365StartRun(record: OnboardRecord) {
     setM365Starting(true)
     const upn = m365Upn || record.user_email
