@@ -3314,21 +3314,19 @@ export default function AdminOnboarding() {
                                   )}
                                   {leaverSchedulingAvailable && leaverScheduleMode === 'schedule' && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                      {!record.end_date && (
-                                        <div style={{ width: 180 }}>
-                                          <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2, color: '#c62828' }}>Leave date (required)</label>
-                                          <input className="admin-input" type="date"
-                                            onChange={async e => {
-                                              const v = e.target.value
-                                              if (!v) return
-                                              const { error } = await supabase.from('offboarding').update({ end_date: v }).eq('id', record.id)
-                                              if (error) { showError('Failed to save leave date'); return }
-                                              record.end_date = v
-                                              setOffboardRecords(prev => prev.map(r => r.id === record.id ? { ...r, end_date: v } : r))
-                                            }}
-                                            style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
-                                        </div>
-                                      )}
+                                      <div style={{ width: 180 }}>
+                                        <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2, color: record.end_date ? undefined : '#c62828' }}>Leave date{!record.end_date ? ' (required)' : ''}</label>
+                                        <input className="admin-input" type="date"
+                                          value={record.end_date ? record.end_date.split('T')[0] : ''}
+                                          onChange={async e => {
+                                            const v = e.target.value
+                                            if (!v) return
+                                            const { error } = await supabase.from('offboarding').update({ end_date: v }).eq('id', record.id)
+                                            if (error) { showError('Failed to save leave date'); return }
+                                            setOffboardRecords(prev => prev.map(r => r.id === record.id ? { ...r, end_date: v } : r))
+                                          }}
+                                          style={{ fontSize: 13, width: '100%', boxSizing: 'border-box' }} />
+                                      </div>
                                       <div style={{ width: 180 }}>
                                         <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 2 }}>Remove licence & groups on</label>
                                         <input className="admin-input" type="date"
