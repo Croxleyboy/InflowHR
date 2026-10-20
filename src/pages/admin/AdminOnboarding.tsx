@@ -197,6 +197,7 @@ export default function AdminOnboarding() {
   const [offboardEmployeeSearch, setOffboardEmployeeSearch] = useState('')
   const [offboardEmployeeResults, setOffboardEmployeeResults] = useState<{ id: string; first_name: string; last_name: string; email: string; job_title: string; department: string }[]>([])
   const [offboardForm, setOffboardForm] = useState({ end_date: '', reason: '' })
+  const [expandedCompletedId, setExpandedCompletedId] = useState<number | null>(null)
 
   // Leaver review step data
   const [reviewShifts, setReviewShifts] = useState<{ id: number; date: string; shift_name: string; rota_name: string }[]>([])
@@ -3217,17 +3218,75 @@ export default function AdminOnboarding() {
               <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px', color: '#888' }}>Completed Offboarding</h3>
               <div className="admin-table-wrap">
                 <table className="admin-table">
-                  <thead><tr><th>Employee</th><th>Role</th><th>End Date</th><th>Reason</th><th>Frozen</th></tr></thead>
+                  <thead><tr><th style={{ width: 30 }}></th><th>Employee</th><th>Role</th><th>End Date</th><th>Reason</th><th>Frozen</th></tr></thead>
                   <tbody>
-                    {paginatedCompletedOffboard.map(r => (
-                      <tr key={r.id} style={{ opacity: 0.7 }}>
-                        <td><strong>{r.employee_name}</strong></td>
-                        <td>{r.job_title || '—'}</td>
-                        <td>{r.end_date ? new Date(r.end_date).toLocaleDateString('en-GB') : '—'}</td>
-                        <td>{r.reason || '—'}</td>
-                        <td>{r.frozen_at ? new Date(r.frozen_at).toLocaleDateString('en-GB') : '—'}</td>
-                      </tr>
-                    ))}
+                    {paginatedCompletedOffboard.map(r => {
+                      const isExpanded = expandedCompletedId === r.id
+                      const steps = offboardCustomSteps.length > 0 ? offboardCustomSteps : OFFBOARD_STEPS
+                      return (<span key={r.id} style={{ display: 'contents' }}>
+                        <tr style={{ opacity: 0.7, cursor: 'pointer' }} onClick={() => setExpandedCompletedId(isExpanded ? null : r.id)}>
+                          <td style={{ textAlign: 'center', fontSize: 14 }}>{isExpanded ? '▼' : '▶'}</td>
+                          <td><strong>{r.employee_name}</strong></td>
+                          <td>{r.job_title || '—'}</td>
+                          <td>{r.end_date ? new Date(r.end_date).toLocaleDateString('en-GB') : '—'}</td>
+                          <td>{r.reason || '—'}</td>
+                          <td>{r.frozen_at ? new Date(r.frozen_at).toLocaleDateString('en-GB') : '—'}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr><td colSpan={6} style={{ padding: 0, background: 'var(--bg-muted, #fafafa)' }}>
+                            <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                              <div>
+                                <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: 'var(--text-muted, #666)' }}>Workflow Steps</p>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                  {steps.map((s: any) => {
+                                    const key = s.step_key || s.key
+                                    const completed = r.workflow_steps?.[key]
+                                    const skipped = r.skipped_steps?.[key]
+                                    const customDone = r.custom_steps_completed?.[key]
+                                    const status = completed || customDone ? 'done' : skipped ? 'skipped' : 'not_reached'
+                                    return (
+                                      <span key={key} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4,
+                                        background: status === 'done' ? '#e8f5e9' : status === 'skipped' ? '#fff8e1' : '#f5f5f5',
+                                        color: status === 'done' ? '#2e7d32' : status === 'skipped' ? '#f57f17' : '#999',
+                                        border: `1px solid ${status === 'done' ? '#a5d6a7' : status === 'skipped' ? '#ffe082' : '#e0e0e0'}`,
+                                      }}>
+                                        <span>{status === 'done' ? '✓' : status === 'skipped' ? '⏭' : '○'}</span>
+                                        {s.label}
+                                      </span>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                              <div>
+                                <p style={{ margin: '0 0 6px', fontSize: 12, fontWeight: 700, color: 'var(--text-muted, #666)' }}>Cleanup Actions</p>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                                  {[
+                                    { label: 'Shifts cancelled', done: r.cleanup_shifts_done },
+                                    { label: 'Bookings cancelled', done: r.cleanup_bookings_done },
+                                    { label: 'Benefits unenrolled', done: r.cleanup_benefits_done },
+                                    { label: 'Assets reviewed', done: r.cleanup_assets_done },
+                                  ].map(c => (
+                                    <span key={c.label} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 4,
+                                      background: c.done ? '#e8f5e9' : '#f5f5f5', color: c.done ? '#2e7d32' : '#999',
+                                      border: `1px solid ${c.done ? '#a5d6a7' : '#e0e0e0'}`,
+                                    }}>
+                                      <span>{c.done ? '✓' : '○'}</span>{c.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 12, color: 'var(--text-muted, #666)' }}>
+                                <span><strong>Started:</strong> {new Date(r.created_at).toLocaleDateString('en-GB')}</span>
+                                {r.end_date && <span><strong>Leave date:</strong> {new Date(r.end_date).toLocaleDateString('en-GB')}</span>}
+                                {r.frozen_at && <span><strong>Account frozen:</strong> {new Date(r.frozen_at).toLocaleDateString('en-GB')}</span>}
+                                {r.data_exported_at && <span><strong>GDPR export:</strong> {new Date(r.data_exported_at).toLocaleDateString('en-GB')}</span>}
+                                {!r.data_exported_at && <span style={{ color: '#e65100' }}><strong>GDPR export:</strong> Not done</span>}
+                              </div>
+                            </div>
+                          </td></tr>
+                        )}
+                      </span>)
+                    })}
                   </tbody>
                 </table>
               </div>
