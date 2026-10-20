@@ -1000,14 +1000,29 @@ export default function AdminOnboarding() {
   }
 
   async function loadM365Actions(onboardingId: number) {
-    const [{ data }, { data: ifo }, { data: schedulingFlag }] = await Promise.all([
+    const [{ data }, { data: ifo }, { data: wt }, { data: schedulingFlag }] = await Promise.all([
       supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle(),
       supabase.from('inflowonboarder_integrations')
         .select('status, approver_mode, approver_name, approver_email, account_domain, licence_sku_id, licence_sku_name, licence_manager_name, group_name, schedule_templates_cache')
         .eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
+        .eq('onboard_id', onboardingId).in('record_type', ['M365 Provisioning', 'M365 Scheduling']).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('company_features').select('is_enabled').eq('company_id', selectedCompanyId).eq('feature_key', 'm365_scheduling').maybeSingle(),
     ])
-    setM365Actions(data as M365Actions | null)
+    if (data && wt) {
+      const merged = { ...data } as M365Actions
+      merged.approval_sent_at = merged.approval_sent_at || wt.created_at
+      if (wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
+        merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+        merged.approved_by = wt.assigned_to || 'Approver'
+        merged.approved_at = wt.updated_at || new Date().toISOString()
+      } else if (wt.status === 'Pending') {
+        merged.approval_status = 'pending'
+      }
+      setM365Actions(merged)
+    } else {
+      setM365Actions(data as M365Actions | null)
+    }
     const m365SchedulingEnabled = schedulingFlag?.is_enabled === true
     setIfoConnected(ifo?.status === 'connected_ready')
     const { count: activeCount } = await supabase.from('onboarding_m365_actions')
@@ -1040,7 +1055,28 @@ export default function AdminOnboarding() {
         m365PollRun(data.run_id, onboardingId)
       }
     }
-    if (data && data.approval_status === 'approved' && data.schedule_status === 'pending_approval' && !data.schedule_id) {
+    if (data?.schedule_id && data.schedule_status && !['completed', 'cancelled', 'failed'].includes(data.schedule_status)) {
+      const freshSchedule = await callIfo('get-schedule', { schedule_id: data.schedule_id, onboarding_id: onboardingId })
+      if (freshSchedule) {
+        const { data: refreshed } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
+        if (refreshed) {
+          if (wt) {
+            const merged = { ...refreshed } as M365Actions
+            merged.approval_sent_at = merged.approval_sent_at || wt.created_at
+            if (wt.status === 'Complete' && (wt.approval_status === 'Approved' || wt.approval_status === 'Declined')) {
+              merged.approval_status = wt.approval_status === 'Approved' ? 'approved' : 'declined'
+              merged.approved_by = wt.assigned_to || 'Approver'
+              merged.approved_at = wt.updated_at || new Date().toISOString()
+            }
+            setM365Actions(merged)
+          } else {
+            setM365Actions(refreshed as M365Actions | null)
+          }
+        }
+      }
+    }
+    const effectiveApproval = (data && wt && wt.status === 'Complete' && wt.approval_status === 'Approved') ? 'approved' : data?.approval_status
+    if (data && effectiveApproval === 'approved' && data.schedule_status === 'pending_approval' && !data.schedule_id) {
       const { data: rec } = await supabase.from('onboarding').select('id, firstname, surname, user_email, job_title, department, start_date').eq('id', onboardingId).maybeSingle()
       if (rec) {
         const result = await callIfo('create-schedule', {
@@ -1057,9 +1093,9 @@ export default function AdminOnboarding() {
             employeeHireDate: rec.start_date,
           },
           options: { prepareDaysBefore: data.schedule_options?.prepareDaysBefore || 3 },
-          approver_name: data.approved_by || 'InflowHR Approver',
+          approver_name: (wt?.assigned_to) || data.approved_by || 'InflowHR Approver',
           approver_email: ifo?.approver_email || '',
-          approved_at: data.approved_at || new Date().toISOString(),
+          approved_at: wt?.updated_at || data.approved_at || new Date().toISOString(),
           attempt: data.attempt_count_run || 0,
         })
         if (result && !result.use_run_now) {
@@ -2729,7 +2765,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* No run yet — start form or schedule */}
-                            {!m365Actions?.is_v1_legacy && (!m365Actions || (!m365Actions.run_id && !m365Actions.run_status && !m365Actions.schedule_id)) && (
+                            {!m365Actions?.is_v1_legacy && (!m365Actions || (!m365Actions.run_id && !m365Actions.run_status && !m365Actions.schedule_id && !m365Actions.schedule_status)) && (
                               <div style={{ marginBottom: 12 }}>
                                 {m365SchedulingAvailable && (
                                   <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderRadius: 6, overflow: 'hidden', border: '1px solid #90caf9', width: 'fit-content' }}>
@@ -2926,7 +2962,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Checking licence (or unknown status with a run_id) — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && (m365Actions?.run_status === 'checking_licence' || (m365Actions?.run_id && !m365Actions?.run_status)) && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && (m365Actions?.run_status === 'checking_licence' || (m365Actions?.run_id && !m365Actions?.run_status)) && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                   <span style={{ fontSize: 13, color: '#1976d2' }}>Checking licence availability...</span>
@@ -2939,7 +2975,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Licence unavailable — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'licence_unavailable' && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'licence_unavailable' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>No licence seats available</p>
@@ -2959,7 +2995,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Ready for approval — not yet sent — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'ready_for_approval' && !m365Actions.approval_status && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'ready_for_approval' && !m365Actions.approval_status && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #90caf9', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#1565c0', fontWeight: 600 }}>Licence available — ready for approval</p>
@@ -2978,7 +3014,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Approval pending — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.approval_status === 'pending' && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.approval_status === 'pending' && (
                               <div style={{ marginBottom: 12, background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
                                 <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Waiting for approval</p>
                                 <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
@@ -2991,7 +3027,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Approval approved — proceed — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.approval_status === 'approved' && m365Actions?.run_status === 'ready_for_approval' && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.approval_status === 'approved' && m365Actions?.run_status === 'ready_for_approval' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Approved by {(m365Actions.approved_by || '').replace(/<[^>]+>/, '').trim() || m365Actions.approved_by}</p>
@@ -3006,7 +3042,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Approval declined — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.approval_status === 'declined' && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.approval_status === 'declined' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Approval declined</p>
@@ -3024,14 +3060,14 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Provisioning in progress — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'provisioning' && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'provisioning' && (
                               <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{ fontSize: 13, color: '#1976d2' }}>Provisioning in progress — creating account, assigning licence and adding to group...</span>
                               </div>
                             )}
 
                             {/* Awaiting approval (engine-side) — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'awaiting_approval' && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'awaiting_approval' && (
                               <div style={{ marginBottom: 12, background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
                                 <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Awaiting approval in InflowOnboarder</p>
                                 <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
@@ -3041,7 +3077,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Completed (ad-hoc) — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'completed' && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'completed' && (
                               <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 12 }}>
                                 <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>M365 provisioning complete</p>
                                 {m365Actions.m365_upn && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>UPN: {m365Actions.m365_upn}</p>}
@@ -3064,7 +3100,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Failed (ad-hoc) — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'failed' && (
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'failed' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Provisioning failed</p>
