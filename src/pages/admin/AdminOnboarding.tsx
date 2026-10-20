@@ -1758,6 +1758,8 @@ export default function AdminOnboarding() {
 
   async function leaverCreateSchedule(record: OffboardRecord) {
     if (!selectedCompanyId || !leaverM365Actions) return
+    if (!record.employee_email) { showError('Cannot create schedule — employee has no email address set'); return }
+    if (!record.end_date) { showError('Cannot create schedule — no leave date set on this offboarding record'); return }
     setLeaverScheduleCreating(true)
     const result = await callIfoLeaver('create-leaver-schedule', {
       offboarding_id: record.id,
