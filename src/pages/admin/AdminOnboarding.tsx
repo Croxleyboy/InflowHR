@@ -1695,8 +1695,10 @@ export default function AdminOnboarding() {
 
   async function leaverSendScheduleApproval(record: OffboardRecord) {
     if (!selectedCompanyId || !ifoOffboardSettings) return
+    if (!record.employee_email) { showError('Cannot schedule — employee has no email address set'); return }
+    if (!record.end_date) { showError('Cannot schedule — no leave date set on this offboarding record'); return }
     setLeaverM365ApprovalSending(true)
-    const leaveDate = record.end_date || new Date().toISOString().split('T')[0]
+    const leaveDate = record.end_date
     const removalDate = new Date(new Date(leaveDate).getTime() + leaverLicenceRemovalDays * 86400000)
     const planDesc = `Schedule M365 Offboarding for ${record.employee_name}:\n` +
       `• Block access: ${new Date(leaveDate).toLocaleDateString('en-GB')} at 17:00\n` +
