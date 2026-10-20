@@ -1239,33 +1239,37 @@ export default function AdminOnboarding() {
       `• Prepare account: ${prepDate.toLocaleDateString('en-GB')} at 09:00\n` +
       `• Enable sign-in: ${new Date(startDate).toLocaleDateString('en-GB')} at 08:00`
     const approverMode = ifoSettings?.approver_mode || 'manager'
-    let approverEmpId: string | null = null
+    let approverEmail: string | null = null
     if (approverMode === 'manager' && record.manager_email) {
-      const { data: mgr } = await supabase.from('employees').select('id').eq('user_email', record.manager_email).eq('company_id', selectedCompanyId).maybeSingle()
-      approverEmpId = mgr?.id || null
+      approverEmail = record.manager_email
     } else if (approverMode === 'nominated' && ifoSettings?.approver_email) {
-      const { data: nom } = await supabase.from('employees').select('id').eq('user_email', ifoSettings.approver_email).eq('company_id', selectedCompanyId).maybeSingle()
-      approverEmpId = nom?.id || null
+      approverEmail = ifoSettings.approver_email
     }
-    if (!approverEmpId) { showError('Could not find the approver. Check the approver settings on the Integrations page.'); setM365ApprovalSending(false); return }
+    if (!approverEmail) { showError('No approver found. Check the approver settings on the Integrations page.'); setM365ApprovalSending(false); return }
     await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,
       record_id: record.id,
       record_type: 'M365 Scheduling',
       task_description: planDesc,
-      assigned_to: approverEmpId,
+      employee_email: approverEmail,
+      assigned_to: approverEmail,
       status: 'pending',
     })
-    await supabase.from('notifications').insert({
-      company_id: selectedCompanyId,
-      employee_id: approverEmpId,
-      type: 'action',
-      title: 'M365 Schedule Approval Required',
-      message: `Please approve the M365 account schedule for ${record.firstname} ${record.surname}.`,
-      is_read: false,
-      action_type: 'M365 Scheduling',
-      action_record_id: record.id,
-    })
+    const { data: approverEmp } = await supabase.from('employees')
+      .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
+    if (approverEmp) {
+      await supabase.from('notifications').insert({
+        company_id: selectedCompanyId,
+        employee_id: approverEmp.id,
+        type: 'action',
+        notification_type: 'm365_schedule_approval',
+        title: 'M365 Schedule Approval Required',
+        message: `Please approve the M365 account schedule for ${record.firstname} ${record.surname}.`,
+        send_email: true,
+        action_type: 'M365 Scheduling',
+        action_record_id: record.id,
+      })
+    }
     await supabase.from('onboarding_m365_actions').upsert({
       onboarding_id: record.id,
       company_id: selectedCompanyId,
@@ -1705,27 +1709,29 @@ export default function AdminOnboarding() {
       approverEmail = emp?.manager_email || null
     }
     if (!approverEmail) { showError('No approver found. Check the approver settings on the Integrations page.'); setLeaverM365ApprovalSending(false); return }
-    const { data: approverEmp } = await supabase.from('employees').select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
-    const approverEmpId = approverEmp?.id || null
-    if (!approverEmpId) { showError(`Could not find an employee record for approver "${approverEmail}" (mode: ${resolvedMode}). Check the approver settings on Integrations.`); setLeaverM365ApprovalSending(false); return }
     await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,
       record_id: record.id,
       record_type: 'M365 Leaver Scheduling',
       task_description: planDesc,
-      assigned_to: approverEmpId,
+      employee_email: approverEmail,
+      assigned_to: approverEmail,
       status: 'pending',
     })
-    await supabase.from('notifications').insert({
-      company_id: selectedCompanyId,
-      employee_id: approverEmpId,
-      type: 'action',
-      title: 'M365 Leaver Schedule Approval Required',
-      message: `Please approve the M365 offboarding schedule for ${record.employee_name}.`,
-      is_read: false,
-      action_type: 'M365 Leaver Scheduling',
-      action_record_id: record.id,
-    })
+    const { data: approverEmp } = await supabase.from('employees').select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
+    if (approverEmp) {
+      await supabase.from('notifications').insert({
+        company_id: selectedCompanyId,
+        employee_id: approverEmp.id,
+        type: 'action',
+        notification_type: 'm365_leaver_schedule_approval',
+        title: 'M365 Leaver Schedule Approval Required',
+        message: `Please approve the M365 offboarding schedule for ${record.employee_name}.`,
+        send_email: true,
+        action_type: 'M365 Leaver Scheduling',
+        action_record_id: record.id,
+      })
+    }
     await supabase.from('offboarding_m365_actions').upsert({
       offboarding_id: record.id,
       company_id: selectedCompanyId,
