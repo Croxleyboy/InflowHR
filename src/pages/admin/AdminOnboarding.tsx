@@ -2579,6 +2579,26 @@ export default function AdminOnboarding() {
             <h3>{selectedRecord.firstname} {selectedRecord.surname}</h3>
             <p>{selectedRecord.job_title} · Starting {selectedRecord.start_date ? new Date(selectedRecord.start_date).toLocaleDateString('en-GB') : 'TBC'}</p>
           </div>
+          {features.inflowonboarder_integration && ifoConnected && m365Actions && (
+            <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: '14px 16px', margin: '0 0 16px', background: 'linear-gradient(135deg, rgba(232,242,255,.6), rgba(227,242,253,.4))' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 16 }}>⚡</span>
+                <strong style={{ fontSize: 13, color: '#1565c0' }}>M365 Account Automation Active</strong>
+              </div>
+              <p style={{ fontSize: 12, color: '#37474f', margin: 0, lineHeight: 1.5 }}>
+                {selectedRecord.start_date ? (
+                  <>
+                    The M365 account will be created automatically {m365SchedulingAvailable ? <>ahead of <strong>{new Date(selectedRecord.start_date).toLocaleDateString('en-GB')}</strong></> : <>when triggered</>}, with sign-in enabled on the start date.
+                    Align your manual tasks around this timeline — complete IT equipment setup, workspace allocation and access card preparation before the account goes live.
+                  </>
+                ) : (
+                  <>
+                    M365 account provisioning is connected. Set a start date to see the automated timeline, then align manual tasks (equipment, workspace, access cards) around it.
+                  </>
+                )}
+              </p>
+            </div>
+          )}
           <div className="admin-workflow-timeline">
             {activeSteps.map((step, i) => {
               const done = stepChecks[step.step_key]
@@ -3311,6 +3331,26 @@ export default function AdminOnboarding() {
               <h3>{record.employee_name}</h3>
               <p>{record.job_title} · Last day {record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB') : 'TBC'}</p>
             </div>
+            {features.inflowonboarder_integration && ifoConnected && leaverM365Actions && (
+              <div style={{ border: '1px solid #ef9a9a', borderRadius: 10, padding: '14px 16px', margin: '0 0 16px', background: 'linear-gradient(135deg, rgba(255,235,238,.6), rgba(252,228,236,.4))' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 16 }}>⚡</span>
+                  <strong style={{ fontSize: 13, color: '#c62828' }}>M365 Account Offboarding Active</strong>
+                </div>
+                <p style={{ fontSize: 12, color: '#37474f', margin: 0, lineHeight: 1.5 }}>
+                  {record.end_date ? (
+                    <>
+                      Sign-in will be blocked automatically on <strong>{new Date(record.end_date).toLocaleDateString('en-GB')}</strong> at 17:00, with licences and groups removed {leaverLicenceRemovalDays} days later.
+                      Complete equipment recovery, the leaving meeting and shift/booking/benefit reviews before the leave date. Mailbox conversion, data export and final payment confirmation can follow after access is blocked.
+                    </>
+                  ) : (
+                    <>
+                      M365 offboarding is connected. Set a leave date to see the automated timeline, then align manual tasks (equipment, exit meeting, benefit reviews) around it.
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
             <div className="admin-workflow-timeline">
               {OFFBOARD_STEPS.map((step, i) => {
                 const done = offboardChecks[step.key]
