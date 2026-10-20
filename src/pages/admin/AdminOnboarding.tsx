@@ -1246,7 +1246,7 @@ export default function AdminOnboarding() {
       approverEmail = ifoSettings.approver_email
     }
     if (!approverEmail) { showError('No approver found. Check the approver settings on the Integrations page.'); setM365ApprovalSending(false); return }
-    await supabase.from('workflow_tracker').insert({
+    const { error: wtErr } = await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,
       onboard_id: record.id,
       record_type: 'M365 Scheduling',
@@ -1257,6 +1257,7 @@ export default function AdminOnboarding() {
       status: 'Pending',
       approval_status: 'pending',
     })
+    if (wtErr) { showError(`Failed to create approval task: ${wtErr.message}`); setM365ApprovalSending(false); return }
     const { data: approverEmp } = await supabase.from('employees')
       .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
     if (approverEmp) {
@@ -1272,7 +1273,7 @@ export default function AdminOnboarding() {
         action_record_id: record.id,
       })
     }
-    await supabase.from('onboarding_m365_actions').upsert({
+    const { error: upsertErr } = await supabase.from('onboarding_m365_actions').upsert({
       onboarding_id: record.id,
       company_id: selectedCompanyId,
       approval_sent_at: new Date().toISOString(),
@@ -1281,6 +1282,7 @@ export default function AdminOnboarding() {
       schedule_options: { prepareDaysBefore: m365PrepareDays },
       updated_at: new Date().toISOString(),
     }, { onConflict: 'onboarding_id' })
+    if (upsertErr) { showError(`Failed to save schedule status: ${upsertErr.message}`); setM365ApprovalSending(false); return }
     showSuccess('Schedule approval sent')
     setM365ApprovalSending(false)
     await loadM365Actions(record.id)
@@ -1711,7 +1713,7 @@ export default function AdminOnboarding() {
       approverEmail = emp?.manager_email || null
     }
     if (!approverEmail) { showError('No approver found. Check the approver settings on the Integrations page.'); setLeaverM365ApprovalSending(false); return }
-    await supabase.from('workflow_tracker').insert({
+    const { error: wtErr } = await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,
       onboard_id: record.id,
       record_type: 'M365 Leaver Scheduling',
@@ -1722,6 +1724,7 @@ export default function AdminOnboarding() {
       status: 'Pending',
       approval_status: 'pending',
     })
+    if (wtErr) { showError(`Failed to create approval task: ${wtErr.message}`); setLeaverM365ApprovalSending(false); return }
     const { data: approverEmp } = await supabase.from('employees').select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
     if (approverEmp) {
       await supabase.from('notifications').insert({
@@ -1736,7 +1739,7 @@ export default function AdminOnboarding() {
         action_record_id: record.id,
       })
     }
-    await supabase.from('offboarding_m365_actions').upsert({
+    const { error: upsertErr } = await supabase.from('offboarding_m365_actions').upsert({
       offboarding_id: record.id,
       company_id: selectedCompanyId,
       approval_sent_at: new Date().toISOString(),
@@ -1745,6 +1748,7 @@ export default function AdminOnboarding() {
       schedule_options: { licenceRemovalDelayDays: leaverLicenceRemovalDays },
       updated_at: new Date().toISOString(),
     }, { onConflict: 'offboarding_id' })
+    if (upsertErr) { showError(`Failed to save schedule status: ${upsertErr.message}`); setLeaverM365ApprovalSending(false); return }
     showSuccess('Schedule approval sent')
     setLeaverM365ApprovalSending(false)
     await loadLeaverM365Actions(record.id)
