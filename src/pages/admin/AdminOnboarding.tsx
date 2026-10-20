@@ -1040,6 +1040,34 @@ export default function AdminOnboarding() {
         m365PollRun(data.run_id, onboardingId)
       }
     }
+    if (data && data.approval_status === 'approved' && data.schedule_status === 'pending_approval' && !data.schedule_id) {
+      const { data: rec } = await supabase.from('onboarding').select('id, firstname, surname, user_email, job_title, department, start_date').eq('id', onboardingId).maybeSingle()
+      if (rec) {
+        const result = await callIfo('create-schedule', {
+          onboarding_id: rec.id,
+          input: {
+            givenName: rec.firstname,
+            surname: rec.surname,
+            displayName: `${rec.firstname} ${rec.surname}`,
+            userPrincipalName: rec.user_email,
+            usageLocation: 'GB',
+            startDate: rec.start_date,
+            jobTitle: rec.job_title,
+            department: rec.department,
+            employeeHireDate: rec.start_date,
+          },
+          options: { prepareDaysBefore: data.schedule_options?.prepareDaysBefore || 3 },
+          approver_name: data.approved_by || 'InflowHR Approver',
+          approver_email: ifo?.approver_email || '',
+          approved_at: data.approved_at || new Date().toISOString(),
+          attempt: data.attempt_count_run || 0,
+        })
+        if (result && !result.use_run_now) {
+          const { data: synced } = await supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle()
+          if (synced) setM365Actions(synced as M365Actions | null)
+        }
+      }
+    }
   }
 
   useEffect(() => {
@@ -1479,6 +1507,27 @@ export default function AdminOnboarding() {
         setLeaverM365Actions(merged)
       } else {
         setLeaverM365Actions(data as LeaverM365Actions | null)
+      }
+      const effectiveApproval = (data && wt && wt.status === 'Complete' && wt.approval_status === 'Approved') ? 'approved' : data?.approval_status
+      if (data && effectiveApproval === 'approved' && data.schedule_status === 'pending_approval' && !data.schedule_id) {
+        const { data: rec } = await supabase.from('offboarding').select('id, employee_name, employee_email, end_date').eq('id', offboardingId).maybeSingle()
+        if (rec && rec.employee_email && rec.end_date) {
+          const result = await callIfoLeaver('create-leaver-schedule', {
+            offboarding_id: rec.id,
+            user_principal_name: rec.employee_email,
+            display_name: rec.employee_name,
+            leave_date: rec.end_date,
+            options: { licenceRemovalDelayDays: data.schedule_options?.licenceRemovalDelayDays || 30 },
+            approver_name: (wt?.assigned_to) || 'InflowHR Approver',
+            approver_email: ifo?.offboard_approver_email || ifo?.approver_email || '',
+            approved_at: wt?.updated_at || new Date().toISOString(),
+            attempt: data.attempt_count_run || 0,
+          })
+          if (result && !result.use_run_now) {
+            const { data: synced } = await supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle()
+            if (synced) setLeaverM365Actions(synced as LeaverM365Actions | null)
+          }
+        }
       }
     } finally {
       setLeaverM365Refreshing(false)
