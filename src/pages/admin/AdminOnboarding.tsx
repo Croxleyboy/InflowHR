@@ -285,6 +285,7 @@ export default function AdminOnboarding() {
   const [m365ScheduleCancelling, setM365ScheduleCancelling] = useState(false)
   const [m365ScheduleRefreshing, setM365ScheduleRefreshing] = useState(false)
   const [m365PanelRefreshing, setM365PanelRefreshing] = useState(false)
+  const [m365ActiveProvisionCount, setM365ActiveProvisionCount] = useState(0)
 
 
   const COLUMN_MAP: Record<string, string> = {
@@ -1009,6 +1010,12 @@ export default function AdminOnboarding() {
     setM365Actions(data as M365Actions | null)
     const m365SchedulingEnabled = schedulingFlag?.is_enabled === true
     setIfoConnected(ifo?.status === 'connected_ready')
+    const { count: activeCount } = await supabase.from('onboarding_m365_actions')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', selectedCompanyId)
+      .neq('onboarding_id', onboardingId)
+      .in('schedule_status', ['pending_approval', 'scheduled', 'running'])
+    setM365ActiveProvisionCount(activeCount || 0)
     if (ifo) {
       setIfoSettings({
         approver_mode: ifo.approver_mode || 'manager',
@@ -2689,6 +2696,16 @@ export default function AdminOnboarding() {
                                     </button>
                                   </div>
                                 )}
+                                {m365ActiveProvisionCount > 0 && (
+                                  <div style={{ marginBottom: 10, padding: 10, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                                    <p style={{ margin: 0, fontSize: 12, color: '#e65100', fontWeight: 600 }}>
+                                      {m365ActiveProvisionCount} other joiner{m365ActiveProvisionCount > 1 ? 's' : ''} {m365ActiveProvisionCount > 1 ? 'have' : 'has'} M365 provisioning in progress
+                                    </p>
+                                    <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
+                                      If licence seats are limited, this joiner may be blocked until a seat becomes available. Check your M365 licence availability before proceeding.
+                                    </p>
+                                  </div>
+                                )}
                                 {(!m365SchedulingAvailable || m365ScheduleMode === 'now') && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2859,8 +2876,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Checking licence (or unknown status with a run_id) */}
-                            {!m365Actions?.is_v1_legacy && (m365Actions?.run_status === 'checking_licence' || (m365Actions?.run_id && !m365Actions?.run_status)) && (
+                            {/* Checking licence (or unknown status with a run_id) — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && (m365Actions?.run_status === 'checking_licence' || (m365Actions?.run_id && !m365Actions?.run_status)) && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                   <span style={{ fontSize: 13, color: '#1976d2' }}>Checking licence availability...</span>
@@ -2872,8 +2889,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Licence unavailable */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'licence_unavailable' && (
+                            {/* Licence unavailable — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'licence_unavailable' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>No licence seats available</p>
@@ -2892,8 +2909,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Ready for approval — not yet sent */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'ready_for_approval' && !m365Actions.approval_status && (
+                            {/* Ready for approval — not yet sent — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'ready_for_approval' && !m365Actions.approval_status && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(232,242,255,.5)', border: '1px solid #90caf9', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#1565c0', fontWeight: 600 }}>Licence available — ready for approval</p>
@@ -2911,8 +2928,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Approval pending */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.approval_status === 'pending' && (
+                            {/* Approval pending — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.approval_status === 'pending' && (
                               <div style={{ marginBottom: 12, background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
                                 <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Waiting for approval</p>
                                 <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
@@ -2924,8 +2941,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Approval approved — proceed */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.approval_status === 'approved' && m365Actions?.run_status === 'ready_for_approval' && (
+                            {/* Approval approved — proceed — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.approval_status === 'approved' && m365Actions?.run_status === 'ready_for_approval' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Approved by {(m365Actions.approved_by || '').replace(/<[^>]+>/, '').trim() || m365Actions.approved_by}</p>
@@ -2939,8 +2956,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Approval declined */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.approval_status === 'declined' && (
+                            {/* Approval declined — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.approval_status === 'declined' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Approval declined</p>
@@ -2957,15 +2974,15 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Provisioning in progress */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'provisioning' && (
+                            {/* Provisioning in progress — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'provisioning' && (
                               <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{ fontSize: 13, color: '#1976d2' }}>Provisioning in progress — creating account, assigning licence and adding to group...</span>
                               </div>
                             )}
 
-                            {/* Awaiting approval (engine-side) */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'awaiting_approval' && (
+                            {/* Awaiting approval (engine-side) — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'awaiting_approval' && (
                               <div style={{ marginBottom: 12, background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10 }}>
                                 <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>Awaiting approval in InflowOnboarder</p>
                                 <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>
@@ -2974,8 +2991,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Completed */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'completed' && (
+                            {/* Completed (ad-hoc) — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'completed' && (
                               <div style={{ background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10, marginBottom: 12 }}>
                                 <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>M365 provisioning complete</p>
                                 {m365Actions.m365_upn && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>UPN: {m365Actions.m365_upn}</p>}
@@ -2997,8 +3014,8 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
-                            {/* Failed */}
-                            {!m365Actions?.is_v1_legacy && m365Actions?.run_status === 'failed' && (
+                            {/* Failed (ad-hoc) — hide if schedule path active */}
+                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && m365Actions?.run_status === 'failed' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(255,235,238,.7)', border: '1px solid #ef9a9a', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#c62828', fontWeight: 600 }}>Provisioning failed</p>
