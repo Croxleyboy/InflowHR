@@ -1025,12 +1025,22 @@ export default function AdminOnboarding() {
     }
     const m365SchedulingEnabled = schedulingFlag?.is_enabled === true
     setIfoConnected(ifo?.status === 'connected_ready')
-    const { count: activeCount } = await supabase.from('onboarding_m365_actions')
-      .select('*', { count: 'exact', head: true })
+    const { data: activeRows } = await supabase.from('onboarding_m365_actions')
+      .select('onboarding_id, schedule_id, schedule_status')
       .eq('company_id', selectedCompanyId)
       .neq('onboarding_id', onboardingId)
       .in('schedule_status', ['pending_approval', 'scheduled', 'running'])
-    setM365ActiveProvisionCount(activeCount || 0)
+    let validCount = activeRows?.length || 0
+    if (activeRows && activeRows.length > 0) {
+      const staleChecks = activeRows.filter(r => r.schedule_id).map(async (r) => {
+        const fresh = await callIfo('get-schedule', { schedule_id: r.schedule_id, onboarding_id: r.onboarding_id })
+        if (fresh && ['cancelled', 'completed', 'failed'].includes(fresh.status)) {
+          validCount--
+        }
+      })
+      await Promise.all(staleChecks)
+    }
+    setM365ActiveProvisionCount(Math.max(0, validCount))
     if (ifo) {
       setIfoSettings({
         approver_mode: ifo.approver_mode || 'manager',
