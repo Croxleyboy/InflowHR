@@ -198,6 +198,7 @@ export default function AdminOnboarding() {
   const [offboardEmployeeResults, setOffboardEmployeeResults] = useState<{ id: string; first_name: string; last_name: string; email: string; job_title: string; department: string }[]>([])
   const [offboardForm, setOffboardForm] = useState({ end_date: '', reason: '' })
   const [expandedCompletedId, setExpandedCompletedId] = useState<number | null>(null)
+  const [timingWarningStep, setTimingWarningStep] = useState<string | null>(null)
 
   // Leaver review step data
   const [reviewShifts, setReviewShifts] = useState<{ id: number; date: string; shift_name: string; rota_name: string }[]>([])
@@ -586,9 +587,21 @@ export default function AdminOnboarding() {
     setTab('offboard-workflow')
   }
 
-  async function completeOffboardStep(stepKey: string) {
+  const POST_LEAVE_DATE_STEPS = ['remove_accounts', 'convert_shared_mailbox', 'forward_to_manager', 'confirm_payments']
+
+  async function completeOffboardStep(stepKey: string, bypassTimingWarning = false) {
     const record = offboardRecords.find(r => r.id === offboardSelectedId)
     if (!record) return
+
+    if (!bypassTimingWarning && POST_LEAVE_DATE_STEPS.includes(stepKey) && record.end_date) {
+      const leaveDate = new Date(record.end_date + 'T23:59:59')
+      if (new Date() < leaveDate) {
+        setTimingWarningStep(stepKey)
+        return
+      }
+    }
+
+    setTimingWarningStep(null)
     const newChecks = { ...offboardChecks, [stepKey]: true }
     const newSkips = { ...offboardSkips, [stepKey]: false }
     setOffboardChecks(newChecks)
@@ -2583,20 +2596,32 @@ export default function AdminOnboarding() {
             <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: '14px 16px', margin: '0 0 16px', background: 'linear-gradient(135deg, rgba(232,242,255,.6), rgba(227,242,253,.4))' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 16 }}>⚡</span>
-                <strong style={{ fontSize: 13, color: '#1565c0' }}>M365 Account Automation Active</strong>
+                <strong style={{ fontSize: 13, color: '#1565c0' }}>M365 Account Provisioning {m365Actions.schedule_id ? 'Scheduled' : 'Active'}</strong>
               </div>
-              <p style={{ fontSize: 12, color: '#37474f', margin: 0, lineHeight: 1.5 }}>
-                {selectedRecord.start_date ? (
-                  <>
-                    The M365 account will be created automatically {m365SchedulingAvailable ? <>ahead of <strong>{new Date(selectedRecord.start_date).toLocaleDateString('en-GB')}</strong></> : <>when triggered</>}, with sign-in enabled on the start date.
-                    Align your manual tasks around this timeline — complete IT equipment setup, workspace allocation and access card preparation before the account goes live.
-                  </>
-                ) : (
-                  <>
-                    M365 account provisioning is connected. Set a start date to see the automated timeline, then align manual tasks (equipment, workspace, access cards) around it.
-                  </>
-                )}
-              </p>
+              {selectedRecord.start_date ? (
+                <div style={{ fontSize: 12, color: '#37474f', lineHeight: 1.6 }}>
+                  <p style={{ margin: '0 0 8px' }}>
+                    {m365Actions.schedule_id
+                      ? <>Account creation is <strong>scheduled</strong> for {(() => { const d = new Date(selectedRecord.start_date); d.setDate(d.getDate() - 3); return d.toLocaleDateString('en-GB') })()} at 09:00. Sign-in will be enabled on <strong>{new Date(selectedRecord.start_date).toLocaleDateString('en-GB')}</strong> at 08:00.</>
+                      : <>The M365 account will be created {m365SchedulingAvailable ? 'ahead of' : 'when triggered for'} <strong>{new Date(selectedRecord.start_date).toLocaleDateString('en-GB')}</strong>, with sign-in enabled on the start date.</>
+                    }
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                      <span style={{ color: '#4caf50', fontWeight: 700, flexShrink: 0 }}>Before</span>
+                      <span>Complete starter details, order equipment, notify manager, plan first day and inform the starter</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                      <span style={{ color: '#1565c0', fontWeight: 700, flexShrink: 0 }}>On start date</span>
+                      <span>M365 sign-in goes live at 08:00 — verify Day 1 access (email, Teams, apps) once the account is active</span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p style={{ fontSize: 12, color: '#37474f', margin: 0, lineHeight: 1.5 }}>
+                  M365 account provisioning is connected. Set a start date to see the automated timeline, then align manual tasks around it.
+                </p>
+              )}
             </div>
           )}
           <div className="admin-workflow-timeline">
@@ -3335,20 +3360,36 @@ export default function AdminOnboarding() {
               <div style={{ border: '1px solid #ef9a9a', borderRadius: 10, padding: '14px 16px', margin: '0 0 16px', background: 'linear-gradient(135deg, rgba(255,235,238,.6), rgba(252,228,236,.4))' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <span style={{ fontSize: 16 }}>⚡</span>
-                  <strong style={{ fontSize: 13, color: '#c62828' }}>M365 Account Offboarding Active</strong>
+                  <strong style={{ fontSize: 13, color: '#c62828' }}>M365 Account Offboarding {leaverM365Actions.schedule_id ? 'Scheduled' : 'Active'}</strong>
                 </div>
-                <p style={{ fontSize: 12, color: '#37474f', margin: 0, lineHeight: 1.5 }}>
-                  {record.end_date ? (
-                    <>
-                      Sign-in will be blocked automatically on <strong>{new Date(record.end_date).toLocaleDateString('en-GB')}</strong> at 17:00, with licences and groups removed {leaverLicenceRemovalDays} days later.
-                      Complete equipment recovery, the leaving meeting and shift/booking/benefit reviews before the leave date. Mailbox conversion, data export and final payment confirmation can follow after access is blocked.
-                    </>
-                  ) : (
-                    <>
-                      M365 offboarding is connected. Set a leave date to see the automated timeline, then align manual tasks (equipment, exit meeting, benefit reviews) around it.
-                    </>
-                  )}
-                </p>
+                {record.end_date ? (
+                  <div style={{ fontSize: 12, color: '#37474f', lineHeight: 1.6 }}>
+                    <p style={{ margin: '0 0 8px' }}>
+                      {leaverM365Actions.schedule_id
+                        ? <>Sign-in block is <strong>scheduled</strong> for <strong>{new Date(record.end_date).toLocaleDateString('en-GB')}</strong> at 17:00. Licences and groups will be removed {leaverLicenceRemovalDays} day{leaverLicenceRemovalDays !== 1 ? 's' : ''} later.</>
+                        : <>Sign-in will be blocked on <strong>{new Date(record.end_date).toLocaleDateString('en-GB')}</strong> when triggered. Licences and groups removed {leaverLicenceRemovalDays} day{leaverLicenceRemovalDays !== 1 ? 's' : ''} after.</>
+                      }
+                    </p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        <span style={{ color: '#4caf50', fontWeight: 700, flexShrink: 0 }}>Before</span>
+                        <span>Complete equipment recovery, leaving meeting, shift/booking/benefit reviews, reassign direct reports and data export</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        <span style={{ color: '#e65100', fontWeight: 700, flexShrink: 0 }}>On leave date</span>
+                        <span>M365 sign-in blocked automatically at 17:00 — employee loses email and app access</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                        <span style={{ color: '#c62828', fontWeight: 700, flexShrink: 0 }}>After</span>
+                        <span>Convert to shared mailbox, set up email forwarding, confirm final payments and issue P45</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ fontSize: 12, color: '#37474f', margin: 0, lineHeight: 1.5 }}>
+                    M365 offboarding is connected. Set a leave date to see the automated timeline, then align manual tasks around it.
+                  </p>
+                )}
               </div>
             )}
             <div className="admin-workflow-timeline">
@@ -3365,6 +3406,26 @@ export default function AdminOnboarding() {
                       {isCurrent && (
                         <div className="admin-wf-detail">
                           <p>{step.description}</p>
+
+                          {/* Timing hint for post-leave-date steps when M365 automation is active */}
+                          {ifoConnected && leaverM365Actions && record.end_date && !done && !skipped && (() => {
+                            const hints: Record<string, string> = {
+                              remove_accounts: leaverM365Actions.schedule_id
+                                ? `Scheduled: sign-in blocked on ${new Date(record.end_date).toLocaleDateString('en-GB')} at 17:00, licences removed ${leaverLicenceRemovalDays} days later. If you need to act sooner (e.g. garden leave), cancel the schedule and run manually.`
+                                : `Best practice: complete on or after the leave date (${new Date(record.end_date).toLocaleDateString('en-GB')}). Removing access while the employee is still working may breach their contract unless they are on garden leave.`,
+                              convert_shared_mailbox: `Best practice: convert after sign-in is blocked (${new Date(record.end_date).toLocaleDateString('en-GB')} at 17:00). The mailbox must remain active until the employee leaves.`,
+                              forward_to_manager: `Best practice: set up forwarding after the leave date (${new Date(record.end_date).toLocaleDateString('en-GB')}). The employee should not see forwarded copies of their own mail.`,
+                              confirm_payments: `Best practice: confirm after processing the final pay run covering all accrued holiday, expenses and deductions up to ${new Date(record.end_date).toLocaleDateString('en-GB')}. The P45 must be issued after, not before, the final pay.`,
+                            }
+                            const hint = hints[step.key]
+                            if (!hint) return null
+                            return (
+                              <div style={{ margin: '8px 0', padding: '8px 12px', background: '#fffde7', border: '1px solid #fff9c4', borderRadius: 6, fontSize: 11, color: '#5d4037', lineHeight: 1.5, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f57f17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                <span>{hint}</span>
+                              </div>
+                            )
+                          })()}
 
                           {/* M365 Offboarding panel (InflowOnboarder leaver) */}
                           {step.key === 'remove_accounts' && features.inflowonboarder_integration && ifoConnected && !done && !skipped && (
@@ -3914,6 +3975,49 @@ export default function AdminOnboarding() {
         )
       })()}
 
+      {/* Timing Advisory Modal — warns when completing post-leave-date steps early */}
+      {timingWarningStep && (() => {
+        const record = offboardRecords.find(r => r.id === offboardSelectedId)
+        const stepDef = OFFBOARD_STEPS.find(s => s.key === timingWarningStep)
+        const stepReasons: Record<string, string> = {
+          remove_accounts: 'Removing accounts and licences before the last working day may prevent the employee from accessing systems they still need. Unless the employee is on garden leave or PILON, this should wait until end of day on their leave date.',
+          convert_shared_mailbox: 'Converting the mailbox before the employee leaves means they will lose access to their own email. This is typically done after the last working day.',
+          forward_to_manager: 'Setting up email forwarding before departure means the employee may see forwarded copies. This is typically configured on or after the last day.',
+          confirm_payments: 'Final pay confirmation should include all accrued holiday, expenses and deductions up to the leave date. Confirming early may mean the calculation is incomplete. The P45 must follow final pay — issuing it before creates tax complications.',
+        }
+        if (!record || !stepDef) return null
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+            <div style={{ background: '#fff', borderRadius: 16, padding: 28, maxWidth: 440, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+              <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fff8e1', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f57f17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                </div>
+                <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>Before the leave date</h3>
+                <p style={{ margin: 0, fontSize: 13, color: '#666' }}>
+                  <strong>{stepDef.label}</strong> is typically completed on or after the last working day ({record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB') : 'not set'}).
+                </p>
+              </div>
+              <div style={{ background: '#fffde7', border: '1px solid #fff9c4', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 12, color: '#5d4037', lineHeight: 1.5 }}>
+                {stepReasons[timingWarningStep] || 'This step is usually completed after the employee has left. Completing it now may have unintended consequences.'}
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                <button className="admin-btn" style={{ background: '#e0e0e0', color: '#333', border: 'none', padding: '10px 20px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => setTimingWarningStep(null)}>
+                  Go Back
+                </button>
+                <button className="admin-btn" style={{ background: '#f57f17', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => completeOffboardStep(timingWarningStep, true)}>
+                  Complete Anyway
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Freeze Confirmation Modal */}
       {showFreezeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -3953,6 +4057,12 @@ export default function AdminOnboarding() {
                 <div style={{ marginTop: 10, padding: 10, background: '#fce4ec', borderRadius: 8, border: '1px solid #f8bbd0' }}>
                   <p style={{ margin: 0, fontSize: 12, color: '#c62828', fontWeight: 600 }}>Payroll warning: Final pay run has not been confirmed</p>
                   <p style={{ margin: '4px 0 0', fontSize: 12, color: '#b71c1c' }}>Ensure the employee's final payslip is processed in {features.xero_integration ? 'Xero' : 'Sage'} before freezing. You can still proceed, but the final pay run must be handled separately.</p>
+                </div>
+              )}
+              {showFreezeModal.end_date && new Date() < new Date(showFreezeModal.end_date + 'T23:59:59') && (
+                <div style={{ marginTop: 10, padding: 10, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
+                  <p style={{ margin: 0, fontSize: 12, color: '#e65100', fontWeight: 600 }}>Leave date has not passed</p>
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: '#bf360c' }}>The leave date is {new Date(showFreezeModal.end_date).toLocaleDateString('en-GB')}. Freezing now will immediately disable their InflowHR login and start the 30-day deletion countdown. If M365 offboarding is scheduled, it will continue independently.</p>
                 </div>
               )}
             </div>
