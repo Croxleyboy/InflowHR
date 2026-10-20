@@ -1033,7 +1033,7 @@ export default function AdminOnboarding() {
       const [{ data }, { data: wt }] = await Promise.all([
         supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', selectedId).maybeSingle(),
         supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
-          .eq('onboard_id', selectedId).eq('record_type', 'M365 Provisioning').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+          .eq('onboard_id', selectedId).in('record_type', ['M365 Provisioning', 'M365 Scheduling']).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       ])
       if (data) {
         const merged = { ...data } as M365Actions
@@ -1248,12 +1248,14 @@ export default function AdminOnboarding() {
     if (!approverEmail) { showError('No approver found. Check the approver settings on the Integrations page.'); setM365ApprovalSending(false); return }
     await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,
-      record_id: record.id,
+      onboard_id: record.id,
       record_type: 'M365 Scheduling',
       task_description: planDesc,
+      emp_display_name: `${record.firstname} ${record.surname}`,
       employee_email: approverEmail,
       assigned_to: approverEmail,
-      status: 'pending',
+      status: 'Pending',
+      approval_status: 'pending',
     })
     const { data: approverEmp } = await supabase.from('employees')
       .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
@@ -1399,7 +1401,7 @@ export default function AdminOnboarding() {
           .select('status, approver_mode, approver_name, approver_email, offboard_approver_mode, offboard_approver_name, offboard_approver_email, schedule_templates_cache')
           .eq('company_id', selectedCompanyId).maybeSingle(),
         supabase.from('workflow_tracker').select('status, approval_status, assigned_to, updated_at, created_at')
-          .eq('onboard_id', offboardingId).eq('record_type', 'M365 Offboarding').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+          .eq('onboard_id', offboardingId).in('record_type', ['M365 Offboarding', 'M365 Leaver Scheduling']).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('company_features').select('is_enabled').eq('company_id', selectedCompanyId).eq('feature_key', 'm365_scheduling').maybeSingle(),
       ])
       const m365SchedulingEnabled = schedulingFlag?.is_enabled === true
@@ -1711,12 +1713,14 @@ export default function AdminOnboarding() {
     if (!approverEmail) { showError('No approver found. Check the approver settings on the Integrations page.'); setLeaverM365ApprovalSending(false); return }
     await supabase.from('workflow_tracker').insert({
       company_id: selectedCompanyId,
-      record_id: record.id,
+      onboard_id: record.id,
       record_type: 'M365 Leaver Scheduling',
       task_description: planDesc,
+      emp_display_name: record.employee_name,
       employee_email: approverEmail,
       assigned_to: approverEmail,
-      status: 'pending',
+      status: 'Pending',
+      approval_status: 'pending',
     })
     const { data: approverEmp } = await supabase.from('employees').select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
     if (approverEmp) {
