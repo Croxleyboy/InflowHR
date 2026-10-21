@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
+// v2: simplified mover workflow — removed update_persona step
 import { useLanguage } from '../../context/LanguageContext'
 import { useToast } from '../../context/ToastContext'
 import { useFeatures } from '../../context/FeatureContext'
