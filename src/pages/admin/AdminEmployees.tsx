@@ -72,7 +72,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 export default function AdminEmployees() {
   const navigate = useNavigate()
   const { selectedCompanyId } = useAdminCompany()
-  const { company, session } = useAuth()
+  const { company } = useAuth()
   const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -122,7 +122,7 @@ export default function AdminEmployees() {
   const [customFields, setCustomFields] = useState<CustomFieldDef[]>([])
   const [customFieldsLoading, setCustomFieldsLoading] = useState(false)
   const [customFieldsSaving, setCustomFieldsSaving] = useState(false)
-  const [moverPrompt, setMoverPrompt] = useState<{ empId: string; empName: string; changes: Record<string, { old: string; new: string }> } | null>(null)
+  const [moverPrompt, setMoverPrompt] = useState<{ empId: string; empName: string; empEmail: string; changes: Record<string, { old: string; new: string }> } | null>(null)
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
