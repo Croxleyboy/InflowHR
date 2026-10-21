@@ -67,6 +67,9 @@ interface InflowOnboarderIntegration {
   offboard_approver_mode: 'same_as_joiner' | 'nominated' | 'manager'
   offboard_approver_name: string | null
   offboard_approver_email: string | null
+  mover_approver_mode: 'same_as_joiner' | 'nominated' | 'manager'
+  mover_approver_name: string | null
+  mover_approver_email: string | null
 }
 
 interface IfoLicence {
@@ -215,6 +218,11 @@ export default function AdminIntegrations() {
   const [ifoOffboardApproverMode, setIfoOffboardApproverMode] = useState<'same_as_joiner' | 'nominated' | 'manager'>('same_as_joiner')
   const [ifoOffboardApproverName, setIfoOffboardApproverName] = useState('')
   const [ifoOffboardApproverEmail, setIfoOffboardApproverEmail] = useState('')
+  const [ifoMoverApproverMode, setIfoMoverApproverMode] = useState<'same_as_joiner' | 'nominated' | 'manager'>('same_as_joiner')
+  const [ifoMoverApproverName, setIfoMoverApproverName] = useState('')
+  const [ifoMoverApproverEmail, setIfoMoverApproverEmail] = useState('')
+  const [personaMappings, setPersonaMappings] = useState<Record<string, any>>({})
+  const [personaMappingsLoaded, setPersonaMappingsLoaded] = useState(false)
   const [ifoSchedulingAvailable, setIfoSchedulingAvailable] = useState(false)
 
   const [modulrApiKey, setModulrApiKey] = useState('')
@@ -248,7 +256,7 @@ export default function AdminIntegrations() {
       supabase.from('sage_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, last_upload_at, last_upload_filename, payslip_source').eq('company_id', companyId).maybeSingle(),
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
-      supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at, offboard_approver_mode, offboard_approver_name, offboard_approver_email, schedule_templates_cache').eq('company_id', companyId).maybeSingle(),
+      supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email, schedule_templates_cache').eq('company_id', companyId).maybeSingle(),
     ])
 
     if (featuresRes.data) {
@@ -297,9 +305,17 @@ export default function AdminIntegrations() {
       setIfoOffboardApproverMode(ifoData.offboard_approver_mode || 'same_as_joiner')
       setIfoOffboardApproverName(ifoData.offboard_approver_name || '')
       setIfoOffboardApproverEmail(ifoData.offboard_approver_email || '')
+      setIfoMoverApproverMode((ifoData as any).mover_approver_mode || 'same_as_joiner')
+      setIfoMoverApproverName((ifoData as any).mover_approver_name || '')
+      setIfoMoverApproverEmail((ifoData as any).mover_approver_email || '')
       const templates = Array.isArray((ifoData as any).schedule_templates_cache) ? (ifoData as any).schedule_templates_cache : []
       const hasScheduleTemplates = templates.some((t: any) => t.id === 'hr.joiner' || t.templateId === 'hr.joiner') || templates.some((t: any) => t.id === 'hr.leaver' || t.templateId === 'hr.leaver')
       setIfoSchedulingAvailable(hasScheduleTemplates)
+      const { data: pmData } = await supabase.from('inflowonboarder_persona_mappings').select('*').eq('company_id', companyId)
+      const pmMap: Record<string, any> = {}
+      ;(pmData || []).forEach((pm: any) => { pmMap[pm.persona] = pm })
+      setPersonaMappings(pmMap)
+      setPersonaMappingsLoaded(true)
     }
 
     // Load Xero employee sync status
@@ -618,6 +634,10 @@ export default function AdminIntegrations() {
       showError('Nominated offboarding approver requires a name and email')
       return
     }
+    if (ifoMoverApproverMode === 'nominated' && (!ifoMoverApproverName.trim() || !ifoMoverApproverEmail.trim())) {
+      showError('Nominated mover approver requires a name and email')
+      return
+    }
     setIfoSettingsSaving(true)
     const result = await callEdgeFunction('inflowonboarder', {
       action: 'save-settings',
@@ -633,6 +653,9 @@ export default function AdminIntegrations() {
       offboard_approver_mode: ifoOffboardApproverMode,
       offboard_approver_name: ifoOffboardApproverMode === 'nominated' ? ifoOffboardApproverName.trim() : null,
       offboard_approver_email: ifoOffboardApproverMode === 'nominated' ? ifoOffboardApproverEmail.trim() : null,
+      mover_approver_mode: ifoMoverApproverMode,
+      mover_approver_name: ifoMoverApproverMode === 'nominated' ? ifoMoverApproverName.trim() : null,
+      mover_approver_email: ifoMoverApproverMode === 'nominated' ? ifoMoverApproverEmail.trim() : null,
     })
     setIfoSettingsSaving(false)
     if (result?.saved) {
@@ -1436,13 +1459,148 @@ export default function AdminIntegrations() {
                         </p>
                       </div>
 
+                      {/* Mover Approver */}
+                      <div>
+                        <label style={{ ...labelStyle, marginBottom: 8, display: 'block' }}>Mover Approver</label>
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text, #333)' }}>
+                            <input type="radio" name="ifo-mover-approver" checked={ifoMoverApproverMode === 'same_as_joiner'} onChange={() => setIfoMoverApproverMode('same_as_joiner')} />
+                            Same as joiner approver
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text, #333)' }}>
+                            <input type="radio" name="ifo-mover-approver" checked={ifoMoverApproverMode === 'manager'} onChange={() => setIfoMoverApproverMode('manager')} />
+                            Employee&rsquo;s manager
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text, #333)' }}>
+                            <input type="radio" name="ifo-mover-approver" checked={ifoMoverApproverMode === 'nominated'} onChange={() => setIfoMoverApproverMode('nominated')} />
+                            Nominated person
+                          </label>
+                        </div>
+                        {ifoMoverApproverMode === 'nominated' && (
+                          <div style={{ display: 'flex', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
+                            <input value={ifoMoverApproverName} onChange={e => setIfoMoverApproverName(e.target.value)} placeholder="Approver name" style={{ ...inputStyle, flex: 1, minWidth: 160 }} />
+                            <input value={ifoMoverApproverEmail} onChange={e => setIfoMoverApproverEmail(e.target.value)} placeholder="Approver email" style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
+                          </div>
+                        )}
+                        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                          This person must approve each M365 mover update before profile, licence, and group changes are applied.
+                        </p>
+                      </div>
+
+                      {/* Persona Tier Configuration */}
+                      {personaMappingsLoaded && (
+                        <div>
+                          <label style={{ ...labelStyle, marginBottom: 8, display: 'block' }}>Persona Tier Configuration</label>
+                          <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                            Map each persona tier to its M365 configuration. When a mover changes persona, the engine applies these settings automatically.
+                          </p>
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                              <thead>
+                                <tr style={{ borderBottom: '2px solid var(--admin-border, #e0e0e0)' }}>
+                                  <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Persona</th>
+                                  <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Extension Attribute Value</th>
+                                  <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Licence</th>
+                                  <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>M365 Groups</th>
+                                  <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 700 }}>Intune Hint</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {[
+                                  { key: 'standard', label: 'Standard Information Worker', icon: '💼', defaultAttr: 'Persona-Standard' },
+                                  { key: 'mobile', label: 'Mobile / Field Worker', icon: '📱', defaultAttr: 'Persona-Mobile' },
+                                  { key: 'strict_secure', label: 'Strict Secure / VIP', icon: '🔒', defaultAttr: 'Persona-StrictSecure' },
+                                  { key: 'kiosk', label: 'Shared / Kiosk', icon: '🖥️', defaultAttr: 'Persona-Kiosk' },
+                                ].map(tier => {
+                                  const pm = personaMappings[tier.key] || {}
+                                  return (
+                                    <tr key={tier.key} style={{ borderBottom: '1px solid var(--admin-border, #eee)' }}>
+                                      <td style={{ padding: '8px', whiteSpace: 'nowrap' }}>{tier.icon} {tier.label}</td>
+                                      <td style={{ padding: '8px' }}>
+                                        <input style={{ ...inputStyle, width: '100%', minWidth: 140 }}
+                                          value={pm.extension_attribute_value ?? tier.defaultAttr}
+                                          onChange={e => setPersonaMappings({ ...personaMappings, [tier.key]: { ...pm, persona: tier.key, extension_attribute_value: e.target.value } })}
+                                        />
+                                      </td>
+                                      <td style={{ padding: '8px' }}>
+                                        <input style={{ ...inputStyle, width: '100%', minWidth: 120 }}
+                                          placeholder="SKU name"
+                                          value={pm.m365_licence_sku_name || ''}
+                                          onChange={e => setPersonaMappings({ ...personaMappings, [tier.key]: { ...pm, persona: tier.key, m365_licence_sku_name: e.target.value } })}
+                                        />
+                                      </td>
+                                      <td style={{ padding: '8px' }}>
+                                        <input style={{ ...inputStyle, width: '100%', minWidth: 120 }}
+                                          placeholder="Comma-separated groups"
+                                          value={Array.isArray(pm.m365_groups) ? pm.m365_groups.join(', ') : (pm.m365_groups || '')}
+                                          onChange={e => setPersonaMappings({ ...personaMappings, [tier.key]: { ...pm, persona: tier.key, m365_groups: e.target.value } })}
+                                        />
+                                      </td>
+                                      <td style={{ padding: '8px' }}>
+                                        <input style={{ ...inputStyle, width: '100%', minWidth: 100 }}
+                                          placeholder="Intune profile hint"
+                                          value={pm.intune_profile_hint || ''}
+                                          onChange={e => setPersonaMappings({ ...personaMappings, [tier.key]: { ...pm, persona: tier.key, intune_profile_hint: e.target.value } })}
+                                        />
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <button className="admin-btn admin-btn-primary" style={{ marginTop: 12, background: '#e65100' }}
+                            onClick={async () => {
+                              if (!companyId) return
+                              for (const [key, pm] of Object.entries(personaMappings)) {
+                                if (!pm.extension_attribute_value) continue
+                                const groups = typeof pm.m365_groups === 'string'
+                                  ? pm.m365_groups.split(',').map((g: string) => g.trim()).filter(Boolean)
+                                  : (pm.m365_groups || [])
+                                const row = {
+                                  company_id: companyId,
+                                  persona: key,
+                                  extension_attribute_value: pm.extension_attribute_value,
+                                  m365_licence_sku_id: pm.m365_licence_sku_id || null,
+                                  m365_licence_sku_name: pm.m365_licence_sku_name || null,
+                                  m365_groups: groups,
+                                  intune_profile_hint: pm.intune_profile_hint || null,
+                                  conditional_access_hint: pm.conditional_access_hint || null,
+                                  description: pm.description || null,
+                                }
+                                if (pm.id) {
+                                  await supabase.from('inflowonboarder_persona_mappings').update(row).eq('id', pm.id)
+                                } else {
+                                  await supabase.from('inflowonboarder_persona_mappings').upsert(row, { onConflict: 'company_id,persona' })
+                                }
+                              }
+                              showSuccess('Persona mappings saved')
+                              loadAll()
+                            }}>
+                            Save Persona Mappings
+                          </button>
+
+                          <details style={{ marginTop: 16 }}>
+                            <summary style={{ fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text, #333)' }}>How persona tiers work</summary>
+                            <div style={{ padding: '12px 0', fontSize: 12, color: 'var(--text-muted, #666)', lineHeight: 1.6 }}>
+                              <p><strong>1.</strong> InflowHR assigns a persona tier to each employee and includes it in the mover request.</p>
+                              <p><strong>2.</strong> The InflowOnboarder engine stamps <code>extensionAttribute1</code> in Entra ID with the mapped value (e.g. <code>Persona-StrictSecure</code>).</p>
+                              <p><strong>3.</strong> Entra ID dynamic groups re-evaluate membership based on the attribute change.</p>
+                              <p><strong>4.</strong> Intune configuration profiles and conditional access policies scoped to those dynamic groups apply automatically.</p>
+                              <p style={{ marginTop: 8 }}><strong>Example dynamic group rule:</strong></p>
+                              <code style={{ display: 'block', background: '#f5f5f5', padding: '6px 10px', borderRadius: 4, fontSize: 11 }}>(user.extensionAttribute1 -eq &quot;Persona-StrictSecure&quot;)</code>
+                            </div>
+                          </details>
+                        </div>
+                      )}
+
                       {/* Scope note */}
                       <div style={{ background: 'rgba(0,120,212,.06)', borderRadius: 8, padding: '10px 14px' }}>
                         <p style={{ margin: 0, fontSize: 12, color: 'var(--text, #333)' }}>
-                          <strong>API key scope:</strong> The API key needs the <strong>m365.leaver</strong> scope for offboarding.
+                          <strong>API key scope:</strong> The API key needs <strong>m365.joiner</strong>, <strong>m365.leaver</strong>,
+                          <strong> m365.mover</strong>, and <strong>m365.license.list</strong> scopes.
                           Scopes cannot be added to an existing key &mdash; create a new key in InflowOnboarder with
-                          <em> m365.joiner</em>, <em>m365.license.list</em> and <em>m365.leaver</em>, with approvals set
-                          to &ldquo;Approved in this service&rdquo;.
+                          all required scopes, with approvals set to &ldquo;Approved in this service&rdquo;.
                         </p>
                       </div>
 

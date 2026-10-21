@@ -288,6 +288,15 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
+  if (type === 'M365 Mover') {
+    return (
+      <div className="notif-icon" style={{ background: '#e65100' }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </div>
+    )
+  }
   return (
     <div className="notif-icon notif-icon-default">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
@@ -744,6 +753,8 @@ export default function Notifications() {
   const [m365Approving, setM365Approving] = useState(false)
   const [m365OffboardActionItem, setM365OffboardActionItem] = useState<WorkflowItem | null>(null)
   const [m365OffboardApproving, setM365OffboardApproving] = useState(false)
+  const [m365MoverActionItem, setM365MoverActionItem] = useState<WorkflowItem | null>(null)
+  const [m365MoverApproving, setM365MoverApproving] = useState(false)
   const [m365ScheduleActionItem, setM365ScheduleActionItem] = useState<WorkflowItem | null>(null)
   const [m365ScheduleApproving, setM365ScheduleApproving] = useState(false)
   const [hrResponseItem, setHrResponseItem] = useState<WorkflowItem | null>(null)
@@ -871,6 +882,10 @@ export default function Notifications() {
       setM365OffboardActionItem(item)
       return
     }
+    if (item.record_type === 'M365 Mover') {
+      setM365MoverActionItem(item)
+      return
+    }
     if (item.record_type === 'M365 Scheduling' || item.record_type === 'M365 Leaver Scheduling') {
       setM365ScheduleActionItem(item)
       return
@@ -972,6 +987,43 @@ export default function Notifications() {
     }
   }
 
+  async function handleM365MoverApproval(item: WorkflowItem, approve: boolean) {
+    setM365MoverApproving(true)
+    try {
+      const now = new Date().toISOString()
+      let approverDisplayName = employeeName || ''
+      if (!approverDisplayName && HARDCODED_EMPLOYEE_ID && companyUser?.company_id) {
+        const { data: emp } = await supabase.from('employees').select('first_name, last_name').eq('id', HARDCODED_EMPLOYEE_ID).eq('company_id', companyUser.company_id).maybeSingle()
+        if (emp) approverDisplayName = `${emp.first_name} ${emp.last_name}`.trim()
+      }
+      if (!approverDisplayName) approverDisplayName = HARDCODED_EMAIL || 'Unknown'
+      const approverEmail = HARDCODED_EMAIL || ''
+      const roleChangeId = item.onboard_id || (item.extra_info ? parseInt(item.extra_info) : item.approval_id)
+      if (roleChangeId) {
+        const { error: m365Err } = await supabase.from('mover_m365_actions').update({
+          approval_status: approve ? 'approved' : 'declined',
+          approved_by: `${approverDisplayName} <${approverEmail}>`,
+          approved_at: now
+        }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
+        if (m365Err) console.warn('mover_m365_actions update failed:', m365Err.message)
+      }
+      const { error: wtErr } = await supabase.from('workflow_tracker').update({
+        status: 'Complete',
+        approval_status: approve ? 'Approved' : 'Declined',
+        updated_at: now,
+      }).eq('id', item.id).eq('company_id', companyUser?.company_id)
+      if (wtErr) throw new Error(wtErr.message)
+      showSuccess(approve ? 'Role change M365 update approved' : 'Role change M365 update declined')
+      setM365MoverActionItem(null)
+      await fetchData()
+      window.dispatchEvent(new Event('notifications-updated'))
+    } catch {
+      showError('Failed to process approval')
+    } finally {
+      setM365MoverApproving(false)
+    }
+  }
+
   async function handleM365ScheduleApproval(item: WorkflowItem, approve: boolean) {
     setM365ScheduleApproving(true)
     try {
@@ -1027,6 +1079,7 @@ export default function Notifications() {
     if (item.record_type === 'HR Response') return 'HR Ticket Response'
     if (item.record_type === 'M365 Provisioning') return 'New Starter Account Approval'
     if (item.record_type === 'M365 Offboarding') return 'Leaver Account Offboarding Approval'
+    if (item.record_type === 'M365 Mover') return 'Role Change — M365 Update Approval'
     if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approval'
     if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approval'
     return item.action
@@ -1065,6 +1118,7 @@ export default function Notifications() {
       if (item.record_type === 'Skill Validation') return 'Skill Validated'
       if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Approved'
       if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Approved'
+      if (item.record_type === 'M365 Mover') return 'Role Change M365 Update Approved'
       if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approved'
       if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approved'
     }
@@ -1074,11 +1128,13 @@ export default function Notifications() {
       if (item.record_type === 'Skill Validation') return 'Skill Validation Rejected'
       if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Declined'
       if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Declined'
+      if (item.record_type === 'M365 Mover') return 'Role Change M365 Update Declined'
       if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Declined'
       if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Declined'
     }
     if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Request'
     if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Request'
+    if (item.record_type === 'M365 Mover') return 'Role Change M365 Update Request'
     if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approval Request'
     if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approval Request'
     return item.action
@@ -1379,6 +1435,42 @@ export default function Notifications() {
                 <button onClick={() => handleM365OffboardApproval(m365OffboardActionItem, false)} disabled={m365OffboardApproving}
                   style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365OffboardApproving ? 0.6 : 1 }}>
                   {m365OffboardApproving ? 'Processing...' : 'Decline'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {m365MoverActionItem && (
+        <div className="my-profile-modal-overlay" onClick={() => setM365MoverActionItem(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: '#e65100', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Role Change — M365 Update Approval</span>
+              <button onClick={() => setM365MoverActionItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{m365MoverActionItem.emp_display_name}</div>
+              {(() => {
+                let desc = m365MoverActionItem.task_description || ''
+                try { const parsed = JSON.parse(desc); desc = `${parsed.employee_name || ''} — ${parsed.change_type || 'Role Change'}${parsed.effective_date ? `, effective ${new Date(parsed.effective_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}` : ''}${parsed.persona_change ? `\nPersona: ${parsed.persona_change}` : ''}` } catch {}
+                return desc.split('\n').map((line: string, i: number) => (
+                  <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: i === 0 ? 2 : 0, lineHeight: 1.5 }}>{line}</div>
+                ))
+              })()}
+              <div style={{ background: 'rgba(255,243,224,.5)', border: '1px solid #ffcc80', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#e65100' }}>
+                Please confirm whether to approve this role change M365 update. Once approved, InflowOnboarder will update the employee's profile, groups, licence, and persona attribute in Microsoft 365.
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => handleM365MoverApproval(m365MoverActionItem, true)} disabled={m365MoverApproving}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365MoverApproving ? 0.6 : 1 }}>
+                  {m365MoverApproving ? 'Processing...' : 'Approve'}
+                </button>
+                <button onClick={() => handleM365MoverApproval(m365MoverActionItem, false)} disabled={m365MoverApproving}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365MoverApproving ? 0.6 : 1 }}>
+                  {m365MoverApproving ? 'Processing...' : 'Decline'}
                 </button>
               </div>
             </div>
