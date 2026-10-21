@@ -76,15 +76,16 @@ async function processEvent(sb: ReturnType<typeof getSupabase>, event: ScheduleE
 
   const isJoiner = templateId === 'hr.joiner'
   const isLeaver = templateId === 'hr.leaver'
-  if (!isJoiner && !isLeaver) {
+  const isMover = templateId === 'hr.mover'
+  if (!isJoiner && !isLeaver && !isMover) {
     console.warn(`[IFO-WEBHOOK] Unknown template: ${templateId}`)
     return
   }
 
-  const table = isJoiner ? 'onboarding_m365_actions' : 'offboarding_m365_actions'
-  const idColumn = isJoiner ? 'onboarding_id' : 'offboarding_id'
+  const table = isMover ? 'mover_m365_actions' : isJoiner ? 'onboarding_m365_actions' : 'offboarding_m365_actions'
+  const idColumn = isMover ? 'role_change_id' : isJoiner ? 'onboarding_id' : 'offboarding_id'
 
-  const refPrefix = isJoiner ? 'starter-' : 'leaver-'
+  const refPrefix = isMover ? 'move-' : isJoiner ? 'starter-' : 'leaver-'
   const recordId = externalRef.startsWith(refPrefix)
     ? parseInt(externalRef.slice(refPrefix.length), 10)
     : parseInt(externalRef, 10)
@@ -133,6 +134,12 @@ async function processEvent(sb: ReturnType<typeof getSupabase>, event: ScheduleE
     if (isJoiner && (data.result as any)?.userId) {
       updates.m365_user_id = (data.result as any).userId
       updates.m365_upn = (data.result as any).userPrincipalName
+    }
+    if (isMover) {
+      await sb.from('role_changes').update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      }).eq('id', recordId)
     }
   }
 

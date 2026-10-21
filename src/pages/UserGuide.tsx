@@ -353,6 +353,58 @@ const SECTIONS: GuideSection[] = [
         '"Account Blocked" — the M365 account has a protection (e.g. litigation hold). Remove the hold in the Microsoft 365 admin centre, then click Re-check.',
         '"Settings incomplete" — the Account Domain field is empty. Open Onboarding Settings and enter your domain.',
       ] },
+
+      { title: 'Movers & Persona Tiers', purpose: 'Understand how role changes and persona-driven M365 updates work.', steps: [
+        'InflowHR supports four persona tiers: Standard Information Worker, Mobile / Field Worker, Strict Secure / VIP, and Shared / Kiosk.',
+        'Each persona maps to an extensionAttribute1 value in Entra ID (e.g. Persona-Standard, Persona-StrictSecure).',
+        'When an employee changes role or persona, InflowHR creates a Role Change record and optionally triggers an M365 update via InflowOnboarder.',
+        'The engine updates the employee\'s profile, groups, licence, and extensionAttribute1 in Microsoft 365.',
+        'Dynamic groups in Entra ID re-evaluate automatically based on extensionAttribute1, so Intune policies and conditional access apply without manual steps.',
+      ], callout: { type: 'note', text: 'Persona tiers require Entra ID dynamic groups to be configured by your IT admin. InflowHR sets the attribute; Azure handles the policy scoping.' } },
+
+      { title: 'Setting Up Persona Mappings', purpose: 'Configure what each persona tier means for M365 accounts.', steps: [
+        'Go to Admin > Integrations and find the InflowOnboarder card.',
+        'Scroll to the Persona Tier Configuration section.',
+        'For each of the four tiers, set:',
+        '• Extension Attribute Value — the value stamped in Entra ID (e.g. Persona-StrictSecure).',
+        '• Licence — the M365 licence SKU to assign for this tier.',
+        '• M365 Groups — comma-separated group names to add the employee to.',
+        '• Intune Hint — a description of the Intune profile applied by this tier (informational).',
+        'Click Save Persona Mappings.',
+      ] },
+
+      { title: 'Starting a Role Change', purpose: 'Create a mover record when an employee changes role, department, or persona.', steps: [
+        'Go to Admin > Onboarding > Movers tab.',
+        'Search for the employee and click their name.',
+        'Fill in the change details: change type, effective date, new values for changed fields.',
+        'If the persona is changing, select the new persona tier from the card picker.',
+        'Add a reason for the change and click Create Role Change.',
+        'The mover workflow opens with seven steps: Review Changes, Update M365 Account, Apply Persona Change, Update HR Record, Notify Team, Review Access, and Confirm Complete.',
+      ] },
+
+      { title: 'Mover M365 Workflow', purpose: 'How the engine updates M365 during a role change.', steps: [
+        'In the Update M365 Account step, InflowHR builds a changes object from the role change details and persona mapping.',
+        'This includes profile updates (job title, department), group add/remove, licence swap, and extensionAttribute1.',
+        'Click Start M365 Update to send the changes to the engine.',
+        'The engine checks the account, then returns a plan showing what will change.',
+        'Send for approval — the configured Mover Approver receives a notification card.',
+        'Once approved, click Proceed. The engine applies all changes.',
+        'If the employee is crossing a strict secure boundary (to or from Strict Secure / VIP), all active sessions are revoked automatically.',
+      ] },
+
+      { title: 'Persona at Onboarding', purpose: 'Assign a persona tier when creating a new starter.', steps: [
+        'When creating a new starter in Admin > Onboarding, a Persona Tier section appears if InflowOnboarder is connected.',
+        'Select the appropriate tier (defaults to Standard Information Worker).',
+        'The selected persona is stored on the onboarding record and applied to the employee record when onboarding completes.',
+        'If persona mappings exist, the joiner\'s M365 provisioning uses the mapped licence and groups instead of the global defaults.',
+      ] },
+
+      { title: 'Change Detection on Employee Edit', purpose: 'InflowHR detects role-relevant changes when you edit an employee.', steps: [
+        'When you save an employee edit that changes job title, department, location, manager, or persona, a prompt appears.',
+        '"Would you like to start a role change to update their Microsoft 365 account?"',
+        'Click "Yes — Go to Movers" to create a role change record and navigate to the Movers workflow.',
+        'Click "No — HR Record Only" to save the changes without triggering an M365 update.',
+      ], callout: { type: 'tip', text: 'The prompt only appears when InflowOnboarder is connected. Without it, employee edits save normally with no M365 integration.' } },
     ],
   },
   {

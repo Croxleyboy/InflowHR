@@ -87,6 +87,65 @@ const OFFBOARD_STEPS = [
   { key: 'confirm_payments', label: 'Agree / Confirm Last Payments', icon: '💷', description: 'Calculate final salary payment including outstanding holiday pay, expenses, bonuses and any deductions. Confirm P45 will be issued and pension contributions ceased.', role: 'HR' },
 ]
 
+const MOVER_STEPS = [
+  { key: 'review_changes', label: 'Review Proposed Changes', icon: '📋', description: 'Review all proposed changes including role, department, location, manager, and persona tier transition. Confirm the changes are correct before proceeding.', role: 'HR' },
+  { key: 'update_accounts', label: 'Update M365 Account', icon: '🔐', description: 'Update the employee\'s Microsoft 365 account via InflowOnboarder — changes profile fields, swaps licences, updates group membership, and sets the persona extensionAttribute.', role: 'HR' },
+  { key: 'update_persona', label: 'Apply Persona Change', icon: '🛡️', description: 'Confirm the persona tier transition. The extensionAttribute1 update triggers Entra ID dynamic group re-evaluation, which automatically applies the correct Intune profiles and conditional access policies.', role: 'HR' },
+  { key: 'update_records', label: 'Update HR Record', icon: '📝', description: 'Apply the approved changes to the employee\'s HR record — job title, department, location, manager, and persona tier.', role: 'HR' },
+  { key: 'notify_team', label: 'Notify Team / Manager', icon: '📧', description: 'Inform the new and previous managers and team members of the role change. Share updated reporting lines and responsibilities.', role: 'HR' },
+  { key: 'review_access', label: 'Review Remaining Access', icon: '🔍', description: 'Review any access that requires manual attention — SharePoint sites, Teams channels, shared drives, and application permissions that were not automatically updated.', role: 'Manager' },
+  { key: 'confirm_complete', label: 'Confirm Complete', icon: '✅', description: 'Confirm all changes have been applied and verified. Mark the role change as complete.', role: 'HR' },
+]
+
+const PERSONA_TIERS = [
+  { key: 'standard', label: 'Standard Information Worker', icon: '💼', description: 'Default office/hybrid worker — Business Premium, standard conditional access', color: '#4f46e5', bg: '#eef2ff' },
+  { key: 'mobile', label: 'Mobile / Field Worker', icon: '📱', description: 'Frontline staff — F3 licence, Intune MAM, limited desktop apps', color: '#0284c7', bg: '#e0f2fe' },
+  { key: 'strict_secure', label: 'Strict Secure / VIP', icon: '🔒', description: 'Exec/finance — E5, phishing-resistant MFA, session limits, DLP', color: '#dc2626', bg: '#fef2f2' },
+  { key: 'kiosk', label: 'Shared / Kiosk', icon: '🖥️', description: 'Reception/lab devices — Kiosk licence, locked single-app mode', color: '#7c3aed', bg: '#ede9fe' },
+]
+
+interface RoleChange {
+  id: number
+  company_id: string
+  employee_id: string
+  employee_name: string
+  employee_email: string
+  change_type: string
+  changes: any
+  effective_date: string | null
+  status: string
+  workflow_steps: Record<string, boolean>
+  skipped_steps: Record<string, boolean>
+  is_complete: boolean
+  requested_by: string | null
+  reason: string | null
+  created_at: string
+  completed_at: string | null
+}
+
+interface MoverM365Actions {
+  id: string
+  role_change_id: number
+  company_id: string
+  run_id: string | null
+  run_status: string | null
+  run_error: any
+  run_result: any
+  approval_sent_at: string | null
+  approval_status: string | null
+  approved_by: string | null
+  approved_at: string | null
+  schedule_id: string | null
+  schedule_status: string | null
+  schedule_message: string | null
+  schedule_stages: any
+  schedule_next_due_at: string | null
+  schedule_updated_at: string | null
+  schedule_options: any
+  employee_upn: string | null
+  attempt_count_run: number
+}
+
 interface OnboardRecord {
   id: number
   company_id: string
@@ -161,7 +220,7 @@ export default function AdminOnboarding() {
   const { features } = useFeatures()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow' | 'settings'>('dashboard')
+  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow' | 'movers' | 'mover-workflow' | 'settings'>('dashboard')
   const [filterStatus, setFilterStatus] = useState('')
   const [onbPage, setOnbPage] = useState(1)
   const [offPage, setOffPage] = useState(1)
@@ -181,6 +240,7 @@ export default function AdminOnboarding() {
     ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '',
     probation_end_date: '', notice_period: '', weekly_hours: '37.5',
     annual_salary: '', tax_code: '', payroll_id: '', religion: '', salary_group: 'N/A', qualifications: '',
+    user_persona: 'standard',
   })
 
   const [offboardRecords, setOffboardRecords] = useState<OffboardRecord[]>([])
@@ -212,6 +272,20 @@ export default function AdminOnboarding() {
   const [offboardEditingSteps, setOffboardEditingSteps] = useState<CustomStep[]>([])
   const [hasOffboardCustomSteps, setHasOffboardCustomSteps] = useState(false)
   const [settingsWorkflowType, setSettingsWorkflowType] = useState<'onboarding' | 'offboarding'>('onboarding')
+
+  // Movers state
+  const [moverRecords, setMoverRecords] = useState<RoleChange[]>([])
+  const [moverM365, setMoverM365] = useState<Record<number, MoverM365Actions>>({})
+  const [moverSelectedId, setMoverSelectedId] = useState<number | null>(null)
+  const [moverStep, setMoverStep] = useState(0)
+  const [moverChecks, setMoverChecks] = useState<Record<string, boolean>>({})
+  const [moverSkips, setMoverSkips] = useState<Record<string, boolean>>({})
+  const [moverPage, setMoverPage] = useState(1)
+  const [moverEmployeeSearch, setMoverEmployeeSearch] = useState('')
+  const [moverEmployeeResults, setMoverEmployeeResults] = useState<{ id: string; first_name: string; last_name: string; email: string; job_title: string; department: string; location: string; manager_name: string; manager_email: string; persona: string }[]>([])
+  const [moverForm, setMoverForm] = useState<Record<string, any>>({})
+  const [moverSelectedEmployee, setMoverSelectedEmployee] = useState<any>(null)
+  const [expandedMoverCompletedId, setExpandedMoverCompletedId] = useState<number | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadRows, setUploadRows] = useState<Record<string, string>[]>([])
@@ -416,6 +490,7 @@ export default function AdminOnboarding() {
       setFrozenEmployees([])
       load()
       loadOffboarding()
+      loadMovers()
       loadCustomSteps()
       loadOffboardCustomSteps()
     }
@@ -444,6 +519,17 @@ export default function AdminOnboarding() {
     setOffboardRecords((offData as OffboardRecord[]) || [])
     setFrozenEmployees((frozenData as FrozenEmployee[]) || [])
     setDeletionCertificates((certData as DeletionCertificate[]) || [])
+  }
+
+  async function loadMovers() {
+    const [{ data: rcData }, { data: m365Data }] = await Promise.all([
+      supabase.from('role_changes').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false }),
+      supabase.from('mover_m365_actions').select('*').eq('company_id', selectedCompanyId),
+    ])
+    setMoverRecords((rcData as RoleChange[]) || [])
+    const m365Map: Record<number, MoverM365Actions> = {}
+    ;(m365Data || []).forEach((r: any) => { m365Map[r.role_change_id] = r })
+    setMoverM365(m365Map)
   }
 
   async function loadReviewData(employeeId: string) {
@@ -995,6 +1081,19 @@ export default function AdminOnboarding() {
     })
     const data = await res.json()
     console.log('[IFO-LEAVER]', action, 'response:', res.status, data)
+    if (!res.ok) { showError(data.error || 'Request failed'); return null }
+    return data
+  }
+
+  async function callIfoMover(action: string, body: Record<string, unknown> = {}) {
+    if (!session || !selectedCompanyId) return null
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const res = await fetch(`${supabaseUrl}/functions/v1/inflowonboarder-mover`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ company_id: selectedCompanyId, action, ...body }),
+    })
+    const data = await res.json()
     if (!res.ok) { showError(data.error || 'Request failed'); return null }
     return data
   }
@@ -1985,7 +2084,9 @@ export default function AdminOnboarding() {
         const { data: newEmp } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
         emp = newEmp
       }
-      const { error: activateErr } = await supabase.from('employees').update({ is_active: true }).eq('email', record.user_email).eq('company_id', selectedCompanyId)
+      const activatePayload: Record<string, any> = { is_active: true }
+      if ((record as any).user_persona) activatePayload.persona = (record as any).user_persona
+      const { error: activateErr } = await supabase.from('employees').update(activatePayload).eq('email', record.user_email).eq('company_id', selectedCompanyId)
       if (activateErr) { showError('Failed to activate employee: ' + activateErr.message); return }
       if (emp) {
         const { data: existingCu } = await supabase.from('company_users').select('id').eq('employee_id', emp.id).eq('company_id', selectedCompanyId).maybeSingle()
@@ -2090,6 +2191,7 @@ export default function AdminOnboarding() {
       tax_code: record.tax_code || null,
       payroll_id: record.payroll_id || null,
       leave_allowance: record.leave_allowance ?? 15,
+      persona: (record as any).user_persona || 'standard',
     }).select('id').single()
     if (error) {
       showError(`Failed to create employee record: ${error.message}`)
@@ -2201,13 +2303,48 @@ export default function AdminOnboarding() {
   const complTotalPages = Math.max(1, Math.ceil(completedOffboardRecords.length / PAGE_SIZE))
   const paginatedCompletedOffboard = completedOffboardRecords.slice((complPage - 1) * PAGE_SIZE, complPage * PAGE_SIZE)
 
+  const activeMoverRecords = useMemo(() => moverRecords.filter(r => !r.is_complete), [moverRecords])
+  const completedMoverRecords = useMemo(() => moverRecords.filter(r => r.is_complete), [moverRecords])
+  const moverTotalPages = Math.max(1, Math.ceil(activeMoverRecords.length / PAGE_SIZE))
+  const paginatedActiveMovers = activeMoverRecords.slice((moverPage - 1) * PAGE_SIZE, moverPage * PAGE_SIZE)
+
+  const moverStats = useMemo(() => {
+    const now = new Date()
+    const today = toLocalDateStr(now)
+    const fyStart = new Date(now.getFullYear(), fyStartMonth - 1, 1)
+    if (fyStart > now) fyStart.setFullYear(fyStart.getFullYear() - 1)
+    const fyEnd = new Date(fyStart.getFullYear() + 1, fyStart.getMonth(), 0)
+    const fyRecs = moverRecords.filter(r => r.created_at >= toLocalDateStr(fyStart) && r.created_at <= toLocalDateStr(fyEnd))
+    const personaChanges = moverRecords.filter(r => r.change_type === 'persona_change' || (r.changes?.persona))
+    const monthNames = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar']
+    const monthlyBreakdown = monthNames.map((label, i) => {
+      const m = (fyStartMonth - 1 + i) % 12
+      const y = m < fyStartMonth - 1 ? fyStart.getFullYear() + 1 : fyStart.getFullYear()
+      const count = fyRecs.filter(r => { const d = new Date(r.created_at); return d.getMonth() === m && d.getFullYear() === y }).length
+      return { label, count }
+    })
+    const statusMap: Record<string, number> = { pending: 0, in_progress: 0, completed: 0, cancelled: 0 }
+    moverRecords.forEach(r => { statusMap[r.status] = (statusMap[r.status] || 0) + 1 })
+    return {
+      total: moverRecords.length,
+      fyTotal: fyRecs.length,
+      inProgress: statusMap['in_progress'] || 0,
+      personaChanges: personaChanges.length,
+      completed: statusMap['completed'] || 0,
+      pending: statusMap['pending'] || 0,
+      monthlyBreakdown,
+      statusMap,
+      fyLabel: `${fyStart.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })} – ${fyEnd.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}`,
+    }
+  }, [moverRecords, fyStartMonth])
+
   const selectedRecord = records.find(r => r.id === selectedId)
 
   return (
     <div className="admin-section">
       <div className="admin-page-header">
         <h2>Onboard / Offboard</h2>
-        <p>{records.length} onboarding · {offboardRecords.filter(r => !r.is_complete).length} offboarding</p>
+        <p>{records.length} onboarding · {offboardRecords.filter(r => !r.is_complete).length} offboarding{features.inflowonboarder_integration && moverRecords.length > 0 ? ` · ${activeMoverRecords.length} movers` : ''}</p>
       </div>
 
       <div className="admin-tabs">
@@ -2218,6 +2355,12 @@ export default function AdminOnboarding() {
         {selectedId && <button className={`admin-tab ${tab === 'workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('workflow')}>Onboard Workflow</button>}
         <button className={`admin-tab ${tab === 'offboarding' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboarding')}>Offboarding</button>
         {offboardSelectedId && <button className={`admin-tab ${tab === 'offboard-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboard-workflow')}>Offboarding Workflow</button>}
+        {features.inflowonboarder_integration && (
+          <button className={`admin-tab ${tab === 'movers' ? 'admin-tab-active' : ''}`} onClick={() => setTab('movers')} style={{ borderColor: '#e65100', color: tab === 'movers' ? '#fff' : '#e65100', background: tab === 'movers' ? '#e65100' : undefined }}>Movers</button>
+        )}
+        {features.inflowonboarder_integration && moverSelectedId && (
+          <button className={`admin-tab ${tab === 'mover-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('mover-workflow')} style={{ borderColor: '#e65100', color: tab === 'mover-workflow' ? '#fff' : '#e65100', background: tab === 'mover-workflow' ? '#e65100' : undefined }}>Mover Workflow</button>
+        )}
         <button className={`admin-tab ${tab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => { setTab('settings'); initEditingSteps() }}>Settings</button>
         {isSuperAdmin && (
           <button className={`admin-tab ${tab === 'setup' ? 'admin-tab-active' : ''}`} onClick={() => setTab('setup')} style={{ borderColor: '#7b1fa2', color: tab === 'setup' ? '#fff' : '#7b1fa2', background: tab === 'setup' ? '#7b1fa2' : undefined }}>
@@ -2358,6 +2501,120 @@ export default function AdminOnboarding() {
               </div>
             </div>
           )}
+
+          {features.inflowonboarder_integration && moverRecords.length > 0 && (<>
+            <h3 style={{ margin: '32px 0 14px', fontSize: 17, fontWeight: 700, color: '#e65100' }}>Movers</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14, marginBottom: 20 }}>
+              {[
+                { label: 'Total Movers', value: moverStats.total, color: '#e65100', bg: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)', icon: '🔄' },
+                { label: 'This FY', value: moverStats.fyTotal, color: '#ef6c00', bg: 'linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%)', icon: '📊' },
+                { label: 'In Progress', value: moverStats.inProgress, color: '#f57c00', bg: 'linear-gradient(135deg, #fff3e0 0%, #ffcc80 100%)', icon: '⏳' },
+                { label: 'Persona Changes', value: moverStats.personaChanges, color: '#bf360c', bg: 'linear-gradient(135deg, #fbe9e7 0%, #ffccbc 100%)', icon: '🛡️' },
+                { label: 'Completed', value: moverStats.completed, color: '#16a34a', bg: 'linear-gradient(135deg, #f0fdf4 0%, #bbf7d0 100%)', icon: '✅' },
+              ].map((card, i) => (
+                <div key={i} style={{
+                  background: card.bg, borderRadius: 14, padding: '16px 18px',
+                  border: `1px solid ${card.color}22`, position: 'relative', overflow: 'hidden',
+                }}>
+                  <div style={{ position: 'absolute', top: 10, right: 12, fontSize: 28, opacity: 0.2 }}>{card.icon}</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: card.color, lineHeight: 1 }}>{card.value}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: card.color, opacity: 0.7, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 }}>{card.label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))', gap: 20, marginTop: 24 }}>
+              {(() => {
+                const data = moverStats.monthlyBreakdown
+                const max = Math.max(...data.map(x => x.count), 1)
+                const padTop = 28, padBot = 32, padLeft = 30, padRight = 16
+                const w = 660, h = 220
+                const chartW = w - padLeft - padRight, chartH = h - padTop - padBot
+                const points = data.map((m, i) => ({
+                  x: padLeft + (i / (data.length - 1)) * chartW,
+                  y: padTop + chartH - (m.count / max) * chartH,
+                  count: m.count, label: m.label,
+                }))
+                const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+                const areaPath = `${linePath} L${points[points.length - 1].x},${padTop + chartH} L${points[0].x},${padTop + chartH} Z`
+                const gridLines = Array.from({ length: 5 }, (_, i) => {
+                  const val = Math.round((max / 4) * i)
+                  const y = padTop + chartH - (val / max) * chartH
+                  return { y, val }
+                })
+                return (
+                  <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
+                    <h4 style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>Movers per Month</h4>
+                    <p style={{ margin: '0 0 12px', fontSize: 12, color: '#888' }}>{moverStats.fyLabel}</p>
+                    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', height: 'auto' }}>
+                      <defs>
+                        <linearGradient id="moverLineGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#e65100" stopOpacity="0.18" />
+                          <stop offset="100%" stopColor="#e65100" stopOpacity="0.01" />
+                        </linearGradient>
+                      </defs>
+                      {gridLines.map((g, i) => (
+                        <g key={i}>
+                          <line x1={padLeft} y1={g.y} x2={w - padRight} y2={g.y} stroke="#e5e7eb" strokeWidth="1" />
+                          <text x={padLeft - 6} y={g.y + 4} textAnchor="end" fill="#aaa" fontSize="10">{g.val}</text>
+                        </g>
+                      ))}
+                      <path d={areaPath} fill="url(#moverLineGrad)" />
+                      <path d={linePath} fill="none" stroke="#e65100" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      {points.map((p, i) => (
+                        <g key={i}>
+                          <circle cx={p.x} cy={p.y} r={p.count > 0 ? 4 : 2.5} fill={p.count > 0 ? '#e65100' : '#cbd5e1'} stroke="#fff" strokeWidth="2" />
+                          {p.count > 0 && <text x={p.x} y={p.y - 10} textAnchor="middle" fill="#e65100" fontSize="12" fontWeight="700">{p.count}</text>}
+                          <text x={p.x} y={padTop + chartH + 18} textAnchor="middle" fill="#999" fontSize="12">{p.label}</text>
+                        </g>
+                      ))}
+                    </svg>
+                  </div>
+                )
+              })()}
+
+              {(() => {
+                const pipelineData = [
+                  { label: 'Pending', icon: '📋', count: moverStats.pending, color: '#e65100' },
+                  { label: 'In Progress', icon: '⏳', count: moverStats.inProgress, color: '#f57c00' },
+                  { label: 'Completed', icon: '✅', count: moverStats.completed, color: '#16a34a' },
+                  { label: 'Cancelled', icon: '🚫', count: moverStats.statusMap['cancelled'] || 0, color: '#9e9e9e' },
+                ]
+                const maxCount = Math.max(...pipelineData.map(d => d.count), 1)
+                return (
+                  <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 14, padding: '20px 20px 16px', border: '1px solid var(--admin-border, #e0e0e0)' }}>
+                    <h4 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: 'var(--admin-text, #1e1e2d)' }}>Mover Pipeline</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {pipelineData.map((d, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 16, width: 22, textAlign: 'center', flexShrink: 0 }}>{d.icon}</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: d.count > 0 ? 'var(--admin-text, #333)' : '#bbb', width: 120, flexShrink: 0 }}>{d.label}</span>
+                          <div style={{ flex: 1, height: 22, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                            <div style={{
+                              height: '100%',
+                              width: d.count > 0 ? `${Math.max((d.count / maxCount) * 100, 8)}%` : '0%',
+                              background: d.color === '#16a34a'
+                                ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)'
+                                : d.color === '#9e9e9e'
+                                  ? 'linear-gradient(90deg, #9e9e9e 0%, #bdbdbd 100%)'
+                                  : `linear-gradient(90deg, #e65100 0%, #ff9800 100%)`,
+                              borderRadius: 6, transition: 'width 0.4s ease',
+                            }} />
+                            {d.count > 0 && (
+                              <span style={{
+                                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                                fontSize: 11, fontWeight: 700, color: (d.count / maxCount) > 0.5 ? '#fff' : d.color,
+                              }}>{d.count}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </>)}
         </div>
       )}
 
@@ -2519,6 +2776,28 @@ export default function AdminOnboarding() {
               ))}
             </div>
           </fieldset>
+          {features.inflowonboarder_integration && (
+            <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+              <legend style={{ fontWeight: 700, fontSize: 13, color: '#e65100' }}>Persona Tier</legend>
+              <p style={{ fontSize: 12, color: '#666', margin: '0 0 12px' }}>
+                Assign a security/access persona for this new starter's M365 account.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                {[
+                  { key: 'standard', label: 'Standard', desc: 'Office / hybrid worker' },
+                  { key: 'mobile', label: 'Mobile / Field', desc: 'Frontline staff' },
+                  { key: 'strict_secure', label: 'Strict Secure / VIP', desc: 'Exec / finance' },
+                  { key: 'kiosk', label: 'Shared / Kiosk', desc: 'Reception / lab' },
+                ].map(p => (
+                  <button key={p.key} type="button" onClick={() => setNewForm(f => ({...f, user_persona: p.key}))}
+                    style={{ padding: '10px 12px', borderRadius: 8, border: newForm.user_persona === p.key ? '2px solid #e65100' : '1px solid #ddd', background: newForm.user_persona === p.key ? '#fff3e0' : '#fafafa', cursor: 'pointer', textAlign: 'left' }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: newForm.user_persona === p.key ? '#e65100' : '#333' }}>{p.label}</div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{p.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
           <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
             <legend style={{ fontWeight: 700, fontSize: 13, color: '#1565c0' }}>Bank Details</legend>
             <div className="admin-form-grid">
@@ -4189,6 +4468,554 @@ export default function AdminOnboarding() {
           </div>
         </div>
       )}
+
+      {tab === 'movers' && (
+        <div>
+          <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 20 }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#e65100' }}>Start Role Change</h3>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Search Employee</label>
+              <input
+                type="text"
+                className="admin-input"
+                placeholder="Type employee name..."
+                value={moverEmployeeSearch}
+                onChange={async (e) => {
+                  setMoverEmployeeSearch(e.target.value)
+                  if (e.target.value.length >= 2) {
+                    const { data } = await supabase.from('employees').select('id, first_name, last_name, work_email, job_title, department, manager_name, manager_email, location, persona')
+                      .eq('company_id', selectedCompanyId).or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%,work_email.ilike.%${e.target.value}%`).limit(10)
+                    setMoverEmployeeResults(data || [])
+                  } else {
+                    setMoverEmployeeResults([])
+                  }
+                }}
+                style={{ width: '100%', maxWidth: 400 }}
+              />
+              {moverEmployeeResults.length > 0 && !moverSelectedEmployee && (
+                <div style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 8, marginTop: 4, maxWidth: 400, maxHeight: 200, overflowY: 'auto' }}>
+                  {moverEmployeeResults.map((emp: any) => (
+                    <div key={emp.id} style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 13 }}
+                      onClick={() => {
+                        setMoverSelectedEmployee(emp)
+                        setMoverEmployeeSearch(`${emp.first_name} ${emp.last_name}`)
+                        setMoverEmployeeResults([])
+                        setMoverForm({ employee_id: emp.id, employee_name: `${emp.first_name} ${emp.last_name}`, employee_email: emp.work_email, changes: {}, change_type: 'role_change', reason: '' })
+                      }}>
+                      <span style={{ fontWeight: 600 }}>{emp.first_name} {emp.last_name}</span>
+                      <span style={{ color: '#666', marginLeft: 8 }}>{emp.job_title} · {emp.department}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {moverSelectedEmployee && (
+              <div>
+                <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
+                  <strong>{moverSelectedEmployee.first_name} {moverSelectedEmployee.last_name}</strong> · {moverSelectedEmployee.job_title} · {moverSelectedEmployee.department}
+                  <span style={{ marginLeft: 12 }}>Current Persona: <span style={{ fontWeight: 600, color: PERSONA_TIERS.find(p => p.key === (moverSelectedEmployee.persona || 'standard'))?.color || '#333' }}>
+                    {PERSONA_TIERS.find(p => p.key === (moverSelectedEmployee.persona || 'standard'))?.label || 'Standard'}
+                  </span></span>
+                  <button className="admin-btn-sm" style={{ marginLeft: 12 }} onClick={() => { setMoverSelectedEmployee(null); setMoverEmployeeSearch(''); setMoverForm({}) }}>Clear</button>
+                </div>
+
+                <div className="admin-form-grid" style={{ marginBottom: 16 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Change Type</label>
+                    <select className="admin-input" value={moverForm.change_type || 'role_change'}
+                      onChange={e => setMoverForm({ ...moverForm, change_type: e.target.value })}>
+                      <option value="role_change">Role / Title Change</option>
+                      <option value="department_change">Department Change</option>
+                      <option value="manager_change">Manager Change</option>
+                      <option value="location_change">Location Change</option>
+                      <option value="persona_change">Persona Change</option>
+                      <option value="multi_change">Multiple Changes</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Effective Date</label>
+                    <input type="date" className="admin-input" value={moverForm.effective_date || ''} onChange={e => setMoverForm({ ...moverForm, effective_date: e.target.value })} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                  {[
+                    { field: 'job_title', label: 'Job Title', current: moverSelectedEmployee.job_title },
+                    { field: 'department', label: 'Department', current: moverSelectedEmployee.department },
+                    { field: 'location', label: 'Location', current: moverSelectedEmployee.location },
+                    { field: 'manager_name', label: 'Manager', current: moverSelectedEmployee.manager_name },
+                  ].map(({ field, label, current }) => (
+                    <div key={field} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600 }}>{label} <span style={{ color: '#999', fontWeight: 400 }}>(current: {current || '—'})</span></label>
+                      <input className="admin-input" placeholder={`New ${label.toLowerCase()}...`}
+                        value={moverForm.changes?.[field]?.new || ''}
+                        onChange={e => setMoverForm({
+                          ...moverForm,
+                          changes: { ...moverForm.changes, [field]: { old: current || '', new: e.target.value } }
+                        })}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {(moverForm.change_type === 'persona_change' || moverForm.change_type === 'multi_change') && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>New Persona Tier</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+                      {PERSONA_TIERS.map(tier => {
+                        const isCurrent = (moverSelectedEmployee.persona || 'standard') === tier.key
+                        const isSelected = moverForm.changes?.persona?.new === tier.key
+                        return (
+                          <div key={tier.key}
+                            onClick={() => {
+                              if (isCurrent) return
+                              setMoverForm({
+                                ...moverForm,
+                                changes: { ...moverForm.changes, persona: { old: moverSelectedEmployee.persona || 'standard', new: tier.key } }
+                              })
+                            }}
+                            style={{
+                              border: `2px solid ${isSelected ? tier.color : isCurrent ? '#16a34a' : '#e0e0e0'}`,
+                              borderRadius: 10, padding: '12px 14px', cursor: isCurrent ? 'default' : 'pointer',
+                              background: isSelected ? `${tier.bg}` : isCurrent ? '#f0fdf4' : '#fff',
+                              opacity: isCurrent ? 0.7 : 1,
+                            }}>
+                            <div style={{ fontSize: 20 }}>{tier.icon}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: tier.color, marginTop: 4 }}>{tier.label}</div>
+                            <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{tier.description}</div>
+                            {isCurrent && <div style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>CURRENT</div>}
+                            {isSelected && <div style={{ fontSize: 10, fontWeight: 700, color: tier.color, marginTop: 4 }}>SELECTED</div>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {moverForm.changes?.persona?.new === 'strict_secure' && moverSelectedEmployee.persona !== 'strict_secure' && (
+                      <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
+                        Moving to Strict Secure will revoke all active sessions for this user.
+                      </div>
+                    )}
+                    {moverSelectedEmployee.persona === 'strict_secure' && moverForm.changes?.persona?.new && moverForm.changes.persona.new !== 'strict_secure' && (
+                      <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
+                        Moving from Strict Secure will revoke all active sessions for this user.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Reason</label>
+                  <input className="admin-input" placeholder="Reason for role change..." value={moverForm.reason || ''} onChange={e => setMoverForm({ ...moverForm, reason: e.target.value })} style={{ width: '100%' }} />
+                </div>
+
+                <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
+                  onClick={async () => {
+                    const nonEmptyChanges: Record<string, any> = {}
+                    Object.entries(moverForm.changes || {}).forEach(([k, v]: [string, any]) => {
+                      if (v?.new && v.new !== v.old) nonEmptyChanges[k] = v
+                    })
+                    if (Object.keys(nonEmptyChanges).length === 0) { showError('Please specify at least one change'); return }
+                    const { data, error } = await supabase.from('role_changes').insert({
+                      company_id: selectedCompanyId,
+                      employee_id: moverForm.employee_id,
+                      employee_name: moverForm.employee_name,
+                      employee_email: moverForm.employee_email,
+                      change_type: moverForm.change_type || 'role_change',
+                      changes: nonEmptyChanges,
+                      effective_date: moverForm.effective_date || null,
+                      reason: moverForm.reason || null,
+                      requested_by: session?.user?.id,
+                    }).select().single()
+                    if (error) { showError(error.message); return }
+                    setMoverSelectedEmployee(null); setMoverEmployeeSearch(''); setMoverForm({})
+                    setMoverSelectedId(data.id); setMoverStep(0); setMoverChecks({}); setMoverSkips({})
+                    await loadMovers()
+                    setTab('mover-workflow')
+                    showSuccess('Role change created')
+                  }}>
+                  Start Role Change
+                </button>
+              </div>
+            )}
+          </div>
+
+          {activeMoverRecords.length > 0 && (
+            <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 20 }}>
+              <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#e65100' }}>Active Role Changes</h3>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="admin-table" style={{ width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Change Summary</th>
+                      <th>Persona</th>
+                      <th>Effective Date</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedActiveMovers.map(rc => {
+                      const personaChange = rc.changes?.persona
+                      const changeSummary = Object.keys(rc.changes || {}).filter(k => k !== 'persona').map(k => {
+                        const v = rc.changes[k]
+                        return `${k.replace(/_/g, ' ')}: ${v?.old || '—'} → ${v?.new || '—'}`
+                      }).join(', ')
+                      return (
+                        <tr key={rc.id}>
+                          <td><strong>{rc.employee_name}</strong><br /><span style={{ fontSize: 11, color: '#666' }}>{rc.employee_email}</span></td>
+                          <td style={{ fontSize: 12 }}>{changeSummary || '—'}</td>
+                          <td>{personaChange ? (
+                            <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: '#fff3e0', color: '#e65100', fontWeight: 600 }}>
+                              {PERSONA_TIERS.find(p => p.key === personaChange.old)?.label?.split(' ')[0] || personaChange.old} → {PERSONA_TIERS.find(p => p.key === personaChange.new)?.label?.split(' ')[0] || personaChange.new}
+                            </span>
+                          ) : '—'}</td>
+                          <td>{rc.effective_date ? new Date(rc.effective_date).toLocaleDateString('en-GB') : '—'}</td>
+                          <td><span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 12, fontWeight: 600,
+                            background: rc.status === 'completed' ? '#dcfce7' : rc.status === 'in_progress' ? '#fff3e0' : rc.status === 'cancelled' ? '#f5f5f5' : '#e3f2fd',
+                            color: rc.status === 'completed' ? '#16a34a' : rc.status === 'in_progress' ? '#e65100' : rc.status === 'cancelled' ? '#9e9e9e' : '#1565c0',
+                          }}>{rc.status}</span></td>
+                          <td>
+                            <button className="admin-btn-sm admin-btn-save" style={{ background: '#e65100' }} onClick={() => {
+                              setMoverSelectedId(rc.id)
+                              setMoverStep(0)
+                              setMoverChecks(rc.workflow_steps || {})
+                              setMoverSkips(rc.skipped_steps || {})
+                              setTab('mover-workflow')
+                            }}>Workflow</button>
+                            {rc.status === 'pending' && (
+                              <button className="admin-btn-sm" style={{ marginLeft: 6, color: '#c62828' }} onClick={async () => {
+                                await supabase.from('role_changes').update({ status: 'cancelled' }).eq('id', rc.id)
+                                await loadMovers()
+                                showSuccess('Role change cancelled')
+                              }}>Cancel</button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {moverTotalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+                  <button className="admin-btn-sm" disabled={moverPage <= 1} onClick={() => setMoverPage(p => p - 1)}>Prev</button>
+                  <span style={{ fontSize: 13, lineHeight: '32px' }}>Page {moverPage} of {moverTotalPages}</span>
+                  <button className="admin-btn-sm" disabled={moverPage >= moverTotalPages} onClick={() => setMoverPage(p => p + 1)}>Next</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {completedMoverRecords.length > 0 && (
+            <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)' }}>
+              <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#16a34a' }}>Completed Role Changes</h3>
+              {completedMoverRecords.slice(0, 10).map(rc => {
+                const expanded = expandedMoverCompletedId === rc.id
+                return (
+                  <div key={rc.id} style={{ borderBottom: '1px solid #e0e0e0', padding: '10px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setExpandedMoverCompletedId(expanded ? null : rc.id)}>
+                      <span style={{ fontSize: 12, transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▶</span>
+                      <strong style={{ fontSize: 13 }}>{rc.employee_name}</strong>
+                      <span style={{ fontSize: 12, color: '#666' }}>{rc.change_type.replace(/_/g, ' ')}</span>
+                      <span style={{ fontSize: 12, color: '#888', marginLeft: 'auto' }}>{rc.completed_at ? new Date(rc.completed_at).toLocaleDateString('en-GB') : new Date(rc.created_at).toLocaleDateString('en-GB')}</span>
+                    </div>
+                    {expanded && (
+                      <div style={{ marginTop: 8, padding: 12, background: '#f5f5f5', borderRadius: 8, fontSize: 12 }}>
+                        {Object.entries(rc.changes || {}).map(([k, v]: [string, any]) => (
+                          <div key={k} style={{ marginBottom: 4 }}>
+                            <strong>{k.replace(/_/g, ' ')}:</strong> {v?.old || '—'} → {v?.new || '—'}
+                          </div>
+                        ))}
+                        {rc.reason && <div style={{ marginTop: 4, color: '#666' }}>Reason: {rc.reason}</div>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'mover-workflow' && (() => {
+        const rc = moverRecords.find(r => r.id === moverSelectedId)
+        if (!rc) return <p>Select a role change from the Movers tab.</p>
+        const m365 = moverM365[rc.id]
+        const steps = MOVER_STEPS
+        const currentStep = steps[moverStep] || steps[0]
+        const progressPct = Math.round((Object.keys(moverChecks).filter(k => moverChecks[k]).length / steps.length) * 100)
+
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
+            <div>
+              <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 16, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 16 }}>
+                <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: '#e65100' }}>{rc.employee_name}</h4>
+                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>{rc.change_type.replace(/_/g, ' ')} · {rc.status}</p>
+                <div style={{ marginTop: 10, background: '#f1f5f9', borderRadius: 6, height: 8, overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${progressPct}%`, background: 'linear-gradient(90deg, #e65100, #ff9800)', borderRadius: 6, transition: 'width 0.3s' }} />
+                </div>
+                <p style={{ margin: '4px 0 0', fontSize: 11, color: '#888' }}>{progressPct}% complete</p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {steps.map((step, i) => {
+                  const done = moverChecks[step.key]
+                  const skipped = moverSkips[step.key]
+                  const isCurrent = i === moverStep
+                  return (
+                    <div key={step.key}
+                      className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`}
+                      onClick={() => setMoverStep(i)}
+                      style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
+                        background: isCurrent ? '#fff3e0' : done ? '#f0fdf4' : skipped ? '#f5f5f5' : 'transparent',
+                        border: isCurrent ? '1px solid #e65100' : '1px solid transparent',
+                      }}>
+                      <span style={{ fontSize: 16 }}>{done ? '✅' : skipped ? '⏭️' : step.icon}</span>
+                      <span style={{ fontWeight: isCurrent ? 700 : 400, color: done ? '#16a34a' : skipped ? '#999' : isCurrent ? '#e65100' : 'inherit' }}>{step.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)' }}>
+              <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700, color: '#e65100' }}>{currentStep.icon} {currentStep.label}</h3>
+              <p style={{ margin: '0 0 20px', fontSize: 13, color: '#666' }}>{currentStep.description}</p>
+
+              {currentStep.key === 'review_changes' && (
+                <div>
+                  <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Proposed Changes</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    {Object.entries(rc.changes || {}).map(([field, val]: [string, any]) => (
+                      <div key={field} style={{ background: '#f5f5f5', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: '#888', marginBottom: 4 }}>{field.replace(/_/g, ' ')}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 13, color: '#c62828', textDecoration: 'line-through' }}>{val?.old || '—'}</span>
+                          <span style={{ fontSize: 13 }}>→</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#2e7d32' }}>{val?.new || '—'}</span>
+                        </div>
+                        {field === 'persona' && (
+                          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                            {[val?.old, val?.new].map((pKey, idx) => {
+                              const tier = PERSONA_TIERS.find(p => p.key === pKey)
+                              if (!tier) return null
+                              return <div key={idx} style={{ background: tier.bg, border: `1px solid ${tier.color}33`, borderRadius: 8, padding: '6px 10px', flex: 1 }}>
+                                <div style={{ fontSize: 16 }}>{tier.icon}</div>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: tier.color }}>{tier.label}</div>
+                              </div>
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {(rc.changes?.persona?.new === 'strict_secure' || rc.changes?.persona?.old === 'strict_secure') && (
+                    <div style={{ marginTop: 12, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>
+                      This persona transition crosses a security boundary. All active user sessions will be revoked.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {currentStep.key === 'update_accounts' && (
+                <div>
+                  {features.inflowonboarder_integration && ifoConnected ? (
+                    <div>
+                      {!m365 && (
+                        <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
+                          onClick={async () => {
+                            const res = await callIfoMover('start-mover-run', {
+                              role_change_id: rc.id,
+                              employee_upn: rc.employee_email,
+                              changes: rc.changes,
+                            })
+                            if (res) { await loadMovers(); showSuccess('M365 mover run started') }
+                          }}>
+                          Start M365 Update
+                        </button>
+                      )}
+                      {m365 && (
+                        <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, fontSize: 13 }}>
+                          <div style={{ marginBottom: 8 }}><strong>Status:</strong> <span style={{ color: m365.run_status === 'completed' ? '#16a34a' : m365.run_status === 'failed' ? '#dc2626' : '#e65100', fontWeight: 600 }}>{m365.run_status || 'Not started'}</span></div>
+                          {m365.run_status === 'ready_for_approval' && (
+                            <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 8 }}>
+                              Awaiting approval. The designated approver will receive a notification to review and approve the M365 changes.
+                            </div>
+                          )}
+                          {m365.run_status === 'completed' && m365.run_result && (
+                            <div>
+                              <h5 style={{ margin: '8px 0', fontSize: 13, fontWeight: 700 }}>Result</h5>
+                              {m365.run_result.changed && <div style={{ marginBottom: 4 }}>Changed: {JSON.stringify(m365.run_result.changed)}</div>}
+                              {m365.run_result.skipped && <div style={{ marginBottom: 4 }}>Skipped: {JSON.stringify(m365.run_result.skipped)}</div>}
+                            </div>
+                          )}
+                          {m365.run_error && (
+                            <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 12 }}>
+                              Error: {m365.run_error.message || JSON.stringify(m365.run_error)}
+                            </div>
+                          )}
+                          {m365.run_status && !['completed', 'failed'].includes(m365.run_status) && (
+                            <button className="admin-btn-sm admin-btn-save" style={{ marginTop: 8 }}
+                              onClick={async () => {
+                                await callIfoMover('check-mover-run', { role_change_id: rc.id, run_id: m365.run_id })
+                                await loadMovers()
+                              }}>
+                              Refresh Status
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, fontSize: 13 }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                        <input type="checkbox" checked={!!moverChecks['update_accounts']} onChange={e => setMoverChecks({ ...moverChecks, update_accounts: e.target.checked })} />
+                        I have manually updated the employee's M365 account
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {currentStep.key === 'update_persona' && (
+                <div>
+                  {rc.changes?.persona ? (
+                    <div>
+                      <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+                        <div style={{ fontSize: 13, marginBottom: 8 }}>
+                          <strong>extensionAttribute1</strong> will be set to: <code style={{ background: '#e3f2fd', padding: '2px 6px', borderRadius: 4 }}>
+                            {`Persona-${(rc.changes.persona.new || '').charAt(0).toUpperCase() + (rc.changes.persona.new || '').slice(1).replace(/_/g, '')}`}
+                          </code>
+                        </div>
+                        <div style={{ padding: '10px 14px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8, fontSize: 12, color: '#2e7d32' }}>
+                          Dynamic groups will re-evaluate automatically based on the extensionAttribute1 change. Intune configuration profiles and conditional access policies scoped to those groups will apply within minutes.
+                        </div>
+                      </div>
+                      {m365?.run_status === 'completed' ? (
+                        <p style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>Persona attribute applied by the M365 update step.</p>
+                      ) : (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                          <input type="checkbox" checked={!!moverChecks['update_persona']} onChange={e => setMoverChecks({ ...moverChecks, update_persona: e.target.checked })} />
+                          Persona change confirmed
+                        </label>
+                      )}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 13, color: '#888' }}>No persona change in this role change. You can skip this step.</p>
+                  )}
+                </div>
+              )}
+
+              {currentStep.key === 'update_records' && (
+                <div>
+                  <p style={{ fontSize: 13, marginBottom: 12 }}>Apply the following changes to the employee's HR record:</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                    {Object.entries(rc.changes || {}).map(([field, val]: [string, any]) => (
+                      <div key={field} style={{ fontSize: 13 }}>
+                        <strong>{field.replace(/_/g, ' ')}:</strong> {val?.old || '—'} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{val?.new || '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
+                    onClick={async () => {
+                      const updates: Record<string, any> = {}
+                      const ch = rc.changes || {}
+                      if (ch.job_title?.new) updates.job_title = ch.job_title.new
+                      if (ch.department?.new) updates.department = ch.department.new
+                      if (ch.location?.new) updates.location = ch.location.new
+                      if (ch.manager_name?.new) updates.manager_name = ch.manager_name.new
+                      if (ch.manager_email?.new) updates.manager_email = ch.manager_email.new
+                      if (ch.persona?.new) updates.persona = ch.persona.new
+                      if (Object.keys(updates).length > 0) {
+                        const { error } = await supabase.from('employees').update(updates).eq('id', rc.employee_id)
+                        if (error) { showError(error.message); return }
+                      }
+                      setMoverChecks({ ...moverChecks, update_records: true })
+                      showSuccess('HR record updated')
+                    }}>
+                    Apply Changes to HR Record
+                  </button>
+                </div>
+              )}
+
+              {currentStep.key === 'notify_team' && (
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                    <input type="checkbox" checked={!!moverChecks['notify_team']} onChange={e => setMoverChecks({ ...moverChecks, notify_team: e.target.checked })} />
+                    Team and manager(s) have been notified of the role change
+                  </label>
+                </div>
+              )}
+
+              {currentStep.key === 'review_access' && (
+                <div>
+                  <p style={{ fontSize: 13, marginBottom: 12 }}>Review any access items requiring manual attention:</p>
+                  {['SharePoint sites and document libraries', 'Teams channels and groups', 'Shared drives and folders', 'Application-specific permissions', 'Physical access (badges, keys)'].map((item, i) => (
+                    <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, marginBottom: 6 }}>
+                      <input type="checkbox" />
+                      {item}
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {currentStep.key === 'confirm_complete' && (
+                <div>
+                  <p style={{ fontSize: 13, marginBottom: 12 }}>Confirm all changes have been applied and verified:</p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16 }}>
+                    {steps.filter(s => s.key !== 'confirm_complete').map(s => (
+                      <div key={s.key} style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{moverChecks[s.key] ? '✅' : moverSkips[s.key] ? '⏭️' : '⬜'}</span>
+                        <span style={{ color: moverChecks[s.key] ? '#16a34a' : moverSkips[s.key] ? '#999' : '#333' }}>{s.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="admin-btn admin-btn-save" style={{ background: '#16a34a' }}
+                    onClick={async () => {
+                      await supabase.from('role_changes').update({
+                        status: 'completed', is_complete: true, completed_at: new Date().toISOString(),
+                        workflow_steps: moverChecks, skipped_steps: moverSkips,
+                      }).eq('id', rc.id)
+                      await loadMovers()
+                      setTab('movers')
+                      showSuccess('Role change completed')
+                    }}>
+                    Mark Complete
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 24, borderTop: '1px solid #e0e0e0', paddingTop: 16 }}>
+                {!moverChecks[currentStep.key] && !moverSkips[currentStep.key] && currentStep.key !== 'confirm_complete' && (
+                  <>
+                    <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
+                      onClick={async () => {
+                        const newChecks = { ...moverChecks, [currentStep.key]: true }
+                        setMoverChecks(newChecks)
+                        await supabase.from('role_changes').update({ workflow_steps: newChecks, status: 'in_progress' }).eq('id', rc.id)
+                        if (moverStep < steps.length - 1) setMoverStep(moverStep + 1)
+                      }}>
+                      Mark Done & Next
+                    </button>
+                    <button className="admin-btn-sm" style={{ color: '#888' }}
+                      onClick={async () => {
+                        const newSkips = { ...moverSkips, [currentStep.key]: true }
+                        setMoverSkips(newSkips)
+                        await supabase.from('role_changes').update({ skipped_steps: newSkips, status: 'in_progress' }).eq('id', rc.id)
+                        if (moverStep < steps.length - 1) setMoverStep(moverStep + 1)
+                      }}>
+                      Skip
+                    </button>
+                  </>
+                )}
+                <button className="admin-btn-sm" disabled={moverStep <= 0} onClick={() => setMoverStep(moverStep - 1)}>← Previous</button>
+                <button className="admin-btn-sm" disabled={moverStep >= steps.length - 1} onClick={() => setMoverStep(moverStep + 1)}>Next →</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {tab === 'settings' && (
         <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)' }}>

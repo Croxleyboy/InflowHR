@@ -64,6 +64,7 @@ interface Employee {
   overtime_handling_override: string | null
   time_recording_override: string | null
   is_payroll_exception: boolean
+  persona: string | null
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -121,6 +122,7 @@ export default function AdminEmployees() {
   const [customFields, setCustomFields] = useState<CustomFieldDef[]>([])
   const [customFieldsLoading, setCustomFieldsLoading] = useState(false)
   const [customFieldsSaving, setCustomFieldsSaving] = useState(false)
+  const [moverPrompt, setMoverPrompt] = useState<{ empId: string; empName: string; changes: Record<string, { old: string; new: string }> } | null>(null)
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
     if (!value) return '—'
@@ -224,6 +226,7 @@ export default function AdminEmployees() {
       overtime_handling_override: emp.overtime_handling_override || '',
       time_recording_override: emp.time_recording_override || '',
       is_payroll_exception: emp.is_payroll_exception || false,
+      persona: emp.persona || 'standard',
     })
     setEditLieuDays(lieuDays[emp.id]?.lieu_days ?? 0)
   }
@@ -262,6 +265,28 @@ export default function AdminEmployees() {
         balUpdate.total_allowance = parseFloat(editForm.leave_allowance)
       }
       await supabase.from('leave_balances').update(balUpdate).eq('id', lieuDays[id].balanceId)
+    }
+
+    if (features.inflowonboarder_integration) {
+      const emp = employees.find(e => e.id === id)
+      if (emp) {
+        const roleFields: { key: string; label: string }[] = [
+          { key: 'job_title', label: 'Job Title' },
+          { key: 'department', label: 'Department' },
+          { key: 'location', label: 'Location' },
+          { key: 'manager_name', label: 'Manager' },
+          { key: 'persona', label: 'Persona' },
+        ]
+        const changes: Record<string, { old: string; new: string }> = {}
+        for (const f of roleFields) {
+          const oldVal = (emp as any)[f.key] || ''
+          const newVal = editForm[f.key] || ''
+          if (oldVal !== newVal) changes[f.label] = { old: oldVal, new: newVal }
+        }
+        if (Object.keys(changes).length > 0) {
+          setMoverPrompt({ empId: id, empName: `${emp.first_name} ${emp.last_name}`, changes })
+        }
+      }
     }
 
     setEditingId(null)
@@ -738,6 +763,9 @@ export default function AdminEmployees() {
                       <div><span style={{ color: '#999', display: 'block' }}>Service</span><strong>{calculateDuration(selectedEmployee.start_date)}</strong></div>
                       <div><span style={{ color: '#999', display: 'block' }}>Location</span><strong>{selectedEmployee.location || '—'}</strong></div>
                       <div><span style={{ color: '#999', display: 'block' }}>Manager</span><strong>{selectedEmployee.manager_name || '—'}</strong></div>
+                      {features.inflowonboarder_integration && (
+                        <div><span style={{ color: '#999', display: 'block' }}>Persona</span><strong style={{ textTransform: 'capitalize' }}>{(selectedEmployee.persona || 'standard').replace('_', ' ')}</strong></div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1095,6 +1123,17 @@ export default function AdminEmployees() {
                                           <div className="admin-form-field">
                                             <label style={{ fontSize: 12 }}>Manager Email</label>
                                             <input className="admin-inline-input" value={editForm.manager_email || ''} onChange={e => setEditForm(p => ({...p, manager_email: e.target.value}))} />
+                                          </div>
+                                        )}
+                                        {features.inflowonboarder_integration && (
+                                          <div className="admin-form-field">
+                                            <label style={{ fontSize: 12 }}>Persona Tier</label>
+                                            <select className="admin-select" value={editForm.persona || 'standard'} onChange={e => setEditForm(p => ({...p, persona: e.target.value}))}>
+                                              <option value="standard">Standard Information Worker</option>
+                                              <option value="mobile">Mobile / Field Worker</option>
+                                              <option value="strict_secure">Strict Secure / VIP</option>
+                                              <option value="kiosk">Shared / Kiosk</option>
+                                            </select>
                                           </div>
                                         )}
                                         {showField('leave_allowance') && (
@@ -1687,6 +1726,46 @@ function OrgChart({ employees }: { employees: Employee[] }) {
           })}
         </div>
       </div>
+
+      {moverPrompt && (
+        <div className="my-profile-modal-overlay" onClick={() => setMoverPrompt(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: '#e65100', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Role Change Detected</span>
+              <button onClick={() => setMoverPrompt(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <p style={{ fontSize: 14, marginBottom: 12 }}>
+                <strong>{moverPrompt.empName}</strong>'s details have changed. Would you like to start a role change to update their Microsoft 365 account?
+              </p>
+              <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
+                {Object.entries(moverPrompt.changes).map(([label, { old: o, new: n }]) => (
+                  <div key={label} style={{ marginBottom: 4 }}>
+                    <strong>{label}:</strong> {o || '(none)'} → {n || '(none)'}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => {
+                  const empId = moverPrompt.empId
+                  const emp = employees.find(e => e.id === empId)
+                  setMoverPrompt(null)
+                  if (emp) navigate('/admin/onboarding', { state: { tab: 'movers', moverEmployee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, email: emp.email, changes: moverPrompt.changes } } })
+                }}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#e65100', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                  Yes — Go to Movers
+                </button>
+                <button onClick={() => setMoverPrompt(null)}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid #ccc', background: '#fff', color: '#333', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                  No — HR Record Only
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
