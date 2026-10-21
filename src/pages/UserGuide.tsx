@@ -379,7 +379,7 @@ const SECTIONS: GuideSection[] = [
         'Fill in the change details: change type, effective date, new values for changed fields.',
         'If the persona is changing, select the new persona tier from the card picker.',
         'Add a reason for the change and click Create Role Change.',
-        'The mover workflow opens with seven steps: Review Changes, Update M365 Account, Apply Persona Change, Update HR Record, Notify Team, Review Access, and Confirm Complete.',
+        'The mover workflow opens with six steps: Review Changes, Update M365 Account, Save Changes to InflowHR, Notify Team / Manager, Review Remaining Access, and Confirm Complete.',
       ] },
 
       { title: 'Mover M365 Workflow', purpose: 'How the engine updates M365 during a role change.', steps: [
