@@ -507,20 +507,17 @@ export default function AdminOnboarding() {
 
   useEffect(() => {
     const state = location.state as any
-    if (state?.tab === 'movers') {
+    if (state?.tab === 'mover-workflow' && state.moverRecordId) {
+      loadMovers().then(() => {
+        setMoverSelectedId(state.moverRecordId)
+        setMoverStep(0)
+        setMoverChecks({})
+        setMoverSkips({})
+        setTab('mover-workflow')
+      })
+      window.history.replaceState({}, '')
+    } else if (state?.tab === 'movers') {
       setTab('movers')
-      if (state.moverEmployee) {
-        setMoverSelectedEmployee({
-          id: state.moverEmployee.id,
-          first_name: state.moverEmployee.name?.split(' ')[0] || '',
-          last_name: state.moverEmployee.name?.split(' ').slice(1).join(' ') || '',
-          email: state.moverEmployee.email || '',
-          job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: ''
-        })
-        if (state.moverEmployee.changes) {
-          setMoverForm(state.moverEmployee.changes)
-        }
-      }
       window.history.replaceState({}, '')
     }
   }, [location.state])
