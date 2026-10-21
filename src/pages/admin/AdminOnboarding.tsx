@@ -508,18 +508,15 @@ export default function AdminOnboarding() {
 
   useEffect(() => {
     const state = location.state as any
-    if (state?.tab === 'jml' && state.jmlSection === 'movers' && state.moverRecordId) {
-      loadMovers().then(() => {
-        setMoverSelectedId(state.moverRecordId)
-        setMoverStep(0)
-        setMoverChecks({})
-        setMoverSkips({})
-        setTab('mover-workflow')
-      })
-      window.history.replaceState({}, '')
-    } else if (state?.tab === 'jml') {
+    if (state?.tab === 'jml') {
       setTab('jml')
       if (state.jmlSection) setJmlSection(state.jmlSection)
+      if (state.prefill) {
+        const pf = state.prefill
+        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, work_email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: pf.personaChange.old })
+        setMoverEmployeeSearch(pf.empName)
+        setMoverForm({ employee_id: pf.empId, employee_name: pf.empName, employee_email: pf.empEmail, changes: { persona: pf.personaChange }, change_type: 'persona_change', reason: '', additionalFields: [] })
+      }
       window.history.replaceState({}, '')
     }
   }, [location.state])
@@ -4515,9 +4512,9 @@ export default function AdminOnboarding() {
                 onChange={async (e) => {
                   setMoverEmployeeSearch(e.target.value)
                   if (e.target.value.length >= 2) {
-                    const { data } = await supabase.from('employees').select('id, first_name, last_name, work_email, job_title, department, manager_name, manager_email, location, persona')
-                      .eq('company_id', selectedCompanyId).or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%,work_email.ilike.%${e.target.value}%`).limit(10)
-                    setMoverEmployeeResults((data || []).map((e: any) => ({ ...e, email: e.work_email || e.email || '' })))
+                    const { data } = await supabase.from('employees').select('id, first_name, last_name, email, job_title, department, manager_name, manager_email, location, persona')
+                      .eq('company_id', selectedCompanyId).or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%,email.ilike.%${e.target.value}%`).limit(10)
+                    setMoverEmployeeResults((data || []).map((e: any) => ({ ...e, email: e.email || '' })))
                   } else {
                     setMoverEmployeeResults([])
                   }
@@ -4532,7 +4529,7 @@ export default function AdminOnboarding() {
                         setMoverSelectedEmployee(emp)
                         setMoverEmployeeSearch(`${emp.first_name} ${emp.last_name}`)
                         setMoverEmployeeResults([])
-                        setMoverForm({ employee_id: emp.id, employee_name: `${emp.first_name} ${emp.last_name}`, employee_email: emp.work_email, changes: {}, change_type: 'role_change', reason: '' })
+                        setMoverForm({ employee_id: emp.id, employee_name: `${emp.first_name} ${emp.last_name}`, employee_email: emp.email, changes: {}, change_type: 'persona_change', reason: '', additionalFields: [] })
                       }}>
                       <span style={{ fontWeight: 600 }}>{emp.first_name} {emp.last_name}</span>
                       <span style={{ color: '#666', marginLeft: 8 }}>{emp.job_title} · {emp.department}</span>
@@ -4544,26 +4541,67 @@ export default function AdminOnboarding() {
 
             {moverSelectedEmployee && (
               <div>
-                <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
-                  <strong>{moverSelectedEmployee.first_name} {moverSelectedEmployee.last_name}</strong> · {moverSelectedEmployee.job_title} · {moverSelectedEmployee.department}
-                  <span style={{ marginLeft: 12 }}>Current Persona: <span style={{ fontWeight: 600, color: PERSONA_TIERS.find(p => p.key === (moverSelectedEmployee.persona || 'standard'))?.color || '#333' }}>
-                    {PERSONA_TIERS.find(p => p.key === (moverSelectedEmployee.persona || 'standard'))?.label || 'Standard'}
-                  </span></span>
-                  <button className="admin-btn-sm" style={{ marginLeft: 12 }} onClick={() => { setMoverSelectedEmployee(null); setMoverEmployeeSearch(''); setMoverForm({}) }}>Clear</button>
+                <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{moverSelectedEmployee.first_name} {moverSelectedEmployee.last_name}</div>
+                      <div style={{ fontSize: 13, color: '#666' }}>{moverSelectedEmployee.email}</div>
+                    </div>
+                    <button className="admin-btn-sm" onClick={() => { setMoverSelectedEmployee(null); setMoverEmployeeSearch(''); setMoverForm({}) }}>Clear</button>
+                  </div>
+                  <div style={{ fontSize: 13 }}>
+                    Current Persona: <span style={{ fontWeight: 600, color: PERSONA_TIERS.find(p => p.key === (moverSelectedEmployee.persona || 'standard'))?.color || '#333' }}>
+                      {PERSONA_TIERS.find(p => p.key === (moverSelectedEmployee.persona || 'standard'))?.label || 'Standard'}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>New Persona Tier</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+                    {PERSONA_TIERS.map(tier => {
+                      const isCurrent = (moverSelectedEmployee.persona || 'standard') === tier.key
+                      const isSelected = moverForm.changes?.persona?.new === tier.key
+                      return (
+                        <div key={tier.key}
+                          onClick={() => {
+                            if (isCurrent) return
+                            setMoverForm({
+                              ...moverForm,
+                              changes: { ...moverForm.changes, persona: { old: moverSelectedEmployee.persona || 'standard', new: tier.key } }
+                            })
+                          }}
+                          style={{
+                            border: `2px solid ${isSelected ? tier.color : isCurrent ? '#16a34a' : '#e0e0e0'}`,
+                            borderRadius: 10, padding: '12px 14px', cursor: isCurrent ? 'default' : 'pointer',
+                            background: isSelected ? `${tier.bg}` : isCurrent ? '#f0fdf4' : '#fff',
+                            opacity: isCurrent ? 0.7 : 1,
+                          }}>
+                          <div style={{ fontSize: 20 }}>{tier.icon}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: tier.color, marginTop: 4 }}>{tier.label}</div>
+                          <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{tier.description}</div>
+                          {isCurrent && <div style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>CURRENT</div>}
+                          {isSelected && <div style={{ fontSize: 10, fontWeight: 700, color: tier.color, marginTop: 4 }}>SELECTED</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {moverForm.changes?.persona?.new === 'strict_secure' && moverSelectedEmployee.persona !== 'strict_secure' && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
+                      Moving to Strict Secure will revoke all active sessions for this user.
+                    </div>
+                  )}
+                  {moverSelectedEmployee.persona === 'strict_secure' && moverForm.changes?.persona?.new && moverForm.changes.persona.new !== 'strict_secure' && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
+                      Moving from Strict Secure will revoke all active sessions for this user.
+                    </div>
+                  )}
                 </div>
 
                 <div className="admin-form-grid" style={{ marginBottom: 16 }}>
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Change Type</label>
-                    <select className="admin-input" value={moverForm.change_type || 'role_change'}
-                      onChange={e => setMoverForm({ ...moverForm, change_type: e.target.value })}>
-                      <option value="role_change">Role / Title Change</option>
-                      <option value="department_change">Department Change</option>
-                      <option value="manager_change">Manager Change</option>
-                      <option value="location_change">Location Change</option>
-                      <option value="persona_change">Persona Change</option>
-                      <option value="multi_change">Multiple Changes</option>
-                    </select>
+                    <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Reason</label>
+                    <input className="admin-input" placeholder="Reason for role change..." value={moverForm.reason || ''} onChange={e => setMoverForm({ ...moverForm, reason: e.target.value })} style={{ width: '100%' }} />
                   </div>
                   <div>
                     <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Effective Date</label>
@@ -4571,88 +4609,85 @@ export default function AdminOnboarding() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-                  {[
-                    { field: 'job_title', label: 'Job Title', current: moverSelectedEmployee.job_title },
-                    { field: 'department', label: 'Department', current: moverSelectedEmployee.department },
-                    { field: 'location', label: 'Location', current: moverSelectedEmployee.location },
-                    { field: 'manager_name', label: 'Manager', current: moverSelectedEmployee.manager_name },
-                  ].map(({ field, label, current }) => (
-                    <div key={field} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <label style={{ fontSize: 12, fontWeight: 600 }}>{label} <span style={{ color: '#999', fontWeight: 400 }}>(current: {current || '—'})</span></label>
-                      <input className="admin-input" placeholder={`New ${label.toLowerCase()}...`}
-                        value={moverForm.changes?.[field]?.new || ''}
-                        onChange={e => setMoverForm({
-                          ...moverForm,
-                          changes: { ...moverForm.changes, [field]: { old: current || '', new: e.target.value } }
-                        })}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {(moverForm.change_type === 'persona_change' || moverForm.change_type === 'multi_change') && (
+                {/* Additional change fields — added one at a time via + button */}
+                {(moverForm.additionalFields || []).length > 0 && (
                   <div style={{ marginBottom: 16 }}>
-                    <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>New Persona Tier</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
-                      {PERSONA_TIERS.map(tier => {
-                        const isCurrent = (moverSelectedEmployee.persona || 'standard') === tier.key
-                        const isSelected = moverForm.changes?.persona?.new === tier.key
-                        return (
-                          <div key={tier.key}
-                            onClick={() => {
-                              if (isCurrent) return
-                              setMoverForm({
+                    <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Additional Changes</label>
+                    {(moverForm.additionalFields as string[]).map((field: string) => {
+                      const labels: Record<string, string> = { job_title: 'Job Title', department: 'Department', location: 'Location', manager_name: 'Manager' }
+                      const currentValues: Record<string, string> = { job_title: moverSelectedEmployee.job_title || '', department: moverSelectedEmployee.department || '', location: moverSelectedEmployee.location || '', manager_name: moverSelectedEmployee.manager_name || '' }
+                      return (
+                        <div key={field} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <label style={{ fontSize: 12, fontWeight: 600 }}>{labels[field]} <span style={{ color: '#999', fontWeight: 400 }}>(current: {currentValues[field] || '—'})</span></label>
+                            <input className="admin-input" placeholder={`New ${labels[field].toLowerCase()}...`}
+                              value={moverForm.changes?.[field]?.new || ''}
+                              onChange={e => setMoverForm({
                                 ...moverForm,
-                                changes: { ...moverForm.changes, persona: { old: moverSelectedEmployee.persona || 'standard', new: tier.key } }
-                              })
-                            }}
-                            style={{
-                              border: `2px solid ${isSelected ? tier.color : isCurrent ? '#16a34a' : '#e0e0e0'}`,
-                              borderRadius: 10, padding: '12px 14px', cursor: isCurrent ? 'default' : 'pointer',
-                              background: isSelected ? `${tier.bg}` : isCurrent ? '#f0fdf4' : '#fff',
-                              opacity: isCurrent ? 0.7 : 1,
-                            }}>
-                            <div style={{ fontSize: 20 }}>{tier.icon}</div>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: tier.color, marginTop: 4 }}>{tier.label}</div>
-                            <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{tier.description}</div>
-                            {isCurrent && <div style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>CURRENT</div>}
-                            {isSelected && <div style={{ fontSize: 10, fontWeight: 700, color: tier.color, marginTop: 4 }}>SELECTED</div>}
+                                changes: { ...moverForm.changes, [field]: { old: currentValues[field], new: e.target.value } }
+                              })}
+                              style={{ width: '100%', marginTop: 4 }}
+                            />
                           </div>
-                        )
-                      })}
-                    </div>
-                    {moverForm.changes?.persona?.new === 'strict_secure' && moverSelectedEmployee.persona !== 'strict_secure' && (
-                      <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
-                        Moving to Strict Secure will revoke all active sessions for this user.
-                      </div>
-                    )}
-                    {moverSelectedEmployee.persona === 'strict_secure' && moverForm.changes?.persona?.new && moverForm.changes.persona.new !== 'strict_secure' && (
-                      <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
-                        Moving from Strict Secure will revoke all active sessions for this user.
-                      </div>
-                    )}
+                          <button onClick={() => {
+                            const newFields = (moverForm.additionalFields as string[]).filter((f: string) => f !== field)
+                            const newChanges = { ...moverForm.changes }
+                            delete newChanges[field]
+                            setMoverForm({ ...moverForm, additionalFields: newFields, changes: newChanges })
+                          }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#999', fontSize: 18, marginTop: 16 }} title="Remove">
+                            &times;
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 
-                <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Reason</label>
-                  <input className="admin-input" placeholder="Reason for role change..." value={moverForm.reason || ''} onChange={e => setMoverForm({ ...moverForm, reason: e.target.value })} style={{ width: '100%' }} />
-                </div>
+                {/* + button to add additional fields */}
+                {(() => {
+                  const allFields = ['job_title', 'department', 'location', 'manager_name']
+                  const usedFields = moverForm.additionalFields || []
+                  const available = allFields.filter(f => !usedFields.includes(f))
+                  if (available.length === 0) return null
+                  const labels: Record<string, string> = { job_title: 'Job Title', department: 'Department', location: 'Location', manager_name: 'Manager' }
+                  return (
+                    <div style={{ marginBottom: 16, position: 'relative' }}>
+                      <button className="admin-btn-sm" style={{ background: '#f5f5f5', border: '1px solid #e0e0e0', fontWeight: 600, fontSize: 13, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                        onClick={() => setMoverForm({ ...moverForm, showFieldPicker: !moverForm.showFieldPicker })}>
+                        <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Add Change
+                      </button>
+                      {moverForm.showFieldPicker && (
+                        <div style={{ position: 'absolute', top: 36, left: 0, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 10, minWidth: 180 }}>
+                          {available.map(f => (
+                            <div key={f} style={{ padding: '8px 14px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f0f0f0' }}
+                              onClick={() => setMoverForm({ ...moverForm, additionalFields: [...(moverForm.additionalFields || []), f], showFieldPicker: false })}
+                              onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
+                              onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
+                              {labels[f]}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
 
                 <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
                   onClick={async () => {
+                    if (!moverForm.changes?.persona?.new) { showError('Please select a new persona tier'); return }
                     const nonEmptyChanges: Record<string, any> = {}
                     Object.entries(moverForm.changes || {}).forEach(([k, v]: [string, any]) => {
                       if (v?.new && v.new !== v.old) nonEmptyChanges[k] = v
                     })
                     if (Object.keys(nonEmptyChanges).length === 0) { showError('Please specify at least one change'); return }
+                    const changeKeys = Object.keys(nonEmptyChanges)
+                    const changeType = changeKeys.length > 1 ? 'multi_change' : 'persona_change'
                     const { data, error } = await supabase.from('role_changes').insert({
                       company_id: selectedCompanyId,
                       employee_id: moverForm.employee_id,
                       employee_name: moverForm.employee_name,
                       employee_email: moverForm.employee_email,
-                      change_type: moverForm.change_type || 'role_change',
+                      change_type: changeType,
                       changes: nonEmptyChanges,
                       effective_date: moverForm.effective_date || null,
                       reason: moverForm.reason || null,
