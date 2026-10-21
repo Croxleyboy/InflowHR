@@ -222,7 +222,8 @@ export default function AdminOnboarding() {
   const location = useLocation()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow' | 'movers' | 'mover-workflow' | 'settings'>('dashboard')
+  const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow' | 'movers' | 'mover-workflow' | 'settings' | 'jml'>('dashboard')
+  const [jmlSection, setJmlSection] = useState<'joiners' | 'movers' | 'leavers'>('joiners')
   const [filterStatus, setFilterStatus] = useState('')
   const [onbPage, setOnbPage] = useState(1)
   const [offPage, setOffPage] = useState(1)
@@ -507,7 +508,7 @@ export default function AdminOnboarding() {
 
   useEffect(() => {
     const state = location.state as any
-    if (state?.tab === 'mover-workflow' && state.moverRecordId) {
+    if (state?.tab === 'jml' && state.jmlSection === 'movers' && state.moverRecordId) {
       loadMovers().then(() => {
         setMoverSelectedId(state.moverRecordId)
         setMoverStep(0)
@@ -516,8 +517,9 @@ export default function AdminOnboarding() {
         setTab('mover-workflow')
       })
       window.history.replaceState({}, '')
-    } else if (state?.tab === 'movers') {
-      setTab('movers')
+    } else if (state?.tab === 'jml') {
+      setTab('jml')
+      if (state.jmlSection) setJmlSection(state.jmlSection)
       window.history.replaceState({}, '')
     }
   }, [location.state])
@@ -2369,13 +2371,9 @@ export default function AdminOnboarding() {
         <button className={`admin-tab ${tab === 'dashboard' ? 'admin-tab-active' : ''}`} onClick={() => setTab('dashboard')}>Dashboard</button>
         <button className={`admin-tab ${tab === 'new' ? 'admin-tab-active' : ''}`} onClick={() => setTab('new')}>New Starter</button>
         <button className={`admin-tab ${tab === 'upload' ? 'admin-tab-active' : ''}`} onClick={() => setTab('upload')}>Bulk Upload</button>
-        <button className={`admin-tab ${tab === 'list' ? 'admin-tab-active' : ''}`} onClick={() => setTab('list')}>Onboarding</button>
+        <button className={`admin-tab ${tab === 'jml' ? 'admin-tab-active' : ''}`} onClick={() => setTab('jml')}>Joiners / Movers / Leavers</button>
         {selectedId && <button className={`admin-tab ${tab === 'workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('workflow')}>Onboard Workflow</button>}
-        <button className={`admin-tab ${tab === 'offboarding' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboarding')}>Offboarding</button>
-        {offboardSelectedId && <button className={`admin-tab ${tab === 'offboard-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboard-workflow')}>Offboarding Workflow</button>}
-        {features.inflowonboarder_integration && (
-          <button className={`admin-tab ${tab === 'movers' ? 'admin-tab-active' : ''}`} onClick={() => setTab('movers')} style={{ borderColor: '#e65100', color: tab === 'movers' ? '#fff' : '#e65100', background: tab === 'movers' ? '#e65100' : undefined }}>Movers</button>
-        )}
+        {offboardSelectedId && <button className={`admin-tab ${tab === 'offboard-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('offboard-workflow')}>Offboard Workflow</button>}
         {features.inflowonboarder_integration && moverSelectedId && (
           <button className={`admin-tab ${tab === 'mover-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('mover-workflow')} style={{ borderColor: '#e65100', color: tab === 'mover-workflow' ? '#fff' : '#e65100', background: tab === 'mover-workflow' ? '#e65100' : undefined }}>Mover Workflow</button>
         )}
@@ -2924,7 +2922,23 @@ export default function AdminOnboarding() {
         </div>
       )}
 
-      {tab === 'list' && (
+      {tab === 'jml' && (
+        <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '2px solid var(--admin-border, #e0e0e0)' }}>
+          <button onClick={() => setJmlSection('joiners')} style={{ padding: '10px 24px', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', borderBottom: jmlSection === 'joiners' ? '3px solid #4f46e5' : '3px solid transparent', color: jmlSection === 'joiners' ? '#4f46e5' : '#666', background: 'none' }}>
+            Joiners ({records.filter(r => !r.is_complete).length})
+          </button>
+          {features.inflowonboarder_integration && (
+            <button onClick={() => setJmlSection('movers')} style={{ padding: '10px 24px', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', borderBottom: jmlSection === 'movers' ? '3px solid #e65100' : '3px solid transparent', color: jmlSection === 'movers' ? '#e65100' : '#666', background: 'none' }}>
+              Movers ({activeMoverRecords.length})
+            </button>
+          )}
+          <button onClick={() => setJmlSection('leavers')} style={{ padding: '10px 24px', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', borderBottom: jmlSection === 'leavers' ? '3px solid #c62828' : '3px solid transparent', color: jmlSection === 'leavers' ? '#c62828' : '#666', background: 'none' }}>
+            Leavers ({offboardRecords.filter(r => !r.is_complete).length})
+          </button>
+        </div>
+      )}
+
+      {(tab === 'list' || (tab === 'jml' && jmlSection === 'joiners')) && (
         <>
           <div className="admin-filters">
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="admin-select">
@@ -3468,7 +3482,7 @@ export default function AdminOnboarding() {
         </div>
       )}
 
-      {tab === 'offboarding' && (
+      {(tab === 'offboarding' || (tab === 'jml' && jmlSection === 'leavers')) && (
         <div>
           {/* New Offboard */}
           <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 20, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 20 }}>
@@ -4487,7 +4501,7 @@ export default function AdminOnboarding() {
         </div>
       )}
 
-      {tab === 'movers' && (
+      {(tab === 'movers' || (tab === 'jml' && jmlSection === 'movers')) && (
         <div>
           <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 20 }}>
             <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#e65100' }}>Start Role Change</h3>

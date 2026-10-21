@@ -1425,7 +1425,7 @@ export default function AdminEmployees() {
                   }).select().single()
                   setMoverPrompt(null)
                   if (error) { showError(error.message); return }
-                  navigate('/admin/onboarding', { state: { tab: 'mover-workflow', moverRecordId: data.id } })
+                  navigate('/admin/onboarding', { state: { tab: 'jml', jmlSection: 'movers', moverRecordId: data.id } })
                 }}
                   style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#e65100', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
                   Yes — Go to Movers
