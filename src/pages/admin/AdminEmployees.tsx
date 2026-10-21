@@ -72,7 +72,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 export default function AdminEmployees() {
   const navigate = useNavigate()
   const { selectedCompanyId } = useAdminCompany()
-  const { company } = useAuth()
+  const { company, session } = useAuth()
   const currency = company?.currency || 'GBP'
   const { showError, showSuccess } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -270,18 +270,12 @@ export default function AdminEmployees() {
     if (features.inflowonboarder_integration) {
       const emp = employees.find(e => e.id === id)
       if (emp) {
-        const roleFields: { key: string; label: string }[] = [
-          { key: 'job_title', label: 'Job Title' },
-          { key: 'department', label: 'Department' },
-          { key: 'location', label: 'Location' },
-          { key: 'manager_name', label: 'Manager' },
-          { key: 'persona', label: 'Persona' },
-        ]
+        const roleFields = ['job_title', 'department', 'location', 'manager_name', 'persona']
         const changes: Record<string, { old: string; new: string }> = {}
-        for (const f of roleFields) {
-          const oldVal = (emp as any)[f.key] || ''
-          const newVal = editForm[f.key] || ''
-          if (oldVal !== newVal) changes[f.label] = { old: oldVal, new: newVal }
+        for (const key of roleFields) {
+          const oldVal = (emp as any)[key] || ''
+          const newVal = editForm[key] || ''
+          if (oldVal !== newVal) changes[key] = { old: oldVal, new: newVal }
         }
         if (Object.keys(changes).length > 0) {
           setMoverPrompt({ empId: id, empName: `${emp.first_name} ${emp.last_name}`, changes })
@@ -1403,18 +1397,35 @@ export default function AdminEmployees() {
                 <strong>{moverPrompt.empName}</strong>'s details have changed. Would you like to start a role change to update their Microsoft 365 account?
               </p>
               <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
-                {Object.entries(moverPrompt.changes).map(([label, val]) => (
-                  <div key={label} style={{ marginBottom: 4 }}>
-                    <strong>{label}:</strong> {val.old || '(none)'} → {val.new || '(none)'}
-                  </div>
-                ))}
+                {Object.entries(moverPrompt.changes).map(([key, val]) => {
+                  const labels: Record<string, string> = { job_title: 'Job Title', department: 'Department', location: 'Location', manager_name: 'Manager', persona: 'Persona' }
+                  return (
+                    <div key={key} style={{ marginBottom: 4 }}>
+                      <strong>{labels[key] || key}:</strong> {val.old || '(none)'} → {val.new || '(none)'}
+                    </div>
+                  )
+                })}
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => {
+                <button onClick={async () => {
                   const empId = moverPrompt.empId
                   const emp = employees.find(e => e.id === empId)
+                  if (!emp) { setMoverPrompt(null); return }
+                  const hasPersona = !!moverPrompt.changes.persona
+                  const changeKeys = Object.keys(moverPrompt.changes)
+                  const changeType = changeKeys.length > 1 ? 'multi_change' : hasPersona ? 'persona_change' : changeKeys[0] === 'department' ? 'department_change' : changeKeys[0] === 'manager_name' ? 'manager_change' : changeKeys[0] === 'location' ? 'location_change' : 'role_change'
+                  const { data, error } = await supabase.from('role_changes').insert({
+                    company_id: selectedCompanyId,
+                    employee_id: emp.id,
+                    employee_name: `${emp.first_name} ${emp.last_name}`,
+                    employee_email: emp.work_email || emp.email || '',
+                    change_type: changeType,
+                    changes: moverPrompt.changes,
+                    requested_by: session?.user?.id,
+                  }).select().single()
                   setMoverPrompt(null)
-                  if (emp) navigate('/admin/onboarding', { state: { tab: 'movers', moverEmployee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, email: emp.email, changes: moverPrompt.changes } } })
+                  if (error) { showError(error.message); return }
+                  navigate('/admin/onboarding', { state: { tab: 'mover-workflow', moverRecordId: data.id } })
                 }}
                   style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#e65100', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
                   Yes — Go to Movers
