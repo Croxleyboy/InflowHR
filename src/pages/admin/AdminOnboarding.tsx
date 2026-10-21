@@ -2310,7 +2310,6 @@ export default function AdminOnboarding() {
 
   const moverStats = useMemo(() => {
     const now = new Date()
-    const today = toLocalDateStr(now)
     const fyStart = new Date(now.getFullYear(), fyStartMonth - 1, 1)
     if (fyStart > now) fyStart.setFullYear(fyStart.getFullYear() - 1)
     const fyEnd = new Date(fyStart.getFullYear() + 1, fyStart.getMonth(), 0)
@@ -4485,7 +4484,7 @@ export default function AdminOnboarding() {
                   if (e.target.value.length >= 2) {
                     const { data } = await supabase.from('employees').select('id, first_name, last_name, work_email, job_title, department, manager_name, manager_email, location, persona')
                       .eq('company_id', selectedCompanyId).or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%,work_email.ilike.%${e.target.value}%`).limit(10)
-                    setMoverEmployeeResults(data || [])
+                    setMoverEmployeeResults((data || []).map((e: any) => ({ ...e, email: e.work_email || e.email || '' })))
                   } else {
                     setMoverEmployeeResults([])
                   }

@@ -1388,6 +1388,46 @@ export default function AdminEmployees() {
         </div>
       )}
       </>}
+
+      {moverPrompt && (
+        <div className="my-profile-modal-overlay" onClick={() => setMoverPrompt(null)}>
+          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+            <div className="my-profile-modal-header" style={{ background: '#e65100', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Role Change Detected</span>
+              <button onClick={() => setMoverPrompt(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <p style={{ fontSize: 14, marginBottom: 12 }}>
+                <strong>{moverPrompt.empName}</strong>'s details have changed. Would you like to start a role change to update their Microsoft 365 account?
+              </p>
+              <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
+                {Object.entries(moverPrompt.changes).map(([label, val]) => (
+                  <div key={label} style={{ marginBottom: 4 }}>
+                    <strong>{label}:</strong> {val.old || '(none)'} → {val.new || '(none)'}
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => {
+                  const empId = moverPrompt.empId
+                  const emp = employees.find(e => e.id === empId)
+                  setMoverPrompt(null)
+                  if (emp) navigate('/admin/onboarding', { state: { tab: 'movers', moverEmployee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, email: emp.email, changes: moverPrompt.changes } } })
+                }}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#e65100', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                  Yes — Go to Movers
+                </button>
+                <button onClick={() => setMoverPrompt(null)}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid #ccc', background: '#fff', color: '#333', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                  No — HR Record Only
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1727,45 +1767,6 @@ function OrgChart({ employees }: { employees: Employee[] }) {
         </div>
       </div>
 
-      {moverPrompt && (
-        <div className="my-profile-modal-overlay" onClick={() => setMoverPrompt(null)}>
-          <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
-            <div className="my-profile-modal-header" style={{ background: '#e65100', justifyContent: 'space-between', padding: '14px 20px' }}>
-              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Role Change Detected</span>
-              <button onClick={() => setMoverPrompt(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            <div style={{ padding: 20 }}>
-              <p style={{ fontSize: 14, marginBottom: 12 }}>
-                <strong>{moverPrompt.empName}</strong>'s details have changed. Would you like to start a role change to update their Microsoft 365 account?
-              </p>
-              <div style={{ background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13 }}>
-                {Object.entries(moverPrompt.changes).map(([label, { old: o, new: n }]) => (
-                  <div key={label} style={{ marginBottom: 4 }}>
-                    <strong>{label}:</strong> {o || '(none)'} → {n || '(none)'}
-                  </div>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => {
-                  const empId = moverPrompt.empId
-                  const emp = employees.find(e => e.id === empId)
-                  setMoverPrompt(null)
-                  if (emp) navigate('/admin/onboarding', { state: { tab: 'movers', moverEmployee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, email: emp.email, changes: moverPrompt.changes } } })
-                }}
-                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#e65100', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-                  Yes — Go to Movers
-                </button>
-                <button onClick={() => setMoverPrompt(null)}
-                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid #ccc', background: '#fff', color: '#333', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
-                  No — HR Record Only
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
