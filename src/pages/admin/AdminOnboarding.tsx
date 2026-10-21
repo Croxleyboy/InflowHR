@@ -89,10 +89,9 @@ const OFFBOARD_STEPS = [
 ]
 
 const MOVER_STEPS = [
-  { key: 'review_changes', label: 'Review Proposed Changes', icon: '📋', description: 'Review all proposed changes including role, department, location, manager, and persona tier transition. Confirm the changes are correct before proceeding.', role: 'HR' },
-  { key: 'update_accounts', label: 'Update M365 Account', icon: '🔐', description: 'Update the employee\'s Microsoft 365 account via InflowOnboarder — changes profile fields, swaps licences, updates group membership, and sets the persona extensionAttribute.', role: 'HR' },
-  { key: 'update_persona', label: 'Apply Persona Change', icon: '🛡️', description: 'Confirm the persona tier transition. The extensionAttribute1 update triggers Entra ID dynamic group re-evaluation, which automatically applies the correct Intune profiles and conditional access policies.', role: 'HR' },
-  { key: 'update_records', label: 'Update HR Record', icon: '📝', description: 'Apply the approved changes to the employee\'s HR record — job title, department, location, manager, and persona tier.', role: 'HR' },
+  { key: 'review_changes', label: 'Review Proposed Changes', icon: '📋', description: 'Review all proposed changes including persona tier, role, department, location and manager. Confirm the changes are correct before proceeding.', role: 'HR' },
+  { key: 'update_accounts', label: 'Update M365 Account', icon: '🔐', description: 'Update the employee\'s Microsoft 365 account — this step sets extensionAttribute1 in Entra ID, swaps licences, and updates group membership. Dynamic groups re-evaluate automatically, applying the correct Intune profiles and conditional access policies.', role: 'HR' },
+  { key: 'update_records', label: 'Save Changes to InflowHR', icon: '📝', description: 'Apply the changes to the employee\'s InflowHR record — persona tier, job title, department, location and manager.', role: 'HR' },
   { key: 'notify_team', label: 'Notify Team / Manager', icon: '📧', description: 'Inform the new and previous managers and team members of the role change. Share updated reporting lines and responsibilities.', role: 'HR' },
   { key: 'review_access', label: 'Review Remaining Access', icon: '🔍', description: 'Review any access that requires manual attention — SharePoint sites, Teams channels, shared drives, and application permissions that were not automatically updated.', role: 'Manager' },
   { key: 'confirm_complete', label: 'Confirm Complete', icon: '✅', description: 'Confirm all changes have been applied and verified. Mark the role change as complete.', role: 'HR' },
@@ -4931,6 +4930,16 @@ export default function AdminOnboarding() {
                               Refresh Status
                             </button>
                           )}
+                          {m365.run_status === 'completed' && (
+                            <div style={{ marginTop: 12, padding: '12px 16px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#2e7d32' }}>Where to verify the changes</div>
+                              <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4, color: '#333' }}>
+                                <li><strong>Entra ID</strong> — Open the user's profile in Microsoft Entra admin centre. Check extensionAttribute1 is set correctly and dynamic group memberships have updated.</li>
+                                <li><strong>Intune</strong> — In the Microsoft Intune admin centre, go to Devices → the user's device(s). Verify the correct configuration profiles and compliance policies are now assigned.</li>
+                                <li><strong>Conditional Access</strong> — Check the user's sign-in logs in Entra ID to confirm the correct policies are being applied.</li>
+                              </ul>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -4945,38 +4954,9 @@ export default function AdminOnboarding() {
                 </div>
               )}
 
-              {currentStep.key === 'update_persona' && (
-                <div>
-                  {rc.changes?.persona ? (
-                    <div>
-                      <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, marginBottom: 12 }}>
-                        <div style={{ fontSize: 13, marginBottom: 8 }}>
-                          <strong>extensionAttribute1</strong> will be set to: <code style={{ background: '#e3f2fd', padding: '2px 6px', borderRadius: 4 }}>
-                            {`Persona-${(rc.changes.persona.new || '').charAt(0).toUpperCase() + (rc.changes.persona.new || '').slice(1).replace(/_/g, '')}`}
-                          </code>
-                        </div>
-                        <div style={{ padding: '10px 14px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8, fontSize: 12, color: '#2e7d32' }}>
-                          Dynamic groups will re-evaluate automatically based on the extensionAttribute1 change. Intune configuration profiles and conditional access policies scoped to those groups will apply within minutes.
-                        </div>
-                      </div>
-                      {m365?.run_status === 'completed' ? (
-                        <p style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>Persona attribute applied by the M365 update step.</p>
-                      ) : (
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
-                          <input type="checkbox" checked={!!moverChecks['update_persona']} onChange={e => setMoverChecks({ ...moverChecks, update_persona: e.target.checked })} />
-                          Persona change confirmed
-                        </label>
-                      )}
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 13, color: '#888' }}>No persona change in this role change. You can skip this step.</p>
-                  )}
-                </div>
-              )}
-
               {currentStep.key === 'update_records' && (
                 <div>
-                  <p style={{ fontSize: 13, marginBottom: 12 }}>Apply the following changes to the employee's HR record:</p>
+                  <p style={{ fontSize: 13, marginBottom: 12 }}>Save the following changes to the employee's InflowHR record:</p>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
                     {Object.entries(rc.changes || {}).map(([field, val]: [string, any]) => (
                       <div key={field} style={{ fontSize: 13 }}>
@@ -5001,7 +4981,7 @@ export default function AdminOnboarding() {
                       setMoverChecks({ ...moverChecks, update_records: true })
                       showSuccess('HR record updated')
                     }}>
-                    Apply Changes to HR Record
+                    Save Changes to InflowHR
                   </button>
                 </div>
               )}

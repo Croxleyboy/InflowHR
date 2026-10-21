@@ -215,6 +215,7 @@ export default function AdminIntegrations() {
   const [ifoLicences, setIfoLicences] = useState<IfoLicence[]>([])
   const [ifoLicencesLoading, setIfoLicencesLoading] = useState(false)
   const [ifoOffboardSettingsOpen, setIfoOffboardSettingsOpen] = useState(false)
+  const [ifoMoverSettingsOpen, setIfoMoverSettingsOpen] = useState(false)
   const [ifoOffboardApproverMode, setIfoOffboardApproverMode] = useState<'same_as_joiner' | 'nominated' | 'manager'>('same_as_joiner')
   const [ifoOffboardApproverName, setIfoOffboardApproverName] = useState('')
   const [ifoOffboardApproverEmail, setIfoOffboardApproverEmail] = useState('')
@@ -1459,6 +1460,37 @@ export default function AdminIntegrations() {
                         </p>
                       </div>
 
+                      {/* Save button */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
+                        <button
+                          className="admin-btn admin-btn-primary"
+                          onClick={saveIfoSettings}
+                          disabled={ifoSettingsSaving}
+                          style={{ minWidth: 160, background: '#0078D4' }}
+                        >
+                          {ifoSettingsSaving ? 'Saving...' : 'Save Settings'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {ifoIntegration?.status === 'connected_ready' && (
+                <div style={{ ...sectionStyle, marginTop: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                    onClick={() => setIfoMoverSettingsOpen(!ifoMoverSettingsOpen)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <strong style={{ fontSize: 14, color: 'var(--text, #1a1a2e)' }}>Movers Settings</strong>
+                    </div>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-muted, #64748b)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={chevronStyle(ifoMoverSettingsOpen)}>
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </div>
+
+                  {ifoMoverSettingsOpen && (
+                    <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
+
                       {/* Mover Approver */}
                       <div>
                         <label style={{ ...labelStyle, marginBottom: 8, display: 'block' }}>Mover Approver</label>
@@ -1597,17 +1629,11 @@ export default function AdminIntegrations() {
                       {/* Scope note */}
                       <div style={{ background: 'rgba(0,120,212,.06)', borderRadius: 8, padding: '10px 14px' }}>
                         <p style={{ margin: 0, fontSize: 12, color: 'var(--text, #333)' }}>
-                          <strong>API key scope:</strong> The API key needs <strong>m365.joiner</strong>, <strong>m365.leaver</strong>,
-                          <strong> m365.mover</strong>, and <strong>m365.license.list</strong> scopes.
+                          <strong>API key scope:</strong> The API key needs <strong>m365.mover</strong> scope.
                           Scopes cannot be added to an existing key &mdash; create a new key in InflowOnboarder with
                           all required scopes, with approvals set to &ldquo;Approved in this service&rdquo;.
                         </p>
                       </div>
-
-                      {/* Protected accounts note */}
-                      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>
-                        Protected accounts (e.g. emergency admin accounts) are managed in InflowOnboarder&rsquo;s own Settings, not here.
-                      </p>
 
                       {/* Save button */}
                       <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
@@ -1615,13 +1641,30 @@ export default function AdminIntegrations() {
                           className="admin-btn admin-btn-primary"
                           onClick={saveIfoSettings}
                           disabled={ifoSettingsSaving}
-                          style={{ minWidth: 160, background: '#0078D4' }}
+                          style={{ minWidth: 160, background: '#e65100' }}
                         >
                           {ifoSettingsSaving ? 'Saving...' : 'Save Settings'}
                         </button>
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* General InflowOnboarder notes */}
+              {ifoIntegration?.status === 'connected_ready' && (
+                <div style={{ ...sectionStyle, marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ background: 'rgba(0,120,212,.06)', borderRadius: 8, padding: '10px 14px' }}>
+                    <p style={{ margin: 0, fontSize: 12, color: 'var(--text, #333)' }}>
+                      <strong>API key scope:</strong> The API key needs <strong>m365.joiner</strong>, <strong>m365.leaver</strong>,
+                      <strong> m365.mover</strong>, and <strong>m365.license.list</strong> scopes.
+                      Scopes cannot be added to an existing key &mdash; create a new key in InflowOnboarder with
+                      all required scopes, with approvals set to &ldquo;Approved in this service&rdquo;.
+                    </p>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #888)' }}>
+                    Protected accounts (e.g. emergency admin accounts) are managed in InflowOnboarder&rsquo;s own Settings, not here.
+                  </p>
                 </div>
               )}
 
