@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
@@ -218,6 +219,7 @@ export default function AdminOnboarding() {
   const { fyStartMonth } = useLanguage()
   const { showError, showSuccess } = useToast()
   const { features } = useFeatures()
+  const location = useLocation()
   const [records, setRecords] = useState<OnboardRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'dashboard' | 'new' | 'list' | 'workflow' | 'upload' | 'setup' | 'offboarding' | 'offboard-workflow' | 'movers' | 'mover-workflow' | 'settings'>('dashboard')
@@ -502,6 +504,26 @@ export default function AdminOnboarding() {
     setFrozenPage(1)
     setComplPage(1)
   }, [filterStatus, selectedCompanyId])
+
+  useEffect(() => {
+    const state = location.state as any
+    if (state?.tab === 'movers') {
+      setTab('movers')
+      if (state.moverEmployee) {
+        setMoverSelectedEmployee({
+          id: state.moverEmployee.id,
+          first_name: state.moverEmployee.name?.split(' ')[0] || '',
+          last_name: state.moverEmployee.name?.split(' ').slice(1).join(' ') || '',
+          email: state.moverEmployee.email || '',
+          job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: ''
+        })
+        if (state.moverEmployee.changes) {
+          setMoverForm(state.moverEmployee.changes)
+        }
+      }
+      window.history.replaceState({}, '')
+    }
+  }, [location.state])
 
   async function load() {
     setLoading(true)
