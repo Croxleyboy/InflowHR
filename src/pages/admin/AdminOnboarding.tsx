@@ -4566,9 +4566,9 @@ export default function AdminOnboarding() {
                 onChange={async (e) => {
                   setMoverEmployeeSearch(e.target.value)
                   if (e.target.value.length >= 2) {
-                    const { data } = await supabase.from('employees').select('id, first_name, last_name, email, job_title, department, manager_name, manager_email, location, persona')
+                    const { data } = await supabase.from('employees').select('id, first_name, last_name, email, work_email, job_title, department, manager_name, manager_email, location, persona')
                       .eq('company_id', selectedCompanyId).or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%,email.ilike.%${e.target.value}%`).limit(10)
-                    setMoverEmployeeResults((data || []).map((e: any) => ({ ...e, email: e.email || '' })))
+                    setMoverEmployeeResults((data || []).map((e: any) => ({ ...e, email: e.email || '', work_email: e.work_email || e.email || '' })))
                   } else {
                     setMoverEmployeeResults([])
                   }
@@ -4583,7 +4583,7 @@ export default function AdminOnboarding() {
                         setMoverSelectedEmployee(emp)
                         setMoverEmployeeSearch(`${emp.first_name} ${emp.last_name}`)
                         setMoverEmployeeResults([])
-                        setMoverForm({ employee_id: emp.id, employee_name: `${emp.first_name} ${emp.last_name}`, employee_email: emp.email, changes: {}, change_type: 'persona_change', reason: '', additionalFields: [] })
+                        setMoverForm({ employee_id: emp.id, employee_name: `${emp.first_name} ${emp.last_name}`, employee_email: emp.work_email || emp.email, changes: {}, change_type: 'persona_change', reason: '', additionalFields: [] })
                       }}>
                       <span style={{ fontWeight: 600 }}>{emp.first_name} {emp.last_name}</span>
                       <span style={{ color: '#666', marginLeft: 8 }}>{emp.job_title} · {emp.department}</span>
@@ -4668,8 +4668,8 @@ export default function AdminOnboarding() {
                   <div style={{ marginBottom: 16 }}>
                     <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Additional Changes</label>
                     {(moverForm.additionalFields as string[]).map((field: string) => {
-                      const labels: Record<string, string> = { job_title: 'Job Title', department: 'Department', location: 'Location', manager_name: 'Manager' }
-                      const currentValues: Record<string, string> = { job_title: moverSelectedEmployee.job_title || '', department: moverSelectedEmployee.department || '', location: moverSelectedEmployee.location || '', manager_name: moverSelectedEmployee.manager_name || '' }
+                      const labels: Record<string, string> = { job_title: 'Job Title', department: 'Department', location: 'Location', manager_name: 'Manager Name', manager_email: 'Manager Email (UPN)' }
+                      const currentValues: Record<string, string> = { job_title: moverSelectedEmployee.job_title || '', department: moverSelectedEmployee.department || '', location: moverSelectedEmployee.location || '', manager_name: moverSelectedEmployee.manager_name || '', manager_email: moverSelectedEmployee.manager_email || '' }
                       return (
                         <div key={field} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
                           <div style={{ flex: 1 }}>
@@ -4699,11 +4699,11 @@ export default function AdminOnboarding() {
 
                 {/* + button to add additional fields */}
                 {(() => {
-                  const allFields = ['job_title', 'department', 'location', 'manager_name']
+                  const allFields = ['job_title', 'department', 'location', 'manager_name', 'manager_email']
                   const usedFields = moverForm.additionalFields || []
                   const available = allFields.filter(f => !usedFields.includes(f))
                   if (available.length === 0) return null
-                  const labels: Record<string, string> = { job_title: 'Job Title', department: 'Department', location: 'Location', manager_name: 'Manager' }
+                  const labels: Record<string, string> = { job_title: 'Job Title', department: 'Department', location: 'Location', manager_name: 'Manager Name', manager_email: 'Manager Email (UPN)' }
                   return (
                     <div style={{ marginBottom: 16, position: 'relative' }}>
                       <button className="admin-btn-sm" style={{ background: '#f5f5f5', border: '1px solid #e0e0e0', fontWeight: 600, fontSize: 13, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
@@ -4937,6 +4937,9 @@ export default function AdminOnboarding() {
 
               {currentStep.key === 'update_accounts' && (
                 <div>
+                  <div style={{ padding: '10px 14px', background: '#f5f5f5', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+                    <strong>Employee:</strong> {rc.employee_name} · <strong>UPN:</strong> {rc.employee_email}
+                  </div>
                   {features.inflowonboarder_integration && ifoConnected ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                       {/* ── M365 Mover Run (profile, manager, groups, licence) ── */}
@@ -4947,7 +4950,7 @@ export default function AdminOnboarding() {
                         const hasNonPersonaChanges = hasProfileChanges || hasManagerChanges
                         if (!hasNonPersonaChanges) return (
                           <div style={{ padding: '10px 14px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8, fontSize: 13, color: '#2e7d32' }}>
-                            No profile, manager, group or licence changes — M365 mover run not required.
+                            No profile or manager changes — M365 mover run not required.{ch.persona ? ' Persona change is handled separately below.' : ''}
                           </div>
                         )
 
@@ -4975,6 +4978,7 @@ export default function AdminOnboarding() {
                               {ch.department && <div><strong>Department:</strong> {ch.department.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.department.new}</span></div>}
                               {ch.location && <div><strong>Location:</strong> {ch.location.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.location.new}</span></div>}
                               {ch.manager_name && <div><strong>Manager:</strong> {ch.manager_name.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.manager_name.new}</span></div>}
+                              {ch.manager_email && <div><strong>Manager UPN:</strong> {ch.manager_email.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.manager_email.new}</span></div>}
                             </div>
                             {(!m365 || m365.run_status === 'failed') && (
                               <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
