@@ -200,6 +200,7 @@ export default function AdminIntegrations() {
   const [ifoApiKey, setIfoApiKey] = useState('')
   const [ifoConnecting, setIfoConnecting] = useState(false)
   const [ifoChecking, setIfoChecking] = useState(false)
+  const [ifoLastChecked, setIfoLastChecked] = useState<string | null>(null)
   const [showIfoModal, setShowIfoModal] = useState(false)
   const [ifoSettingsOpen, setIfoSettingsOpen] = useState(false)
   const [ifoSettingsSaving, setIfoSettingsSaving] = useState(false)
@@ -604,8 +605,10 @@ export default function AdminIntegrations() {
     const result = await callEdgeFunction('inflowonboarder', { action: 'check-status' })
     setIfoChecking(false)
     if (result) {
-      if (result.status === 'connected_ready') showSuccess('M365 connection healthy')
-      else if (result.status === 'needs_attention') showError('API key revoked or invalid — reconnect with a new key')
+      if (result.status === 'connected_ready') {
+        showSuccess('M365 connection healthy')
+        setIfoLastChecked(new Date().toISOString())
+      } else if (result.status === 'needs_attention') showError('API key revoked or invalid — reconnect with a new key')
       else if (result.unavailable) showError('InflowOnboarder is temporarily unavailable')
       if (result.schedule_templates_available !== undefined) {
         setIfoSchedulingAvailable(result.schedule_templates_available)
@@ -1281,6 +1284,11 @@ export default function AdminIntegrations() {
                       <p style={{ margin: '2px 0 0', fontSize: 12, color: '#666' }}>
                         API Key: ifo_…{ifoIntegration.api_key_hint}
                       </p>
+                      {ifoLastChecked && (
+                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#2e7d32', fontWeight: 600 }}>
+                          ✓ Connection verified: {new Date(ifoLastChecked).toLocaleString('en-GB')}
+                        </p>
+                      )}
                     </div>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="admin-btn" onClick={checkIfoStatus} disabled={ifoChecking}>
@@ -1584,6 +1592,7 @@ export default function AdminIntegrations() {
                           <button className="admin-btn admin-btn-primary" style={{ marginTop: 12, background: '#e65100' }}
                             onClick={async () => {
                               if (!companyId) return
+                              let savedCount = 0
                               for (const [key, pm] of Object.entries(personaMappings)) {
                                 if (!pm.extension_attribute_value) continue
                                 const groups = typeof pm.m365_groups === 'string'
@@ -1600,11 +1609,23 @@ export default function AdminIntegrations() {
                                   conditional_access_hint: pm.conditional_access_hint || null,
                                   description: pm.description || null,
                                 }
+                                let err
                                 if (pm.id) {
-                                  await supabase.from('inflowonboarder_persona_mappings').update(row).eq('id', pm.id)
+                                  const res = await supabase.from('inflowonboarder_persona_mappings').update(row).eq('id', pm.id)
+                                  err = res.error
                                 } else {
-                                  await supabase.from('inflowonboarder_persona_mappings').upsert(row, { onConflict: 'company_id,persona' })
+                                  const res = await supabase.from('inflowonboarder_persona_mappings').upsert(row, { onConflict: 'company_id,persona' })
+                                  err = res.error
                                 }
+                                if (err) {
+                                  showError(`Failed to save ${key} mapping: ${err.message}`)
+                                  return
+                                }
+                                savedCount++
+                              }
+                              if (savedCount === 0) {
+                                showError('No persona mappings to save — fill in the Extension Attribute Value for at least one tier')
+                                return
                               }
                               showSuccess('Persona mappings saved')
                               loadAll()

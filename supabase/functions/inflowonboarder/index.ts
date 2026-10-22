@@ -479,7 +479,7 @@ Deno.serve(async (req) => {
 
     // ── save-settings ───────────────────────────────────────────────────────
     if (action === 'save-settings') {
-      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode, offboard_approver_name, offboard_approver_email } = body
+      const { approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email } = body
 
       if (approver_mode && !['nominated', 'manager'].includes(approver_mode)) {
         return json({ error: 'approver_mode must be "nominated" or "manager"' }, 400)
@@ -493,6 +493,12 @@ Deno.serve(async (req) => {
       if (offboard_approver_mode === 'nominated' && (!offboard_approver_name || !offboard_approver_email)) {
         return json({ error: 'Nominated offboarding approver requires a name and email' }, 400)
       }
+      if (mover_approver_mode && !['same_as_joiner', 'nominated', 'manager'].includes(mover_approver_mode)) {
+        return json({ error: 'mover_approver_mode must be "same_as_joiner", "nominated" or "manager"' }, 400)
+      }
+      if (mover_approver_mode === 'nominated' && (!mover_approver_name || !mover_approver_email)) {
+        return json({ error: 'Nominated mover approver requires a name and email' }, 400)
+      }
       const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       if (approver_email && !emailRe.test(approver_email)) {
         return json({ error: 'Invalid approver email address' }, 400)
@@ -502,6 +508,9 @@ Deno.serve(async (req) => {
       }
       if (offboard_approver_email && !emailRe.test(offboard_approver_email)) {
         return json({ error: 'Invalid offboarding approver email address' }, 400)
+      }
+      if (mover_approver_email && !emailRe.test(mover_approver_email)) {
+        return json({ error: 'Invalid mover approver email address' }, 400)
       }
 
       const updates: Record<string, unknown> = {
@@ -521,12 +530,15 @@ Deno.serve(async (req) => {
       if (offboard_approver_mode !== undefined) updates.offboard_approver_mode = offboard_approver_mode
       if (offboard_approver_name !== undefined) updates.offboard_approver_name = offboard_approver_name
       if (offboard_approver_email !== undefined) updates.offboard_approver_email = offboard_approver_email
+      if (mover_approver_mode !== undefined) updates.mover_approver_mode = mover_approver_mode
+      if (mover_approver_name !== undefined) updates.mover_approver_name = mover_approver_name
+      if (mover_approver_email !== undefined) updates.mover_approver_email = mover_approver_email
 
       const { error: updateErr } = await sb.from('inflowonboarder_integrations').update(updates).eq('company_id', company_id)
       if (updateErr) return json({ error: 'Failed to save settings: ' + updateErr.message }, 500)
 
       await audit(sb, company_id, userId, 'inflowonboarder_save_settings', {
-        approver_mode, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode,
+        approver_mode, licence_sku_id, licence_sku_name, group_name, account_domain, offboard_approver_mode, mover_approver_mode,
       })
 
       return json({ saved: true })
