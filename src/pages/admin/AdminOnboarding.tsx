@@ -540,10 +540,12 @@ export default function AdminOnboarding() {
   }
 
   async function loadMovers() {
-    const [{ data: rcData }, { data: m365Data }] = await Promise.all([
+    const [{ data: rcData }, { data: m365Data }, { data: ifo }] = await Promise.all([
       supabase.from('role_changes').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false }),
       supabase.from('mover_m365_actions').select('*').eq('company_id', selectedCompanyId),
+      supabase.from('inflowonboarder_integrations').select('status').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
+    setIfoConnected(ifo?.status === 'connected_ready')
     setMoverRecords((rcData as RoleChange[]) || [])
     const m365Map: Record<number, MoverM365Actions> = {}
     ;(m365Data || []).forEach((r: any) => { m365Map[r.role_change_id] = r })
