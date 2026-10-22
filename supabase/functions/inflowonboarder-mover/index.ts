@@ -314,13 +314,11 @@ Deno.serve(async (req) => {
         engineChanges.manager = changes.manager
       }
 
-      // Persona transition: resolve mappings → extensionAttribute1, groups, licence
+      // Persona transition: resolve mappings → groups, licence, extensionAttribute1
+      let extensionAttributesPayload: Record<string, string> | undefined
       if (changes?.persona) {
         const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
         if (personaChanges) {
-          if (personaChanges.extensionAttribute1) {
-            engineChanges.extensionAttributes = { extensionAttribute1: personaChanges.extensionAttribute1 }
-          }
           // Merge persona groups with explicit group changes
           const existingGroupsAdd = changes?.groups?.add || []
           const existingGroupsRemove = changes?.groups?.remove || []
@@ -332,6 +330,9 @@ Deno.serve(async (req) => {
             engineChanges.licence = { add: personaChanges.licenceAdd, remove: personaChanges.licenceRemove }
           }
           engineChanges.revokeSessions = personaChanges.revokeSessions
+          if (personaChanges.extensionAttribute1) {
+            extensionAttributesPayload = { extensionAttribute1: personaChanges.extensionAttribute1 }
+          }
         }
       }
 
@@ -366,6 +367,7 @@ Deno.serve(async (req) => {
           userPrincipalName: user_principal_name,
           changes: engineChanges,
         }
+        if (extensionAttributesPayload) engineBody.extensionAttributes = extensionAttributesPayload
         if (licence_contact) engineBody.licenceContact = licence_contact
 
         const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/workflows/m365.mover/runs', engineBody, idempotencyKey)
@@ -571,12 +573,10 @@ Deno.serve(async (req) => {
       if (changes?.groups) engineChanges.groups = changes.groups
       if (changes?.licence) engineChanges.licence = changes.licence
 
+      let scheduleExtAttrs: Record<string, string> | undefined
       if (changes?.persona) {
         const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
         if (personaChanges) {
-          if (personaChanges.extensionAttribute1) {
-            engineChanges.extensionAttributes = { extensionAttribute1: personaChanges.extensionAttribute1 }
-          }
           const existingGroupsAdd = (engineChanges.groups as any)?.add || []
           const existingGroupsRemove = (engineChanges.groups as any)?.remove || []
           engineChanges.groups = {
@@ -587,18 +587,24 @@ Deno.serve(async (req) => {
             engineChanges.licence = { add: personaChanges.licenceAdd, remove: personaChanges.licenceRemove }
           }
           if (personaChanges.revokeSessions) engineChanges.revokeSessions = true
+          if (personaChanges.extensionAttribute1) {
+            scheduleExtAttrs = { extensionAttribute1: personaChanges.extensionAttribute1 }
+          }
         }
       }
+
+      const scheduleParams: Record<string, unknown> = {
+        userPrincipalName: user_principal_name,
+        displayName: display_name || user_principal_name,
+        effectiveDate: effective_date,
+        changes: engineChanges,
+      }
+      if (scheduleExtAttrs) scheduleParams.extensionAttributes = scheduleExtAttrs
 
       const engineBody: Record<string, unknown> = {
         templateId: 'hr.mover',
         externalRef: `move-${role_change_id}`,
-        parameters: {
-          userPrincipalName: user_principal_name,
-          displayName: display_name || user_principal_name,
-          effectiveDate: effective_date,
-          changes: engineChanges,
-        },
+        parameters: scheduleParams,
         options: options || {},
         timeZone: 'Europe/London',
         approval: {
