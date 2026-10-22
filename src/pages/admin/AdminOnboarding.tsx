@@ -4900,7 +4900,32 @@ export default function AdminOnboarding() {
                               changes: rc.changes,
                               attempt: (m365?.attempt_count_run || 0) + 1,
                             })
-                            if (res) { await loadMovers(); showSuccess('M365 mover run started') }
+                            if (!res) return
+                            let personaScheduled = false
+                            if (rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new) {
+                              try {
+                                const personas = await callIfoMover('list-personas', {})
+                                if (personas && Array.isArray(personas)) {
+                                  const { data: mapping } = await supabase.from('inflowonboarder_persona_mappings')
+                                    .select('extension_attribute_value')
+                                    .eq('company_id', selectedCompanyId)
+                                    .eq('persona', rc.changes.persona.new)
+                                    .maybeSingle()
+                                  const enginePersona = mapping ? personas.find((p: any) => p.extensionAttributeValue === mapping.extension_attribute_value || p.name?.toLowerCase().includes(rc.changes.persona.new.replace('_', ' '))) : null
+                                  if (enginePersona?.id) {
+                                    await callIfoMover('schedule-persona', {
+                                      role_change_id: rc.id,
+                                      persona_id: enginePersona.id,
+                                      user_principal_name: rc.employee_email,
+                                      display_name: rc.employee_name,
+                                    })
+                                    personaScheduled = true
+                                  }
+                                }
+                              } catch (e) { /* persona schedule is best-effort alongside the mover run */ }
+                            }
+                            await loadMovers()
+                            showSuccess(personaScheduled ? 'M365 mover run started + persona change scheduled' : 'M365 mover run started')
                           }}>
                           {m365?.run_status === 'failed' ? 'Retry M365 Update' : 'Start M365 Update'}
                         </button>
