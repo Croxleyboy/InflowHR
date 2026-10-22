@@ -4805,7 +4805,7 @@ export default function AdminOnboarding() {
                               setTab('mover-workflow')
                             }}>Workflow</button>
                             {(rc.status === 'pending' || rc.status === 'in_progress') && (
-                              <button className="admin-btn-sm" style={{ marginLeft: 6, color: '#c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel</button>
+                              <button className="admin-btn-sm" style={{ marginLeft: 8, color: '#c62828', border: '1px solid #c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel</button>
                             )}
                           </td>
                         </tr>
@@ -5072,8 +5072,13 @@ export default function AdminOnboarding() {
                             {!personaStatus && !personaCheckResult && (
                               <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
                                 onClick={async () => {
-                                  const personas = await callIfoMover('list-personas', {})
-                                  if (!personas || !Array.isArray(personas)) return
+                                  const personasRaw = await callIfoMover('list-personas', {})
+                                  if (!personasRaw) return
+                                  const personas = Array.isArray(personasRaw) ? personasRaw : (personasRaw.items || personasRaw.personas || personasRaw.data || [])
+                                  if (!Array.isArray(personas) || personas.length === 0) {
+                                    showError('No personas returned from InflowOnboarder. Check that persona packs are configured in the engine.')
+                                    return
+                                  }
 
                                   const { data: mapping } = await supabase.from('inflowonboarder_persona_mappings')
                                     .select('extension_attribute_value')
@@ -5085,7 +5090,8 @@ export default function AdminOnboarding() {
                                     ? personas.find((p: any) => p.extensionAttributeValue === mapping.extension_attribute_value || p.name?.toLowerCase().includes(personaNew.replace('_', ' ')))
                                     : personas.find((p: any) => p.name?.toLowerCase().includes(personaNew.replace('_', ' ')))
                                   if (!enginePersona?.id) {
-                                    showError(`Could not find engine persona matching "${personaNew}". Check persona mappings in Integrations.`)
+                                    const available = personas.map((p: any) => p.name || p.id).join(', ')
+                                    showError(`Could not find engine persona matching "${personaNew}". Available: ${available}. Check persona mappings in Integrations.`)
                                     return
                                   }
 
@@ -5282,7 +5288,9 @@ export default function AdminOnboarding() {
                 )}
                 <button className="admin-btn-sm" disabled={moverStep <= 0} onClick={() => setMoverStep(moverStep - 1)}>← Previous</button>
                 <button className="admin-btn-sm" disabled={moverStep >= steps.length - 1} onClick={() => setMoverStep(moverStep + 1)}>Next →</button>
-                <button className="admin-btn-sm" style={{ marginLeft: 'auto', color: '#c62828', border: '1px solid #c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel Role Change</button>
+                {(rc.status === 'pending' || rc.status === 'in_progress') && (
+                  <button className="admin-btn-sm" style={{ marginLeft: 'auto', color: '#c62828', border: '1px solid #c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel Role Change</button>
+                )}
               </div>
             </div>
           </div>
