@@ -68,7 +68,7 @@ async function verifyAdminOrApprover(
   const { data: cu } = await sb.from('company_users').select('role').eq('auth_user_id', user.id).eq('company_id', companyId).eq('is_active', true).maybeSingle()
   if (cu && (cu.role === 'admin' || cu.role === 'hr')) return { userId: user.id, userEmail: user.email! }
   if (roleChangeId) {
-    const { data: wt } = await sb.from('workflow_tracker').select('id').eq('record_id', roleChangeId).eq('record_type', 'M365 Mover Persona').eq('company_id', companyId).eq('approver_email', user.email).eq('status', 'pending').maybeSingle()
+    const { data: wt } = await sb.from('workflow_tracker').select('id').eq('record_index', roleChangeId).eq('record_type', 'M365 Mover Persona').eq('company_id', companyId).eq('approver_email', user.email).eq('status', 'pending').maybeSingle()
     if (wt) return { userId: user.id, userEmail: user.email! }
   }
   return json({ error: 'Admin access or approver role required' }, 403)
