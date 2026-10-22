@@ -85,7 +85,7 @@ function mockStartMoverRun(roleChangeId: number): { id: string; status: string; 
   return {
     id: `mock-mover-run-${roleChangeId}`,
     status: 'ready_for_approval',
-    message: 'Update department from Support to Engineering, change job title, update extensionAttribute1 to Persona-StrictSecure, swap licence, update 2 groups.',
+    message: 'Update department from Support to Engineering, change job title, swap licence, update 2 groups.',
   }
 }
 
@@ -106,13 +106,12 @@ function mockProceedMoverRun(runId: string, roleChangeId: number, currentStatus:
   if (currentStatus === 'ready_for_approval') {
     return {
       status: 'completed',
-      message: 'Department updated, job title changed, licence swapped, 2 groups updated, extensionAttribute1 set.',
+      message: 'Department updated, job title changed, licence swapped, 2 groups updated.',
       result: {
         userId: 'mock-aad-user-id-mover',
         userPrincipalName: 'mover@mockdomain.com',
         changed: {
           profile: { jobTitle: 'Senior Engineer', department: 'Engineering' },
-          extensionAttributes: { extensionAttribute1: 'Persona-StrictSecure' },
           groups: { added: ['SG-Engineering'], removed: ['SG-Support'] },
           licence: { added: 'Microsoft 365 E5', removed: 'Microsoft 365 Business Premium' },
         },
@@ -218,7 +217,6 @@ async function buildPersonaChanges(
   oldPersona: string | null,
   newPersona: string | null,
 ): Promise<{
-  extensionAttribute1?: string;
   groupsAdd: string[];
   groupsRemove: string[];
   licenceAdd?: string;
@@ -238,7 +236,6 @@ async function buildPersonaChanges(
   const newMapping = mappings.find((m: any) => m.persona === newPersona)
 
   const result: {
-    extensionAttribute1?: string;
     groupsAdd: string[];
     groupsRemove: string[];
     licenceAdd?: string;
@@ -248,10 +245,6 @@ async function buildPersonaChanges(
     groupsAdd: [],
     groupsRemove: [],
     revokeSessions: oldPersona === 'strict_secure' || newPersona === 'strict_secure',
-  }
-
-  if (newMapping?.extension_attribute_value) {
-    result.extensionAttribute1 = newMapping.extension_attribute_value
   }
 
   if (newMapping?.m365_groups) {
@@ -314,12 +307,10 @@ Deno.serve(async (req) => {
         engineChanges.manager = changes.manager
       }
 
-      // Persona transition: resolve mappings → groups, licence, extensionAttribute1
-      let extensionAttributesPayload: Record<string, string> | undefined
+      // Persona transition: resolve groups + licence changes (extensionAttribute1 is handled separately via persona packs API)
       if (changes?.persona) {
         const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
         if (personaChanges) {
-          // Merge persona groups with explicit group changes
           const existingGroupsAdd = changes?.groups?.add || []
           const existingGroupsRemove = changes?.groups?.remove || []
           engineChanges.groups = {
@@ -330,9 +321,6 @@ Deno.serve(async (req) => {
             engineChanges.licence = { add: personaChanges.licenceAdd, remove: personaChanges.licenceRemove }
           }
           engineChanges.revokeSessions = personaChanges.revokeSessions
-          if (personaChanges.extensionAttribute1) {
-            extensionAttributesPayload = { extensionAttribute1: personaChanges.extensionAttribute1 }
-          }
         }
       }
 
@@ -367,7 +355,6 @@ Deno.serve(async (req) => {
           userPrincipalName: user_principal_name,
           changes: engineChanges,
         }
-        if (extensionAttributesPayload) engineBody.extensionAttributes = extensionAttributesPayload
         if (licence_contact) engineBody.licenceContact = licence_contact
 
         const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/workflows/m365.mover/runs', engineBody, idempotencyKey)
@@ -573,7 +560,7 @@ Deno.serve(async (req) => {
       if (changes?.groups) engineChanges.groups = changes.groups
       if (changes?.licence) engineChanges.licence = changes.licence
 
-      let scheduleExtAttrs: Record<string, string> | undefined
+      // Persona transition: resolve groups + licence (extensionAttribute1 handled via persona packs API)
       if (changes?.persona) {
         const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
         if (personaChanges) {
@@ -587,9 +574,6 @@ Deno.serve(async (req) => {
             engineChanges.licence = { add: personaChanges.licenceAdd, remove: personaChanges.licenceRemove }
           }
           if (personaChanges.revokeSessions) engineChanges.revokeSessions = true
-          if (personaChanges.extensionAttribute1) {
-            scheduleExtAttrs = { extensionAttribute1: personaChanges.extensionAttribute1 }
-          }
         }
       }
 
@@ -599,7 +583,6 @@ Deno.serve(async (req) => {
         effectiveDate: effective_date,
         changes: engineChanges,
       }
-      if (scheduleExtAttrs) scheduleParams.extensionAttributes = scheduleExtAttrs
 
       const engineBody: Record<string, unknown> = {
         templateId: 'hr.mover',
@@ -869,6 +852,91 @@ Deno.serve(async (req) => {
 
       await audit(sb, company_id, userId, 'inflowonboarder_recheck_mover_schedule', { role_change_id, schedule_id })
       return json(sched)
+    }
+
+    // ── list-personas ─────────────────────────────────────────────────
+    if (action === 'list-personas') {
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const res = await engineFetch(keyResult.apiKey, 'GET', '/v1/personas')
+      const engineErr = handleEngineError(sb, company_id, res)
+      if (engineErr) return engineErr
+
+      await audit(sb, company_id, userId, 'inflowonboarder_list_personas', {})
+      return json(res.data)
+    }
+
+    // ── check-persona ───────────────────────────────────────────────
+    if (action === 'check-persona') {
+      const { persona_id, user_principal_name, effective_date, effective_time } = body
+      if (!persona_id || !user_principal_name) return json({ error: 'Missing persona_id or user_principal_name' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const checkBody: Record<string, unknown> = { userPrincipalName: user_principal_name }
+      if (effective_date) checkBody.effectiveDate = effective_date
+      if (effective_time) checkBody.effectiveTime = effective_time
+
+      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/personas/${persona_id}/check`, checkBody)
+      const engineErr = handleEngineError(sb, company_id, res)
+      if (engineErr) return engineErr
+
+      await audit(sb, company_id, userId, 'inflowonboarder_check_persona', { persona_id, user_principal_name })
+      return json(res.data)
+    }
+
+    // ── schedule-persona ────────────────────────────────────────────
+    if (action === 'schedule-persona') {
+      const { role_change_id, persona_id, user_principal_name, display_name, effective_date, effective_time, approver_name, approver_email, approved_at, approval_required } = body
+      if (!persona_id || !user_principal_name) return json({ error: 'Missing persona_id or user_principal_name' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-persona-${role_change_id || persona_id}-${Date.now()}`
+
+      const engineBody: Record<string, unknown> = {
+        templateId: `persona.${persona_id}`,
+        externalRef: role_change_id ? `move-persona-${role_change_id}` : `persona-${persona_id}-${Date.now()}`,
+        parameters: {
+          userPrincipalName: user_principal_name,
+          displayName: display_name || user_principal_name,
+          effectiveDate: effective_date || new Date().toISOString().split('T')[0],
+        },
+        options: effective_time ? { effectiveTime: effective_time } : {},
+        timeZone: 'Europe/London',
+      }
+
+      if (approval_required) {
+        engineBody.approval = {
+          approvedBy: { name: approver_name || 'InflowHR Approver', email: approver_email || userEmail },
+          approvedAt: approved_at || new Date().toISOString(),
+          reference: `inflowhr-persona-approval-${role_change_id || persona_id}`,
+        }
+      }
+
+      const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
+      const engineErr = handleEngineError(sb, company_id, res)
+      if (engineErr) return engineErr
+
+      const schedData = res.data as any
+
+      if (role_change_id) {
+        await sb.from('mover_m365_actions').upsert({
+          role_change_id,
+          company_id,
+          schedule_id: schedData.id,
+          schedule_status: schedData.status || 'scheduled',
+          schedule_message: schedData.message,
+          employee_upn: user_principal_name,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'role_change_id' })
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_schedule_persona', { role_change_id, persona_id, user_principal_name })
+      return json(schedData)
     }
 
     return json({ error: `Unknown action: ${action}` }, 400)
