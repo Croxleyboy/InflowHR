@@ -191,6 +191,7 @@ const SCOPE_HINTS: Record<string, string> = {
   'check-persona': 'hr.persona',
   'get-job': 'hr.persona',
   'schedule-persona': 'hr.persona',
+  'cancel-persona-schedule': 'hr.persona',
 }
 
 function handleEngineError(
@@ -961,6 +962,45 @@ Deno.serve(async (req) => {
 
       await audit(sb, company_id, userId, 'inflowonboarder_schedule_persona', { role_change_id, persona_id, user_principal_name })
       return json(schedData)
+    }
+
+    // ── cancel-persona-schedule ──────────────────────────────────────────
+    if (action === 'cancel-persona-schedule') {
+      const { schedule_id, role_change_id, reason } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-persona-cancel-${role_change_id || schedule_id}-${Date.now()}`
+
+      if (MOCK_MODE) {
+        await sb.from('mover_m365_actions').update({
+          persona_schedule_status: 'cancelled',
+          updated_at: new Date().toISOString(),
+        }).eq('role_change_id', role_change_id)
+        return json({ status: 'cancelled', message: reason || 'Persona schedule cancelled' })
+      }
+
+      console.log(`[IFO-MOVER] POST /v1/schedules/${schedule_id}/cancel (persona)`)
+      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/schedules/${schedule_id}/cancel`, {
+        reason: reason || 'Cancelled from InflowHR',
+      }, idempotencyKey)
+      console.log(`[IFO-MOVER] POST /v1/schedules/${schedule_id}/cancel (persona) → ${res.status}`)
+
+      const errResp = handleEngineError(sb, company_id, res, action)
+      if (errResp) return errResp
+
+      const sched = res.data as any
+      if (role_change_id) {
+        await sb.from('mover_m365_actions').update({
+          persona_schedule_status: 'cancelled',
+          updated_at: new Date().toISOString(),
+        }).eq('role_change_id', role_change_id)
+      }
+
+      await audit(sb, company_id, userId, 'inflowonboarder_cancel_persona_schedule', { role_change_id, schedule_id, reason })
+      return json(sched)
     }
 
     return json({ error: `Unknown action: ${action}` }, 400)

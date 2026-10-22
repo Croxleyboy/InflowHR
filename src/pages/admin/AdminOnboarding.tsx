@@ -1121,6 +1121,55 @@ export default function AdminOnboarding() {
     return data
   }
 
+  async function cancelMoverRoleChange(rc: RoleChange) {
+    const m365 = moverM365[rc.id]
+    const hrApplied = !!(rc.workflow_steps as any)?.update_records
+
+    const parts: string[] = []
+    if (hrApplied) parts.push('revert the HR record changes')
+    if (m365?.schedule_id && m365.schedule_status !== 'completed' && m365.schedule_status !== 'cancelled' && m365.schedule_status !== 'failed') parts.push('cancel the M365 mover schedule')
+    if (m365?.persona_schedule_id && m365.persona_schedule_status !== 'completed' && m365.persona_schedule_status !== 'cancelled' && m365.persona_schedule_status !== 'failed') parts.push('cancel the persona schedule')
+
+    const detail = parts.length > 0 ? `\n\nThis will also ${parts.join(', ')}.` : ''
+    if (!confirm(`Cancel role change for ${rc.employee_name}?${detail}\n\nThis action cannot be undone.`)) return
+
+    try {
+      if (hrApplied) {
+        const reverts: Record<string, any> = {}
+        const ch = rc.changes || {}
+        if (ch.job_title?.old) reverts.job_title = ch.job_title.old
+        if (ch.department?.old) reverts.department = ch.department.old
+        if (ch.location?.old) reverts.location = ch.location.old
+        if (ch.manager_name?.old) reverts.manager_name = ch.manager_name.old
+        if (ch.manager_email?.old) reverts.manager_email = ch.manager_email.old
+        if (ch.persona?.old) reverts.persona = ch.persona.old
+        if (Object.keys(reverts).length > 0) {
+          const { error } = await supabase.from('employees').update(reverts).eq('id', rc.employee_id)
+          if (error) { showError('Failed to revert HR record: ' + error.message); return }
+        }
+      }
+
+      if (m365?.schedule_id && m365.schedule_status !== 'completed' && m365.schedule_status !== 'cancelled' && m365.schedule_status !== 'failed') {
+        await callIfoMover('cancel-mover-schedule', { schedule_id: m365.schedule_id, role_change_id: rc.id, reason: 'Role change cancelled' })
+      }
+      if (m365?.persona_schedule_id && m365.persona_schedule_status !== 'completed' && m365.persona_schedule_status !== 'cancelled' && m365.persona_schedule_status !== 'failed') {
+        await callIfoMover('cancel-persona-schedule', { schedule_id: m365.persona_schedule_id, role_change_id: rc.id, reason: 'Role change cancelled' })
+      }
+
+      if (m365) {
+        await supabase.from('mover_m365_actions').delete().eq('role_change_id', rc.id)
+      }
+
+      await supabase.from('role_changes').update({ status: 'cancelled', workflow_steps: {}, skipped_steps: {} }).eq('id', rc.id)
+
+      if (moverSelectedId === rc.id) { setMoverSelectedId(null); setTab('movers') }
+      await loadMovers()
+      showSuccess(`Role change cancelled for ${rc.employee_name}`)
+    } catch (err: any) {
+      showError('Cancel failed: ' + (err?.message || 'Unknown error'))
+    }
+  }
+
   async function loadM365Actions(onboardingId: number) {
     const [{ data }, { data: ifo }, { data: wt }, { data: schedulingFlag }] = await Promise.all([
       supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle(),
@@ -4755,12 +4804,8 @@ export default function AdminOnboarding() {
                               setMoverSkips(rc.skipped_steps || {})
                               setTab('mover-workflow')
                             }}>Workflow</button>
-                            {rc.status === 'pending' && (
-                              <button className="admin-btn-sm" style={{ marginLeft: 6, color: '#c62828' }} onClick={async () => {
-                                await supabase.from('role_changes').update({ status: 'cancelled' }).eq('id', rc.id)
-                                await loadMovers()
-                                showSuccess('Role change cancelled')
-                              }}>Cancel</button>
+                            {(rc.status === 'pending' || rc.status === 'in_progress') && (
+                              <button className="admin-btn-sm" style={{ marginLeft: 6, color: '#c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel</button>
                             )}
                           </td>
                         </tr>
@@ -5237,6 +5282,7 @@ export default function AdminOnboarding() {
                 )}
                 <button className="admin-btn-sm" disabled={moverStep <= 0} onClick={() => setMoverStep(moverStep - 1)}>← Previous</button>
                 <button className="admin-btn-sm" disabled={moverStep >= steps.length - 1} onClick={() => setMoverStep(moverStep + 1)}>Next →</button>
+                <button className="admin-btn-sm" style={{ marginLeft: 'auto', color: '#c62828', border: '1px solid #c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel Role Change</button>
               </div>
             </div>
           </div>
