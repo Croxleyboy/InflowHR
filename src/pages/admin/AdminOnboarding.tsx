@@ -4891,17 +4891,18 @@ export default function AdminOnboarding() {
                 <div>
                   {features.inflowonboarder_integration && ifoConnected ? (
                     <div>
-                      {!m365 && (
+                      {(!m365 || m365.run_status === 'failed') && (
                         <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
                           onClick={async () => {
                             const res = await callIfoMover('start-mover-run', {
                               role_change_id: rc.id,
                               user_principal_name: rc.employee_email,
                               changes: rc.changes,
+                              attempt: (m365?.attempt_count_run || 0) + 1,
                             })
                             if (res) { await loadMovers(); showSuccess('M365 mover run started') }
                           }}>
-                          Start M365 Update
+                          {m365?.run_status === 'failed' ? 'Retry M365 Update' : 'Start M365 Update'}
                         </button>
                       )}
                       {m365 && (
