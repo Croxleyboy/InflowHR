@@ -54,6 +54,26 @@ async function verifyAdmin(
   return { userId: user.id, userEmail: user.email! }
 }
 
+async function verifyAdminOrApprover(
+  sb: ReturnType<typeof getSupabase>,
+  authHeader: string | null,
+  companyId: string,
+  roleChangeId?: number,
+): Promise<{ userId: string; userEmail: string } | Response> {
+  if (!authHeader) return json({ error: 'Unauthorized' }, 401)
+  const { data: { user }, error } = await sb.auth.getUser(authHeader.replace('Bearer ', ''))
+  if (error || !user) return json({ error: 'Unauthorized' }, 401)
+  const { data: sa } = await sb.from('super_admins').select('id').eq('email', user.email).maybeSingle()
+  if (sa) return { userId: user.id, userEmail: user.email! }
+  const { data: cu } = await sb.from('company_users').select('role').eq('auth_user_id', user.id).eq('company_id', companyId).eq('is_active', true).maybeSingle()
+  if (cu && (cu.role === 'admin' || cu.role === 'hr')) return { userId: user.id, userEmail: user.email! }
+  if (roleChangeId) {
+    const { data: wt } = await sb.from('workflow_tracker').select('id').eq('record_id', roleChangeId).eq('record_type', 'M365 Mover Persona').eq('company_id', companyId).eq('approver_email', user.email).eq('status', 'pending').maybeSingle()
+    if (wt) return { userId: user.id, userEmail: user.email! }
+  }
+  return json({ error: 'Admin access or approver role required' }, 403)
+}
+
 // ── Engine HTTP calls ───────────────────────────────────────────────────────
 
 async function engineFetch(
@@ -250,7 +270,9 @@ Deno.serve(async (req) => {
 
     if (!company_id || !action) return json({ error: 'Missing company_id or action' }, 400)
 
-    const authResult = await verifyAdmin(sb, authHeader, company_id)
+    const authResult = action === 'schedule-persona'
+      ? await verifyAdminOrApprover(sb, authHeader, company_id, body.role_change_id)
+      : await verifyAdmin(sb, authHeader, company_id)
     if (authResult instanceof Response) return authResult
     const { userId, userEmail } = authResult
 
