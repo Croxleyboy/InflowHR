@@ -233,48 +233,6 @@ function handleEngineError(
   return json({ error: friendlyError(code, errData?.error?.message) }, res.status)
 }
 
-// ── Persona transition: build licence + session changes for mover ────────────
-// Groups and extensionAttribute1 are handled by the persona packs API, not m365.mover.
-
-async function buildPersonaChanges(
-  sb: ReturnType<typeof getSupabase>,
-  companyId: string,
-  oldPersona: string | null,
-  newPersona: string | null,
-): Promise<{
-  licenceAdd?: string;
-  licenceRemove?: string;
-  revokeSessions: boolean;
-} | null> {
-  if (!oldPersona || !newPersona || oldPersona === newPersona) return null
-
-  const { data: mappings } = await sb.from('inflowonboarder_persona_mappings')
-    .select('*')
-    .eq('company_id', companyId)
-    .in('persona', [oldPersona, newPersona])
-
-  if (!mappings || mappings.length === 0) return null
-
-  const oldMapping = mappings.find((m: any) => m.persona === oldPersona)
-  const newMapping = mappings.find((m: any) => m.persona === newPersona)
-
-  const result: {
-    licenceAdd?: string;
-    licenceRemove?: string;
-    revokeSessions: boolean;
-  } = {
-    revokeSessions: oldPersona === 'strict_secure' || newPersona === 'strict_secure',
-  }
-
-  if (newMapping?.m365_licence_sku_id && oldMapping?.m365_licence_sku_id &&
-      newMapping.m365_licence_sku_id !== oldMapping.m365_licence_sku_id) {
-    result.licenceAdd = newMapping.m365_licence_sku_id
-    result.licenceRemove = oldMapping.m365_licence_sku_id
-  }
-
-  return result
-}
-
 // ── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -315,17 +273,6 @@ Deno.serve(async (req) => {
       // Manager change
       if (changes?.manager) {
         engineChanges.manager = changes.manager
-      }
-
-      // Persona transition: resolve licence + session changes (groups and extensionAttribute1 handled by persona packs API)
-      if (changes?.persona) {
-        const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
-        if (personaChanges) {
-          if (personaChanges.licenceAdd && !changes?.licence?.add) {
-            engineChanges.licence = { add: personaChanges.licenceAdd, remove: personaChanges.licenceRemove }
-          }
-          engineChanges.revokeSessions = personaChanges.revokeSessions
-        }
       }
 
       // Explicit group/licence changes
@@ -569,17 +516,6 @@ Deno.serve(async (req) => {
       if (changes?.manager) engineChanges.manager = changes.manager
       if (changes?.groups) engineChanges.groups = changes.groups
       if (changes?.licence) engineChanges.licence = changes.licence
-
-      // Persona transition: resolve licence + session changes (groups handled by persona packs API)
-      if (changes?.persona) {
-        const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
-        if (personaChanges) {
-          if (personaChanges.licenceAdd && !engineChanges.licence) {
-            engineChanges.licence = { add: personaChanges.licenceAdd, remove: personaChanges.licenceRemove }
-          }
-          if (personaChanges.revokeSessions) engineChanges.revokeSessions = true
-        }
-      }
 
       const scheduleParams: Record<string, unknown> = {
         userPrincipalName: user_principal_name,
