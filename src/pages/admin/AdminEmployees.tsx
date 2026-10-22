@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAdminCompany } from '../../context/AdminCompanyContext'
@@ -91,7 +91,7 @@ export default function AdminEmployees() {
   const [empSkills, setEmpSkills] = useState<Record<string, { skill_name: string; proficiency: number; status: string }[]>>({})
   const [lieuDays, setLieuDays] = useState<Record<string, { balanceId: number; lieu_days: number }>>({})
   const [editLieuDays, setEditLieuDays] = useState<number>(0)
-  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart' | 'settings' | 'custom_fields'>('records')
+  const [activeTab, setActiveTab] = useState<'management' | 'records' | 'orgchart' | 'settings' | 'custom_fields' | 'changelog'>('records')
   const [recordsSearch, setRecordsSearch] = useState('')
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
@@ -247,8 +247,37 @@ export default function AdminEmployees() {
       else if (typeof v === 'string') { payload[k] = v || null }
       else { payload[k] = v }
     }
+
+    // Fetch current record before update for audit trail
+    const { data: oldRecord } = await supabase.from('employees').select('*').eq('id', id).single()
+
     const { error } = await supabase.from('employees').update(payload).eq('id', id)
     if (error) { showError('Failed to save employee: ' + error.message); return }
+
+    // Audit log — record changed fields
+    if (oldRecord) {
+      const changedFields: Record<string, { old: any; new: any }> = {}
+      for (const [k, v] of Object.entries(payload)) {
+        const oldVal = (oldRecord as any)[k]
+        if (JSON.stringify(oldVal) !== JSON.stringify(v)) {
+          changedFields[k] = { old: oldVal ?? null, new: v ?? null }
+        }
+      }
+      if (Object.keys(changedFields).length > 0) {
+        const { data: userData } = await supabase.auth.getUser()
+        await supabase.from('gdpr_audit_logs').insert({
+          actor_id: userData.user?.id,
+          actor_role: 'company_admin',
+          company_id: selectedCompanyId,
+          table_name: 'employees',
+          record_id: id,
+          action: 'UPDATE',
+          old_data: changedFields,
+          new_data: Object.fromEntries(Object.entries(changedFields).map(([k, v]) => [k, v.new])),
+          metadata: { employee_name: `${oldRecord.first_name} ${oldRecord.last_name}`, source: 'admin_employees' },
+        })
+      }
+    }
     const emp = employees.find(e => e.id === id)
     if (emp && (editForm.first_name !== emp.first_name || editForm.last_name !== emp.last_name)) {
       const onboardingUpdate: Record<string, string | null> = {}
@@ -285,8 +314,23 @@ export default function AdminEmployees() {
 
   async function deactivateEmployee(id: string) {
     if (!confirm('Deactivate this employee? This will mark them as inactive and reassign their pending approvals.')) return
+    const emp = employees.find(e => e.id === id)
     const { error } = await supabase.from('employees').update({ is_active: false }).eq('id', id)
     if (error) { showError('Failed to deactivate employee: ' + error.message); return }
+
+    // Audit log — deactivation
+    const { data: userData } = await supabase.auth.getUser()
+    await supabase.from('gdpr_audit_logs').insert({
+      actor_id: userData.user?.id,
+      actor_role: 'company_admin',
+      company_id: selectedCompanyId,
+      table_name: 'employees',
+      record_id: id,
+      action: 'UPDATE',
+      old_data: { is_active: { old: true, new: false } },
+      new_data: { is_active: false },
+      metadata: { employee_name: emp ? `${emp.first_name} ${emp.last_name}` : 'Unknown', source: 'admin_employees', change_type: 'deactivation' },
+    })
 
     const { data: pendingItems } = await supabase.from('workflow_tracker')
       .select('id')
@@ -604,6 +648,7 @@ export default function AdminEmployees() {
         <button className={`admin-tab ${activeTab === 'orgchart' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('orgchart')}>Org Chart</button>
         <button className={`admin-tab ${activeTab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('settings')}>Payroll Settings</button>
         <button className={`admin-tab ${activeTab === 'custom_fields' ? 'admin-tab-active' : ''}`} onClick={() => { setActiveTab('custom_fields'); if (customFields.length === 0) loadCustomFields() }}>Custom Fields</button>
+        <button className={`admin-tab ${activeTab === 'changelog' ? 'admin-tab-active' : ''}`} onClick={() => setActiveTab('changelog')}>Change Log</button>
       </div>
 
       {activeTab === 'records' && (
@@ -864,6 +909,10 @@ export default function AdminEmployees() {
             </>
           )}
         </div>
+      )}
+
+      {activeTab === 'changelog' && (
+        <EmployeeChangeLog companyId={selectedCompanyId} />
       )}
 
       {activeTab === 'management' && <>
@@ -1410,6 +1459,336 @@ export default function AdminEmployees() {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+/* ─── Employee Change Log ─── */
+
+const FIELD_LABELS: Record<string, string> = {
+  job_title: 'Job Title', department: 'Department', location: 'Location',
+  annual_salary: 'Annual Salary', hourly_rate: 'Hourly Rate', persona: 'Persona',
+  manager_name: 'Manager', first_name: 'First Name', last_name: 'Last Name',
+  email: 'Email', work_email: 'Work Email', phone: 'Phone',
+  date_of_birth: 'Date of Birth', ni_number: 'NI Number',
+  bank_sort_code: 'Sort Code', bank_account_number: 'Account Number',
+  employment_category: 'Employment Type', leave_allowance: 'Leave Allowance',
+  weekly_hours: 'Weekly Hours', start_date: 'Start Date',
+  probation_end_date: 'Probation End Date', is_active: 'Active Status',
+  gender: 'Gender', nationality: 'Nationality', marital_status: 'Marital Status',
+  address_line1: 'Address Line 1', address_line2: 'Address Line 2',
+  city: 'City', county: 'County', postcode: 'Postcode', country: 'Country',
+  emergency_contact_name: 'Emergency Contact', emergency_contact_phone: 'Emergency Phone',
+  emergency_contact_relationship: 'Emergency Relationship', bank_account_name: 'Bank Account Name',
+  notice_period: 'Notice Period', contract_type: 'Contract Type',
+  tax_code: 'Tax Code', payroll_id: 'Payroll ID', personal_email: 'Personal Email',
+  manager_email: 'Manager Email', salary_group: 'Salary Group', qualifications: 'Qualifications',
+  religion: 'Religion', is_admin: 'Admin', contracted_days: 'Contracted Days',
+  pay_pattern_override: 'Pay Pattern Override', overtime_handling_override: 'Overtime Override',
+  time_recording_override: 'Time Recording Override', is_payroll_exception: 'Payroll Exception',
+}
+
+const CHANGELOG_PAGE_SIZE = 25
+
+interface AuditLogEntry {
+  id: number
+  performed_at: string
+  actor_id: string
+  actor_role: string
+  company_id: string | null
+  table_name: string
+  record_id: string | null
+  action: string
+  old_data: any
+  new_data: any
+  metadata: any
+}
+
+function EmployeeChangeLog({ companyId }: { companyId: string }) {
+  const [entries, setEntries] = useState<AuditLogEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [actionFilter, setActionFilter] = useState('')
+  const [searchText, setSearchText] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+
+  async function loadLogs() {
+    setLoading(true)
+    let query = supabase
+      .from('gdpr_audit_logs')
+      .select('*')
+      .eq('company_id', companyId)
+      .eq('table_name', 'employees')
+      .order('performed_at', { ascending: false })
+      .limit(500)
+
+    if (actionFilter) {
+      query = query.eq('action', actionFilter)
+    }
+    if (dateFrom) {
+      query = query.gte('performed_at', dateFrom + 'T00:00:00')
+    }
+    if (dateTo) {
+      query = query.lte('performed_at', dateTo + 'T23:59:59')
+    }
+
+    const { data } = await query
+    setEntries((data as AuditLogEntry[]) || [])
+    setCurrentPage(1)
+    setLoading(false)
+  }
+
+  useEffect(() => { if (companyId) loadLogs() }, [companyId, actionFilter, dateFrom, dateTo])
+
+  const filtered = useMemo(() => {
+    if (!searchText) return entries
+    const q = searchText.toLowerCase()
+    return entries.filter(e => {
+      const empName = e.metadata?.employee_name || ''
+      const actorId = e.actor_id || ''
+      return empName.toLowerCase().includes(q) || actorId.toLowerCase().includes(q)
+    })
+  }, [entries, searchText])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / CHANGELOG_PAGE_SIZE))
+  const paginated = filtered.slice((currentPage - 1) * CHANGELOG_PAGE_SIZE, currentPage * CHANGELOG_PAGE_SIZE)
+
+  function formatFieldName(key: string): string {
+    return FIELD_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  }
+
+  function formatValue(val: any): string {
+    if (val === null || val === undefined) return '(empty)'
+    if (typeof val === 'boolean') return val ? 'Yes' : 'No'
+    if (Array.isArray(val)) return val.map((v, i) => v ? DAY_LABELS[i] : null).filter(Boolean).join(', ') || '(none)'
+    return String(val)
+  }
+
+  function renderChangedFields(entry: AuditLogEntry) {
+    const oldData = entry.old_data
+    if (!oldData || typeof oldData !== 'object') return null
+
+    // Check if old_data has the {field: {old, new}} shape
+    const fields = Object.entries(oldData)
+    const isDetailedFormat = fields.length > 0 && fields.every(([, v]) => v && typeof v === 'object' && 'old' in v && 'new' in v)
+
+    if (isDetailedFormat) {
+      return (
+        <div style={{ display: 'grid', gap: 6 }}>
+          {fields.map(([field, val]: [string, any]) => (
+            <div key={field} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', background: '#f8f9fc', borderRadius: 6 }}>
+              <span style={{ fontWeight: 600, color: '#333', minWidth: 140 }}>{formatFieldName(field)}</span>
+              <span style={{ color: '#c62828', textDecoration: 'line-through' }}>{formatValue(val.old)}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+              <span style={{ color: '#2e7d32', fontWeight: 600 }}>{formatValue(val.new)}</span>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    // Fallback: show old_data and new_data as JSON
+    return (
+      <div style={{ display: 'grid', gap: 8 }}>
+        {entry.old_data && (
+          <div>
+            <strong style={{ fontSize: 11, color: '#c62828', textTransform: 'uppercase' }}>Old Data</strong>
+            <pre style={{ fontSize: 11, margin: '4px 0', padding: 8, background: '#fff', borderRadius: 6, overflow: 'auto', maxHeight: 150 }}>
+              {JSON.stringify(entry.old_data, null, 2)}
+            </pre>
+          </div>
+        )}
+        {entry.new_data && (
+          <div>
+            <strong style={{ fontSize: 11, color: '#2e7d32', textTransform: 'uppercase' }}>New Data</strong>
+            <pre style={{ fontSize: 11, margin: '4px 0', padding: 8, background: '#fff', borderRadius: 6, overflow: 'auto', maxHeight: 150 }}>
+              {JSON.stringify(entry.new_data, null, 2)}
+            </pre>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const ACTION_COLORS: Record<string, { bg: string; color: string }> = {
+    UPDATE: { bg: '#fff3e0', color: '#e65100' },
+    INSERT: { bg: '#e8f5e9', color: '#2e7d32' },
+    DELETE: { bg: '#ffebee', color: '#c62828' },
+  }
+
+  const ROLE_COLORS: Record<string, { bg: string; color: string }> = {
+    super_admin: { bg: '#e3f2fd', color: '#1565c0' },
+    company_admin: { bg: '#f3e5f5', color: '#7b1fa2' },
+    employee: { bg: '#e8f5e9', color: '#2e7d32' },
+  }
+
+  return (
+    <div style={{ padding: '16px 0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Employee Change Log</h3>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#8b8fa3' }}>
+            Read-only audit trail of all employee record changes
+          </p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16, alignItems: 'flex-end' }}>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: '#8b8fa3', display: 'block', marginBottom: 4 }}>Action</label>
+          <select className="admin-select" style={{ minWidth: 140, fontSize: 13 }} value={actionFilter} onChange={e => setActionFilter(e.target.value)}>
+            <option value="">All Actions</option>
+            <option value="UPDATE">UPDATE</option>
+            <option value="INSERT">INSERT</option>
+            <option value="DELETE">DELETE</option>
+          </select>
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: '#8b8fa3', display: 'block', marginBottom: 4 }}>Search</label>
+          <input className="admin-input" style={{ minWidth: 180, fontSize: 13 }} placeholder="Employee name or actor..." value={searchText} onChange={e => setSearchText(e.target.value)} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: '#8b8fa3', display: 'block', marginBottom: 4 }}>From</label>
+          <input className="admin-input" type="date" style={{ fontSize: 13 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 600, color: '#8b8fa3', display: 'block', marginBottom: 4 }}>To</label>
+          <input className="admin-input" type="date" style={{ fontSize: 13 }} value={dateTo} onChange={e => setDateTo(e.target.value)} />
+        </div>
+        {(actionFilter || searchText || dateFrom || dateTo) && (
+          <button className="admin-btn-sm" onClick={() => { setActionFilter(''); setSearchText(''); setDateFrom(''); setDateTo('') }} style={{ fontSize: 12, padding: '6px 12px', marginBottom: 1 }}>
+            Clear Filters
+          </button>
+        )}
+      </div>
+
+      <div style={{ padding: '8px 14px', background: '#f8f9fc', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b8fa3" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <span style={{ fontSize: 12, color: '#8b8fa3' }}>
+          This log is read-only. Showing {filtered.length} entries for employee record changes.
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="admin-loading">Loading...</div>
+      ) : filtered.length === 0 ? (
+        <div className="admin-empty" style={{ padding: 40 }}>No change log entries found</div>
+      ) : (
+        <>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Date/Time</th>
+                  <th>Actor</th>
+                  <th>Employee</th>
+                  <th>Action</th>
+                  <th>Changed Fields</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.map(entry => {
+                  const actionColor = ACTION_COLORS[entry.action] || { bg: '#f5f5f5', color: '#666' }
+                  const roleColor = ROLE_COLORS[entry.actor_role] || { bg: '#f5f5f5', color: '#666' }
+                  const isExpanded = expandedId === entry.id
+                  const empName = entry.metadata?.employee_name || '—'
+                  const changeType = entry.metadata?.change_type
+
+                  // Count changed fields
+                  let fieldCount = 0
+                  let fieldNames: string[] = []
+                  if (entry.old_data && typeof entry.old_data === 'object') {
+                    fieldNames = Object.keys(entry.old_data)
+                    fieldCount = fieldNames.length
+                  }
+
+                  return (
+                    <React.Fragment key={entry.id}>
+                      <tr style={{ cursor: fieldCount > 0 ? 'pointer' : 'default' }} onClick={() => fieldCount > 0 && setExpandedId(isExpanded ? null : entry.id)}>
+                        <td style={{ fontSize: 12, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                          {new Date(entry.performed_at).toLocaleDateString('en-GB')}{' '}
+                          {new Date(entry.performed_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+                        </td>
+                        <td>
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: roleColor.bg, color: roleColor.color }}>
+                            {entry.actor_role.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 13, fontWeight: 500 }}>{empName}</td>
+                        <td>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: actionColor.bg, color: actionColor.color }}>
+                            {changeType === 'deactivation' ? 'DEACTIVATION' : entry.action}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12, color: '#666' }}>
+                          {fieldCount > 0 ? (
+                            <span>
+                              {fieldNames.slice(0, 3).map(f => formatFieldName(f)).join(', ')}
+                              {fieldCount > 3 && ` +${fieldCount - 3} more`}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td style={{ fontSize: 12, color: '#8b8fa3', width: 30, textAlign: 'center' }}>
+                          {fieldCount > 0 ? (isExpanded ? '▼' : '▶') : ''}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: 0 }}>
+                            <div style={{ padding: '12px 16px', background: '#f8f9fc', borderTop: '1px solid #e5e7eb' }}>
+                              {renderChangedFields(entry)}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
+              <button className="admin-btn-sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={{ padding: '6px 12px', fontSize: 13 }}>
+                Previous
+              </button>
+              {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => {
+                let page: number
+                if (totalPages <= 10) {
+                  page = i + 1
+                } else if (currentPage <= 5) {
+                  page = i + 1
+                } else if (currentPage >= totalPages - 4) {
+                  page = totalPages - 9 + i
+                } else {
+                  page = currentPage - 4 + i
+                }
+                return (
+                  <button key={page} onClick={() => setCurrentPage(page)} style={{
+                    padding: '6px 12px', fontSize: 13, fontWeight: currentPage === page ? 700 : 400,
+                    background: currentPage === page ? '#1565c0' : '#f5f5f5', color: currentPage === page ? '#fff' : '#333',
+                    border: 'none', borderRadius: 4, cursor: 'pointer',
+                  }}>
+                    {page}
+                  </button>
+                )
+              })}
+              <button className="admin-btn-sm" onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={{ padding: '6px 12px', fontSize: 13 }}>
+                Next
+              </button>
+              <span style={{ fontSize: 12, color: '#888', marginLeft: 8 }}>
+                Showing {((currentPage - 1) * CHANGELOG_PAGE_SIZE) + 1}–{Math.min(currentPage * CHANGELOG_PAGE_SIZE, filtered.length)} of {filtered.length}
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

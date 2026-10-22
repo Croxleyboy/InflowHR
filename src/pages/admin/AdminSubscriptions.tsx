@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
@@ -1068,7 +1068,155 @@ export default function AdminSubscriptions() {
       {tab === 'companies' && <AdminCompanies />}
       {tab === 'trial-requests' && <AdminTrialRequests />}
       {tab === 'support-access' && <AdminSupportAccess />}
-      {tab === 'audit-log' && <AdminAuditLog />}
+      {tab === 'audit-log' && (
+        <>
+          <EmployeeAuditControls companies={companies} currency={currency} showSuccess={showSuccess} showError={showError} />
+          <AdminAuditLog />
+        </>
+      )}
+    </div>
+  )
+}
+
+/* ─── Employee Audit Controls (super admin) ─── */
+
+function EmployeeAuditControls({
+  companies,
+  currency,
+  showSuccess,
+  showError,
+}: {
+  companies: CompanyOption[]
+  currency: string
+  showSuccess: (msg: string) => void
+  showError: (msg: string) => void
+}) {
+  const [auditToggleCompanyId, setAuditToggleCompanyId] = useState('')
+  const [auditLoggingEnabled, setAuditLoggingEnabled] = useState(true)
+  const [togglingAudit, setTogglingAudit] = useState(false)
+
+  const [clearCompanyId, setClearCompanyId] = useState('')
+  const [clearBefore, setClearBefore] = useState('')
+  const [clearing, setClearing] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
+
+  const loadAuditSetting = useCallback(async (companyId: string) => {
+    if (!companyId) return
+    const { data } = await supabase
+      .from('companies')
+      .select('employee_audit_logging')
+      .eq('id', companyId)
+      .single()
+    if (data) setAuditLoggingEnabled(data.employee_audit_logging ?? true)
+  }, [])
+
+  useEffect(() => {
+    if (auditToggleCompanyId) loadAuditSetting(auditToggleCompanyId)
+  }, [auditToggleCompanyId, loadAuditSetting])
+
+  async function toggleAuditLogging() {
+    if (!auditToggleCompanyId) return
+    setTogglingAudit(true)
+    const newVal = !auditLoggingEnabled
+    const { error } = await supabase
+      .from('companies')
+      .update({ employee_audit_logging: newVal })
+      .eq('id', auditToggleCompanyId)
+    if (error) {
+      showError('Failed to update audit logging: ' + error.message)
+    } else {
+      setAuditLoggingEnabled(newVal)
+      showSuccess(`Employee audit logging ${newVal ? 'enabled' : 'disabled'}`)
+    }
+    setTogglingAudit(false)
+  }
+
+  async function handleClearLogs() {
+    if (!clearBefore) { showError('Please select a date'); return }
+    setClearing(true)
+    const { data, error } = await callRpcDirect('clear_employee_audit_logs', {
+      p_before: new Date(clearBefore + 'T00:00:00Z').toISOString(),
+      p_company_id: clearCompanyId || null,
+    })
+    if (error) {
+      showError('Failed to clear logs: ' + (error as any).message)
+    } else {
+      const count = typeof data === 'number' ? data : 0
+      showSuccess(`Cleared ${count} employee audit log${count !== 1 ? 's' : ''}`)
+    }
+    setClearing(false)
+    setConfirmClear(false)
+  }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+        {/* Toggle audit logging per company */}
+        <div style={{ background: '#f8f9fc', border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#333' }}>Employee Audit Logging</h4>
+          <p style={{ fontSize: 12, color: '#8b8fa3', margin: '0 0 12px' }}>
+            Toggle employee change logging per company. When disabled, employee edits are not recorded.
+          </p>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select className="admin-select" style={{ minWidth: 200, fontSize: 13 }} value={auditToggleCompanyId} onChange={e => setAuditToggleCompanyId(e.target.value)}>
+              <option value="">Select company...</option>
+              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {auditToggleCompanyId && (
+              <>
+                <label className="admin-toggle-switch">
+                  <input type="checkbox" checked={auditLoggingEnabled} onChange={toggleAuditLogging} disabled={togglingAudit} />
+                  <span className="admin-toggle-slider" />
+                </label>
+                <span style={{ fontSize: 13, fontWeight: 600, color: auditLoggingEnabled ? '#2e7d32' : '#c62828' }}>
+                  {auditLoggingEnabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Clear employee logs */}
+        <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 10, padding: 16 }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#c62828' }}>Clear Employee Logs</h4>
+          <p style={{ fontSize: 12, color: '#8b8fa3', margin: '0 0 12px' }}>
+            Permanently delete employee UPDATE audit logs before a given date. This cannot be undone.
+          </p>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select className="admin-select" style={{ minWidth: 200, fontSize: 13 }} value={clearCompanyId} onChange={e => setClearCompanyId(e.target.value)}>
+              <option value="">All companies</option>
+              {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#8b8fa3', display: 'block', marginBottom: 2 }}>Clear before</label>
+              <input className="admin-input" type="date" style={{ fontSize: 13 }} value={clearBefore} onChange={e => setClearBefore(e.target.value)} />
+            </div>
+            {!confirmClear ? (
+              <button
+                className="admin-btn"
+                style={{ background: '#c62828', color: '#fff', border: 'none', fontWeight: 700, fontSize: 13, padding: '8px 16px', borderRadius: 6, cursor: 'pointer' }}
+                onClick={() => { if (!clearBefore) { showError('Please select a date'); return } setConfirmClear(true) }}
+                disabled={!clearBefore}
+              >
+                Clear Logs
+              </button>
+            ) : (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: '#c62828', fontWeight: 600 }}>Are you sure?</span>
+                <button
+                  className="admin-btn"
+                  style={{ background: '#c62828', color: '#fff', border: 'none', fontWeight: 700, fontSize: 13, padding: '8px 16px', borderRadius: 6, cursor: 'pointer' }}
+                  onClick={handleClearLogs}
+                  disabled={clearing}
+                >
+                  {clearing ? 'Clearing...' : 'Yes, Delete'}
+                </button>
+                <button className="admin-btn-sm" onClick={() => setConfirmClear(false)} style={{ fontSize: 12 }}>Cancel</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
