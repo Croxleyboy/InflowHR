@@ -4856,6 +4856,7 @@ export default function AdminOnboarding() {
       )}
 
       {tab === 'mover-workflow' && (() => {
+        try {
         const rc = moverRecords.find(r => r.id === moverSelectedId)
         if (!rc) return <p>Select a role change from the Movers tab.</p>
         const m365 = moverM365[rc.id]
@@ -4867,8 +4868,8 @@ export default function AdminOnboarding() {
           <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
             <div>
               <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 16, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 16 }}>
-                <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: '#e65100' }}>{rc.employee_name}</h4>
-                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>{rc.change_type.replace(/_/g, ' ')} · {rc.status}</p>
+                <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: '#e65100' }}>{rc.employee_name || '—'}</h4>
+                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>{(rc.change_type || '').replace(/_/g, ' ')} · {rc.status || 'pending'}</p>
                 <div style={{ marginTop: 10, background: '#f1f5f9', borderRadius: 6, height: 8, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${progressPct}%`, background: 'linear-gradient(90deg, #e65100, #ff9800)', borderRadius: 6, transition: 'width 0.3s' }} />
                 </div>
@@ -4968,7 +4969,6 @@ export default function AdminOnboarding() {
                           if (hasManagerChanges && ch.manager_email?.new) {
                             engineChanges.manager = { userPrincipalName: ch.manager_email.new }
                           }
-                          if (ch.persona) engineChanges.persona = ch.persona
                           return engineChanges
                         }
 
@@ -5076,8 +5076,8 @@ export default function AdminOnboarding() {
                                     </ul>
                                   </div>
                                 )}
-                                {personaCheckResult.documents && personaCheckResult.documents.length > 0 && (
-                                  <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {personaCheckResult.documents.map((d: any) => d.name || d).join(', ')}</div>
+                                {Array.isArray(personaCheckResult.documents) && personaCheckResult.documents.length > 0 && (
+                                  <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {personaCheckResult.documents.map((d: any) => d.name || String(d)).join(', ')}</div>
                                 )}
                                 {personaCheckResult.deviceWarning && (
                                   <div style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginTop: 6 }}>
@@ -5216,6 +5216,7 @@ export default function AdminOnboarding() {
                 </div>
                 )
                 } catch (err: any) {
+                  console.error('Mover step 2 render error:', err)
                   return <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 13 }}>
                     <strong>Error rendering step 2:</strong> {err?.message || String(err)}
                     <pre style={{ fontSize: 11, marginTop: 8, whiteSpace: 'pre-wrap' }}>{err?.stack}</pre>
@@ -5334,6 +5335,20 @@ export default function AdminOnboarding() {
             </div>
           </div>
         )
+        } catch (wfErr: any) {
+          console.error('Mover workflow render error:', wfErr)
+          return (
+            <div style={{ padding: 24, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, color: '#dc2626' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700 }}>Mover Workflow Error</h3>
+              <p style={{ margin: '0 0 12px', fontSize: 13 }}>An error occurred rendering the mover workflow. This usually means unexpected data in the role change record.</p>
+              <div style={{ background: '#fff', borderRadius: 8, padding: 12, fontSize: 12, fontFamily: 'monospace' }}>
+                <div><strong>Error:</strong> {wfErr?.message || String(wfErr)}</div>
+                <pre style={{ marginTop: 8, whiteSpace: 'pre-wrap', fontSize: 11, color: '#666' }}>{wfErr?.stack}</pre>
+              </div>
+              <button className="admin-btn-sm" style={{ marginTop: 12 }} onClick={() => { setTab('movers') }}>← Back to Movers List</button>
+            </div>
+          )
+        }
       })()}
 
       {tab === 'settings' && (
