@@ -1592,16 +1592,22 @@ export default function AdminIntegrations() {
                           <button className="admin-btn admin-btn-primary" style={{ marginTop: 12, background: '#e65100' }}
                             onClick={async () => {
                               if (!companyId) return
-                              let savedCount = 0
-                              for (const [key, pm] of Object.entries(personaMappings)) {
-                                if (!pm.extension_attribute_value) continue
+                              const allTiers = [
+                                { key: 'standard', defaultAttr: 'Persona-Standard' },
+                                { key: 'mobile', defaultAttr: 'Persona-Mobile' },
+                                { key: 'strict_secure', defaultAttr: 'Persona-StrictSecure' },
+                                { key: 'kiosk', defaultAttr: 'Persona-Kiosk' },
+                              ]
+                              for (const tier of allTiers) {
+                                const pm = personaMappings[tier.key] || {}
+                                const extAttr = pm.extension_attribute_value || tier.defaultAttr
                                 const groups = typeof pm.m365_groups === 'string'
                                   ? pm.m365_groups.split(',').map((g: string) => g.trim()).filter(Boolean)
                                   : (pm.m365_groups || [])
                                 const row = {
                                   company_id: companyId,
-                                  persona: key,
-                                  extension_attribute_value: pm.extension_attribute_value,
+                                  persona: tier.key,
+                                  extension_attribute_value: extAttr,
                                   m365_licence_sku_id: pm.m365_licence_sku_id || null,
                                   m365_licence_sku_name: pm.m365_licence_sku_name || null,
                                   m365_groups: groups,
@@ -1618,14 +1624,9 @@ export default function AdminIntegrations() {
                                   err = res.error
                                 }
                                 if (err) {
-                                  showError(`Failed to save ${key} mapping: ${err.message}`)
+                                  showError(`Failed to save ${tier.key} mapping: ${err.message}`)
                                   return
                                 }
-                                savedCount++
-                              }
-                              if (savedCount === 0) {
-                                showError('No persona mappings to save — fill in the Extension Attribute Value for at least one tier')
-                                return
                               }
                               showSuccess('Persona mappings saved')
                               loadAll()
