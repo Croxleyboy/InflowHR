@@ -4941,22 +4941,48 @@ export default function AdminOnboarding() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                       {/* ── M365 Mover Run (profile, manager, groups, licence) ── */}
                       {(() => {
-                        const hasNonPersonaChanges = rc.changes?.profile || rc.changes?.manager || rc.changes?.groups || rc.changes?.licence || rc.changes?.revokeSessions
+                        const ch = rc.changes || {}
+                        const hasProfileChanges = ch.job_title || ch.department || ch.location
+                        const hasManagerChanges = ch.manager_name || ch.manager_email
+                        const hasNonPersonaChanges = hasProfileChanges || hasManagerChanges
                         if (!hasNonPersonaChanges) return (
                           <div style={{ padding: '10px 14px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8, fontSize: 13, color: '#2e7d32' }}>
                             No profile, manager, group or licence changes — M365 mover run not required.
                           </div>
                         )
+
+                        const buildEngineChanges = () => {
+                          const engineChanges: Record<string, any> = {}
+                          if (hasProfileChanges) {
+                            const profile: Record<string, string> = {}
+                            if (ch.job_title?.new) profile.jobTitle = ch.job_title.new
+                            if (ch.department?.new) profile.department = ch.department.new
+                            if (ch.location?.new) profile.officeLocation = ch.location.new
+                            engineChanges.profile = profile
+                          }
+                          if (hasManagerChanges && ch.manager_email?.new) {
+                            engineChanges.manager = { userPrincipalName: ch.manager_email.new }
+                          }
+                          if (ch.persona) engineChanges.persona = ch.persona
+                          return engineChanges
+                        }
+
                         return (
                           <div>
                             <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>M365 Account Changes</h5>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12, fontSize: 13 }}>
+                              {ch.job_title && <div><strong>Job Title:</strong> {ch.job_title.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.job_title.new}</span></div>}
+                              {ch.department && <div><strong>Department:</strong> {ch.department.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.department.new}</span></div>}
+                              {ch.location && <div><strong>Location:</strong> {ch.location.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.location.new}</span></div>}
+                              {ch.manager_name && <div><strong>Manager:</strong> {ch.manager_name.old} → <span style={{ color: '#2e7d32', fontWeight: 600 }}>{ch.manager_name.new}</span></div>}
+                            </div>
                             {(!m365 || m365.run_status === 'failed') && (
                               <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
                                 onClick={async () => {
                                   const res = await callIfoMover('start-mover-run', {
                                     role_change_id: rc.id,
                                     user_principal_name: rc.employee_email,
-                                    changes: rc.changes,
+                                    changes: buildEngineChanges(),
                                     attempt: (m365?.attempt_count_run || 0) + 1,
                                   })
                                   if (!res) return
@@ -5161,7 +5187,7 @@ export default function AdminOnboarding() {
                       })()}
 
                       {/* Verification panel — show when both mover and persona are done */}
-                      {(m365?.run_status === 'completed' || !(rc.changes?.profile || rc.changes?.manager || rc.changes?.groups || rc.changes?.licence)) &&
+                      {(m365?.run_status === 'completed' || !(rc.changes?.job_title || rc.changes?.department || rc.changes?.location || rc.changes?.manager_name || rc.changes?.manager_email)) &&
                        (m365?.persona_schedule_status === 'scheduled' || m365?.persona_schedule_status === 'completed' || !(rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new)) && (
                         <div style={{ padding: '12px 16px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#2e7d32' }}>Where to verify the changes</div>
