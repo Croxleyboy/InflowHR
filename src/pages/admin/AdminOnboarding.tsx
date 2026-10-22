@@ -4896,7 +4896,7 @@ export default function AdminOnboarding() {
                           onClick={async () => {
                             const res = await callIfoMover('start-mover-run', {
                               role_change_id: rc.id,
-                              employee_upn: rc.employee_email,
+                              user_principal_name: rc.employee_email,
                               changes: rc.changes,
                             })
                             if (res) { await loadMovers(); showSuccess('M365 mover run started') }
