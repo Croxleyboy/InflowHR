@@ -1070,7 +1070,7 @@ export default function AdminSubscriptions() {
       {tab === 'support-access' && <AdminSupportAccess />}
       {tab === 'audit-log' && (
         <>
-          <EmployeeAuditControls companies={companies} currency={currency} showSuccess={showSuccess} showError={showError} />
+          <EmployeeAuditControls companies={companies} showSuccess={showSuccess} showError={showError} />
           <AdminAuditLog />
         </>
       )}
@@ -1082,12 +1082,10 @@ export default function AdminSubscriptions() {
 
 function EmployeeAuditControls({
   companies,
-  currency,
   showSuccess,
   showError,
 }: {
   companies: CompanyOption[]
-  currency: string
   showSuccess: (msg: string) => void
   showError: (msg: string) => void
 }) {
