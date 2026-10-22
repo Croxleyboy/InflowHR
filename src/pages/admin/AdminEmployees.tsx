@@ -226,7 +226,7 @@ export default function AdminEmployees() {
       overtime_handling_override: emp.overtime_handling_override || '',
       time_recording_override: emp.time_recording_override || '',
       is_payroll_exception: emp.is_payroll_exception || false,
-      persona: emp.persona || 'standard',
+      persona: emp.persona || 'information-worker',
     })
     setEditLieuDays(lieuDays[emp.id]?.lieu_days ?? 0)
   }
@@ -299,8 +299,8 @@ export default function AdminEmployees() {
     if (features.inflowonboarder_integration) {
       const emp = employees.find(e => e.id === id)
       if (emp) {
-        const oldPersona = emp.persona || 'standard'
-        const newPersona = editForm.persona || 'standard'
+        const oldPersona = emp.persona || 'information-worker'
+        const newPersona = editForm.persona || 'information-worker'
         if (oldPersona !== newPersona) {
           setMoverPrompt({ empId: id, empName: `${emp.first_name} ${emp.last_name}`, empEmail: emp.email || '', changes: { persona: { old: oldPersona, new: newPersona } } })
         }
@@ -798,7 +798,7 @@ export default function AdminEmployees() {
                       <div><span style={{ color: '#999', display: 'block' }}>Location</span><strong>{selectedEmployee.location || '—'}</strong></div>
                       <div><span style={{ color: '#999', display: 'block' }}>Manager</span><strong>{selectedEmployee.manager_name || '—'}</strong></div>
                       {features.inflowonboarder_integration && (
-                        <div><span style={{ color: '#999', display: 'block' }}>Persona</span><strong style={{ textTransform: 'capitalize' }}>{(selectedEmployee.persona || 'standard').replace('_', ' ')}</strong></div>
+                        <div><span style={{ color: '#999', display: 'block' }}>Persona</span><strong style={{ textTransform: 'capitalize' }}>{(selectedEmployee.persona || 'information-worker').replace(/-/g, ' ')}</strong></div>
                       )}
                     </div>
                   </div>
@@ -1165,12 +1165,12 @@ export default function AdminEmployees() {
                                         )}
                                         {features.inflowonboarder_integration && (
                                           <div className="admin-form-field">
-                                            <label style={{ fontSize: 12 }}>Persona Tier</label>
-                                            <select className="admin-select" value={editForm.persona || 'standard'} onChange={e => setEditForm(p => ({...p, persona: e.target.value}))}>
-                                              <option value="standard">Standard Information Worker</option>
-                                              <option value="mobile">Mobile / Field Worker</option>
-                                              <option value="strict_secure">Strict Secure / VIP</option>
-                                              <option value="kiosk">Shared / Kiosk</option>
+                                            <label style={{ fontSize: 12 }}>Persona</label>
+                                            <select className="admin-select" value={editForm.persona || 'information-worker'} onChange={e => setEditForm(p => ({...p, persona: e.target.value}))}>
+                                              <option value="information-worker">Information worker</option>
+                                              <option value="mobile-field-worker">Mobile and field worker</option>
+                                              <option value="secure-vip">Secure VIP</option>
+                                              <option value="shared-kiosk">Shared kiosk</option>
                                             </select>
                                           </div>
                                         )}

@@ -98,12 +98,20 @@ const MOVER_STEPS = [
   { key: 'confirm_complete', label: 'Confirm Complete', icon: '✅', description: 'Confirm all changes have been applied and verified. Mark the role change as complete.', role: 'HR' },
 ]
 
-const PERSONA_TIERS = [
-  { key: 'standard', label: 'Standard Information Worker', icon: '💼', description: 'Default office/hybrid worker — Business Premium, standard conditional access', color: '#4f46e5', bg: '#eef2ff' },
-  { key: 'mobile', label: 'Mobile / Field Worker', icon: '📱', description: 'Frontline staff — F3 licence, Intune MAM, limited desktop apps', color: '#0284c7', bg: '#e0f2fe' },
-  { key: 'strict_secure', label: 'Strict Secure / VIP', icon: '🔒', description: 'Exec/finance — E5, phishing-resistant MFA, session limits, DLP', color: '#dc2626', bg: '#fef2f2' },
-  { key: 'kiosk', label: 'Shared / Kiosk', icon: '🖥️', description: 'Reception/lab devices — Kiosk licence, locked single-app mode', color: '#7c3aed', bg: '#ede9fe' },
-]
+interface EnginePersona {
+  id: string
+  name: string
+  description?: string
+  ready?: boolean
+  setup?: string
+}
+
+const ENGINE_PERSONA_COLORS: Record<string, { color: string; bg: string }> = {
+  'information-worker': { color: '#4f46e5', bg: '#eef2ff' },
+  'mobile-field-worker': { color: '#0284c7', bg: '#e0f2fe' },
+  'secure-vip': { color: '#dc2626', bg: '#fef2f2' },
+  'shared-kiosk': { color: '#7c3aed', bg: '#ede9fe' },
+}
 
 interface RoleChange {
   id: number
@@ -246,7 +254,7 @@ export default function AdminOnboarding() {
     ni_number: '', bank_sort_code: '', bank_account_number: '', bank_account_name: '',
     probation_end_date: '', notice_period: '', weekly_hours: '37.5',
     annual_salary: '', tax_code: '', payroll_id: '', religion: '', salary_group: 'N/A', qualifications: '',
-    user_persona: 'standard',
+    user_persona: 'information-worker',
   })
 
   const [offboardRecords, setOffboardRecords] = useState<OffboardRecord[]>([])
@@ -292,6 +300,8 @@ export default function AdminOnboarding() {
   const [moverForm, setMoverForm] = useState<Record<string, any>>({})
   const [moverSelectedEmployee, setMoverSelectedEmployee] = useState<any>(null)
   const [expandedMoverCompletedId, setExpandedMoverCompletedId] = useState<number | null>(null)
+  const [enginePersonas, setEnginePersonas] = useState<EnginePersona[]>([])
+  const [enginePersonasLoaded, setEnginePersonasLoaded] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadRows, setUploadRows] = useState<Record<string, string>[]>([])
@@ -548,11 +558,22 @@ export default function AdminOnboarding() {
       supabase.from('mover_m365_actions').select('*').eq('company_id', selectedCompanyId),
       supabase.from('inflowonboarder_integrations').select('status').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
-    setIfoConnected(ifo?.status === 'connected_ready')
+    const connected = ifo?.status === 'connected_ready'
+    setIfoConnected(connected)
     setMoverRecords((rcData as RoleChange[]) || [])
     const m365Map: Record<number, MoverM365Actions> = {}
     ;(m365Data || []).forEach((r: any) => { m365Map[r.role_change_id] = r })
     setMoverM365(m365Map)
+    if (connected && !enginePersonasLoaded) {
+      try {
+        const raw = await callIfoMover('list-personas', {})
+        if (raw) {
+          const list = raw.personas || raw.items || (Array.isArray(raw) ? raw : [])
+          setEnginePersonas(Array.isArray(list) ? list : [])
+          setEnginePersonasLoaded(true)
+        }
+      } catch { /* engine unavailable — personas stay empty */ }
+    }
   }
 
   async function loadReviewData(employeeId: string) {
@@ -2276,7 +2297,7 @@ export default function AdminOnboarding() {
       tax_code: record.tax_code || null,
       payroll_id: record.payroll_id || null,
       leave_allowance: record.leave_allowance ?? 15,
-      persona: (record as any).user_persona || 'standard',
+      persona: (record as any).user_persona || 'information-worker',
     }).select('id').single()
     if (error) {
       showError(`Failed to create employee record: ${error.message}`)
@@ -2858,24 +2879,31 @@ export default function AdminOnboarding() {
           </fieldset>
           {features.inflowonboarder_integration && (
             <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
-              <legend style={{ fontWeight: 700, fontSize: 13, color: '#e65100' }}>Persona Tier</legend>
+              <legend style={{ fontWeight: 700, fontSize: 13, color: '#e65100' }}>Persona</legend>
               <p style={{ fontSize: 12, color: '#666', margin: '0 0 12px' }}>
                 Assign a security/access persona for this new starter's M365 account.
               </p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
-                {[
-                  { key: 'standard', label: 'Standard', desc: 'Office / hybrid worker' },
-                  { key: 'mobile', label: 'Mobile / Field', desc: 'Frontline staff' },
-                  { key: 'strict_secure', label: 'Strict Secure / VIP', desc: 'Exec / finance' },
-                  { key: 'kiosk', label: 'Shared / Kiosk', desc: 'Reception / lab' },
-                ].map(p => (
-                  <button key={p.key} type="button" onClick={() => setNewForm(f => ({...f, user_persona: p.key}))}
-                    style={{ padding: '10px 12px', borderRadius: 8, border: newForm.user_persona === p.key ? '2px solid #e65100' : '1px solid #ddd', background: newForm.user_persona === p.key ? '#fff3e0' : '#fafafa', cursor: 'pointer', textAlign: 'left' }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: newForm.user_persona === p.key ? '#e65100' : '#333' }}>{p.label}</div>
-                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{p.desc}</div>
-                  </button>
-                ))}
-              </div>
+              {enginePersonas.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+                  {enginePersonas.map(ep => {
+                    const colours = ENGINE_PERSONA_COLORS[ep.id] || { color: '#555', bg: '#f5f5f5' }
+                    const sel = newForm.user_persona === ep.id
+                    return (
+                      <button key={ep.id} type="button" disabled={ep.ready === false}
+                        onClick={() => setNewForm(f => ({...f, user_persona: ep.id}))}
+                        style={{ padding: '10px 12px', borderRadius: 8, border: sel ? `2px solid ${colours.color}` : '1px solid #ddd', background: sel ? colours.bg : '#fafafa', cursor: ep.ready === false ? 'not-allowed' : 'pointer', textAlign: 'left', opacity: ep.ready === false ? 0.5 : 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: sel ? colours.color : '#333' }}>{ep.name}</div>
+                        {ep.description && <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{ep.description}</div>}
+                        {ep.ready === false && <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>Not ready — {ep.setup || 'set up in InflowOnboarder'}</div>}
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: '#888' }}>
+                  {enginePersonasLoaded ? 'No persona packs enabled in InflowOnboarder.' : 'Connect InflowOnboarder to load personas.'}
+                </div>
+              )}
             </fieldset>
           )}
           <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
@@ -4617,50 +4645,59 @@ export default function AdminOnboarding() {
                     <button className="admin-btn-sm" onClick={() => { setMoverSelectedEmployee(null); setMoverEmployeeSearch(''); setMoverForm({}) }}>Clear</button>
                   </div>
                   <div style={{ fontSize: 13 }}>
-                    Current Persona: <span style={{ fontWeight: 600, color: PERSONA_TIERS.find(p => p.key === (moverSelectedEmployee.persona || 'standard'))?.color || '#333' }}>
-                      {PERSONA_TIERS.find(p => p.key === (moverSelectedEmployee.persona || 'standard'))?.label || 'Standard'}
+                    Current Persona: <span style={{ fontWeight: 600, color: ENGINE_PERSONA_COLORS[moverSelectedEmployee.persona || 'information-worker']?.color || '#333' }}>
+                      {enginePersonas.find(ep => ep.id === (moverSelectedEmployee.persona || 'information-worker'))?.name || moverSelectedEmployee.persona || 'Information worker'}
                     </span>
                   </div>
                 </div>
 
                 <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>New Persona Tier</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
-                    {PERSONA_TIERS.map(tier => {
-                      const isCurrent = (moverSelectedEmployee.persona || 'standard') === tier.key
-                      const isSelected = moverForm.changes?.persona?.new === tier.key
-                      return (
-                        <div key={tier.key}
-                          onClick={() => {
-                            if (isCurrent) return
-                            setMoverForm({
-                              ...moverForm,
-                              changes: { ...moverForm.changes, persona: { old: moverSelectedEmployee.persona || 'standard', new: tier.key } }
-                            })
-                          }}
-                          style={{
-                            border: `2px solid ${isSelected ? tier.color : isCurrent ? '#16a34a' : '#e0e0e0'}`,
-                            borderRadius: 10, padding: '12px 14px', cursor: isCurrent ? 'default' : 'pointer',
-                            background: isSelected ? `${tier.bg}` : isCurrent ? '#f0fdf4' : '#fff',
-                            opacity: isCurrent ? 0.7 : 1,
-                          }}>
-                          <div style={{ fontSize: 20 }}>{tier.icon}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: tier.color, marginTop: 4 }}>{tier.label}</div>
-                          <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{tier.description}</div>
-                          {isCurrent && <div style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>CURRENT</div>}
-                          {isSelected && <div style={{ fontSize: 10, fontWeight: 700, color: tier.color, marginTop: 4 }}>SELECTED</div>}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  {moverForm.changes?.persona?.new === 'strict_secure' && moverSelectedEmployee.persona !== 'strict_secure' && (
-                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
-                      Moving to Strict Secure will revoke all active sessions for this user.
+                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>New Persona</label>
+                  {enginePersonas.length > 0 ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
+                      {enginePersonas.map(ep => {
+                        const colours = ENGINE_PERSONA_COLORS[ep.id] || { color: '#555', bg: '#f5f5f5' }
+                        const currentPersona = moverSelectedEmployee.persona || 'information-worker'
+                        const isCurrent = currentPersona === ep.id
+                        const isSelected = moverForm.changes?.persona?.new === ep.id
+                        const disabled = isCurrent || ep.ready === false
+                        return (
+                          <div key={ep.id}
+                            onClick={() => {
+                              if (disabled) return
+                              setMoverForm({
+                                ...moverForm,
+                                changes: { ...moverForm.changes, persona: { old: currentPersona, new: ep.id } }
+                              })
+                            }}
+                            style={{
+                              border: `2px solid ${isSelected ? colours.color : isCurrent ? '#16a34a' : '#e0e0e0'}`,
+                              borderRadius: 10, padding: '12px 14px', cursor: disabled ? 'default' : 'pointer',
+                              background: isSelected ? colours.bg : isCurrent ? '#f0fdf4' : '#fff',
+                              opacity: disabled ? 0.5 : 1,
+                            }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: colours.color, marginTop: 4 }}>{ep.name}</div>
+                            {ep.description && <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{ep.description}</div>}
+                            {isCurrent && <div style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>CURRENT</div>}
+                            {isSelected && <div style={{ fontSize: 10, fontWeight: 700, color: colours.color, marginTop: 4 }}>SELECTED</div>}
+                            {ep.ready === false && <div style={{ fontSize: 10, color: '#c62828', marginTop: 2 }}>Not ready — {ep.setup || 'set up in InflowOnboarder'}</div>}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#888' }}>
+                      {enginePersonasLoaded ? 'No persona packs enabled in InflowOnboarder.' : 'Loading personas from engine...'}
                     </div>
                   )}
-                  {moverSelectedEmployee.persona === 'strict_secure' && moverForm.changes?.persona?.new && moverForm.changes.persona.new !== 'strict_secure' && (
+                  {moverForm.changes?.persona?.new === 'secure-vip' && moverSelectedEmployee.persona !== 'secure-vip' && (
                     <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
-                      Moving from Strict Secure will revoke all active sessions for this user.
+                      Moving to Secure VIP will revoke all active sessions for this user.
+                    </div>
+                  )}
+                  {moverSelectedEmployee.persona === 'secure-vip' && moverForm.changes?.persona?.new && moverForm.changes.persona.new !== 'secure-vip' && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
+                      Moving from Secure VIP will revoke all active sessions for this user.
                     </div>
                   )}
                 </div>
@@ -4801,7 +4838,7 @@ export default function AdminOnboarding() {
                           <td style={{ fontSize: 12 }}>{changeSummary || '—'}</td>
                           <td>{personaChange ? (
                             <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: '#fff3e0', color: '#e65100', fontWeight: 600 }}>
-                              {PERSONA_TIERS.find(p => p.key === personaChange.old)?.label?.split(' ')[0] || personaChange.old} → {PERSONA_TIERS.find(p => p.key === personaChange.new)?.label?.split(' ')[0] || personaChange.new}
+                              {enginePersonas.find(ep => ep.id === personaChange.old)?.name || personaChange.old} → {enginePersonas.find(ep => ep.id === personaChange.new)?.name || personaChange.new}
                             </span>
                           ) : '—'}</td>
                           <td>{rc.effective_date ? new Date(rc.effective_date).toLocaleDateString('en-GB') : '—'}</td>
@@ -4929,12 +4966,11 @@ export default function AdminOnboarding() {
                         </div>
                         {field === 'persona' && (
                           <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                            {[val?.old, val?.new].map((pKey, idx) => {
-                              const tier = PERSONA_TIERS.find(p => p.key === pKey)
-                              if (!tier) return null
-                              return <div key={idx} style={{ background: tier.bg, border: `1px solid ${tier.color}33`, borderRadius: 8, padding: '6px 10px', flex: 1 }}>
-                                <div style={{ fontSize: 16 }}>{tier.icon}</div>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: tier.color }}>{tier.label}</div>
+                            {[val?.old, val?.new].map((pId, idx) => {
+                              const ep = enginePersonas.find(p => p.id === pId)
+                              const colours = ENGINE_PERSONA_COLORS[pId] || { color: '#555', bg: '#f5f5f5' }
+                              return <div key={idx} style={{ background: colours.bg, border: `1px solid ${colours.color}33`, borderRadius: 8, padding: '6px 10px', flex: 1 }}>
+                                <div style={{ fontSize: 12, fontWeight: 600, color: colours.color }}>{ep?.name || pId}</div>
                               </div>
                             })}
                           </div>
@@ -4942,7 +4978,7 @@ export default function AdminOnboarding() {
                       </div>
                     ))}
                   </div>
-                  {(rc.changes?.persona?.new === 'strict_secure' || rc.changes?.persona?.old === 'strict_secure') && (
+                  {(rc.changes?.persona?.new === 'secure-vip' || rc.changes?.persona?.old === 'secure-vip') && (
                     <div style={{ marginTop: 12, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626' }}>
                       This persona transition crosses a security boundary. All active user sessions will be revoked.
                     </div>
@@ -5067,7 +5103,7 @@ export default function AdminOnboarding() {
                             {/* Check result display */}
                             {personaCheckResult && (() => {
                               try {
-                                const { _enginePersonaId, ...displayResult } = personaCheckResult
+                                const displayResult = personaCheckResult
                                 return (
                                   <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
                                     <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Persona Check Result</div>
@@ -5135,42 +5171,8 @@ export default function AdminOnboarding() {
                             {!personaStatus && !personaCheckResult && (
                               <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
                                 onClick={async () => {
-                                  const personasRaw = await callIfoMover('list-personas', {})
-                                  if (!personasRaw) return
-                                  const personas = Array.isArray(personasRaw) ? personasRaw : (personasRaw.items || personasRaw.personas || personasRaw.data || [])
-                                  if (!Array.isArray(personas) || personas.length === 0) {
-                                    showError('No personas returned from InflowOnboarder. Check that persona packs are configured in the engine.')
-                                    return
-                                  }
-
-                                  const { data: mapping } = await supabase.from('inflowonboarder_persona_mappings')
-                                    .select('extension_attribute_value')
-                                    .eq('company_id', selectedCompanyId)
-                                    .eq('persona', personaNew)
-                                    .maybeSingle()
-
-                                  const personaAliases: Record<string, string[]> = {
-                                    standard: ['information worker', 'standard', 'office'],
-                                    mobile: ['mobile', 'field worker', 'mobile and field', 'frontline'],
-                                    strict_secure: ['strict', 'secure', 'vip', 'strict secure'],
-                                    kiosk: ['kiosk', 'shared', 'shared device'],
-                                  }
-                                  const aliases = personaAliases[personaNew] || [personaNew.replace(/_/g, ' ')]
-                                  const matchByName = (p: any) => {
-                                    const n = (p.name || '').toLowerCase()
-                                    return aliases.some(a => n.includes(a))
-                                  }
-                                  const enginePersona = mapping
-                                    ? personas.find((p: any) => p.extensionAttributeValue === mapping.extension_attribute_value || matchByName(p))
-                                    : personas.find(matchByName)
-                                  if (!enginePersona?.id) {
-                                    const available = personas.map((p: any) => p.name || p.id).join(', ')
-                                    showError(`Could not find engine persona matching "${personaNew}". Available: ${available}. Check persona mappings in Integrations.`)
-                                    return
-                                  }
-
                                   const checkResult = await callIfoMover('check-persona', {
-                                    persona_id: enginePersona.id,
+                                    persona_id: personaNew,
                                     user_principal_name: rc.employee_email,
                                   })
                                   if (!checkResult) return
@@ -5188,7 +5190,7 @@ export default function AdminOnboarding() {
                                       await supabase.from('mover_m365_actions').upsert({
                                         role_change_id: rc.id,
                                         company_id: selectedCompanyId,
-                                        persona_check_result: { ...jobData.result, _enginePersonaId: enginePersona.id },
+                                        persona_check_result: jobData.result,
                                         employee_upn: rc.employee_email,
                                         updated_at: new Date().toISOString(),
                                       }, { onConflict: 'role_change_id' })
@@ -5201,7 +5203,7 @@ export default function AdminOnboarding() {
                                   await supabase.from('mover_m365_actions').upsert({
                                     role_change_id: rc.id,
                                     company_id: selectedCompanyId,
-                                    persona_check_result: { ...checkResult, _enginePersonaId: enginePersona.id },
+                                    persona_check_result: checkResult,
                                     employee_upn: rc.employee_email,
                                     updated_at: new Date().toISOString(),
                                   }, { onConflict: 'role_change_id' })
@@ -5215,11 +5217,9 @@ export default function AdminOnboarding() {
                             {personaCheckResult && !personaStatus && (
                               <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
                                 onClick={async () => {
-                                  const personaId = personaCheckResult._enginePersonaId
-                                  if (!personaId) { showError('Missing engine persona ID — run the check again'); return }
                                   const res = await callIfoMover('schedule-persona', {
                                     role_change_id: rc.id,
-                                    persona_id: personaId,
+                                    persona_id: personaNew,
                                     user_principal_name: rc.employee_email,
                                     display_name: rc.employee_name,
                                   })
