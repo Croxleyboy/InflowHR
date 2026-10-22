@@ -5118,9 +5118,20 @@ export default function AdminOnboarding() {
                                     .eq('persona', personaNew)
                                     .maybeSingle()
 
+                                  const personaAliases: Record<string, string[]> = {
+                                    standard: ['information worker', 'standard', 'office'],
+                                    mobile: ['mobile', 'field worker', 'mobile and field', 'frontline'],
+                                    strict_secure: ['strict', 'secure', 'vip', 'strict secure'],
+                                    kiosk: ['kiosk', 'shared', 'shared device'],
+                                  }
+                                  const aliases = personaAliases[personaNew] || [personaNew.replace(/_/g, ' ')]
+                                  const matchByName = (p: any) => {
+                                    const n = (p.name || '').toLowerCase()
+                                    return aliases.some(a => n.includes(a))
+                                  }
                                   const enginePersona = mapping
-                                    ? personas.find((p: any) => p.extensionAttributeValue === mapping.extension_attribute_value || p.name?.toLowerCase().includes(personaNew.replace('_', ' ')))
-                                    : personas.find((p: any) => p.name?.toLowerCase().includes(personaNew.replace('_', ' ')))
+                                    ? personas.find((p: any) => p.extensionAttributeValue === mapping.extension_attribute_value || matchByName(p))
+                                    : personas.find(matchByName)
                                   if (!enginePersona?.id) {
                                     const available = personas.map((p: any) => p.name || p.id).join(', ')
                                     showError(`Could not find engine persona matching "${personaNew}". Available: ${available}. Check persona mappings in Integrations.`)
