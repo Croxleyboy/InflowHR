@@ -5068,7 +5068,6 @@ export default function AdminOnboarding() {
                             {personaCheckResult && (() => {
                               try {
                                 const { _enginePersonaId, ...displayResult } = personaCheckResult
-                                const hasKnownFields = displayResult.currentPersona || displayResult.targetPersona || displayResult.automaticSteps || displayResult.instructions || displayResult.documents || displayResult.deviceWarning || displayResult.approvalRequired
                                 return (
                                   <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
                                     <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Persona Check Result</div>
