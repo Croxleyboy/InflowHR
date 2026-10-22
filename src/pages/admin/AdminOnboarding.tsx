@@ -106,6 +106,14 @@ interface EnginePersona {
   setup?: string
 }
 
+const LEGACY_PERSONA_MAP: Record<string, string> = {
+  standard: 'information-worker',
+  mobile: 'mobile-field-worker',
+  strict_secure: 'secure-vip',
+  kiosk: 'shared-kiosk',
+}
+function resolvePersonaId(raw: string): string { return LEGACY_PERSONA_MAP[raw] || raw }
+
 const ENGINE_PERSONA_COLORS: Record<string, { color: string; bg: string }> = {
   'information-worker': { color: '#4f46e5', bg: '#eef2ff' },
   'mobile-field-worker': { color: '#0284c7', bg: '#e0f2fe' },
@@ -526,9 +534,9 @@ export default function AdminOnboarding() {
       if (state.jmlSection) setJmlSection(state.jmlSection)
       if (state.prefill) {
         const pf = state.prefill
-        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, work_email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: pf.personaChange.old })
+        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, work_email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: resolvePersonaId(pf.personaChange.old) })
         setMoverEmployeeSearch(pf.empName)
-        setMoverForm({ employee_id: pf.empId, employee_name: pf.empName, employee_email: pf.empEmail, changes: { persona: pf.personaChange }, change_type: 'persona_change', reason: '', additionalFields: [] })
+        setMoverForm({ employee_id: pf.empId, employee_name: pf.empName, employee_email: pf.empEmail, changes: { persona: { old: resolvePersonaId(pf.personaChange.old), new: resolvePersonaId(pf.personaChange.new) } }, change_type: 'persona_change', reason: '', additionalFields: [] })
       }
       window.history.replaceState({}, '')
     }
@@ -4838,7 +4846,7 @@ export default function AdminOnboarding() {
                           <td style={{ fontSize: 12 }}>{changeSummary || '—'}</td>
                           <td>{personaChange ? (
                             <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: '#fff3e0', color: '#e65100', fontWeight: 600 }}>
-                              {enginePersonas.find(ep => ep.id === personaChange.old)?.name || personaChange.old} → {enginePersonas.find(ep => ep.id === personaChange.new)?.name || personaChange.new}
+                              {enginePersonas.find(ep => ep.id === resolvePersonaId(personaChange.old))?.name || resolvePersonaId(personaChange.old)} → {enginePersonas.find(ep => ep.id === resolvePersonaId(personaChange.new))?.name || resolvePersonaId(personaChange.new)}
                             </span>
                           ) : '—'}</td>
                           <td>{rc.effective_date ? new Date(rc.effective_date).toLocaleDateString('en-GB') : '—'}</td>
@@ -5087,8 +5095,8 @@ export default function AdminOnboarding() {
                       {(() => {
                         const hasPersonaChange = rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new
                         if (!hasPersonaChange) return null
-                        const personaOld = rc.changes.persona.old
-                        const personaNew = rc.changes.persona.new
+                        const personaOld = resolvePersonaId(rc.changes.persona.old)
+                        const personaNew = resolvePersonaId(rc.changes.persona.new)
                         const personaStatus = m365?.persona_schedule_status
                         const personaCheckResult = m365?.persona_check_result
 

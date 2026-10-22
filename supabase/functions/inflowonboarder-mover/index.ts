@@ -233,6 +233,10 @@ function handleEngineError(
   return json({ error: friendlyError(code, errData?.error?.message) }, res.status)
 }
 
+// ── Legacy persona key fallback ─────────────────────────────────────────────
+const LEGACY_PERSONA: Record<string, string> = { standard: 'information-worker', mobile: 'mobile-field-worker', strict_secure: 'secure-vip', kiosk: 'shared-kiosk' }
+function resolvePersonaId(raw: string): string { return LEGACY_PERSONA[raw] || raw }
+
 // ── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -811,8 +815,9 @@ Deno.serve(async (req) => {
 
     // ── check-persona ───────────────────────────────────────────────
     if (action === 'check-persona') {
-      const { persona_id, user_principal_name, effective_date, effective_time } = body
-      if (!persona_id || !user_principal_name) return json({ error: 'Missing persona_id or user_principal_name' }, 400)
+      const { persona_id: rawPersonaId, user_principal_name, effective_date, effective_time } = body
+      if (!rawPersonaId || !user_principal_name) return json({ error: 'Missing persona_id or user_principal_name' }, 400)
+      const persona_id = resolvePersonaId(rawPersonaId)
 
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
@@ -851,8 +856,9 @@ Deno.serve(async (req) => {
 
     // ── schedule-persona ────────────────────────────────────────────
     if (action === 'schedule-persona') {
-      const { role_change_id, persona_id, user_principal_name, display_name, effective_date, effective_time, approver_name, approver_email, approved_at, approval_required } = body
-      if (!persona_id || !user_principal_name) return json({ error: 'Missing persona_id or user_principal_name' }, 400)
+      const { role_change_id, persona_id: rawPId, user_principal_name, display_name, effective_date, effective_time, approver_name, approver_email, approved_at, approval_required } = body
+      if (!rawPId || !user_principal_name) return json({ error: 'Missing persona_id or user_principal_name' }, 400)
+      const persona_id = resolvePersonaId(rawPId)
 
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
