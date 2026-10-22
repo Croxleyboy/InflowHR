@@ -5117,7 +5117,7 @@ export default function AdminOnboarding() {
                                 return (
                                   <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
                                     <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Persona Check Result</div>
-                                    {displayResult.currentPersona && <div style={{ marginBottom: 4 }}>Current: <strong>{typeof displayResult.currentPersona === 'object' ? (displayResult.currentPersona.name || displayResult.currentPersona.id || JSON.stringify(displayResult.currentPersona)) : String(displayResult.currentPersona)}</strong></div>}
+                                    {displayResult.currentPersona && <div style={{ marginBottom: 4 }}>Current: <strong>{typeof displayResult.currentPersona === 'object' ? (displayResult.currentPersona.name || displayResult.currentPersona.id || (displayResult.currentPersona.source === 'none' ? 'None (not set)' : JSON.stringify(displayResult.currentPersona))) : String(displayResult.currentPersona)}</strong></div>}
                                     {displayResult.targetPersona && <div style={{ marginBottom: 4 }}>Target: <strong>{typeof displayResult.targetPersona === 'object' ? (displayResult.targetPersona.name || displayResult.targetPersona.id || JSON.stringify(displayResult.targetPersona)) : String(displayResult.targetPersona)}</strong></div>}
                                     {displayResult.automaticSteps && (
                                       <div style={{ marginBottom: 4 }}>

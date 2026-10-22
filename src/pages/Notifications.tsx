@@ -1002,6 +1002,38 @@ export default function Notifications() {
       const isPersona = item.record_type === 'M365 Mover Persona'
       if (roleChangeId) {
         if (isPersona) {
+          if (approve) {
+            const { data: rcRow } = await supabase.from('role_changes').select('changes, employee_email, employee_name').eq('id', roleChangeId).eq('company_id', companyUser?.company_id).maybeSingle()
+            const personaNew = rcRow?.changes?.persona?.new
+            if (personaNew && rcRow?.employee_email) {
+              try {
+                const { data: sess } = await supabase.auth.getSession()
+                const token = sess?.session?.access_token
+                const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+                if (token && supabaseUrl) {
+                  const res = await fetch(`${supabaseUrl}/functions/v1/inflowonboarder-mover`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({
+                      company_id: companyUser?.company_id,
+                      action: 'schedule-persona',
+                      role_change_id: roleChangeId,
+                      persona_id: personaNew,
+                      user_principal_name: rcRow.employee_email,
+                      display_name: rcRow.employee_name,
+                      approval_required: false,
+                      approved_by: `${approverDisplayName} <${approverEmail}>`,
+                      approved_at: now,
+                    }),
+                  })
+                  if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}))
+                    console.warn('schedule-persona call failed:', errData.error || res.statusText)
+                  }
+                }
+              } catch (e) { console.warn('schedule-persona call error:', e) }
+            }
+          }
           const { error: m365Err } = await supabase.from('mover_m365_actions').update({
             persona_schedule_status: approve ? 'scheduled' : 'cancelled',
             updated_at: now
