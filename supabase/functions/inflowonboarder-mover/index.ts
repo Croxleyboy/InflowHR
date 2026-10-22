@@ -189,6 +189,7 @@ const SCOPE_HINTS: Record<string, string> = {
   'recheck-mover-schedule': 'hr.mover',
   'list-personas': 'hr.persona',
   'check-persona': 'hr.persona',
+  'get-job': 'hr.persona',
   'schedule-persona': 'hr.persona',
 }
 
@@ -861,7 +862,9 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
+      console.log('[IFO-MOVER] GET /v1/personas')
       const res = await engineFetch(keyResult.apiKey, 'GET', '/v1/personas')
+      console.log(`[IFO-MOVER] GET /v1/personas → ${res.status}`)
       const engineErr = handleEngineError(sb, company_id, res, action)
       if (engineErr) return engineErr
 
@@ -877,15 +880,35 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
+      const idempotencyKey = `inflowhr-persona-check-${persona_id}-${Date.now()}`
       const checkBody: Record<string, unknown> = { userPrincipalName: user_principal_name }
       if (effective_date) checkBody.effectiveDate = effective_date
       if (effective_time) checkBody.effectiveTime = effective_time
 
-      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/personas/${persona_id}/check`, checkBody)
+      console.log(`[IFO-MOVER] POST /v1/personas/${persona_id}/check`, JSON.stringify(checkBody))
+      const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/personas/${persona_id}/check`, checkBody, idempotencyKey)
+      console.log(`[IFO-MOVER] POST /v1/personas/${persona_id}/check → ${res.status}`)
       const engineErr = handleEngineError(sb, company_id, res, action)
       if (engineErr) return engineErr
 
       await audit(sb, company_id, userId, 'inflowonboarder_check_persona', { persona_id, user_principal_name })
+      return json(res.data)
+    }
+
+    // ── get-job ────────────────────────────────────────────────────
+    if (action === 'get-job') {
+      const { job_id } = body
+      if (!job_id) return json({ error: 'Missing job_id' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      console.log(`[IFO-MOVER] GET /v1/jobs/${job_id}`)
+      const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/jobs/${job_id}`)
+      console.log(`[IFO-MOVER] GET /v1/jobs/${job_id} → ${res.status}`)
+      const engineErr = handleEngineError(sb, company_id, res, action)
+      if (engineErr) return engineErr
+
       return json(res.data)
     }
 
@@ -919,22 +942,21 @@ Deno.serve(async (req) => {
         }
       }
 
+      console.log('[IFO-MOVER] POST /v1/schedules (persona)', JSON.stringify({ templateId: engineBody.templateId, externalRef: engineBody.externalRef }))
       const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
+      console.log(`[IFO-MOVER] POST /v1/schedules (persona) → ${res.status}`)
       const engineErr = handleEngineError(sb, company_id, res, action)
       if (engineErr) return engineErr
 
       const schedData = res.data as any
 
       if (role_change_id) {
-        await sb.from('mover_m365_actions').upsert({
-          role_change_id,
-          company_id,
-          schedule_id: schedData.id,
-          schedule_status: schedData.status || 'scheduled',
-          schedule_message: schedData.message,
-          employee_upn: user_principal_name,
+        await sb.from('mover_m365_actions').update({
+          persona_schedule_id: schedData.id,
+          persona_schedule_status: schedData.status || 'scheduled',
+          persona_check_result: null,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'role_change_id' })
+        }).eq('role_change_id', role_change_id)
       }
 
       await audit(sb, company_id, userId, 'inflowonboarder_schedule_persona', { role_change_id, persona_id, user_principal_name })

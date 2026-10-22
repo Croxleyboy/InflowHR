@@ -145,6 +145,9 @@ interface MoverM365Actions {
   schedule_options: any
   employee_upn: string | null
   attempt_count_run: number
+  persona_check_result: any
+  persona_schedule_id: string | null
+  persona_schedule_status: string | null
 }
 
 interface OnboardRecord {
@@ -4890,98 +4893,232 @@ export default function AdminOnboarding() {
               {currentStep.key === 'update_accounts' && (
                 <div>
                   {features.inflowonboarder_integration && ifoConnected ? (
-                    <div>
-                      {(!m365 || m365.run_status === 'failed') && (
-                        <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
-                          onClick={async () => {
-                            const hasPersonaChange = rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new
-                            const hasNonPersonaChanges = rc.changes?.profile || rc.changes?.manager || rc.changes?.groups || rc.changes?.licence || rc.changes?.revokeSessions
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      {/* ── M365 Mover Run (profile, manager, groups, licence) ── */}
+                      {(() => {
+                        const hasNonPersonaChanges = rc.changes?.profile || rc.changes?.manager || rc.changes?.groups || rc.changes?.licence || rc.changes?.revokeSessions
+                        if (!hasNonPersonaChanges) return (
+                          <div style={{ padding: '10px 14px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8, fontSize: 13, color: '#2e7d32' }}>
+                            No profile, manager, group or licence changes — M365 mover run not required.
+                          </div>
+                        )
+                        return (
+                          <div>
+                            <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>M365 Account Changes</h5>
+                            {(!m365 || m365.run_status === 'failed') && (
+                              <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
+                                onClick={async () => {
+                                  const res = await callIfoMover('start-mover-run', {
+                                    role_change_id: rc.id,
+                                    user_principal_name: rc.employee_email,
+                                    changes: rc.changes,
+                                    attempt: (m365?.attempt_count_run || 0) + 1,
+                                  })
+                                  if (!res) return
+                                  await loadMovers()
+                                  showSuccess('M365 mover run started')
+                                }}>
+                                {m365?.run_status === 'failed' ? 'Retry M365 Update' : 'Start M365 Update'}
+                              </button>
+                            )}
+                            {m365 && m365.run_id && (
+                              <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, fontSize: 13 }}>
+                                <div style={{ marginBottom: 8 }}><strong>Status:</strong> <span style={{ color: m365.run_status === 'completed' ? '#16a34a' : m365.run_status === 'failed' ? '#dc2626' : '#e65100', fontWeight: 600 }}>{m365.run_status || 'Not started'}</span></div>
+                                {m365.run_status === 'ready_for_approval' && (
+                                  <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 8 }}>
+                                    Awaiting approval. The designated approver will receive a notification to review and approve the M365 changes.
+                                  </div>
+                                )}
+                                {m365.run_status === 'completed' && m365.run_result && (
+                                  <div>
+                                    <h5 style={{ margin: '8px 0', fontSize: 13, fontWeight: 700 }}>Result</h5>
+                                    {m365.run_result.changed && <div style={{ marginBottom: 4 }}>Changed: {JSON.stringify(m365.run_result.changed)}</div>}
+                                    {m365.run_result.skipped && <div style={{ marginBottom: 4 }}>Skipped: {JSON.stringify(m365.run_result.skipped)}</div>}
+                                  </div>
+                                )}
+                                {m365.run_error && (
+                                  <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 12 }}>
+                                    Error: {m365.run_error.message || JSON.stringify(m365.run_error)}
+                                  </div>
+                                )}
+                                {m365.run_status && !['completed', 'failed'].includes(m365.run_status) && (
+                                  <button className="admin-btn-sm admin-btn-save" style={{ marginTop: 8 }}
+                                    onClick={async () => {
+                                      await callIfoMover('check-mover-run', { role_change_id: rc.id, run_id: m365.run_id })
+                                      await loadMovers()
+                                    }}>
+                                    Refresh Status
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })()}
 
-                            let moverStarted = false
-                            if (hasNonPersonaChanges) {
-                              const res = await callIfoMover('start-mover-run', {
-                                role_change_id: rc.id,
-                                user_principal_name: rc.employee_email,
-                                changes: rc.changes,
-                                attempt: (m365?.attempt_count_run || 0) + 1,
-                              })
-                              if (!res) return
-                              moverStarted = true
-                            }
+                      {/* ── Persona Change (separate engine flow) ── */}
+                      {(() => {
+                        const hasPersonaChange = rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new
+                        if (!hasPersonaChange) return null
+                        const personaOld = rc.changes.persona.old
+                        const personaNew = rc.changes.persona.new
+                        const personaStatus = m365?.persona_schedule_status
+                        const personaCheckResult = m365?.persona_check_result
 
-                            let personaScheduled = false
-                            if (hasPersonaChange) {
-                              try {
-                                const personas = await callIfoMover('list-personas', {})
-                                if (personas && Array.isArray(personas)) {
+                        return (
+                          <div>
+                            <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>Persona Change</h5>
+                            <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
+                              <strong>{personaOld.replace(/_/g, ' ')}</strong> → <strong style={{ color: '#e65100' }}>{personaNew.replace(/_/g, ' ')}</strong>
+                              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>This updates extensionAttribute1 in Entra ID. Dynamic groups re-evaluate automatically, applying the correct Intune profiles and conditional access policies.</div>
+                            </div>
+
+                            {/* Check result display */}
+                            {personaCheckResult && (
+                              <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
+                                <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Persona Check Result</div>
+                                {personaCheckResult.currentPersona && <div style={{ marginBottom: 4 }}>Current: <strong>{personaCheckResult.currentPersona}</strong></div>}
+                                {personaCheckResult.targetPersona && <div style={{ marginBottom: 4 }}>Target: <strong>{personaCheckResult.targetPersona}</strong></div>}
+                                {personaCheckResult.automaticSteps && (
+                                  <div style={{ marginBottom: 4 }}>
+                                    <strong>Automatic steps:</strong>
+                                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                      {(Array.isArray(personaCheckResult.automaticSteps) ? personaCheckResult.automaticSteps : []).map((s: any, i: number) => (
+                                        <li key={i}>{typeof s === 'string' ? s : s.description || JSON.stringify(s)}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {personaCheckResult.instructions && (
+                                  <div style={{ marginBottom: 4 }}>
+                                    <strong>Instructions:</strong>
+                                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                      {(Array.isArray(personaCheckResult.instructions) ? personaCheckResult.instructions : []).map((s: any, i: number) => (
+                                        <li key={i}>{typeof s === 'string' ? s : s.description || JSON.stringify(s)}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {personaCheckResult.documents && personaCheckResult.documents.length > 0 && (
+                                  <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {personaCheckResult.documents.map((d: any) => d.name || d).join(', ')}</div>
+                                )}
+                                {personaCheckResult.deviceWarning && (
+                                  <div style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginTop: 6 }}>
+                                    ⚠️ {personaCheckResult.deviceWarning}
+                                  </div>
+                                )}
+                                {personaCheckResult.approvalRequired && (
+                                  <div style={{ padding: '6px 10px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginTop: 6 }}>
+                                    Approval required before this persona change can be scheduled.
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Persona schedule status */}
+                            {personaStatus && (
+                              <div style={{ padding: '10px 14px', background: personaStatus === 'scheduled' || personaStatus === 'completed' ? '#e8f5e9' : '#f5f5f5', border: `1px solid ${personaStatus === 'scheduled' || personaStatus === 'completed' ? '#c8e6c9' : '#ddd'}`, borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
+                                <strong>Persona schedule:</strong> <span style={{ color: personaStatus === 'completed' ? '#16a34a' : personaStatus === 'failed' ? '#dc2626' : '#e65100', fontWeight: 600 }}>{personaStatus}</span>
+                                {m365?.persona_schedule_id && <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>({m365.persona_schedule_id})</span>}
+                              </div>
+                            )}
+
+                            {/* Action buttons */}
+                            {!personaStatus && !personaCheckResult && (
+                              <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
+                                onClick={async () => {
+                                  const personas = await callIfoMover('list-personas', {})
+                                  if (!personas || !Array.isArray(personas)) return
+
                                   const { data: mapping } = await supabase.from('inflowonboarder_persona_mappings')
                                     .select('extension_attribute_value')
                                     .eq('company_id', selectedCompanyId)
-                                    .eq('persona', rc.changes.persona.new)
+                                    .eq('persona', personaNew)
                                     .maybeSingle()
-                                  const enginePersona = mapping ? personas.find((p: any) => p.extensionAttributeValue === mapping.extension_attribute_value || p.name?.toLowerCase().includes(rc.changes.persona.new.replace('_', ' '))) : null
-                                  if (enginePersona?.id) {
-                                    await callIfoMover('schedule-persona', {
-                                      role_change_id: rc.id,
-                                      persona_id: enginePersona.id,
-                                      user_principal_name: rc.employee_email,
-                                      display_name: rc.employee_name,
-                                    })
-                                    personaScheduled = true
-                                  }
-                                }
-                              } catch (e) { /* persona schedule is best-effort */ }
-                            }
 
-                            await loadMovers()
-                            const msg = moverStarted && personaScheduled ? 'M365 mover run started + persona change scheduled'
-                              : moverStarted ? 'M365 mover run started'
-                              : personaScheduled ? 'Persona change scheduled'
-                              : 'No M365 changes to apply'
-                            showSuccess(msg)
-                          }}>
-                          {m365?.run_status === 'failed' ? 'Retry M365 Update' : 'Start M365 Update'}
-                        </button>
-                      )}
-                      {m365 && (
-                        <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 16, fontSize: 13 }}>
-                          <div style={{ marginBottom: 8 }}><strong>Status:</strong> <span style={{ color: m365.run_status === 'completed' ? '#16a34a' : m365.run_status === 'failed' ? '#dc2626' : '#e65100', fontWeight: 600 }}>{m365.run_status || 'Not started'}</span></div>
-                          {m365.run_status === 'ready_for_approval' && (
-                            <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 8 }}>
-                              Awaiting approval. The designated approver will receive a notification to review and approve the M365 changes.
-                            </div>
-                          )}
-                          {m365.run_status === 'completed' && m365.run_result && (
-                            <div>
-                              <h5 style={{ margin: '8px 0', fontSize: 13, fontWeight: 700 }}>Result</h5>
-                              {m365.run_result.changed && <div style={{ marginBottom: 4 }}>Changed: {JSON.stringify(m365.run_result.changed)}</div>}
-                              {m365.run_result.skipped && <div style={{ marginBottom: 4 }}>Skipped: {JSON.stringify(m365.run_result.skipped)}</div>}
-                            </div>
-                          )}
-                          {m365.run_error && (
-                            <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 12 }}>
-                              Error: {m365.run_error.message || JSON.stringify(m365.run_error)}
-                            </div>
-                          )}
-                          {m365.run_status && !['completed', 'failed'].includes(m365.run_status) && (
-                            <button className="admin-btn-sm admin-btn-save" style={{ marginTop: 8 }}
-                              onClick={async () => {
-                                await callIfoMover('check-mover-run', { role_change_id: rc.id, run_id: m365.run_id })
-                                await loadMovers()
-                              }}>
-                              Refresh Status
-                            </button>
-                          )}
-                          {m365.run_status === 'completed' && (
-                            <div style={{ marginTop: 12, padding: '12px 16px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#2e7d32' }}>Where to verify the changes</div>
-                              <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4, color: '#333' }}>
-                                <li><strong>Entra ID</strong> — Open the user's profile in Microsoft Entra admin centre. Check extensionAttribute1 is set correctly and dynamic group memberships have updated.</li>
-                                <li><strong>Intune</strong> — In the Microsoft Intune admin centre, go to Devices → the user's device(s). Verify the correct configuration profiles and compliance policies are now assigned.</li>
-                                <li><strong>Conditional Access</strong> — Check the user's sign-in logs in Entra ID to confirm the correct policies are being applied.</li>
-                              </ul>
-                            </div>
-                          )}
+                                  const enginePersona = mapping
+                                    ? personas.find((p: any) => p.extensionAttributeValue === mapping.extension_attribute_value || p.name?.toLowerCase().includes(personaNew.replace('_', ' ')))
+                                    : personas.find((p: any) => p.name?.toLowerCase().includes(personaNew.replace('_', ' ')))
+                                  if (!enginePersona?.id) {
+                                    showError(`Could not find engine persona matching "${personaNew}". Check persona mappings in Integrations.`)
+                                    return
+                                  }
+
+                                  const checkResult = await callIfoMover('check-persona', {
+                                    persona_id: enginePersona.id,
+                                    user_principal_name: rc.employee_email,
+                                  })
+                                  if (!checkResult) return
+
+                                  if (checkResult.jobId) {
+                                    let jobData: any = checkResult
+                                    let attempts = 0
+                                    while (jobData.status !== 'succeeded' && jobData.status !== 'failed' && attempts < 20) {
+                                      await new Promise(r => setTimeout(r, 1500))
+                                      jobData = await callIfoMover('get-job', { job_id: checkResult.jobId })
+                                      if (!jobData) break
+                                      attempts++
+                                    }
+                                    if (jobData?.result) {
+                                      await supabase.from('mover_m365_actions').upsert({
+                                        role_change_id: rc.id,
+                                        company_id: selectedCompanyId,
+                                        persona_check_result: { ...jobData.result, _enginePersonaId: enginePersona.id },
+                                        employee_upn: rc.employee_email,
+                                        updated_at: new Date().toISOString(),
+                                      }, { onConflict: 'role_change_id' })
+                                      await loadMovers()
+                                      showSuccess('Persona check complete — review the results below')
+                                      return
+                                    }
+                                  }
+
+                                  await supabase.from('mover_m365_actions').upsert({
+                                    role_change_id: rc.id,
+                                    company_id: selectedCompanyId,
+                                    persona_check_result: { ...checkResult, _enginePersonaId: enginePersona.id },
+                                    employee_upn: rc.employee_email,
+                                    updated_at: new Date().toISOString(),
+                                  }, { onConflict: 'role_change_id' })
+                                  await loadMovers()
+                                  showSuccess('Persona check complete — review the results below')
+                                }}>
+                                Check Persona Change
+                              </button>
+                            )}
+
+                            {personaCheckResult && !personaStatus && (
+                              <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
+                                onClick={async () => {
+                                  const personaId = personaCheckResult._enginePersonaId
+                                  if (!personaId) { showError('Missing engine persona ID — run the check again'); return }
+                                  const res = await callIfoMover('schedule-persona', {
+                                    role_change_id: rc.id,
+                                    persona_id: personaId,
+                                    user_principal_name: rc.employee_email,
+                                    display_name: rc.employee_name,
+                                  })
+                                  if (!res) return
+                                  await loadMovers()
+                                  showSuccess(`Persona move to ${personaNew.replace(/_/g, ' ')} scheduled`)
+                                }}>
+                                Schedule Persona Change
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })()}
+
+                      {/* Verification panel — show when both mover and persona are done */}
+                      {(m365?.run_status === 'completed' || !(rc.changes?.profile || rc.changes?.manager || rc.changes?.groups || rc.changes?.licence)) &&
+                       (m365?.persona_schedule_status === 'scheduled' || m365?.persona_schedule_status === 'completed' || !(rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new)) && (
+                        <div style={{ padding: '12px 16px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#2e7d32' }}>Where to verify the changes</div>
+                          <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4, color: '#333' }}>
+                            <li><strong>Entra ID</strong> — Open the user's profile in Microsoft Entra admin centre. Check extensionAttribute1 is set correctly and dynamic group memberships have updated.</li>
+                            <li><strong>Intune</strong> — In the Microsoft Intune admin centre, go to Devices → the user's device(s). Verify the correct configuration profiles and compliance policies are now assigned.</li>
+                            <li><strong>Conditional Access</strong> — Check the user's sign-in logs in Entra ID to confirm the correct policies are being applied.</li>
+                          </ul>
                         </div>
                       )}
                     </div>
