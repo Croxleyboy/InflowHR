@@ -310,6 +310,7 @@ export default function AdminOnboarding() {
   const [expandedMoverCompletedId, setExpandedMoverCompletedId] = useState<number | null>(null)
   const [enginePersonas, setEnginePersonas] = useState<EnginePersona[]>([])
   const [enginePersonasLoaded, setEnginePersonasLoaded] = useState(false)
+  const [moverApproverConfig, setMoverApproverConfig] = useState<{ mode: string; name?: string; email?: string; joiner_approver_mode?: string; joiner_approver_name?: string; joiner_approver_email?: string }>({ mode: 'same_as_joiner' })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadRows, setUploadRows] = useState<Record<string, string>[]>([])
@@ -564,10 +565,11 @@ export default function AdminOnboarding() {
     const [{ data: rcData }, { data: m365Data }, { data: ifo }] = await Promise.all([
       supabase.from('role_changes').select('*').eq('company_id', selectedCompanyId).order('created_at', { ascending: false }),
       supabase.from('mover_m365_actions').select('*').eq('company_id', selectedCompanyId),
-      supabase.from('inflowonboarder_integrations').select('status').eq('company_id', selectedCompanyId).maybeSingle(),
+      supabase.from('inflowonboarder_integrations').select('status, mover_approver_mode, mover_approver_name, mover_approver_email, approver_mode, approver_name, approver_email').eq('company_id', selectedCompanyId).maybeSingle(),
     ])
     const connected = ifo?.status === 'connected_ready'
     setIfoConnected(connected)
+    if (ifo) setMoverApproverConfig({ mode: ifo.mover_approver_mode || 'same_as_joiner', name: ifo.mover_approver_name, email: ifo.mover_approver_email, joiner_approver_mode: ifo.approver_mode, joiner_approver_name: ifo.approver_name, joiner_approver_email: ifo.approver_email })
     setMoverRecords((rcData as RoleChange[]) || [])
     const m365Map: Record<number, MoverM365Actions> = {}
     ;(m365Data || []).forEach((r: any) => { m365Map[r.role_change_id] = r })
@@ -5115,8 +5117,8 @@ export default function AdminOnboarding() {
                                 return (
                                   <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
                                     <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Persona Check Result</div>
-                                    {displayResult.currentPersona && <div style={{ marginBottom: 4 }}>Current: <strong>{String(displayResult.currentPersona)}</strong></div>}
-                                    {displayResult.targetPersona && <div style={{ marginBottom: 4 }}>Target: <strong>{String(displayResult.targetPersona)}</strong></div>}
+                                    {displayResult.currentPersona && <div style={{ marginBottom: 4 }}>Current: <strong>{typeof displayResult.currentPersona === 'object' ? (displayResult.currentPersona.name || displayResult.currentPersona.id || JSON.stringify(displayResult.currentPersona)) : String(displayResult.currentPersona)}</strong></div>}
+                                    {displayResult.targetPersona && <div style={{ marginBottom: 4 }}>Target: <strong>{typeof displayResult.targetPersona === 'object' ? (displayResult.targetPersona.name || displayResult.targetPersona.id || JSON.stringify(displayResult.targetPersona)) : String(displayResult.targetPersona)}</strong></div>}
                                     {displayResult.automaticSteps && (
                                       <div style={{ marginBottom: 4 }}>
                                         <strong>Automatic steps:</strong>
@@ -5145,11 +5147,18 @@ export default function AdminOnboarding() {
                                         {String(displayResult.deviceWarning)}
                                       </div>
                                     )}
-                                    {displayResult.approvalRequired && (
-                                      <div style={{ padding: '6px 10px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginTop: 6 }}>
-                                        Approval required before this persona change can be scheduled.
-                                      </div>
-                                    )}
+                                    {displayResult.approvalRequired && (() => {
+                                      const mode = moverApproverConfig.mode || 'same_as_joiner'
+                                      let approver = ''
+                                      if (mode === 'nominated') approver = moverApproverConfig.name || moverApproverConfig.email || ''
+                                      else if (mode === 'manager') approver = 'employee\'s line manager'
+                                      else approver = moverApproverConfig.joiner_approver_name || moverApproverConfig.joiner_approver_email || ''
+                                      return (
+                                        <div style={{ padding: '6px 10px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginTop: 6 }}>
+                                          Approval required before this persona change can be scheduled.{approver ? ` Approver: ${approver}` : ''}
+                                        </div>
+                                      )
+                                    })()}
                                     <details style={{ marginTop: 8 }}>
                                       <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Raw engine response</summary>
                                       <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', fontSize: 11, color: '#555', background: '#fff', padding: 8, borderRadius: 6, maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(displayResult, null, 2)}</pre>
@@ -5225,15 +5234,77 @@ export default function AdminOnboarding() {
                             {personaCheckResult && !personaStatus && (
                               <button className="admin-btn admin-btn-save" style={{ background: '#7b1fa2' }}
                                 onClick={async () => {
-                                  const res = await callIfoMover('schedule-persona', {
-                                    role_change_id: rc.id,
-                                    persona_id: personaNew,
-                                    user_principal_name: rc.employee_email,
-                                    display_name: rc.employee_name,
+                                  let approverEmail = ''
+                                  let approverName = ''
+                                  const mode = moverApproverConfig.mode || 'same_as_joiner'
+                                  if (mode === 'nominated') {
+                                    approverEmail = moverApproverConfig.email || ''
+                                    approverName = moverApproverConfig.name || ''
+                                  } else if (mode === 'manager') {
+                                    const { data: empRec } = await supabase.from('employees').select('manager_name, manager_email').eq('id', rc.employee_id).eq('company_id', selectedCompanyId).maybeSingle()
+                                    approverEmail = empRec?.manager_email || ''
+                                    approverName = empRec?.manager_name || ''
+                                  } else {
+                                    approverEmail = moverApproverConfig.joiner_approver_email || moverApproverConfig.email || ''
+                                    approverName = moverApproverConfig.joiner_approver_name || moverApproverConfig.name || ''
+                                  }
+                                  if (!approverEmail) {
+                                    showError('No approver email configured. Check the Mover Approver setting in Integrations.')
+                                    return
+                                  }
+
+                                  const oldName = enginePersonas.find(ep => ep.id === resolvePersonaId(personaOld))?.name || resolvePersonaId(personaOld)
+                                  const newName = enginePersonas.find(ep => ep.id === resolvePersonaId(personaNew))?.name || resolvePersonaId(personaNew)
+                                  const taskDesc = `${rc.employee_name} — Persona change: ${oldName} → ${newName}\nM365 account: ${rc.employee_email}`
+
+                                  const { data: existingWt } = await supabase.from('workflow_tracker')
+                                    .select('id, status').eq('onboard_id', rc.id).eq('record_type', 'M365 Mover Persona').eq('status', 'Pending').maybeSingle()
+                                  if (existingWt) {
+                                    showError('An approval request is already pending for this persona change.')
+                                    return
+                                  }
+
+                                  const { error: wtErr } = await supabase.from('workflow_tracker').insert({
+                                    company_id: selectedCompanyId,
+                                    record_type: 'M365 Mover Persona',
+                                    onboard_id: rc.id,
+                                    emp_display_name: rc.employee_name,
+                                    action: 'Approve',
+                                    employee_email: approverEmail,
+                                    assigned_to: approverEmail,
+                                    status: 'Pending',
+                                    approval_status: 'pending',
+                                    task_description: taskDesc,
                                   })
-                                  if (!res) return
+                                  if (wtErr) {
+                                    showError(`Failed to create approval task: ${wtErr.message}`)
+                                    return
+                                  }
+
+                                  const { data: approverEmp } = await supabase.from('employees')
+                                    .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${approverEmail},email.eq.${approverEmail}`).maybeSingle()
+                                  if (approverEmp) {
+                                    await supabase.from('notifications').insert({
+                                      company_id: selectedCompanyId,
+                                      employee_id: approverEmp.id,
+                                      type: 'action',
+                                      notification_type: 'm365_mover_persona_approval',
+                                      title: 'M365 Persona Change Approval',
+                                      message: `${rc.employee_name}'s persona change (${oldName} → ${newName}) needs your approval.`,
+                                      send_email: true,
+                                    })
+                                  }
+
+                                  await supabase.from('mover_m365_actions').upsert({
+                                    role_change_id: rc.id,
+                                    company_id: selectedCompanyId,
+                                    persona_schedule_status: 'pending_approval',
+                                    employee_upn: rc.employee_email,
+                                    updated_at: new Date().toISOString(),
+                                  }, { onConflict: 'role_change_id' })
+
                                   await loadMovers()
-                                  showSuccess(`Persona move to ${String(personaNew).replace(/_/g, ' ')} scheduled`)
+                                  showSuccess(`Persona change approval sent to ${approverName || approverEmail}`)
                                 }}>
                                 Schedule Persona Change
                               </button>

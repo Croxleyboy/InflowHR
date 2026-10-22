@@ -288,7 +288,7 @@ function NotifIcon({ type, status }: { type: string; status?: string | null }) {
       </div>
     )
   }
-  if (type === 'M365 Mover') {
+  if (type === 'M365 Mover' || type === 'M365 Mover Persona') {
     return (
       <div className="notif-icon" style={{ background: '#e65100' }}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -882,7 +882,7 @@ export default function Notifications() {
       setM365OffboardActionItem(item)
       return
     }
-    if (item.record_type === 'M365 Mover') {
+    if (item.record_type === 'M365 Mover' || item.record_type === 'M365 Mover Persona') {
       setM365MoverActionItem(item)
       return
     }
@@ -999,13 +999,22 @@ export default function Notifications() {
       if (!approverDisplayName) approverDisplayName = HARDCODED_EMAIL || 'Unknown'
       const approverEmail = HARDCODED_EMAIL || ''
       const roleChangeId = item.onboard_id || (item.extra_info ? parseInt(item.extra_info) : item.approval_id)
+      const isPersona = item.record_type === 'M365 Mover Persona'
       if (roleChangeId) {
-        const { error: m365Err } = await supabase.from('mover_m365_actions').update({
-          approval_status: approve ? 'approved' : 'declined',
-          approved_by: `${approverDisplayName} <${approverEmail}>`,
-          approved_at: now
-        }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
-        if (m365Err) console.warn('mover_m365_actions update failed:', m365Err.message)
+        if (isPersona) {
+          const { error: m365Err } = await supabase.from('mover_m365_actions').update({
+            persona_schedule_status: approve ? 'scheduled' : 'cancelled',
+            updated_at: now
+          }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
+          if (m365Err) console.warn('mover_m365_actions persona update failed:', m365Err.message)
+        } else {
+          const { error: m365Err } = await supabase.from('mover_m365_actions').update({
+            approval_status: approve ? 'approved' : 'declined',
+            approved_by: `${approverDisplayName} <${approverEmail}>`,
+            approved_at: now
+          }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
+          if (m365Err) console.warn('mover_m365_actions update failed:', m365Err.message)
+        }
       }
       const { error: wtErr } = await supabase.from('workflow_tracker').update({
         status: 'Complete',
@@ -1013,7 +1022,10 @@ export default function Notifications() {
         updated_at: now,
       }).eq('id', item.id).eq('company_id', companyUser?.company_id)
       if (wtErr) throw new Error(wtErr.message)
-      showSuccess(approve ? 'Role change M365 update approved' : 'Role change M365 update declined')
+      const msg = isPersona
+        ? (approve ? 'Persona change approved' : 'Persona change declined')
+        : (approve ? 'Role change M365 update approved' : 'Role change M365 update declined')
+      showSuccess(msg)
       setM365MoverActionItem(null)
       await fetchData()
       window.dispatchEvent(new Event('notifications-updated'))
@@ -1080,6 +1092,7 @@ export default function Notifications() {
     if (item.record_type === 'M365 Provisioning') return 'New Starter Account Approval'
     if (item.record_type === 'M365 Offboarding') return 'Leaver Account Offboarding Approval'
     if (item.record_type === 'M365 Mover') return 'Role Change — M365 Update Approval'
+    if (item.record_type === 'M365 Mover Persona') return 'Persona Change Approval'
     if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approval'
     if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approval'
     return item.action
@@ -1119,6 +1132,7 @@ export default function Notifications() {
       if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Approved'
       if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Approved'
       if (item.record_type === 'M365 Mover') return 'Role Change M365 Update Approved'
+      if (item.record_type === 'M365 Mover Persona') return 'Persona Change Approved'
       if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approved'
       if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approved'
     }
@@ -1129,12 +1143,14 @@ export default function Notifications() {
       if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Declined'
       if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Declined'
       if (item.record_type === 'M365 Mover') return 'Role Change M365 Update Declined'
+      if (item.record_type === 'M365 Mover Persona') return 'Persona Change Declined'
       if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Declined'
       if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Declined'
     }
     if (item.record_type === 'M365 Provisioning') return 'Account Provisioning Request'
     if (item.record_type === 'M365 Offboarding') return 'Account Offboarding Request'
     if (item.record_type === 'M365 Mover') return 'Role Change M365 Update Request'
+    if (item.record_type === 'M365 Mover Persona') return 'Persona Change Approval Request'
     if (item.record_type === 'M365 Scheduling') return 'M365 Schedule Approval Request'
     if (item.record_type === 'M365 Leaver Scheduling') return 'M365 Leaver Schedule Approval Request'
     return item.action
