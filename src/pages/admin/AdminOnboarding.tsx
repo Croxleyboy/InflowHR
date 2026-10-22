@@ -1170,6 +1170,19 @@ export default function AdminOnboarding() {
     }
   }
 
+  async function deleteMoverRoleChange(rc: RoleChange) {
+    if (!confirm(`Permanently delete role change record for ${rc.employee_name}?\n\nThis will remove the role change and any associated M365 actions. This cannot be undone.`)) return
+    try {
+      await supabase.from('mover_m365_actions').delete().eq('role_change_id', rc.id)
+      await supabase.from('role_changes').delete().eq('id', rc.id)
+      if (moverSelectedId === rc.id) { setMoverSelectedId(null); setTab('movers') }
+      await loadMovers()
+      showSuccess(`Role change record deleted for ${rc.employee_name}`)
+    } catch (err: any) {
+      showError('Delete failed: ' + (err?.message || 'Unknown error'))
+    }
+  }
+
   async function loadM365Actions(onboardingId: number) {
     const [{ data }, { data: ifo }, { data: wt }, { data: schedulingFlag }] = await Promise.all([
       supabase.from('onboarding_m365_actions').select('*').eq('onboarding_id', onboardingId).maybeSingle(),
@@ -4807,6 +4820,7 @@ export default function AdminOnboarding() {
                             {(rc.status === 'pending' || rc.status === 'in_progress') && (
                               <button className="admin-btn-sm" style={{ marginLeft: 8, color: '#c62828', border: '1px solid #c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel</button>
                             )}
+                            <button className="admin-btn-sm" style={{ marginLeft: 8, color: '#9e9e9e', border: '1px solid #ccc' }} onClick={() => deleteMoverRoleChange(rc)}>Delete</button>
                           </td>
                         </tr>
                       )
@@ -5051,46 +5065,64 @@ export default function AdminOnboarding() {
                             </div>
 
                             {/* Check result display */}
-                            {personaCheckResult && (
-                              <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
-                                <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Persona Check Result</div>
-                                {personaCheckResult.currentPersona && <div style={{ marginBottom: 4 }}>Current: <strong>{personaCheckResult.currentPersona}</strong></div>}
-                                {personaCheckResult.targetPersona && <div style={{ marginBottom: 4 }}>Target: <strong>{personaCheckResult.targetPersona}</strong></div>}
-                                {personaCheckResult.automaticSteps && (
-                                  <div style={{ marginBottom: 4 }}>
-                                    <strong>Automatic steps:</strong>
-                                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                                      {(Array.isArray(personaCheckResult.automaticSteps) ? personaCheckResult.automaticSteps : []).map((s: any, i: number) => (
-                                        <li key={i}>{typeof s === 'string' ? s : s.description || JSON.stringify(s)}</li>
-                                      ))}
-                                    </ul>
+                            {personaCheckResult && (() => {
+                              try {
+                                const { _enginePersonaId, ...displayResult } = personaCheckResult
+                                const hasKnownFields = displayResult.currentPersona || displayResult.targetPersona || displayResult.automaticSteps || displayResult.instructions || displayResult.documents || displayResult.deviceWarning || displayResult.approvalRequired
+                                return (
+                                  <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
+                                    <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Persona Check Result</div>
+                                    {displayResult.currentPersona && <div style={{ marginBottom: 4 }}>Current: <strong>{String(displayResult.currentPersona)}</strong></div>}
+                                    {displayResult.targetPersona && <div style={{ marginBottom: 4 }}>Target: <strong>{String(displayResult.targetPersona)}</strong></div>}
+                                    {displayResult.automaticSteps && (
+                                      <div style={{ marginBottom: 4 }}>
+                                        <strong>Automatic steps:</strong>
+                                        <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                          {(Array.isArray(displayResult.automaticSteps) ? displayResult.automaticSteps : []).map((s: any, i: number) => (
+                                            <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {displayResult.instructions && (
+                                      <div style={{ marginBottom: 4 }}>
+                                        <strong>Instructions:</strong>
+                                        <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                          {(Array.isArray(displayResult.instructions) ? displayResult.instructions : []).map((s: any, i: number) => (
+                                            <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    )}
+                                    {Array.isArray(displayResult.documents) && displayResult.documents.length > 0 && (
+                                      <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {displayResult.documents.map((d: any) => d?.name || String(d)).join(', ')}</div>
+                                    )}
+                                    {displayResult.deviceWarning && (
+                                      <div style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginTop: 6 }}>
+                                        {String(displayResult.deviceWarning)}
+                                      </div>
+                                    )}
+                                    {displayResult.approvalRequired && (
+                                      <div style={{ padding: '6px 10px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginTop: 6 }}>
+                                        Approval required before this persona change can be scheduled.
+                                      </div>
+                                    )}
+                                    <details style={{ marginTop: 8 }}>
+                                      <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Raw engine response</summary>
+                                      <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', fontSize: 11, color: '#555', background: '#fff', padding: 8, borderRadius: 6, maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(displayResult, null, 2)}</pre>
+                                    </details>
                                   </div>
-                                )}
-                                {personaCheckResult.instructions && (
-                                  <div style={{ marginBottom: 4 }}>
-                                    <strong>Instructions:</strong>
-                                    <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                                      {(Array.isArray(personaCheckResult.instructions) ? personaCheckResult.instructions : []).map((s: any, i: number) => (
-                                        <li key={i}>{typeof s === 'string' ? s : s.description || JSON.stringify(s)}</li>
-                                      ))}
-                                    </ul>
+                                )
+                              } catch (e: any) {
+                                return (
+                                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
+                                    <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13, color: '#dc2626' }}>Error displaying check result</div>
+                                    <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: '#555' }}>{e?.message || String(e)}</pre>
+                                    <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', fontSize: 11, color: '#555', background: '#fff', padding: 8, borderRadius: 6, maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(personaCheckResult, null, 2)}</pre>
                                   </div>
-                                )}
-                                {Array.isArray(personaCheckResult.documents) && personaCheckResult.documents.length > 0 && (
-                                  <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {personaCheckResult.documents.map((d: any) => d.name || String(d)).join(', ')}</div>
-                                )}
-                                {personaCheckResult.deviceWarning && (
-                                  <div style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginTop: 6 }}>
-                                    ⚠️ {personaCheckResult.deviceWarning}
-                                  </div>
-                                )}
-                                {personaCheckResult.approvalRequired && (
-                                  <div style={{ padding: '6px 10px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginTop: 6 }}>
-                                    Approval required before this persona change can be scheduled.
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                                )
+                              }
+                            })()}
 
                             {/* Persona schedule status */}
                             {personaStatus && (
@@ -5342,6 +5374,7 @@ export default function AdminOnboarding() {
                 {(rc.status === 'pending' || rc.status === 'in_progress') && (
                   <button className="admin-btn-sm" style={{ marginLeft: 'auto', color: '#c62828', border: '1px solid #c62828' }} onClick={() => cancelMoverRoleChange(rc)}>Cancel Role Change</button>
                 )}
+                <button className="admin-btn-sm" style={{ marginLeft: (rc.status === 'pending' || rc.status === 'in_progress') ? 8 : 'auto', color: '#9e9e9e', border: '1px solid #ccc' }} onClick={() => deleteMoverRoleChange(rc)}>Delete</button>
               </div>
             </div>
           </div>
