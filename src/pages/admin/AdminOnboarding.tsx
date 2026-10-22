@@ -4935,10 +4935,12 @@ export default function AdminOnboarding() {
                 </div>
               )}
 
-              {currentStep.key === 'update_accounts' && (
+              {currentStep.key === 'update_accounts' && (() => {
+                try {
+                return (
                 <div>
                   <div style={{ padding: '10px 14px', background: '#f5f5f5', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
-                    <strong>Employee:</strong> {rc.employee_name} · <strong>UPN:</strong> {rc.employee_email}
+                    <strong>Employee:</strong> {rc.employee_name || '—'} · <strong>UPN:</strong> {rc.employee_email || '—'}
                   </div>
                   {features.inflowonboarder_integration && ifoConnected ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -5044,7 +5046,7 @@ export default function AdminOnboarding() {
                           <div>
                             <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>Persona Change</h5>
                             <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
-                              <strong>{personaOld.replace(/_/g, ' ')}</strong> → <strong style={{ color: '#e65100' }}>{personaNew.replace(/_/g, ' ')}</strong>
+                              <strong>{String(personaOld).replace(/_/g, ' ')}</strong> → <strong style={{ color: '#e65100' }}>{String(personaNew).replace(/_/g, ' ')}</strong>
                               <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>This updates extensionAttribute1 in Entra ID. Dynamic groups re-evaluate automatically, applying the correct Intune profiles and conditional access policies.</div>
                             </div>
 
@@ -5181,7 +5183,7 @@ export default function AdminOnboarding() {
                                   })
                                   if (!res) return
                                   await loadMovers()
-                                  showSuccess(`Persona move to ${personaNew.replace(/_/g, ' ')} scheduled`)
+                                  showSuccess(`Persona move to ${String(personaNew).replace(/_/g, ' ')} scheduled`)
                                 }}>
                                 Schedule Persona Change
                               </button>
@@ -5212,7 +5214,14 @@ export default function AdminOnboarding() {
                     </div>
                   )}
                 </div>
-              )}
+                )
+                } catch (err: any) {
+                  return <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 13 }}>
+                    <strong>Error rendering step 2:</strong> {err?.message || String(err)}
+                    <pre style={{ fontSize: 11, marginTop: 8, whiteSpace: 'pre-wrap' }}>{err?.stack}</pre>
+                  </div>
+                }
+              })()}
 
               {currentStep.key === 'update_records' && (
                 <div>
