@@ -299,7 +299,7 @@ Deno.serve(async (req) => {
         return json({ error: 'Invalid or missing userPrincipalName — must be user@domain.tld' }, 400)
       }
 
-      const idempotencyKey = `mover-${role_change_id}-start-run-${attempt || 0}`
+      const idempotencyKey = `mover-${role_change_id}-start-run-${Date.now()}`
 
       // Build engine changes object
       const engineChanges: Record<string, unknown> = {}
@@ -465,7 +465,7 @@ Deno.serve(async (req) => {
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
       if (!/^[a-zA-Z0-9_-]+$/.test(run_id)) return json({ error: 'Invalid run_id format' }, 400)
 
-      const idempotencyKey = `mover-${role_change_id}-recheck-${attempt || 0}`
+      const idempotencyKey = `mover-${role_change_id}-recheck-${Date.now()}`
       let runData: any
 
       if (MOCK_MODE) {
@@ -499,7 +499,7 @@ Deno.serve(async (req) => {
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
       if (!/^[a-zA-Z0-9_-]+$/.test(run_id)) return json({ error: 'Invalid run_id format' }, 400)
 
-      const idempotencyKey = `mover-${role_change_id}-proceed-${attempt || 0}`
+      const idempotencyKey = `mover-${role_change_id}-proceed-${Date.now()}`
       let runData: any
 
       if (MOCK_MODE) {
@@ -564,7 +564,7 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
-      const idempotencyKey = `inflowhr-mover-${role_change_id}-schedule-${attempt || 0}`
+      const idempotencyKey = `inflowhr-mover-${role_change_id}-schedule-${Date.now()}`
 
       // Build engine changes for schedule (same persona resolution as run)
       const engineChanges: Record<string, unknown> = {}
@@ -743,7 +743,7 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
-      const idempotencyKey = `inflowhr-mover-${role_change_id}-update-${attempt || 0}`
+      const idempotencyKey = `inflowhr-mover-${role_change_id}-update-${Date.now()}`
 
       if (MOCK_MODE) {
         await sb.from('mover_m365_actions').update({
@@ -798,7 +798,7 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
-      const idempotencyKey = `inflowhr-mover-${role_change_id}-cancel-${attempt || 0}`
+      const idempotencyKey = `inflowhr-mover-${role_change_id}-cancel-${Date.now()}`
 
       if (MOCK_MODE) {
         await sb.from('mover_m365_actions').update({
@@ -839,7 +839,7 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
-      const idempotencyKey = `inflowhr-mover-${role_change_id}-recheck-schedule-${attempt || 0}`
+      const idempotencyKey = `inflowhr-mover-${role_change_id}-recheck-schedule-${Date.now()}`
 
       if (MOCK_MODE) {
         await sb.from('mover_m365_actions').update({
