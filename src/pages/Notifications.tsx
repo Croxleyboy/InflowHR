@@ -1038,12 +1038,16 @@ export default function Notifications() {
               } catch (e) { console.warn('schedule-persona call error:', e) }
             }
           }
-          if (!engineCallSucceeded) {
-            const { error: m365Err } = await supabase.from('mover_m365_actions').update({
-              persona_schedule_status: approve ? 'pending_approval' : 'cancelled',
+          if (!engineCallSucceeded && approve) {
+            showError('Persona schedule failed — the engine did not accept the request. Check the browser console for details. The approval task remains open so you can retry.')
+            setM365MoverApproving(false)
+            return
+          }
+          if (!approve) {
+            await supabase.from('mover_m365_actions').update({
+              persona_schedule_status: 'cancelled',
               updated_at: now
             }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
-            if (m365Err) console.warn('mover_m365_actions persona update failed:', m365Err.message)
           }
         } else {
           const { error: m365Err } = await supabase.from('mover_m365_actions').update({
