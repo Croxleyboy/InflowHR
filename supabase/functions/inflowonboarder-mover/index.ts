@@ -142,7 +142,7 @@ async function audit(sb: ReturnType<typeof getSupabase>, companyId: string, user
 // ── Error code mapping ──────────────────────────────────────────────────────
 
 const ERROR_MESSAGES: Record<string, string> = {
-  forbidden_scope: 'Your API key is missing the m365.mover permission. Check the key scopes in InflowOnboarder.',
+  forbidden_scope: 'Your API key is missing a required permission. Check the key scopes in InflowOnboarder.',
   rate_limited: 'Too many requests. Please try again shortly.',
   unauthenticated: 'Your InflowOnboarder API key is invalid or has been revoked.',
   run_exists: 'A workflow run already exists for this role change.',
@@ -177,10 +177,26 @@ async function getApiKey(sb: ReturnType<typeof getSupabase>, companyId: string):
 
 // ── Helper: handle engine error responses ───────────────────────────────────
 
+const SCOPE_HINTS: Record<string, string> = {
+  'start-mover-run': 'm365.mover',
+  'check-mover-run': 'm365.mover',
+  'recheck-mover-run': 'm365.mover',
+  'proceed-mover-run': 'm365.mover',
+  'create-mover-schedule': 'hr.mover',
+  'get-mover-schedule': 'hr.mover',
+  'update-mover-schedule': 'hr.mover',
+  'cancel-mover-schedule': 'hr.mover',
+  'recheck-mover-schedule': 'hr.mover',
+  'list-personas': 'hr.persona',
+  'check-persona': 'hr.persona',
+  'schedule-persona': 'hr.persona',
+}
+
 function handleEngineError(
   sb: ReturnType<typeof getSupabase>,
   companyId: string,
   res: { ok: boolean; status: number; data: unknown },
+  action?: string,
 ): Response | null {
   if (res.ok) return null
   const errData = res.data as any
@@ -190,7 +206,13 @@ function handleEngineError(
     sb.from('inflowonboarder_integrations').update({ status: 'needs_attention', updated_at: new Date().toISOString() }).eq('company_id', companyId)
     return json({ error: friendlyError('unauthenticated') }, 401)
   }
-  if (res.status === 403) return json({ error: friendlyError(code || 'forbidden_scope') }, 403)
+  if (res.status === 403) {
+    const scope = action ? SCOPE_HINTS[action] : null
+    const msg = scope
+      ? `Your API key is missing the ${scope} permission. Check the key scopes in InflowOnboarder.`
+      : friendlyError(code || 'forbidden_scope')
+    return json({ error: msg }, 403)
+  }
   if (res.status === 429) return json({ error: friendlyError('rate_limited') }, 429)
   if (res.status >= 500) return json({ error: 'InflowOnboarder is temporarily unavailable. Please try again shortly.' }, 503)
 
@@ -368,7 +390,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        const errResp = handleEngineError(sb, company_id, res)
+        const errResp = handleEngineError(sb, company_id, res, action)
         if (errResp) return errResp
 
         const resData = res.data as any
@@ -409,7 +431,7 @@ Deno.serve(async (req) => {
         const keyResult = await getApiKey(sb, company_id)
         if (keyResult instanceof Response) return keyResult
         const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/workflows/runs/${run_id}`)
-        const errResp = handleEngineError(sb, company_id, res)
+        const errResp = handleEngineError(sb, company_id, res, action)
         if (errResp) return errResp
         runData = res.data
       }
@@ -448,7 +470,7 @@ Deno.serve(async (req) => {
         const keyResult = await getApiKey(sb, company_id)
         if (keyResult instanceof Response) return keyResult
         const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/workflows/runs/${run_id}/recheck`, {}, idempotencyKey)
-        const errResp = handleEngineError(sb, company_id, res)
+        const errResp = handleEngineError(sb, company_id, res, action)
         if (errResp) return errResp
         runData = res.data
       }
@@ -490,7 +512,7 @@ Deno.serve(async (req) => {
         }
         const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/workflows/runs/${run_id}/proceed`, approvalBody, idempotencyKey)
 
-        const errResp = handleEngineError(sb, company_id, res)
+        const errResp = handleEngineError(sb, company_id, res, action)
         if (errResp) return errResp
         runData = res.data
       }
@@ -637,7 +659,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      const errResp = handleEngineError(sb, company_id, res)
+      const errResp = handleEngineError(sb, company_id, res, action)
       if (errResp) return errResp
 
       const sched = res.data as any
@@ -680,7 +702,7 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
       const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${schedule_id}`)
-      const errResp = handleEngineError(sb, company_id, res)
+      const errResp = handleEngineError(sb, company_id, res, action)
       if (errResp) return errResp
 
       const sched = res.data as any
@@ -734,7 +756,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      const errResp = handleEngineError(sb, company_id, res)
+      const errResp = handleEngineError(sb, company_id, res, action)
       if (errResp) return errResp
 
       const sched = res.data as any
@@ -777,7 +799,7 @@ Deno.serve(async (req) => {
         reason: reason || 'Cancelled from InflowHR',
       }, idempotencyKey)
 
-      const errResp = handleEngineError(sb, company_id, res)
+      const errResp = handleEngineError(sb, company_id, res, action)
       if (errResp) return errResp
 
       const sched = res.data as any
@@ -815,7 +837,7 @@ Deno.serve(async (req) => {
       }
 
       const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/schedules/${schedule_id}/recheck`, {}, idempotencyKey)
-      const errResp = handleEngineError(sb, company_id, res)
+      const errResp = handleEngineError(sb, company_id, res, action)
       if (errResp) return errResp
 
       const sched = res.data as any
@@ -840,7 +862,7 @@ Deno.serve(async (req) => {
       if (keyResult instanceof Response) return keyResult
 
       const res = await engineFetch(keyResult.apiKey, 'GET', '/v1/personas')
-      const engineErr = handleEngineError(sb, company_id, res)
+      const engineErr = handleEngineError(sb, company_id, res, action)
       if (engineErr) return engineErr
 
       await audit(sb, company_id, userId, 'inflowonboarder_list_personas', {})
@@ -860,7 +882,7 @@ Deno.serve(async (req) => {
       if (effective_time) checkBody.effectiveTime = effective_time
 
       const res = await engineFetch(keyResult.apiKey, 'POST', `/v1/personas/${persona_id}/check`, checkBody)
-      const engineErr = handleEngineError(sb, company_id, res)
+      const engineErr = handleEngineError(sb, company_id, res, action)
       if (engineErr) return engineErr
 
       await audit(sb, company_id, userId, 'inflowonboarder_check_persona', { persona_id, user_principal_name })
@@ -898,7 +920,7 @@ Deno.serve(async (req) => {
       }
 
       const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
-      const engineErr = handleEngineError(sb, company_id, res)
+      const engineErr = handleEngineError(sb, company_id, res, action)
       if (engineErr) return engineErr
 
       const schedData = res.data as any
