@@ -4894,15 +4894,23 @@ export default function AdminOnboarding() {
                       {(!m365 || m365.run_status === 'failed') && (
                         <button className="admin-btn admin-btn-save" style={{ background: '#e65100' }}
                           onClick={async () => {
-                            const res = await callIfoMover('start-mover-run', {
-                              role_change_id: rc.id,
-                              user_principal_name: rc.employee_email,
-                              changes: rc.changes,
-                              attempt: (m365?.attempt_count_run || 0) + 1,
-                            })
-                            if (!res) return
+                            const hasPersonaChange = rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new
+                            const hasNonPersonaChanges = rc.changes?.profile || rc.changes?.manager || rc.changes?.groups || rc.changes?.licence || rc.changes?.revokeSessions
+
+                            let moverStarted = false
+                            if (hasNonPersonaChanges) {
+                              const res = await callIfoMover('start-mover-run', {
+                                role_change_id: rc.id,
+                                user_principal_name: rc.employee_email,
+                                changes: rc.changes,
+                                attempt: (m365?.attempt_count_run || 0) + 1,
+                              })
+                              if (!res) return
+                              moverStarted = true
+                            }
+
                             let personaScheduled = false
-                            if (rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new) {
+                            if (hasPersonaChange) {
                               try {
                                 const personas = await callIfoMover('list-personas', {})
                                 if (personas && Array.isArray(personas)) {
@@ -4922,10 +4930,15 @@ export default function AdminOnboarding() {
                                     personaScheduled = true
                                   }
                                 }
-                              } catch (e) { /* persona schedule is best-effort alongside the mover run */ }
+                              } catch (e) { /* persona schedule is best-effort */ }
                             }
+
                             await loadMovers()
-                            showSuccess(personaScheduled ? 'M365 mover run started + persona change scheduled' : 'M365 mover run started')
+                            const msg = moverStarted && personaScheduled ? 'M365 mover run started + persona change scheduled'
+                              : moverStarted ? 'M365 mover run started'
+                              : personaScheduled ? 'Persona change scheduled'
+                              : 'No M365 changes to apply'
+                            showSuccess(msg)
                           }}>
                           {m365?.run_status === 'failed' ? 'Retry M365 Update' : 'Start M365 Update'}
                         </button>

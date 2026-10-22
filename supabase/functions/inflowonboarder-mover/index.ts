@@ -315,6 +315,12 @@ Deno.serve(async (req) => {
         engineChanges.revokeSessions = changes.revokeSessions
       }
 
+      // Guard: engine requires at least one real change (profile, manager, groups, licence)
+      const hasRealChanges = engineChanges.profile || engineChanges.manager || engineChanges.groups || engineChanges.licence
+      if (!hasRealChanges) {
+        return json({ error: 'No M365 changes to apply. Use schedule-persona for persona-only changes.' }, 400)
+      }
+
       let runId: string
       let runStatus: string
       let runError: unknown = null
