@@ -5149,10 +5149,15 @@ export default function AdminOnboarding() {
                                     )}
                                     {displayResult.approvalRequired && (() => {
                                       const mode = moverApproverConfig.mode || 'same_as_joiner'
+                                      const effMode = mode === 'same_as_joiner' ? (moverApproverConfig.joiner_approver_mode || 'nominated') : mode
                                       let approver = ''
-                                      if (mode === 'nominated') approver = moverApproverConfig.name || moverApproverConfig.email || ''
-                                      else if (mode === 'manager') approver = 'employee\'s line manager'
-                                      else approver = moverApproverConfig.joiner_approver_name || moverApproverConfig.joiner_approver_email || ''
+                                      if (effMode === 'nominated') {
+                                        approver = mode === 'same_as_joiner'
+                                          ? (moverApproverConfig.joiner_approver_name || moverApproverConfig.joiner_approver_email || '')
+                                          : (moverApproverConfig.name || moverApproverConfig.email || '')
+                                      } else if (effMode === 'manager') {
+                                        approver = 'employee\'s line manager'
+                                      }
                                       return (
                                         <div style={{ padding: '6px 10px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginTop: 6 }}>
                                           Approval required before this persona change can be scheduled.{approver ? ` Approver: ${approver}` : ''}
@@ -5237,16 +5242,19 @@ export default function AdminOnboarding() {
                                   let approverEmail = ''
                                   let approverName = ''
                                   const mode = moverApproverConfig.mode || 'same_as_joiner'
-                                  if (mode === 'nominated') {
-                                    approverEmail = moverApproverConfig.email || ''
-                                    approverName = moverApproverConfig.name || ''
-                                  } else if (mode === 'manager') {
+                                  const effectiveMode = mode === 'same_as_joiner' ? (moverApproverConfig.joiner_approver_mode || 'nominated') : mode
+                                  if (effectiveMode === 'nominated') {
+                                    if (mode === 'same_as_joiner') {
+                                      approverEmail = moverApproverConfig.joiner_approver_email || ''
+                                      approverName = moverApproverConfig.joiner_approver_name || ''
+                                    } else {
+                                      approverEmail = moverApproverConfig.email || ''
+                                      approverName = moverApproverConfig.name || ''
+                                    }
+                                  } else if (effectiveMode === 'manager') {
                                     const { data: empRec } = await supabase.from('employees').select('manager_name, manager_email').eq('id', rc.employee_id).eq('company_id', selectedCompanyId).maybeSingle()
                                     approverEmail = empRec?.manager_email || ''
                                     approverName = empRec?.manager_name || ''
-                                  } else {
-                                    approverEmail = moverApproverConfig.joiner_approver_email || moverApproverConfig.email || ''
-                                    approverName = moverApproverConfig.joiner_approver_name || moverApproverConfig.name || ''
                                   }
                                   if (!approverEmail) {
                                     showError('No approver email configured. Check the Mover Approver setting in Integrations.')
