@@ -209,7 +209,8 @@ function handleEngineError(
   return json({ error: friendlyError(code, errData?.error?.message) }, res.status)
 }
 
-// ── Persona transition: build changes from persona mappings ────────────────
+// ── Persona transition: build licence + session changes for mover ────────────
+// Groups and extensionAttribute1 are handled by the persona packs API, not m365.mover.
 
 async function buildPersonaChanges(
   sb: ReturnType<typeof getSupabase>,
@@ -217,8 +218,6 @@ async function buildPersonaChanges(
   oldPersona: string | null,
   newPersona: string | null,
 ): Promise<{
-  groupsAdd: string[];
-  groupsRemove: string[];
   licenceAdd?: string;
   licenceRemove?: string;
   revokeSessions: boolean;
@@ -236,24 +235,11 @@ async function buildPersonaChanges(
   const newMapping = mappings.find((m: any) => m.persona === newPersona)
 
   const result: {
-    groupsAdd: string[];
-    groupsRemove: string[];
     licenceAdd?: string;
     licenceRemove?: string;
     revokeSessions: boolean;
   } = {
-    groupsAdd: [],
-    groupsRemove: [],
     revokeSessions: oldPersona === 'strict_secure' || newPersona === 'strict_secure',
-  }
-
-  if (newMapping?.m365_groups) {
-    const oldGroups = new Set(oldMapping?.m365_groups || [])
-    result.groupsAdd = newMapping.m365_groups.filter((g: string) => !oldGroups.has(g))
-  }
-  if (oldMapping?.m365_groups) {
-    const newGroups = new Set(newMapping?.m365_groups || [])
-    result.groupsRemove = oldMapping.m365_groups.filter((g: string) => !newGroups.has(g))
   }
 
   if (newMapping?.m365_licence_sku_id && oldMapping?.m365_licence_sku_id &&
@@ -307,16 +293,10 @@ Deno.serve(async (req) => {
         engineChanges.manager = changes.manager
       }
 
-      // Persona transition: resolve groups + licence changes (extensionAttribute1 is handled separately via persona packs API)
+      // Persona transition: resolve licence + session changes (groups and extensionAttribute1 handled by persona packs API)
       if (changes?.persona) {
         const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
         if (personaChanges) {
-          const existingGroupsAdd = changes?.groups?.add || []
-          const existingGroupsRemove = changes?.groups?.remove || []
-          engineChanges.groups = {
-            add: [...new Set([...existingGroupsAdd, ...personaChanges.groupsAdd])],
-            remove: [...new Set([...existingGroupsRemove, ...personaChanges.groupsRemove])],
-          }
           if (personaChanges.licenceAdd && !changes?.licence?.add) {
             engineChanges.licence = { add: personaChanges.licenceAdd, remove: personaChanges.licenceRemove }
           }
@@ -324,8 +304,8 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Explicit group/licence changes (override persona if set directly)
-      if (changes?.groups && !engineChanges.groups) {
+      // Explicit group/licence changes
+      if (changes?.groups) {
         engineChanges.groups = changes.groups
       }
       if (changes?.licence && !engineChanges.licence) {
@@ -560,16 +540,10 @@ Deno.serve(async (req) => {
       if (changes?.groups) engineChanges.groups = changes.groups
       if (changes?.licence) engineChanges.licence = changes.licence
 
-      // Persona transition: resolve groups + licence (extensionAttribute1 handled via persona packs API)
+      // Persona transition: resolve licence + session changes (groups handled by persona packs API)
       if (changes?.persona) {
         const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
         if (personaChanges) {
-          const existingGroupsAdd = (engineChanges.groups as any)?.add || []
-          const existingGroupsRemove = (engineChanges.groups as any)?.remove || []
-          engineChanges.groups = {
-            add: [...new Set([...existingGroupsAdd, ...personaChanges.groupsAdd])],
-            remove: [...new Set([...existingGroupsRemove, ...personaChanges.groupsRemove])],
-          }
           if (personaChanges.licenceAdd && !engineChanges.licence) {
             engineChanges.licence = { add: personaChanges.licenceAdd, remove: personaChanges.licenceRemove }
           }
