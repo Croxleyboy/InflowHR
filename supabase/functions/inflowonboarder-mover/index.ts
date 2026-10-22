@@ -111,7 +111,8 @@ function mockProceedMoverRun(runId: string, roleChangeId: number, currentStatus:
         userId: 'mock-aad-user-id-mover',
         userPrincipalName: 'mover@mockdomain.com',
         changed: {
-          profile: { jobTitle: 'Senior Engineer', department: 'Engineering', extensionAttribute1: 'Persona-StrictSecure' },
+          profile: { jobTitle: 'Senior Engineer', department: 'Engineering' },
+          extensionAttributes: { extensionAttribute1: 'Persona-StrictSecure' },
           groups: { added: ['SG-Engineering'], removed: ['SG-Support'] },
           licence: { added: 'Microsoft 365 E5', removed: 'Microsoft 365 Business Premium' },
         },
@@ -317,9 +318,8 @@ Deno.serve(async (req) => {
       if (changes?.persona) {
         const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
         if (personaChanges) {
-          if (!engineChanges.profile) engineChanges.profile = {}
           if (personaChanges.extensionAttribute1) {
-            (engineChanges.profile as any).extensionAttribute1 = personaChanges.extensionAttribute1
+            engineChanges.extensionAttributes = { extensionAttribute1: personaChanges.extensionAttribute1 }
           }
           // Merge persona groups with explicit group changes
           const existingGroupsAdd = changes?.groups?.add || []
@@ -574,9 +574,8 @@ Deno.serve(async (req) => {
       if (changes?.persona) {
         const personaChanges = await buildPersonaChanges(sb, company_id, changes.persona.old, changes.persona.new)
         if (personaChanges) {
-          if (!engineChanges.profile) engineChanges.profile = {}
           if (personaChanges.extensionAttribute1) {
-            (engineChanges.profile as any).extensionAttribute1 = personaChanges.extensionAttribute1
+            engineChanges.extensionAttributes = { extensionAttribute1: personaChanges.extensionAttribute1 }
           }
           const existingGroupsAdd = (engineChanges.groups as any)?.add || []
           const existingGroupsRemove = (engineChanges.groups as any)?.remove || []
