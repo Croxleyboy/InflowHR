@@ -1002,6 +1002,7 @@ export default function Notifications() {
       const isPersona = item.record_type === 'M365 Mover Persona'
       if (roleChangeId) {
         if (isPersona) {
+          let engineCallSucceeded = false
           if (approve) {
             const { data: rcRow } = await supabase.from('role_changes').select('changes, employee_email, employee_name').eq('id', roleChangeId).eq('company_id', companyUser?.company_id).maybeSingle()
             const personaNew = rcRow?.changes?.persona?.new
@@ -1021,12 +1022,15 @@ export default function Notifications() {
                       persona_id: personaNew,
                       user_principal_name: rcRow.employee_email,
                       display_name: rcRow.employee_name,
-                      approval_required: false,
-                      approved_by: `${approverDisplayName} <${approverEmail}>`,
+                      approval_required: true,
+                      approver_name: approverDisplayName,
+                      approver_email: approverEmail,
                       approved_at: now,
                     }),
                   })
-                  if (!res.ok) {
+                  if (res.ok) {
+                    engineCallSucceeded = true
+                  } else {
                     const errData = await res.json().catch(() => ({}))
                     console.warn('schedule-persona call failed:', errData.error || res.statusText)
                   }
@@ -1034,11 +1038,13 @@ export default function Notifications() {
               } catch (e) { console.warn('schedule-persona call error:', e) }
             }
           }
-          const { error: m365Err } = await supabase.from('mover_m365_actions').update({
-            persona_schedule_status: approve ? 'scheduled' : 'cancelled',
-            updated_at: now
-          }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
-          if (m365Err) console.warn('mover_m365_actions persona update failed:', m365Err.message)
+          if (!engineCallSucceeded) {
+            const { error: m365Err } = await supabase.from('mover_m365_actions').update({
+              persona_schedule_status: approve ? 'pending_approval' : 'cancelled',
+              updated_at: now
+            }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
+            if (m365Err) console.warn('mover_m365_actions persona update failed:', m365Err.message)
+          }
         } else {
           const { error: m365Err } = await supabase.from('mover_m365_actions').update({
             approval_status: approve ? 'approved' : 'declined',
