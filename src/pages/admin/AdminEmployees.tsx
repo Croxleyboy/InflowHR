@@ -65,6 +65,7 @@ interface Employee {
   time_recording_override: string | null
   is_payroll_exception: boolean
   persona: string | null
+  has_company_device: boolean
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -296,7 +297,7 @@ export default function AdminEmployees() {
       await supabase.from('leave_balances').update(balUpdate).eq('id', lieuDays[id].balanceId)
     }
 
-    if (features.inflowonboarder_integration) {
+    if (features.inflowonboarder_integration && editForm.has_company_device) {
       const emp = employees.find(e => e.id === id)
       if (emp) {
         const oldPersona = emp.persona || 'information-worker'
@@ -798,7 +799,10 @@ export default function AdminEmployees() {
                       <div><span style={{ color: '#999', display: 'block' }}>Location</span><strong>{selectedEmployee.location || '—'}</strong></div>
                       <div><span style={{ color: '#999', display: 'block' }}>Manager</span><strong>{selectedEmployee.manager_name || '—'}</strong></div>
                       {features.inflowonboarder_integration && (
-                        <div><span style={{ color: '#999', display: 'block' }}>Persona</span><strong style={{ textTransform: 'capitalize' }}>{(selectedEmployee.persona || 'information-worker').replace(/-/g, ' ')}</strong></div>
+                        <>
+                          <div><span style={{ color: '#999', display: 'block' }}>Company Device</span><strong>{selectedEmployee.has_company_device ? 'Yes' : 'No'}</strong></div>
+                          <div><span style={{ color: '#999', display: 'block' }}>Persona</span><strong style={{ textTransform: 'capitalize' }}>{selectedEmployee.has_company_device ? (selectedEmployee.persona || 'information-worker').replace(/-/g, ' ') : '—'}</strong></div>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1164,15 +1168,30 @@ export default function AdminEmployees() {
                                           </div>
                                         )}
                                         {features.inflowonboarder_integration && (
-                                          <div className="admin-form-field">
-                                            <label style={{ fontSize: 12 }}>Persona</label>
-                                            <select className="admin-select" value={editForm.persona || 'information-worker'} onChange={e => setEditForm(p => ({...p, persona: e.target.value}))}>
-                                              <option value="information-worker">Information worker</option>
-                                              <option value="mobile-field-worker">Mobile and field worker</option>
-                                              <option value="secure-vip">Secure VIP</option>
-                                              <option value="shared-kiosk">Shared kiosk</option>
-                                            </select>
-                                          </div>
+                                          <>
+                                            <div className="admin-form-field">
+                                              <label style={{ fontSize: 12 }}>Company Device</label>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                                                  <input type="checkbox" checked={!!editForm.has_company_device} onChange={e => setEditForm(p => ({...p, has_company_device: e.target.checked}))} />
+                                                  Has a managed company device
+                                                </label>
+                                              </div>
+                                            </div>
+                                            <div className="admin-form-field">
+                                              <label style={{ fontSize: 12 }}>Persona</label>
+                                              {editForm.has_company_device ? (
+                                                <select className="admin-select" value={editForm.persona || 'information-worker'} onChange={e => setEditForm(p => ({...p, persona: e.target.value}))}>
+                                                  <option value="information-worker">Information worker</option>
+                                                  <option value="mobile-field-worker">Mobile and field worker</option>
+                                                  <option value="secure-vip">Secure VIP</option>
+                                                  <option value="shared-kiosk">Shared kiosk</option>
+                                                </select>
+                                              ) : (
+                                                <div style={{ fontSize: 12, color: '#888', padding: '6px 0' }}>No company device assigned — persona changes not applicable</div>
+                                              )}
+                                            </div>
+                                          </>
                                         )}
                                         {showField('leave_allowance') && (
                                           <div className="admin-form-field">

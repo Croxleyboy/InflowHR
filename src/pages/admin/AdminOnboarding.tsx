@@ -597,7 +597,7 @@ export default function AdminOnboarding() {
       if (state.jmlSection) setJmlSection(state.jmlSection)
       if (state.prefill) {
         const pf = state.prefill
-        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, work_email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: resolvePersonaId(pf.personaChange.old) })
+        setMoverSelectedEmployee({ id: pf.empId, first_name: pf.empName.split(' ')[0], last_name: pf.empName.split(' ').slice(1).join(' '), email: pf.empEmail, work_email: pf.empEmail, job_title: '', department: '', location: '', manager_name: '', manager_email: '', persona: resolvePersonaId(pf.personaChange.old), has_company_device: true })
         setMoverEmployeeSearch(pf.empName)
         setMoverForm({ employee_id: pf.empId, employee_name: pf.empName, employee_email: pf.empEmail, changes: { persona: { old: resolvePersonaId(pf.personaChange.old), new: resolvePersonaId(pf.personaChange.new) } }, change_type: 'persona_change', reason: '', additionalFields: [] })
       }
@@ -2288,7 +2288,12 @@ export default function AdminOnboarding() {
     const record = records.find(r => r.id === selectedId)
     if (!record) return
     const updates: Record<string, any> = {}
-    if (stepKey === 'equipment') updates.equipment_order = 'Y'
+    if (stepKey === 'equipment') {
+      updates.equipment_order = 'Y'
+      if (record.user_email && selectedCompanyId) {
+        await supabase.from('employees').update({ has_company_device: true }).eq('email', record.user_email).eq('company_id', selectedCompanyId)
+      }
+    }
     if (stepKey === 'plan_day1' || stepKey === 'meeting' || stepKey === 'notify_manager') updates.first_day = true
     if (stepKey === 'inform_starter') updates.first_week = true
     if (stepKey === 'accounts') {
@@ -4722,7 +4727,7 @@ export default function AdminOnboarding() {
                 onChange={async (e) => {
                   setMoverEmployeeSearch(e.target.value)
                   if (e.target.value.length >= 2) {
-                    const { data } = await supabase.from('employees').select('id, first_name, last_name, email, work_email, job_title, department, manager_name, manager_email, location, persona')
+                    const { data } = await supabase.from('employees').select('id, first_name, last_name, email, work_email, job_title, department, manager_name, manager_email, location, persona, has_company_device')
                       .eq('company_id', selectedCompanyId).or(`first_name.ilike.%${e.target.value}%,last_name.ilike.%${e.target.value}%,email.ilike.%${e.target.value}%`).limit(10)
                     setMoverEmployeeResults((data || []).map((e: any) => ({ ...e, email: e.email || '', work_email: e.work_email || e.email || '' })))
                   } else {
@@ -4768,7 +4773,11 @@ export default function AdminOnboarding() {
 
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>New Persona</label>
-                  {enginePersonas.length > 0 ? (
+                  {!moverSelectedEmployee.has_company_device ? (
+                    <div style={{ padding: '12px 16px', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, fontSize: 13, color: '#6d4c00' }}>
+                      This employee doesn't have a managed company device — persona changes are not applicable. To enable persona changes, tick "Company Device" on the employee record first.
+                    </div>
+                  ) : enginePersonas.length > 0 ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
                       {enginePersonas.map(ep => {
                         const colours = ENGINE_PERSONA_COLORS[ep.id] || { color: '#555', bg: '#f5f5f5' }
