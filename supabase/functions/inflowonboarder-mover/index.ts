@@ -212,6 +212,9 @@ const SCOPE_HINTS: Record<string, string> = {
   'get-job': 'hr.persona',
   'schedule-persona': 'hr.persona',
   'cancel-persona-schedule': 'hr.persona',
+  'get-persona-schedule': 'hr.persona',
+  'recheck-persona-schedule': 'hr.persona',
+  'poll-active-persona-schedules': 'hr.persona',
 }
 
 function handleEngineError(
@@ -256,6 +259,59 @@ function handleEngineError(
 // ── Legacy persona key fallback ─────────────────────────────────────────────
 const LEGACY_PERSONA: Record<string, string> = { standard: 'information-worker', mobile: 'mobile-field-worker', strict_secure: 'secure-vip', kiosk: 'shared-kiosk' }
 function resolvePersonaId(raw: string): string { return LEGACY_PERSONA[raw] || raw }
+
+// ── PreCheck code → HR-friendly help text ──────────────────────────────────
+const PRECHECK_HELP: Record<string, { summary: string; action: string; detail: string }> = {
+  account_has_admin_role: {
+    summary: 'This employee has an admin account',
+    action: 'Contact IT to make this change manually, or ask them to remove the admin role first so it can be done automatically.',
+    detail: 'The engine cannot modify accounts with admin roles. IT can either remove the admin role and retry, or update extensionAttribute1 directly in InflowOnboarder Templates.',
+  },
+  admin_move_needs_approval: {
+    summary: 'Extra approval needed',
+    action: 'A Global Admin needs to approve this change before it can go ahead. Contact your IT team.',
+    detail: 'Admin account persona changes require Global Admin approval via InflowOnboarder.',
+  },
+  persona_not_set_up: {
+    summary: 'Persona not configured yet',
+    action: 'Ask IT to set up this persona in InflowOnboarder before you can assign it.',
+    detail: 'The target persona template is not configured in InflowOnboarder Settings → Templates.',
+  },
+  persona_group_not_found: {
+    summary: 'Missing security group',
+    action: 'Ask IT to create the required security groups for this persona.',
+    detail: 'One or more Entra ID security groups for this persona do not exist. IT needs to create them or update the persona template.',
+  },
+  account_protected: {
+    summary: 'Protected account',
+    action: 'This account is protected. Contact IT to make this change manually.',
+    detail: 'The account has protection rules that prevent automatic modification.',
+  },
+  user_not_found: {
+    summary: 'Account not found',
+    action: 'Check the employee\'s email address is correct. If it is, ask IT to verify the account exists.',
+    detail: 'The user account was not found in Microsoft 365 / Entra ID.',
+  },
+  licence_unavailable: {
+    summary: 'No licences available',
+    action: 'Ask IT to purchase or free up licences for this persona, then try again.',
+    detail: 'The M365 licence required for the target persona has no available seats.',
+  },
+}
+
+// Helper: store full persona schedule state from engine response
+function buildPersonaScheduleUpdate(sched: any): Record<string, unknown> {
+  return {
+    persona_schedule_status: sched.status,
+    persona_schedule_message: sched.message || null,
+    persona_pre_check: sched.preCheck || null,
+    persona_next_actions: sched.nextActions || null,
+    persona_schedule_stages: sched.stages || null,
+    persona_schedule_next_due_at: sched.nextDueAt || null,
+    persona_schedule_updated_at: sched.updatedAt || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+}
 
 // ── Main handler ────────────────────────────────────────────────────────────
 
@@ -928,19 +984,32 @@ Deno.serve(async (req) => {
       const engineErr = handleEngineError(sb, company_id, res, action)
       if (engineErr) return engineErr
 
-      const schedData = res.data as any
+      let schedData = res.data as any
+
+      // 3-second post-create poll to catch immediate blocks
+      if (schedData.id) {
+        await new Promise(r => setTimeout(r, 3000))
+        console.log(`[IFO-MOVER] POST-CREATE poll: GET /v1/schedules/${schedData.id}`)
+        const pollRes = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${schedData.id}`)
+        console.log(`[IFO-MOVER] POST-CREATE poll → ${pollRes.status}`)
+        if (pollRes.ok) {
+          schedData = pollRes.data as any
+        }
+      }
 
       if (role_change_id) {
         await sb.from('mover_m365_actions').update({
           persona_schedule_id: schedData.id,
-          persona_schedule_status: schedData.status || 'scheduled',
           persona_check_result: null,
-          updated_at: new Date().toISOString(),
+          ...buildPersonaScheduleUpdate(schedData),
         }).eq('role_change_id', role_change_id)
       }
 
+      // Include preCheck help text in response for UI
+      const preCheckHelp = schedData.preCheck?.code ? PRECHECK_HELP[schedData.preCheck.code] || null : null
+
       await audit(sb, company_id, userId, 'inflowonboarder_schedule_persona', { role_change_id, persona_id, user_principal_name })
-      return json(schedData)
+      return json({ ...schedData, preCheckHelp })
     }
 
     // ── cancel-persona-schedule ──────────────────────────────────────────
@@ -980,6 +1049,136 @@ Deno.serve(async (req) => {
 
       await audit(sb, company_id, userId, 'inflowonboarder_cancel_persona_schedule', { role_change_id, schedule_id, reason })
       return json(sched)
+    }
+
+    // ── get-persona-schedule ──────────────────────────────────────────
+    if (action === 'get-persona-schedule') {
+      const { schedule_id, role_change_id } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      console.log(`[IFO-MOVER] GET /v1/schedules/${schedule_id} (persona)`)
+      const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${schedule_id}`)
+      console.log(`[IFO-MOVER] GET /v1/schedules/${schedule_id} (persona) → ${res.status}`)
+      const engineErr = handleEngineError(sb, company_id, res, action)
+      if (engineErr) return engineErr
+
+      const sched = res.data as any
+      if (role_change_id) {
+        await sb.from('mover_m365_actions').update(
+          buildPersonaScheduleUpdate(sched),
+        ).eq('role_change_id', role_change_id)
+      }
+
+      const preCheckHelp = sched.preCheck?.code ? PRECHECK_HELP[sched.preCheck.code] || null : null
+      return json({ ...sched, preCheckHelp })
+    }
+
+    // ── recheck-persona-schedule ────────────────────────────────────────
+    if (action === 'recheck-persona-schedule') {
+      const { schedule_id, role_change_id } = body
+      if (!schedule_id) return json({ error: 'Missing schedule_id' }, 400)
+
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const idempotencyKey = `inflowhr-persona-recheck-${role_change_id || schedule_id}-${Date.now()}`
+
+      console.log(`[IFO-MOVER] POST /v1/schedules/${schedule_id}/recheck (persona)`)
+      const recheckRes = await engineFetch(keyResult.apiKey, 'POST', `/v1/schedules/${schedule_id}/recheck`, {}, idempotencyKey)
+      console.log(`[IFO-MOVER] POST /v1/schedules/${schedule_id}/recheck (persona) → ${recheckRes.status}`)
+      const engineErr = handleEngineError(sb, company_id, recheckRes, action)
+      if (engineErr) return engineErr
+
+      // Immediately GET the schedule to get full refreshed state
+      const getRes = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${schedule_id}`)
+      const sched = getRes.ok ? (getRes.data as any) : (recheckRes.data as any)
+
+      if (role_change_id) {
+        await sb.from('mover_m365_actions').update(
+          buildPersonaScheduleUpdate(sched),
+        ).eq('role_change_id', role_change_id)
+      }
+
+      const preCheckHelp = sched.preCheck?.code ? PRECHECK_HELP[sched.preCheck.code] || null : null
+      await audit(sb, company_id, userId, 'inflowonboarder_recheck_persona_schedule', { role_change_id, schedule_id })
+      return json({ ...sched, preCheckHelp })
+    }
+
+    // ── poll-active-persona-schedules ───────────────────────────────────
+    if (action === 'poll-active-persona-schedules') {
+      const keyResult = await getApiKey(sb, company_id)
+      if (keyResult instanceof Response) return keyResult
+
+      const FINAL_STATUSES = ['completed', 'cancelled', 'failed', 'missed', 'declined']
+      const { data: activeRows } = await sb.from('mover_m365_actions')
+        .select('id, role_change_id, persona_schedule_id, persona_schedule_status, persona_schedule_updated_at, persona_last_notified_status')
+        .eq('company_id', company_id)
+        .not('persona_schedule_id', 'is', null)
+        .not('persona_schedule_status', 'in', `(${FINAL_STATUSES.join(',')})`)
+
+      if (!activeRows || activeRows.length === 0) {
+        return json({ updated: 0, total: 0 })
+      }
+
+      let updatedCount = 0
+      const notifications: Array<{ role_change_id: number; status: string; message: string }> = []
+
+      for (const row of activeRows) {
+        try {
+          const res = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${row.persona_schedule_id}`)
+          if (!res.ok) continue
+
+          const sched = res.data as any
+          // Only update if the engine's updatedAt is newer
+          if (sched.updatedAt && row.persona_schedule_updated_at && sched.updatedAt <= row.persona_schedule_updated_at) continue
+
+          const updates: Record<string, unknown> = buildPersonaScheduleUpdate(sched)
+
+          // Check if status changed to a notify-worthy state
+          const notifyStatuses = ['blocked', 'missed', 'failed']
+          if (notifyStatuses.includes(sched.status) && row.persona_last_notified_status !== sched.status) {
+            updates.persona_last_notified_status = sched.status
+            notifications.push({
+              role_change_id: row.role_change_id,
+              status: sched.status,
+              message: sched.message || `Persona schedule ${sched.status}`,
+            })
+          }
+
+          await sb.from('mover_m365_actions').update(updates).eq('id', row.id)
+          updatedCount++
+        } catch (e) {
+          console.error(`[IFO-MOVER] poll error for schedule ${row.persona_schedule_id}:`, e)
+        }
+      }
+
+      // Send notifications for status changes (Phase 4)
+      for (const n of notifications) {
+        try {
+          const { data: rc } = await sb.from('role_changes')
+            .select('requested_by, employee_name, company_id')
+            .eq('id', n.role_change_id).maybeSingle()
+          if (rc?.requested_by) {
+            const statusLabel = n.status === 'blocked' ? 'Action Required' : n.status === 'missed' ? 'Missed' : 'Failed'
+            await sb.from('notifications').insert({
+              user_id: rc.requested_by,
+              company_id,
+              type: 'system',
+              title: `Persona Change — ${statusLabel}`,
+              message: `The persona change for ${rc.employee_name} needs attention: ${n.message}`,
+              is_read: false,
+              created_at: new Date().toISOString(),
+            })
+          }
+        } catch (e) {
+          console.error(`[IFO-MOVER] notification error for role_change ${n.role_change_id}:`, e)
+        }
+      }
+
+      return json({ updated: updatedCount, total: activeRows.length, notifications: notifications.length })
     }
 
     return json({ error: `Unknown action: ${action}` }, 400)

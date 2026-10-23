@@ -121,6 +121,56 @@ const ENGINE_PERSONA_COLORS: Record<string, { color: string; bg: string }> = {
   'shared-kiosk': { color: '#7c3aed', bg: '#ede9fe' },
 }
 
+const PERSONA_STATUS_DISPLAY: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  scheduled: { label: 'Scheduled', color: '#1976d2', bg: '#e3f2fd', border: '#90caf9' },
+  pending_approval: { label: 'Waiting for Approval', color: '#f57f17', bg: '#fff8e1', border: '#ffe082' },
+  blocked: { label: 'Action Required', color: '#c62828', bg: '#ffebee', border: '#ef9a9a' },
+  running: { label: 'In Progress', color: '#1565c0', bg: '#e3f2fd', border: '#90caf9' },
+  completed: { label: 'Complete', color: '#2e7d32', bg: '#e8f5e9', border: '#a5d6a7' },
+  cancelled: { label: 'Cancelled', color: '#616161', bg: '#f5f5f5', border: '#e0e0e0' },
+  missed: { label: 'Missed — needs rescheduling', color: '#e65100', bg: '#fff3e0', border: '#ffcc80' },
+  failed: { label: 'Failed — contact IT', color: '#b71c1c', bg: '#ffebee', border: '#ef9a9a' },
+  declined: { label: 'Declined', color: '#616161', bg: '#f5f5f5', border: '#e0e0e0' },
+}
+
+const PRECHECK_HELP: Record<string, { summary: string; action: string; detail: string }> = {
+  account_has_admin_role: {
+    summary: 'This employee has an admin account',
+    action: 'Contact IT to make this change manually, or ask them to remove the admin role first so it can be done automatically.',
+    detail: 'The engine cannot modify accounts with admin roles. IT can either remove the admin role and retry, or update extensionAttribute1 directly in InflowOnboarder Templates.',
+  },
+  admin_move_needs_approval: {
+    summary: 'Extra approval needed',
+    action: 'A Global Admin needs to approve this change before it can go ahead. Contact your IT team.',
+    detail: 'Admin account persona changes require Global Admin approval via InflowOnboarder.',
+  },
+  persona_not_set_up: {
+    summary: 'Persona not configured yet',
+    action: 'Ask IT to set up this persona in InflowOnboarder before you can assign it.',
+    detail: 'The target persona template is not configured in InflowOnboarder Settings → Templates.',
+  },
+  persona_group_not_found: {
+    summary: 'Missing security group',
+    action: 'Ask IT to create the required security groups for this persona.',
+    detail: 'One or more Entra ID security groups for this persona do not exist. IT needs to create them or update the persona template.',
+  },
+  account_protected: {
+    summary: 'Protected account',
+    action: 'This account is protected. Contact IT to make this change manually.',
+    detail: 'The account has protection rules that prevent automatic modification.',
+  },
+  user_not_found: {
+    summary: 'Account not found',
+    action: 'Check the employee\'s email address is correct. If it is, ask IT to verify the account exists.',
+    detail: 'The user account was not found in Microsoft 365 / Entra ID.',
+  },
+  licence_unavailable: {
+    summary: 'No licences available',
+    action: 'Ask IT to purchase or free up licences for this persona, then try again.',
+    detail: 'The M365 licence required for the target persona has no available seats.',
+  },
+}
+
 interface RoleChange {
   id: number
   company_id: string
@@ -164,6 +214,12 @@ interface MoverM365Actions {
   persona_check_result: any
   persona_schedule_id: string | null
   persona_schedule_status: string | null
+  persona_pre_check: any
+  persona_next_actions: string[] | null
+  persona_schedule_message: string | null
+  persona_schedule_stages: any
+  persona_schedule_next_due_at: string | null
+  persona_schedule_updated_at: string | null
   decline_reason: string | null
   declined_by: string | null
   declined_at: string | null
@@ -1895,6 +1951,33 @@ export default function AdminOnboarding() {
     }, pollInterval)
     return () => clearInterval(timer)
   }, [leaverM365Actions?.run_id, leaverM365Actions?.approval_status, leaverM365Actions?.run_status, offboardSelectedId])
+
+  // ── Persona schedule polling ──────────────────────────────────────────
+  useEffect(() => {
+    if (!features.inflowonboarder_integration || !ifoConnected || !selectedCompanyId) return
+    const FINAL_STATUSES = ['completed', 'cancelled', 'failed', 'missed', 'declined']
+    const hasActivePersonaSchedules = Object.values(moverM365).some(
+      (m) => m.persona_schedule_id && !FINAL_STATUSES.includes(m.persona_schedule_status || '')
+    )
+    if (!hasActivePersonaSchedules && moverRecords.length > 0) return
+
+    // Initial poll on page load
+    callIfoMover('poll-active-persona-schedules', {}).then(() => loadMovers())
+
+    // Check if any schedule is due soon (within 2 minutes)
+    const hasSoonDue = Object.values(moverM365).some((m) => {
+      if (!m.persona_schedule_next_due_at || FINAL_STATUSES.includes(m.persona_schedule_status || '')) return false
+      const dueAt = new Date(m.persona_schedule_next_due_at).getTime()
+      return dueAt - Date.now() < 2 * 60 * 1000
+    })
+    const pollMs = hasSoonDue ? 60000 : 15 * 60 * 1000
+
+    const timer = setInterval(async () => {
+      await callIfoMover('poll-active-persona-schedules', {})
+      await loadMovers()
+    }, pollMs)
+    return () => clearInterval(timer)
+  }, [features.inflowonboarder_integration, ifoConnected, selectedCompanyId, moverRecords.length])
 
   async function leaverM365SendApproval(record: OffboardRecord) {
     if (!ifoOffboardSettings) return
@@ -5166,47 +5249,34 @@ export default function AdminOnboarding() {
                             <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>Persona Change</h5>
                             <div style={{ padding: '10px 14px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
                               <strong>{String(personaOld).replace(/_/g, ' ')}</strong> → <strong style={{ color: '#e65100' }}>{String(personaNew).replace(/_/g, ' ')}</strong>
-                              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>This updates extensionAttribute1 in Entra ID. Dynamic groups re-evaluate automatically, applying the correct Intune profiles and conditional access policies.</div>
+                              <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>The employee's Microsoft 365 access and security settings will be updated to match their new persona.</div>
                             </div>
 
-                            {/* Check result display */}
+                            {/* Check result display — HR-friendly */}
                             {personaCheckResult && (() => {
                               try {
-                                const displayResult = personaCheckResult
+                                const r = personaCheckResult
+                                const currentName = typeof r.currentPersona === 'object' ? (r.currentPersona.name || r.currentPersona.id || (r.currentPersona.source === 'none' ? 'None' : '')) : String(r.currentPersona || '')
+                                const targetName = typeof r.targetPersona === 'object' ? (r.targetPersona.name || r.targetPersona.id || '') : String(r.targetPersona || '')
+                                const isAdmin = r.adminAccount === true
+                                const needsApproval = r.approvalRequired === true
+                                const warnings = Array.isArray(r.warnings) ? r.warnings : []
+
                                 return (
                                   <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
-                                    <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Persona Check Result</div>
-                                    {displayResult.currentPersona && <div style={{ marginBottom: 4 }}>Current: <strong>{typeof displayResult.currentPersona === 'object' ? (displayResult.currentPersona.name || displayResult.currentPersona.id || (displayResult.currentPersona.source === 'none' ? 'None (not set)' : JSON.stringify(displayResult.currentPersona))) : String(displayResult.currentPersona)}</strong></div>}
-                                    {displayResult.targetPersona && <div style={{ marginBottom: 4 }}>Target: <strong>{typeof displayResult.targetPersona === 'object' ? (displayResult.targetPersona.name || displayResult.targetPersona.id || JSON.stringify(displayResult.targetPersona)) : String(displayResult.targetPersona)}</strong></div>}
-                                    {displayResult.automaticSteps && (
-                                      <div style={{ marginBottom: 4 }}>
-                                        <strong>Automatic steps:</strong>
-                                        <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                                          {(Array.isArray(displayResult.automaticSteps) ? displayResult.automaticSteps : []).map((s: any, i: number) => (
-                                            <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
-                                          ))}
-                                        </ul>
+                                    <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>Check Result</div>
+                                    {currentName && <div style={{ marginBottom: 4 }}>Current persona: <strong>{currentName}</strong></div>}
+                                    {targetName && <div style={{ marginBottom: 6 }}>New persona: <strong>{targetName}</strong></div>}
+
+                                    {/* Admin account warning */}
+                                    {isAdmin && (
+                                      <div style={{ padding: '8px 12px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 8, fontSize: 12 }}>
+                                        This employee has an admin account — the persona change may need to be done manually by IT.
                                       </div>
                                     )}
-                                    {displayResult.instructions && (
-                                      <div style={{ marginBottom: 4 }}>
-                                        <strong>Instructions:</strong>
-                                        <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                                          {(Array.isArray(displayResult.instructions) ? displayResult.instructions : []).map((s: any, i: number) => (
-                                            <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
-                                          ))}
-                                        </ul>
-                                      </div>
-                                    )}
-                                    {Array.isArray(displayResult.documents) && displayResult.documents.length > 0 && (
-                                      <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {displayResult.documents.map((d: any) => d?.name || String(d)).join(', ')}</div>
-                                    )}
-                                    {displayResult.deviceWarning && (
-                                      <div style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginTop: 6 }}>
-                                        {String(displayResult.deviceWarning)}
-                                      </div>
-                                    )}
-                                    {displayResult.approvalRequired && (() => {
+
+                                    {/* Needs IT Approval */}
+                                    {needsApproval && (() => {
                                       const mode = moverApproverConfig.mode || 'same_as_joiner'
                                       const effMode = mode === 'same_as_joiner' ? (moverApproverConfig.joiner_approver_mode || 'nominated') : mode
                                       let approver = ''
@@ -5218,14 +5288,55 @@ export default function AdminOnboarding() {
                                         approver = 'employee\'s line manager'
                                       }
                                       return (
-                                        <div style={{ padding: '6px 10px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginTop: 6 }}>
-                                          Approval required before this persona change can be scheduled.{approver ? ` Approver: ${approver}` : ''}
+                                        <div style={{ padding: '8px 12px', background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 6, marginBottom: 8 }}>
+                                          <strong style={{ color: '#1565c0' }}>Needs IT Approval</strong>
+                                          <div style={{ fontSize: 12, marginTop: 2 }}>This change needs approval before it can be scheduled.{approver ? ` Approver: ${approver}` : ''}</div>
                                         </div>
                                       )
                                     })()}
+
+                                    {/* Warnings */}
+                                    {warnings.map((w: any, i: number) => (
+                                      <div key={i} style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 6, fontSize: 12 }}>
+                                        {typeof w === 'string' ? w : w?.message || w?.description || JSON.stringify(w)}
+                                      </div>
+                                    ))}
+
+                                    {r.deviceWarning && (
+                                      <div style={{ padding: '6px 10px', background: '#fff3e0', border: '1px solid #ff9800', borderRadius: 6, marginBottom: 6, fontSize: 12 }}>
+                                        {String(r.deviceWarning)}
+                                      </div>
+                                    )}
+
+                                    {/* Technical details — collapsible */}
                                     <details style={{ marginTop: 8 }}>
-                                      <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Raw engine response</summary>
-                                      <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', fontSize: 11, color: '#555', background: '#fff', padding: 8, borderRadius: 6, maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(displayResult, null, 2)}</pre>
+                                      <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Technical details</summary>
+                                      <div style={{ marginTop: 6, fontSize: 11, color: '#555', background: '#fff', padding: 8, borderRadius: 6 }}>
+                                        {r.automaticSteps && (
+                                          <div style={{ marginBottom: 4 }}>
+                                            <strong>Automatic steps:</strong>
+                                            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                              {(Array.isArray(r.automaticSteps) ? r.automaticSteps : []).map((s: any, i: number) => (
+                                                <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                        {r.instructions && (
+                                          <div style={{ marginBottom: 4 }}>
+                                            <strong>Instructions:</strong>
+                                            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                              {(Array.isArray(r.instructions) ? r.instructions : []).map((s: any, i: number) => (
+                                                <li key={i}>{typeof s === 'string' ? s : s?.description || JSON.stringify(s)}</li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        )}
+                                        {Array.isArray(r.documents) && r.documents.length > 0 && (
+                                          <div style={{ marginBottom: 4 }}><strong>Documents:</strong> {r.documents.map((d: any) => d?.name || String(d)).join(', ')}</div>
+                                        )}
+                                        <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(r, null, 2)}</pre>
+                                      </div>
                                     </details>
                                   </div>
                                 )
@@ -5234,19 +5345,87 @@ export default function AdminOnboarding() {
                                   <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, fontSize: 12, marginBottom: 10 }}>
                                     <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13, color: '#dc2626' }}>Error displaying check result</div>
                                     <pre style={{ whiteSpace: 'pre-wrap', fontSize: 11, color: '#555' }}>{e?.message || String(e)}</pre>
-                                    <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', fontSize: 11, color: '#555', background: '#fff', padding: 8, borderRadius: 6, maxHeight: 200, overflow: 'auto' }}>{JSON.stringify(personaCheckResult, null, 2)}</pre>
                                   </div>
                                 )
                               }
                             })()}
 
-                            {/* Persona schedule status */}
-                            {personaStatus && (
-                              <div style={{ padding: '10px 14px', background: personaStatus === 'scheduled' || personaStatus === 'completed' ? '#e8f5e9' : '#f5f5f5', border: `1px solid ${personaStatus === 'scheduled' || personaStatus === 'completed' ? '#c8e6c9' : '#ddd'}`, borderRadius: 8, marginBottom: 10, fontSize: 13 }}>
-                                <strong>Persona schedule:</strong> <span style={{ color: personaStatus === 'completed' ? '#16a34a' : personaStatus === 'failed' ? '#dc2626' : '#e65100', fontWeight: 600 }}>{personaStatus}</span>
-                                {m365?.persona_schedule_id && <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>({m365.persona_schedule_id})</span>}
-                              </div>
-                            )}
+                            {/* Persona schedule status — HR-friendly display */}
+                            {personaStatus && (() => {
+                              const display = PERSONA_STATUS_DISPLAY[personaStatus] || { label: personaStatus, color: '#616161', bg: '#f5f5f5', border: '#e0e0e0' }
+                              const preCheck = m365?.persona_pre_check
+                              const preCheckCode = preCheck?.code
+                              const help = preCheckCode ? PRECHECK_HELP[preCheckCode] : null
+                              const nextActions = m365?.persona_next_actions || []
+                              const isActionRequired = ['blocked', 'missed', 'failed'].includes(personaStatus)
+
+                              return (
+                                <div style={{ padding: '12px 16px', background: display.bg, border: `1px solid ${display.border}`, borderRadius: 8, marginBottom: 10 }}>
+                                  {/* Status badge */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: help || m365?.persona_schedule_message ? 8 : 0 }}>
+                                    <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: display.color, flexShrink: 0, animation: personaStatus === 'running' ? 'pulse 1.5s infinite' : undefined }} />
+                                    <strong style={{ color: display.color, fontSize: 13 }}>{display.label}</strong>
+                                    {m365?.persona_schedule_next_due_at && !['completed', 'cancelled', 'failed'].includes(personaStatus) && (
+                                      <span style={{ fontSize: 11, color: '#666', marginLeft: 'auto' }}>
+                                        Next scheduled: {new Date(m365.persona_schedule_next_due_at).toLocaleDateString('en-GB')}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* What happened — engine message */}
+                                  {m365?.persona_schedule_message && (
+                                    <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>{m365.persona_schedule_message}</div>
+                                  )}
+
+                                  {/* What to do — preCheck help for HR */}
+                                  {help && (
+                                    <div style={{ padding: '10px 12px', background: '#fff', border: `1px solid ${display.border}`, borderRadius: 6, marginBottom: 8 }}>
+                                      <div style={{ fontWeight: 600, fontSize: 13, color: display.color, marginBottom: 4 }}>{help.summary}</div>
+                                      <div style={{ fontSize: 12, color: '#333' }}>{help.action}</div>
+                                    </div>
+                                  )}
+
+                                  {/* Action buttons */}
+                                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                    {(nextActions.includes('recheck') || (isActionRequired && nextActions.length === 0)) && (
+                                      <button className="admin-btn-sm admin-btn-save" style={{ fontSize: 12 }}
+                                        onClick={async () => {
+                                          const result = await callIfoMover('recheck-persona-schedule', { schedule_id: m365?.persona_schedule_id, role_change_id: rc.id })
+                                          if (result) {
+                                            await loadMovers()
+                                            showSuccess('Persona schedule rechecked')
+                                          }
+                                        }}>
+                                        Try Again
+                                      </button>
+                                    )}
+                                    {nextActions.includes('cancel') && (
+                                      <button className="admin-btn-sm" style={{ fontSize: 12, background: '#f5f5f5', border: '1px solid #ccc', color: '#333' }}
+                                        onClick={async () => {
+                                          if (!confirm('Cancel this persona change schedule?')) return
+                                          await callIfoMover('cancel-persona-schedule', { schedule_id: m365?.persona_schedule_id, role_change_id: rc.id, reason: 'Cancelled by HR' })
+                                          await loadMovers()
+                                        }}>
+                                        Cancel
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {/* Technical details — hidden by default */}
+                                  <details style={{ marginTop: 8 }}>
+                                    <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Technical details</summary>
+                                    <div style={{ marginTop: 6, fontSize: 11, color: '#666', background: '#fff', padding: 8, borderRadius: 6 }}>
+                                      {preCheckCode && <div>PreCheck code: <code>{preCheckCode}</code></div>}
+                                      {help?.detail && <div style={{ marginTop: 2 }}>{help.detail}</div>}
+                                      {m365?.persona_schedule_id && <div style={{ marginTop: 2 }}>Schedule ID: {m365.persona_schedule_id}</div>}
+                                      {m365?.persona_schedule_stages && (
+                                        <pre style={{ marginTop: 4, whiteSpace: 'pre-wrap', maxHeight: 150, overflow: 'auto' }}>{JSON.stringify(m365.persona_schedule_stages, null, 2)}</pre>
+                                      )}
+                                    </div>
+                                  </details>
+                                </div>
+                              )
+                            })()}
 
                             {/* Action buttons */}
                             {!personaStatus && !personaCheckResult && (
@@ -5373,7 +5552,7 @@ export default function AdminOnboarding() {
                                   await loadMovers()
                                   showSuccess(`Persona change approval sent to ${approverName || approverEmail}`)
                                 }}>
-                                Schedule Persona Change
+                                {personaCheckResult?.approvalRequired ? 'Request Approval' : 'Schedule Persona Change'}
                               </button>
                             )}
                           </div>
@@ -5384,12 +5563,16 @@ export default function AdminOnboarding() {
                       {(m365?.run_status === 'completed' || !(rc.changes?.job_title || rc.changes?.department || rc.changes?.location || rc.changes?.manager_name || rc.changes?.manager_email)) &&
                        (m365?.persona_schedule_status === 'scheduled' || m365?.persona_schedule_status === 'completed' || !(rc.changes?.persona?.old && rc.changes?.persona?.new && rc.changes.persona.old !== rc.changes.persona.new)) && (
                         <div style={{ padding: '12px 16px', background: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: 8 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#2e7d32' }}>Where to verify the changes</div>
-                          <ul style={{ fontSize: 12, margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4, color: '#333' }}>
-                            <li><strong>Entra ID</strong> — Open the user's profile in Microsoft Entra admin centre. Check extensionAttribute1 is set correctly and dynamic group memberships have updated.</li>
-                            <li><strong>Intune</strong> — In the Microsoft Intune admin centre, go to Devices → the user's device(s). Verify the correct configuration profiles and compliance policies are now assigned.</li>
-                            <li><strong>Conditional Access</strong> — Check the user's sign-in logs in Entra ID to confirm the correct policies are being applied.</li>
-                          </ul>
+                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, color: '#2e7d32' }}>Changes applied</div>
+                          <p style={{ fontSize: 12, color: '#333', margin: '0 0 8px' }}>The M365 account changes have been applied. Ask IT to verify if needed.</p>
+                          <details>
+                            <summary style={{ cursor: 'pointer', fontSize: 11, color: '#888' }}>Verification steps for IT</summary>
+                            <ul style={{ fontSize: 11, margin: '6px 0 0', paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4, color: '#555' }}>
+                              <li><strong>Entra ID</strong> — Check the user's profile, extensionAttribute1 value, and dynamic group memberships.</li>
+                              <li><strong>Intune</strong> — Verify the correct configuration profiles and compliance policies are assigned to the user's devices.</li>
+                              <li><strong>Conditional Access</strong> — Check sign-in logs to confirm the correct policies are being applied.</li>
+                            </ul>
+                          </details>
                         </div>
                       )}
                     </div>
