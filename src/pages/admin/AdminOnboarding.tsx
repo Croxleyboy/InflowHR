@@ -1172,11 +1172,14 @@ export default function AdminOnboarding() {
         .select('id, employee_name')
         .eq('company_id', selectedCompanyId)
         .eq('employee_email', record.user_email)
-        .eq('status', 'awaiting_expiry')
       if (matchingFrozen && matchingFrozen.length > 0) {
         await supabase.from('frozen_employees').delete().in('id', matchingFrozen.map(f => f.id))
         setFrozenEmployees(prev => prev.filter(f => !matchingFrozen.some(mf => mf.id === f.id)))
       }
+      await supabase.from('deletion_certificates').delete()
+        .eq('company_id', selectedCompanyId)
+        .eq('employee_email', record.user_email)
+      setDeletionCertificates(prev => prev.filter(c => c.employee_email !== record.user_email))
     }
     setRecords(prev => prev.filter(r => r.id !== id))
     showSuccess('Record deleted')
