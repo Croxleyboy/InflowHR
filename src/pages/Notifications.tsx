@@ -755,6 +755,8 @@ export default function Notifications() {
   const [m365OffboardApproving, setM365OffboardApproving] = useState(false)
   const [m365MoverActionItem, setM365MoverActionItem] = useState<WorkflowItem | null>(null)
   const [m365MoverApproving, setM365MoverApproving] = useState(false)
+  const [m365MoverDeclineReason, setM365MoverDeclineReason] = useState('')
+  const [m365MoverShowDecline, setM365MoverShowDecline] = useState(false)
   const [m365ScheduleActionItem, setM365ScheduleActionItem] = useState<WorkflowItem | null>(null)
   const [m365ScheduleApproving, setM365ScheduleApproving] = useState(false)
   const [hrResponseItem, setHrResponseItem] = useState<WorkflowItem | null>(null)
@@ -987,7 +989,11 @@ export default function Notifications() {
     }
   }
 
-  async function handleM365MoverApproval(item: WorkflowItem, approve: boolean) {
+  async function handleM365MoverApproval(item: WorkflowItem, approve: boolean, declineReason?: string) {
+    if (!approve && !declineReason?.trim()) {
+      showError('Please enter a reason for declining')
+      return
+    }
     setM365MoverApproving(true)
     try {
       const now = new Date().toISOString()
@@ -1003,6 +1009,7 @@ export default function Notifications() {
       if (roleChangeId) {
         if (isPersona) {
           let engineCallSucceeded = false
+          let engineErrorMsg = ''
           if (approve) {
             const { data: rcRow } = await supabase.from('role_changes').select('changes, employee_email, employee_name').eq('id', roleChangeId).eq('company_id', companyUser?.company_id).maybeSingle()
             const personaNew = rcRow?.changes?.persona?.new
@@ -1032,35 +1039,61 @@ export default function Notifications() {
                     engineCallSucceeded = true
                   } else {
                     const errData = await res.json().catch(() => ({}))
-                    console.warn('schedule-persona call failed:', errData.error || res.statusText)
+                    engineErrorMsg = errData.error || errData.message || res.statusText || 'Unknown error'
+                    console.warn('schedule-persona call failed:', engineErrorMsg)
                   }
                 }
-              } catch (e) { console.warn('schedule-persona call error:', e) }
+              } catch (e: any) {
+                engineErrorMsg = e?.message || 'Network error'
+                console.warn('schedule-persona call error:', e)
+              }
             }
           }
           if (!engineCallSucceeded && approve) {
-            showError('Persona schedule failed — the engine did not accept the request. Check the browser console for details. The approval task remains open so you can retry.')
+            showError(`Persona schedule failed — ${engineErrorMsg || 'the engine did not accept the request'}. The approval task remains open so you can retry.`)
             setM365MoverApproving(false)
             return
           }
           if (!approve) {
             await supabase.from('mover_m365_actions').update({
-              persona_schedule_status: 'cancelled',
-              updated_at: now
+              persona_schedule_status: 'declined',
+              decline_reason: declineReason?.trim() || null,
+              declined_by: approverEmail,
+              declined_at: now,
+              updated_at: now,
             }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
+            await supabase.from('role_changes').update({
+              status: 'cancelled',
+              workflow_steps: {},
+              skipped_steps: { update_records: true, notify_team: true, review_access: true, confirm_complete: true },
+            }).eq('id', roleChangeId).eq('company_id', companyUser?.company_id)
           }
         } else {
+          const declineFields = !approve ? {
+            decline_reason: declineReason?.trim() || null,
+            declined_by: approverEmail,
+            declined_at: now,
+          } : {}
           const { error: m365Err } = await supabase.from('mover_m365_actions').update({
             approval_status: approve ? 'approved' : 'declined',
             approved_by: `${approverDisplayName} <${approverEmail}>`,
-            approved_at: now
+            approved_at: now,
+            ...declineFields,
           }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
           if (m365Err) console.warn('mover_m365_actions update failed:', m365Err.message)
+          if (!approve) {
+            await supabase.from('role_changes').update({
+              status: 'cancelled',
+              workflow_steps: {},
+              skipped_steps: { update_records: true, notify_team: true, review_access: true, confirm_complete: true },
+            }).eq('id', roleChangeId).eq('company_id', companyUser?.company_id)
+          }
         }
       }
       const { error: wtErr } = await supabase.from('workflow_tracker').update({
         status: 'Complete',
         approval_status: approve ? 'Approved' : 'Declined',
+        extra_info: !approve ? declineReason?.trim() || null : undefined,
         updated_at: now,
       }).eq('id', item.id).eq('company_id', companyUser?.company_id)
       if (wtErr) throw new Error(wtErr.message)
@@ -1069,6 +1102,8 @@ export default function Notifications() {
         : (approve ? 'Role change M365 update approved' : 'Role change M365 update declined')
       showSuccess(msg)
       setM365MoverActionItem(null)
+      setM365MoverShowDecline(false)
+      setM365MoverDeclineReason('')
       await fetchData()
       window.dispatchEvent(new Event('notifications-updated'))
     } catch {
@@ -1501,11 +1536,11 @@ export default function Notifications() {
       )}
 
       {m365MoverActionItem && (
-        <div className="my-profile-modal-overlay" onClick={() => setM365MoverActionItem(null)}>
+        <div className="my-profile-modal-overlay" onClick={() => { setM365MoverActionItem(null); setM365MoverShowDecline(false); setM365MoverDeclineReason('') }}>
           <div className="my-profile-cr-modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
-            <div className="my-profile-modal-header" style={{ background: '#e65100', justifyContent: 'space-between', padding: '14px 20px' }}>
-              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>Role Change — M365 Update Approval</span>
-              <button onClick={() => setM365MoverActionItem(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+            <div className="my-profile-modal-header" style={{ background: m365MoverShowDecline ? '#dc2626' : '#e65100', justifyContent: 'space-between', padding: '14px 20px' }}>
+              <span className="my-profile-modal-dept" style={{ fontSize: 16 }}>{m365MoverShowDecline ? 'Decline Role Change' : 'Role Change — M365 Update Approval'}</span>
+              <button onClick={() => { setM365MoverActionItem(null); setM365MoverShowDecline(false); setM365MoverDeclineReason('') }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
@@ -1518,19 +1553,47 @@ export default function Notifications() {
                   <div key={i} style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: i === 0 ? 2 : 0, lineHeight: 1.5 }}>{line}</div>
                 ))
               })()}
-              <div style={{ background: 'rgba(255,243,224,.5)', border: '1px solid #ffcc80', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#e65100' }}>
-                Please confirm whether to approve this role change M365 update. Once approved, InflowOnboarder will update the employee's profile, groups, licence, and persona attribute in Microsoft 365.
-              </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => handleM365MoverApproval(m365MoverActionItem, true)} disabled={m365MoverApproving}
-                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365MoverApproving ? 0.6 : 1 }}>
-                  {m365MoverApproving ? 'Processing...' : 'Approve'}
-                </button>
-                <button onClick={() => handleM365MoverApproval(m365MoverActionItem, false)} disabled={m365MoverApproving}
-                  style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365MoverApproving ? 0.6 : 1 }}>
-                  {m365MoverApproving ? 'Processing...' : 'Decline'}
-                </button>
-              </div>
+              {m365MoverShowDecline ? (
+                <>
+                  <div style={{ background: 'rgba(255,235,238,.5)', border: '1px solid #ef9a9a', borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 13, color: '#c62828' }}>
+                    Declining will cancel this role change. The employee's M365 account will not be updated and the role change will need to be started again.
+                  </div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Reason for declining <span style={{ color: '#dc2626' }}>*</span></label>
+                  <textarea
+                    value={m365MoverDeclineReason}
+                    onChange={e => setM365MoverDeclineReason(e.target.value)}
+                    placeholder="Enter the reason for declining this role change..."
+                    rows={3}
+                    style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid #ccc', fontSize: 13, resize: 'vertical', boxSizing: 'border-box', marginBottom: 12 }}
+                  />
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => { setM365MoverShowDecline(false); setM365MoverDeclineReason('') }}
+                      style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid #ccc', background: '#fff', color: '#333', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+                      Back
+                    </button>
+                    <button onClick={() => handleM365MoverApproval(m365MoverActionItem, false, m365MoverDeclineReason)} disabled={m365MoverApproving || !m365MoverDeclineReason.trim()}
+                      style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: (m365MoverApproving || !m365MoverDeclineReason.trim()) ? 0.6 : 1 }}>
+                      {m365MoverApproving ? 'Processing...' : 'Confirm Decline'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ background: 'rgba(255,243,224,.5)', border: '1px solid #ffcc80', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#e65100' }}>
+                    Please confirm whether to approve this role change M365 update. Once approved, InflowOnboarder will update the employee's profile, groups, licence, and persona attribute in Microsoft 365.
+                  </div>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => handleM365MoverApproval(m365MoverActionItem, true)} disabled={m365MoverApproving}
+                      style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365MoverApproving ? 0.6 : 1 }}>
+                      {m365MoverApproving ? 'Processing...' : 'Approve'}
+                    </button>
+                    <button onClick={() => setM365MoverShowDecline(true)} disabled={m365MoverApproving}
+                      style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: m365MoverApproving ? 0.6 : 1 }}>
+                      Decline
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

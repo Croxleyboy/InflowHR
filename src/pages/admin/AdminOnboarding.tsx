@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
@@ -164,6 +164,9 @@ interface MoverM365Actions {
   persona_check_result: any
   persona_schedule_id: string | null
   persona_schedule_status: string | null
+  decline_reason: string | null
+  declined_by: string | null
+  declined_at: string | null
 }
 
 interface OnboardRecord {
@@ -308,6 +311,7 @@ export default function AdminOnboarding() {
   const [moverForm, setMoverForm] = useState<Record<string, any>>({})
   const [moverSelectedEmployee, setMoverSelectedEmployee] = useState<any>(null)
   const [expandedMoverCompletedId, setExpandedMoverCompletedId] = useState<number | null>(null)
+  const [expandedMoverDeclineId, setExpandedMoverDeclineId] = useState<number | null>(null)
   const [enginePersonas, setEnginePersonas] = useState<EnginePersona[]>([])
   const [enginePersonasLoaded, setEnginePersonasLoaded] = useState(false)
   const [moverApproverConfig, setMoverApproverConfig] = useState<{ mode: string; name?: string; email?: string; joiner_approver_mode?: string; joiner_approver_name?: string; joiner_approver_email?: string }>({ mode: 'same_as_joiner' })
@@ -4831,6 +4835,7 @@ export default function AdminOnboarding() {
                       <th>Change Summary</th>
                       <th>Persona</th>
                       <th>Effective Date</th>
+                      <th>Approver</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
@@ -4838,12 +4843,16 @@ export default function AdminOnboarding() {
                   <tbody>
                     {paginatedActiveMovers.map(rc => {
                       const personaChange = rc.changes?.persona
+                      const m365 = moverM365[rc.id]
+                      const isDeclined = m365?.persona_schedule_status === 'declined' || m365?.approval_status === 'declined'
+                      const declineExpanded = expandedMoverDeclineId === rc.id
                       const changeSummary = Object.keys(rc.changes || {}).filter(k => k !== 'persona').map(k => {
                         const v = rc.changes[k]
                         return `${k.replace(/_/g, ' ')}: ${v?.old || '—'} → ${v?.new || '—'}`
                       }).join(', ')
                       return (
-                        <tr key={rc.id}>
+                        <Fragment key={rc.id}>
+                        <tr>
                           <td><strong>{rc.employee_name}</strong><br /><span style={{ fontSize: 11, color: '#666' }}>{rc.employee_email}</span></td>
                           <td style={{ fontSize: 12 }}>{changeSummary || '—'}</td>
                           <td>{personaChange ? (
@@ -4852,10 +4861,16 @@ export default function AdminOnboarding() {
                             </span>
                           ) : '—'}</td>
                           <td>{rc.effective_date ? new Date(rc.effective_date).toLocaleDateString('en-GB') : '—'}</td>
-                          <td><span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 12, fontWeight: 600,
-                            background: rc.status === 'completed' ? '#dcfce7' : rc.status === 'in_progress' ? '#fff3e0' : rc.status === 'cancelled' ? '#f5f5f5' : '#e3f2fd',
-                            color: rc.status === 'completed' ? '#16a34a' : rc.status === 'in_progress' ? '#e65100' : rc.status === 'cancelled' ? '#9e9e9e' : '#1565c0',
-                          }}>{rc.status}</span></td>
+                          <td style={{ fontSize: 12 }}>{m365?.declined_by || m365?.approved_by || '—'}</td>
+                          <td>
+                            <span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 12, fontWeight: 600,
+                              background: rc.status === 'completed' ? '#dcfce7' : rc.status === 'in_progress' ? '#fff3e0' : rc.status === 'cancelled' ? (isDeclined ? '#fef2f2' : '#f5f5f5') : '#e3f2fd',
+                              color: rc.status === 'completed' ? '#16a34a' : rc.status === 'in_progress' ? '#e65100' : rc.status === 'cancelled' ? (isDeclined ? '#dc2626' : '#9e9e9e') : '#1565c0',
+                            }}>{isDeclined ? 'Declined' : rc.status}</span>
+                            {isDeclined && m365?.decline_reason && (
+                              <span onClick={() => setExpandedMoverDeclineId(declineExpanded ? null : rc.id)} style={{ cursor: 'pointer', marginLeft: 6, fontSize: 11, color: '#888', userSelect: 'none', display: 'inline-block', transform: declineExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▶</span>
+                            )}
+                          </td>
                           <td>
                             <button className="admin-btn-sm admin-btn-save" style={{ background: '#e65100' }} onClick={() => {
                               setMoverSelectedId(rc.id)
@@ -4870,6 +4885,21 @@ export default function AdminOnboarding() {
                             <button className="admin-btn-sm" style={{ marginLeft: 8, color: '#9e9e9e', border: '1px solid #ccc' }} onClick={() => deleteMoverRoleChange(rc)}>Delete</button>
                           </td>
                         </tr>
+                        {isDeclined && declineExpanded && m365?.decline_reason && (
+                          <tr>
+                            <td colSpan={7} style={{ padding: '0 16px 12px', background: '#fef2f2' }}>
+                              <div style={{ padding: 12, borderRadius: 8, fontSize: 12 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 8 }}>
+                                  <div><strong style={{ color: '#888' }}>Submitted</strong><br />{m365?.created_at ? new Date(m365.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</div>
+                                  <div><strong style={{ color: '#888' }}>Declined</strong><br />{m365?.declined_at ? new Date(m365.declined_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</div>
+                                  <div><strong style={{ color: '#888' }}>Declined by</strong><br />{m365?.declined_by || '—'}</div>
+                                </div>
+                                <div><strong style={{ color: '#888' }}>Reason:</strong> {m365.decline_reason}</div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </Fragment>
                       )
                     })}
                   </tbody>
@@ -4925,14 +4955,30 @@ export default function AdminOnboarding() {
         const currentStep = steps[moverStep] || steps[0]
         const progressPct = Math.round((Object.keys(moverChecks).filter(k => moverChecks[k]).length / steps.length) * 100)
 
+        const isDeclined = rc.status === 'cancelled' && (m365?.persona_schedule_status === 'declined' || m365?.approval_status === 'declined')
+
         return (
+          <div>
+            {isDeclined && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 18 }}>❌</span>
+                  <strong style={{ color: '#dc2626', fontSize: 15 }}>Approval Declined</strong>
+                </div>
+                <div style={{ fontSize: 13, color: '#991b1b' }}>
+                  This role change was declined{m365?.declined_by ? ` by ${m365.declined_by}` : ''}{m365?.declined_at ? ` on ${new Date(m365.declined_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}.
+                  {m365?.decline_reason && <><br /><strong>Reason:</strong> {m365.decline_reason}</>}
+                </div>
+                <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>The remaining steps have been cancelled. This role change will need to be started again.</div>
+              </div>
+            )}
           <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
             <div>
               <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 16, border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 16 }}>
-                <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: '#e65100' }}>{rc.employee_name || '—'}</h4>
-                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>{(rc.change_type || '').replace(/_/g, ' ')} · {rc.status || 'pending'}</p>
+                <h4 style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 700, color: isDeclined ? '#dc2626' : '#e65100' }}>{rc.employee_name || '—'}</h4>
+                <p style={{ margin: 0, fontSize: 12, color: '#666' }}>{(rc.change_type || '').replace(/_/g, ' ')} · {isDeclined ? 'Declined' : (rc.status || 'pending')}</p>
                 <div style={{ marginTop: 10, background: '#f1f5f9', borderRadius: 6, height: 8, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${progressPct}%`, background: 'linear-gradient(90deg, #e65100, #ff9800)', borderRadius: 6, transition: 'width 0.3s' }} />
+                  <div style={{ height: '100%', width: `${progressPct}%`, background: isDeclined ? '#dc2626' : 'linear-gradient(90deg, #e65100, #ff9800)', borderRadius: 6, transition: 'width 0.3s' }} />
                 </div>
                 <p style={{ margin: '4px 0 0', fontSize: 11, color: '#888' }}>{progressPct}% complete</p>
               </div>
@@ -4942,16 +4988,17 @@ export default function AdminOnboarding() {
                   const done = moverChecks[step.key]
                   const skipped = moverSkips[step.key]
                   const isCurrent = i === moverStep
+                  const isDeclinedSkip = skipped && rc.status === 'cancelled' && (m365?.persona_schedule_status === 'declined' || m365?.approval_status === 'declined')
                   return (
                     <div key={step.key}
                       className={`admin-wf-step ${done ? 'admin-wf-done' : ''} ${skipped ? 'admin-wf-skipped' : ''} ${isCurrent ? 'admin-wf-current' : ''}`}
                       onClick={() => setMoverStep(i)}
                       style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
-                        background: isCurrent ? '#fff3e0' : done ? '#f0fdf4' : skipped ? '#f5f5f5' : 'transparent',
+                        background: isCurrent ? '#fff3e0' : done ? '#f0fdf4' : isDeclinedSkip ? '#fef2f2' : skipped ? '#f5f5f5' : 'transparent',
                         border: isCurrent ? '1px solid #e65100' : '1px solid transparent',
                       }}>
-                      <span style={{ fontSize: 16 }}>{done ? '✅' : skipped ? '⏭️' : step.icon}</span>
-                      <span style={{ fontWeight: isCurrent ? 700 : 400, color: done ? '#16a34a' : skipped ? '#999' : isCurrent ? '#e65100' : 'inherit' }}>{step.label}</span>
+                      <span style={{ fontSize: 16 }}>{done ? '✅' : isDeclinedSkip ? '❌' : skipped ? '⏭️' : step.icon}</span>
+                      <span style={{ fontWeight: isCurrent ? 700 : 400, color: done ? '#16a34a' : isDeclinedSkip ? '#dc2626' : skipped ? '#999' : isCurrent ? '#e65100' : 'inherit' }}>{step.label}</span>
                     </div>
                   )
                 })}
@@ -5463,6 +5510,7 @@ export default function AdminOnboarding() {
                 <button className="admin-btn-sm" style={{ marginLeft: (rc.status === 'pending' || rc.status === 'in_progress') ? 8 : 'auto', color: '#9e9e9e', border: '1px solid #ccc' }} onClick={() => deleteMoverRoleChange(rc)}>Delete</button>
               </div>
             </div>
+          </div>
           </div>
         )
         } catch (wfErr: any) {
