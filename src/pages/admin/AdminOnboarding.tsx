@@ -2425,8 +2425,8 @@ export default function AdminOnboarding() {
   const complTotalPages = Math.max(1, Math.ceil(completedOffboardRecords.length / PAGE_SIZE))
   const paginatedCompletedOffboard = completedOffboardRecords.slice((complPage - 1) * PAGE_SIZE, complPage * PAGE_SIZE)
 
-  const activeMoverRecords = useMemo(() => moverRecords.filter(r => !r.is_complete), [moverRecords])
-  const completedMoverRecords = useMemo(() => moverRecords.filter(r => r.is_complete), [moverRecords])
+  const activeMoverRecords = useMemo(() => moverRecords.filter(r => !r.is_complete && r.status !== 'cancelled'), [moverRecords])
+  const completedMoverRecords = useMemo(() => moverRecords.filter(r => r.is_complete || r.status === 'cancelled'), [moverRecords])
   const moverTotalPages = Math.max(1, Math.ceil(activeMoverRecords.length / PAGE_SIZE))
   const paginatedActiveMovers = activeMoverRecords.slice((moverPage - 1) * PAGE_SIZE, moverPage * PAGE_SIZE)
 
@@ -4919,21 +4919,31 @@ export default function AdminOnboarding() {
 
           {completedMoverRecords.length > 0 && (
             <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)' }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#16a34a' }}>Completed Role Changes</h3>
+              <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: '#16a34a' }}>Completed / Cancelled</h3>
               {completedMoverRecords.slice(0, 10).map(rc => {
                 const expanded = expandedMoverCompletedId === rc.id
+                const isCancelled = rc.status === 'cancelled'
+                const m365 = moverM365[rc.id]
                 return (
                   <div key={rc.id} style={{ borderBottom: '1px solid #e0e0e0', padding: '10px 0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setExpandedMoverCompletedId(expanded ? null : rc.id)}>
                       <span style={{ fontSize: 12, transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▶</span>
                       <strong style={{ fontSize: 13 }}>{rc.employee_name}</strong>
                       <span style={{ fontSize: 12, color: '#666' }}>{rc.change_type.replace(/_/g, ' ')}</span>
+                      {isCancelled && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, background: '#fef2f2', color: '#dc2626', fontWeight: 600 }}>Cancelled</span>}
                       <span style={{ fontSize: 12, color: '#888', marginLeft: 'auto' }}>{rc.completed_at ? new Date(rc.completed_at).toLocaleDateString('en-GB') : new Date(rc.created_at).toLocaleDateString('en-GB')}</span>
                     </div>
                     {expanded && (
-                      <div style={{ marginTop: 8, padding: 12, background: '#f5f5f5', borderRadius: 8, fontSize: 12 }}>
+                      <div style={{ marginTop: 8, padding: 12, background: isCancelled ? '#fef2f2' : '#f5f5f5', borderRadius: 8, fontSize: 12 }}>
+                        {isCancelled && m365?.decline_reason && (
+                          <div style={{ marginBottom: 8, padding: 8, background: '#fee2e2', borderRadius: 6, border: '1px solid #fecaca' }}>
+                            <strong style={{ color: '#dc2626' }}>Decline Reason:</strong> {m365.decline_reason}
+                            {m365.declined_by && <div style={{ marginTop: 4, color: '#666' }}>Declined by: {m365.declined_by}</div>}
+                            {m365.declined_at && <div style={{ color: '#666' }}>Declined: {new Date(m365.declined_at).toLocaleDateString('en-GB')}</div>}
+                          </div>
+                        )}
                         {Object.entries(rc.changes || {}).map(([k, v]: [string, any]) => (
-                          <div key={k} style={{ marginBottom: 4 }}>
+                          <div key={k} style={{ marginBottom: 4, textDecoration: isCancelled ? 'line-through' : 'none', color: isCancelled ? '#999' : undefined }}>
                             <strong>{k.replace(/_/g, ' ')}:</strong> {v?.old || '—'} → {v?.new || '—'}
                           </div>
                         ))}
@@ -4971,7 +4981,7 @@ export default function AdminOnboarding() {
                   This role change was declined{m365?.declined_by ? ` by ${m365.declined_by}` : ''}{m365?.declined_at ? ` on ${new Date(m365.declined_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}.
                   {m365?.decline_reason && <><br /><strong>Reason:</strong> {m365.decline_reason}</>}
                 </div>
-                <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>The remaining steps have been cancelled. This role change will need to be started again.</div>
+                <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 8 }}>All steps have been cancelled and any applied changes have been reverted. This role change will need to be started again.</div>
               </div>
             )}
           <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20 }}>
