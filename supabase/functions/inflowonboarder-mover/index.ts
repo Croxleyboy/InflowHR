@@ -908,8 +908,23 @@ Deno.serve(async (req) => {
       }
 
       console.log('[IFO-MOVER] POST /v1/schedules (persona)', JSON.stringify({ templateId: engineBody.templateId, externalRef: engineBody.externalRef }))
-      const res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
+      let res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, idempotencyKey)
       console.log(`[IFO-MOVER] POST /v1/schedules (persona) → ${res.status}`)
+
+      if (res.status === 422) {
+        const code = (res.data as any)?.error?.code
+        if (code === 'stage_in_past') {
+          const tomorrow = new Date()
+          tomorrow.setDate(tomorrow.getDate() + 1)
+          const tomorrowStr = tomorrow.toISOString().split('T')[0]
+          console.log(`[IFO-MOVER] stage_in_past — retrying with effectiveDate=${tomorrowStr}`)
+          ;(engineBody.parameters as any).effectiveDate = tomorrowStr
+          const retryKey = `${idempotencyKey}-retry-${Date.now()}`
+          res = await engineFetch(keyResult.apiKey, 'POST', '/v1/schedules', engineBody, retryKey)
+          console.log(`[IFO-MOVER] POST /v1/schedules (persona retry) → ${res.status}`)
+        }
+      }
+
       const engineErr = handleEngineError(sb, company_id, res, action)
       if (engineErr) return engineErr
 
