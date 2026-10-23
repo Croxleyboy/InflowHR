@@ -1063,8 +1063,8 @@ export default function Notifications() {
               updated_at: now,
             }).eq('role_change_id', roleChangeId).eq('company_id', companyUser?.company_id)
             const allSkipped = { review_changes: true, update_accounts: true, update_records: true, notify_team: true, review_access: true, confirm_complete: true }
-            const { data: rcRow } = await supabase.from('role_changes').select('changes, employee_id, workflow_steps').eq('id', roleChangeId).eq('company_id', companyUser?.company_id).maybeSingle()
-            if (rcRow?.workflow_steps?.update_records && rcRow?.employee_id) {
+            const { data: rcRow } = await supabase.from('role_changes').select('changes, employee_id').eq('id', roleChangeId).eq('company_id', companyUser?.company_id).maybeSingle()
+            if (rcRow?.employee_id) {
               const reverts: Record<string, any> = {}
               const ch = rcRow.changes || {}
               if (ch.job_title?.old) reverts.job_title = ch.job_title.old
@@ -1099,8 +1099,8 @@ export default function Notifications() {
           if (m365Err) console.warn('mover_m365_actions update failed:', m365Err.message)
           if (!approve) {
             const allSkipped = { review_changes: true, update_accounts: true, update_records: true, notify_team: true, review_access: true, confirm_complete: true }
-            const { data: rcRow } = await supabase.from('role_changes').select('changes, employee_id, workflow_steps').eq('id', roleChangeId).eq('company_id', companyUser?.company_id).maybeSingle()
-            if (rcRow?.workflow_steps?.update_records && rcRow?.employee_id) {
+            const { data: rcRow } = await supabase.from('role_changes').select('changes, employee_id').eq('id', roleChangeId).eq('company_id', companyUser?.company_id).maybeSingle()
+            if (rcRow?.employee_id) {
               const reverts: Record<string, any> = {}
               const ch = rcRow.changes || {}
               if (ch.job_title?.old) reverts.job_title = ch.job_title.old
