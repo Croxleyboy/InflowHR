@@ -359,13 +359,20 @@ const SECTIONS: GuideSection[] = [
         'When an employee changes role or persona, InflowHR creates a Role Change record and optionally triggers an M365 update via InflowOnboarder.',
         'The engine updates the employee\'s profile, groups, licence, and extensionAttribute1 in Microsoft 365.',
         'Dynamic groups in Entra ID re-evaluate automatically based on extensionAttribute1, so Intune policies and conditional access apply without manual steps.',
-      ], callout: { type: 'note', text: 'Persona packs are set up in InflowOnboarder. InflowHR displays whatever personas the engine reports as enabled and ready.' } },
+        '',
+        'Company Device Requirement:',
+        'Persona changes are only available for employees who have a managed company device (e.g. a laptop or phone enrolled in Entra ID / Intune).',
+        'If you do not have a company device, the persona picker is disabled and shows "No company device assigned — persona changes not applicable".',
+        'Your admin can toggle the company device flag on your employee record. It is also set automatically when the equipment step is completed during onboarding.',
+      ], callout: { type: 'note', text: 'Persona packs are set up in InflowOnboarder. InflowHR displays whatever personas the engine reports as enabled and ready. Persona changes require a managed company device.' } },
 
       { title: 'Starting a Role Change', purpose: 'Create a mover record when an employee changes role, department, or persona.', steps: [
         'Go to Admin > Onboarding > Movers tab.',
         'Search for the employee and click their name.',
         'Fill in the change details: change type, effective date, new values for changed fields.',
+        'When adding manager name or manager email as a change, the other field is automatically included — they are always updated together to prevent data gaps.',
         'If the persona is changing, select the new persona from the engine-driven picker. Only personas marked "ready" in the engine can be selected.',
+        'If the employee does not have a company device, persona changes are disabled with an amber warning explaining why.',
         'Add a reason for the change and click Create Role Change.',
         'The mover workflow opens with six steps: Review Changes, Update M365 Account, Save Changes to InflowHR, Notify Team / Manager, Review Remaining Access, and Confirm Complete.',
       ] },
@@ -387,12 +394,18 @@ const SECTIONS: GuideSection[] = [
         'The selected persona is stored on the onboarding record and applied to the employee record when onboarding completes.',
       ] },
 
-      { title: 'Change Detection on Employee Edit', purpose: 'InflowHR detects role-relevant changes when you edit an employee.', steps: [
-        'When you save an employee edit that changes job title, department, location, manager, or persona, a prompt appears.',
+      { title: 'Change Detection on Employee Edit', purpose: 'InflowHR detects role-relevant changes when you edit an employee and protects JML-controlled fields.', steps: [
+        'When InflowOnboarder is connected, key fields are locked on the employee edit form to prevent changes being made outside the Mover workflow:',
+        '• Job title and department (inline table editing is disabled)',
+        '• Location, manager name, and manager email (edit form fields show a lock icon with "Mover workflow")',
+        'An amber banner explains: "Job title, department, location and manager are locked — use the Mover workflow in JML to change these fields so that M365 and HR records stay in sync."',
+        '',
+        'For non-locked fields (e.g. persona), the system still detects changes on save:',
         '"Would you like to start a role change to update their Microsoft 365 account?"',
         'Click "Yes — Go to Movers" to create a role change record and navigate to the Movers workflow.',
         'Click "No — HR Record Only" to save the changes without triggering an M365 update.',
-      ], callout: { type: 'tip', text: 'The prompt only appears when InflowOnboarder is connected. Without it, employee edits save normally with no M365 integration.' } },
+        'The mover prompt only appears when the employee has a company device assigned.',
+      ], callout: { type: 'tip', text: 'Field locking ensures all JML-relevant changes go through the Mover workflow, keeping old/new values tracked for cancel/revert. Without InflowOnboarder connected, all fields are editable as normal.' } },
     ],
   },
   {
