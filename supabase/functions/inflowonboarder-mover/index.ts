@@ -265,7 +265,7 @@ const PRECHECK_HELP: Record<string, { summary: string; action: string; detail: s
   account_has_admin_role: {
     summary: 'This employee has an admin account',
     action: 'Contact IT to make this change manually, or ask them to remove the admin role first so it can be done automatically.',
-    detail: 'The engine cannot modify accounts with admin roles. IT can either remove the admin role and retry, or update extensionAttribute1 directly in InflowOnboarder Templates.',
+    detail: 'The engine cannot modify accounts with admin roles. IT can either remove the admin role and retry, or update extensionAttribute1 manually.\n\nNote: extensionAttribute1 is not visible in the Entra ID portal user interface.\n\nTo VIEW the current value, IT can use:\n• Microsoft Graph Explorer — GET https://graph.microsoft.com/v1.0/users/{email}?$select=onPremisesExtensionAttributes\n• PowerShell — Get-MgUser -UserId {email} -Property OnPremisesExtensionAttributes | Select -ExpandProperty OnPremisesExtensionAttributes\n\nTo CHANGE the value, IT can use:\n• Graph Explorer — PATCH https://graph.microsoft.com/v1.0/users/{email} with body {"onPremisesExtensionAttributes":{"extensionAttribute1":"target-persona-id"}}\n• PowerShell — Update-MgUser -UserId {email} -OnPremisesExtensionAttributes @{extensionAttribute1="target-persona-id"}\n\nReplace {email} with the employee\'s email and "target-persona-id" with the persona ID shown below.',
   },
   admin_move_needs_approval: {
     summary: 'Extra approval needed',
