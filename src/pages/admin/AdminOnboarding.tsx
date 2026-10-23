@@ -4888,10 +4888,15 @@ export default function AdminOnboarding() {
                         <div style={{ position: 'absolute', top: 36, left: 0, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', zIndex: 10, minWidth: 180 }}>
                           {available.map(f => (
                             <div key={f} style={{ padding: '8px 14px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f0f0f0' }}
-                              onClick={() => setMoverForm({ ...moverForm, additionalFields: [...(moverForm.additionalFields || []), f], showFieldPicker: false })}
+                              onClick={() => {
+                                let newFields = [...(moverForm.additionalFields || []), f]
+                                if (f === 'manager_name' && !newFields.includes('manager_email')) newFields.push('manager_email')
+                                if (f === 'manager_email' && !newFields.includes('manager_name')) newFields.push('manager_name')
+                                setMoverForm({ ...moverForm, additionalFields: newFields, showFieldPicker: false })
+                              }}
                               onMouseEnter={e => (e.currentTarget.style.background = '#f5f5f5')}
                               onMouseLeave={e => (e.currentTarget.style.background = '#fff')}>
-                              {labels[f]}
+                              {labels[f]}{(f === 'manager_name' || f === 'manager_email') && ' (adds both)'}
                             </div>
                           ))}
                         </div>

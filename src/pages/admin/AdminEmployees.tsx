@@ -949,8 +949,8 @@ export default function AdminEmployees() {
                       </div>
                     ) : <span className="admin-inline-avatar">{emp.avatar_url ? <img src={emp.avatar_url} alt="" /> : <span className="admin-avatar-initials">{emp.first_name[0]}{emp.last_name[0]}</span>}{emp.first_name} {emp.last_name}</span>}</td>
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.email} onChange={e => setEditForm(f => ({...f, email: e.target.value}))} /> : emp.email}</td>
-                    <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(f => ({...f, department: e.target.value}))} /> : (emp.department || '—')}</td>
-                    <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.job_title} onChange={e => setEditForm(f => ({...f, job_title: e.target.value}))} /> : (emp.job_title || '—')}</td>
+                    <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(f => ({...f, department: e.target.value}))} disabled={!!features.inflowonboarder_integration} title={features.inflowonboarder_integration ? 'Use the Mover workflow to change this field' : ''} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} /> : (emp.department || '—')}</td>
+                    <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.job_title} onChange={e => setEditForm(f => ({...f, job_title: e.target.value}))} disabled={!!features.inflowonboarder_integration} title={features.inflowonboarder_integration ? 'Use the Mover workflow to change this field' : ''} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} /> : (emp.job_title || '—')}</td>
                     <td>
                       <span className={`admin-badge ${emp.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>{emp.is_active ? 'Active' : 'Inactive'}</span>
                       {setupMap[emp.email?.toLowerCase()] === false && (
@@ -1110,8 +1110,8 @@ export default function AdminEmployees() {
                                         </div>
                                         {showField('location') && (
                                           <div className="admin-form-field">
-                                            <label style={{ fontSize: 12 }}>Work Location</label>
-                                            <input className="admin-inline-input" value={editForm.location || ''} onChange={e => setEditForm(p => ({...p, location: e.target.value}))} />
+                                            <label style={{ fontSize: 12 }}>Work Location {features.inflowonboarder_integration && <span style={{ fontSize: 10, color: '#e65100' }}>🔒 Mover workflow</span>}</label>
+                                            <input className="admin-inline-input" value={editForm.location || ''} onChange={e => setEditForm(p => ({...p, location: e.target.value}))} disabled={!!features.inflowonboarder_integration} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} />
                                           </div>
                                         )}
                                         {showField('contract_type') && (
@@ -1157,14 +1157,19 @@ export default function AdminEmployees() {
                                         )}
                                         {showField('manager_name') && (
                                           <div className="admin-form-field">
-                                            <label style={{ fontSize: 12 }}>Manager Name</label>
-                                            <input className="admin-inline-input" value={editForm.manager_name || ''} onChange={e => setEditForm(p => ({...p, manager_name: e.target.value}))} />
+                                            <label style={{ fontSize: 12 }}>Manager Name {features.inflowonboarder_integration && <span style={{ fontSize: 10, color: '#e65100' }}>🔒 Mover workflow</span>}</label>
+                                            <input className="admin-inline-input" value={editForm.manager_name || ''} onChange={e => setEditForm(p => ({...p, manager_name: e.target.value}))} disabled={!!features.inflowonboarder_integration} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} />
                                           </div>
                                         )}
                                         {showField('manager_email') && (
                                           <div className="admin-form-field">
-                                            <label style={{ fontSize: 12 }}>Manager Email</label>
-                                            <input className="admin-inline-input" value={editForm.manager_email || ''} onChange={e => setEditForm(p => ({...p, manager_email: e.target.value}))} />
+                                            <label style={{ fontSize: 12 }}>Manager Email {features.inflowonboarder_integration && <span style={{ fontSize: 10, color: '#e65100' }}>🔒 Mover workflow</span>}</label>
+                                            <input className="admin-inline-input" value={editForm.manager_email || ''} onChange={e => setEditForm(p => ({...p, manager_email: e.target.value}))} disabled={!!features.inflowonboarder_integration} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} />
+                                          </div>
+                                        )}
+                                        {features.inflowonboarder_integration && (
+                                          <div style={{ gridColumn: 'span 2', padding: '8px 12px', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, fontSize: 12, color: '#6d4c00', marginBottom: 4 }}>
+                                            Job title, department, location and manager are locked — use the <strong>Mover workflow</strong> in JML to change these fields so that M365 and HR records stay in sync.
                                           </div>
                                         )}
                                         {features.inflowonboarder_integration && (
