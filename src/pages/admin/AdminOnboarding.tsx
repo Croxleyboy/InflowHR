@@ -1162,9 +1162,22 @@ export default function AdminOnboarding() {
   }
 
   async function deleteRecord(id: number) {
-    if (!confirm('Delete this onboarding record?')) return
+    const record = records.find(r => r.id === id)
+    if (!record) return
+    if (!confirm(`Delete this onboarding record for ${record.firstname} ${record.surname}? Any matching frozen/deletion queue entries will also be removed.`)) return
     const { error } = await supabase.from('onboarding').delete().eq('id', id)
     if (error) { showError('Failed to delete record: ' + error.message); return }
+    if (record.user_email && selectedCompanyId) {
+      const { data: matchingFrozen } = await supabase.from('frozen_employees')
+        .select('id, employee_name')
+        .eq('company_id', selectedCompanyId)
+        .eq('employee_email', record.user_email)
+        .eq('status', 'awaiting_expiry')
+      if (matchingFrozen && matchingFrozen.length > 0) {
+        await supabase.from('frozen_employees').delete().in('id', matchingFrozen.map(f => f.id))
+        setFrozenEmployees(prev => prev.filter(f => !matchingFrozen.some(mf => mf.id === f.id)))
+      }
+    }
     setRecords(prev => prev.filter(r => r.id !== id))
     showSuccess('Record deleted')
   }
