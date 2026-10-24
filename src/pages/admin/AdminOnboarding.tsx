@@ -413,6 +413,7 @@ export default function AdminOnboarding() {
     step_type?: 'action' | 'notice'
     notify_email?: string
     notify_contact_key?: string
+    notify_starter?: boolean
     notify_subject?: string
     notify_body?: string
     requires_step?: string
@@ -793,7 +794,9 @@ export default function AdminOnboarding() {
   async function sendStepNotification(stepConfig: StepConfig, record: any, stepLabel: string, workflowType: 'onboarding' | 'offboarding') {
     if (!selectedCompanyId || !stepConfig) return false
     let email = stepConfig.notify_email || ''
-    if (stepConfig.notify_contact_key) {
+    if (stepConfig.notify_starter) {
+      email = record.user_email || record.employee_email || ''
+    } else if (stepConfig.notify_contact_key) {
       const contact = companyContacts.find(c => c.contact_key === stepConfig.notify_contact_key)
       if (contact?.email) email = contact.email
     }
@@ -3583,11 +3586,11 @@ export default function AdminOnboarding() {
                         <p>{step.description}</p>
 
                         {/* ── Send Notification / Meeting button ── */}
-                        {(step.step_config?.notify_email || step.step_config?.notify_contact_key) && selectedRecord && (
+                        {(step.step_config?.notify_email || step.step_config?.notify_contact_key || step.step_config?.notify_starter) && selectedRecord && (
                           <div style={{ margin: '8px 0', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
-                                {step.step_config.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {step.step_config.notify_contact_key ? (companyContacts.find(c => c.contact_key === step.step_config!.notify_contact_key)?.label || step.step_config.notify_contact_key) : step.step_config.notify_email}
+                                {step.step_config.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {step.step_config.notify_starter ? `${selectedRecord.firstname} ${selectedRecord.surname}` : step.step_config.notify_contact_key ? (companyContacts.find(c => c.contact_key === step.step_config!.notify_contact_key)?.label || step.step_config.notify_contact_key) : step.step_config.notify_email}
                               </span>
                               {step.step_config.requires_step && (() => {
                                 const reqDone = stepChecks[step.step_config.requires_step!]
@@ -4478,13 +4481,13 @@ export default function AdminOnboarding() {
                           {/* ── Offboard Send Notification / Meeting button ── */}
                           {(() => {
                             const offCfg = (offboardCustomSteps.find(cs => cs.step_key === step.key)?.step_config) as StepConfig | undefined
-                            if (!offCfg || (!offCfg.notify_email && !offCfg.notify_contact_key)) return null
+                            if (!offCfg || (!offCfg.notify_email && !offCfg.notify_contact_key && !offCfg.notify_starter)) return null
                             const offReqDone = offCfg.requires_step ? offboardChecks[offCfg.requires_step] : true
                             return (
                               <div style={{ margin: '8px 0', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
-                                    {offCfg.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
+                                    {offCfg.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {offCfg.notify_starter ? `${record.firstname} ${record.surname}` : offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
                                   </span>
                                   {offCfg.requires_step && !offReqDone && <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {OFFBOARD_STEPS.find(s => s.key === offCfg.requires_step)?.label || offCfg.requires_step}</span>}
                                   <button
@@ -6363,7 +6366,7 @@ export default function AdminOnboarding() {
             const setSteps = settingsWorkflowType === 'onboarding'
               ? (u: CustomStep[]) => { setEditingSteps(u); setSettingsDirty(true) }
               : (u: CustomStep[]) => { setOffboardEditingSteps(u); setSettingsDirty(true) }
-            const allStepKeys = steps.map(s => ({ key: s.step_key, label: s.label }))
+            const allStepKeys = steps.map(s => ({ key: s.step_key, label: s.label, phase: s.step_config?.phase }))
             return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>
             {steps.map((step, i) => {
@@ -6485,15 +6488,20 @@ export default function AdminOnboarding() {
                           </div>
                           <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                             <div style={{ flex: 1, minWidth: 180 }}>
-                              <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Send to (company contact)</label>
-                              <select className="admin-input" value={cfg.notify_contact_key || ''} onChange={e => updateCfg({ notify_contact_key: e.target.value || undefined, notify_email: e.target.value ? undefined : cfg.notify_email })} style={{ fontSize: 12 }}>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Send to</label>
+                              <select className="admin-input" value={cfg.notify_starter ? '__starter__' : (cfg.notify_contact_key || '')} onChange={e => {
+                                const v = e.target.value
+                                if (v === '__starter__') updateCfg({ notify_starter: true, notify_contact_key: undefined, notify_email: undefined })
+                                else updateCfg({ notify_starter: undefined, notify_contact_key: v || undefined, notify_email: v ? undefined : cfg.notify_email })
+                              }} style={{ fontSize: 12 }}>
                                 <option value="">— Custom email —</option>
+                                <option value="__starter__">New Starter / Leaver</option>
                                 {(companyContacts.length > 0 ? companyContacts : DEFAULT_CONTACTS).map(c => (
                                   <option key={c.contact_key} value={c.contact_key}>{c.label}{c.email ? ` (${c.email})` : ''}</option>
                                 ))}
                               </select>
                             </div>
-                            {!cfg.notify_contact_key && (
+                            {!cfg.notify_contact_key && !cfg.notify_starter && (
                               <div style={{ flex: 1, minWidth: 200 }}>
                                 <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Email address</label>
                                 <input className="admin-input" value={cfg.notify_email || ''} onChange={e => updateCfg({ notify_email: e.target.value })} placeholder="recipient@company.com" style={{ fontSize: 12 }} type="email" />
@@ -6512,7 +6520,7 @@ export default function AdminOnboarding() {
                             <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Requires step completed first</label>
                             <select className="admin-input" value={cfg.requires_step || ''} onChange={e => updateCfg({ requires_step: e.target.value || undefined })} style={{ fontSize: 12 }}>
                               <option value="">— No dependency —</option>
-                              {allStepKeys.filter(s => s.key !== step.step_key).map(s => (
+                              {allStepKeys.filter(s => s.key !== step.step_key && (cfg.phase === 'post_join' ? s.phase === 'post_join' : s.phase !== 'post_join')).map(s => (
                                 <option key={s.key} value={s.key}>{s.label}</option>
                               ))}
                             </select>
@@ -6571,15 +6579,15 @@ export default function AdminOnboarding() {
                       <>
                         <div style={{ fontWeight: 700, fontSize: 14, color: '#1e1e2d' }}>
                           {step.label}
-                          {(cfg.notify_email || cfg.notify_contact_key) && <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 4, background: cfg.step_type === 'notice' ? '#e0f2fe' : '#ede9fe', color: cfg.step_type === 'notice' ? '#0369a1' : '#6d28d9', fontWeight: 600 }}>{cfg.step_type === 'notice' ? 'Notice' : 'Action'}</span>}
+                          {(cfg.notify_email || cfg.notify_contact_key || cfg.notify_starter) && <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 4, background: cfg.step_type === 'notice' ? '#e0f2fe' : '#ede9fe', color: cfg.step_type === 'notice' ? '#0369a1' : '#6d28d9', fontWeight: 600 }}>{cfg.step_type === 'notice' ? 'Notice' : 'Action'}</span>}
                           {cfg.meeting && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Meeting</span>}
                           {cfg.requires_step && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>Requires: {allStepKeys.find(s => s.key === cfg.requires_step)?.label || cfg.requires_step}</span>}
                           {cfg.phase === 'post_join' && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#d1fae5', color: '#065f46', fontWeight: 600 }}>Post-Join</span>}
                         </div>
                         <div style={{ fontSize: 12, color: '#888', marginTop: 2, lineHeight: 1.4 }}>{step.description}</div>
-                        {(cfg.notify_email || cfg.notify_contact_key) && (
+                        {(cfg.notify_email || cfg.notify_contact_key || cfg.notify_starter) && (
                           <div style={{ fontSize: 11, color: '#6366f1', marginTop: 4 }}>
-                            Notifies: {cfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === cfg.notify_contact_key)?.label || cfg.notify_contact_key) : cfg.notify_email}
+                            Notifies: {cfg.notify_starter ? 'New Starter / Leaver' : cfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === cfg.notify_contact_key)?.label || cfg.notify_contact_key) : cfg.notify_email}
                           </div>
                         )}
                       </>
