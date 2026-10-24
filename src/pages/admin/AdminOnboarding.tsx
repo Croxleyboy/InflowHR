@@ -3488,7 +3488,7 @@ export default function AdminOnboarding() {
                                 disabled={m365RunPolling || m365PanelRefreshing}
                                 onClick={async e => { e.stopPropagation(); setM365PanelRefreshing(true); await loadM365Actions(selectedRecord.id); setM365PanelRefreshing(false) }}
                                 title="Refresh M365 status">
-                                {m365PanelRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
+                                {m365PanelRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh from DB</>}
                               </button>
                             </div>
 
@@ -3624,7 +3624,7 @@ export default function AdminOnboarding() {
                                   <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
                                     disabled={m365ScheduleRefreshing}
                                     onClick={e => { e.stopPropagation(); m365RefreshSchedule(m365Actions!.schedule_id!, selectedRecord.id) }}>
-                                    {m365ScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
+                                    {m365ScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh from Engine</>}
                                   </button>
                                 </div>
                                 {m365Actions.schedule_message && (
@@ -4289,7 +4289,7 @@ export default function AdminOnboarding() {
                                   disabled={leaverM365RunPolling || leaverM365Refreshing}
                                   onClick={e => { e.stopPropagation(); loadLeaverM365Actions(record.id) }}
                                   title="Refresh M365 status">
-                                  {leaverM365Refreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
+                                  {leaverM365Refreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh from DB</>}
                                 </button>
                               </div>
 
@@ -4418,7 +4418,7 @@ export default function AdminOnboarding() {
                                     <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
                                       disabled={leaverScheduleRefreshing}
                                       onClick={e => { e.stopPropagation(); leaverRefreshSchedule(leaverM365Actions!.schedule_id!, record.id) }}>
-                                      {leaverScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
+                                      {leaverScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh from Engine</>}
                                     </button>
                                   </div>
                                   {leaverM365Actions.schedule_message && (
