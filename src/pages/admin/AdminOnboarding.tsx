@@ -3659,6 +3659,21 @@ export default function AdminOnboarding() {
                                       {m365ScheduleCancelling ? 'Cancelling...' : 'Cancel Schedule'}
                                     </button>
                                   )}
+                                  {['cancelled', 'failed'].includes(m365Actions.schedule_status || '') && (
+                                    <button className="admin-btn-sm" style={{ background: '#0078D4', color: '#fff', border: 'none' }}
+                                      onClick={async e => {
+                                        e.stopPropagation()
+                                        const { error } = await supabase.from('onboarding_m365_actions').update({
+                                          schedule_id: null, schedule_status: 'pending_approval', schedule_message: null,
+                                          schedule_stages: null, schedule_next_due_at: null
+                                        }).eq('onboarding_id', selectedRecord.id)
+                                        if (error) { showError('Failed to reset schedule'); return }
+                                        await loadM365Actions(selectedRecord.id)
+                                        showSuccess('Schedule reset — ready to create a new one')
+                                      }}>
+                                      Create New Schedule
+                                    </button>
+                                  )}
                                 </div>
                                 {m365Actions.schedule_status === 'completed' && m365Actions.run_result && (
                                   <div style={{ marginTop: 8, background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10 }}>
@@ -4451,6 +4466,21 @@ export default function AdminOnboarding() {
                                       <button className="admin-btn-sm admin-btn-cancel" disabled={leaverScheduleCancelling}
                                         onClick={e => { e.stopPropagation(); leaverCancelSchedule(leaverM365Actions!.schedule_id!, record.id, 'Cancelled by admin') }}>
                                         {leaverScheduleCancelling ? 'Cancelling...' : 'Cancel Schedule'}
+                                      </button>
+                                    )}
+                                    {['cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
+                                      <button className="admin-btn-sm" style={{ background: '#0078D4', color: '#fff', border: 'none' }}
+                                        onClick={async e => {
+                                          e.stopPropagation()
+                                          const { error } = await supabase.from('offboarding_m365_actions').update({
+                                            schedule_id: null, schedule_status: 'pending_approval', schedule_message: null,
+                                            schedule_stages: null, schedule_next_due_at: null
+                                          }).eq('offboarding_id', record.id)
+                                          if (error) { showError('Failed to reset schedule'); return }
+                                          await loadLeaverM365Actions(record.id)
+                                          showSuccess('Schedule reset — ready to create a new one')
+                                        }}>
+                                        Create New Schedule
                                       </button>
                                     )}
                                   </div>
