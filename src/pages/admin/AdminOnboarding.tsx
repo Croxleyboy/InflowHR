@@ -1859,6 +1859,9 @@ export default function AdminOnboarding() {
         setM365ScheduleMode('now')
       } else {
         showSuccess('Schedule created')
+        if (result.id && m365Actions) {
+          setM365Actions({ ...m365Actions, schedule_id: result.id, schedule_status: result.status || 'scheduled', schedule_message: result.message, schedule_stages: result.stages, schedule_next_due_at: result.nextDueAt })
+        }
       }
       await loadM365Actions(record.id)
     }
@@ -2369,6 +2372,9 @@ export default function AdminOnboarding() {
         setLeaverScheduleMode('now')
       } else {
         showSuccess('Leaver schedule created')
+        if (result.id && leaverM365Actions) {
+          setLeaverM365Actions({ ...leaverM365Actions, schedule_id: result.id, schedule_status: result.status || 'scheduled', schedule_message: result.message, schedule_stages: result.stages, schedule_next_due_at: result.nextDueAt })
+        }
       }
       await loadLeaverM365Actions(record.id)
     }
