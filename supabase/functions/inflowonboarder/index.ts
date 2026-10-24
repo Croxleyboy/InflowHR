@@ -621,7 +621,7 @@ Deno.serve(async (req) => {
         return json({ error: 'Invalid userPrincipalName format — must be user@domain.tld' }, 400)
       }
 
-      const idempotencyKey = `starter-${onboarding_id}-start-run-${attempt || 0}`
+      const idempotencyKey = `starter-${onboarding_id}-start-run-${Date.now()}`
       let runId: string
       let runStatus: string
 
@@ -756,7 +756,7 @@ Deno.serve(async (req) => {
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
       if (!/^[a-zA-Z0-9_-]+$/.test(run_id)) return json({ error: 'Invalid run_id format' }, 400)
 
-      const idempotencyKey = `starter-${onboarding_id}-recheck-${attempt || 0}`
+      const idempotencyKey = `starter-${onboarding_id}-recheck-${Date.now()}`
       let runData: any
 
       if (MOCK_MODE) {
@@ -790,7 +790,7 @@ Deno.serve(async (req) => {
       if (!run_id) return json({ error: 'Missing run_id' }, 400)
       if (!/^[a-zA-Z0-9_-]+$/.test(run_id)) return json({ error: 'Invalid run_id format' }, 400)
 
-      const idempotencyKey = `starter-${onboarding_id}-proceed-${attempt || 0}`
+      const idempotencyKey = `starter-${onboarding_id}-proceed-${Date.now()}`
       let runData: any
 
       if (MOCK_MODE) {
@@ -890,7 +890,7 @@ Deno.serve(async (req) => {
       if (keyResult instanceof Response) return keyResult
       const { config } = keyResult
 
-      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-schedule-${attempt || 0}`
+      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-schedule-${Date.now()}`
 
       const person: Record<string, string> = {
         givenName: input.givenName,
@@ -958,7 +958,14 @@ Deno.serve(async (req) => {
 
       if (res.status === 409) {
         const errData = res.data as any
-        const existingId = errData?.error?.scheduleId
+        let existingId = errData?.error?.scheduleId
+        if (!existingId) {
+          const lookupRes = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules?externalRef=${encodeURIComponent(`starter-${onboarding_id}`)}`)
+          if (lookupRes.ok) {
+            const schedules = (lookupRes.data as any)?.data || (lookupRes.data as any)?.schedules || []
+            if (Array.isArray(schedules) && schedules.length > 0) existingId = schedules[0].id
+          }
+        }
         if (existingId) {
           const checkRes = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules/${existingId}`)
           if (checkRes.ok) {
@@ -1057,7 +1064,7 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
-      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-update-${attempt || 0}`
+      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-update-${Date.now()}`
 
       if (MOCK_MODE) {
         await sb.from('onboarding_m365_actions').update({
@@ -1112,7 +1119,7 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
-      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-cancel-${attempt || 0}`
+      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-cancel-${Date.now()}`
 
       if (MOCK_MODE) {
         await sb.from('onboarding_m365_actions').update({
@@ -1153,7 +1160,7 @@ Deno.serve(async (req) => {
       const keyResult = await getApiKey(sb, company_id)
       if (keyResult instanceof Response) return keyResult
 
-      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-recheck-schedule-${attempt || 0}`
+      const idempotencyKey = `inflowhr-joiner-${onboarding_id}-recheck-schedule-${Date.now()}`
 
       if (MOCK_MODE) {
         await sb.from('onboarding_m365_actions').update({
