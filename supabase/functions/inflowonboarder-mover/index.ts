@@ -640,7 +640,7 @@ Deno.serve(async (req) => {
           schedule_options: options || {},
           external_ref: `move-${role_change_id}`,
           employee_upn: user_principal_name,
-          run_status: 'scheduled',
+          run_status: 'completed',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'role_change_id' })
         return json(mockSchedule)
@@ -665,7 +665,7 @@ Deno.serve(async (req) => {
               schedule_updated_at: sched.updatedAt,
               external_ref: `move-${role_change_id}`,
               employee_upn: user_principal_name,
-              run_status: 'scheduled',
+              run_status: 'completed',
               updated_at: new Date().toISOString(),
             }, { onConflict: 'role_change_id' })
             return json({ ...sched, message: 'A schedule already exists for this role change.' })
@@ -696,7 +696,7 @@ Deno.serve(async (req) => {
         schedule_options: options || {},
         external_ref: `move-${role_change_id}`,
         employee_upn: user_principal_name,
-        run_status: 'scheduled',
+        run_status: 'completed',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'role_change_id' })
 

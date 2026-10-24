@@ -506,7 +506,7 @@ Deno.serve(async (req) => {
           schedule_options: { licenceRemovalDelayDays: options?.licenceRemovalDelayDays ?? 30 },
           external_ref: `leaver-${offboarding_id}`,
           employee_upn: user_principal_name,
-          run_status: 'scheduled',
+          run_status: 'completed',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'offboarding_id' })
         return json(mockSchedule)
@@ -539,7 +539,7 @@ Deno.serve(async (req) => {
               schedule_updated_at: sched.updatedAt,
               external_ref: `leaver-${offboarding_id}`,
               employee_upn: user_principal_name,
-              run_status: 'scheduled',
+              run_status: 'completed',
               updated_at: new Date().toISOString(),
             }, { onConflict: 'offboarding_id' })
             return json({ id: existingId, ...sched, recovered: true, message: 'A schedule already exists for this leaver.' })
@@ -570,7 +570,7 @@ Deno.serve(async (req) => {
         schedule_options: { licenceRemovalDelayDays: options?.licenceRemovalDelayDays ?? 30 },
         external_ref: `leaver-${offboarding_id}`,
         employee_upn: user_principal_name,
-        run_status: 'scheduled',
+        run_status: 'completed',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'offboarding_id' })
 

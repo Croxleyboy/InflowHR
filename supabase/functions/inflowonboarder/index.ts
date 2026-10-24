@@ -948,7 +948,7 @@ Deno.serve(async (req) => {
           schedule_updated_at: new Date().toISOString(),
           schedule_options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
           external_ref: `starter-${onboarding_id}`,
-          run_status: 'scheduled',
+          run_status: 'completed',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'onboarding_id' })
         return json(mockSchedule)
@@ -980,7 +980,7 @@ Deno.serve(async (req) => {
               schedule_next_due_at: sched.nextDueAt,
               schedule_updated_at: sched.updatedAt,
               external_ref: `starter-${onboarding_id}`,
-              run_status: 'scheduled',
+              run_status: 'completed',
               updated_at: new Date().toISOString(),
             }, { onConflict: 'onboarding_id' })
             return json({ id: existingId, ...sched, recovered: true, message: 'A schedule already exists for this starter.' })
@@ -1010,7 +1010,7 @@ Deno.serve(async (req) => {
         schedule_updated_at: sched.updatedAt || new Date().toISOString(),
         schedule_options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
         external_ref: `starter-${onboarding_id}`,
-        run_status: 'scheduled',
+        run_status: 'completed',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'onboarding_id' })
 
