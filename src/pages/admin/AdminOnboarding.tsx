@@ -3483,13 +3483,7 @@ export default function AdminOnboarding() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                               <svg width="20" height="20" viewBox="0 0 512 512"><rect width="512" height="512" rx="64" fill="#0078D4"/><circle cx="256" cy="256" r="100" fill="none" stroke="#fff" strokeWidth="32"/><circle cx="256" cy="256" r="16" fill="#fff"/></svg>
                               <strong style={{ fontSize: 14, color: '#0078D4' }}>Microsoft 365 Provisioning</strong>
-                              {m365RunPolling && <span style={{ fontSize: 12, color: '#1976d2', marginLeft: 8 }}>Polling...</span>}
-                              <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
-                                disabled={m365RunPolling || m365PanelRefreshing}
-                                onClick={async e => { e.stopPropagation(); setM365PanelRefreshing(true); await loadM365Actions(selectedRecord.id); setM365PanelRefreshing(false) }}
-                                title="Refresh M365 status">
-                                {m365PanelRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh from DB</>}
-                              </button>
+                              {m365RunPolling && <span style={{ fontSize: 12, color: '#1976d2', marginLeft: 8 }}>Updating...</span>}
                             </div>
 
                             {/* V1 legacy starters */}
@@ -3619,29 +3613,37 @@ export default function AdminOnboarding() {
                                     background: m365Actions.schedule_status === 'scheduled' ? '#e3f2fd' : m365Actions.schedule_status === 'running' ? '#fff3e0' : m365Actions.schedule_status === 'completed' ? '#e8f5e9' : m365Actions.schedule_status === 'cancelled' ? '#fafafa' : m365Actions.schedule_status === 'failed' || m365Actions.schedule_status === 'missed' ? '#fce4ec' : m365Actions.schedule_status === 'blocked' ? '#fff8e1' : '#f5f5f5',
                                     color: m365Actions.schedule_status === 'scheduled' ? '#1565c0' : m365Actions.schedule_status === 'running' ? '#e65100' : m365Actions.schedule_status === 'completed' ? '#2e7d32' : m365Actions.schedule_status === 'cancelled' ? '#888' : m365Actions.schedule_status === 'failed' || m365Actions.schedule_status === 'missed' ? '#c62828' : m365Actions.schedule_status === 'blocked' ? '#f57f17' : '#666',
                                   }}>
-                                    {(m365Actions.schedule_status || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                    {m365Actions.schedule_status === 'scheduled' ? 'Scheduled' : m365Actions.schedule_status === 'running' ? 'Running' : m365Actions.schedule_status === 'completed' ? 'Completed' : m365Actions.schedule_status === 'cancelled' ? 'Cancelled' : m365Actions.schedule_status === 'failed' ? 'Failed' : m365Actions.schedule_status === 'blocked' ? 'Blocked' : (m365Actions.schedule_status || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                   </span>
-                                  <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+                                  <span style={{ fontSize: 12, color: '#666', flex: 1 }}>
+                                    {m365Actions.schedule_status === 'scheduled' && m365Actions.schedule_next_due_at
+                                      ? `Provisioning will run on ${new Date(m365Actions.schedule_next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                      : m365Actions.schedule_status === 'scheduled' ? 'Account provisioning is scheduled'
+                                      : m365Actions.schedule_status === 'running' ? 'Account provisioning is in progress...'
+                                      : m365Actions.schedule_status === 'completed' ? 'Account provisioning complete'
+                                      : m365Actions.schedule_status === 'cancelled' ? 'This schedule was cancelled'
+                                      : m365Actions.schedule_status === 'failed' ? 'Provisioning failed — you can create a new schedule'
+                                      : m365Actions.schedule_status === 'blocked' ? 'Provisioning is blocked — check licence availability'
+                                      : ''}
+                                  </span>
+                                  <button className="admin-btn-sm" style={{ padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
                                     disabled={m365ScheduleRefreshing}
-                                    onClick={e => { e.stopPropagation(); m365RefreshSchedule(m365Actions!.schedule_id!, selectedRecord.id) }}>
-                                    {m365ScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh from Engine</>}
+                                    onClick={async e => { e.stopPropagation(); setM365ScheduleRefreshing(true); await callIfo('get-schedule', { schedule_id: m365Actions!.schedule_id!, onboarding_id: selectedRecord.id }); await loadM365Actions(selectedRecord.id); setM365ScheduleRefreshing(false) }}>
+                                    {m365ScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Updating...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
                                   </button>
                                 </div>
-                                {m365Actions.schedule_message && (
-                                  <p style={{ margin: '0 0 8px', fontSize: 12, color: '#555', background: 'rgba(0,0,0,.03)', padding: '6px 10px', borderRadius: 4 }}>{m365Actions.schedule_message}</p>
-                                )}
-                                {m365Actions.schedule_stages && Array.isArray(m365Actions.schedule_stages) && (
+                                {m365Actions.schedule_stages && Array.isArray(m365Actions.schedule_stages) && m365Actions.schedule_stages.filter((s: any) => s.name).length > 0 && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-                                    {m365Actions.schedule_stages.map((stage: any, si: number) => (
+                                    {m365Actions.schedule_stages.filter((s: any) => s.name).map((stage: any, si: number) => (
                                       <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
                                         <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
                                           background: stage.status === 'completed' ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
                                         }} />
-                                        <span style={{ fontWeight: 600 }}>{(stage.name || '').replace(/_/g, ' ')}</span>
-                                        <span style={{ color: '#888' }}>{stage.scheduledAt ? new Date(stage.scheduledAt).toLocaleString('en-GB') : ''}</span>
+                                        <span style={{ fontWeight: 600 }}>{stage.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                                        <span style={{ color: '#888' }}>{stage.scheduledAt ? new Date(stage.scheduledAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
                                         <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
                                           color: stage.status === 'completed' ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
-                                        }}>{stage.status}</span>
+                                        }}>{stage.status === 'pending' ? 'Waiting' : (stage.status || '').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -3677,9 +3679,8 @@ export default function AdminOnboarding() {
                                 </div>
                                 {m365Actions.schedule_status === 'completed' && m365Actions.run_result && (
                                   <div style={{ marginTop: 8, background: 'rgba(232,245,233,.5)', border: '1px solid #a5d6a7', borderRadius: 6, padding: 10 }}>
-                                    <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Schedule completed</p>
-                                    {m365Actions.m365_upn && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>UPN: {m365Actions.m365_upn}</p>}
-                                    {m365Actions.m365_user_id && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>User ID: {m365Actions.m365_user_id}</p>}
+                                    <p style={{ margin: 0, fontSize: 13, color: '#2e7d32', fontWeight: 600 }}>Account provisioned successfully</p>
+                                    {m365Actions.m365_upn && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#4caf50' }}>Email: {m365Actions.m365_upn}</p>}
                                   </div>
                                 )}
                               </div>
@@ -4299,13 +4300,7 @@ export default function AdminOnboarding() {
                                   <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
                                 </svg>
                                 <strong style={{ fontSize: 13, color: '#0078D4' }}>Microsoft 365 Offboarding</strong>
-                                {leaverM365RunPolling && <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>Checking...</span>}
-                                <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
-                                  disabled={leaverM365RunPolling || leaverM365Refreshing}
-                                  onClick={e => { e.stopPropagation(); loadLeaverM365Actions(record.id) }}
-                                  title="Refresh M365 status">
-                                  {leaverM365Refreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh from DB</>}
-                                </button>
+                                {leaverM365RunPolling && <span style={{ fontSize: 11, color: '#888', fontStyle: 'italic' }}>Updating...</span>}
                               </div>
 
                               {/* No run yet — start or schedule */}
@@ -4428,29 +4423,37 @@ export default function AdminOnboarding() {
                                       background: leaverM365Actions.schedule_status === 'scheduled' ? '#e3f2fd' : leaverM365Actions.schedule_status === 'running' ? '#fff3e0' : leaverM365Actions.schedule_status === 'completed' ? '#e8f5e9' : leaverM365Actions.schedule_status === 'cancelled' ? '#fafafa' : leaverM365Actions.schedule_status === 'failed' || leaverM365Actions.schedule_status === 'missed' ? '#fce4ec' : leaverM365Actions.schedule_status === 'blocked' ? '#fff8e1' : '#f5f5f5',
                                       color: leaverM365Actions.schedule_status === 'scheduled' ? '#1565c0' : leaverM365Actions.schedule_status === 'running' ? '#e65100' : leaverM365Actions.schedule_status === 'completed' ? '#2e7d32' : leaverM365Actions.schedule_status === 'cancelled' ? '#888' : leaverM365Actions.schedule_status === 'failed' || leaverM365Actions.schedule_status === 'missed' ? '#c62828' : leaverM365Actions.schedule_status === 'blocked' ? '#f57f17' : '#666',
                                     }}>
-                                      {(leaverM365Actions.schedule_status || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                      {leaverM365Actions.schedule_status === 'scheduled' ? 'Scheduled' : leaverM365Actions.schedule_status === 'running' ? 'Running' : leaverM365Actions.schedule_status === 'completed' ? 'Completed' : leaverM365Actions.schedule_status === 'cancelled' ? 'Cancelled' : leaverM365Actions.schedule_status === 'failed' ? 'Failed' : leaverM365Actions.schedule_status === 'blocked' ? 'Blocked' : (leaverM365Actions.schedule_status || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                     </span>
-                                    <button className="admin-btn-sm" style={{ marginLeft: 'auto', padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
+                                    <span style={{ fontSize: 12, color: '#666', flex: 1 }}>
+                                      {leaverM365Actions.schedule_status === 'scheduled' && leaverM365Actions.schedule_next_due_at
+                                        ? `Sign-in block scheduled for ${new Date(leaverM365Actions.schedule_next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                        : leaverM365Actions.schedule_status === 'scheduled' ? 'Account offboarding is scheduled'
+                                        : leaverM365Actions.schedule_status === 'running' ? 'Account offboarding is in progress...'
+                                        : leaverM365Actions.schedule_status === 'completed' ? 'Account offboarding complete'
+                                        : leaverM365Actions.schedule_status === 'cancelled' ? 'This schedule was cancelled'
+                                        : leaverM365Actions.schedule_status === 'failed' ? 'Offboarding failed — you can create a new schedule'
+                                        : leaverM365Actions.schedule_status === 'blocked' ? 'Offboarding is blocked — check licence availability'
+                                        : ''}
+                                    </span>
+                                    <button className="admin-btn-sm" style={{ padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
                                       disabled={leaverScheduleRefreshing}
-                                      onClick={e => { e.stopPropagation(); leaverRefreshSchedule(leaverM365Actions!.schedule_id!, record.id) }}>
-                                      {leaverScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Refreshing...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh from Engine</>}
+                                      onClick={async e => { e.stopPropagation(); setLeaverScheduleRefreshing(true); await callIfoLeaver('get-leaver-schedule', { schedule_id: leaverM365Actions!.schedule_id!, offboarding_id: record.id }); await loadLeaverM365Actions(record.id); setLeaverScheduleRefreshing(false) }}>
+                                      {leaverScheduleRefreshing ? <><div style={{ width: 12, height: 12, border: '2px solid #ccc', borderTopColor: '#0078D4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} /> Updating...</> : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Refresh</>}
                                     </button>
                                   </div>
-                                  {leaverM365Actions.schedule_message && (
-                                    <p style={{ margin: '0 0 8px', fontSize: 12, color: '#555', background: 'rgba(0,0,0,.03)', padding: '6px 10px', borderRadius: 4 }}>{leaverM365Actions.schedule_message}</p>
-                                  )}
-                                  {leaverM365Actions.schedule_stages && Array.isArray(leaverM365Actions.schedule_stages) && (
+                                  {leaverM365Actions.schedule_stages && Array.isArray(leaverM365Actions.schedule_stages) && leaverM365Actions.schedule_stages.filter((s: any) => s.name).length > 0 && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-                                      {leaverM365Actions.schedule_stages.map((stage: any, si: number) => (
+                                      {leaverM365Actions.schedule_stages.filter((s: any) => s.name).map((stage: any, si: number) => (
                                         <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
                                           <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
                                             background: stage.status === 'completed' ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
                                           }} />
-                                          <span style={{ fontWeight: 600 }}>{(stage.name || '').replace(/_/g, ' ')}</span>
-                                          <span style={{ color: '#888' }}>{stage.scheduledAt ? new Date(stage.scheduledAt).toLocaleString('en-GB') : ''}</span>
+                                          <span style={{ fontWeight: 600 }}>{stage.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                                          <span style={{ color: '#888' }}>{stage.scheduledAt ? new Date(stage.scheduledAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
                                           <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
                                             color: stage.status === 'completed' ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
-                                          }}>{stage.status}</span>
+                                          }}>{stage.status === 'pending' ? 'Waiting' : (stage.status || '').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
                                         </div>
                                       ))}
                                     </div>
