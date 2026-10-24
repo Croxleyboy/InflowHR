@@ -3596,7 +3596,7 @@ export default function AdminOnboarding() {
                             </div>
                             {step.step_config.meeting && (
                               <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
-                                Meeting: {resolveStepPlaceholders(step.step_config.meeting.title || '', selectedRecord, 'onboarding')} · Attendees: {step.step_config.meeting.attendees?.join(', ') || 'manager, starter'}
+                                Meeting: {resolveStepPlaceholders(step.step_config.meeting.title || '', selectedRecord)} · Attendees: {step.step_config.meeting.attendees?.join(', ') || 'manager, starter'}
                               </div>
                             )}
                           </div>
@@ -4444,7 +4444,7 @@ export default function AdminOnboarding() {
                                 </div>
                                 {offCfg.meeting && (
                                   <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
-                                    Meeting: {resolveStepPlaceholders(offCfg.meeting.title || '', record, 'offboarding')} · Attendees: {offCfg.meeting.attendees?.join(', ') || 'manager, leaver'}
+                                    Meeting: {resolveStepPlaceholders(offCfg.meeting.title || '', record)} · Attendees: {offCfg.meeting.attendees?.join(', ') || 'manager, leaver'}
                                   </div>
                                 )}
                               </div>
