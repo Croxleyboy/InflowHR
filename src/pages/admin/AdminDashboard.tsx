@@ -87,7 +87,7 @@ export default function AdminDashboard() {
   async function loadSuperAdminStats() {
     setLoading(true)
     const todayStr = new Date().toISOString().slice(0, 10)
-    const [metricsRes, compRes, featRes, annRes, benRes, notifRes, unreadNotifRes, actionNotifRes, kudosRes, kudosLikesRes, surveyDepRes, surveyRespRes, otoRes, otoCompRes, goalsRes, activeGoalsRes, bookingsRes, todayBookingsRes, leaverRes, moverRes] = await Promise.all([
+    const [metricsRes, compRes, featRes, annRes, benRes, notifRes, unreadNotifRes, actionNotifRes, kudosRes, kudosLikesRes, surveyDepRes, otoRes, otoCompRes, goalsRes, activeGoalsRes, bookingsRes, todayBookingsRes, leaverRes, moverRes] = await Promise.all([
       supabase.rpc('get_all_company_metrics'),
       supabase.from('companies').select('id', { count: 'exact', head: true }),
       supabase.from('company_features').select('feature_key, company_id').eq('is_enabled', true),
@@ -99,7 +99,6 @@ export default function AdminDashboard() {
       supabase.from('kudos').select('id', { count: 'exact', head: true }),
       supabase.from('kudos').select('like_count'),
       supabase.from('survey_deployments').select('id, total_recipients, total_responses'),
-      supabase.from('survey_responses').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
       supabase.from('one_to_one_meetings').select('id', { count: 'exact', head: true }),
       supabase.from('one_to_one_meetings').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
       supabase.from('performance_goals').select('id', { count: 'exact', head: true }),
