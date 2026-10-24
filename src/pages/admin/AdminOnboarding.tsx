@@ -409,7 +409,17 @@ export default function AdminOnboarding() {
   const [uploadResult, setUploadResult] = useState<{ success: number; failed: number } | null>(null)
 
   // Custom workflow steps state
-  interface CustomStep { id?: number; step_key: string; label: string; icon: string; description: string; sort_order: number; is_default: boolean }
+  interface StepConfig {
+    step_type?: 'action' | 'notice'
+    notify_email?: string
+    notify_contact_key?: string
+    notify_subject?: string
+    notify_body?: string
+    requires_step?: string
+    meeting?: { title?: string; body?: string; attendees?: string[] }
+  }
+  interface CustomStep { id?: number; step_key: string; label: string; icon: string; description: string; sort_order: number; is_default: boolean; step_config?: StepConfig }
+  interface CompanyContact { id?: number; contact_key: string; label: string; email: string; phone?: string; notes?: string; sort_order: number }
   const [customSteps, setCustomSteps] = useState<CustomStep[]>([])
   const [editingSteps, setEditingSteps] = useState<CustomStep[]>([])
   const [hasCustomSteps, setHasCustomSteps] = useState(false)
@@ -417,6 +427,12 @@ export default function AdminOnboarding() {
   const [settingsDirty, setSettingsDirty] = useState(false)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const [companyContacts, setCompanyContacts] = useState<CompanyContact[]>([])
+  const [editingContacts, setEditingContacts] = useState<CompanyContact[]>([])
+  const [contactsDirty, setContactsDirty] = useState(false)
+  const [contactsSaving, setContactsSaving] = useState(false)
+  const [settingsSubTab, setSettingsSubTab] = useState<'workflows' | 'contacts'>('workflows')
+  const [stepNotifSending, setStepNotifSending] = useState<string | null>(null)
 
   const activeSteps: CustomStep[] = hasCustomSteps ? customSteps : WORKFLOW_STEPS.map((s, i) => ({ step_key: s.key, label: s.label, icon: s.icon, description: s.description, sort_order: i, is_default: true }))
 
@@ -607,6 +623,7 @@ export default function AdminOnboarding() {
       loadMovers()
       loadCustomSteps()
       loadOffboardCustomSteps()
+      loadCompanyContacts()
       loadSyncStatus()
     }
   }, [selectedCompanyId])
@@ -716,6 +733,99 @@ export default function AdminOnboarding() {
     }
   }
 
+  const DEFAULT_CONTACTS: CompanyContact[] = [
+    { contact_key: 'it_admin', label: 'IT Admin', email: '', sort_order: 0 },
+    { contact_key: 'support', label: 'Support', email: '', sort_order: 1 },
+    { contact_key: 'facilities', label: 'Facilities', email: '', sort_order: 2 },
+    { contact_key: 'security', label: 'Security', email: '', sort_order: 3 },
+  ]
+
+  async function loadCompanyContacts() {
+    if (!selectedCompanyId) return
+    const { data } = await supabase.from('company_contacts')
+      .select('*').eq('company_id', selectedCompanyId).order('sort_order')
+    if (data && data.length > 0) {
+      setCompanyContacts(data as CompanyContact[])
+    } else {
+      setCompanyContacts([])
+    }
+  }
+
+  async function saveCompanyContacts() {
+    if (!selectedCompanyId) return
+    setContactsSaving(true)
+    try {
+      await supabase.from('company_contacts').delete().eq('company_id', selectedCompanyId)
+      const rows = editingContacts.filter(c => c.label.trim()).map((c, i) => ({
+        company_id: selectedCompanyId,
+        contact_key: c.contact_key,
+        label: c.label,
+        email: c.email,
+        phone: c.phone || '',
+        notes: c.notes || '',
+        sort_order: i,
+      }))
+      if (rows.length > 0) {
+        const { error } = await supabase.from('company_contacts').insert(rows)
+        if (error) { showError('Failed to save contacts: ' + error.message); return }
+      }
+      await loadCompanyContacts()
+      setContactsDirty(false)
+      showSuccess('Company contacts saved')
+    } finally {
+      setContactsSaving(false)
+    }
+  }
+
+  function resolveStepPlaceholders(template: string, record: any) {
+    if (!template) return template
+    return template
+      .replace(/\{firstname\}/gi, record?.firstname || '')
+      .replace(/\{surname\}/gi, record?.surname || '')
+      .replace(/\{start_date\}/gi, record?.start_date ? new Date(record.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+      .replace(/\{manager\}/gi, record?.manager_name || record?.manager || '')
+      .replace(/\{job_title\}/gi, record?.job_title || '')
+      .replace(/\{department\}/gi, record?.department || '')
+      .replace(/\{leaving_date\}/gi, record?.leaving_date ? new Date(record.leaving_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '')
+  }
+
+  async function sendStepNotification(stepConfig: StepConfig, record: any, stepLabel: string, workflowType: 'onboarding' | 'offboarding') {
+    if (!selectedCompanyId || !stepConfig) return false
+    let email = stepConfig.notify_email || ''
+    if (stepConfig.notify_contact_key) {
+      const contact = companyContacts.find(c => c.contact_key === stepConfig.notify_contact_key)
+      if (contact?.email) email = contact.email
+    }
+    if (!email) { showError('No notification email configured for this step'); return false }
+
+    const { data: recipientEmp } = await supabase.from('employees')
+      .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${email},email.eq.${email}`).maybeSingle()
+
+    const subject = resolveStepPlaceholders(stepConfig.notify_subject || stepLabel, record)
+    const body = resolveStepPlaceholders(stepConfig.notify_body || `Please complete: ${stepLabel}`, record)
+    const isMeeting = !!stepConfig.meeting
+    const meetingTitle = isMeeting ? resolveStepPlaceholders(stepConfig.meeting?.title || '', record) : undefined
+    const meetingBody = isMeeting ? resolveStepPlaceholders(stepConfig.meeting?.body || '', record) : undefined
+
+    if (recipientEmp) {
+      await supabase.from('notifications').insert({
+        company_id: selectedCompanyId,
+        employee_id: recipientEmp.id,
+        type: stepConfig.step_type === 'notice' ? 'info' : 'action',
+        notification_type: isMeeting ? 'onboarding_meeting' : 'onboarding_task',
+        title: subject,
+        message: body,
+        metadata: isMeeting ? { meeting_title: meetingTitle, meeting_body: meetingBody, meeting_attendees: stepConfig.meeting?.attendees, starter_name: `${record.firstname} ${record.surname}`, workflow_type: workflowType } : { workflow_type: workflowType, starter_name: `${record.firstname} ${record.surname}` },
+        send_email: true,
+      })
+      showSuccess(`Notification sent to ${email}`)
+      return true
+    } else {
+      showError(`Could not find employee with email ${email} in this company`)
+      return false
+    }
+  }
+
   async function loadSyncStatus() {
     if (!selectedCompanyId) return
     const { data } = await supabase.from('engine_schedule_sync')
@@ -777,6 +887,7 @@ export default function AdminOnboarding() {
         description: s.description,
         sort_order: i,
         is_default: s.is_default,
+        step_config: s.step_config || {},
       }))
       const { error } = await supabase.from('onboard_workflow_steps').insert(rows)
       if (error) { showError('Failed to save workflow steps: ' + error.message); return }
@@ -1188,6 +1299,7 @@ export default function AdminOnboarding() {
         description: s.description,
         sort_order: i,
         is_default: s.is_default,
+        step_config: s.step_config || {},
       }))
       const { error } = await supabase.from('offboard_workflow_steps').insert(rows)
       if (error) { showError('Failed to save offboarding steps: ' + error.message); return }
@@ -2720,7 +2832,7 @@ export default function AdminOnboarding() {
         {features.inflowonboarder_integration && moverSelectedId && (
           <button className={`admin-tab ${tab === 'mover-workflow' ? 'admin-tab-active' : ''}`} onClick={() => setTab('mover-workflow')} style={{ borderColor: '#e65100', color: tab === 'mover-workflow' ? '#fff' : '#e65100', background: tab === 'mover-workflow' ? '#e65100' : undefined }}>Mover Workflow</button>
         )}
-        <button className={`admin-tab ${tab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => { setTab('settings'); initEditingSteps() }}>Settings</button>
+        <button className={`admin-tab ${tab === 'settings' ? 'admin-tab-active' : ''}`} onClick={() => { setTab('settings'); initEditingSteps(); loadCompanyContacts() }}>Settings</button>
         {isSuperAdmin && (
           <button className={`admin-tab ${tab === 'setup' ? 'admin-tab-active' : ''}`} onClick={() => setTab('setup')} style={{ borderColor: '#7b1fa2', color: tab === 'setup' ? '#fff' : '#7b1fa2', background: tab === 'setup' ? '#7b1fa2' : undefined }}>
             Company Setup
@@ -3458,6 +3570,38 @@ export default function AdminOnboarding() {
                       <div className="admin-wf-detail">
                         <p>{step.description}</p>
 
+                        {/* ── Send Notification / Meeting button ── */}
+                        {(step.step_config?.notify_email || step.step_config?.notify_contact_key) && selectedRecord && (
+                          <div style={{ margin: '8px 0', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
+                                {step.step_config.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {step.step_config.notify_contact_key ? (companyContacts.find(c => c.contact_key === step.step_config!.notify_contact_key)?.label || step.step_config.notify_contact_key) : step.step_config.notify_email}
+                              </span>
+                              {step.step_config.requires_step && (() => {
+                                const reqDone = stepChecks[step.step_config.requires_step!]
+                                return !reqDone ? <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {activeSteps.find(s => s.step_key === step.step_config!.requires_step)?.label || step.step_config.requires_step}</span> : null
+                              })()}
+                              <button
+                                className="admin-btn-sm admin-btn-save"
+                                disabled={stepNotifSending === step.step_key || (!!step.step_config.requires_step && !stepChecks[step.step_config.requires_step])}
+                                onClick={async () => {
+                                  setStepNotifSending(step.step_key)
+                                  await sendStepNotification(step.step_config!, selectedRecord, step.label, 'onboarding')
+                                  setStepNotifSending(null)
+                                }}
+                                style={{ fontSize: 12, padding: '4px 12px' }}
+                              >
+                                {stepNotifSending === step.step_key ? 'Sending...' : step.step_config.meeting ? '📅 Send Meeting Invite' : '📧 Send Notification'}
+                              </button>
+                            </div>
+                            {step.step_config.meeting && (
+                              <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
+                                Meeting: {resolveStepPlaceholders(step.step_config.meeting.title || '', selectedRecord, 'onboarding')} · Attendees: {step.step_config.meeting.attendees?.join(', ') || 'manager, starter'}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {step.step_key === 'accounts' && features.inflowonboarder_integration && ifoConnected && selectedRecord && !done && (
                           <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: 'rgba(232,242,255,.5)' }} onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
@@ -3596,15 +3740,24 @@ export default function AdminOnboarding() {
                                     {m365Actions.schedule_status === 'scheduled' ? 'Scheduled' : m365Actions.schedule_status === 'running' ? 'Running' : m365Actions.schedule_status === 'completed' ? 'Completed' : m365Actions.schedule_status === 'cancelled' ? 'Cancelled' : m365Actions.schedule_status === 'failed' ? 'Failed' : m365Actions.schedule_status === 'blocked' ? 'Blocked' : (m365Actions.schedule_status || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                   </span>
                                   <span style={{ fontSize: 12, color: '#666', flex: 1 }}>
-                                    {m365Actions.schedule_status === 'scheduled' && m365Actions.schedule_next_due_at
-                                      ? `Provisioning will run on ${new Date(m365Actions.schedule_next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                                      : m365Actions.schedule_status === 'scheduled' ? 'Account provisioning is scheduled'
-                                      : m365Actions.schedule_status === 'running' ? 'Account provisioning is in progress...'
-                                      : m365Actions.schedule_status === 'completed' ? 'Account provisioning complete'
-                                      : m365Actions.schedule_status === 'cancelled' ? 'This schedule was cancelled'
-                                      : m365Actions.schedule_status === 'failed' ? 'Provisioning failed — you can create a new schedule'
-                                      : m365Actions.schedule_status === 'blocked' ? 'Provisioning is blocked — check licence availability'
-                                      : ''}
+                                    {(() => {
+                                      const stages = m365Actions.schedule_stages
+                                      const s0Done = stages && Array.isArray(stages) && stages[0]?.status === 'done'
+                                      if (m365Actions.schedule_status === 'scheduled' && s0Done) {
+                                        const s0Date = stages[0].dueAt ? new Date(stages[0].dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+                                        const s1Date = stages[1]?.dueAt ? new Date(stages[1].dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+                                        return `Account created (sign-in off) on ${s0Date}${s1Date ? `; sign-in switches on ${s1Date}` : ''}`
+                                      }
+                                      if (m365Actions.schedule_status === 'scheduled' && m365Actions.schedule_next_due_at)
+                                        return `Provisioning will run on ${new Date(m365Actions.schedule_next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                      if (m365Actions.schedule_status === 'scheduled') return 'Account provisioning is scheduled'
+                                      if (m365Actions.schedule_status === 'running') return 'Account provisioning is in progress...'
+                                      if (m365Actions.schedule_status === 'completed') return 'Account provisioning complete'
+                                      if (m365Actions.schedule_status === 'cancelled') return 'This schedule was cancelled'
+                                      if (m365Actions.schedule_status === 'failed') return 'Provisioning failed — you can create a new schedule'
+                                      if (m365Actions.schedule_status === 'blocked') return 'Provisioning is blocked — check licence availability'
+                                      return ''
+                                    })()}
                                   </span>
                                   <button className="admin-btn-sm" style={{ padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
                                     disabled={m365ScheduleRefreshing}
@@ -3614,18 +3767,30 @@ export default function AdminOnboarding() {
                                 </div>
                                 {m365Actions.schedule_stages && Array.isArray(m365Actions.schedule_stages) && m365Actions.schedule_stages.filter((s: any) => s.name).length > 0 && (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-                                    {m365Actions.schedule_stages.filter((s: any) => s.name).map((stage: any, si: number) => (
-                                      <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
-                                        <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                          background: stage.status === 'completed' ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
-                                        }} />
-                                        <span style={{ fontWeight: 600 }}>{stage.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
-                                        <span style={{ color: '#888' }}>{stage.scheduledAt ? new Date(stage.scheduledAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
-                                        <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
-                                          color: stage.status === 'completed' ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
-                                        }}>{stage.status === 'pending' ? 'Waiting' : (stage.status || '').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
-                                      </div>
-                                    ))}
+                                    {m365Actions.schedule_stages.filter((s: any) => s.name).map((stage: any, si: number) => {
+                                      const stageDate = stage.dueAt || stage.scheduledAt
+                                      const isDone = stage.status === 'done' || stage.status === 'completed'
+                                      return (
+                                        <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0', flexWrap: 'wrap' }}>
+                                          <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                            background: isDone ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
+                                          }} />
+                                          <span style={{ fontWeight: 600 }}>{stage.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                                          <span style={{ color: '#888' }}>{stageDate ? new Date(stageDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+                                          <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
+                                            color: isDone ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
+                                          }}>{isDone ? 'Done' : stage.status === 'pending' ? 'Waiting' : (stage.status || '').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                                          {isDone && stage.result?.userPrincipalName && (
+                                            <span style={{ width: '100%', fontSize: 11, color: '#4caf50', paddingLeft: 16 }}>Email: {stage.result.userPrincipalName}</span>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                                {m365Actions.schedule_message && !['completed', 'cancelled', 'failed'].includes(m365Actions.schedule_status || '') && (
+                                  <div style={{ marginBottom: 8, padding: '6px 10px', background: 'rgba(227,242,253,.4)', borderRadius: 4, border: '1px solid #bbdefb', fontSize: 12, color: '#1565c0' }}>
+                                    {m365Actions.schedule_message}
                                   </div>
                                 )}
                                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -4252,6 +4417,40 @@ export default function AdminOnboarding() {
                         <div className="admin-wf-detail">
                           <p>{step.description}</p>
 
+                          {/* ── Offboard Send Notification / Meeting button ── */}
+                          {(() => {
+                            const offCfg = (offboardCustomSteps.find(cs => cs.step_key === step.key)?.step_config) as StepConfig | undefined
+                            if (!offCfg || (!offCfg.notify_email && !offCfg.notify_contact_key)) return null
+                            const offReqDone = offCfg.requires_step ? offboardChecks[offCfg.requires_step] : true
+                            return (
+                              <div style={{ margin: '8px 0', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
+                                    {offCfg.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
+                                  </span>
+                                  {offCfg.requires_step && !offReqDone && <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {OFFBOARD_STEPS.find(s => s.key === offCfg.requires_step)?.label || offCfg.requires_step}</span>}
+                                  <button
+                                    className="admin-btn-sm admin-btn-save"
+                                    disabled={stepNotifSending === step.key || !offReqDone}
+                                    onClick={async () => {
+                                      setStepNotifSending(step.key)
+                                      await sendStepNotification(offCfg, record, step.label, 'offboarding')
+                                      setStepNotifSending(null)
+                                    }}
+                                    style={{ fontSize: 12, padding: '4px 12px' }}
+                                  >
+                                    {stepNotifSending === step.key ? 'Sending...' : offCfg.meeting ? '📅 Send Meeting Invite' : '📧 Send Notification'}
+                                  </button>
+                                </div>
+                                {offCfg.meeting && (
+                                  <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
+                                    Meeting: {resolveStepPlaceholders(offCfg.meeting.title || '', record, 'offboarding')} · Attendees: {offCfg.meeting.attendees?.join(', ') || 'manager, leaver'}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()}
+
                           {/* Timing hint for post-leave-date steps when M365 automation is active */}
                           {ifoConnected && leaverM365Actions && record.end_date && !done && !skipped && (() => {
                             const hints: Record<string, string> = {
@@ -4406,15 +4605,24 @@ export default function AdminOnboarding() {
                                       {leaverM365Actions.schedule_status === 'scheduled' ? 'Scheduled' : leaverM365Actions.schedule_status === 'running' ? 'Running' : leaverM365Actions.schedule_status === 'completed' ? 'Completed' : leaverM365Actions.schedule_status === 'cancelled' ? 'Cancelled' : leaverM365Actions.schedule_status === 'failed' ? 'Failed' : leaverM365Actions.schedule_status === 'blocked' ? 'Blocked' : (leaverM365Actions.schedule_status || 'Unknown').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                     </span>
                                     <span style={{ fontSize: 12, color: '#666', flex: 1 }}>
-                                      {leaverM365Actions.schedule_status === 'scheduled' && leaverM365Actions.schedule_next_due_at
-                                        ? `Sign-in block scheduled for ${new Date(leaverM365Actions.schedule_next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                                        : leaverM365Actions.schedule_status === 'scheduled' ? 'Account offboarding is scheduled'
-                                        : leaverM365Actions.schedule_status === 'running' ? 'Account offboarding is in progress...'
-                                        : leaverM365Actions.schedule_status === 'completed' ? 'Account offboarding complete'
-                                        : leaverM365Actions.schedule_status === 'cancelled' ? 'This schedule was cancelled'
-                                        : leaverM365Actions.schedule_status === 'failed' ? 'Offboarding failed — you can create a new schedule'
-                                        : leaverM365Actions.schedule_status === 'blocked' ? 'Offboarding is blocked — check licence availability'
-                                        : ''}
+                                      {(() => {
+                                        const stages = leaverM365Actions.schedule_stages
+                                        const s0Done = stages && Array.isArray(stages) && stages[0]?.status === 'done'
+                                        if (leaverM365Actions.schedule_status === 'scheduled' && s0Done) {
+                                          const s0Date = stages[0].dueAt ? new Date(stages[0].dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+                                          const s1Date = stages[1]?.dueAt ? new Date(stages[1].dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''
+                                          return `Sign-in blocked on ${s0Date}${s1Date ? `; licence removal on ${s1Date}` : ''}`
+                                        }
+                                        if (leaverM365Actions.schedule_status === 'scheduled' && leaverM365Actions.schedule_next_due_at)
+                                          return `Sign-in block scheduled for ${new Date(leaverM365Actions.schedule_next_due_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                        if (leaverM365Actions.schedule_status === 'scheduled') return 'Account offboarding is scheduled'
+                                        if (leaverM365Actions.schedule_status === 'running') return 'Account offboarding is in progress...'
+                                        if (leaverM365Actions.schedule_status === 'completed') return 'Account offboarding complete'
+                                        if (leaverM365Actions.schedule_status === 'cancelled') return 'This schedule was cancelled'
+                                        if (leaverM365Actions.schedule_status === 'failed') return 'Offboarding failed — you can create a new schedule'
+                                        if (leaverM365Actions.schedule_status === 'blocked') return 'Offboarding is blocked — check licence availability'
+                                        return ''
+                                      })()}
                                     </span>
                                     <button className="admin-btn-sm" style={{ padding: '2px 10px', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}
                                       disabled={leaverScheduleRefreshing}
@@ -4424,18 +4632,30 @@ export default function AdminOnboarding() {
                                   </div>
                                   {leaverM365Actions.schedule_stages && Array.isArray(leaverM365Actions.schedule_stages) && leaverM365Actions.schedule_stages.filter((s: any) => s.name).length > 0 && (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
-                                      {leaverM365Actions.schedule_stages.filter((s: any) => s.name).map((stage: any, si: number) => (
-                                        <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0' }}>
-                                          <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                            background: stage.status === 'completed' ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
-                                          }} />
-                                          <span style={{ fontWeight: 600 }}>{stage.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
-                                          <span style={{ color: '#888' }}>{stage.scheduledAt ? new Date(stage.scheduledAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
-                                          <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
-                                            color: stage.status === 'completed' ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
-                                          }}>{stage.status === 'pending' ? 'Waiting' : (stage.status || '').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
-                                        </div>
-                                      ))}
+                                      {leaverM365Actions.schedule_stages.filter((s: any) => s.name).map((stage: any, si: number) => {
+                                        const stageDate = stage.dueAt || stage.scheduledAt
+                                        const isDone = stage.status === 'done' || stage.status === 'completed'
+                                        return (
+                                          <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 8px', background: 'rgba(255,255,255,.6)', borderRadius: 4, border: '1px solid #e0e0e0', flexWrap: 'wrap' }}>
+                                            <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                              background: isDone ? '#4caf50' : stage.status === 'running' ? '#ff9800' : stage.status === 'failed' ? '#f44336' : stage.status === 'skipped' ? '#bbb' : '#90caf9',
+                                            }} />
+                                            <span style={{ fontWeight: 600 }}>{stage.name.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                                            <span style={{ color: '#888' }}>{stageDate ? new Date(stageDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span>
+                                            <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 500,
+                                              color: isDone ? '#2e7d32' : stage.status === 'running' ? '#e65100' : stage.status === 'failed' ? '#c62828' : '#888',
+                                            }}>{isDone ? 'Done' : stage.status === 'pending' ? 'Waiting' : (stage.status || '').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                                            {isDone && stage.result?.userPrincipalName && (
+                                              <span style={{ width: '100%', fontSize: 11, color: '#4caf50', paddingLeft: 16 }}>Email: {stage.result.userPrincipalName}</span>
+                                            )}
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                  {leaverM365Actions.schedule_message && !['completed', 'cancelled', 'failed'].includes(leaverM365Actions.schedule_status || '') && (
+                                    <div style={{ marginBottom: 8, padding: '6px 10px', background: 'rgba(227,242,253,.4)', borderRadius: 4, border: '1px solid #bbdefb', fontSize: 12, color: '#1565c0' }}>
+                                      {leaverM365Actions.schedule_message}
                                     </div>
                                   )}
                                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -5983,6 +6203,69 @@ export default function AdminOnboarding() {
 
       {tab === 'settings' && (
         <div style={{ background: 'var(--admin-card-bg, #fff)', borderRadius: 12, padding: 24, border: '1px solid var(--admin-border, #e0e0e0)' }}>
+          {/* Settings sub-tabs */}
+          <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--admin-border, #e0e0e0)', marginBottom: 20 }}>
+            <button onClick={() => setSettingsSubTab('workflows')}
+              style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', background: settingsSubTab === 'workflows' ? 'var(--admin-accent, #1976d2)' : 'transparent', color: settingsSubTab === 'workflows' ? '#fff' : 'inherit' }}>
+              Workflow Steps
+            </button>
+            <button onClick={() => { setSettingsSubTab('contacts'); setEditingContacts(companyContacts.length > 0 ? companyContacts.map(c => ({ ...c })) : DEFAULT_CONTACTS.map(c => ({ ...c }))); setContactsDirty(false) }}
+              style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', background: settingsSubTab === 'contacts' ? 'var(--admin-accent, #1976d2)' : 'transparent', color: settingsSubTab === 'contacts' ? '#fff' : 'inherit' }}>
+              Company Contacts
+            </button>
+          </div>
+
+          {/* ── Company Contacts sub-tab ── */}
+          {settingsSubTab === 'contacts' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div>
+                  <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700 }}>Company Contact Points</h3>
+                  <p style={{ margin: 0, fontSize: 13, color: '#888' }}>Define key contact points (IT Admin, Support, Facilities, etc.) that workflow steps can send notifications to.</p>
+                </div>
+                <button className="admin-btn-sm admin-btn-save" disabled={!contactsDirty || contactsSaving} onClick={saveCompanyContacts}
+                  style={{ minWidth: 100, opacity: contactsDirty ? 1 : 0.5 }}>
+                  {contactsSaving ? 'Saving...' : 'Save Contacts'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {editingContacts.map((c, ci) => (
+                  <div key={c.contact_key + ci} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14, border: '1px solid var(--admin-border, #e5e7eb)', borderRadius: 10, borderLeft: '4px solid #4f46e5' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <input className="admin-input" value={c.label} placeholder="Contact name (e.g. IT Admin)"
+                          onChange={e => { const u = [...editingContacts]; u[ci] = { ...u[ci], label: e.target.value }; setEditingContacts(u); setContactsDirty(true) }}
+                          style={{ flex: 1, minWidth: 140, fontWeight: 600, fontSize: 14 }} />
+                        <input className="admin-input" value={c.email} placeholder="Email address"
+                          onChange={e => { const u = [...editingContacts]; u[ci] = { ...u[ci], email: e.target.value }; setEditingContacts(u); setContactsDirty(true) }}
+                          style={{ flex: 1, minWidth: 200, fontSize: 13 }} type="email" />
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <input className="admin-input" value={c.phone || ''} placeholder="Phone (optional)"
+                          onChange={e => { const u = [...editingContacts]; u[ci] = { ...u[ci], phone: e.target.value }; setEditingContacts(u); setContactsDirty(true) }}
+                          style={{ flex: 1, minWidth: 140, fontSize: 13 }} />
+                        <input className="admin-input" value={c.notes || ''} placeholder="Notes (optional)"
+                          onChange={e => { const u = [...editingContacts]; u[ci] = { ...u[ci], notes: e.target.value }; setEditingContacts(u); setContactsDirty(true) }}
+                          style={{ flex: 2, minWidth: 200, fontSize: 13 }} />
+                      </div>
+                    </div>
+                    <button onClick={() => { setEditingContacts(editingContacts.filter((_, idx) => idx !== ci)); setContactsDirty(true) }}
+                      style={{ background: 'none', border: '1px solid #fecaca', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 12, color: '#dc2626', flexShrink: 0 }}>✕</button>
+                  </div>
+                ))}
+                <button onClick={() => {
+                  const key = `custom_${Date.now()}`
+                  setEditingContacts([...editingContacts, { contact_key: key, label: '', email: '', sort_order: editingContacts.length }])
+                  setContactsDirty(true)
+                }} style={{ background: 'none', border: '2px dashed #c7d2fe', borderRadius: 8, padding: '8px 16px', cursor: 'pointer', color: '#4f46e5', fontSize: 13, fontWeight: 600, alignSelf: 'flex-start' }}>
+                  + Add Contact
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Workflows sub-tab ── */}
+          {settingsSubTab === 'workflows' && (<>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
             <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--admin-border, #e0e0e0)' }}>
               <button
@@ -6012,8 +6295,8 @@ export default function AdminOnboarding() {
             <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 700 }}>{settingsWorkflowType === 'onboarding' ? 'Onboarding' : 'Offboarding'} Workflow Steps</h3>
             <p style={{ margin: 0, fontSize: 13, color: '#888' }}>
               {settingsWorkflowType === 'onboarding'
-                ? 'Customise the onboarding workflow for your company. Drag steps to reorder, edit titles and descriptions, or add new steps.'
-                : 'Customise the offboarding workflow. Add company-specific steps (e.g. redundancy consultation, exit survey, TUPE checklist) alongside the default steps.'}
+                ? 'Customise the onboarding workflow for your company. Drag steps to reorder, edit titles and descriptions, or add new steps. Configure notifications and meeting invites per step.'
+                : 'Customise the offboarding workflow. Add company-specific steps alongside the defaults. Configure notifications per step.'}
             </p>
           </div>
 
@@ -6022,9 +6305,17 @@ export default function AdminOnboarding() {
             const setSteps = settingsWorkflowType === 'onboarding'
               ? (u: CustomStep[]) => { setEditingSteps(u); setSettingsDirty(true) }
               : (u: CustomStep[]) => { setOffboardEditingSteps(u); setSettingsDirty(true) }
+            const allStepKeys = steps.map(s => ({ key: s.step_key, label: s.label }))
             return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0, position: 'relative' }}>
-            {steps.map((step, i) => (
+            {steps.map((step, i) => {
+              const cfg = step.step_config || {}
+              const updateCfg = (patch: Partial<StepConfig>) => {
+                const updated = [...steps]
+                updated[i] = { ...updated[i], step_config: { ...cfg, ...patch } }
+                setSteps(updated)
+              }
+              return (
               <div key={step.step_key + '-' + i}>
                 {i === 0 && (
                   <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
@@ -6108,14 +6399,118 @@ export default function AdminOnboarding() {
                           style={{ resize: 'vertical', fontSize: 13 }}
                           placeholder="Step description"
                         />
+
+                        {/* ── Notification config ── */}
+                        <div style={{ border: '1px solid #e0e7ff', borderRadius: 8, padding: 12, background: '#f8faff' }}>
+                          <div style={{ fontWeight: 600, fontSize: 12, color: '#4338ca', marginBottom: 8 }}>Notification Settings</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                            <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Type:</label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                              <input type="radio" name={`step_type_${i}`} checked={cfg.step_type === 'action' || !cfg.step_type} onChange={() => updateCfg({ step_type: 'action' })} /> Action
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                              <input type="radio" name={`step_type_${i}`} checked={cfg.step_type === 'notice'} onChange={() => updateCfg({ step_type: 'notice' })} /> Notice
+                            </label>
+                            <span style={{ fontSize: 11, color: '#888', marginLeft: 8 }}>{cfg.step_type === 'notice' ? 'Informational only' : 'Requires recipient to act'}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                            <div style={{ flex: 1, minWidth: 180 }}>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Send to (company contact)</label>
+                              <select className="admin-input" value={cfg.notify_contact_key || ''} onChange={e => updateCfg({ notify_contact_key: e.target.value || undefined, notify_email: e.target.value ? undefined : cfg.notify_email })} style={{ fontSize: 12 }}>
+                                <option value="">— Custom email —</option>
+                                {(companyContacts.length > 0 ? companyContacts : DEFAULT_CONTACTS).map(c => (
+                                  <option key={c.contact_key} value={c.contact_key}>{c.label}{c.email ? ` (${c.email})` : ''}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {!cfg.notify_contact_key && (
+                              <div style={{ flex: 1, minWidth: 200 }}>
+                                <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Email address</label>
+                                <input className="admin-input" value={cfg.notify_email || ''} onChange={e => updateCfg({ notify_email: e.target.value })} placeholder="recipient@company.com" style={{ fontSize: 12 }} type="email" />
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Subject</label>
+                            <input className="admin-input" value={cfg.notify_subject || ''} onChange={e => updateCfg({ notify_subject: e.target.value })} placeholder="{firstname} {surname} — step title" style={{ fontSize: 12, width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Message body</label>
+                            <textarea className="admin-input" value={cfg.notify_body || ''} onChange={e => updateCfg({ notify_body: e.target.value })} rows={2} placeholder="Use {firstname}, {surname}, {start_date}, {manager}, {job_title}, {department}, {leaving_date}" style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
+                          </div>
+                          <div style={{ marginBottom: 8 }}>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Requires step completed first</label>
+                            <select className="admin-input" value={cfg.requires_step || ''} onChange={e => updateCfg({ requires_step: e.target.value || undefined })} style={{ fontSize: 12 }}>
+                              <option value="">— No dependency —</option>
+                              {allStepKeys.filter(s => s.key !== step.step_key).map(s => (
+                                <option key={s.key} value={s.key}>{s.label}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* ── Meeting config (for steps like Organise First Meeting) ── */}
+                          <div style={{ marginTop: 8 }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#555', cursor: 'pointer' }}>
+                              <input type="checkbox" checked={!!cfg.meeting} onChange={e => {
+                                if (e.target.checked) {
+                                  updateCfg({ meeting: { title: 'Welcome Meeting — {firstname} {surname}', body: 'Hi {manager},\n\nPlease schedule a welcome meeting with {firstname} {surname} who is joining on {start_date}.\n\nSuggested agenda:\n- Introduction and team overview\n- First week expectations\n- IT setup and access\n- Questions and next steps\n\nPlease send a calendar invite to {firstname} and yourself.', attendees: ['manager', 'starter'] } })
+                                } else {
+                                  updateCfg({ meeting: undefined })
+                                }
+                              }} />
+                              Include meeting invite details
+                            </label>
+                            {cfg.meeting && (
+                              <div style={{ marginTop: 8, padding: 10, border: '1px solid #c7d2fe', borderRadius: 6, background: '#eef2ff' }}>
+                                <div style={{ marginBottom: 6 }}>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Meeting title</label>
+                                  <input className="admin-input" value={cfg.meeting.title || ''} onChange={e => updateCfg({ meeting: { ...cfg.meeting!, title: e.target.value } })} style={{ fontSize: 12, width: '100%' }} />
+                                </div>
+                                <div style={{ marginBottom: 6 }}>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Email body template</label>
+                                  <textarea className="admin-input" value={cfg.meeting.body || ''} onChange={e => updateCfg({ meeting: { ...cfg.meeting!, body: e.target.value } })} rows={4} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 2 }}>Attendees</label>
+                                  <div style={{ display: 'flex', gap: 12 }}>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                                      <input type="checkbox" checked={cfg.meeting.attendees?.includes('manager') ?? true} onChange={e => {
+                                        const att = cfg.meeting?.attendees || []
+                                        updateCfg({ meeting: { ...cfg.meeting!, attendees: e.target.checked ? [...att.filter(a => a !== 'manager'), 'manager'] : att.filter(a => a !== 'manager') } })
+                                      }} /> Manager
+                                    </label>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                                      <input type="checkbox" checked={cfg.meeting.attendees?.includes('starter') ?? true} onChange={e => {
+                                        const att = cfg.meeting?.attendees || []
+                                        updateCfg({ meeting: { ...cfg.meeting!, attendees: e.target.checked ? [...att.filter(a => a !== 'starter'), 'starter'] : att.filter(a => a !== 'starter') } })
+                                      }} /> New Starter
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#888' }}>Placeholders: <code style={{ fontSize: 10 }}>{'{firstname}'} {'{surname}'} {'{start_date}'} {'{manager}'} {'{job_title}'} {'{department}'} {'{leaving_date}'}</code></div>
+
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button className="admin-btn-sm admin-btn-save" onClick={() => setEditingIdx(null)}>Done</button>
                         </div>
                       </div>
                     ) : (
                       <>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: '#1e1e2d' }}>{step.label}</div>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: '#1e1e2d' }}>
+                          {step.label}
+                          {(cfg.notify_email || cfg.notify_contact_key) && <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 4, background: cfg.step_type === 'notice' ? '#e0f2fe' : '#ede9fe', color: cfg.step_type === 'notice' ? '#0369a1' : '#6d28d9', fontWeight: 600 }}>{cfg.step_type === 'notice' ? 'Notice' : 'Action'}</span>}
+                          {cfg.meeting && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Meeting</span>}
+                          {cfg.requires_step && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>Requires: {allStepKeys.find(s => s.key === cfg.requires_step)?.label || cfg.requires_step}</span>}
+                        </div>
                         <div style={{ fontSize: 12, color: '#888', marginTop: 2, lineHeight: 1.4 }}>{step.description}</div>
+                        {(cfg.notify_email || cfg.notify_contact_key) && (
+                          <div style={{ fontSize: 11, color: '#6366f1', marginTop: 4 }}>
+                            Notifies: {cfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === cfg.notify_contact_key)?.label || cfg.notify_contact_key) : cfg.notify_email}
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -6155,7 +6550,8 @@ export default function AdminOnboarding() {
                   >+</button>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
             )
           })()}
@@ -6180,6 +6576,7 @@ export default function AdminOnboarding() {
               Using default offboarding workflow ({OFFBOARD_STEPS.length} steps). Click Save Changes to customise for this company.
             </div>
           )}
+          </>)}
         </div>
       )}
 
