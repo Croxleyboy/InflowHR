@@ -5229,12 +5229,12 @@ export default function AdminOnboarding() {
                                           {result.balanceStatus === 'overtaken' ? 'Clawback Value' : 'Total Cost to Company'}
                                         </div>
                                         <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>
-                                          {currencySymbol}{result.balanceStatus === 'overtaken' ? result.clawbackValue.toFixed(2) : result.totalEmployerCost.toFixed(2)}
+                                          {currencySymbol(currency)}{result.balanceStatus === 'overtaken' ? result.clawbackValue.toFixed(2) : result.totalEmployerCost.toFixed(2)}
                                         </div>
                                         <div style={{ fontSize: 11, color: '#888' }}>
                                           {result.balanceStatus === 'overtaken'
                                             ? `Clawback ${result.clawbackPermitted === 'yes' ? 'permitted' : 'check contract'}`
-                                            : `Gross ${currencySymbol}${result.grossPayout.toFixed(2)} + NI + pension`
+                                            : `Gross ${currencySymbol(currency)}${result.grossPayout.toFixed(2)} + NI + pension`
                                           }
                                         </div>
                                       </div>
@@ -5272,18 +5272,18 @@ export default function AdminOnboarding() {
                                         </div>
                                         <div style={{ marginBottom: 12 }}>
                                           <strong>5. Cost</strong>
-                                          <div>Day rate: {currencySymbol}{result.dayRate.toFixed(2)}</div>
+                                          <div>Day rate: {currencySymbol(currency)}{result.dayRate.toFixed(2)}</div>
                                           {result.balanceStatus === 'owed' && (
                                             <>
-                                              <div>Gross payout: {currencySymbol}{result.grossPayout.toFixed(2)}</div>
-                                              <div>Employer NI (13.8%): {currencySymbol}{result.employerNI.toFixed(2)}</div>
-                                              <div>Employer pension: {currencySymbol}{result.employerPension.toFixed(2)}</div>
-                                              <div><strong>Total employer cost: {currencySymbol}{result.totalEmployerCost.toFixed(2)}</strong></div>
+                                              <div>Gross payout: {currencySymbol(currency)}{result.grossPayout.toFixed(2)}</div>
+                                              <div>Employer NI (13.8%): {currencySymbol(currency)}{result.employerNI.toFixed(2)}</div>
+                                              <div>Employer pension: {currencySymbol(currency)}{result.employerPension.toFixed(2)}</div>
+                                              <div><strong>Total employer cost: {currencySymbol(currency)}{result.totalEmployerCost.toFixed(2)}</strong></div>
                                             </>
                                           )}
                                           {result.balanceStatus === 'overtaken' && (
                                             <>
-                                              <div>Clawback value: {currencySymbol}{result.clawbackValue.toFixed(2)}</div>
+                                              <div>Clawback value: {currencySymbol(currency)}{result.clawbackValue.toFixed(2)}</div>
                                               <div>Clawback permitted: {result.clawbackPermitted}</div>
                                             </>
                                           )}
