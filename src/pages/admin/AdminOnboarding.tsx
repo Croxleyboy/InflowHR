@@ -11,6 +11,7 @@ import * as XLSX from 'xlsx'
 import CompanySetupWizard from './CompanySetupWizard'
 import { validateNINumber, validateSortCode, validateAccountNumber } from '../../lib/validators'
 import { toLocalDateStr, currencySymbol } from '../../lib/formatters'
+import { calculateLeaverFinancials as runLeaverCalc, type LeaverCalcInput, type LeaverCalcResult } from '../../lib/leaverCalculator'
 
 const PAGE_SIZE = 30
 
@@ -37,6 +38,9 @@ interface OffboardRecord {
   cleanup_benefits_done: boolean
   cleanup_assets_done: boolean
   custom_steps_completed: Record<string, boolean>
+  notice_given_by: 'employee' | 'employer' | null
+  notice_given_date: string | null
+  leaver_calc_result: LeaverCalcResult | null
 }
 
 interface FrozenEmployee {
@@ -74,7 +78,7 @@ interface DeletionCertificate {
 }
 
 const OFFBOARD_STEPS = [
-  { key: 'approve_resignation', label: 'Approve Resignation', icon: '📝', description: 'Review and formally approve the employee resignation or termination. Update HR records with the leaving reason and confirm final working date.', role: 'HR' },
+  { key: 'approve_resignation', label: 'Approve Resignation / Redundancy', icon: '📝', description: 'Review and formally approve the employee resignation or termination. Update HR records with the leaving reason and confirm final working date. Use the leaver financial calculator to work out holiday balance and costs.', role: 'HR' },
   { key: 'recover_equipment', label: 'Recover Equipment', icon: '💻', description: 'Collect all company equipment — laptop, monitor, phone, building pass, keys, parking permit. Complete the asset return checklist and update the inventory register.', role: 'HR' },
   { key: 'leaving_meeting', label: 'Organise Leaving Meeting', icon: '🤝', description: 'Schedule an exit interview and farewell meeting with the line manager. Cover handover tasks, knowledge transfer, and gather feedback on their experience.', role: 'Manager' },
   { key: 'convert_shared_mailbox', label: 'Convert to Shared Mailbox', icon: '📬', description: 'Convert the leaver\'s mailbox to a shared mailbox so colleagues can continue to access their emails without consuming a licence. This step can be skipped if not required.', role: 'HR' },
@@ -364,6 +368,11 @@ export default function AdminOnboarding() {
   const [offboardForm, setOffboardForm] = useState({ end_date: '', reason: '' })
   const [expandedCompletedId, setExpandedCompletedId] = useState<number | null>(null)
   const [timingWarningStep, setTimingWarningStep] = useState<string | null>(null)
+
+  // Leaver financial calculator
+  const [leaverCalcLoading, setLeaverCalcLoading] = useState(false)
+  const [leaverCalcResult, setLeaverCalcResult] = useState<LeaverCalcResult | null>(null)
+  const [leaverCalcError, setLeaverCalcError] = useState('')
 
   // Leaver review step data
   const [reviewShifts, setReviewShifts] = useState<{ id: number; date: string; shift_name: string; rota_name: string }[]>([])
@@ -968,6 +977,8 @@ export default function AdminOnboarding() {
     setOffboardSelectedId(record.id)
     setOffboardChecks(record.workflow_steps || {})
     setOffboardSkips(record.skipped_steps || {})
+    setLeaverCalcResult(record.leaver_calc_result || null)
+    setLeaverCalcError('')
     const doneCount = OFFBOARD_STEPS.filter(s => record.workflow_steps?.[s.key] || record.skipped_steps?.[s.key]).length
     const nextStep = record.is_complete ? OFFBOARD_STEPS.length - 1 : Math.min(doneCount, OFFBOARD_STEPS.length - 1)
     setOffboardStep(nextStep)
@@ -1268,6 +1279,91 @@ export default function AdminOnboarding() {
     await supabase.from('offboarding').update({ cleanup_assets_done: true }).eq('id', record.id)
     completeOffboardStep('review_assets')
     showSuccess('Company assets confirmed as accounted for')
+  }
+
+  async function calculateLeaverFinancials(record: OffboardRecord) {
+    setLeaverCalcLoading(true)
+    setLeaverCalcError('')
+    try {
+      const { data: emp } = await supabase.from('employees')
+        .select('id, first_name, last_name, start_date, annual_salary, hourly_rate, contracted_days, weekly_hours, notice_period, employment_category, leave_allowance, contract_type')
+        .eq('id', record.employee_id).single()
+      if (!emp) throw new Error('Employee not found')
+
+      const { data: co } = await supabase.from('companies')
+        .select('fy_start_month, bank_holiday_treatment, bank_holidays_per_year, leave_payout_policy, leave_clawback_clause, employer_pension_rate')
+        .eq('id', record.company_id).single()
+
+      const fyMonth = co?.fy_start_month || 4
+      const now = new Date()
+      let fyStartYear = now.getFullYear()
+      const fyStartThisYear = new Date(fyStartYear, fyMonth - 1, 1)
+      if (fyStartThisYear > now) fyStartYear--
+      const leaveYearStart = `${fyStartYear}-${String(fyMonth).padStart(2, '0')}-01`
+
+      const { data: balances } = await supabase.from('leave_balances')
+        .select('used, carried_over, total_allowance')
+        .eq('employee_id', record.employee_id)
+        .eq('year', fyStartYear)
+
+      const leaveTaken = (balances || []).reduce((s, b) => s + (b.used || 0), 0)
+      const carryOver = (balances || []).reduce((s, b) => s + (b.carried_over || 0), 0)
+
+      const { data: futureLeave } = await supabase.from('leave_requests')
+        .select('start_date, end_date, days_requested, status')
+        .eq('employee_id', record.employee_id)
+        .in('status', ['approved', 'pending'])
+        .gte('start_date', new Date().toISOString().slice(0, 10))
+
+      const leaveBooked = (futureLeave || []).map(r => ({
+        startDate: r.start_date,
+        endDate: r.end_date,
+        days: r.days_requested || 1,
+      }))
+
+      const contractedDays = emp.contracted_days as boolean[] | null
+      const daysPerWeek = contractedDays ? contractedDays.filter(Boolean).length : 5
+
+      const payType = emp.hourly_rate && !emp.annual_salary ? 'hourly' as const : 'salaried' as const
+
+      const input: LeaverCalcInput = {
+        employeeName: record.employee_name,
+        employeeId: record.employee_id,
+        startDate: emp.start_date || record.created_at.slice(0, 10),
+        noticeGivenBy: record.notice_given_by || 'employee',
+        noticeGivenDate: record.notice_given_date || record.created_at.slice(0, 10),
+        noticePeriod: emp.notice_period,
+        agreedLeavingDate: record.end_date,
+        daysPerWeek,
+        hoursPerWeek: emp.weekly_hours || (daysPerWeek * 7.5),
+        payType,
+        annualSalary: emp.annual_salary,
+        hourlyRate: emp.hourly_rate,
+        annualEntitlement: emp.leave_allowance || 28,
+        bankHolidayTreatment: (co?.bank_holiday_treatment as LeaverCalcInput['bankHolidayTreatment']) || 'additional',
+        bankHolidaysInYear: co?.bank_holidays_per_year || 8,
+        leaveYearStart,
+        carryOver,
+        leaveTaken,
+        leaveBooked,
+        payoutPolicy: (co?.leave_payout_policy as LeaverCalcInput['payoutPolicy']) || 'pay_out',
+        clawbackClause: co?.leave_clawback_clause || false,
+        employerPensionRate: co?.employer_pension_rate || 3,
+      }
+
+      const result = runLeaverCalc(input)
+      setLeaverCalcResult(result)
+
+      await supabase.from('offboarding').update({ leaver_calc_result: result }).eq('id', record.id)
+
+      setOffboardRecords(prev => prev.map(r =>
+        r.id === record.id ? { ...r, leaver_calc_result: result } : r
+      ))
+    } catch (err: any) {
+      setLeaverCalcError(err.message || 'Calculation failed')
+    } finally {
+      setLeaverCalcLoading(false)
+    }
   }
 
   async function generateDataExport(record: OffboardRecord) {
@@ -4487,7 +4583,7 @@ export default function AdminOnboarding() {
                               <div style={{ margin: '8px 0', padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }} onClick={e => e.stopPropagation()}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                   <span style={{ fontSize: 12, color: '#4338ca', fontWeight: 600 }}>
-                                    {offCfg.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {offCfg.notify_starter ? `${record.firstname} ${record.surname}` : offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
+                                    {offCfg.step_type === 'notice' ? '📢 Notice' : '⚡ Action'}: {offCfg.notify_starter ? record.employee_name : offCfg.notify_contact_key ? (companyContacts.find(c => c.contact_key === offCfg.notify_contact_key)?.label || offCfg.notify_contact_key) : offCfg.notify_email}
                                   </span>
                                   {offCfg.requires_step && !offReqDone && <span style={{ fontSize: 11, color: '#dc2626' }}>Requires: {OFFBOARD_STEPS.find(s => s.key === offCfg.requires_step)?.label || offCfg.requires_step}</span>}
                                   <button
@@ -5078,6 +5174,140 @@ export default function AdminOnboarding() {
                               )}
                             </div>
                           )}
+                          {/* Leaver Financial Calculator — approve_resignation step only */}
+                          {step.key === 'approve_resignation' && !done && !skipped && (() => {
+                            const saved = record.leaver_calc_result
+                            const result = leaverCalcResult || saved
+                            return (
+                              <div style={{ margin: '12px 0', padding: 16, background: 'linear-gradient(135deg, #f8f9ff, #f0f4ff)', borderRadius: 12, border: '1px solid #c5cae9' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1565c0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                                  <strong style={{ fontSize: 14, color: '#1a1a2e' }}>Leaver Holiday & Pay Calculator</strong>
+                                  <span style={{ fontSize: 11, color: '#666', marginLeft: 'auto' }}>UK Working Time Regulations 1998</span>
+                                </div>
+
+                                {!record.notice_given_by && !record.end_date && (
+                                  <div style={{ padding: '10px 14px', background: '#fff8e1', borderRadius: 8, marginBottom: 12, fontSize: 13, border: '1px solid #ffe082' }}>
+                                    <strong style={{ color: '#e65100' }}>Notice details needed:</strong> Set the leaving date or notice details on this record before calculating. The calculator uses the offboarding end date if set, otherwise it derives the leaving date from the notice period.
+                                  </div>
+                                )}
+
+                                <button
+                                  className="admin-btn-sm admin-btn-primary"
+                                  disabled={leaverCalcLoading}
+                                  onClick={e => { e.stopPropagation(); calculateLeaverFinancials(record) }}
+                                  style={{ marginBottom: result ? 12 : 0 }}
+                                >
+                                  {leaverCalcLoading ? 'Calculating...' : result ? 'Recalculate' : 'Calculate Holiday Balance & Costs'}
+                                </button>
+
+                                {leaverCalcError && (
+                                  <div style={{ padding: '8px 12px', background: '#ffebee', borderRadius: 8, marginTop: 8, fontSize: 13, color: '#c62828' }}>
+                                    {leaverCalcError}
+                                  </div>
+                                )}
+
+                                {result && (
+                                  <div style={{ marginTop: 8 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, marginBottom: 12 }}>
+                                      <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
+                                        <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>Leaving Date</div>
+                                        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>{new Date(result.leavingDate + 'T00:00:00').toLocaleDateString('en-GB')}</div>
+                                        <div style={{ fontSize: 11, color: '#888' }}>{result.noticePeriodApplied}</div>
+                                      </div>
+                                      <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
+                                        <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>Holiday Balance</div>
+                                        <div style={{ fontSize: 16, fontWeight: 700, color: result.balanceStatus === 'owed' ? '#2e7d32' : result.balanceStatus === 'overtaken' ? '#c62828' : '#666' }}>
+                                          {result.balanceDays > 0 ? '+' : ''}{result.balanceDays} days
+                                        </div>
+                                        <div style={{ fontSize: 11, color: '#888' }}>
+                                          {result.balanceStatus === 'owed' ? 'Owed to employee' : result.balanceStatus === 'overtaken' ? 'Overtaken by employee' : 'Nil balance'}
+                                        </div>
+                                      </div>
+                                      <div style={{ background: '#fff', borderRadius: 10, padding: 12, border: '1px solid #e0e0e0' }}>
+                                        <div style={{ fontSize: 11, color: '#666', marginBottom: 2 }}>
+                                          {result.balanceStatus === 'overtaken' ? 'Clawback Value' : 'Total Cost to Company'}
+                                        </div>
+                                        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a2e' }}>
+                                          {currencySymbol}{result.balanceStatus === 'overtaken' ? result.clawbackValue.toFixed(2) : result.totalEmployerCost.toFixed(2)}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: '#888' }}>
+                                          {result.balanceStatus === 'overtaken'
+                                            ? `Clawback ${result.clawbackPermitted === 'yes' ? 'permitted' : 'check contract'}`
+                                            : `Gross ${currencySymbol}${result.grossPayout.toFixed(2)} + NI + pension`
+                                          }
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <details style={{ background: '#fff', borderRadius: 10, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
+                                      <summary style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1565c0' }}>View Full Breakdown</summary>
+                                      <div style={{ padding: '12px 14px', fontSize: 13, lineHeight: 1.6 }}>
+                                        <div style={{ marginBottom: 12 }}>
+                                          <strong>1. Key Dates</strong>
+                                          <div>Leave year: {new Date(result.leaveYearStart + 'T00:00:00').toLocaleDateString('en-GB')} to {new Date(result.leaveYearEnd + 'T00:00:00').toLocaleDateString('en-GB')}</div>
+                                          <div>Leaving date: {new Date(result.leavingDate + 'T00:00:00').toLocaleDateString('en-GB')} ({result.noticeBasis})</div>
+                                        </div>
+                                        <div style={{ marginBottom: 12 }}>
+                                          <strong>2. Entitlement</strong>
+                                          <div>Full-year entitlement: {result.fullYearEntitlement} days (statutory min: {result.statutoryMinimum} — {result.statutoryCheck})</div>
+                                          <div>Pro-rata accrued: {result.accruedDays} days ({result.daysElapsed}/{result.daysInYear} of year)</div>
+                                          <div>Carry-over: {result.carryOverDays} days</div>
+                                          <div><strong>Total available: {result.totalAvailable} days</strong></div>
+                                        </div>
+                                        <div style={{ marginBottom: 12 }}>
+                                          <strong>3. Leave Used</strong>
+                                          <div>Already taken: {result.leaveTakenDays} days</div>
+                                          <div>Booked before leaving: {result.leaveBookedBeforeLeavingDays} days</div>
+                                          <div>Bank holidays: {result.bankHolidaysUsed} days</div>
+                                          <div><strong>Total used: {result.totalUsed} days</strong></div>
+                                          {result.leaveToCancel.length > 0 && (
+                                            <div style={{ color: '#c62828', marginTop: 4 }}>To cancel: {result.leaveToCancel.join('; ')}</div>
+                                          )}
+                                        </div>
+                                        <div style={{ marginBottom: 12 }}>
+                                          <strong>4. Balance</strong>
+                                          <div>Unrounded: {result.balanceUnrounded} days</div>
+                                          <div>Rounded (nearest half day): <strong>{result.balanceDays} days</strong> ({result.balanceHours} hours)</div>
+                                        </div>
+                                        <div style={{ marginBottom: 12 }}>
+                                          <strong>5. Cost</strong>
+                                          <div>Day rate: {currencySymbol}{result.dayRate.toFixed(2)}</div>
+                                          {result.balanceStatus === 'owed' && (
+                                            <>
+                                              <div>Gross payout: {currencySymbol}{result.grossPayout.toFixed(2)}</div>
+                                              <div>Employer NI (13.8%): {currencySymbol}{result.employerNI.toFixed(2)}</div>
+                                              <div>Employer pension: {currencySymbol}{result.employerPension.toFixed(2)}</div>
+                                              <div><strong>Total employer cost: {currencySymbol}{result.totalEmployerCost.toFixed(2)}</strong></div>
+                                            </>
+                                          )}
+                                          {result.balanceStatus === 'overtaken' && (
+                                            <>
+                                              <div>Clawback value: {currencySymbol}{result.clawbackValue.toFixed(2)}</div>
+                                              <div>Clawback permitted: {result.clawbackPermitted}</div>
+                                            </>
+                                          )}
+                                        </div>
+                                        {result.flags.length > 0 && (
+                                          <div>
+                                            <strong>6. Notes & Assumptions</strong>
+                                            <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                                              {result.flags.map((f, i) => <li key={i} style={{ marginBottom: 2 }}>{f}</li>)}
+                                            </ul>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </details>
+
+                                    <div style={{ fontSize: 11, color: '#999', marginTop: 8 }}>
+                                      Calculated {new Date(result.calculatedAt).toLocaleDateString('en-GB')} {new Date(result.calculatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} — all data processed locally, nothing sent externally
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })()}
+
                           <div className="admin-wf-actions">
                             {done ? (
                               <button className="admin-btn-sm admin-btn-cancel" onClick={e => { e.stopPropagation(); uncompleteOffboardStep(step.key) }}>Undo</button>
