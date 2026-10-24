@@ -947,6 +947,7 @@ Deno.serve(async (req) => {
           schedule_next_due_at: mockSchedule.nextDueAt,
           schedule_updated_at: new Date().toISOString(),
           schedule_options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
+          external_ref: `starter-${onboarding_id}`,
           run_status: 'scheduled',
           updated_at: new Date().toISOString(),
         }, { onConflict: 'onboarding_id' })
@@ -970,6 +971,7 @@ Deno.serve(async (req) => {
               schedule_stages: sched.stages,
               schedule_next_due_at: sched.nextDueAt,
               schedule_updated_at: sched.updatedAt,
+              external_ref: `starter-${onboarding_id}`,
               run_status: 'scheduled',
               updated_at: new Date().toISOString(),
             }, { onConflict: 'onboarding_id' })
@@ -999,6 +1001,7 @@ Deno.serve(async (req) => {
         schedule_next_due_at: sched.nextDueAt,
         schedule_updated_at: sched.updatedAt || new Date().toISOString(),
         schedule_options: { prepareDaysBefore: options?.prepareDaysBefore || 3 },
+        external_ref: `starter-${onboarding_id}`,
         run_status: 'scheduled',
         updated_at: new Date().toISOString(),
       }, { onConflict: 'onboarding_id' })
