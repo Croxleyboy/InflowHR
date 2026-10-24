@@ -16,10 +16,30 @@ interface AllCompanyStats {
   subsTimesheets: number
   subsPerformance: number
   subsSpaceBooking: number
+  subsSurveys: number
+  subsAssets: number
+  subsElearning: number
+  subsCheckIn: number
   totalOnboarders: number
   totalAnnouncements: number
   totalTickets: number
   totalBenefitTypes: number
+  totalNotifications: number
+  unreadNotifications: number
+  actionNotifications: number
+  totalKudos: number
+  totalKudosLikes: number
+  totalSurveyDeployments: number
+  totalSurveyResponses: number
+  totalSurveyRecipients: number
+  totalOneToOnes: number
+  completedOneToOnes: number
+  totalGoals: number
+  activeGoals: number
+  totalSpaceBookings: number
+  todaySpaceBookings: number
+  totalLeavers: number
+  totalMovers: number
 }
 
 interface CompanyStats {
@@ -66,12 +86,28 @@ export default function AdminDashboard() {
 
   async function loadSuperAdminStats() {
     setLoading(true)
-    const [metricsRes, compRes, featRes, annRes, benRes] = await Promise.all([
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const [metricsRes, compRes, featRes, annRes, benRes, notifRes, unreadNotifRes, actionNotifRes, kudosRes, kudosLikesRes, surveyDepRes, surveyRespRes, otoRes, otoCompRes, goalsRes, activeGoalsRes, bookingsRes, todayBookingsRes, leaverRes, moverRes] = await Promise.all([
       supabase.rpc('get_all_company_metrics'),
       supabase.from('companies').select('id', { count: 'exact', head: true }),
       supabase.from('company_features').select('feature_key, company_id').eq('is_enabled', true),
       supabase.from('announcements').select('id', { count: 'exact', head: true }),
       supabase.from('benefit_types').select('id', { count: 'exact', head: true }),
+      supabase.from('notifications').select('id', { count: 'exact', head: true }),
+      supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('is_read', false),
+      supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('type', 'action').eq('is_read', false),
+      supabase.from('kudos').select('id', { count: 'exact', head: true }),
+      supabase.from('kudos').select('like_count'),
+      supabase.from('survey_deployments').select('id, total_recipients, total_responses'),
+      supabase.from('survey_responses').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+      supabase.from('one_to_one_meetings').select('id', { count: 'exact', head: true }),
+      supabase.from('one_to_one_meetings').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+      supabase.from('performance_goals').select('id', { count: 'exact', head: true }),
+      supabase.from('performance_goals').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      supabase.from('space_bookings').select('id', { count: 'exact', head: true }),
+      supabase.from('space_bookings').select('id', { count: 'exact', head: true }).eq('booking_date', todayStr),
+      supabase.from('offboarding').select('id', { count: 'exact', head: true }),
+      supabase.from('role_changes').select('id', { count: 'exact', head: true }),
     ])
     const metrics = (metricsRes.data || []) as { employee_count: number; total_employees: number; open_tickets: number; pending_onboarding: number }[]
     const totalEmployees = metrics.reduce((s, m) => s + (m.total_employees || 0), 0)
@@ -79,6 +115,12 @@ export default function AdminDashboard() {
     const totalOnboarders = metrics.reduce((s, m) => s + (m.pending_onboarding || 0), 0)
     const features = (featRes.data || []) as { feature_key: string; company_id: string }[]
     const countFeature = (key: string) => features.filter(f => f.feature_key === key).length
+
+    const surveyDeps = (surveyDepRes.data || []) as { id: string; total_recipients: number; total_responses: number }[]
+    const totalSurveyRecipients = surveyDeps.reduce((s, d) => s + (d.total_recipients || 0), 0)
+    const totalSurveyResponses = surveyDeps.reduce((s, d) => s + (d.total_responses || 0), 0)
+    const totalKudosLikes = ((kudosLikesRes.data || []) as { like_count: number }[]).reduce((s, k) => s + (k.like_count || 0), 0)
+
     setAllStats({
       totalEmployees,
       totalCompanies: compRes.count ?? 0,
@@ -89,10 +131,30 @@ export default function AdminDashboard() {
       subsTimesheets: countFeature('timesheets'),
       subsPerformance: countFeature('performance'),
       subsSpaceBooking: countFeature('space_booking'),
+      subsSurveys: countFeature('surveys'),
+      subsAssets: countFeature('asset_management'),
+      subsElearning: countFeature('elearning'),
+      subsCheckIn: countFeature('check_in'),
       totalOnboarders,
       totalAnnouncements: annRes.count ?? 0,
       totalTickets,
       totalBenefitTypes: benRes.count ?? 0,
+      totalNotifications: notifRes.count ?? 0,
+      unreadNotifications: unreadNotifRes.count ?? 0,
+      actionNotifications: actionNotifRes.count ?? 0,
+      totalKudos: kudosRes.count ?? 0,
+      totalKudosLikes,
+      totalSurveyDeployments: surveyDeps.length,
+      totalSurveyResponses,
+      totalSurveyRecipients,
+      totalOneToOnes: otoRes.count ?? 0,
+      completedOneToOnes: otoCompRes.count ?? 0,
+      totalGoals: goalsRes.count ?? 0,
+      activeGoals: activeGoalsRes.count ?? 0,
+      totalSpaceBookings: bookingsRes.count ?? 0,
+      todaySpaceBookings: todayBookingsRes.count ?? 0,
+      totalLeavers: leaverRes.count ?? 0,
+      totalMovers: moverRes.count ?? 0,
     })
     setLoading(false)
   }
@@ -546,6 +608,27 @@ function CompanyDash({
 }
 
 function SuperAdminDash({ stats, navigate, archives }: { stats: AllCompanyStats; navigate: (p: string) => void; archives: ArchiveFile[] }) {
+  const surveyCompletionRate = stats.totalSurveyRecipients > 0 ? Math.round((stats.totalSurveyResponses / stats.totalSurveyRecipients) * 100) : 0
+  const otoCompletionRate = stats.totalOneToOnes > 0 ? Math.round((stats.completedOneToOnes / stats.totalOneToOnes) * 100) : 0
+
+  const cards: { label: string; value: number; color: string; path: string; subtitle?: string; suffix?: string }[] = [
+    { label: 'Total Employees', value: stats.totalEmployees, color: '#1565c0', path: '/admin/employees' },
+    { label: 'Companies', value: stats.totalCompanies, color: '#2e7d32', path: '/admin/subscriptions' },
+    { label: 'New Onboarders', value: stats.totalOnboarders, color: '#e91e63', path: '/admin/onboarding' },
+    { label: 'Leavers', value: stats.totalLeavers, color: '#8e24aa', path: '/admin/onboarding' },
+    { label: 'Movers', value: stats.totalMovers, color: '#00838f', path: '/admin/onboarding' },
+    { label: 'Notifications', value: stats.totalNotifications, color: '#5c6bc0', path: '/admin/employees', subtitle: `${stats.unreadNotifications} unread` },
+    { label: 'Pending Actions', value: stats.actionNotifications, color: '#d84315', path: '/admin/employees', subtitle: 'unread action items' },
+    { label: 'Kudos Given', value: stats.totalKudos, color: '#fbc02d', path: '/admin/kudos', subtitle: `${stats.totalKudosLikes} likes` },
+    { label: 'Surveys', value: stats.totalSurveyDeployments, color: '#26a69a', path: '/admin/surveys', subtitle: `${surveyCompletionRate}% completion` },
+    { label: 'Performance 1:1s', value: stats.totalOneToOnes, color: '#c62828', path: '/admin/performance', subtitle: `${otoCompletionRate}% completed` },
+    { label: 'Goals', value: stats.totalGoals, color: '#ef6c00', path: '/admin/performance', subtitle: `${stats.activeGoals} active` },
+    { label: 'Room Bookings', value: stats.totalSpaceBookings, color: '#4527a0', path: '/admin/space-management', subtitle: `${stats.todaySpaceBookings} today` },
+    { label: 'Announcements', value: stats.totalAnnouncements, color: '#00897b', path: '/admin/announcements' },
+    { label: 'Tickets Raised', value: stats.totalTickets, color: '#37474f', path: '/admin/tickets' },
+    { label: 'Benefit Types', value: stats.totalBenefitTypes, color: '#6a1b9a', path: '/admin/benefits' },
+  ]
+
   const featureSubs = [
     { label: 'Payroll', value: stats.subsPayroll, color: '#1565c0' },
     { label: 'Benefits', value: stats.subsBenefits, color: '#7b1fa2' },
@@ -554,6 +637,10 @@ function SuperAdminDash({ stats, navigate, archives }: { stats: AllCompanyStats;
     { label: 'Timesheets', value: stats.subsTimesheets, color: '#0277bd' },
     { label: 'Performance', value: stats.subsPerformance, color: '#c62828' },
     { label: 'Space Booking', value: stats.subsSpaceBooking, color: '#4527a0' },
+    { label: 'Surveys', value: stats.subsSurveys, color: '#26a69a' },
+    { label: 'Asset Management', value: stats.subsAssets, color: '#ef6c00' },
+    { label: 'E-Learning', value: stats.subsElearning, color: '#2e7d32' },
+    { label: 'Check-In', value: stats.subsCheckIn, color: '#5c6bc0' },
   ]
   const maxSub = Math.max(...featureSubs.map(f => f.value), 1)
 
@@ -564,61 +651,25 @@ function SuperAdminDash({ stats, navigate, archives }: { stats: AllCompanyStats;
         <p>All-company metrics across InflowHR</p>
       </div>
 
-      <div className="sa-dash-grid">
-        <button className="sa-dash-card" onClick={() => navigate('/admin/employees')}>
-          <div className="sa-dash-card-icon" style={{ background: '#1565c0' }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          </div>
-          <div className="sa-dash-card-body">
-            <span className="sa-dash-card-value">{stats.totalEmployees}</span>
-            <span className="sa-dash-card-label">Total Employees</span>
-          </div>
-        </button>
-        <button className="sa-dash-card" onClick={() => navigate('/admin/subscriptions')}>
-          <div className="sa-dash-card-icon" style={{ background: '#2e7d32' }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          </div>
-          <div className="sa-dash-card-body">
-            <span className="sa-dash-card-value">{stats.totalCompanies}</span>
-            <span className="sa-dash-card-label">Companies</span>
-          </div>
-        </button>
-        <button className="sa-dash-card" onClick={() => navigate('/admin/onboarding')}>
-          <div className="sa-dash-card-icon" style={{ background: '#e91e63' }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
-          </div>
-          <div className="sa-dash-card-body">
-            <span className="sa-dash-card-value">{stats.totalOnboarders}</span>
-            <span className="sa-dash-card-label">New Onboarders</span>
-          </div>
-        </button>
-        <button className="sa-dash-card" onClick={() => navigate('/admin/announcements')}>
-          <div className="sa-dash-card-icon" style={{ background: '#7b1fa2' }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3zm-8.27 4a2 2 0 0 1-3.46 0"/></svg>
-          </div>
-          <div className="sa-dash-card-body">
-            <span className="sa-dash-card-value">{stats.totalAnnouncements}</span>
-            <span className="sa-dash-card-label">Announcements</span>
-          </div>
-        </button>
-        <button className="sa-dash-card" onClick={() => navigate('/admin/tickets')}>
-          <div className="sa-dash-card-icon" style={{ background: '#00897b' }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          </div>
-          <div className="sa-dash-card-body">
-            <span className="sa-dash-card-value">{stats.totalTickets}</span>
-            <span className="sa-dash-card-label">Tickets Raised</span>
-          </div>
-        </button>
-        <button className="sa-dash-card" onClick={() => navigate('/admin/benefits')}>
-          <div className="sa-dash-card-icon" style={{ background: '#ef6c00' }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4"/><circle cx="8" cy="21" r="1"/><circle cx="18" cy="21" r="1"/><path d="M1 16h22"/></svg>
-          </div>
-          <div className="sa-dash-card-body">
-            <span className="sa-dash-card-value">{stats.totalBenefitTypes}</span>
-            <span className="sa-dash-card-label">Benefit Types</span>
-          </div>
-        </button>
+      <div className="cd-grid">
+        {cards.map(c => (
+          <button key={c.label} className="cd-card" onClick={() => navigate(c.path)}>
+            <div className="cd-card-top">
+              <div className="cd-card-meta">
+                <span className="cd-card-label">{c.label}</span>
+                <span className="cd-card-value" style={{ color: c.color }}>
+                  {c.value}{c.suffix || ''}
+                </span>
+              </div>
+              <div className="cd-card-icon" style={{ background: c.color }}>
+                <span style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{c.value}{c.suffix || ''}</span>
+              </div>
+            </div>
+            {c.subtitle && (
+              <div style={{ fontSize: 12, color: '#8b8fa3', marginTop: 6 }}>{c.subtitle}</div>
+            )}
+          </button>
+        ))}
       </div>
 
       <div className="sa-dash-chart-section">

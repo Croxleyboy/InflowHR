@@ -5240,6 +5240,15 @@ export default function AdminOnboarding() {
                                       </div>
                                     </div>
 
+                                    {result.flags.some(f => f.startsWith('WARNING:')) && (
+                                      <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <span style={{ fontSize: 18 }}>&#9888;</span>
+                                        <span style={{ fontSize: 12, color: '#856404', fontWeight: 600 }}>
+                                          Missing employee data — costs may be inaccurate. See notes below.
+                                        </span>
+                                      </div>
+                                    )}
+
                                     <details style={{ background: '#fff', borderRadius: 10, border: '1px solid #e0e0e0', overflow: 'hidden' }}>
                                       <summary style={{ padding: '10px 14px', cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1565c0' }}>View Full Breakdown</summary>
                                       <div style={{ padding: '12px 14px', fontSize: 13, lineHeight: 1.6 }}>
@@ -5290,9 +5299,23 @@ export default function AdminOnboarding() {
                                         </div>
                                         {result.flags.length > 0 && (
                                           <div>
+                                            {result.flags.some(f => f.startsWith('WARNING:')) && (
+                                              <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 6, padding: '8px 12px', marginBottom: 10 }}>
+                                                <strong style={{ color: '#856404' }}>Missing Data</strong>
+                                                <ul style={{ margin: '4px 0 0', paddingLeft: 18, color: '#856404' }}>
+                                                  {result.flags.filter(f => f.startsWith('WARNING:')).map((f, i) => (
+                                                    <li key={i} style={{ marginBottom: 2 }}>{f.replace('WARNING: ', '')}</li>
+                                                  ))}
+                                                </ul>
+                                              </div>
+                                            )}
                                             <strong>6. Notes & Assumptions</strong>
                                             <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                                              {result.flags.map((f, i) => <li key={i} style={{ marginBottom: 2 }}>{f}</li>)}
+                                              {result.flags.filter(f => !f.startsWith('WARNING:')).map((f, i) => (
+                                                <li key={i} style={{ marginBottom: 2, color: f.startsWith('NOTE:') ? '#0d6efd' : undefined }}>
+                                                  {f.startsWith('NOTE: ') ? f.replace('NOTE: ', '') : f}
+                                                </li>
+                                              ))}
                                             </ul>
                                           </div>
                                         )}

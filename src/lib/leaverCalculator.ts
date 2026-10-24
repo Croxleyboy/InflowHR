@@ -127,6 +127,21 @@ export function calculateLeaverFinancials(input: LeaverCalcInput): LeaverCalcRes
   const startDate = parseDate(input.startDate)
   const noticeGivenDate = parseDate(input.noticeGivenDate)
 
+  if (input.payType === 'salaried' && !input.annualSalary) {
+    flags.push('WARNING: No annual salary recorded for this employee. All cost figures will show as £0.00. Update the employee\'s salary in their profile to get accurate costs.')
+  } else if (input.payType === 'hourly' && !input.hourlyRate) {
+    flags.push('WARNING: No hourly rate recorded for this employee. All cost figures will show as £0.00. Update the employee\'s hourly rate in their profile to get accurate costs.')
+  }
+  if (!input.noticePeriod && !input.agreedLeavingDate) {
+    flags.push('WARNING: No contractual notice period recorded and no agreed leaving date set. Statutory minimum notice has been used, which may not reflect the actual contract.')
+  }
+  if (input.annualEntitlement === 28 && input.payType === 'salaried') {
+    flags.push('NOTE: Using default leave allowance of 28 days. If the employee has a different entitlement, update their leave allowance for an accurate calculation.')
+  }
+  if (!input.hoursPerWeek || input.hoursPerWeek <= 0) {
+    flags.push('WARNING: No weekly hours recorded. Hours-based figures may be inaccurate.')
+  }
+
   // STEP 1: Leaving date
   let leavingDate: Date
   let noticeBasis: 'contractual' | 'statutory' | 'agreed'
