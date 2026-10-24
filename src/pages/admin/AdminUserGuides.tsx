@@ -189,7 +189,7 @@ const ADMIN_SECTIONS: GuideSection[] = [
   {
     icon: '📊', title: 'Dashboard',
     features: [
-      { title: 'Admin Dashboard Overview', purpose: 'At-a-glance summary of all HR activity across your company, accessible from the Admin sidebar.', steps: ['Navigate to Admin > Dashboard (the default landing page when entering the Admin Portal).', 'Stat cards show: Total Employees, New Onboarders, Benefits Enrolled, Shifts & Rotas, Legal Timesheets, Performance 1:1s, Space Bookings, Announcements, Tickets Raised, Pending Expenses, Pending Leave, and Kudos Given.', 'Click any stat card to jump directly to the relevant admin page.'] },
+      { title: 'Admin Dashboard Overview', purpose: 'At-a-glance summary of all HR activity across your company, accessible from the Admin sidebar.', steps: ['Navigate to Admin > Dashboard (the default landing page when entering the Admin Portal).', 'Stat cards show key metrics: Total Employees, New Onboarders, Benefits Enrolled, Shifts & Rotas, Legal Timesheets, Performance 1:1s, Space Bookings, Announcements, Tickets Raised, Pending Expenses, Pending Leave, and Kudos Given.', 'Click any stat card to jump directly to the relevant admin page.'], callout: { type: 'note', text: 'Super Admins see a different, platform-wide dashboard with 15 metric cards, sparkline trend charts, and 6-month trend data across all companies. See the Super Admin tab for details.' } },
       { title: 'Expense Export Warning', purpose: 'An orange warning banner appears when expense exports are overdue.', steps: ['If no expense export has been run in 25+ days (or ever), a warning banner appears above the stat cards.', 'Click the banner to navigate directly to Admin > Expenses > Exports tab.'], callout: { type: 'note', text: 'This warning ensures company admins stay on top of regular expense processing. It is visible to all admins.' } },
     ],
   },
@@ -559,6 +559,31 @@ const ADMIN_SECTIONS: GuideSection[] = [
       { title: 'Offboarding Workflow', purpose: 'Guide a leaver through 5 sequential offboarding steps.', steps: ['Switch to the Offboarding Workflow tab (or click Workflow on an active offboarding record).', 'Steps: Approve Resignation (HR) → Recover Equipment → Organise Leaving Meeting (Manager) → Remove Employee Accounts/Licences → Agree/Confirm Last Payments.', 'Mark each step complete or skip if not applicable. You can undo a completed step if needed.', 'After marking the final step complete, a confirmation modal appears asking you to approve or decline freezing the employee\'s HR app account.'] },
       { title: 'Freeze & Deletion Queue', purpose: 'Frozen employees are blocked from signing in to the HR app and placed in a 30-day deletion queue.', steps: ['When you approve the freeze, the employee is immediately deactivated — they can no longer sign in to the HR app.', 'The frozen employee appears in the Deletion Queue table on the Offboarding tab with their freeze date and scheduled deletion date (30 days later).', 'Each record shows a status: Awaiting Expiry, Ready to Delete, or Recovered.', 'Click Recover to reinstate the employee — their HR app account is reactivated and they can sign in again.', 'Click Delete to permanently remove the employee record before the 30-day period.', 'If a joiner record is deleted from the onboarding pipeline, any associated frozen employee and deletion certificate records are also cascade-deleted automatically.'], callout: { type: 'tip', text: 'Recovery is available at any time before deletion. The employee\'s data is fully preserved during the 30-day freeze period.' } },
       { title: 'Cancel Offboarding', purpose: 'Remove an in-progress offboarding record before it is completed.', steps: ['On the Offboarding tab, find the employee under Active Offboarding.', 'Click the Cancel button on their record.', 'Confirm the cancellation — the offboarding record is removed and the employee remains active with full HR app access.'] },
+      { title: 'Leaver Financial Calculator', purpose: 'An automated cost breakdown for departing employees — covering notice pay, accrued holiday, pension, and recruitment costs. All calculations run locally with no external API calls for GDPR compliance.', steps: [
+        'When viewing an offboarding record, click the Financial Summary tab to see the leaver cost breakdown.',
+        'The calculator uses the employee\'s salary (or hourly rate), contract details, and your company\'s leave policy settings to compute:',
+        '• Notice period cost — based on contractual or statutory minimum notice (whichever applies).',
+        '• Accrued but untaken holiday — pro-rated to the leaving date, factoring in your company\'s bank holiday treatment (included, additional, or not given) and leave payout policy.',
+        '• Employer pension contribution — calculated from the employer pension rate set on your company record.',
+        '• Estimated recruitment replacement cost — a configurable estimate for hiring a replacement.',
+        '',
+        'The summary cards at the top show: Total Cost to Company, Notice Period Cost, Holiday Payout, and Pension Cost.',
+        'A detailed breakdown section shows every line item with the calculation method.',
+        '',
+        'Company policy settings that affect the calculation:',
+        '• Bank Holiday Treatment — set in your company record: "additional" (bank holidays are on top of annual leave), "included" (bank holidays count within the allowance), or "not given" (no bank holidays).',
+        '• Leave Payout Policy — "pay out" (unused leave is paid), "must take" (employee must use leave during notice), "company decides", or "mixed".',
+        '• Leave Clawback Clause — if enabled, overused leave can be deducted from the final payment.',
+        '• Employer Pension Rate — the percentage your company contributes (e.g. 3%).',
+      ], callout: { type: 'note', text: 'All calculations are performed entirely within the app using UK Working Time Regulations 1998 and Employment Rights Act 1996 rules. No employee data is sent to any external service. The calculator is fully GDPR-compliant.' } },
+      { title: 'Leaver Calculator — Missing Data Warnings', purpose: 'The calculator raises warnings when key employee data is missing, so you know which figures may be inaccurate.', steps: [
+        'If the employee has no annual salary recorded (for salaried staff) or no hourly rate (for hourly staff), a yellow warning banner appears: all cost figures will show as £0.00 until the data is updated.',
+        'If no contractual notice period is set and no agreed leaving date exists, a warning explains that statutory minimum notice has been used — which may not reflect the actual contract.',
+        'If the employee\'s leave allowance is the default 28 days, a blue note suggests checking whether they have a different entitlement.',
+        'If no weekly hours are recorded, a warning flags that hours-based figures may be inaccurate.',
+        '',
+        'To resolve warnings: update the employee\'s profile in Admin > Employees with their salary, hourly rate, notice period, and leave allowance. Then return to the offboarding record to see accurate costs.',
+      ], callout: { type: 'tip', text: 'Ensure employee salary and contract details are up to date before starting offboarding to get the most accurate financial breakdown from the start.' } },
     ],
   },
   {
@@ -709,6 +734,15 @@ const ADMIN_SECTIONS: GuideSection[] = [
 
 const SUPER_SECTIONS: GuideSection[] = [
   {
+    icon: '📊', title: 'Platform Dashboard',
+    features: [
+      { title: 'Super Admin Dashboard Overview', purpose: 'A platform-wide overview of all HR activity across every subscribed company, with trend charts showing how metrics change over time.', steps: ['Navigate to Admin > Dashboard while signed in as a Super Admin.', 'The dashboard loads data across ALL companies — it is not filtered by the company selector.', '15 metric cards display key platform stats at a glance: Total Employees, Active Onboarders, Notifications Sent, Kudos Given, Surveys Deployed, Survey Responses, Open 1:1 Meetings, Active Goals, Space Bookings, Leavers (Offboarding), Active Movers, Total Leave Requests, Open HR Tickets, Pending Expenses, and Total Announcements.', 'Six cards include mini sparkline charts showing the 6-month trend — hover or tap to see the direction of change at a glance.', 'Click any metric card to jump directly to the relevant admin page.'] },
+      { title: 'Trend Charts', purpose: 'Six larger trend charts below the metric cards show how key metrics have changed over the last 6 months.', steps: ['Scroll below the metric cards to see the Trend Charts section.', 'Charts are displayed in a responsive grid — two or three per row depending on screen width.', 'Available charts: Employees (line), Onboarders (bar), Notifications (line), Kudos (bar), Bookings (bar), and Tickets (bar).', 'Each chart shows monthly data points with labelled axes, grid lines, and value annotations on each data point.', 'Use these trends to identify patterns — for example, a spike in HR tickets or a drop in kudos activity.'] },
+      { title: 'Feature Subscriptions Chart', purpose: 'A bar chart showing how many companies have each feature module enabled.', steps: ['The Feature Subscriptions section shows a horizontal bar chart.', 'Features tracked: Leave, Expenses, Timesheets, Shifts & Rotas, Legal Timesheets, Kudos, Space Booking, Surveys, Asset Management, E-Learning, and Check-In.', 'Use this chart to understand feature adoption across your customer base and identify upsell opportunities.'] },
+      { title: 'Archives Table', purpose: 'View and manage archived company data.', steps: ['Scroll to the bottom of the dashboard to see the Archives table.', 'Archived records show company name, financial year, archive date, and actions.', 'Use this to track which companies have had their data archived for compliance or housekeeping purposes.'] },
+    ],
+  },
+  {
     icon: '🏢', title: 'Company Management',
     features: [
       { title: 'Create a Company', purpose: 'Register a new tenant on the platform.', steps: ['Navigate to Admin > Subscriptions > Companies.', 'Tap + Register New Company.', 'Choose the authentication mode: SSO (Microsoft) or Non-SSO.', 'For SSO companies, enter the company name and email domain (e.g. acme.co.uk).', 'For Non-SSO companies, enter the company name only — a unique login username and password are generated automatically.', 'Optionally upload a company logo and configure trial settings.', 'Tap Register Company. The company is created with default leave types, feature settings, and a welcome announcement.'], callout: { type: 'tip', text: 'Non-SSO companies receive auto-generated login credentials displayed in a one-time modal. Save these securely — the password cannot be retrieved later. Employees of Non-SSO companies are identified by a unique Employee ID instead of a work email.' } },
@@ -829,7 +863,7 @@ export default function AdminUserGuides() {
     super: {
       title: 'Getting Started',
       text: 'As Super Admin you have full access to every company admin feature plus platform-level controls. Key differences from a standard Company Admin:',
-      bullets: ['Company selector — a dropdown in the top bar lets you switch between all registered companies.', 'Subscriptions — manage pricing, feature activation, trial requests, and company setup (sidebar item visible only to you).', 'Cancellations — review and process company cancellation requests, manage frozen companies.', 'E-Learning Course Management — full CRUD for courses and per-company visibility controls.'],
+      bullets: ['Platform Dashboard — 15 metric cards with sparkline trends, 6-month trend charts, and feature adoption across all companies.', 'Company selector — a dropdown in the top bar lets you switch between all registered companies.', 'Subscriptions — manage pricing, feature activation, trial requests, and company setup (sidebar item visible only to you).', 'Cancellations — review and process company cancellation requests, manage frozen companies.', 'E-Learning Course Management — full CRUD for courses and per-company visibility controls.'],
       callout: { type: 'note', text: 'All Company Admin features documented above apply to you as well. This section covers Super Admin–only capabilities.' },
     },
   }
