@@ -3330,7 +3330,7 @@ export default function AdminOnboarding() {
                       <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: 12 }}>{sr.external_ref}</td>
                       <td style={{ padding: '8px', color: '#c62828', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sr.last_error || ''}>{sr.last_error || '-'}</td>
                       <td style={{ padding: '8px', textAlign: 'center' }}>{sr.attempts}</td>
-                      <td style={{ padding: '8px' }}>{sr.created_at ? toLocalDateStr(sr.created_at) : '-'}</td>
+                      <td style={{ padding: '8px' }}>{sr.created_at ? toLocalDateStr(new Date(sr.created_at)) : '-'}</td>
                       <td style={{ padding: '8px' }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                           <button onClick={() => handleSyncRetry(sr.id)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #4caf50', background: '#e8f5e9', color: '#2e7d32', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>Retry</button>
