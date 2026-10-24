@@ -473,7 +473,6 @@ export default function AdminOnboarding() {
   const [m365ScheduleCreating, setM365ScheduleCreating] = useState(false)
   const [m365ScheduleCancelling, setM365ScheduleCancelling] = useState(false)
   const [m365ScheduleRefreshing, setM365ScheduleRefreshing] = useState(false)
-  const [m365PanelRefreshing, setM365PanelRefreshing] = useState(false)
   const [m365ActiveProvisionCount, setM365ActiveProvisionCount] = useState(0)
 
 
@@ -1867,13 +1866,6 @@ export default function AdminOnboarding() {
     }
   }
 
-  async function m365RefreshSchedule(scheduleId: string, onboardingId: number) {
-    setM365ScheduleRefreshing(true)
-    await callIfo('get-schedule', { schedule_id: scheduleId, onboarding_id: onboardingId })
-    await loadM365Actions(onboardingId)
-    setM365ScheduleRefreshing(false)
-  }
-
   async function m365CancelSchedule(scheduleId: string, onboardingId: number, reason: string) {
     if (!confirm('Cancel this schedule? The engine will release any reserved licences and groups.')) return
     setM365ScheduleCancelling(true)
@@ -1928,7 +1920,6 @@ export default function AdminOnboarding() {
   const [leaverM365Starting, setLeaverM365Starting] = useState(false)
   const [leaverM365ApprovalSending, setLeaverM365ApprovalSending] = useState(false)
   const [leaverM365Proceeding, setLeaverM365Proceeding] = useState(false)
-  const [leaverM365Refreshing, setLeaverM365Refreshing] = useState(false)
   const [ifoOffboardSettings, setIfoOffboardSettings] = useState<IfoOffboardSettings | null>(null)
   const [leaverScheduleMode, setLeaverScheduleMode] = useState<'now' | 'schedule'>('now')
   const [leaverSchedulingAvailable, setLeaverSchedulingAvailable] = useState(false)
@@ -2378,13 +2369,6 @@ export default function AdminOnboarding() {
       }
       await loadLeaverM365Actions(record.id)
     }
-  }
-
-  async function leaverRefreshSchedule(scheduleId: string, offboardingId: number) {
-    setLeaverScheduleRefreshing(true)
-    await callIfoLeaver('get-leaver-schedule', { schedule_id: scheduleId, offboarding_id: offboardingId })
-    await loadLeaverM365Actions(offboardingId)
-    setLeaverScheduleRefreshing(false)
   }
 
   async function leaverCancelSchedule(scheduleId: string, offboardingId: number, reason: string) {
