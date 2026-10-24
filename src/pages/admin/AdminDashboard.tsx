@@ -74,6 +74,7 @@ export default function AdminDashboard() {
   const [empTrend, setEmpTrend] = useState<TrendPoint[]>([])
   const [ticketTrend, setTicketTrend] = useState<TrendPoint[]>([])
   const [allArchives, setAllArchives] = useState<ArchiveFile[]>([])
+  const [saTrends, setSaTrends] = useState<Record<string, TrendPoint[]>>({})
 
   useEffect(() => {
     if (isSuperAdmin) {
@@ -156,6 +157,33 @@ export default function AdminDashboard() {
       totalMovers: moverRes.count ?? 0,
     })
     setLoading(false)
+
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const now = new Date()
+    const trends: Record<string, TrendPoint[]> = { employees: [], onboarders: [], notifications: [], kudos: [], tickets: [], bookings: [] }
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+      const startStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+      const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
+      const label = MONTHS[d.getMonth()]
+
+      const [empC, onbC, notC, kudC, tickC, bookC] = await Promise.all([
+        supabase.from('employees').select('id', { count: 'exact', head: true }).eq('is_active', true).lte('created_at', endStr + 'T23:59:59'),
+        supabase.from('onboarding').select('id', { count: 'exact', head: true }).gte('created_at', startStr).lte('created_at', endStr + 'T23:59:59'),
+        supabase.from('notifications').select('id', { count: 'exact', head: true }).gte('created_at', startStr).lte('created_at', endStr + 'T23:59:59'),
+        supabase.from('kudos').select('id', { count: 'exact', head: true }).gte('created_at', startStr).lte('created_at', endStr + 'T23:59:59'),
+        supabase.from('hr_tickets').select('id', { count: 'exact', head: true }).gte('created_at', startStr).lte('created_at', endStr + 'T23:59:59'),
+        supabase.from('space_bookings').select('id', { count: 'exact', head: true }).gte('booking_date', startStr).lte('booking_date', endStr),
+      ])
+      trends.employees.push({ label, value: empC.count ?? 0 })
+      trends.onboarders.push({ label, value: onbC.count ?? 0 })
+      trends.notifications.push({ label, value: notC.count ?? 0 })
+      trends.kudos.push({ label, value: kudC.count ?? 0 })
+      trends.tickets.push({ label, value: tickC.count ?? 0 })
+      trends.bookings.push({ label, value: bookC.count ?? 0 })
+    }
+    setSaTrends(trends)
   }
 
   async function loadCompanyStats() {
@@ -253,7 +281,7 @@ export default function AdminDashboard() {
     )
   }
 
-  if (isSuperAdmin && allStats) return <SuperAdminDash stats={allStats} navigate={navigate} archives={allArchives} />
+  if (isSuperAdmin && allStats) return <SuperAdminDash stats={allStats} navigate={navigate} archives={allArchives} trends={saTrends} />
 
   if (companyStats) {
     return (
@@ -323,6 +351,87 @@ function MiniBarChart({ data, color, height = 48 }: { data: TrendPoint[]; color:
           <g key={i}>
             <rect x={x} y={h - 12 - barH} width={barW} height={barH} rx={3} fill={i === data.length - 1 ? color : color + '80'} />
             <text x={x + barW / 2} y={h - 1} textAnchor="middle" fontSize="8" fill="#8b8fa3">{d.label}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+function LargeChart({ data, color, type }: { data: TrendPoint[]; color: string; type: 'line' | 'bar' }) {
+  if (data.length < 2) return null
+  const max = Math.max(...data.map(d => d.value), 1)
+  const w = 360
+  const h = 140
+  const padL = 36
+  const padR = 12
+  const padT = 8
+  const padB = 22
+  const chartW = w - padL - padR
+  const chartH = h - padT - padB
+
+  const gridLines = 4
+  const gridVals = Array.from({ length: gridLines + 1 }, (_, i) => Math.round((max / gridLines) * i))
+
+  if (type === 'line') {
+    const pts = data.map((d, i) => ({
+      x: padL + (i / (data.length - 1)) * chartW,
+      y: padT + (1 - d.value / max) * chartH,
+    }))
+    const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+    const area = line + ` L${pts[pts.length - 1].x},${padT + chartH} L${pts[0].x},${padT + chartH} Z`
+
+    return (
+      <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+        {gridVals.map((v, i) => {
+          const y = padT + (1 - v / max) * chartH
+          return (
+            <g key={i}>
+              <line x1={padL} y1={y} x2={w - padR} y2={y} stroke="#e8e8ef" strokeWidth="1" />
+              <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#8b8fa3">{v}</text>
+            </g>
+          )
+        })}
+        <defs>
+          <linearGradient id={`lg-${color.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#lg-${color.replace('#', '')})`} />
+        <path d={line} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        {pts.map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r={3.5} fill="#fff" stroke={color} strokeWidth="2" />
+            <text x={p.x} y={h - 4} textAnchor="middle" fontSize="10" fill="#8b8fa3">{data[i].label}</text>
+            <text x={p.x} y={p.y - 8} textAnchor="middle" fontSize="9" fontWeight="700" fill={color}>{data[i].value}</text>
+          </g>
+        ))}
+      </svg>
+    )
+  }
+
+  const barW = Math.min(32, chartW / data.length - 8)
+  return (
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{ display: 'block' }}>
+      {gridVals.map((v, i) => {
+        const y = padT + (1 - v / max) * chartH
+        return (
+          <g key={i}>
+            <line x1={padL} y1={y} x2={w - padR} y2={y} stroke="#e8e8ef" strokeWidth="1" />
+            <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="#8b8fa3">{v}</text>
+          </g>
+        )
+      })}
+      {data.map((d, i) => {
+        const x = padL + (i + 0.5) * (chartW / data.length) - barW / 2
+        const barH = (d.value / max) * chartH
+        const y = padT + chartH - barH
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={barW} height={barH} rx={4} fill={i === data.length - 1 ? color : color + '99'} />
+            <text x={x + barW / 2} y={h - 4} textAnchor="middle" fontSize="10" fill="#8b8fa3">{d.label}</text>
+            <text x={x + barW / 2} y={y - 4} textAnchor="middle" fontSize="9" fontWeight="700" fill={color}>{d.value}</text>
           </g>
         )
       })}
@@ -606,25 +715,25 @@ function CompanyDash({
   )
 }
 
-function SuperAdminDash({ stats, navigate, archives }: { stats: AllCompanyStats; navigate: (p: string) => void; archives: ArchiveFile[] }) {
+function SuperAdminDash({ stats, navigate, archives, trends }: { stats: AllCompanyStats; navigate: (p: string) => void; archives: ArchiveFile[]; trends: Record<string, TrendPoint[]> }) {
   const surveyCompletionRate = stats.totalSurveyRecipients > 0 ? Math.round((stats.totalSurveyResponses / stats.totalSurveyRecipients) * 100) : 0
   const otoCompletionRate = stats.totalOneToOnes > 0 ? Math.round((stats.completedOneToOnes / stats.totalOneToOnes) * 100) : 0
 
-  const cards: { label: string; value: number; color: string; path: string; subtitle?: string; suffix?: string }[] = [
-    { label: 'Total Employees', value: stats.totalEmployees, color: '#1565c0', path: '/admin/employees' },
+  const cards: { label: string; value: number; color: string; path: string; subtitle?: string; suffix?: string; chart?: 'line' | 'bar'; chartData?: TrendPoint[] }[] = [
+    { label: 'Total Employees', value: stats.totalEmployees, color: '#1565c0', path: '/admin/employees', chart: 'line', chartData: trends.employees },
     { label: 'Companies', value: stats.totalCompanies, color: '#2e7d32', path: '/admin/subscriptions' },
-    { label: 'New Onboarders', value: stats.totalOnboarders, color: '#e91e63', path: '/admin/onboarding' },
+    { label: 'New Onboarders', value: stats.totalOnboarders, color: '#e91e63', path: '/admin/onboarding', chart: 'bar', chartData: trends.onboarders },
     { label: 'Leavers', value: stats.totalLeavers, color: '#8e24aa', path: '/admin/onboarding' },
     { label: 'Movers', value: stats.totalMovers, color: '#00838f', path: '/admin/onboarding' },
-    { label: 'Notifications', value: stats.totalNotifications, color: '#5c6bc0', path: '/admin/employees', subtitle: `${stats.unreadNotifications} unread` },
+    { label: 'Notifications', value: stats.totalNotifications, color: '#5c6bc0', path: '/admin/employees', subtitle: `${stats.unreadNotifications} unread`, chart: 'line', chartData: trends.notifications },
     { label: 'Pending Actions', value: stats.actionNotifications, color: '#d84315', path: '/admin/employees', subtitle: 'unread action items' },
-    { label: 'Kudos Given', value: stats.totalKudos, color: '#fbc02d', path: '/admin/kudos', subtitle: `${stats.totalKudosLikes} likes` },
+    { label: 'Kudos Given', value: stats.totalKudos, color: '#fbc02d', path: '/admin/kudos', subtitle: `${stats.totalKudosLikes} likes`, chart: 'bar', chartData: trends.kudos },
     { label: 'Surveys', value: stats.totalSurveyDeployments, color: '#26a69a', path: '/admin/surveys', subtitle: `${surveyCompletionRate}% completion` },
     { label: 'Performance 1:1s', value: stats.totalOneToOnes, color: '#c62828', path: '/admin/performance', subtitle: `${otoCompletionRate}% completed` },
     { label: 'Goals', value: stats.totalGoals, color: '#ef6c00', path: '/admin/performance', subtitle: `${stats.activeGoals} active` },
-    { label: 'Room Bookings', value: stats.totalSpaceBookings, color: '#4527a0', path: '/admin/space-management', subtitle: `${stats.todaySpaceBookings} today` },
+    { label: 'Room Bookings', value: stats.totalSpaceBookings, color: '#4527a0', path: '/admin/space-management', subtitle: `${stats.todaySpaceBookings} today`, chart: 'bar', chartData: trends.bookings },
     { label: 'Announcements', value: stats.totalAnnouncements, color: '#00897b', path: '/admin/announcements' },
-    { label: 'Tickets Raised', value: stats.totalTickets, color: '#37474f', path: '/admin/tickets' },
+    { label: 'Tickets Raised', value: stats.totalTickets, color: '#37474f', path: '/admin/tickets', chart: 'bar', chartData: trends.tickets },
     { label: 'Benefit Types', value: stats.totalBenefitTypes, color: '#6a1b9a', path: '/admin/benefits' },
   ]
 
@@ -667,9 +776,35 @@ function SuperAdminDash({ stats, navigate, archives }: { stats: AllCompanyStats;
             {c.subtitle && (
               <div style={{ fontSize: 12, color: '#8b8fa3', marginTop: 6 }}>{c.subtitle}</div>
             )}
+            {c.chart && c.chartData && c.chartData.length > 1 && (
+              <div className="cd-card-chart">
+                {c.chart === 'line'
+                  ? <MiniLineChart data={c.chartData} color={c.color} />
+                  : <MiniBarChart data={c.chartData} color={c.color} />
+                }
+              </div>
+            )}
           </button>
         ))}
       </div>
+
+      {Object.keys(trends).length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginTop: 8 }}>
+          {[
+            { title: 'Employee Growth', key: 'employees', color: '#1565c0', type: 'line' as const },
+            { title: 'New Onboarders per Month', key: 'onboarders', color: '#e91e63', type: 'bar' as const },
+            { title: 'Notifications per Month', key: 'notifications', color: '#5c6bc0', type: 'bar' as const },
+            { title: 'Kudos per Month', key: 'kudos', color: '#fbc02d', type: 'bar' as const },
+            { title: 'Tickets per Month', key: 'tickets', color: '#37474f', type: 'bar' as const },
+            { title: 'Room Bookings per Month', key: 'bookings', color: '#4527a0', type: 'bar' as const },
+          ].filter(t => trends[t.key] && trends[t.key].length > 1).map(t => (
+            <div key={t.key} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8ef', padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e1e2d', marginBottom: 12 }}>{t.title}</div>
+              <LargeChart data={trends[t.key]} color={t.color} type={t.type} />
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="sa-dash-chart-section">
         <h3 className="sa-dash-section-title">Feature Subscriptions by Company</h3>
