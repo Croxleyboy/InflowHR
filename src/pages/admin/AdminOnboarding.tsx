@@ -1858,7 +1858,7 @@ export default function AdminOnboarding() {
         showError(result.error || 'Start date is too close — use Run Now instead')
         setM365ScheduleMode('now')
       } else {
-        showSuccess('Schedule created')
+        showSuccess(result.recovered ? 'Existing schedule synced' : 'Schedule created')
         if (result.id && m365Actions) {
           setM365Actions({ ...m365Actions, schedule_id: result.id, schedule_status: result.status || 'scheduled', schedule_message: result.message, schedule_stages: result.stages, schedule_next_due_at: result.nextDueAt })
         }
@@ -2371,7 +2371,7 @@ export default function AdminOnboarding() {
         showError(result.error || 'Leave date is too close — use Run Now instead')
         setLeaverScheduleMode('now')
       } else {
-        showSuccess('Leaver schedule created')
+        showSuccess(result.recovered ? 'Existing leaver schedule synced' : 'Leaver schedule created')
         if (result.id && leaverM365Actions) {
           setLeaverM365Actions({ ...leaverM365Actions, schedule_id: result.id, schedule_status: result.status || 'scheduled', schedule_message: result.message, schedule_stages: result.stages, schedule_next_due_at: result.nextDueAt })
         }

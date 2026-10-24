@@ -516,11 +516,12 @@ Deno.serve(async (req) => {
 
       if (res.status === 409) {
         const errData = res.data as any
-        let existingId = errData?.error?.scheduleId
+        let existingId = errData?.error?.scheduleId || errData?.scheduleId || errData?.error?.id || errData?.id
         if (!existingId) {
           const lookupRes = await engineFetch(keyResult.apiKey, 'GET', `/v1/schedules?externalRef=${encodeURIComponent(`leaver-${offboarding_id}`)}`)
           if (lookupRes.ok) {
-            const schedules = (lookupRes.data as any)?.data || (lookupRes.data as any)?.schedules || []
+            const ld = lookupRes.data as any
+            const schedules = ld?.data || ld?.schedules || ld?.items || ld?.results || (Array.isArray(ld) ? ld : [])
             if (Array.isArray(schedules) && schedules.length > 0) existingId = schedules[0].id
           }
         }
@@ -541,10 +542,10 @@ Deno.serve(async (req) => {
               run_status: 'scheduled',
               updated_at: new Date().toISOString(),
             }, { onConflict: 'offboarding_id' })
-            return json({ ...sched, message: 'A schedule already exists for this leaver.' })
+            return json({ id: existingId, ...sched, recovered: true, message: 'A schedule already exists for this leaver.' })
           }
         }
-        return json({ error: friendlyError('schedule_exists') }, 409)
+        return json({ error: 'A schedule already exists in the engine but could not be recovered automatically. Check the engine dashboard for the schedule ID and use Refresh to sync it.', schedule_conflict: true }, 409)
       }
 
       if (res.status === 422) {
