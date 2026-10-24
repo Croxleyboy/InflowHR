@@ -66,9 +66,16 @@ interface Employee {
   is_payroll_exception: boolean
   persona: string | null
   has_company_device: boolean
+  is_frozen: boolean
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function empStatus(emp: Employee): { label: string; bg: string; color: string; cls: string } {
+  if (emp.is_frozen) return { label: 'Frozen', bg: '#e3f2fd', color: '#1565c0', cls: 'admin-badge-info' }
+  if (emp.is_active) return { label: 'Active', bg: '#e8f5e9', color: '#2e7d32', cls: 'admin-badge-approved' }
+  return { label: 'Inactive', bg: '#ffebee', color: '#c62828', cls: 'admin-badge-rejected' }
+}
 
 export default function AdminEmployees() {
   const navigate = useNavigate()
@@ -557,8 +564,9 @@ export default function AdminEmployees() {
   const filtered = useMemo(() => {
     return employees.filter(e => {
       if (filterDept && e.department !== filterDept) return false
-      if (filterActive === 'active' && !e.is_active) return false
-      if (filterActive === 'inactive' && e.is_active) return false
+      if (filterActive === 'active' && (!e.is_active || e.is_frozen)) return false
+      if (filterActive === 'inactive' && (e.is_active || e.is_frozen)) return false
+      if (filterActive === 'frozen' && !e.is_frozen) return false
       if (search) {
         const q = search.toLowerCase()
         if (!`${e.first_name} ${e.last_name} ${e.email} ${e.employee_number}`.toLowerCase().includes(q)) return false
@@ -640,7 +648,7 @@ export default function AdminEmployees() {
     <div className="admin-section">
       <div className="admin-page-header">
         <h2>Employees</h2>
-        <p>{employees.length} employees · {employees.filter(e => e.is_active).length} active</p>
+        <p>{employees.length} employees · {employees.filter(e => e.is_active && !e.is_frozen).length} active{employees.some(e => e.is_frozen) ? ` · ${employees.filter(e => e.is_frozen).length} frozen` : ''}</p>
       </div>
 
       <div className="admin-tabs">
@@ -702,8 +710,8 @@ export default function AdminEmployees() {
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.first_name} {emp.last_name}</div>
                         <div style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{emp.job_title || emp.department || 'No role assigned'}</div>
                       </div>
-                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600, background: emp.is_active ? '#e8f5e9' : '#ffebee', color: emp.is_active ? '#2e7d32' : '#c62828' }}>
-                        {emp.is_active ? 'Active' : 'Inactive'}
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600, background: empStatus(emp).bg, color: empStatus(emp).color }}>
+                        {empStatus(emp).label}
                       </span>
                     </div>
                   ))
@@ -779,8 +787,8 @@ export default function AdminEmployees() {
                       <h3 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1a1a1a' }}>{selectedEmployee.first_name} {selectedEmployee.last_name}</h3>
                       <div style={{ fontSize: 14, color: '#666', marginTop: 4 }}>{selectedEmployee.job_title || '—'}</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-                        <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 600, background: selectedEmployee.is_active ? '#e8f5e9' : '#ffebee', color: selectedEmployee.is_active ? '#2e7d32' : '#c62828' }}>
-                          {selectedEmployee.is_active ? 'Active' : 'Inactive'}
+                        <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 600, background: empStatus(selectedEmployee).bg, color: empStatus(selectedEmployee).color }}>
+                          {empStatus(selectedEmployee).label}
                         </span>
                         {selectedEmployee.contract_type && (
                           <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 600, background: '#e3f2fd', color: '#1565c0' }}>{selectedEmployee.contract_type}</span>
@@ -929,6 +937,7 @@ export default function AdminEmployees() {
         <select value={filterActive} onChange={e => setFilterActive(e.target.value)} className="admin-select">
           <option value="">All</option>
           <option value="active">Active</option>
+          <option value="frozen">Frozen</option>
           <option value="inactive">Inactive</option>
         </select>
       </div>
@@ -952,7 +961,7 @@ export default function AdminEmployees() {
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.department} onChange={e => setEditForm(f => ({...f, department: e.target.value}))} disabled={!!features.inflowonboarder_integration} title={features.inflowonboarder_integration ? 'Use the Mover workflow to change this field' : ''} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} /> : (emp.department || '—')}</td>
                     <td>{editingId === emp.id ? <input className="admin-inline-input" value={editForm.job_title} onChange={e => setEditForm(f => ({...f, job_title: e.target.value}))} disabled={!!features.inflowonboarder_integration} title={features.inflowonboarder_integration ? 'Use the Mover workflow to change this field' : ''} style={features.inflowonboarder_integration ? { opacity: 0.6, cursor: 'not-allowed' } : {}} /> : (emp.job_title || '—')}</td>
                     <td>
-                      <span className={`admin-badge ${emp.is_active ? 'admin-badge-approved' : 'admin-badge-rejected'}`}>{emp.is_active ? 'Active' : 'Inactive'}</span>
+                      <span className={`admin-badge ${empStatus(emp).cls}`}>{empStatus(emp).label}</span>
                       {setupMap[emp.email?.toLowerCase()] === false && (
                         <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#fff3e0', color: '#e65100' }}>Not logged in</span>
                       )}
@@ -1922,7 +1931,7 @@ function OrgChart({ employees }: { employees: Employee[] }) {
   const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
   const [initialized, setInitialized] = useState(false)
 
-  const activeEmployees = useMemo(() => employees.filter(e => e.is_active), [employees])
+  const activeEmployees = useMemo(() => employees.filter(e => e.is_active && !e.is_frozen), [employees])
   const roots = useMemo(() => buildTree(activeEmployees), [activeEmployees])
 
   useEffect(() => {
