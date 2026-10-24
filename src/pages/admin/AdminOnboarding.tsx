@@ -190,6 +190,26 @@ interface RoleChange {
   completed_at: string | null
 }
 
+interface SyncRecord {
+  id: number
+  company_id: string
+  kind: string
+  action: string
+  record_id: number
+  schedule_id: string | null
+  external_ref: string
+  status: string
+  attempts: number
+  last_attempt_at: string | null
+  last_error: string | null
+  next_retry_at: string | null
+  source: string
+  created_at: string
+  completed_at: string | null
+  reviewed_by: string | null
+  review_note: string | null
+}
+
 interface MoverM365Actions {
   id: string
   role_change_id: number
@@ -220,6 +240,8 @@ interface MoverM365Actions {
   persona_schedule_stages: any
   persona_schedule_next_due_at: string | null
   persona_schedule_updated_at: string | null
+  external_ref: string | null
+  persona_external_ref: string | null
   decline_reason: string | null
   declined_by: string | null
   declined_at: string | null
@@ -372,6 +394,12 @@ export default function AdminOnboarding() {
   const [expandedMoverDeclineId, setExpandedMoverDeclineId] = useState<number | null>(null)
   const [enginePersonas, setEnginePersonas] = useState<EnginePersona[]>([])
   const [enginePersonasLoaded, setEnginePersonasLoaded] = useState(false)
+
+  // Engine schedule sync state
+  const [syncRecords, setSyncRecords] = useState<SyncRecord[]>([])
+  const [syncExpanded, setSyncExpanded] = useState(false)
+  const [syncDismissNote, setSyncDismissNote] = useState<Record<number, string>>({})
+
   const [moverApproverConfig, setMoverApproverConfig] = useState<{ mode: string; name?: string; email?: string; joiner_approver_mode?: string; joiner_approver_name?: string; joiner_approver_email?: string }>({ mode: 'same_as_joiner' })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -580,6 +608,7 @@ export default function AdminOnboarding() {
       loadMovers()
       loadCustomSteps()
       loadOffboardCustomSteps()
+      loadSyncStatus()
     }
   }, [selectedCompanyId])
 
@@ -685,6 +714,54 @@ export default function AdminOnboarding() {
     } else {
       setCustomSteps([])
       setHasCustomSteps(false)
+    }
+  }
+
+  async function loadSyncStatus() {
+    if (!selectedCompanyId) return
+    const { data } = await supabase.from('engine_schedule_sync')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .in('status', ['needs_review', 'pending', 'in_progress', 'failed'])
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    setSyncRecords((data as SyncRecord[]) || [])
+  }
+
+  async function callIfoSync(action: string, body: Record<string, unknown> = {}) {
+    if (!session || !selectedCompanyId) return null
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const res = await fetch(`${supabaseUrl}/functions/v1/inflowonboarder-sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+      body: JSON.stringify({ company_id: selectedCompanyId, action, ...body }),
+    })
+    const data = await res.json()
+    if (!res.ok) { showError(data.error || 'Sync request failed'); return null }
+    return data
+  }
+
+  async function handleSyncRetry(syncId: number) {
+    const result = await callIfoSync('mark-reviewed', { sync_id: syncId, review_action: 'retry' })
+    if (result) {
+      showSuccess('Sync record reset to pending — will retry shortly')
+      loadSyncStatus()
+    }
+  }
+
+  async function handleSyncDismiss(syncId: number) {
+    const note = syncDismissNote[syncId] || ''
+    const result = await callIfoSync('mark-reviewed', {
+      sync_id: syncId,
+      review_action: 'dismiss',
+      note: note || 'Dismissed by admin',
+      reviewed_by: session?.user?.email || 'admin',
+    })
+    if (result) {
+      showSuccess('Sync record dismissed')
+      setSyncDismissNote(prev => { const n = { ...prev }; delete n[syncId]; return n })
+      loadSyncStatus()
     }
   }
 
@@ -1000,6 +1077,25 @@ export default function AdminOnboarding() {
 
   async function cancelOffboarding(record: OffboardRecord) {
     if (!confirm(`Cancel offboarding for ${record.employee_name}?`)) return
+
+    // Cancel engine leaver schedule if active
+    const { data: offM365 } = await supabase.from('offboarding_m365_actions').select('schedule_id, schedule_status, external_ref').eq('offboarding_id', record.id).maybeSingle()
+    if (offM365?.schedule_id && offM365.schedule_status && !['completed','cancelled','failed','missed','declined'].includes(offM365.schedule_status)) {
+      try {
+        await callIfoLeaver('cancel-leaver-schedule', { schedule_id: offM365.schedule_id, offboarding_id: record.id, reason: 'Offboarding cancelled from InflowHR' })
+      } catch {
+        await supabase.from('engine_schedule_sync').insert({
+          company_id: selectedCompanyId,
+          kind: 'leaver',
+          action: 'cancel',
+          record_id: record.id,
+          schedule_id: offM365.schedule_id,
+          external_ref: offM365.external_ref || `leaver-${record.id}`,
+          source: 'ui',
+        })
+      }
+    }
+
     const { error } = await supabase.from('offboarding').delete().eq('id', record.id)
     if (error) { showError('Failed to cancel offboarding: ' + error.message); return }
     showSuccess(`Offboarding cancelled for ${record.employee_name}`)
@@ -1165,6 +1261,25 @@ export default function AdminOnboarding() {
     const record = records.find(r => r.id === id)
     if (!record) return
     if (!confirm(`Delete this onboarding record for ${record.firstname} ${record.surname}? Any matching frozen/deletion queue entries will also be removed.`)) return
+
+    // Cancel engine joiner schedule if active
+    const { data: onM365 } = await supabase.from('onboarding_m365_actions').select('schedule_id, schedule_status, external_ref').eq('onboarding_id', id).maybeSingle()
+    if (onM365?.schedule_id && onM365.schedule_status && !['completed','cancelled','failed','missed','declined'].includes(onM365.schedule_status)) {
+      try {
+        await callIfo('cancel-schedule', { schedule_id: onM365.schedule_id, onboarding_id: id, reason: 'Onboarding record deleted from InflowHR' })
+      } catch {
+        await supabase.from('engine_schedule_sync').insert({
+          company_id: selectedCompanyId,
+          kind: 'joiner',
+          action: 'cancel',
+          record_id: id,
+          schedule_id: onM365.schedule_id,
+          external_ref: onM365.external_ref || `starter-${id}`,
+          source: 'ui',
+        })
+      }
+    }
+
     const { error } = await supabase.from('onboarding').delete().eq('id', id)
     if (error) { showError('Failed to delete record: ' + error.message); return }
     if (record.user_email && selectedCompanyId) {
@@ -1282,6 +1397,43 @@ export default function AdminOnboarding() {
   async function deleteMoverRoleChange(rc: RoleChange) {
     if (!confirm(`Permanently delete role change record for ${rc.employee_name}?\n\nThis will remove the role change and any associated M365 actions. This cannot be undone.`)) return
     try {
+      const m365 = moverM365[rc.id]
+      const terminalStatuses = ['completed','cancelled','failed','missed','declined']
+
+      // Cancel engine mover schedule if active
+      if (m365?.schedule_id && m365.schedule_status && !terminalStatuses.includes(m365.schedule_status)) {
+        try {
+          await callIfoMover('cancel-mover-schedule', { schedule_id: m365.schedule_id, role_change_id: rc.id, reason: 'Role change deleted from InflowHR' })
+        } catch {
+          await supabase.from('engine_schedule_sync').insert({
+            company_id: selectedCompanyId,
+            kind: 'mover',
+            action: 'cancel',
+            record_id: rc.id,
+            schedule_id: m365.schedule_id,
+            external_ref: m365.external_ref || `move-${rc.id}`,
+            source: 'ui',
+          })
+        }
+      }
+
+      // Cancel engine persona schedule if active
+      if (m365?.persona_schedule_id && m365.persona_schedule_status && !terminalStatuses.includes(m365.persona_schedule_status)) {
+        try {
+          await callIfoMover('cancel-persona-schedule', { schedule_id: m365.persona_schedule_id, role_change_id: rc.id, reason: 'Role change deleted from InflowHR' })
+        } catch {
+          await supabase.from('engine_schedule_sync').insert({
+            company_id: selectedCompanyId,
+            kind: 'persona',
+            action: 'cancel',
+            record_id: rc.id,
+            schedule_id: m365.persona_schedule_id,
+            external_ref: m365.persona_external_ref || `move-persona-${rc.id}`,
+            source: 'ui',
+          })
+        }
+      }
+
       await supabase.from('mover_m365_actions').delete().eq('role_change_id', rc.id)
       await supabase.from('role_changes').delete().eq('id', rc.id)
       if (moverSelectedId === rc.id) { setMoverSelectedId(null); setTab('movers') }
@@ -3147,6 +3299,62 @@ export default function AdminOnboarding() {
           <button onClick={() => setJmlSection('leavers')} style={{ padding: '10px 24px', fontWeight: 700, fontSize: 14, border: 'none', cursor: 'pointer', borderBottom: jmlSection === 'leavers' ? '3px solid #c62828' : '3px solid transparent', color: jmlSection === 'leavers' ? '#c62828' : '#666', background: 'none' }}>
             Leavers ({offboardRecords.filter(r => !r.is_complete).length})
           </button>
+        </div>
+      )}
+
+      {tab === 'jml' && syncRecords.filter(r => r.status === 'needs_review').length > 0 && (
+        <div style={{ background: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)', border: '1px solid #ff9800', borderRadius: 10, padding: '12px 16px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }} onClick={() => setSyncExpanded(!syncExpanded)}>
+            <span style={{ fontWeight: 700, color: '#e65100', fontSize: 14 }}>
+              {syncRecords.filter(r => r.status === 'needs_review').length} engine sync item{syncRecords.filter(r => r.status === 'needs_review').length !== 1 ? 's' : ''} need attention
+            </span>
+            <span style={{ color: '#e65100', fontSize: 12, fontWeight: 600 }}>{syncExpanded ? 'Hide' : 'Show details'}</span>
+          </div>
+          {syncExpanded && (
+            <div style={{ marginTop: 12 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #ffcc80', textAlign: 'left' }}>
+                    <th style={{ padding: '6px 8px', color: '#bf360c' }}>Kind</th>
+                    <th style={{ padding: '6px 8px', color: '#bf360c' }}>Ref</th>
+                    <th style={{ padding: '6px 8px', color: '#bf360c' }}>Error</th>
+                    <th style={{ padding: '6px 8px', color: '#bf360c' }}>Attempts</th>
+                    <th style={{ padding: '6px 8px', color: '#bf360c' }}>Created</th>
+                    <th style={{ padding: '6px 8px', color: '#bf360c' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {syncRecords.filter(r => r.status === 'needs_review').map(sr => (
+                    <tr key={sr.id} style={{ borderBottom: '1px solid #ffe0b2' }}>
+                      <td style={{ padding: '8px', textTransform: 'capitalize', fontWeight: 600 }}>{sr.kind}</td>
+                      <td style={{ padding: '8px', fontFamily: 'monospace', fontSize: 12 }}>{sr.external_ref}</td>
+                      <td style={{ padding: '8px', color: '#c62828', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sr.last_error || ''}>{sr.last_error || '-'}</td>
+                      <td style={{ padding: '8px', textAlign: 'center' }}>{sr.attempts}</td>
+                      <td style={{ padding: '8px' }}>{sr.created_at ? toLocalDateStr(sr.created_at) : '-'}</td>
+                      <td style={{ padding: '8px' }}>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <button onClick={() => handleSyncRetry(sr.id)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #4caf50', background: '#e8f5e9', color: '#2e7d32', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>Retry</button>
+                          <input
+                            type="text"
+                            placeholder="Note (optional)"
+                            value={syncDismissNote[sr.id] || ''}
+                            onChange={e => setSyncDismissNote(prev => ({ ...prev, [sr.id]: e.target.value }))}
+                            style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #ccc', fontSize: 12, width: 120 }}
+                          />
+                          <button onClick={() => handleSyncDismiss(sr.id)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #9e9e9e', background: '#f5f5f5', color: '#616161', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>Dismiss</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {syncRecords.filter(r => ['pending', 'in_progress', 'failed'].includes(r.status)).length > 0 && (
+                <p style={{ marginTop: 10, fontSize: 12, color: '#795548' }}>
+                  {syncRecords.filter(r => ['pending', 'in_progress', 'failed'].includes(r.status)).length} additional sync record{syncRecords.filter(r => ['pending', 'in_progress', 'failed'].includes(r.status)).length !== 1 ? 's' : ''} processing automatically.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
 

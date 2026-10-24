@@ -638,6 +638,7 @@ Deno.serve(async (req) => {
           schedule_next_due_at: mockSchedule.nextDueAt,
           schedule_updated_at: new Date().toISOString(),
           schedule_options: options || {},
+          external_ref: `move-${role_change_id}`,
           employee_upn: user_principal_name,
           run_status: 'scheduled',
           updated_at: new Date().toISOString(),
@@ -662,6 +663,7 @@ Deno.serve(async (req) => {
               schedule_stages: sched.stages,
               schedule_next_due_at: sched.nextDueAt,
               schedule_updated_at: sched.updatedAt,
+              external_ref: `move-${role_change_id}`,
               employee_upn: user_principal_name,
               run_status: 'scheduled',
               updated_at: new Date().toISOString(),
@@ -692,6 +694,7 @@ Deno.serve(async (req) => {
         schedule_next_due_at: sched.nextDueAt,
         schedule_updated_at: sched.updatedAt || new Date().toISOString(),
         schedule_options: options || {},
+        external_ref: `move-${role_change_id}`,
         employee_upn: user_principal_name,
         run_status: 'scheduled',
         updated_at: new Date().toISOString(),
@@ -1001,6 +1004,7 @@ Deno.serve(async (req) => {
         await sb.from('mover_m365_actions').update({
           persona_schedule_id: schedData.id,
           persona_check_result: null,
+          persona_external_ref: `move-persona-${role_change_id}`,
           ...buildPersonaScheduleUpdate(schedData),
         }).eq('role_change_id', role_change_id)
       }
