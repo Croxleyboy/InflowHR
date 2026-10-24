@@ -1930,7 +1930,6 @@ export default function AdminOnboarding() {
   const [leaverScheduleRefreshing, setLeaverScheduleRefreshing] = useState(false)
 
   async function loadLeaverM365Actions(offboardingId: number) {
-    setLeaverM365Refreshing(true)
     try {
       const [{ data }, { data: ifo }, { data: wt }, { data: schedulingFlag }] = await Promise.all([
         supabase.from('offboarding_m365_actions').select('*').eq('offboarding_id', offboardingId).maybeSingle(),
@@ -1975,7 +1974,6 @@ export default function AdminOnboarding() {
           } else {
             setLeaverM365Actions(refreshed as LeaverM365Actions | null)
           }
-          setLeaverM365Refreshing(false)
           return
         }
       }
@@ -2014,9 +2012,7 @@ export default function AdminOnboarding() {
           }
         }
       }
-    } finally {
-      setLeaverM365Refreshing(false)
-    }
+    } finally { /* loading complete */ }
   }
 
   async function leaverM365StartRun(record: OffboardRecord) {
