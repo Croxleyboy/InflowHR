@@ -417,6 +417,7 @@ export default function AdminOnboarding() {
     notify_body?: string
     requires_step?: string
     meeting?: { title?: string; body?: string; attendees?: string[] }
+    phase?: 'preparation' | 'post_join'
   }
   interface CustomStep { id?: number; step_key: string; label: string; icon: string; description: string; sort_order: number; is_default: boolean; step_config?: StepConfig }
   interface CompanyContact { id?: number; contact_key: string; label: string; email: string; phone?: string; notes?: string; sort_order: number }
@@ -2551,7 +2552,14 @@ export default function AdminOnboarding() {
       if (!created) return
       updates.elearning = true
     }
-    if (stepKey === 'day1_access') {
+    // Check if all preparation-phase steps are now done (activate account at that point)
+    const prepSteps = activeSteps.filter(s => s.step_config?.phase !== 'post_join')
+    const newChecks = { ...stepChecks, [stepKey]: true }
+    const newSkipsForCheck = { ...stepSkips, [stepKey]: false }
+    const allPrepDone = prepSteps.every(s => newChecks[s.step_key] || newSkipsForCheck[s.step_key])
+    const wasPrepDone = prepSteps.every(s => (s.step_key === stepKey ? false : stepChecks[s.step_key]) || stepSkips[s.step_key])
+
+    if (allPrepDone && !wasPrepDone) {
       updates.is_complete = true; updates.status = 'Onboarded'; updates.appstatus = 'active'
       let { data: emp } = await supabase.from('employees').select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
       if (!emp) {
@@ -2593,7 +2601,7 @@ export default function AdminOnboarding() {
     const newSkips = { ...stepSkips, [stepKey]: false }
     updates.skipped_steps = newSkips
     updateOnboardStatus(record.id, updates)
-    if (workflowStep < WORKFLOW_STEPS.length - 1) setWorkflowStep(workflowStep + 1)
+    if (workflowStep < activeSteps.length - 1) setWorkflowStep(workflowStep + 1)
   }
 
   function skipStep(stepKey: string) {
@@ -3555,8 +3563,12 @@ export default function AdminOnboarding() {
               )}
             </div>
           )}
-          <div className="admin-workflow-timeline">
-            {activeSteps.map((step, i) => {
+          {(() => {
+            const prepSteps = activeSteps.filter(s => s.step_config?.phase !== 'post_join')
+            const postSteps = activeSteps.filter(s => s.step_config?.phase === 'post_join')
+            const allPrepDone = prepSteps.every(s => stepChecks[s.step_key] || stepSkips[s.step_key])
+            const renderStep = (step: CustomStep) => {
+              const i = activeSteps.indexOf(step)
               const done = stepChecks[step.step_key]
               const skipped = stepSkips[step.step_key]
               const isCurrent = i === workflowStep
@@ -4064,8 +4076,54 @@ export default function AdminOnboarding() {
                   </div>
                 </div>
               )
-            })}
-          </div>
+            }
+
+            return postSteps.length > 0 ? (
+              <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                {/* Preparation column */}
+                <div style={{ flex: '1 1 340px', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#4338ca' }}>Preparation</span>
+                    <span style={{ fontSize: 11, color: '#888' }}>({prepSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length}/{prepSteps.length})</span>
+                  </div>
+                  <div className="admin-workflow-timeline">
+                    {prepSteps.map(renderStep)}
+                  </div>
+                </div>
+
+                {/* Account Goes Live divider */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', paddingTop: 32, flexShrink: 0 }}>
+                  <div style={{ width: 2, height: 40, background: allPrepDone ? '#10b981' : '#e5e7eb' }} />
+                  <div style={{
+                    padding: '8px 14px', borderRadius: 8, fontWeight: 700, fontSize: 11, textAlign: 'center', lineHeight: 1.4,
+                    background: allPrepDone ? 'linear-gradient(135deg, #d1fae5, #a7f3d0)' : '#f3f4f6',
+                    color: allPrepDone ? '#065f46' : '#9ca3af',
+                    border: `2px solid ${allPrepDone ? '#6ee7b7' : '#e5e7eb'}`,
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {allPrepDone ? '✓ Account Live' : '🔒 Account Goes Live'}
+                  </div>
+                  <div style={{ width: 2, height: 40, background: allPrepDone ? '#10b981' : '#e5e7eb' }} />
+                </div>
+
+                {/* Post-Join column */}
+                <div style={{ flex: '1 1 340px', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#059669' }}>Post-Join</span>
+                    <span style={{ fontSize: 11, color: '#888' }}>({postSteps.filter(s => stepChecks[s.step_key] || stepSkips[s.step_key]).length}/{postSteps.length})</span>
+                    {!allPrepDone && <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600 }}>Awaiting account activation</span>}
+                  </div>
+                  <div className="admin-workflow-timeline" style={{ opacity: allPrepDone ? 1 : 0.5 }}>
+                    {postSteps.map(renderStep)}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="admin-workflow-timeline">
+                {prepSteps.map(renderStep)}
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -6400,6 +6458,18 @@ export default function AdminOnboarding() {
                           placeholder="Step description"
                         />
 
+                        {/* ── Phase selector ── */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+                          <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Phase:</label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                            <input type="radio" name={`phase_${i}`} checked={cfg.phase !== 'post_join'} onChange={() => updateCfg({ phase: 'preparation' })} /> Preparation
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, cursor: 'pointer' }}>
+                            <input type="radio" name={`phase_${i}`} checked={cfg.phase === 'post_join'} onChange={() => updateCfg({ phase: 'post_join' })} /> Post-Join
+                          </label>
+                          <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>{cfg.phase === 'post_join' ? 'Runs after account is live' : 'Runs before account activation'}</span>
+                        </div>
+
                         {/* ── Notification config ── */}
                         <div style={{ border: '1px solid #e0e7ff', borderRadius: 8, padding: 12, background: '#f8faff' }}>
                           <div style={{ fontWeight: 600, fontSize: 12, color: '#4338ca', marginBottom: 8 }}>Notification Settings</div>
@@ -6504,6 +6574,7 @@ export default function AdminOnboarding() {
                           {(cfg.notify_email || cfg.notify_contact_key) && <span style={{ fontSize: 10, marginLeft: 8, padding: '1px 6px', borderRadius: 4, background: cfg.step_type === 'notice' ? '#e0f2fe' : '#ede9fe', color: cfg.step_type === 'notice' ? '#0369a1' : '#6d28d9', fontWeight: 600 }}>{cfg.step_type === 'notice' ? 'Notice' : 'Action'}</span>}
                           {cfg.meeting && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>Meeting</span>}
                           {cfg.requires_step && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>Requires: {allStepKeys.find(s => s.key === cfg.requires_step)?.label || cfg.requires_step}</span>}
+                          {cfg.phase === 'post_join' && <span style={{ fontSize: 10, marginLeft: 4, padding: '1px 6px', borderRadius: 4, background: '#d1fae5', color: '#065f46', fontWeight: 600 }}>Post-Join</span>}
                         </div>
                         <div style={{ fontSize: 12, color: '#888', marginTop: 2, lineHeight: 1.4 }}>{step.description}</div>
                         {(cfg.notify_email || cfg.notify_contact_key) && (
