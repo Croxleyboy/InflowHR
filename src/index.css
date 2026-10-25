@@ -5549,8 +5549,8 @@ body {
   }
   .login-hero {
     flex: 0 0 auto;
-    padding: 32px 20px 28px;
-    min-height: 480px;
+    padding: 24px 20px 20px;
+    min-height: 380px;
     background-position: center 15%;
   }
   .login-hero-brand { top: 20px; left: 20px; }
