@@ -5082,6 +5082,9 @@ body {
   flex-shrink: 0;
   opacity: 0.7;
 }
+.login-hero-pills-mobile {
+  display: none;
+}
 
 /* Decorative orbs & grid */
 .login-hero-decoration {
@@ -5560,7 +5563,11 @@ body {
     font-size: 14px;
     margin-bottom: 20px;
   }
-  .login-hero-pills {
+  .login-hero-pills:not(.login-hero-pills-mobile) {
+    display: none;
+  }
+  .login-hero-pills-mobile {
+    display: flex;
     gap: 6px;
   }
   .login-hero-pill {
