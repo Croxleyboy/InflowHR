@@ -5001,7 +5001,7 @@ body {
 /* ── Hero Side ── */
 .login-hero {
   flex: 1;
-  background: url('/login-hero.jpg') center/cover no-repeat;
+  background: url('/login-hero.jpg') top center/cover no-repeat;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
