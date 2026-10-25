@@ -26,9 +26,9 @@ const SETUP_STEPS: SetupStep[] = [
   },
   {
     number: 2,
-    title: 'Enter Company Details',
-    summary: 'Add your company registration, address, and contact information.',
-    details: 'Navigate to Settings > Company Details and fill in your company name, registered business number, VAT number, office address, phone number, website, and number of staff. This information is used across the platform for invoicing, legal compliance, and company identification. You can update these details at any time.',
+    title: 'Configure Company Settings',
+    summary: 'Set your financial year, currency, company details, and address.',
+    details: 'Navigate to Settings > Company Details and fill in your company name, registered business number, VAT number, office address, phone number, website, and number of staff. Set your financial year start month and preferred currency — these control how leave accrual periods, payroll reporting, and billing align to your company calendar. You can update these details at any time.',
     icon: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
     page: '/admin/company-details',
   },
@@ -60,6 +60,14 @@ const SETUP_STEPS: SetupStep[] = [
   },
   {
     number: 6,
+    title: 'Configure Leaver Policy',
+    summary: 'Set bank holiday treatment, leave payout, clawback, and pension rate.',
+    details: 'Navigate to Settings > Leaver Policy to configure how your company handles departing employees. Set bank holiday treatment (additional or pro-rata), specify whether unused leave is paid out or forfeited, enable or disable clawback for overused leave, and enter your employer pension contribution rate. These settings feed directly into the leaver financial calculator used during offboarding.',
+    icon: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>',
+    page: '/admin/company-details',
+  },
+  {
+    number: 7,
     title: 'Connect Payroll Provider',
     summary: 'Link Xero or Sage for payslips, or run payroll in standalone mode.',
     details: 'Navigate to Admin > Integrations and connect your payroll provider — Xero or Sage — using the Configure button on the relevant card. Both are included in the Core subscription at no extra cost. Once connected, the payroll wizard enters Connected mode automatically: it pushes overtime and variable hours to your provider and guides you through manual items. If you do not connect a provider, the wizard runs in Standalone mode and generates estimate payslips with approximate tax/NI (not HMRC-certified). See the User Guide Payroll section for the full connected vs standalone walkthrough.',
@@ -69,7 +77,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'payslips',
   },
   {
-    number: 7,
+    number: 8,
     title: 'Set Up E-Learning Courses',
     summary: 'Select core courses, assign departments, and create company-specific content.',
     details: 'On the E-Learning page, browse the catalogue of core courses available. Enable the courses you want your employees to complete, and for each course select which departments should be assigned. You can also create new company-specific courses tailored to your organisation — these appear alongside the core catalogue for your employees.',
@@ -78,7 +86,16 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'elearning',
   },
   {
-    number: 8,
+    number: 9,
+    title: 'Set Up Employee Help',
+    summary: 'Create FAQ articles and optionally connect the AI Help Agent.',
+    details: 'On the Employee Help page, create FAQ articles that your employees can search when they have questions. Organise articles by category and keep them up to date as policies change. If your subscription includes the AI Help Agent, navigate to Integrations and enable it — the agent uses your FAQ articles and company policies to answer employee questions automatically, with a fallback to HR tickets when it cannot help.',
+    icon: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    page: '/admin/help',
+    feature: 'employee_help',
+  },
+  {
+    number: 10,
     title: 'Create Company Announcements',
     summary: 'Post announcements and remove any default messages.',
     details: 'Navigate to the Announcements page to create a new announcement for your team. This is a good place to welcome employees to the platform, communicate company news, or share important updates. Review any default announcement messages that were pre-populated and delete those that are not relevant to your company.',
@@ -86,7 +103,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/announcements',
   },
   {
-    number: 9,
+    number: 11,
     title: 'Familiarise with HR Tickets',
     summary: 'Understand the ticketing system for employee and service provider queries.',
     details: 'The HR Tickets page is where employees can raise queries and requests. As an admin, you can view and respond to all tickets. Note that only tickets directed to the service provider channel will be visible to the InflowHR support team — internal tickets stay within your company. Use this system for structured issue tracking and resolution.',
@@ -94,7 +111,33 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/tickets',
   },
   {
-    number: 10,
+    number: 12,
+    title: 'Configure JML Workflows',
+    summary: 'Customise onboarding, offboarding, and mover workflow steps.',
+    details: 'On the Onboard / Offboard page, open the Settings tab to configure your Joiners, Movers, and Leavers (JML) workflows. Use the step editor to add, remove, or reorder the steps in each workflow — for example, IT provisioning, equipment handover, or exit interview. Assign notification rules and company contacts to each step so the right people are alerted at the right time. If you use the InflowOnboarder engine integration, configure the M365 provisioning steps and approver settings on the Integrations page.',
+    icon: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+    page: '/admin/onboarding',
+  },
+  {
+    number: 13,
+    title: 'Connect Microsoft Teams',
+    summary: 'Enable presence indicators, notifications, and team collaboration.',
+    details: 'Navigate to Integrations and connect Microsoft Teams using the Configure button. Once connected, employee presence (online, away, busy) appears as coloured dots in the HR Directory. Leave approvals and other workflow notifications can also be sent as Teams messages. This integration requires a Microsoft 365 subscription with Teams enabled for your organisation.',
+    icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    page: '/admin/integrations',
+    optional: true,
+    feature: 'teams_integration',
+  },
+  {
+    number: 14,
+    title: 'Configure Surveys',
+    summary: 'Create pulse surveys and feedback forms for your team.',
+    details: 'On the Surveys page, create surveys to gather employee feedback — pulse checks, engagement scores, or onboarding feedback. Choose from question types including rating scales, multiple choice, and free text. Set surveys as anonymous or named, configure target audiences by department or the whole company, and schedule open and close dates. Results are available on the Analytics tab with charts and export options.',
+    icon: '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M9 14l2 2 4-4"/>',
+    page: '/admin/surveys',
+  },
+  {
+    number: 15,
     title: 'Configure Timesheets & Check-In',
     summary: 'Enable time monitoring, create projects, and set up check-in locations.',
     details: 'On the Timesheets page, decide whether to enable time monitoring for your company. Create your company projects on the Customer Projects tab so employees can log time against them. If you want to use the check-in feature, enable it and then create your office locations by entering site coordinates — employees will use these to check in when arriving at work.',
@@ -104,15 +147,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'timesheets',
   },
   {
-    number: 11,
-    title: 'Assign Managers & Build Org Chart',
-    summary: 'Set up reporting lines to create your company organisation chart.',
-    details: 'On the Performance page, review the Overview tab showing all employees and their current manager assignments. Use the Reassign button to set or change each employee\'s line manager. Once all reporting lines are in place, switch to the Org Chart tab to see the visual organisation diagram — this is automatically built from the manager assignments you configure here.',
-    icon: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
-    page: '/admin/performance',
-  },
-  {
-    number: 12,
+    number: 16,
     title: 'Set Up Legal Timesheets',
     summary: 'Configure clients, matters, and auto-rounding for legal time recording.',
     details: 'If legal timesheets are available on your subscription, navigate to the Legal Timesheets page. Add the clients and matters that your employees will book time against. On the Settings page, select the auto-rounding increment that applies to your company — this determines how recorded time is rounded up for billing purposes. This is a specialist feature for professional services firms.',
@@ -122,7 +157,7 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'legal_timesheets',
   },
   {
-    number: 13,
+    number: 17,
     title: 'Configure Talent Intelligence',
     summary: 'Set up skill categories for employee skills passports.',
     details: 'If the Talent Intelligence feature is available, go to the Talent Intelligence page. You can seed the default skill categories or create your own custom categories relevant to your company. Remove any default categories that do not apply. Your employees will see these categories on their Skills Passport within their My Profile page, where they can self-assess and track their professional development.',
@@ -132,7 +167,15 @@ const SETUP_STEPS: SetupStep[] = [
     feature: 'skills_passport',
   },
   {
-    number: 14,
+    number: 18,
+    title: 'Assign Managers & Build Org Chart',
+    summary: 'Set up reporting lines to create your company organisation chart.',
+    details: 'On the Performance page, review the Overview tab showing all employees and their current manager assignments. Use the Reassign button to set or change each employee\'s line manager. Once all reporting lines are in place, switch to the Org Chart tab to see the visual organisation diagram — this is automatically built from the manager assignments you configure here.',
+    icon: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    page: '/admin/performance',
+  },
+  {
+    number: 19,
     title: 'Manage Access & Permissions',
     summary: 'Grant admin roles and configure service provider access.',
     details: 'On the Access Management page, select key company personnel and grant them the appropriate admin role. This determines who can access the admin portal and what they can do. You also have the option to authorise the service provider (InflowHR) to access your HR data for support purposes using the Service Provider Support Access switch — this can be toggled on and off at any time.',
@@ -140,7 +183,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/access',
   },
   {
-    number: 15,
+    number: 20,
     title: 'Review Billing & Charges',
     summary: 'View your subscription summary and monthly breakdown.',
     details: 'The Billing page provides a summary of your company\'s contracted services and any add-on features. Review the monthly breakdown of charges to ensure everything matches your agreement. This page is for reference — if you need to make changes to your subscription, contact the InflowHR team through the HR Tickets page.',
@@ -148,7 +191,7 @@ const SETUP_STEPS: SetupStep[] = [
     page: '/admin/billing',
   },
   {
-    number: 16,
+    number: 21,
     title: 'Read the User Guides',
     summary: 'Detailed feature guides for end users and administrators.',
     details: 'The User Guides page contains comprehensive documentation covering every feature available to both employees and administrators. Refer to these guides for detailed walkthroughs, tips, and best practices. Share relevant sections with your team as they begin using the platform.',
@@ -159,10 +202,10 @@ const SETUP_STEPS: SetupStep[] = [
 
 const PHASE_MAP: { label: string; color: string; bg: string; range: [number, number] }[] = [
   { label: 'Foundation', color: '#2563eb', bg: '#dbeafe', range: [1, 3] },
-  { label: 'Core Services', color: '#059669', bg: '#dcfce7', range: [4, 7] },
-  { label: 'Communications', color: '#d97706', bg: '#fef3c7', range: [8, 9] },
-  { label: 'Advanced Features', color: '#7c3aed', bg: '#ede9fe', range: [10, 13] },
-  { label: 'Administration', color: '#dc2626', bg: '#fee2e2', range: [14, 16] },
+  { label: 'Core Services', color: '#059669', bg: '#dcfce7', range: [4, 9] },
+  { label: 'Communications', color: '#d97706', bg: '#fef3c7', range: [10, 11] },
+  { label: 'Advanced Features', color: '#7c3aed', bg: '#ede9fe', range: [12, 18] },
+  { label: 'Administration', color: '#dc2626', bg: '#fee2e2', range: [19, 21] },
 ]
 
 function getPhase(stepNum: number) {
