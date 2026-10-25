@@ -55,10 +55,11 @@ export default function Login() {
 
       {/* ── Hero Side ── */}
       <div className="login-hero">
+        <div className="login-hero-brand">
+          <img src="/inflowhr-logo-alt.svg" alt="InflowHR" className="login-hero-logo-img" />
+        </div>
+
         <div className="login-hero-content">
-          <div className="login-hero-brand">
-            <img src="/inflowhr-logo-alt.svg" alt="InflowHR" className="login-hero-logo-img" />
-          </div>
           <h1 className="login-hero-headline">Seamless Workforce<br />&amp; HR Management</h1>
           <p className="login-hero-tagline">{t('login.hero_tagline')}</p>
 
