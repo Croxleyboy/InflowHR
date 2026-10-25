@@ -17,6 +17,7 @@ export default function Login() {
   const [guestOtp, setGuestOtp] = useState('')
   const [guestError, setGuestError] = useState('')
   const [guestLoading, setGuestLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   async function handleAccountLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -51,42 +52,67 @@ export default function Login() {
   return (
     <div className="login-page">
       <span className="login-build">{__BUILD_NUMBER__}</span>
+
+      {/* ── Hero Side ── */}
       <div className="login-hero">
+        <div className="login-hero-topbar">
+          <img src="/inflowhr-logo-alt.svg" alt="InflowHR" className="login-hero-topbar-logo" />
+          <div className="login-hero-topbar-links">
+            <a href="https://inflowhr.com/help" target="_blank" rel="noopener noreferrer" className="login-hero-topbar-link">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Need help?
+            </a>
+          </div>
+        </div>
+
         <div className="login-hero-content">
-          <div className="login-hero-logo">
+          <div className="login-hero-brand">
             <img src="/inflowhr-logo-alt.svg" alt="InflowHR" className="login-hero-logo-img" />
           </div>
+          <h1 className="login-hero-headline">Seamless Workforce<br />&amp; HR Management</h1>
           <p className="login-hero-tagline">{t('login.hero_tagline')}</p>
-          <div className="login-hero-features">
-            <div className="login-hero-feature">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>{t('login.feature_directory')}</span>
+
+          <div className="login-hero-pills">
+            <div className="login-hero-pill">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              {t('login.feature_directory')}
             </div>
-            <div className="login-hero-feature">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-              <span>{t('login.feature_payslips')}</span>
+            <div className="login-hero-pill">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              {t('login.feature_payslips')}
             </div>
-            <div className="login-hero-feature">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              <span>{t('login.feature_leave')}</span>
+            <div className="login-hero-pill">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              {t('login.feature_leave')}
             </div>
-            <div className="login-hero-feature">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-              <span>{t('login.feature_more')}</span>
+            <div className="login-hero-pill">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              Automated JML Workflows
+            </div>
+            <div className="login-hero-pill">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Payroll &amp; Compliance Ready
+            </div>
+            <div className="login-hero-pill">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+              E-Learning &amp; Development
             </div>
           </div>
         </div>
+
         <div className="login-hero-decoration">
-          <div className="login-hero-circle login-hero-circle-1"></div>
-          <div className="login-hero-circle login-hero-circle-2"></div>
-          <div className="login-hero-circle login-hero-circle-3"></div>
+          <div className="login-hero-orb login-hero-orb-1"></div>
+          <div className="login-hero-orb login-hero-orb-2"></div>
+          <div className="login-hero-orb login-hero-orb-3"></div>
+          <div className="login-hero-grid"></div>
         </div>
       </div>
 
+      {/* ── Login Panel ── */}
       <div className="login-form-side">
         <div className="login-card">
           <div className="login-welcome">
-            <h1 className="login-title">{t('login.welcome')}</h1>
+            <h1 className="login-title">Welcome to <span className="login-title-brand">InflowHR</span></h1>
             <p className="login-subtitle">{t('login.subtitle')}</p>
           </div>
 
@@ -120,40 +146,50 @@ export default function Login() {
                 <p className="login-account-info">
                   Enter the email address and one-time passcode provided by your company administrator.
                 </p>
-                <input
-                  type="email"
-                  className="login-account-input"
-                  placeholder="Email Address"
-                  value={guestEmail}
-                  onChange={e => setGuestEmail(e.target.value)}
-                  autoComplete="email"
-                />
-                <input
-                  type="text"
-                  className="login-account-input"
-                  placeholder="One-Time Passcode"
-                  value={guestOtp}
-                  onChange={e => setGuestOtp(e.target.value.toUpperCase())}
-                  autoComplete="one-time-code"
-                  style={{ letterSpacing: '0.15em', fontFamily: 'monospace' }}
-                />
+                <div className="login-input-group">
+                  <input
+                    type="email"
+                    className="login-account-input"
+                    placeholder=" "
+                    value={guestEmail}
+                    onChange={e => setGuestEmail(e.target.value)}
+                    autoComplete="email"
+                    id="guest-email"
+                  />
+                  <label htmlFor="guest-email" className="login-input-label">Email Address</label>
+                </div>
+                <div className="login-input-group">
+                  <input
+                    type="text"
+                    className="login-account-input"
+                    placeholder=" "
+                    value={guestOtp}
+                    onChange={e => setGuestOtp(e.target.value.toUpperCase())}
+                    autoComplete="one-time-code"
+                    style={{ letterSpacing: '0.15em', fontFamily: 'monospace' }}
+                    id="guest-otp"
+                  />
+                  <label htmlFor="guest-otp" className="login-input-label">One-Time Passcode</label>
+                </div>
                 {guestError && <p className="login-account-error">{guestError}</p>}
                 <button
                   type="submit"
-                  className="login-account-btn"
+                  className="login-primary-btn"
                   disabled={guestLoading || !guestEmail || !guestOtp}
                 >
-                  {guestLoading ? 'Verifying...' : 'Sign In as Guest'}
+                  {guestLoading ? (
+                    <span className="login-btn-loading"><span className="login-spinner"></span> Verifying...</span>
+                  ) : 'Sign In as Guest'}
                 </button>
               </form>
 
               <div className="login-trust-badges" style={{ marginTop: 24 }}>
                 <div className="login-trust-badge">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   <span>48-hour access window</span>
                 </div>
                 <div className="login-trust-badge">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                   <span>View-only access</span>
                 </div>
               </div>
@@ -187,15 +223,15 @@ export default function Login() {
 
               <div className="login-trust-badges">
                 <div className="login-trust-badge">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                   <span>{t('login.badge_sso')}</span>
                 </div>
                 <div className="login-trust-badge">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                   <span>{t('login.badge_encrypted')}</span>
                 </div>
                 <div className="login-trust-badge">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                   <span>{t('login.badge_gdpr')}</span>
                 </div>
               </div>
@@ -208,39 +244,62 @@ export default function Login() {
                 <p className="login-account-info">
                   Sign in with your company account credentials provided by your administrator.
                 </p>
-                <input
-                  type="email"
-                  className="login-account-input"
-                  placeholder="Username / Email"
-                  value={bgEmail}
-                  onChange={e => setBgEmail(e.target.value)}
-                  autoComplete="username"
-                />
-                <input
-                  type="password"
-                  className="login-account-input"
-                  placeholder="Password"
-                  value={bgPassword}
-                  onChange={e => setBgPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
+                <div className="login-input-group">
+                  <input
+                    type="email"
+                    className="login-account-input"
+                    placeholder=" "
+                    value={bgEmail}
+                    onChange={e => setBgEmail(e.target.value)}
+                    autoComplete="username"
+                    id="account-email"
+                  />
+                  <label htmlFor="account-email" className="login-input-label">Username / Email</label>
+                </div>
+                <div className="login-input-group">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="login-account-input"
+                    placeholder=" "
+                    value={bgPassword}
+                    onChange={e => setBgPassword(e.target.value)}
+                    autoComplete="current-password"
+                    id="account-password"
+                  />
+                  <label htmlFor="account-password" className="login-input-label">Password</label>
+                  <button
+                    type="button"
+                    className="login-password-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    )}
+                  </button>
+                </div>
                 {bgError && <p className="login-account-error">{bgError}</p>}
                 <button
                   type="submit"
-                  className="login-account-btn"
+                  className="login-primary-btn"
                   disabled={bgLoading || !bgEmail || !bgPassword}
                 >
-                  {bgLoading ? 'Signing in...' : 'Sign In'}
+                  {bgLoading ? (
+                    <span className="login-btn-loading"><span className="login-spinner"></span> Signing in...</span>
+                  ) : 'Sign In to InflowHR'}
                 </button>
               </form>
 
               <div className="login-trust-badges" style={{ marginTop: 24 }}>
                 <div className="login-trust-badge">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                   <span>{t('login.badge_encrypted')}</span>
                 </div>
                 <div className="login-trust-badge">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                   <span>{t('login.badge_gdpr')}</span>
                 </div>
               </div>
@@ -284,8 +343,15 @@ export default function Login() {
             </form>
           )}
 
-          <Link to="/trial" className="login-trial-link">Try for Free — 14 Day Trial</Link>
-          <Link to="/privacy" className="login-privacy-link">Privacy Notice</Link>
+          <div className="login-footer-links">
+            <Link to="/trial" className="login-footer-link">Try for Free</Link>
+            <span className="login-footer-sep">·</span>
+            <Link to="/privacy" className="login-footer-link">Privacy Policy</Link>
+            <span className="login-footer-sep">·</span>
+            <a href="https://inflowhr.com/help" target="_blank" rel="noopener noreferrer" className="login-footer-link">Help Centre</a>
+          </div>
+
+          <p className="login-copyright">© {new Date().getFullYear()} InflowHR. All rights reserved.</p>
         </div>
       </div>
     </div>
