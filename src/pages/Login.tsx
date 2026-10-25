@@ -55,16 +55,6 @@ export default function Login() {
 
       {/* ── Hero Side ── */}
       <div className="login-hero">
-        <div className="login-hero-topbar">
-          <img src="/inflowhr-logo-alt.svg" alt="InflowHR" className="login-hero-topbar-logo" />
-          <div className="login-hero-topbar-links">
-            <a href="https://inflowhr.com/help" target="_blank" rel="noopener noreferrer" className="login-hero-topbar-link">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              Need help?
-            </a>
-          </div>
-        </div>
-
         <div className="login-hero-content">
           <div className="login-hero-brand">
             <img src="/inflowhr-logo-alt.svg" alt="InflowHR" className="login-hero-logo-img" />

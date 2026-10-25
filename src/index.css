@@ -5001,48 +5001,23 @@ body {
 /* ── Hero Side ── */
 .login-hero {
   flex: 1;
-  background: linear-gradient(145deg, #0f0f1e 0%, #1a1a3a 30%, #252560 60%, #1e1e4a 100%);
+  background: url('/login-hero.jpg') center/cover no-repeat;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-end;
   padding: 48px 56px;
   padding-top: calc(48px + env(safe-area-inset-top, 0px));
   position: relative;
   overflow: hidden;
   min-height: 100vh;
 }
-.login-hero-topbar {
+.login-hero::before {
+  content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 48px;
-  padding-top: calc(20px + env(safe-area-inset-top, 0px));
-  z-index: 5;
+  inset: 0;
+  background: linear-gradient(to top, rgba(15,15,30,0.88) 0%, rgba(15,15,30,0.55) 40%, rgba(15,15,30,0.25) 100%);
+  z-index: 1;
 }
-.login-hero-topbar-logo {
-  height: 32px;
-  width: auto;
-  opacity: 0.9;
-}
-.login-hero-topbar-links {
-  display: flex;
-  gap: 20px;
-}
-.login-hero-topbar-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: rgba(255,255,255,0.6);
-  font-size: 13px;
-  font-weight: 500;
-  text-decoration: none;
-  transition: color 0.2s;
-}
-.login-hero-topbar-link:hover { color: rgba(255,255,255,0.9); }
 .login-hero-content {
   position: relative;
   z-index: 2;
@@ -5052,12 +5027,12 @@ body {
   margin-bottom: 40px;
 }
 .login-hero-logo-img {
-  height: 72px;
+  height: 96px;
   width: auto;
   border-radius: 0;
 }
 .login-hero-headline {
-  font-size: 42px;
+  font-size: 48px;
   font-weight: 800;
   color: #fff;
   line-height: 1.15;
@@ -5538,9 +5513,8 @@ body {
   }
   .login-hero-headline { font-size: 32px; }
   .login-hero-tagline { margin-bottom: 28px; }
-  .login-hero-topbar { padding: 16px 40px; }
   .login-hero-brand { margin-bottom: 28px; }
-  .login-hero-logo-img { height: 56px; }
+  .login-hero-logo-img { height: 72px; }
   .login-hero-pills { gap: 8px; }
   .login-hero-pill { padding: 8px 14px; font-size: 12px; }
   .login-form-side {
@@ -5571,14 +5545,8 @@ body {
     padding: 24px 20px 28px;
     min-height: auto;
   }
-  .login-hero-topbar {
-    position: relative;
-    padding: 0 0 16px;
-  }
-  .login-hero-topbar-logo { height: 28px; }
-  .login-hero-topbar-links { display: none; }
   .login-hero-brand { margin-bottom: 20px; }
-  .login-hero-logo-img { height: 48px; }
+  .login-hero-logo-img { height: 56px; }
   .login-hero-headline {
     font-size: 26px;
     margin-bottom: 8px;
