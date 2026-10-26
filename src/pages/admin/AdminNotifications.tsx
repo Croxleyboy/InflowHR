@@ -543,7 +543,7 @@ export default function AdminNotifications() {
                       <div style={{ fontSize: 12, color: 'var(--text-muted, #888)', marginTop: 2 }}>{toggle.description}</div>
                       {featureLocked && (
                         <div style={{ fontSize: 11, color: '#e65100', fontWeight: 600, marginTop: 4 }}>
-                          Requires {toggle.requiredFeature === 'shifts' ? 'Shifts & Rotas' : 'Space & Desk Booking'} subscription (Pack A)
+                          Requires {toggle.requiredFeature === 'shifts' ? 'Shifts & Rotas' : 'Space & Desk Booking'} subscription (People Operations)
                         </div>
                       )}
                     </div>

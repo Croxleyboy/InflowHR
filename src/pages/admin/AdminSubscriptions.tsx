@@ -217,7 +217,7 @@ export default function AdminSubscriptions() {
     if (errorCount > 0) {
       showError(`Failed to update ${errorCount} feature(s)`)
     } else {
-      const label = packKey === 'pack_a' ? 'Workforce & Operations' : 'Enterprise Integrations'
+      const label = packKey === 'pack_a' ? 'People Operations' : 'Enterprise Integrations'
       showSuccess(`${label} ${newState ? 'enabled' : 'disabled'}`)
     }
     await loadCompanyFeatures(selectedCompanyId)
@@ -446,10 +446,10 @@ export default function AdminSubscriptions() {
                 </div>
               )}
 
-              {/* Pack A */}
+              {/* People Operations */}
               {packAPricing && (
                 <div className="sub-pricing-card sub-pricing-card-addon" style={{ borderLeft: '4px solid #43a047' }}>
-                  <div className="sub-pricing-name">Pack A: {packAPricing.display_name}</div>
+                  <div className="sub-pricing-name">{packAPricing.display_name}</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                     {PACK_A_LABELS.map(f => (
                       <span key={f} style={{ fontSize: 11, background: '#e8f5e9', color: '#2e7d32', padding: '3px 10px', borderRadius: 12, fontWeight: 500 }}>{f}</span>
@@ -749,7 +749,7 @@ export default function AdminSubscriptions() {
                     </div>
                   )}
 
-                  {/* Pack A: Workforce & Operations */}
+                  {/* Pack A: People Operations */}
                   {packAPricing && (() => {
                     const partialCount = getPackPartialCount(PACK_A_FEATURE_KEYS)
                     const isPartial = !packAEnabled && partialCount > 0
@@ -766,7 +766,7 @@ export default function AdminSubscriptions() {
                             <span className="admin-toggle-slider" />
                           </label>
                           <div>
-                            <div style={{ fontWeight: 700, fontSize: 15, color: '#2e7d32' }}>Pack A: Workforce &amp; Operations</div>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#2e7d32' }}>Pack A: People Operations</div>
                             {isPartial && (
                               <div style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>
                                 {partialCount} of {PACK_A_FEATURE_KEYS.length} features enabled individually — enable pack to include all
@@ -1013,7 +1013,7 @@ export default function AdminSubscriptions() {
                         )}
                         {packAEnabled && packAPricing && (
                           <tr>
-                            <td>Pack A: Workforce &amp; Operations</td>
+                            <td>Pack A: People Operations</td>
                             <td>{formatCurrency(getEffectivePrice('pack_a'), currency)}/user</td>
                             <td>{employeeCount}</td>
                             <td>{formatCurrency(packACost, currency)}</td>

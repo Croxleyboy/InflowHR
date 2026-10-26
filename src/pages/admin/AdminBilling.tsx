@@ -760,7 +760,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       allFeatures.push({ name: baseline.display_name, type: 'Core' })
     }
     if (packAEnabled && packAPricing) {
-      allFeatures.push({ name: 'Pack A: ' + packAPricing.display_name, type: 'Pack A' })
+      allFeatures.push({ name: packAPricing.display_name, type: 'Pack A' })
     }
     if (packBEnabled && packBPricing) {
       allFeatures.push({ name: 'Pack B: ' + packBPricing.display_name, type: 'Pack B' })
@@ -819,7 +819,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
             </div>
             {packAEnabled && (
               <div className="billing-card" style={{ borderTop: '3px solid #43a047' }}>
-                <span className="billing-card-label" style={{ color: '#2e7d32' }}>Pack A: Workforce</span>
+                <span className="billing-card-label" style={{ color: '#2e7d32' }}>Pack A: People Ops</span>
                 <span className="billing-card-value">{formatCurrency(packAPrice, currency)}</span>
                 <span className="billing-card-sub">per user / month</span>
               </div>
@@ -848,7 +848,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
       {!isFixed && (packAEnabled || packBEnabled || enabledSupport.length > 0) && (
         <div className="billing-addons" style={{ flexWrap: 'wrap', gap: 6 }}>
           {packAEnabled && (
-            <span className="billing-addon-chip" style={{ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7', fontWeight: 600 }}>Pack A: Workforce &amp; Operations</span>
+            <span className="billing-addon-chip" style={{ background: '#e8f5e9', color: '#2e7d32', border: '1px solid #a5d6a7', fontWeight: 600 }}>Pack A: People Operations</span>
           )}
           {packBEnabled && (
             <span className="billing-addon-chip" style={{ background: '#f3e5f5', color: '#7b1fa2', border: '1px solid #ce93d8', fontWeight: 600 }}>Pack B: Pro Integrations</span>
@@ -1092,7 +1092,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
             {packAEnabled && packAPricing && (
               <>
                 <tr>
-                  <td style={{ color: '#2e7d32', fontWeight: 600 }}>Pack A: Workforce &amp; Operations</td>
+                  <td style={{ color: '#2e7d32', fontWeight: 600 }}>Pack A: People Operations</td>
                   <td><span className="admin-badge" style={{ background: '#e8f5e9', color: '#2e7d32' }}>Pack A</span></td>
                   {!isFixed && <td>{formatCurrency(packAPrice, currency)}</td>}
                   <td>{isFixed ? <span style={{ color: '#43a047', fontWeight: 600 }}>&#10003;</span> : <>{formatCurrency(packAPrice * employeeCount, currency)}</>}</td>
