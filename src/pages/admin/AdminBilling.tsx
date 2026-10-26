@@ -5,6 +5,7 @@ import { useAdminCompany } from '../../context/AdminCompanyContext'
 import { useToast } from '../../context/ToastContext'
 import jsPDF from 'jspdf'
 import { formatCurrency, currencySymbol } from '../../lib/formatters'
+import { isWithinGracePeriod, gracePeriodRemaining, formatUKDate, type BillingAdjustment } from '../../lib/billingCalculations'
 
 interface PricingRow {
   id: string
@@ -25,6 +26,11 @@ interface CompanyFeature {
   feature_key: string
   is_enabled: boolean
   custom_price: number | null
+  activated_at: string | null
+  deactivated_at: string | null
+  grace_period_ends_at: string | null
+  cancellation_scheduled: boolean
+  cancellation_effective_date: string | null
 }
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -52,6 +58,7 @@ function generateInvoicePDF(
   supportItems?: { name: string; price: number }[],
   platformFee?: number,
   currency: string = 'GBP',
+  adjustments?: BillingAdjustment[],
 ) {
   const doc = new jsPDF()
   const pw = doc.internal.pageSize.getWidth()
@@ -175,13 +182,45 @@ function generateInvoicePDF(
     drawRow('Platform Fee', 'Flat', `${formatCurrency(platformFee, currency)} flat`, '', `${formatCurrency(platformFee, currency)}`, false, true)
   }
 
+  let adjustmentsTotal = 0
+  if (adjustments && adjustments.length > 0) {
+    y += 2
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(21, 101, 192)
+    doc.text('Adjustments', lm + 4, y)
+    y += 6
+    doc.setTextColor(30, 30, 45)
+    adjustments.forEach(adj => {
+      const label = adj.adjustment_type === 'grace_reversal'
+        ? `Grace reversal: ${adj.display_name}`
+        : `Pro-rata: ${adj.display_name} (${adj.days_charged}/${adj.days_in_month} days)`
+      const amt = adj.line_amount
+      adjustmentsTotal += amt
+      if (rowIdx % 2 === 0) {
+        doc.setFillColor(248, 249, 252)
+        doc.rect(lm, y - 4, rm - lm, 8, 'F')
+      }
+      doc.setFontSize(9)
+      doc.setFont('helvetica', 'normal')
+      doc.setTextColor(adj.adjustment_type === 'grace_reversal' ? 220 : 30, adj.adjustment_type === 'grace_reversal' ? 30 : 30, adj.adjustment_type === 'grace_reversal' ? 30 : 45)
+      doc.text(label, lm + 8, y)
+      doc.text('Adj.', lm + 80, y)
+      doc.text('', lm + 110, y)
+      doc.text('', lm + 140, y)
+      doc.text(`${amt < 0 ? '-' : ''}${formatCurrency(Math.abs(amt), currency)}`, rm - 4, y, { align: 'right' })
+      y += 8
+      rowIdx++
+    })
+  }
+
   y += 4
   doc.setDrawColor(220, 220, 220)
   doc.line(lm + 100, y, rm, y)
   y += 8
 
   const supportTotal = (supportItems || []).reduce((s, sp) => s + sp.price, 0)
-  const subtotal = baselinePrice * employeeCount + packs.reduce((s, p) => s + p.price * employeeCount, 0) + supportTotal + (platformFee || 0)
+  const subtotal = baselinePrice * employeeCount + packs.reduce((s, p) => s + p.price * employeeCount, 0) + supportTotal + (platformFee || 0) + adjustmentsTotal
   const vat = subtotal * VAT_RATE
   const total = subtotal + vat
 
@@ -423,6 +462,8 @@ interface BillingSnapshot {
   core_per_user: number
   addon_per_user: number
   feature_details: SnapshotFeatureDetail[]
+  is_locked?: boolean
+  adjustments_total?: number
 }
 
 interface CancellationBillingSummary {
@@ -457,6 +498,11 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   const [viewEndYear, setViewEndYear] = useState(new Date().getFullYear())
   const [viewEndMonth, setViewEndMonth] = useState(new Date().getMonth() + 1)
   const [companyCreatedAt, setCompanyCreatedAt] = useState<Date | null>(null)
+
+  const [adjustments, setAdjustments] = useState<BillingAdjustment[]>([])
+  const [cancellingPack, setCancellingPack] = useState(false)
+  const [showPackCancelModal, setShowPackCancelModal] = useState<string | null>(null)
+  const isTrial = company?.is_trial || false
 
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
@@ -526,7 +572,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     setLoading(true)
     const now = new Date()
 
-    const [pricingRes, featuresRes, metricsRes, snapshotsRes, companyRes] = await Promise.all([
+    const [pricingRes, featuresRes, metricsRes, snapshotsRes, companyRes, adjustmentsRes] = await Promise.all([
       supabase.from('subscription_pricing').select('*').eq('is_active', true),
       supabase.from('company_features').select('*').eq('company_id', companyId),
       supabase.rpc('get_company_metrics', { p_company_id: companyId }),
@@ -539,11 +585,18 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         .select('billing_type, fixed_annual_price, fy_start_month, monthly_platform_fee, created_at')
         .eq('id', companyId)
         .single(),
+      supabase.from('billing_adjustments')
+        .select('*')
+        .eq('company_id', companyId)
+        .eq('year', now.getFullYear())
+        .eq('month', now.getMonth() + 1)
+        .order('created_at'),
     ])
     const pricingData = (pricingRes.data as PricingRow[]) || []
     const featuresData = (featuresRes.data as CompanyFeature[]) || []
     const empCount = metricsRes.data?.employee_count ?? 0
     const snapshotData = (snapshotsRes.data as BillingSnapshot[]) || []
+    setAdjustments((adjustmentsRes.data as BillingAdjustment[]) || [])
 
     const co = companyRes.data as { billing_type: string; fixed_annual_price: number | null; fy_start_month: number; monthly_platform_fee: number | null; created_at: string | null } | null
     const bt = co?.billing_type === 'fixed' ? 'fixed' : 'monthly'
@@ -588,6 +641,9 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     const featureDetails: SnapshotFeatureDetail[] = []
     if (bl) featureDetails.push({ key: bl.feature_key, name: bl.display_name, price: corePerUser })
     addons.forEach(a => featureDetails.push({ key: a.feature_key, name: a.display_name, price: eff(a) }))
+
+    const existingSnap = snapshots.find(s => s.year === yr && s.month === mo)
+    if (existingSnap?.is_locked) return
 
     await supabase.from('billing_snapshots').upsert(
       {
@@ -636,7 +692,8 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
   const isFixed = billingType === 'fixed' && fixedAnnualPrice > 0
   const fixedMonthly = isFixed ? fixedAnnualPrice / 12 : 0
   const perUserTotal = baselinePrice + packAPrice + packBPrice
-  const subtotal = (isFixed ? fixedMonthly : perUserTotal * employeeCount) + supportTotal + monthlyPlatformFee
+  const adjustmentsTotal = adjustments.reduce((s, a) => s + a.line_amount, 0)
+  const subtotal = (isFixed ? fixedMonthly : perUserTotal * employeeCount) + supportTotal + monthlyPlatformFee + (isFixed || isTrial ? 0 : adjustmentsTotal)
   const vat = subtotal * VAT_RATE
   const monthlyTotal = subtotal + vat
 
@@ -699,12 +756,33 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
     setViewEndMonth(d.getMonth() + 1)
   }
 
+  const packAFeature = features.find(f => f.feature_key === 'pack_a')
+  const packBFeature = features.find(f => f.feature_key === 'pack_b')
+
+  async function handleCancelPack(packKey: string) {
+    setCancellingPack(true)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await supabase.rpc('cancel_pack' as any, { p_company_id: companyId, p_pack_key: packKey })
+      if (error) { showError('Failed to cancel pack: ' + error.message); setCancellingPack(false); setShowPackCancelModal(null); return }
+      const result = data as { status: string; message: string } | null
+      showSuccess(result?.message || 'Pack cancellation processed')
+      setShowPackCancelModal(null)
+      await load()
+    } catch {
+      showError('Failed to cancel pack — please try again')
+    }
+    setCancellingPack(false)
+  }
+
   function handleInvoice(month: string, year: number) {
     if (!baseline) return
     const monthIdx = MONTH_FULL.indexOf(month)
     const now = new Date()
     const isCurrent = year === now.getFullYear() && monthIdx === now.getMonth()
     const snap = snapshots.find(s => s.year === year && s.month === monthIdx + 1)
+
+    const monthAdj = (!isFixed && !isTrial && isCurrent) ? adjustments : []
 
     if (!isCurrent && snap && snap.feature_details?.length > 0) {
       const coreDetail = snap.feature_details.find(d => d.key === baseline.feature_key)
@@ -724,6 +802,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         enabledSupport.map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
         monthlyPlatformFee,
         currency,
+        monthAdj,
       )
     } else {
       const invoicePacks = enabledAddons.map(a => {
@@ -741,6 +820,7 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         enabledSupport.map(sp => ({ name: sp.display_name, price: sp.flat_price ?? 0 })),
         monthlyPlatformFee,
         currency,
+        monthAdj,
       )
     }
   }
@@ -844,6 +924,70 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
           </>
         )}
       </div>
+
+      {!isFixed && !isTrial && (packAEnabled || packBEnabled) && (
+        <div style={{ background: '#fafafa', border: '1px solid #e0e0e0', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Your Packs</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {packAEnabled && packAPricing && (
+              <div style={{ background: '#fff', border: '1px solid #a5d6a7', borderRadius: 8, padding: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontWeight: 600, color: '#2e7d32', flex: '1 1 auto' }}>Pack A: People Operations</span>
+                <span style={{ fontSize: 13, color: '#555' }}>{formatCurrency(packAPrice, currency)}/user &middot; {formatCurrency(packAPrice * employeeCount, currency)}/mo</span>
+                {packAFeature?.activated_at && (
+                  <span style={{ fontSize: 12, color: '#888' }}>Activated: {formatUKDate(packAFeature.activated_at)}</span>
+                )}
+                {packAFeature && isWithinGracePeriod(packAFeature.activated_at) && (
+                  <span style={{ fontSize: 11, background: '#fff8e1', color: '#f57f17', border: '1px solid #ffcc02', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>
+                    Grace period: {gracePeriodRemaining(packAFeature.activated_at)} days left
+                  </span>
+                )}
+                {packAFeature?.cancellation_scheduled && (
+                  <span style={{ fontSize: 11, background: '#ffebee', color: '#c62828', border: '1px solid #ef9a9a', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>
+                    Cancelling: active until {formatUKDate(packAFeature.cancellation_effective_date)}
+                  </span>
+                )}
+                {!isSuperAdmin && !packAFeature?.cancellation_scheduled && (
+                  <button
+                    onClick={() => setShowPackCancelModal('pack_a')}
+                    style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #ef9a9a', background: '#fff', color: '#c62828', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                  >Cancel Pack</button>
+                )}
+              </div>
+            )}
+            {packBEnabled && packBPricing && (
+              <div style={{ background: '#fff', border: '1px solid #ce93d8', borderRadius: 8, padding: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontWeight: 600, color: '#7b1fa2', flex: '1 1 auto' }}>Pack B: Pro Integrations</span>
+                <span style={{ fontSize: 13, color: '#555' }}>{formatCurrency(packBPrice, currency)}/user &middot; {formatCurrency(packBPrice * employeeCount, currency)}/mo</span>
+                {packBFeature?.activated_at && (
+                  <span style={{ fontSize: 12, color: '#888' }}>Activated: {formatUKDate(packBFeature.activated_at)}</span>
+                )}
+                {packBFeature && isWithinGracePeriod(packBFeature.activated_at) && (
+                  <span style={{ fontSize: 11, background: '#fff8e1', color: '#f57f17', border: '1px solid #ffcc02', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>
+                    Grace period: {gracePeriodRemaining(packBFeature.activated_at)} days left
+                  </span>
+                )}
+                {packBFeature?.cancellation_scheduled && (
+                  <span style={{ fontSize: 11, background: '#ffebee', color: '#c62828', border: '1px solid #ef9a9a', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>
+                    Cancelling: active until {formatUKDate(packBFeature.cancellation_effective_date)}
+                  </span>
+                )}
+                {!isSuperAdmin && !packBFeature?.cancellation_scheduled && (
+                  <button
+                    onClick={() => setShowPackCancelModal('pack_b')}
+                    style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #ce93d8', background: '#fff', color: '#7b1fa2', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}
+                  >Cancel Pack</button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {(isFixed || isTrial) && (packAEnabled || packBEnabled) && (
+        <div style={{ background: '#e3f2fd', border: '1px solid #90caf9', borderRadius: 8, padding: 10, marginBottom: 16, fontSize: 13, color: '#1565c0' }}>
+          <strong>Note:</strong> Pro-rata billing does not apply to {isTrial ? 'trial' : 'fixed-price'} subscriptions.
+        </div>
+      )}
 
       {!isFixed && (packAEnabled || packBEnabled || enabledSupport.length > 0) && (
         <div className="billing-addons" style={{ flexWrap: 'wrap', gap: 6 }}>
@@ -1123,6 +1267,25 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
               {!isFixed && <td>{formatCurrency(monthlyPlatformFee, currency)} flat</td>}
               <td>{formatCurrency(monthlyPlatformFee, currency)}</td>
             </tr>
+            {!isFixed && !isTrial && adjustments.length > 0 && (
+              <>
+                <tr>
+                  <td colSpan={4} style={{ fontWeight: 600, color: '#1565c0', paddingTop: 8 }}>Adjustments</td>
+                </tr>
+                {adjustments.map(adj => (
+                  <tr key={adj.id} style={{ color: adj.adjustment_type === 'grace_reversal' ? '#c62828' : '#333' }}>
+                    <td style={{ paddingLeft: 16, fontSize: 13 }}>
+                      {adj.adjustment_type === 'grace_reversal'
+                        ? `Grace reversal: ${adj.display_name}`
+                        : `Pro-rata: ${adj.display_name} (${adj.days_charged}/${adj.days_in_month} days)`}
+                    </td>
+                    <td><span className="admin-badge" style={{ background: '#e3f2fd', color: '#1565c0', fontSize: 10 }}>Adj.</span></td>
+                    <td></td>
+                    <td style={{ fontWeight: 600 }}>{adj.line_amount < 0 ? '-' : ''}{formatCurrency(Math.abs(adj.line_amount), currency)}</td>
+                  </tr>
+                ))}
+              </>
+            )}
             {isFixed ? (
               <>
                 <tr style={{ fontWeight: 700 }}>
@@ -1212,6 +1375,52 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {showPackCancelModal && (
+        <div className="modal-overlay" onClick={() => !cancellingPack && setShowPackCancelModal(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            {(() => {
+              const packKey = showPackCancelModal
+              const feat = features.find(f => f.feature_key === packKey)
+              const packName = packKey === 'pack_a' ? 'Pack A: People Operations' : 'Pack B: Pro Integrations'
+              const inGrace = feat ? isWithinGracePeriod(feat.activated_at) : false
+              const graceLeft = feat ? gracePeriodRemaining(feat.activated_at) : 0
+              return (
+                <>
+                  <h2 style={{ color: '#c62828', margin: '0 0 12px' }}>Cancel {packName}</h2>
+                  {inGrace ? (
+                    <div style={{ background: '#fff8e1', border: '1px solid #ffcc02', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                      <p style={{ margin: 0, fontWeight: 600, color: '#f57f17' }}>Within grace period ({graceLeft} days remaining)</p>
+                      <p style={{ margin: '8px 0 0', fontSize: 14, color: '#555' }}>
+                        This pack will be disabled immediately with <strong>no charge</strong>. Any pro-rata charge already applied will be reversed.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+                      <p style={{ margin: 0, fontWeight: 600, color: '#c62828' }}>Past grace period</p>
+                      <p style={{ margin: '8px 0 0', fontSize: 14, color: '#555' }}>
+                        Features will remain active until the <strong>end of this billing month</strong>. No further charges will apply from next month.
+                      </p>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={() => setShowPackCancelModal(null)}
+                      disabled={cancellingPack}
+                      style={{ padding: '10px 20px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', fontSize: 14 }}
+                    >Keep Pack</button>
+                    <button
+                      onClick={() => handleCancelPack(packKey)}
+                      disabled={cancellingPack}
+                      style={{ padding: '10px 20px', borderRadius: 6, border: 'none', background: '#c62828', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
+                    >{cancellingPack ? 'Processing…' : inGrace ? 'Cancel Now — No Charge' : 'Confirm Cancellation'}</button>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
         </div>
       )}
 

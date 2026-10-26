@@ -3,6 +3,7 @@ import { supabase, callRpcDirect } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { formatCurrency, currencySymbol } from '../../lib/formatters'
+import { isWithinGracePeriod, gracePeriodRemaining, formatUKDate, type FeatureChangeLog } from '../../lib/billingCalculations'
 import AdminCompanies from './AdminCompanies'
 import AdminTrialRequests from './AdminTrialRequests'
 import AdminSupportAccess from './AdminSupportAccess'
@@ -38,6 +39,11 @@ interface CompanyFeature {
   feature_key: string
   is_enabled: boolean
   custom_price: number | null
+  activated_at: string | null
+  deactivated_at: string | null
+  grace_period_ends_at: string | null
+  cancellation_scheduled: boolean
+  cancellation_effective_date: string | null
   created_at: string
 }
 
@@ -90,6 +96,10 @@ export default function AdminSubscriptions() {
   const [savedDashboardStyle, setSavedDashboardStyle] = useState<'default' | 'slim'>('default')
   const [monthlyPlatformFee, setMonthlyPlatformFee] = useState('30.00')
   const [savedMonthlyPlatformFee, setSavedMonthlyPlatformFee] = useState('30.00')
+
+  // Feature change log state
+  const [changeLog, setChangeLog] = useState<FeatureChangeLog[]>([])
+  const [changeLogLoading, setChangeLogLoading] = useState(false)
 
   async function loadPricing() {
     setPricingLoading(true)
@@ -158,13 +168,28 @@ export default function AdminSubscriptions() {
     setFeaturesLoading(false)
   }
 
+  async function loadChangeLog(companyId: string) {
+    setChangeLogLoading(true)
+    const { data } = await supabase
+      .from('feature_change_log')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('changed_at', { ascending: false })
+      .limit(50)
+    setChangeLog((data as FeatureChangeLog[]) || [])
+    setChangeLogLoading(false)
+  }
+
   useEffect(() => {
     loadPricing()
     loadCompanies()
   }, [])
 
   useEffect(() => {
-    if (selectedCompanyId) loadCompanyFeatures(selectedCompanyId)
+    if (selectedCompanyId) {
+      loadCompanyFeatures(selectedCompanyId)
+      loadChangeLog(selectedCompanyId)
+    }
   }, [selectedCompanyId])
 
   async function savePricingItem(item: PricingItem) {
@@ -189,38 +214,68 @@ export default function AdminSubscriptions() {
     await loadPricing()
   }
 
-  async function togglePack(packKey: string, currentlyEnabled: boolean) {
+  async function enablePack(packKey: string) {
     if (!selectedCompanyId) return
     setSavingFeature(packKey)
-    const featureKeys = packKey === 'pack_a' ? PACK_A_FEATURE_KEYS : PACK_B_FEATURE_KEYS
-    const newState = !currentlyEnabled
-    let errorCount = 0
 
-    const { error: packErr } = await supabase
-      .from('company_features')
-      .upsert(
-        { company_id: selectedCompanyId, feature_key: packKey, is_enabled: newState, custom_price: customPrices[packKey] ? parseFloat(customPrices[packKey]) : null },
-        { onConflict: 'company_id,feature_key' }
-      )
-    if (packErr) errorCount++
-
-    for (const fk of featureKeys) {
-      const { error } = await supabase
+    if (customPrices[packKey] && customPrices[packKey] !== '') {
+      await supabase
         .from('company_features')
         .upsert(
-          { company_id: selectedCompanyId, feature_key: fk, is_enabled: newState, custom_price: null },
+          { company_id: selectedCompanyId, feature_key: packKey, custom_price: parseFloat(customPrices[packKey]) },
           { onConflict: 'company_id,feature_key' }
         )
-      if (error) errorCount++
     }
 
-    if (errorCount > 0) {
-      showError(`Failed to update ${errorCount} feature(s)`)
+    const { data, error } = await callRpcDirect('enable_pack', {
+      p_company_id: selectedCompanyId,
+      p_pack_key: packKey,
+    })
+    if (error) {
+      showError(`Failed to enable pack: ${(error as any)?.message || 'Unknown error'}`)
     } else {
-      const label = packKey === 'pack_a' ? 'People Operations' : 'Enterprise Integrations'
-      showSuccess(`${label} ${newState ? 'enabled' : 'disabled'}`)
+      const result = data as Record<string, any>
+      const label = packKey === 'pack_a' ? 'People Operations' : 'Pro Integrations'
+      if (result?.exempt) {
+        showSuccess(`${label} enabled (no pro-rata — exempt)`)
+      } else {
+        showSuccess(`${label} enabled — pro-rata charge: ${formatCurrency(result?.pro_rata_amount || 0, currency)}`)
+      }
     }
     await loadCompanyFeatures(selectedCompanyId)
+    await loadChangeLog(selectedCompanyId)
+    setSavingFeature(null)
+  }
+
+  async function handleCancelPack(packKey: string) {
+    if (!selectedCompanyId) return
+    const label = packKey === 'pack_a' ? 'People Operations' : 'Pro Integrations'
+    const packFeature = companyFeatures.find(f => f.feature_key === packKey)
+    const inGrace = isWithinGracePeriod(packFeature?.activated_at || null)
+
+    if (!window.confirm(
+      inGrace
+        ? `Cancel ${label}? This is within the 7-day grace period — features will be disabled immediately with no charge.`
+        : `Cancel ${label}? Features will remain active until the end of this month. No charges from next month.`
+    )) return
+
+    setSavingFeature(packKey)
+    const { data, error } = await callRpcDirect('cancel_pack', {
+      p_company_id: selectedCompanyId,
+      p_pack_key: packKey,
+    })
+    if (error) {
+      showError(`Failed to cancel pack: ${(error as any)?.message || 'Unknown error'}`)
+    } else {
+      const result = data as Record<string, any>
+      if (result?.cancel_type === 'grace_immediate') {
+        showSuccess(`${label} cancelled — charge reversed (£${result?.reversed_amount || 0})`)
+      } else {
+        showSuccess(`${label} cancellation scheduled for ${formatUKDate(result?.effective_date)}`)
+      }
+    }
+    await loadCompanyFeatures(selectedCompanyId)
+    await loadChangeLog(selectedCompanyId)
     setSavingFeature(null)
   }
 
@@ -753,28 +808,56 @@ export default function AdminSubscriptions() {
                   {packAPricing && (() => {
                     const partialCount = getPackPartialCount(PACK_A_FEATURE_KEYS)
                     const isPartial = !packAEnabled && partialCount > 0
+                    const packAFeature = companyFeatures.find(f => f.feature_key === 'pack_a')
+                    const packAGrace = packAEnabled && isWithinGracePeriod(packAFeature?.activated_at || null)
+                    const packAGraceDays = gracePeriodRemaining(packAFeature?.activated_at || null)
+                    const packACancelling = packAFeature?.cancellation_scheduled
                     return (
                       <div style={{ background: packAEnabled ? '#e8f5e9' : '#f5f5f5', border: `2px solid ${packAEnabled ? '#43a047' : isPartial ? '#ff9800' : '#e0e0e0'}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                          <label className="admin-toggle-switch">
-                            <input
-                              type="checkbox"
-                              checked={packAEnabled}
-                              onChange={() => togglePack('pack_a', packAEnabled)}
+                          {!packAEnabled ? (
+                            <button
+                              className="admin-btn"
+                              style={{ background: '#43a047', color: '#fff', border: 'none', fontWeight: 700, fontSize: 13, padding: '8px 16px', borderRadius: 6, cursor: 'pointer' }}
+                              onClick={() => enablePack('pack_a')}
                               disabled={savingFeature === 'pack_a'}
-                            />
-                            <span className="admin-toggle-slider" />
-                          </label>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: 15, color: '#2e7d32' }}>Pack A: People Operations</div>
+                            >
+                              {savingFeature === 'pack_a' ? 'Enabling...' : 'Enable Pack'}
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: 11, background: '#c8e6c9', color: '#2e7d32', padding: '4px 12px', borderRadius: 12, fontWeight: 700 }}>Active</span>
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#2e7d32' }}>People Operations</div>
                             {isPartial && (
                               <div style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>
                                 {partialCount} of {PACK_A_FEATURE_KEYS.length} features enabled individually — enable pack to include all
                               </div>
                             )}
+                            {packAEnabled && packAFeature?.activated_at && (
+                              <div style={{ fontSize: 11, color: '#666' }}>Activated: {formatUKDate(packAFeature.activated_at)}</div>
+                            )}
                           </div>
-                          {customPrices['pack_a'] && customPrices['pack_a'] !== '' && (
-                            <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            {customPrices['pack_a'] && customPrices['pack_a'] !== '' && (
+                              <span style={{ fontSize: 10, background: '#e8f5e9', color: '#2e7d32', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
+                            )}
+                            {packAGrace && (
+                              <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '3px 10px', borderRadius: 12, fontWeight: 700 }}>Grace period: {packAGraceDays} day{packAGraceDays !== 1 ? 's' : ''} remaining</span>
+                            )}
+                            {packACancelling && (
+                              <span style={{ fontSize: 10, background: '#ffebee', color: '#c62828', padding: '3px 10px', borderRadius: 12, fontWeight: 700 }}>Cancelling: active until {formatUKDate(packAFeature?.cancellation_effective_date || null)}</span>
+                            )}
+                          </div>
+                          {packAEnabled && !packACancelling && (
+                            <button
+                              className="admin-btn"
+                              style={{ background: '#c62828', color: '#fff', border: 'none', fontWeight: 600, fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer' }}
+                              onClick={() => handleCancelPack('pack_a')}
+                              disabled={savingFeature === 'pack_a'}
+                            >
+                              Cancel Pack
+                            </button>
                           )}
                         </div>
 
@@ -823,32 +906,60 @@ export default function AdminSubscriptions() {
                     )
                   })()}
 
-                  {/* Pack B: Enterprise Integrations */}
+                  {/* Pack B: Pro Integrations */}
                   {packBPricing && (() => {
                     const partialCount = getPackPartialCount(PACK_B_FEATURE_KEYS)
                     const isPartial = !packBEnabled && partialCount > 0
+                    const packBFeature = companyFeatures.find(f => f.feature_key === 'pack_b')
+                    const packBGrace = packBEnabled && isWithinGracePeriod(packBFeature?.activated_at || null)
+                    const packBGraceDays = gracePeriodRemaining(packBFeature?.activated_at || null)
+                    const packBCancelling = packBFeature?.cancellation_scheduled
                     return (
                       <div style={{ background: packBEnabled ? '#f3e5f5' : '#f5f5f5', border: `2px solid ${packBEnabled ? '#7b1fa2' : isPartial ? '#ff9800' : '#e0e0e0'}`, borderRadius: 8, padding: 16, marginBottom: 16 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                          <label className="admin-toggle-switch">
-                            <input
-                              type="checkbox"
-                              checked={packBEnabled}
-                              onChange={() => togglePack('pack_b', packBEnabled)}
+                          {!packBEnabled ? (
+                            <button
+                              className="admin-btn"
+                              style={{ background: '#7b1fa2', color: '#fff', border: 'none', fontWeight: 700, fontSize: 13, padding: '8px 16px', borderRadius: 6, cursor: 'pointer' }}
+                              onClick={() => enablePack('pack_b')}
                               disabled={savingFeature === 'pack_b'}
-                            />
-                            <span className="admin-toggle-slider" />
-                          </label>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: 15, color: '#7b1fa2' }}>Pack B: Pro Integrations</div>
+                            >
+                              {savingFeature === 'pack_b' ? 'Enabling...' : 'Enable Pack'}
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: 11, background: '#e1bee7', color: '#7b1fa2', padding: '4px 12px', borderRadius: 12, fontWeight: 700 }}>Active</span>
+                          )}
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 700, fontSize: 15, color: '#7b1fa2' }}>Pro Integrations</div>
                             {isPartial && (
                               <div style={{ fontSize: 12, color: '#e65100', fontWeight: 600 }}>
                                 {partialCount} of {PACK_B_FEATURE_KEYS.length} features enabled individually — enable pack to include all
                               </div>
                             )}
+                            {packBEnabled && packBFeature?.activated_at && (
+                              <div style={{ fontSize: 11, color: '#666' }}>Activated: {formatUKDate(packBFeature.activated_at)}</div>
+                            )}
                           </div>
-                          {customPrices['pack_b'] && customPrices['pack_b'] !== '' && (
-                            <span style={{ fontSize: 10, background: '#f3e5f5', color: '#7b1fa2', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                            {customPrices['pack_b'] && customPrices['pack_b'] !== '' && (
+                              <span style={{ fontSize: 10, background: '#f3e5f5', color: '#7b1fa2', padding: '2px 8px', borderRadius: 3, fontWeight: 600 }}>Custom Rate</span>
+                            )}
+                            {packBGrace && (
+                              <span style={{ fontSize: 10, background: '#fff3e0', color: '#e65100', padding: '3px 10px', borderRadius: 12, fontWeight: 700 }}>Grace period: {packBGraceDays} day{packBGraceDays !== 1 ? 's' : ''} remaining</span>
+                            )}
+                            {packBCancelling && (
+                              <span style={{ fontSize: 10, background: '#ffebee', color: '#c62828', padding: '3px 10px', borderRadius: 12, fontWeight: 700 }}>Cancelling: active until {formatUKDate(packBFeature?.cancellation_effective_date || null)}</span>
+                            )}
+                          </div>
+                          {packBEnabled && !packBCancelling && (
+                            <button
+                              className="admin-btn"
+                              style={{ background: '#c62828', color: '#fff', border: 'none', fontWeight: 600, fontSize: 12, padding: '6px 14px', borderRadius: 6, cursor: 'pointer' }}
+                              onClick={() => handleCancelPack('pack_b')}
+                              disabled={savingFeature === 'pack_b'}
+                            >
+                              Cancel Pack
+                            </button>
                           )}
                         </div>
 
@@ -1058,6 +1169,48 @@ export default function AdminSubscriptions() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Feature Change History */}
+                  {changeLog.length > 0 && (
+                    <div style={{ marginTop: 24 }}>
+                      <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, color: '#333' }}>Feature Change History</h4>
+                      <div className="admin-table-wrap">
+                        <table className="admin-table" style={{ fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Feature</th>
+                              <th>Action</th>
+                              <th>Price</th>
+                              <th>Employees</th>
+                              <th>Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {changeLog.map(log => (
+                              <tr key={log.id}>
+                                <td style={{ whiteSpace: 'nowrap' }}>{formatUKDate(log.changed_at)}</td>
+                                <td>{log.feature_key === 'pack_a' ? 'People Operations' : log.feature_key === 'pack_b' ? 'Pro Integrations' : log.feature_key}</td>
+                                <td>
+                                  <span style={{
+                                    fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 8,
+                                    background: log.action === 'enabled' ? '#e8f5e9' : log.action === 'grace_cancelled' ? '#fff3e0' : log.action === 'scheduled_cancel' ? '#ffebee' : '#f5f5f5',
+                                    color: log.action === 'enabled' ? '#2e7d32' : log.action === 'grace_cancelled' ? '#e65100' : log.action === 'scheduled_cancel' ? '#c62828' : '#666'
+                                  }}>
+                                    {log.action.replace(/_/g, ' ')}
+                                  </span>
+                                </td>
+                                <td>{log.effective_price != null ? formatCurrency(log.effective_price, currency) : '—'}</td>
+                                <td>{log.employee_count ?? '—'}</td>
+                                <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{log.notes || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {changeLogLoading && <div style={{ fontSize: 12, color: '#999', marginTop: 6 }}>Loading...</div>}
+                    </div>
+                  )}
                 </>
               )}
             </>
