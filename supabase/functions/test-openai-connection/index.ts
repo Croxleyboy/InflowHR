@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
       return json({
         connected: true,
         model_available: hasGpt4oMini,
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o-mini-2024-07-18',
         total_models: modelIds.length,
       })
     }

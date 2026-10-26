@@ -240,7 +240,7 @@ ${faqContext}`
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o-mini-2024-07-18',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: query },

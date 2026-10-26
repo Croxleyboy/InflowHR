@@ -19,8 +19,9 @@
     "react-dom": "^19.2.7",
     "react-leaflet": "^5.0.0",
     "react-router-dom": "^7.18.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
+  "license": "UNLICENSED",
   "devDependencies": {
     "@types/leaflet": "^1.9.22",
     "@types/node": "^24.13.2",
