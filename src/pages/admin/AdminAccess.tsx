@@ -96,7 +96,7 @@ export default function AdminAccess() {
   const { companyFeatures } = useFeatures()
   const { showError, showSuccess } = useToast()
 
-  const [tab, setTab] = useState<'access' | 'permissions' | 'guests'>('access')
+  const [tab, setTab] = useState<'access' | 'permissions' | 'guests' | 'delegations'>('access')
   const [employees, setEmployees] = useState<Employee[]>([])
   const [accessList, setAccessList] = useState<AccessRow[]>([])
   const [roles, setRoles] = useState<RolePerms[]>([])
@@ -114,6 +114,11 @@ export default function AdminAccess() {
   const [guestReadOnly, setGuestReadOnly] = useState(true)
   const [guestSaving, setGuestSaving] = useState(false)
   const [showOtp, setShowOtp] = useState<{ id: string; otp: string } | null>(null)
+
+  const [delegations, setDelegations] = useState<{ id: string; delegator_id: string; delegate_id: string; start_date: string; end_date: string; scope: string; reason: string; is_active: boolean }[]>([])
+  const [showNewAdminDel, setShowNewAdminDel] = useState(false)
+  const [adminDel, setAdminDel] = useState({ delegator_id: '', delegate_id: '', start_date: '', end_date: '', scope: 'all', reason: '' })
+  const [adminDelSaving, setAdminDelSaving] = useState(false)
 
   const isCompanyAdmin = isSuperAdmin || companyUser?.role === 'admin'
 
@@ -145,6 +150,12 @@ export default function AdminAccess() {
     setAccessList((accessRes.data as AccessRow[]) || [])
     setGuestUsers((guestRes.data as GuestUser[]) || [])
     if (companyRes.data) setSupportAccessAuthorised(companyRes.data.support_access_authorised ?? false)
+
+    const delRes = await supabase.from('approval_delegations')
+      .select('*')
+      .eq('company_id', selectedCompanyId)
+      .order('start_date', { ascending: false })
+    setDelegations((delRes.data || []) as typeof delegations)
 
     const existing = (rolesRes.data || []) as { id: number; role_key: string; role_label: string; permissions: Record<string, boolean> }[]
     const merged: RolePerms[] = ROLE_KEYS.map(rk => {
@@ -387,6 +398,47 @@ export default function AdminAccess() {
     } catch { showError('Failed to update guest') }
   }
 
+  async function handleAdminCreateDelegation() {
+    if (!selectedCompanyId) return
+    if (!adminDel.delegator_id || !adminDel.delegate_id || !adminDel.start_date || !adminDel.end_date) {
+      showError('Please fill in all required fields')
+      return
+    }
+    if (adminDel.delegator_id === adminDel.delegate_id) {
+      showError('Delegator and delegate must be different people')
+      return
+    }
+    if (adminDel.end_date < adminDel.start_date) {
+      showError('End date must be on or after start date')
+      return
+    }
+    setAdminDelSaving(true)
+    const { error } = await supabase.from('approval_delegations').insert({
+      company_id: selectedCompanyId,
+      delegator_id: adminDel.delegator_id,
+      delegate_id: adminDel.delegate_id,
+      start_date: adminDel.start_date,
+      end_date: adminDel.end_date,
+      scope: adminDel.scope,
+      reason: adminDel.reason,
+    })
+    if (error) { showError('Failed to create delegation: ' + error.message); setAdminDelSaving(false); return }
+    setAdminDel({ delegator_id: '', delegate_id: '', start_date: '', end_date: '', scope: 'all', reason: '' })
+    setShowNewAdminDel(false)
+    setAdminDelSaving(false)
+    showSuccess('Delegation created')
+    loadData()
+  }
+
+  async function handleAdminCancelDelegation(delegationId: string) {
+    const { error } = await supabase.from('approval_delegations')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', delegationId)
+    if (error) { showError('Failed to cancel delegation'); return }
+    setDelegations(prev => prev.map(d => d.id === delegationId ? { ...d, is_active: false } : d))
+    showSuccess('Delegation cancelled')
+  }
+
   const subscribedFeatures = useMemo(() => {
     const featureMap: Record<string, string> = {
       expenses: 'expenses', leave: 'leave', payroll: 'payslips',
@@ -414,6 +466,7 @@ export default function AdminAccess() {
         <button className={`admin-tab ${tab === 'access' ? 'admin-tab-active' : ''}`} onClick={() => setTab('access')}>Access</button>
         <button className={`admin-tab ${tab === 'permissions' ? 'admin-tab-active' : ''}`} onClick={() => setTab('permissions')}>Permissions</button>
         <button className={`admin-tab ${tab === 'guests' ? 'admin-tab-active' : ''}`} onClick={() => setTab('guests')}>Guest Access</button>
+        <button className={`admin-tab ${tab === 'delegations' ? 'admin-tab-active' : ''}`} onClick={() => setTab('delegations')}>Delegations</button>
       </div>
 
       {loading && <div className="admin-loading">Loading...</div>}
@@ -780,6 +833,136 @@ export default function AdminAccess() {
                             >
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             </button>
+                          </td>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {!loading && tab === 'delegations' && (
+        <>
+          <p style={{ color: '#64748b', fontSize: 14, margin: '0 0 16px' }}>
+            View and manage temporary approval delegations. When a manager is away, their approval responsibilities can be assigned to a colleague.
+          </p>
+
+          {isCompanyAdmin && !showNewAdminDel && (
+            <button
+              onClick={() => setShowNewAdminDel(true)}
+              style={{ marginBottom: 16, padding: '8px 16px', borderRadius: 8, border: 'none', background: '#6C4FBF', color: '#fff', cursor: 'pointer', fontWeight: 500, fontSize: 14 }}
+            >+ New Delegation</button>
+          )}
+
+          {isCompanyAdmin && showNewAdminDel && (
+            <div style={{ background: '#f8fafc', borderRadius: 10, padding: 16, marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 12, border: '1px solid #e5e7eb' }}>
+              <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>New Delegation</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>Delegator (manager going away)</label>
+                  <select
+                    value={adminDel.delegator_id}
+                    onChange={e => setAdminDel(p => ({ ...p, delegator_id: e.target.value }))}
+                    style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 14 }}
+                  >
+                    <option value="">Select employee…</option>
+                    {employees.map(e => (
+                      <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>Delegate (covering approvals)</label>
+                  <select
+                    value={adminDel.delegate_id}
+                    onChange={e => setAdminDel(p => ({ ...p, delegate_id: e.target.value }))}
+                    style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 14 }}
+                  >
+                    <option value="">Select employee…</option>
+                    {employees.map(e => (
+                      <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>Start date</label>
+                  <input type="date" value={adminDel.start_date} onChange={e => setAdminDel(p => ({ ...p, start_date: e.target.value }))} style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 14 }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>End date</label>
+                  <input type="date" value={adminDel.end_date} onChange={e => setAdminDel(p => ({ ...p, end_date: e.target.value }))} style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 14 }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>Scope</label>
+                  <select value={adminDel.scope} onChange={e => setAdminDel(p => ({ ...p, scope: e.target.value }))} style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 14 }}>
+                    <option value="all">All approvals</option>
+                    <option value="leave">Leave only</option>
+                    <option value="expenses">Expenses only</option>
+                    <option value="timesheets">Timesheets only</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>Reason (optional)</label>
+                <input type="text" value={adminDel.reason} onChange={e => setAdminDel(p => ({ ...p, reason: e.target.value }))} placeholder="e.g. Annual leave" style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 14 }} />
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button onClick={() => { setShowNewAdminDel(false); setAdminDel({ delegator_id: '', delegate_id: '', start_date: '', end_date: '', scope: 'all', reason: '' }) }} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #e2e8f0', background: 'transparent', cursor: 'pointer', fontSize: 14 }}>Cancel</button>
+                <button onClick={handleAdminCreateDelegation} disabled={adminDelSaving} style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#6C4FBF', color: '#fff', cursor: 'pointer', fontWeight: 500, fontSize: 14 }}>{adminDelSaving ? 'Saving…' : 'Create'}</button>
+              </div>
+            </div>
+          )}
+
+          {delegations.length === 0 ? (
+            <p style={{ color: '#94a3b8', textAlign: 'center', padding: 24 }}>No delegations found</p>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Delegator</th>
+                    <th>Delegate</th>
+                    <th>Period</th>
+                    <th>Scope</th>
+                    <th>Status</th>
+                    {isCompanyAdmin && <th style={{ width: 80 }}>Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {delegations.map(d => {
+                    const today = new Date().toISOString().slice(0, 10)
+                    const isCurrentlyActive = d.is_active && d.start_date <= today && d.end_date >= today
+                    const isUpcoming = d.is_active && d.start_date > today
+                    const isExpired = d.is_active && d.end_date < today
+                    return (
+                      <tr key={d.id} style={!d.is_active || isExpired ? { opacity: 0.6 } : undefined}>
+                        <td>{(() => { const e = empMap.get(d.delegator_id); return e ? `${e.first_name} ${e.last_name}` : d.delegator_id })()}</td>
+                        <td>{(() => { const e = empMap.get(d.delegate_id); return e ? `${e.first_name} ${e.last_name}` : d.delegate_id })()}</td>
+                        <td>{new Date(d.start_date).toLocaleDateString('en-GB')} — {new Date(d.end_date).toLocaleDateString('en-GB')}</td>
+                        <td>{d.scope === 'all' ? 'All' : d.scope}</td>
+                        <td>
+                          {!d.is_active && <span style={{ color: '#94a3b8' }}>Cancelled</span>}
+                          {isCurrentlyActive && <span style={{ color: '#22c55e', fontWeight: 600 }}>Active</span>}
+                          {isUpcoming && <span style={{ color: '#f59e0b' }}>Upcoming</span>}
+                          {isExpired && <span style={{ color: '#94a3b8' }}>Expired</span>}
+                        </td>
+                        {isCompanyAdmin && (
+                          <td>
+                            {d.is_active && !isExpired && (
+                              <button
+                                className="admin-btn-icon admin-btn-danger"
+                                title="Cancel delegation"
+                                onClick={() => handleAdminCancelDelegation(d.id)}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                              </button>
+                            )}
                           </td>
                         )}
                       </tr>

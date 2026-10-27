@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useAuth } from '../../context/AuthContext'
 
 interface Feature {
@@ -181,6 +181,8 @@ const EMPLOYEE_SECTIONS: GuideSection[] = [
     icon: '✅', title: 'Approvals (Managers)',
     features: [
       { title: 'Approve or Reject Requests', purpose: 'Managers can action leave, expense, and timesheet requests from the Actions tab.', steps: ['Open Notifications > Actions.', 'Tap a pending request to review the details.', 'Tap Approve or Reject. The employee is notified immediately.'], callout: { type: 'tip', text: 'You can also reach approval pages via the direct links sent in notification emails.' } },
+      { title: 'Delegate Your Approvals', purpose: 'Temporarily assign your approval responsibilities to a colleague while you are away (e.g. holiday, secondment).', steps: ['Navigate to Settings > Approval Delegation.', 'Tap + New Delegation.', 'Select the team member who will cover your approvals from the colleague picker.', 'Set the start and end dates for the delegation period.', 'Choose the scope: All (leave, expenses, timesheets) or select specific types.', 'Optionally add a reason (e.g. "Annual leave 01/11/2026 – 14/11/2026").', 'Tap Save. Your delegate receives a notification confirming the delegation.', 'During the delegation period, your pending approvals appear in the delegate\'s Actions tab alongside their own.', 'You can cancel an active delegation at any time from the same page.'], callout: { type: 'note', text: 'Delegations do not remove your own access — you can still approve requests during the delegation period. The delegate sees the same requests you would, labelled "On behalf of [your name]".' } },
+      { title: 'Covering for a Colleague', purpose: 'When a colleague delegates their approvals to you, their pending items appear in your Actions tab.', steps: ['You receive a notification when a delegation starts: "[Name] has delegated approvals to you from DD/MM/YYYY to DD/MM/YYYY".', 'Open Notifications > Actions. Delegated items show a banner: "On behalf of [Name]".', 'Approve or reject as normal — the original requester is notified as if their manager actioned it.', 'The delegation ends automatically on the end date. No action is needed from you.'] },
     ],
   },
 ]
@@ -686,6 +688,15 @@ const ADMIN_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    icon: '🔄', title: 'Approval Delegation',
+    features: [
+      { title: 'Overview', purpose: 'Allow managers and admins to temporarily delegate their approval responsibilities to a colleague for a set period — covering leave, expenses, and timesheet approvals.', steps: ['Navigate to Admin > Settings (or an individual manager can set this up from their HR app Settings > Approval Delegation).', 'The Approval Delegation section shows all active, upcoming, and past delegations for the company.', 'Admins can create delegations on behalf of any manager, or managers can create their own.'] },
+      { title: 'Create a Delegation', purpose: 'Set up a temporary approval handover between two employees.', steps: ['Click + New Delegation.', 'Select the delegator (the person going away) and the delegate (the person covering).', 'Set start date and end date (UK format DD/MM/YYYY).', 'Choose the scope: All (leave + expenses + timesheets), or select individual types.', 'Optionally add a reason for the delegation.', 'Click Save. Both parties receive a notification.'], callout: { type: 'note', text: 'The delegate must be an active employee in the same company. They do not need admin access — they receive the delegator\'s pending approvals in their own Notifications > Actions tab.' } },
+      { title: 'How It Works', purpose: 'During the delegation period, the system routes pending approvals to both the original approver and their delegate.', steps: ['When an employee submits a leave request, expense claim, or timesheet, the system checks if their manager has an active delegation.', 'If a delegation is active and today falls within the start/end date range, the delegate also sees the pending approval in their Actions tab.', 'Delegated approvals are labelled "On behalf of [Manager Name]" so the delegate knows they are covering.', 'Either the manager or the delegate can approve or reject — whichever acts first resolves the request.', 'The audit trail records who actioned the request (the delegate\'s name, with a note that it was delegated).'] },
+      { title: 'Cancel or Expire', purpose: 'Delegations end automatically or can be cancelled early.', steps: ['Delegations expire automatically at the end of the end date — no action needed.', 'To cancel early, click Cancel on the active delegation row. The delegate is notified that their cover period has ended.', 'Past delegations remain visible in the history for audit purposes.'] },
+    ],
+  },
+  {
     icon: '💬', title: 'Employee Help',
     features: [
       { title: 'Manage FAQ Articles', purpose: 'Create and organise the knowledge base that powers the employee help chat.', steps: ['Navigate to Admin > Employee Help from the sidebar.', 'The Company Articles tab shows articles specific to your company. The Global Articles tab shows platform-wide articles available to all companies.', 'Click + New Article to create a company-specific article with a category, question, answer, and keywords.', 'Set a data query type (e.g. Leave Balance, Next Shift) to make an article resolve personalised data for each employee.', 'Toggle articles active or inactive. Inactive articles are hidden from employees but not deleted.', 'Drag articles to reorder them within a category — the sort order controls which article appears first in search results.'] },
@@ -796,6 +807,18 @@ const SUPER_SECTIONS: GuideSection[] = [
     ],
   },
   {
+    icon: '🤝', title: 'MSP Partner Channel',
+    features: [
+      { title: 'Overview', purpose: 'The MSP (Managed Service Provider) partner channel allows IT service providers to manage multiple client companies from a single admin session with wholesale pricing.', steps: ['MSP partners are companies with the is_msp flag enabled by a super admin.', 'Each MSP partner gets a dedicated MSP Dashboard with company management, user access control, and audit logging.', 'MSP-managed companies have their billing handled by the MSP — the company admin billing page is replaced with a "Managed by [MSP Name]" panel.', 'InflowHR invoices the MSP at wholesale rates; the MSP invoices their own clients separately.'] },
+      { title: 'Setting Up an MSP Partner', purpose: 'Step-by-step process to designate a company as an MSP and link managed companies.', steps: ['Step 1 — Enable the global MSP feature: set msp_feature_enabled = true in the platform_settings table.', 'Step 2 — Flag a company as MSP: set is_msp = true on the company\'s row in the companies table. This unlocks the MSP Dashboard in their admin sidebar.', 'Step 3 — Assign an MSP tier: set msp_tier (starter / growth / enterprise) and msp_wholesale_discount (20% / 30% / 40%) on the company, or use the Recalculate Tiers button in the super admin billing view.', 'Step 4 — Link managed companies: insert rows into msp_managed_companies with the MSP\'s msp_company_id and each client\'s managed_company_id. Set managed_by_msp_id on each managed company in the companies table.', 'Step 5 — Grant MSP user access: the MSP admin uses their MSP Dashboard > Users tab to grant access to team members, with optional JSONB permission restrictions per managed company.'], callout: { type: 'note', text: 'Steps 1–4 currently require direct database operations. The MSP Dashboard UI handles step 5 (user access management).' } },
+      { title: 'MSP Tiers & Wholesale Pricing', purpose: 'Wholesale pricing is tiered based on the total number of managed employees across all MSP client companies.', steps: ['Starter tier (1–100 employees): 20% wholesale discount.', 'Growth tier (101–500 employees): 30% wholesale discount.', 'Enterprise tier (501+ employees): 40% wholesale discount.', 'Tiers are recalculated based on total active employees across all managed companies.', 'Use the "Recalculate Tiers" button in Admin > Billing > MSP Wholesale Billing section to update tiers.', 'Tier changes update the discount percentage immediately — the next billing cycle reflects the new rate.'] },
+      { title: 'MSP Wholesale Billing (Super Admin)', purpose: 'View consolidated MSP billing data in the super admin billing page.', steps: ['Navigate to Admin > Billing as a super admin.', 'The MSP Wholesale Billing section appears below the standard billing summary cards.', 'A table lists each MSP partner with: partner name, tier badge (starter/growth/enterprise), discount percentage, managed company count, total employees, and monthly wholesale amount.', 'Click "Recalculate Tiers" to auto-update all MSP tiers based on current employee counts.', 'Each MSP row is expandable to show the individual managed companies and their costs.'] },
+      { title: 'MSP Dashboard (MSP Admin)', purpose: 'The MSP admin view with company management, user access, and audit logging.', steps: ['The MSP Dashboard is visible in the sidebar only for users with MSP admin access.', 'Companies tab — lists all managed companies with status, employee count, and quick actions.', 'Users tab — grant or revoke access for MSP team members to specific managed companies. Set JSONB permissions to restrict sidebar visibility per user per company (e.g. hide Payroll, hide Billing).', 'Audit Log tab — shows all MSP actions: company switches, access grants, access revocations. Each entry shows date (DD/MM/YYYY), action type, target company, and details.'] },
+      { title: 'MSP Permission Scoping', purpose: 'Granular per-user permissions control which admin sidebar items an MSP user can see when viewing a managed company.', steps: ['Permissions are stored as JSONB on the msp_user_access table, e.g. {"payroll": false, "billing": false}.', 'When an MSP user switches to a managed company, the system fetches their permissions via the get_msp_permissions RPC.', 'Sidebar items with a matching permKey set to false are hidden for that user on that company.', 'Omitting a key or setting it to true means the item is visible (default is full access).', 'Permissions are checked per-company — the same MSP user can have different access levels on different managed companies.'] },
+      { title: 'MSP-Managed Company Billing', purpose: 'Company admins of MSP-managed companies see a simplified billing view.', steps: ['When a company has managed_by_msp_id set, the standard billing page is replaced with a centred panel showing "Billing Managed by [MSP Partner Name]".', 'The company admin cannot see pricing, invoices, or subscription details — the MSP handles all billing.', 'Super admins can still see the full billing page for MSP-managed companies.'] },
+    ],
+  },
+  {
     icon: '🛡️', title: 'Support Access',
     features: [
       { title: 'Grant Support Access', purpose: 'Temporarily grant the InflowHR support team read access to a company\'s data for troubleshooting.', steps: ['Navigate to Admin > Support Access from the sidebar.', 'Select a company and scope of access (restricted data or configuration only).', 'Set an expiry period and provide a reason for the access grant.', 'The grant is logged with an audit trail showing who granted it, when, and why.'] },
@@ -847,6 +870,36 @@ export default function AdminUserGuides() {
   const [empOpen, setEmpOpen] = useState<Record<number, boolean>>({})
   const [admOpen, setAdmOpen] = useState<Record<number, boolean>>({})
   const [supOpen, setSupOpen] = useState<Record<number, boolean>>({})
+  const [search, setSearch] = useState('')
+
+  const filterSections = (sections: GuideSection[]): GuideSection[] => {
+    if (!search.trim()) return sections
+    const q = search.toLowerCase()
+    return sections.map(section => {
+      const matchedFeatures = section.features.filter(f =>
+        f.title.toLowerCase().includes(q) ||
+        f.purpose.toLowerCase().includes(q) ||
+        f.steps.some(s => s.toLowerCase().includes(q)) ||
+        (f.callout && f.callout.text.toLowerCase().includes(q))
+      )
+      if (matchedFeatures.length > 0 || section.title.toLowerCase().includes(q)) {
+        return { ...section, features: matchedFeatures.length > 0 ? matchedFeatures : section.features }
+      }
+      return null
+    }).filter(Boolean) as GuideSection[]
+  }
+
+  const filteredEmp = useMemo(() => filterSections(EMPLOYEE_SECTIONS), [search])
+  const filteredAdm = useMemo(() => filterSections(ADMIN_SECTIONS), [search])
+  const filteredSup = useMemo(() => filterSections(SUPER_SECTIONS), [search])
+
+  const autoOpen = useMemo(() => {
+    if (!search.trim()) return {}
+    const sections = tab === 'employee' ? filteredEmp : tab === 'admin' ? filteredAdm : filteredSup
+    const map: Record<number, boolean> = {}
+    sections.forEach((_, i) => { map[i] = true })
+    return map
+  }, [search, tab, filteredEmp, filteredAdm, filteredSup])
 
   function toggle(setter: React.Dispatch<React.SetStateAction<Record<number, boolean>>>) {
     return (i: number) => setter(prev => ({ ...prev, [i]: !prev[i] }))
@@ -882,11 +935,23 @@ export default function AdminUserGuides() {
         <p>Reference documentation for all InflowHR features by role</p>
       </div>
 
+      <div style={{ position: 'relative', marginBottom: 12 }}>
+        <svg style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+        <input
+          type="text"
+          placeholder="Search guides..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: 8, border: '1px solid var(--admin-border, #e2e8f0)', fontSize: 14, background: 'var(--admin-input-bg, #fff)', color: 'inherit', boxSizing: 'border-box' }}
+        />
+        {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, opacity: 0.5, color: 'inherit' }}>&times;</button>}
+      </div>
+
       <div className="admin-tabs">
-        <button className={`admin-tab ${tab === 'employee' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employee')}>Employee</button>
-        <button className={`admin-tab ${tab === 'admin' ? 'admin-tab-active' : ''}`} onClick={() => setTab('admin')}>Company Admin</button>
+        <button className={`admin-tab ${tab === 'employee' ? 'admin-tab-active' : ''}`} onClick={() => setTab('employee')}>Employee{search && filteredEmp.length > 0 ? ` (${filteredEmp.length})` : ''}</button>
+        <button className={`admin-tab ${tab === 'admin' ? 'admin-tab-active' : ''}`} onClick={() => setTab('admin')}>Company Admin{search && filteredAdm.length > 0 ? ` (${filteredAdm.length})` : ''}</button>
         {isSuperAdmin && (
-          <button className={`admin-tab ${tab === 'super' ? 'admin-tab-active' : ''}`} onClick={() => setTab('super')}>Super Admin</button>
+          <button className={`admin-tab ${tab === 'super' ? 'admin-tab-active' : ''}`} onClick={() => setTab('super')}>Super Admin{search && filteredSup.length > 0 ? ` (${filteredSup.length})` : ''}</button>
         )}
       </div>
 
@@ -904,9 +969,12 @@ export default function AdminUserGuides() {
         )}
       </div>
 
-      {tab === 'employee' && <SectionAccordion sections={EMPLOYEE_SECTIONS} openMap={empOpen} onToggle={toggle(setEmpOpen)} />}
-      {tab === 'admin' && <SectionAccordion sections={ADMIN_SECTIONS} openMap={admOpen} onToggle={toggle(setAdmOpen)} />}
-      {tab === 'super' && <SectionAccordion sections={SUPER_SECTIONS} openMap={supOpen} onToggle={toggle(setSupOpen)} />}
+      {tab === 'employee' && <SectionAccordion sections={filteredEmp} openMap={search ? autoOpen : empOpen} onToggle={search ? () => {} : toggle(setEmpOpen)} />}
+      {tab === 'admin' && <SectionAccordion sections={filteredAdm} openMap={search ? autoOpen : admOpen} onToggle={search ? () => {} : toggle(setAdmOpen)} />}
+      {tab === 'super' && <SectionAccordion sections={filteredSup} openMap={search ? autoOpen : supOpen} onToggle={search ? () => {} : toggle(setSupOpen)} />}
+      {search && (tab === 'employee' ? filteredEmp : tab === 'admin' ? filteredAdm : filteredSup).length === 0 && (
+        <div style={{ textAlign: 'center', padding: 40, opacity: 0.5 }}>No matching guides found for "{search}"</div>
+      )}
     </div>
   )
 }

@@ -37,6 +37,7 @@ interface DashTask {
   task_description: string | null
   approval_status: string | null
   created_at: string
+  delegated_for?: string
 }
 
 interface OpenShift {
@@ -618,14 +619,45 @@ export default function Dashboard() {
           }
         })
 
-      supabase.from('workflow_tracker')
-        .select('id, record_type, action, task_description, approval_status, created_at')
-        .ilike('assigned_to', `%${employeeEmail}%`)
-        .eq('status', 'Pending')
-        .eq('company_id', companyUser.company_id)
-        .order('created_at', { ascending: false })
-        .limit(3)
-        .then(({ data }) => { if (data) setLatestTasks(data as DashTask[]) })
+      ;(async () => {
+        const myTasks = await supabase.from('workflow_tracker')
+          .select('id, record_type, action, task_description, approval_status, created_at')
+          .ilike('assigned_to', `%${employeeEmail}%`)
+          .eq('status', 'Pending')
+          .eq('company_id', companyUser.company_id)
+          .order('created_at', { ascending: false })
+          .limit(3)
+        const tasks: DashTask[] = (myTasks.data || []) as DashTask[]
+
+        const { data: delegatorIds } = await supabase.rpc('get_my_active_delegations')
+        if (delegatorIds && (delegatorIds as string[]).length > 0) {
+          const { data: delegators } = await supabase.from('employees')
+            .select('id, email, first_name, last_name')
+            .in('id', delegatorIds as string[])
+          if (delegators && delegators.length > 0) {
+            const existingIds = new Set(tasks.map(t => t.id))
+            for (const del of delegators) {
+              if (tasks.length >= 3) break
+              const { data: delTasks } = await supabase.from('workflow_tracker')
+                .select('id, record_type, action, task_description, approval_status, created_at')
+                .ilike('assigned_to', `%${del.email}%`)
+                .eq('status', 'Pending')
+                .eq('company_id', companyUser.company_id)
+                .order('created_at', { ascending: false })
+                .limit(3)
+              if (delTasks) {
+                for (const t of delTasks) {
+                  if (!existingIds.has(t.id) && tasks.length < 3) {
+                    tasks.push({ ...t, delegated_for: `${del.first_name} ${del.last_name}` } as DashTask)
+                    existingIds.add(t.id)
+                  }
+                }
+              }
+            }
+          }
+        }
+        setLatestTasks(tasks)
+      })()
 
       const todayDate = toLocalDateStr()
 
@@ -1848,6 +1880,7 @@ export default function Dashboard() {
                           {label}
                         </span>
                         {detail && <span className="info-card-task-line-detail">{detail}</span>}
+                        {t.delegated_for && <span className="info-card-task-line-detail" style={{ color: '#6C4FBF', fontStyle: 'italic' }}>On behalf of {t.delegated_for}</span>}
                       </button>
                     )
                   })}

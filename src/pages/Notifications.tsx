@@ -37,6 +37,7 @@ interface WorkflowItem {
   approval_status: string | null
   extra_info: string | null
   created_at: string
+  delegated_for?: string
 }
 
 interface Announcement {
@@ -352,7 +353,35 @@ export default function Notifications() {
         .order('published_at', { ascending: false })
         .limit(20),
     ])
-    if (actionsRes.data) setActions(actionsRes.data as WorkflowItem[])
+    let allActions = (actionsRes.data || []) as WorkflowItem[]
+
+    const { data: delegatorIds } = await supabase.rpc('get_my_active_delegations')
+    if (delegatorIds && (delegatorIds as string[]).length > 0) {
+      const { data: delegators } = await supabase.from('employees')
+        .select('id, email, first_name, last_name')
+        .in('id', delegatorIds as string[])
+      if (delegators && delegators.length > 0) {
+        const existingIds = new Set(allActions.map(a => a.id))
+        for (const del of delegators) {
+          const { data: delActions } = await supabase.from('workflow_tracker')
+            .select('*')
+            .ilike('assigned_to', `%${del.email}%`)
+            .eq('status', 'Pending')
+            .eq('company_id', companyId)
+            .order('created_at', { ascending: false })
+          if (delActions) {
+            for (const a of delActions) {
+              if (!existingIds.has(a.id)) {
+                allActions.push({ ...a, delegated_for: `${del.first_name} ${del.last_name}` } as WorkflowItem)
+                existingIds.add(a.id)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    setActions(allActions)
     if (notifsRes.data) setMyNotifs(notifsRes.data as WorkflowItem[])
     if (announcementsRes.data) setAnnouncements(announcementsRes.data as Announcement[])
 
@@ -1410,6 +1439,7 @@ export default function Notifications() {
                     </span>
                   )}
                   <span className="notif-action-for">{t('notifications.for')} {item.emp_display_name}</span>
+                  {item.delegated_for && <span className="notif-action-for" style={{ color: '#6C4FBF', fontStyle: 'italic' }}>On behalf of {item.delegated_for}</span>}
                   {item.approval_id && <span className="notif-action-id">{item.approval_id}</span>}
                 </div>
               </div>
