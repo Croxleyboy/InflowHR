@@ -39,11 +39,11 @@ const VAT_RATE = 0.20
 
 
 export default function AdminBilling() {
-  const { isSuperAdmin } = useAuth()
+  const { isSuperAdmin, isMspAdmin } = useAuth()
   const { selectedCompanyId, selectedCompany, companies } = useAdminCompany()
 
   if (isSuperAdmin) return <SuperAdminBilling companies={companies} />
-  return <CompanyBilling companyId={selectedCompanyId} companyName={selectedCompany?.name || ''} />
+  return <CompanyBilling companyId={selectedCompanyId} companyName={selectedCompany?.name || ''} isMspAdmin={isMspAdmin} />
 }
 
 function generateInvoicePDF(
@@ -482,7 +482,7 @@ interface ExistingCancellation {
   data_frozen_at: string | null
 }
 
-function CompanyBilling({ companyId, companyName }: { companyId: string; companyName: string }) {
+function CompanyBilling({ companyId, companyName, isMspAdmin }: { companyId: string; companyName: string; isMspAdmin?: boolean }) {
   const { showError, showSuccess } = useToast()
   const { isSuperAdmin, company } = useAuth()
   const currency = company?.currency || 'GBP'
@@ -857,6 +857,13 @@ function CompanyBilling({ companyId, companyName }: { companyId: string; company
         <h2>Billing &amp; Subscription</h2>
         <p>Financial overview for {companyName || 'your company'}</p>
       </div>
+
+      {isMspAdmin && (
+        <div style={{ background: '#ede9fe', border: '1px solid #7c3aed', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontWeight: 600, color: '#5b21b6' }}>MSP Managed</span>
+          <span style={{ color: '#555', fontSize: 13 }}>&mdash; Billing for this company is managed through your MSP partner agreement. Contact your InflowHR account manager for wholesale pricing details.</span>
+        </div>
+      )}
 
       {isFixed && (
         <div style={{ background: '#e8f5e9', border: '1px solid #43a047', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>

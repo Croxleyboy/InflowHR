@@ -35,6 +35,8 @@ interface AuthState {
   employeeName: string
   employeeEmail: string
   isSuperAdmin: boolean
+  isMspAdmin: boolean
+  mspCompanyId: string | null
   isManager: boolean
   canPostNotifications: boolean
   portalRole: string | null
@@ -74,6 +76,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null)
   const [isManager, setIsManager] = useState(false)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [isMspAdmin, setIsMspAdmin] = useState(false)
+  const [mspCompanyId, setMspCompanyId] = useState<string | null>(null)
   const [canPostNotifications, setCanPostNotifications] = useState(false)
   const [portalRole, setPortalRole] = useState<string | null>(null)
   const [portalPermissions, setPortalPermissions] = useState<Record<string, boolean> | null>(null)
@@ -88,6 +92,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: saResult } = await supabase.rpc('is_super_admin' as any)
     setIsSuperAdmin(saResult === true)
+
+    // Check MSP admin status
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: mspResult } = await supabase.rpc('is_msp_admin' as any)
+    setIsMspAdmin(mspResult === true)
+    if (mspResult === true) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: mspCo } = await supabase.rpc('get_msp_company_id' as any)
+      setMspCompanyId(mspCo || null)
+    } else {
+      setMspCompanyId(null)
+    }
 
     // Check guest_users server-side first — no client-side sessionStorage dependency
     const { data: guestRow } = await supabase
@@ -335,6 +351,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCompanyUser(null)
         setCompany(null)
         setIsSuperAdmin(false)
+        setIsMspAdmin(false)
+        setMspCompanyId(null)
         setIsGuest(false)
         setGuestReadOnly(false)
         setGuestCompanyId(null)
@@ -385,6 +403,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmployeeId(null)
     setIsManager(false)
     setIsSuperAdmin(false)
+    setIsMspAdmin(false)
+    setMspCompanyId(null)
     setCanPostNotifications(false)
     setPortalRole(null)
     setIsGuest(false)
@@ -406,6 +426,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmployeeId(null)
     setIsManager(false)
     setIsSuperAdmin(false)
+    setIsMspAdmin(false)
+    setMspCompanyId(null)
     setCanPostNotifications(false)
     setPortalRole(null)
     setIsGuest(false)
@@ -449,7 +471,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const employeeEmail = user?.email || ''
 
   return (
-    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isManager, canPostNotifications, portalRole, portalPermissions, workPatternType, employmentCategory, setupComplete, markSetupComplete, isGuest, guestReadOnly, guestCompanyId, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
+    <AuthContext.Provider value={{ user, session, companyUser, company, loading, employeeId, avatarUrl, updateAvatarUrl, employeeName, employeeEmail, isSuperAdmin, isMspAdmin, mspCompanyId, isManager, canPostNotifications, portalRole, portalPermissions, workPatternType, employmentCategory, setupComplete, markSetupComplete, isGuest, guestReadOnly, guestCompanyId, signInWithMicrosoft, signInWithGoogle, signInWithPassword, signOut }}>
       {children}
     </AuthContext.Provider>
   )
