@@ -10,6 +10,7 @@ interface MenuItem {
   svg: string
   end?: boolean
   superAdminOnly?: boolean
+  mspOnly?: boolean
   feature?: keyof Features
   permKey?: string
 }
@@ -33,6 +34,7 @@ const MENU_GROUPS: (MenuItem | MenuGroup)[] = [
       { path: '/admin/xero-test', label: 'Xero API Test', svg: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>', superAdminOnly: true },
     ],
   },
+  { path: '/admin/msp', label: 'MSP Dashboard', svg: '<path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/><circle cx="12" cy="7" r="1.5"/>', mspOnly: true },
   {
     label: 'People',
     svg: '<circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>',
@@ -114,7 +116,7 @@ function AdminLayoutInner() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set())
   const navigate = useNavigate()
   const location = useLocation()
-  const { isSuperAdmin, employeeEmail, companyUser, portalRole, portalPermissions, isGuest, guestReadOnly, company: authCompany, signOut } = useAuth()
+  const { isSuperAdmin, isMspAdmin, employeeEmail, companyUser, portalRole, portalPermissions, isGuest, guestReadOnly, company: authCompany, signOut } = useAuth()
   const { features } = useFeatures()
   const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany } = useAdminCompany()
   const displayCompany = selectedCompany || (isGuest && authCompany ? { name: authCompany.name } : null)
@@ -129,6 +131,7 @@ function AdminLayoutInner() {
       return portalPermissions[item.permKey] === true
     }
     if (item.superAdminOnly && !isSuperAdmin) return false
+    if (item.mspOnly && !isMspAdmin && !isSuperAdmin) return false
     if (item.feature && !isSuperAdmin && !features[item.feature]) return false
     if (item.permKey && !isFullAccess && portalPermissions && portalPermissions[item.permKey] === false) return false
     return true

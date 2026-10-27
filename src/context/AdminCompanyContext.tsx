@@ -33,7 +33,7 @@ export function useAdminCompany() {
 }
 
 export function AdminCompanyProvider({ children }: { children: ReactNode }) {
-  const { isSuperAdmin, company } = useAuth()
+  const { isSuperAdmin, isMspAdmin, mspCompanyId, company } = useAuth()
 
   const [companies, setCompanies] = useState<Company[]>(() => {
     if (company) return [{ id: company.id, name: company.name, domain: company.domain, is_active: true, is_trial: false, trial_start_date: null, trial_end_date: null, auth_mode: 'sso' as const, fy_start_month: null, timesheet_monitoring_enabled: false, timesheet_monitoring_period: 'weekly' as const }]
@@ -42,20 +42,43 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => company?.id || '')
 
   const refreshCompanies = useCallback(async (selectCompanyId?: string) => {
-    const { data } = await supabase.from('companies').select('id, name, domain, is_active, is_trial, trial_start_date, trial_end_date, auth_mode, fy_start_month, timesheet_monitoring_enabled, timesheet_monitoring_period').order('name')
-    const list = (data as Company[]) || []
-    setCompanies(list)
-    if (selectCompanyId && list.some(c => c.id === selectCompanyId)) {
-      setSelectedCompanyId(selectCompanyId)
-    } else if (list.length > 0) {
-      setSelectedCompanyId(prev => prev || list[0].id)
+    if (isSuperAdmin) {
+      const { data } = await supabase.from('companies').select('id, name, domain, is_active, is_trial, trial_start_date, trial_end_date, auth_mode, fy_start_month, timesheet_monitoring_enabled, timesheet_monitoring_period').order('name')
+      const list = (data as Company[]) || []
+      setCompanies(list)
+      if (selectCompanyId && list.some(c => c.id === selectCompanyId)) {
+        setSelectedCompanyId(selectCompanyId)
+      } else if (list.length > 0) {
+        setSelectedCompanyId(prev => prev || list[0].id)
+      }
+    } else if (isMspAdmin && mspCompanyId) {
+      // MSP admins: load only their managed companies + their own MSP company
+      const { data: managedRows } = await supabase
+        .from('msp_managed_companies')
+        .select('managed_company_id')
+        .eq('msp_company_id', mspCompanyId)
+        .eq('is_active', true)
+      const managedIds = (managedRows || []).map((r: any) => r.managed_company_id)
+      const allIds = [mspCompanyId, ...managedIds]
+      const { data } = await supabase
+        .from('companies')
+        .select('id, name, domain, is_active, is_trial, trial_start_date, trial_end_date, auth_mode, fy_start_month, timesheet_monitoring_enabled, timesheet_monitoring_period')
+        .in('id', allIds)
+        .order('name')
+      const list = (data as Company[]) || []
+      setCompanies(list)
+      if (selectCompanyId && list.some(c => c.id === selectCompanyId)) {
+        setSelectedCompanyId(selectCompanyId)
+      } else if (list.length > 0) {
+        setSelectedCompanyId(prev => prev || list[0].id)
+      }
     }
-  }, [])
+  }, [isSuperAdmin, isMspAdmin, mspCompanyId])
 
   useEffect(() => {
-    if (!isSuperAdmin) return
+    if (!isSuperAdmin && !isMspAdmin) return
     refreshCompanies()
-  }, [isSuperAdmin, refreshCompanies])
+  }, [isSuperAdmin, isMspAdmin, refreshCompanies])
 
   const selectedCompany = companies.find(c => c.id === selectedCompanyId) || null
 
