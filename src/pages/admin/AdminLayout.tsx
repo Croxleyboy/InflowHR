@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { useFeatures, type Features } from '../../context/FeatureContext'
 import { AdminCompanyProvider, useAdminCompany } from '../../context/AdminCompanyContext'
@@ -116,10 +117,28 @@ function AdminLayoutInner() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set())
   const navigate = useNavigate()
   const location = useLocation()
-  const { isSuperAdmin, isMspAdmin, employeeEmail, companyUser, portalRole, portalPermissions, isGuest, guestReadOnly, company: authCompany, signOut } = useAuth()
+  const { isSuperAdmin, isMspAdmin, mspCompanyId, employeeEmail, companyUser, portalRole, portalPermissions, isGuest, guestReadOnly, company: authCompany, signOut } = useAuth()
   const { features } = useFeatures()
   const { companies, selectedCompanyId, setSelectedCompanyId, selectedCompany } = useAdminCompany()
   const displayCompany = selectedCompany || (isGuest && authCompany ? { name: authCompany.name } : null)
+  const [mspPermissions, setMspPermissions] = useState<Record<string, boolean> | null>(null)
+
+  useEffect(() => {
+    if (!isMspAdmin || !selectedCompanyId || isSuperAdmin) { setMspPermissions(null); return }
+    if (selectedCompanyId === mspCompanyId) { setMspPermissions(null); return }
+    supabase.rpc('get_msp_permissions' as any, { p_managed_company_id: selectedCompanyId })
+      .then(({ data }: any) => { setMspPermissions(data || null) })
+  }, [isMspAdmin, selectedCompanyId, mspCompanyId, isSuperAdmin])
+
+  useEffect(() => {
+    if (!isMspAdmin || !mspCompanyId || isSuperAdmin || !selectedCompanyId || selectedCompanyId === mspCompanyId) return
+    supabase.rpc('log_msp_action' as any, {
+      p_msp_company_id: mspCompanyId,
+      p_managed_company_id: selectedCompanyId,
+      p_action: 'company_switch',
+      p_details: { target_company: selectedCompany?.name || selectedCompanyId },
+    })
+  }, [selectedCompanyId])
 
   const isFullAccess = isSuperAdmin || companyUser?.role === 'admin' || portalRole === 'company_admin'
 
@@ -134,6 +153,7 @@ function AdminLayoutInner() {
     if (item.mspOnly && !isMspAdmin && !isSuperAdmin) return false
     if (item.feature && !isSuperAdmin && !features[item.feature]) return false
     if (item.permKey && !isFullAccess && portalPermissions && portalPermissions[item.permKey] === false) return false
+    if (isMspAdmin && mspPermissions && item.permKey && mspPermissions[item.permKey] === false) return false
     return true
   }
 

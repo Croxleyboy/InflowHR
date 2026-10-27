@@ -14,6 +14,7 @@ interface Company {
   fy_start_month: number | null
   timesheet_monitoring_enabled: boolean
   timesheet_monitoring_period: 'weekly' | 'monthly'
+  managed_by_msp_id: string | null
 }
 
 interface AdminCompanyState {
@@ -36,14 +37,14 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
   const { isSuperAdmin, isMspAdmin, mspCompanyId, company } = useAuth()
 
   const [companies, setCompanies] = useState<Company[]>(() => {
-    if (company) return [{ id: company.id, name: company.name, domain: company.domain, is_active: true, is_trial: false, trial_start_date: null, trial_end_date: null, auth_mode: 'sso' as const, fy_start_month: null, timesheet_monitoring_enabled: false, timesheet_monitoring_period: 'weekly' as const }]
+    if (company) return [{ id: company.id, name: company.name, domain: company.domain, is_active: true, is_trial: false, trial_start_date: null, trial_end_date: null, auth_mode: 'sso' as const, fy_start_month: null, timesheet_monitoring_enabled: false, timesheet_monitoring_period: 'weekly' as const, managed_by_msp_id: null }]
     return []
   })
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => company?.id || '')
 
   const refreshCompanies = useCallback(async (selectCompanyId?: string) => {
     if (isSuperAdmin) {
-      const { data } = await supabase.from('companies').select('id, name, domain, is_active, is_trial, trial_start_date, trial_end_date, auth_mode, fy_start_month, timesheet_monitoring_enabled, timesheet_monitoring_period').order('name')
+      const { data } = await supabase.from('companies').select('id, name, domain, is_active, is_trial, trial_start_date, trial_end_date, auth_mode, fy_start_month, timesheet_monitoring_enabled, timesheet_monitoring_period, managed_by_msp_id').order('name')
       const list = (data as Company[]) || []
       setCompanies(list)
       if (selectCompanyId && list.some(c => c.id === selectCompanyId)) {
@@ -62,7 +63,7 @@ export function AdminCompanyProvider({ children }: { children: ReactNode }) {
       const allIds = [mspCompanyId, ...managedIds]
       const { data } = await supabase
         .from('companies')
-        .select('id, name, domain, is_active, is_trial, trial_start_date, trial_end_date, auth_mode, fy_start_month, timesheet_monitoring_enabled, timesheet_monitoring_period')
+        .select('id, name, domain, is_active, is_trial, trial_start_date, trial_end_date, auth_mode, fy_start_month, timesheet_monitoring_enabled, timesheet_monitoring_period, managed_by_msp_id')
         .in('id', allIds)
         .order('name')
       const list = (data as Company[]) || []

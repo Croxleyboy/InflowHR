@@ -43,7 +43,7 @@ export default function AdminBilling() {
   const { selectedCompanyId, selectedCompany, companies } = useAdminCompany()
 
   if (isSuperAdmin) return <SuperAdminBilling companies={companies} />
-  return <CompanyBilling companyId={selectedCompanyId} companyName={selectedCompany?.name || ''} isMspAdmin={isMspAdmin} />
+  return <CompanyBilling companyId={selectedCompanyId} companyName={selectedCompany?.name || ''} isMspAdmin={isMspAdmin} managedByMspId={selectedCompany?.managed_by_msp_id || null} />
 }
 
 function generateInvoicePDF(
@@ -482,9 +482,10 @@ interface ExistingCancellation {
   data_frozen_at: string | null
 }
 
-function CompanyBilling({ companyId, companyName, isMspAdmin }: { companyId: string; companyName: string; isMspAdmin?: boolean }) {
+function CompanyBilling({ companyId, companyName, isMspAdmin, managedByMspId }: { companyId: string; companyName: string; isMspAdmin?: boolean; managedByMspId?: string | null }) {
   const { showError, showSuccess } = useToast()
   const { isSuperAdmin, company } = useAuth()
+  const [mspManagerName, setMspManagerName] = useState('')
   const currency = company?.currency || 'GBP'
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [features, setFeatures] = useState<CompanyFeature[]>([])
@@ -514,6 +515,12 @@ function CompanyBilling({ companyId, companyName, isMspAdmin }: { companyId: str
   useEffect(() => {
     if (companyId) load()
   }, [companyId])
+
+  useEffect(() => {
+    if (!managedByMspId) { setMspManagerName(''); return }
+    supabase.from('companies').select('name').eq('id', managedByMspId).single()
+      .then(({ data }) => { if (data) setMspManagerName(data.name) })
+  }, [managedByMspId])
 
   useEffect(() => {
     if (!companyId || isSuperAdmin) return
@@ -847,6 +854,26 @@ function CompanyBilling({ companyId, companyName, isMspAdmin }: { companyId: str
     }
     enabledSupport.forEach(sp => allFeatures.push({ name: sp.display_name, type: 'Support' }))
     generateAnnualInvoicePDF(companyName, getFYLabel(), fixedAnnualPrice, allFeatures, companyId, currency)
+  }
+
+  if (managedByMspId && !isSuperAdmin) {
+    return (
+      <div className="admin-section">
+        <div className="admin-page-header">
+          <h2>Billing &amp; Subscription</h2>
+          <p>Financial overview for {companyName || 'your company'}</p>
+        </div>
+        <div style={{ background: '#ede9fe', border: '1px solid #7c3aed', borderRadius: 12, padding: '32px 24px', textAlign: 'center', maxWidth: 520, margin: '32px auto' }}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }}>
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/><circle cx="12" cy="7" r="1.5"/>
+          </svg>
+          <h3 style={{ margin: '0 0 8px', color: '#5b21b6', fontSize: 18 }}>Billing Managed by {mspManagerName || 'Your MSP Partner'}</h3>
+          <p style={{ margin: 0, color: '#555', fontSize: 14, lineHeight: 1.6 }}>
+            Your company&rsquo;s billing and subscription is managed through your MSP partner agreement with <strong>{mspManagerName || 'your partner'}</strong>. For billing enquiries, invoices, or plan changes, please contact your MSP partner directly.
+          </p>
+        </div>
+      </div>
+    )
   }
 
   if (loading) return <div className="admin-section"><div className="admin-loading">Loading...</div></div>
@@ -1517,6 +1544,32 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
   const [expandedYears, setExpandedYears] = useState<Set<number>>(new Set([new Date().getFullYear()]))
   const currency = 'GBP'
 
+  const [mspBilling, setMspBilling] = useState<any[]>([])
+  const [mspBillingLoading, setMspBillingLoading] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
+  const { showSuccess, showError } = useToast()
+
+  useEffect(() => {
+    setMspBillingLoading(true)
+    supabase.rpc('get_msp_billing_summary' as any).then(({ data }: any) => {
+      setMspBilling(data || [])
+      setMspBillingLoading(false)
+    })
+  }, [])
+
+  const handleRecalculateTiers = async () => {
+    setRecalculating(true)
+    const { data, error } = await supabase.rpc('recalculate_msp_tiers' as any) as any
+    if (error) { showError('Failed to recalculate: ' + error.message) }
+    else {
+      const changes = data?.changes || []
+      if (changes.length === 0) showSuccess('All MSP tiers are up to date')
+      else showSuccess(`Updated ${changes.length} MSP tier(s)`)
+      supabase.rpc('get_msp_billing_summary' as any).then(({ data: d }: any) => setMspBilling(d || []))
+    }
+    setRecalculating(false)
+  }
+
   useEffect(() => { load() }, [companies])
 
   async function load() {
@@ -1689,6 +1742,62 @@ function SuperAdminBilling({ companies }: { companies: { id: string; name: strin
           <span className="billing-card-sub">inc. VAT</span>
         </div>
       </div>
+
+      {mspBilling.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>MSP Wholesale Billing</h3>
+            <button
+              onClick={handleRecalculateTiers}
+              disabled={recalculating}
+              style={{
+                padding: '4px 12px', fontSize: 12, fontWeight: 600, borderRadius: 4,
+                background: '#ede9fe', color: '#5b21b6', border: '1px solid #c4b5fd', cursor: 'pointer',
+              }}
+            >
+              {recalculating ? 'Recalculating...' : 'Recalculate Tiers'}
+            </button>
+          </div>
+          {mspBillingLoading ? (
+            <p style={{ color: '#888' }}>Loading MSP billing...</p>
+          ) : (
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>MSP Partner</th>
+                    <th>Tier</th>
+                    <th>Discount</th>
+                    <th>Managed Cos.</th>
+                    <th>Total Employees</th>
+                    <th>Monthly Wholesale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mspBilling.map((msp: any) => (
+                    <tr key={msp.msp_company_id}>
+                      <td><strong>{msp.msp_name}</strong></td>
+                      <td>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12, textTransform: 'capitalize',
+                          background: msp.msp_tier === 'enterprise' ? '#ede9fe' : msp.msp_tier === 'growth' ? '#dcfce7' : '#f3f4f6',
+                          color: msp.msp_tier === 'enterprise' ? '#5b21b6' : msp.msp_tier === 'growth' ? '#166534' : '#374151',
+                        }}>
+                          {msp.msp_tier || 'starter'}
+                        </span>
+                      </td>
+                      <td>{msp.msp_wholesale_discount || 0}%</td>
+                      <td>{msp.managed_count}</td>
+                      <td>{msp.total_employees}</td>
+                      <td><strong>{formatCurrency(msp.monthly_wholesale || 0, currency)}</strong></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="admin-table-wrap">
         <table className="admin-table">

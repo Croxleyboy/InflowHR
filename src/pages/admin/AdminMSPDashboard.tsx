@@ -45,7 +45,9 @@ export default function AdminMSPDashboard() {
   const [mspCompanyName, setMspCompanyName] = useState('')
   const [mspTier, setMspTier] = useState<string | null>(null)
   const [mspDiscount, setMspDiscount] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState<'companies' | 'users'>('companies')
+  const [activeTab, setActiveTab] = useState<'companies' | 'users' | 'audit'>('companies')
+  const [auditLog, setAuditLog] = useState<{ id: string; action: string; actor_id: string; managed_company_id: string; details: any; created_at: string }[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
 
   const [grantEmail, setGrantEmail] = useState('')
   const [grantCompanyId, setGrantCompanyId] = useState('')
@@ -135,6 +137,18 @@ export default function AdminMSPDashboard() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  const loadAuditLog = useCallback(async () => {
+    if (!mspCompanyId && !isSuperAdmin) return
+    setAuditLoading(true)
+    const query = supabase.from('msp_audit_log').select('id, action, actor_id, managed_company_id, details, created_at').order('created_at', { ascending: false }).limit(100)
+    if (mspCompanyId) query.eq('msp_company_id', mspCompanyId)
+    const { data } = await query
+    setAuditLog((data as any[]) || [])
+    setAuditLoading(false)
+  }, [mspCompanyId, isSuperAdmin])
+
+  useEffect(() => { if (activeTab === 'audit') loadAuditLog() }, [activeTab, loadAuditLog])
+
   const handleManageCompany = (companyId: string) => {
     setSelectedCompanyId(companyId)
     navigate('/admin')
@@ -152,6 +166,12 @@ export default function AdminMSPDashboard() {
         p_permissions: { full_access: true },
       })
       if (error) throw error
+      await supabase.rpc('log_msp_action' as any, {
+        p_msp_company_id: mspCompanyId,
+        p_managed_company_id: grantCompanyId,
+        p_action: 'grant_access',
+        p_details: { email: grantEmail },
+      })
       showToast('Access granted successfully', 'success')
       setGrantEmail('')
       setGrantCompanyId('')
@@ -164,11 +184,20 @@ export default function AdminMSPDashboard() {
 
   const handleRevokeAccess = async (accessId: string) => {
     if (!mspCompanyId) return
+    const revokedUser = mspUsers.find(u => u.id === accessId)
     try {
       const { error } = await supabase.rpc('revoke_msp_user_access' as any, {
         p_access_id: accessId,
       })
       if (error) throw error
+      if (revokedUser) {
+        await supabase.rpc('log_msp_action' as any, {
+          p_msp_company_id: mspCompanyId,
+          p_managed_company_id: revokedUser.managed_company_id,
+          p_action: 'revoke_access',
+          p_details: { email: revokedUser.employee_email, name: revokedUser.employee_name },
+        })
+      }
       showToast('Access revoked', 'success')
       loadData()
     } catch (err: any) {
@@ -216,6 +245,7 @@ export default function AdminMSPDashboard() {
       <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #e5e7eb', marginBottom: 20 }}>
         <TabBtn label="Managed Companies" active={activeTab === 'companies'} onClick={() => setActiveTab('companies')} />
         <TabBtn label="MSP Users" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
+        <TabBtn label="Audit Log" active={activeTab === 'audit'} onClick={() => setActiveTab('audit')} />
       </div>
 
       {activeTab === 'companies' && (
@@ -334,6 +364,50 @@ export default function AdminMSPDashboard() {
                           Revoke
                         </button>
                       </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'audit' && (
+        <div>
+          {auditLoading ? (
+            <p style={{ textAlign: 'center', color: '#888', padding: 32 }}>Loading audit log...</p>
+          ) : auditLog.length === 0 ? (
+            <p style={{ textAlign: 'center', color: '#888', padding: 32 }}>No audit log entries yet.</p>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#f9fafb', borderBottom: '2px solid #e5e7eb' }}>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Date</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Action</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Company</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditLog.map(entry => {
+                  const companyName = managedCompanies.find(c => c.id === entry.managed_company_id)?.name || entry.managed_company_id || '—'
+                  const actionLabel = entry.action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+                  const detailStr = entry.details ? Object.entries(entry.details).map(([k, v]) => `${k}: ${v}`).join(', ') : '—'
+                  return (
+                    <tr key={entry.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{formatDate(entry.created_at)}</td>
+                      <td style={{ padding: '8px 12px' }}>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
+                          background: entry.action === 'grant_access' ? '#dcfce7' : entry.action === 'revoke_access' ? '#fee2e2' : '#f3f4f6',
+                          color: entry.action === 'grant_access' ? '#166534' : entry.action === 'revoke_access' ? '#991b1b' : '#374151',
+                        }}>
+                          {actionLabel}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px 12px' }}>{companyName}</td>
+                      <td style={{ padding: '8px 12px', color: '#666', fontSize: 12 }}>{detailStr}</td>
                     </tr>
                   )
                 })}
