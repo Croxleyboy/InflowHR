@@ -424,8 +424,8 @@ export default function Directory() {
                 <strong>{t('directory.dept')}</strong> {entry.department || ''}
               </span>
               {entry.employee_uuid && delegationMap[entry.employee_uuid] && (
-                <span style={{ display: 'block', marginTop: 6, fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 8, background: '#e8eaf6', color: '#283593', textAlign: 'center' }}>
-                  Approvals delegated to {delegationMap[entry.employee_uuid].name} ({formatDate(delegationMap[entry.employee_uuid].start)} – {formatDate(delegationMap[entry.employee_uuid].end)})
+                <span style={{ display: 'inline-block', marginTop: 4, fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#e8eaf6', color: '#283593', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                  Delegated → {delegationMap[entry.employee_uuid].name}
                 </span>
               )}
             </div>

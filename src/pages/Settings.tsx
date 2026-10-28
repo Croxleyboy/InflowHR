@@ -7,6 +7,7 @@ import { useTheme } from '../context/ThemeContext'
 import { supabase } from '../lib/supabase'
 import { useToast } from '../context/ToastContext'
 import { getExportCategories, getDateRange, buildEmployeeExportZip } from '../lib/employeeDataExport'
+import { toLocalDateStr, formatDate } from '../lib/formatters'
 import { useUserPreferences } from '../hooks/useUserPreferences'
 import type { Lang } from '../lib/translations'
 
@@ -93,6 +94,7 @@ export default function Settings() {
   const [delegationsOut, setDelegationsOut] = useState<{ id: string; delegate_id: string; delegate_name: string; start_date: string; end_date: string; scope: string; reason: string; is_active: boolean }[]>([])
   const [delegationsIn, setDelegationsIn] = useState<{ id: string; delegator_id: string; delegator_name: string; start_date: string; end_date: string; scope: string; reason: string; is_active: boolean }[]>([])
   const [delegationsLoading, setDelegationsLoading] = useState(true)
+  const [isManager, setIsManager] = useState(false)
   const [showNewDelegation, setShowNewDelegation] = useState(false)
   const [colleagues, setColleagues] = useState<{ id: string; name: string }[]>([])
   const [newDel, setNewDel] = useState({ delegate_id: '', start_date: '', end_date: '', scope: 'all', reason: '' })
@@ -192,16 +194,30 @@ export default function Settings() {
   }, [companyUser?.employee_id, companyUser?.company_id])
 
   useEffect(() => {
-    if (!companyUser?.employee_id) { setDelegationsLoading(false); return }
+    if (!companyUser?.employee_id || !companyUser?.company_id) { setDelegationsLoading(false); return }
     Promise.all([
       supabase.rpc('get_my_delegations_out'),
       supabase.rpc('get_my_delegations_in'),
-    ]).then(([outRes, inRes]) => {
+      supabase.from('employees')
+        .select('id')
+        .eq('company_id', companyUser.company_id)
+        .eq('manager_id', companyUser.employee_id)
+        .eq('is_active', true)
+        .limit(1),
+      employeeEmail ? supabase.from('employees')
+        .select('id')
+        .eq('company_id', companyUser.company_id)
+        .eq('manager_email', employeeEmail)
+        .eq('is_active', true)
+        .limit(1) : Promise.resolve({ data: null }),
+    ]).then(([outRes, inRes, byIdRes, byEmailRes]) => {
       if (outRes.data) setDelegationsOut(outRes.data as typeof delegationsOut)
       if (inRes.data) setDelegationsIn(inRes.data as typeof delegationsIn)
+      const hasReports = (byIdRes.data && byIdRes.data.length > 0) || (byEmailRes.data && byEmailRes.data.length > 0)
+      setIsManager(!!hasReports)
       setDelegationsLoading(false)
     })
-  }, [companyUser?.employee_id])
+  }, [companyUser?.employee_id, companyUser?.company_id, employeeEmail])
 
   useEffect(() => {
     if (!companyUser?.company_id || !companyUser?.employee_id) return
@@ -287,9 +303,10 @@ export default function Settings() {
     showSuccess('Delegation cancelled')
   }, [showError, showSuccess])
 
+  const today = useMemo(() => toLocalDateStr(), [])
   const activeDelegationsOut = useMemo(() => delegationsOut.filter(d => d.is_active), [delegationsOut])
   const pastDelegationsOut = useMemo(() => delegationsOut.filter(d => !d.is_active), [delegationsOut])
-  const activeDelegationsIn = useMemo(() => delegationsIn.filter(d => d.is_active), [delegationsIn])
+  const activeDelegationsIn = useMemo(() => delegationsIn.filter(d => d.is_active && d.start_date <= today && d.end_date >= today), [delegationsIn, today])
 
   const handleConsentToggle = useCallback(async (consentType: string) => {
     if (!companyUser?.employee_id || !companyUser?.company_id) return
@@ -755,7 +772,7 @@ export default function Settings() {
         </section>
       )}
 
-      {!delegationsLoading && companyUser?.employee_id && (
+      {!delegationsLoading && companyUser?.employee_id && (isManager || activeDelegationsIn.length > 0) && (
         <section className="settings-section">
           <button className="settings-section-toggle" onClick={() => setDelegationsOpen(v => !v)}>
             <h2>Approval Delegation</h2>
@@ -763,30 +780,40 @@ export default function Settings() {
           </button>
           {delegationsOpen && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <p className="settings-hint" style={{ margin: 0 }}>
-                Temporarily delegate your approval responsibilities (leave, expenses, timesheets) to a colleague — for example during annual leave.
-              </p>
+              {isManager && (
+                <p className="settings-hint" style={{ margin: 0 }}>
+                  Temporarily delegate your approval responsibilities (leave, expenses, timesheets) to a colleague — for example during annual leave.
+                </p>
+              )}
 
               {activeDelegationsOut.length > 0 && (
                 <div>
                   <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 8px', color: 'var(--text-secondary, #64748b)' }}>My Active Delegations</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {activeDelegationsOut.map(d => (
-                      <div key={d.id} style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: 8, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 14 }}>{d.delegate_name}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>
-                            {new Date(d.start_date).toLocaleDateString('en-GB')} — {new Date(d.end_date).toLocaleDateString('en-GB')}
-                            {d.scope !== 'all' && <span style={{ marginLeft: 8 }}>({d.scope})</span>}
+                    {activeDelegationsOut.map(d => {
+                      const isNow = d.start_date <= today && d.end_date >= today
+                      const isFuture = d.start_date > today
+                      return (
+                        <div key={d.id} style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: 8, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {d.delegate_name}
+                              {isNow && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534' }}>Active now</span>}
+                              {isFuture && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e' }}>Upcoming</span>}
+                            </div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>
+                              {formatDate(d.start_date)} — {formatDate(d.end_date)}
+                              {d.scope !== 'all' && <span style={{ marginLeft: 8 }}>({d.scope})</span>}
+                            </div>
+                            {d.reason && <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>{d.reason}</div>}
                           </div>
-                          {d.reason && <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>{d.reason}</div>}
+                          <button
+                            onClick={() => handleCancelDelegation(d.id)}
+                            style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'transparent', cursor: 'pointer', fontSize: 12, color: '#ef4444' }}
+                          >Cancel</button>
                         </div>
-                        <button
-                          onClick={() => handleCancelDelegation(d.id)}
-                          style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'transparent', cursor: 'pointer', fontSize: 12, color: '#ef4444' }}
-                        >Cancel</button>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -799,7 +826,7 @@ export default function Settings() {
                       <div key={d.id} style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: 8, padding: '12px 14px' }}>
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{d.delegator_name}</div>
                         <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>
-                          {new Date(d.start_date).toLocaleDateString('en-GB')} — {new Date(d.end_date).toLocaleDateString('en-GB')}
+                          {formatDate(d.start_date)} — {formatDate(d.end_date)}
                           {d.scope !== 'all' && <span style={{ marginLeft: 8 }}>({d.scope})</span>}
                         </div>
                         {d.reason && <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>{d.reason}</div>}
@@ -809,99 +836,103 @@ export default function Settings() {
                 </div>
               )}
 
-              {!showNewDelegation ? (
-                <button
-                  onClick={() => setShowNewDelegation(true)}
-                  style={{ alignSelf: 'flex-start', padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--primary, #6C4FBF)', color: '#fff', cursor: 'pointer', fontWeight: 500, fontSize: 14 }}
-                >+ New Delegation</button>
-              ) : (
-                <div style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>New Delegation</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>Delegate to</label>
-                    <select
-                      value={newDel.delegate_id}
-                      onChange={e => setNewDel(p => ({ ...p, delegate_id: e.target.value }))}
-                      style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
-                    >
-                      <option value="">Select a colleague…</option>
-                      {colleagues.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>Start date</label>
-                      <input
-                        type="date"
-                        value={newDel.start_date}
-                        onChange={e => setNewDel(p => ({ ...p, start_date: e.target.value }))}
-                        style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>End date</label>
-                      <input
-                        type="date"
-                        value={newDel.end_date}
-                        onChange={e => setNewDel(p => ({ ...p, end_date: e.target.value }))}
-                        style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>Scope</label>
-                    <select
-                      value={newDel.scope}
-                      onChange={e => setNewDel(p => ({ ...p, scope: e.target.value }))}
-                      style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
-                    >
-                      <option value="all">All approvals (leave, expenses, timesheets)</option>
-                      <option value="leave">Leave only</option>
-                      <option value="expenses">Expenses only</option>
-                      <option value="timesheets">Timesheets only</option>
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>Reason (optional)</label>
-                    <input
-                      type="text"
-                      value={newDel.reason}
-                      onChange={e => setNewDel(p => ({ ...p, reason: e.target.value }))}
-                      placeholder="e.g. Annual leave"
-                      style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              {isManager && (
+                <>
+                  {!showNewDelegation ? (
                     <button
-                      onClick={() => { setShowNewDelegation(false); setNewDel({ delegate_id: '', start_date: '', end_date: '', scope: 'all', reason: '' }) }}
-                      style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'transparent', cursor: 'pointer', fontSize: 14 }}
-                    >Cancel</button>
-                    <button
-                      onClick={handleCreateDelegation}
-                      disabled={delSaving}
-                      style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: 'var(--primary, #6C4FBF)', color: '#fff', cursor: 'pointer', fontWeight: 500, fontSize: 14 }}
-                    >{delSaving ? 'Saving…' : 'Create Delegation'}</button>
-                  </div>
-                </div>
-              )}
-
-              {pastDelegationsOut.length > 0 && (
-                <div>
-                  <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 8px', color: 'var(--text-secondary, #64748b)' }}>Past Delegations</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {pastDelegationsOut.slice(0, 5).map(d => (
-                      <div key={d.id} style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: 8, padding: '10px 14px', opacity: 0.7 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>{d.delegate_name}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>
-                          {new Date(d.start_date).toLocaleDateString('en-GB')} — {new Date(d.end_date).toLocaleDateString('en-GB')}
-                          <span style={{ marginLeft: 8, color: '#94a3b8' }}>Cancelled</span>
+                      onClick={() => setShowNewDelegation(true)}
+                      style={{ alignSelf: 'flex-start', padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--primary, #6C4FBF)', color: '#fff', cursor: 'pointer', fontWeight: 500, fontSize: 14 }}
+                    >+ New Delegation</button>
+                  ) : (
+                    <div style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <h3 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>New Delegation</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>Delegate to</label>
+                        <select
+                          value={newDel.delegate_id}
+                          onChange={e => setNewDel(p => ({ ...p, delegate_id: e.target.value }))}
+                          style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
+                        >
+                          <option value="">Select a colleague…</option>
+                          {colleagues.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>Start date</label>
+                          <input
+                            type="date"
+                            value={newDel.start_date}
+                            onChange={e => setNewDel(p => ({ ...p, start_date: e.target.value }))}
+                            style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>End date</label>
+                          <input
+                            type="date"
+                            value={newDel.end_date}
+                            onChange={e => setNewDel(p => ({ ...p, end_date: e.target.value }))}
+                            style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
+                          />
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>Scope</label>
+                        <select
+                          value={newDel.scope}
+                          onChange={e => setNewDel(p => ({ ...p, scope: e.target.value }))}
+                          style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
+                        >
+                          <option value="all">All approvals (leave, expenses, timesheets)</option>
+                          <option value="leave">Leave only</option>
+                          <option value="expenses">Expenses only</option>
+                          <option value="timesheets">Timesheets only</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary, #64748b)' }}>Reason (optional)</label>
+                        <input
+                          type="text"
+                          value={newDel.reason}
+                          onChange={e => setNewDel(p => ({ ...p, reason: e.target.value }))}
+                          placeholder="e.g. Annual leave"
+                          style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'var(--bg, #fff)', fontSize: 14 }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => { setShowNewDelegation(false); setNewDel({ delegate_id: '', start_date: '', end_date: '', scope: 'all', reason: '' }) }}
+                          style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border, #e2e8f0)', background: 'transparent', cursor: 'pointer', fontSize: 14 }}
+                        >Cancel</button>
+                        <button
+                          onClick={handleCreateDelegation}
+                          disabled={delSaving}
+                          style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: 'var(--primary, #6C4FBF)', color: '#fff', cursor: 'pointer', fontWeight: 500, fontSize: 14 }}
+                        >{delSaving ? 'Saving…' : 'Create Delegation'}</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {pastDelegationsOut.length > 0 && (
+                    <div>
+                      <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 8px', color: 'var(--text-secondary, #64748b)' }}>Past Delegations</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {pastDelegationsOut.slice(0, 5).map(d => (
+                          <div key={d.id} style={{ background: 'var(--bg-secondary, #f8fafc)', borderRadius: 8, padding: '10px 14px', opacity: 0.7 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{d.delegate_name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)' }}>
+                              {formatDate(d.start_date)} — {formatDate(d.end_date)}
+                              <span style={{ marginLeft: 8, color: '#94a3b8' }}>Cancelled</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
