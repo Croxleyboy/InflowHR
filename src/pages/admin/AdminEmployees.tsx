@@ -87,7 +87,7 @@ export default function AdminEmployees() {
   const [setupMap, setSetupMap] = useState<Record<string, boolean>>({})
   const [loading, setLoading] = useState(true)
   const [filterDept, setFilterDept] = useState('')
-  const [filterActive, setFilterActive] = useState('')
+  const [filterActive, setFilterActive] = useState('active')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -104,6 +104,7 @@ export default function AdminEmployees() {
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null)
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [showDirectReports, setShowDirectReports] = useState(false)
 
   // Worker type settings state
   interface WorkerTypeSetting {
@@ -613,6 +614,14 @@ export default function AdminEmployees() {
     return employees.find(e => e.id === selectedEmployeeId) || null
   }, [employees, selectedEmployeeId])
 
+  const directReports = useMemo(() => {
+    if (!selectedEmployeeId) return []
+    return employees.filter(e => e.manager_id === selectedEmployeeId && !(!e.is_active && !e.is_frozen))
+      .sort((a, b) => `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`))
+  }, [employees, selectedEmployeeId])
+
+  useEffect(() => { setShowDirectReports(false) }, [selectedEmployeeId])
+
   const selectedIndex = useMemo(() => {
     if (!selectedEmployeeId) return -1
     return alphabeticalEmployees.findIndex(e => e.id === selectedEmployeeId)
@@ -800,6 +809,16 @@ export default function AdminEmployees() {
                           <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 12, fontWeight: 600, background: '#fff3e0', color: '#e65100' }}>Admin</span>
                         )}
                       </div>
+                      {directReports.length > 0 && (
+                        <button
+                          onClick={() => setShowDirectReports(!showDirectReports)}
+                          style={{ marginTop: 12, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', fontSize: 12, fontWeight: 600, border: '1px solid #c5cae9', borderRadius: 6, background: '#e8eaf6', color: '#283593', cursor: 'pointer' }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                          People I Manage ({directReports.length})
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points={showDirectReports ? "18 15 12 9 6 15" : "6 9 12 15 18 9"}/></svg>
+                        </button>
+                      )}
                     </div>
                     {/* Key stats */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px', fontSize: 12 }}>
@@ -820,6 +839,34 @@ export default function AdminEmployees() {
                     </div>
                   </div>
                 </div>
+
+                {showDirectReports && directReports.length > 0 && (
+                  <div style={{ background: '#fff', borderRadius: 10, padding: 16, marginBottom: 20, border: '1px solid #e8e8e8' }}>
+                    <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>Direct Reports ({directReports.length})</h4>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: '#666' }}>First Name</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: '#666' }}>Last Name</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: '#666' }}>Department</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: '#666' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {directReports.map(dr => (
+                          <tr key={dr.id} style={{ borderBottom: '1px solid #f5f5f5', cursor: 'pointer', background: dr.is_frozen ? '#e3f2fd' : undefined }} onClick={() => { setSelectedEmployeeId(dr.id); setShowDirectReports(false) }}>
+                            <td style={{ padding: '8px' }}>{dr.first_name}</td>
+                            <td style={{ padding: '8px' }}>{dr.last_name}</td>
+                            <td style={{ padding: '8px' }}>{dr.department || '—'}</td>
+                            <td style={{ padding: '8px' }}>
+                              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600, background: empStatus(dr).bg, color: empStatus(dr).color }}>{empStatus(dr).label}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
                 <EmployeeRecordModules
                   employee={selectedEmployee}
@@ -933,17 +980,36 @@ export default function AdminEmployees() {
       )}
 
       {activeTab === 'management' && <>
+      <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #e0e0e0', marginBottom: 16 }}>
+        {([
+          { key: 'active', label: 'Active', count: employees.filter(e => e.is_active && !e.is_frozen).length },
+          { key: 'frozen', label: 'Frozen', count: employees.filter(e => e.is_frozen).length },
+          { key: 'inactive', label: 'Deleted / Removed', count: employees.filter(e => !e.is_active && !e.is_frozen).length },
+        ] as const).map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setFilterActive(tab.key)}
+            style={{
+              padding: '10px 20px',
+              border: 'none',
+              borderBottom: filterActive === tab.key ? '2px solid #1565c0' : '2px solid transparent',
+              marginBottom: -2,
+              background: 'transparent',
+              color: filterActive === tab.key ? '#1565c0' : '#666',
+              fontWeight: filterActive === tab.key ? 600 : 400,
+              fontSize: 14,
+              cursor: 'pointer',
+            }}
+          >
+            {tab.label} <span style={{ fontSize: 12, opacity: 0.7 }}>({tab.count})</span>
+          </button>
+        ))}
+      </div>
       <div className="admin-filters">
         <input placeholder="Search name, email, ID..." value={search} onChange={e => setSearch(e.target.value)} className="admin-input admin-search" />
         <select value={filterDept} onChange={e => setFilterDept(e.target.value)} className="admin-select">
           <option value="">All Departments</option>
           {departments.map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <select value={filterActive} onChange={e => setFilterActive(e.target.value)} className="admin-select">
-          <option value="">All</option>
-          <option value="active">Active</option>
-          <option value="frozen">Frozen</option>
-          <option value="inactive">Inactive</option>
         </select>
       </div>
 
@@ -954,7 +1020,7 @@ export default function AdminEmployees() {
             <tbody>
               {paginated.map(emp => (
                 <>
-                  <tr key={emp.id} className={expandedId === emp.id ? 'admin-row-active' : ''}>
+                  <tr key={emp.id} className={expandedId === emp.id ? 'admin-row-active' : ''} style={emp.is_frozen ? { background: '#e3f2fd' } : (!emp.is_active && !emp.is_frozen) ? { background: '#ffebee' } : undefined}>
                     <td className="admin-td-mono">{emp.employee_number}</td>
                     <td>{editingId === emp.id ? (
                       <div className="admin-name-inputs">
