@@ -140,7 +140,7 @@ export default function NewTimesheet() {
     }
 
     if (!asDraft && data) {
-      const managerEmail = await getManagerEmail(employeeId, employeeEmail)
+      const managerEmail = await getManagerEmail(employeeId, employeeEmail, 'timesheets')
 
       const { error: wfError1 } = await supabase.from('workflow_tracker').insert({
         emp_display_name: employeeName,

@@ -95,7 +95,7 @@ export default function ExpenseDetail() {
     }).eq('id', id).eq('company_id', companyUser?.company_id)
     if (error) { showError('Failed to submit expense claim: ' + error.message); setSubmitting(false); return }
 
-    const managerEmail = await getManagerEmail(employeeId, HARDCODED_EMPLOYEE_EMAIL)
+    const managerEmail = await getManagerEmail(employeeId, HARDCODED_EMPLOYEE_EMAIL, 'expenses')
 
     const { error: error2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: HARDCODED_EMPLOYEE_NAME,

@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 
-export async function getManagerEmail(employeeId: string | null, fallbackEmail: string): Promise<string> {
+export async function getManagerEmail(employeeId: string | null, fallbackEmail: string, scope?: 'leave' | 'expenses' | 'timesheets'): Promise<string> {
   if (!employeeId) return fallbackEmail
   const { data: emp } = await supabase
     .from('employees')
@@ -9,21 +9,38 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
     .single()
   if (!emp) return fallbackEmail
 
+  let managerEmail: string | null = null
+  let managerId: string | null = null
+
   // Priority 1: manager_email text field (explicitly set by admin)
-  if (emp.manager_email) return emp.manager_email
+  if (emp.manager_email) {
+    managerEmail = emp.manager_email
+    if (!managerId && emp.company_id) {
+      const { data: mgrByEmail } = await supabase
+        .from('employees')
+        .select('id')
+        .eq('email', emp.manager_email)
+        .eq('company_id', emp.company_id)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+      if (mgrByEmail) managerId = mgrByEmail.id
+    }
+  }
 
   // Priority 2: manager_id FK — look up that employee's email (skip inactive/frozen)
-  if (emp.manager_id) {
+  if (!managerEmail && emp.manager_id) {
+    managerId = emp.manager_id
     const { data: mgr } = await supabase
       .from('employees')
       .select('email, is_active')
       .eq('id', emp.manager_id)
       .single()
-    if (mgr?.email && mgr.is_active !== false) return mgr.email
+    if (mgr?.email && mgr.is_active !== false) managerEmail = mgr.email
   }
 
   // Priority 3: find a company admin to assign to
-  if (emp.company_id) {
+  if (!managerEmail && emp.company_id) {
     const { data: admins } = await supabase
       .from('company_users')
       .select('auth_user_id')
@@ -39,10 +56,38 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
           .in('auth_user_id', adminIds)
           .neq('id', employeeId)
           .limit(1)
-        if (adminEmps?.[0]?.email) return adminEmps[0].email
+        if (adminEmps?.[0]?.email) managerEmail = adminEmps[0].email
       }
     }
   }
 
-  return fallbackEmail
+  if (!managerEmail) return fallbackEmail
+
+  // Check for active approval delegation covering today
+  if (scope && emp.company_id && managerId) {
+    const today = new Date().toISOString().slice(0, 10)
+    const { data: delegation } = await supabase
+      .from('approval_delegations')
+      .select('delegate_id, scope')
+      .eq('delegator_id', managerId)
+      .eq('company_id', emp.company_id)
+      .eq('is_active', true)
+      .lte('start_date', today)
+      .gte('end_date', today)
+      .limit(1)
+      .maybeSingle()
+    if (delegation) {
+      const delScope = delegation.scope || 'all'
+      if (delScope === 'all' || delScope.split(',').map((s: string) => s.trim()).includes(scope)) {
+        const { data: delegate } = await supabase
+          .from('employees')
+          .select('email, is_active')
+          .eq('id', delegation.delegate_id)
+          .single()
+        if (delegate?.email && delegate.is_active !== false) return delegate.email
+      }
+    }
+  }
+
+  return managerEmail
 }

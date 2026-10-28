@@ -156,7 +156,7 @@ export default function MyLeave() {
       return
     }
 
-    const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL)
+    const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL, 'leave')
 
     const { error: wfError } = await supabase.from('workflow_tracker').insert({
       emp_display_name: EMPLOYEE_NAME,

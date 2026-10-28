@@ -451,7 +451,7 @@ export default function NewLeaveRequest() {
     }
 
     const flagNote = careerBreakFlag ? ` ⚠️ ${t('leave.career_break_flag')}` : ''
-    const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL)
+    const managerEmail = await getManagerEmail(EMPLOYEE_ID, EMPLOYEE_EMAIL, 'leave')
 
     const zhHoursVal = parseFloat(zhHoursRequested || '0')
     const taskDesc = `${leaveType} - ${formatDate(startDate)}${startDate !== endDate ? ` to ${formatDate(endDate)}` : ''}${isZhAnnual && zhHoursVal > 0 ? ` (${zhHoursVal} hrs)` : halfDay ? ' (Half Day)' : ` (${days} days)`}${flagNote}`

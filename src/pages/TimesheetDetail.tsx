@@ -54,7 +54,7 @@ export default function TimesheetDetail() {
     }).eq('id', ts.id).eq('company_id', companyUser?.company_id)
     if (error) { showError('Failed to submit timesheet: ' + error.message); setSubmitting(false); return }
 
-    const managerEmail = await getManagerEmail(employeeId, employeeEmail)
+    const managerEmail = await getManagerEmail(employeeId, employeeEmail, 'timesheets')
 
     const { error: error2 } = await supabase.from('workflow_tracker').insert({
       emp_display_name: employeeName,
