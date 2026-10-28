@@ -297,11 +297,10 @@ export default function Settings() {
   }, [companyUser, newDel, showError, showSuccess])
 
   const handleCancelDelegation = useCallback(async (delegationId: string) => {
-    const { error } = await supabase.from('approval_delegations')
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq('id', delegationId)
-    if (error) { showError('Failed to cancel delegation'); return }
-    setDelegationsOut(prev => prev.map(d => d.id === delegationId ? { ...d, is_active: false } : d))
+    const { data: ok, error } = await supabase.rpc('cancel_my_delegation', { p_delegation_id: delegationId })
+    if (error || !ok) { showError('Failed to cancel delegation'); return }
+    const { data } = await supabase.rpc('get_my_delegations_out')
+    if (data) setDelegationsOut(data as typeof delegationsOut)
     showSuccess('Delegation cancelled')
   }, [showError, showSuccess])
 
