@@ -506,6 +506,7 @@ export default function AdminOnboarding() {
   // Identity provider gating
   const [identityProvider, setIdentityProvider] = useState<'entra' | 'google_workspace'>('entra')
   const [skipLicence, setSkipLicence] = useState(false)
+  const [newStarterCourseInfo, setNewStarterCourseInfo] = useState<{ enabled: boolean, course: { title: string, type: string, duration: string, days_to_complete: number | null } | null } | null>(null)
 
   const COLUMN_MAP: Record<string, string> = {
     'first name': 'firstname', 'surname': 'surname', 'work email': 'user_email',
@@ -672,6 +673,27 @@ export default function AdminOnboarding() {
     }
   }, [location.state])
 
+  // Load new starter course info when the assign_elearning step is current
+  useEffect(() => {
+    if (!selectedCompanyId) return
+    const currentStep = activeSteps[workflowStep]
+    if (currentStep?.step_key !== 'assign_elearning') { setNewStarterCourseInfo(null); return }
+    ;(async () => {
+      const { data: companyData } = await supabase.from('companies')
+        .select('new_starter_elearning_enabled, new_starter_course_id')
+        .eq('id', selectedCompanyId).single()
+      if (!companyData) { setNewStarterCourseInfo(null); return }
+      if (companyData.new_starter_course_id) {
+        const { data: courseData } = await supabase.from('elearning_courses')
+          .select('title, type, duration, days_to_complete')
+          .eq('id', companyData.new_starter_course_id).maybeSingle()
+        setNewStarterCourseInfo({ enabled: !!companyData.new_starter_elearning_enabled, course: courseData || null })
+      } else {
+        setNewStarterCourseInfo({ enabled: !!companyData.new_starter_elearning_enabled, course: null })
+      }
+    })()
+  }, [selectedCompanyId, workflowStep, activeSteps])
+
   async function load() {
     setLoading(true)
     const { data } = await supabase.from('onboarding').select('*, company:companies(name)').eq('company_id', selectedCompanyId).order('created_at', { ascending: false })
@@ -822,8 +844,18 @@ export default function AdminOnboarding() {
     }
     if (!email) { showError('No notification email configured for this step'); return false }
 
-    const { data: recipientEmp } = await supabase.from('employees')
+    // First try looking up the employee in the selected company
+    let recipientEmp: { id: string } | null = null
+    const { data: sameCompanyEmp } = await supabase.from('employees')
       .select('id').eq('company_id', selectedCompanyId).or(`user_email.eq.${email},email.eq.${email}`).maybeSingle()
+    recipientEmp = sameCompanyEmp
+
+    // If not found in this company, try across all companies (e.g. super admin in a different company)
+    if (!recipientEmp) {
+      const { data: anyCompanyEmp } = await supabase.from('employees')
+        .select('id').or(`user_email.eq.${email},email.eq.${email}`).maybeSingle()
+      recipientEmp = anyCompanyEmp
+    }
 
     const subject = resolveStepPlaceholders(stepConfig.notify_subject || stepLabel, record)
     const body = resolveStepPlaceholders(stepConfig.notify_body || `Please complete: ${stepLabel}`, record)
@@ -845,8 +877,20 @@ export default function AdminOnboarding() {
       showSuccess(`Notification sent to ${email}`)
       return true
     } else {
-      showError(`Could not find employee with email ${email} in this company`)
-      return false
+      // No employee record found at all — send email directly via edge function as fallback
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+        await fetch(`${supabaseUrl}/functions/v1/send-notification-email`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ to: email, subject, body })
+        })
+        showSuccess(`Notification emailed directly to ${email}`)
+        return true
+      } catch (err) {
+        showError(`Failed to send notification email to ${email}`)
+        return false
+      }
     }
   }
 
@@ -3748,6 +3792,27 @@ export default function AdminOnboarding() {
                               <div style={{ marginTop: 6, fontSize: 11, color: '#6366f1' }}>
                                 Meeting: {resolveStepPlaceholders(step.step_config.meeting.title || '', selectedRecord)} · Attendees: {step.step_config.meeting.attendees?.join(', ') || 'manager, starter'}
                               </div>
+                            )}
+                          </div>
+                        )}
+
+                        {step.step_key === 'assign_elearning' && !done && (
+                          <div style={{ border: '1px solid #c7d2fe', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: '#eef2ff' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                              <span style={{ fontSize: 14, fontWeight: 600, color: '#4338ca' }}>New Starter Course</span>
+                            </div>
+                            {newStarterCourseInfo?.enabled ? (
+                              newStarterCourseInfo.course ? (
+                                <div style={{ fontSize: 13 }}>
+                                  <div><strong>{newStarterCourseInfo.course.title}</strong></div>
+                                  <div style={{ color: '#666', marginTop: 4 }}>Type: {newStarterCourseInfo.course.type} · Duration: {newStarterCourseInfo.course.duration} · Deadline: {newStarterCourseInfo.course.days_to_complete || 7} days from start date</div>
+                                  <div style={{ color: '#666', marginTop: 4, fontSize: 12 }}>Completing this step will enrol the new starter and set their deadline.</div>
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: 13, color: '#dc2626' }}>No course configured — go to E-Learning settings to set up a new starter course.</div>
+                              )
+                            ) : (
+                              <div style={{ fontSize: 13, color: '#666' }}>New starter e-learning is not enabled for this company. Step will be marked complete without enrolment.</div>
                             )}
                           </div>
                         )}
