@@ -772,7 +772,7 @@ export default function Settings() {
         </section>
       )}
 
-      {!delegationsLoading && companyUser?.employee_id && (isManager || activeDelegationsIn.length > 0) && (
+      {!delegationsLoading && companyUser?.employee_id && (isManager || activeDelegationsOut.length > 0 || activeDelegationsIn.length > 0) && (
         <section className="settings-section">
           <button className="settings-section-toggle" onClick={() => setDelegationsOpen(v => !v)}>
             <h2>Approval Delegation</h2>
