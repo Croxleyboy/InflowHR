@@ -217,6 +217,7 @@ export default function AdminIntegrations() {
   const [ifoLicencesLoading, setIfoLicencesLoading] = useState(false)
   const [ifoOffboardSettingsOpen, setIfoOffboardSettingsOpen] = useState(false)
   const [ifoMoverSettingsOpen, setIfoMoverSettingsOpen] = useState(false)
+  const [identityProvider, setIdentityProvider] = useState<'entra' | 'google_workspace'>('entra')
   const [ifoOffboardApproverMode, setIfoOffboardApproverMode] = useState<'same_as_joiner' | 'nominated' | 'manager'>('same_as_joiner')
   const [ifoOffboardApproverName, setIfoOffboardApproverName] = useState('')
   const [ifoOffboardApproverEmail, setIfoOffboardApproverEmail] = useState('')
@@ -249,7 +250,7 @@ export default function AdminIntegrations() {
     if (!companyId) return
     setLoading(true)
 
-    const [teamsRes, teamsBotRes, xeroRes, sageRes, modulrRes, featuresRes, ifoRes] = await Promise.all([
+    const [teamsRes, teamsBotRes, xeroRes, sageRes, modulrRes, featuresRes, ifoRes, companyRes] = await Promise.all([
       supabase.from('company_teams_config').select('*').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_teams_bot_conversations').select('id', { count: 'exact', head: true }).eq('company_id', companyId),
       supabase.from('xero_integrations').select('id, company_id, sync_status, sync_error, last_sync_at, payslip_source, sync_benefits_to_xero').eq('company_id', companyId).maybeSingle(),
@@ -257,7 +258,9 @@ export default function AdminIntegrations() {
       supabase.from('modulr_integrations').select('id, company_id, source_account_id, status, status_error, connected_at').eq('company_id', companyId).maybeSingle(),
       supabase.from('company_features').select('feature_key, is_enabled').eq('company_id', companyId),
       supabase.from('inflowonboarder_integrations').select('company_id, api_key_hint, status, status_detail, status_checked_at, connected_at, approver_mode, approver_name, approver_email, licence_manager_name, licence_manager_email, licence_sku_id, licence_sku_name, group_name, account_domain, settings_updated_at, offboard_approver_mode, offboard_approver_name, offboard_approver_email, mover_approver_mode, mover_approver_name, mover_approver_email, schedule_templates_cache').eq('company_id', companyId).maybeSingle(),
+      supabase.from('companies').select('identity_provider').eq('id', companyId).single(),
     ])
+    if (companyRes.data?.identity_provider) setIdentityProvider(companyRes.data.identity_provider as 'entra' | 'google_workspace')
 
     if (featuresRes.data) {
       const fm = new Map(featuresRes.data.map(f => [f.feature_key, f.is_enabled]))
@@ -1227,6 +1230,22 @@ export default function AdminIntegrations() {
         </div>
 
         {/* ── InflowOnboarder Card ── */}
+        {identityProvider === 'google_workspace' ? (
+          <div style={{ ...cardStyle(true), opacity: 0.55, pointerEvents: 'none', position: 'relative' }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 16 }}>
+              <span style={{ background: '#f59e0b', color: '#fff', padding: '8px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>
+                Not available — Google Workspace identity provider
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+              <InflowOnboarderLogo />
+              <div>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--text, #1a1a2e)' }}>InflowOnboarder</h3>
+                <p style={{ margin: '4px 0 0', fontSize: 13, color: '#888' }}>Microsoft 365 provisioning &amp; licence management</p>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div style={{ ...cardStyle(true), position: 'relative', opacity: features.inflowonboarder_integration ? 1 : 0.55, pointerEvents: features.inflowonboarder_integration ? 'auto' : 'none' }}>
           {!features.inflowonboarder_integration && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'auto', borderRadius: 16 }}>
@@ -1629,6 +1648,7 @@ export default function AdminIntegrations() {
             </div>
           )}
         </div>
+        )}
 
       </div>
 

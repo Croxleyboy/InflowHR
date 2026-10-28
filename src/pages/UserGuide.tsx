@@ -195,6 +195,7 @@ const SECTIONS: GuideSection[] = [
     features: [
       { title: 'Notification Tabs', purpose: 'Three tabs organise everything that needs your attention.', steps: ['Company — announcements and company-wide posts.', 'Actions — items requiring your action (leave approvals, expense approvals, timesheet reviews).', 'My Notifications — personal reminders: upcoming birthdays, shift reminders, booking confirmations, course deadlines, and more.'] },
       { title: 'Create a Post', purpose: 'Admins and authorised users can post company notifications.', steps: ['Tap + New Post on the Company tab.', 'Write your message, choose the audience, and publish.'] },
+      { title: 'Company Announcements', purpose: 'See announcements targeted to your department or to you personally.', steps: ['Announcements appear on your Dashboard and in the Company tab of Notifications.', 'Company-wide announcements are visible to everyone. Department-targeted announcements appear only if you belong to one of the selected departments.', 'Private welcome announcements are created automatically for new starters on their first day and auto-expire after two weeks.', 'Welcome announcements include a link to the User Guide and a reminder to complete any assigned e-learning courses.'], callout: { type: 'tip', text: 'A blue "Welcome" badge indicates a system-generated welcome message for new starters.' } },
     ],
   },
   {
@@ -427,12 +428,25 @@ const SECTIONS: GuideSection[] = [
 export default function UserGuide() {
   const navigate = useNavigate()
   const [openSections, setOpenSections] = useState<Record<number, boolean>>({})
+  const [search, setSearch] = useState('')
 
   useEffect(() => { window.scrollTo(0, 0) }, [])
 
   function toggleSection(idx: number) {
     setOpenSections(prev => ({ ...prev, [idx]: !prev[idx] }))
   }
+
+  const q = search.trim().toLowerCase()
+  const filteredSections = q
+    ? SECTIONS.map(section => ({
+        ...section,
+        features: section.features.filter(f =>
+          f.title.toLowerCase().includes(q) ||
+          f.purpose.toLowerCase().includes(q) ||
+          f.steps.some(s => s.toLowerCase().includes(q))
+        ),
+      })).filter(s => s.features.length > 0)
+    : SECTIONS
 
   return (
     <div className="feature-page user-guide-page">
@@ -446,7 +460,17 @@ export default function UserGuide() {
         </div>
       </header>
 
-      <div className="user-guide-intro">
+      <div style={{ padding: '0 20px 12px' }}>
+        <input
+          type="text"
+          placeholder="Search user guide..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid var(--border, #e0e0e0)', fontSize: 15, background: 'var(--input-bg, #fafbfc)', color: 'var(--text, #1a1a2e)', outline: 'none' }}
+        />
+      </div>
+
+      {!q && <div className="user-guide-intro">
         <h3>Getting Started</h3>
         <p>Sign in with your company Microsoft or Google account, or with the account credentials provided by your administrator. Your dashboard shows quick-access cards for every feature your company has enabled. Use the bottom navigation bar to jump between pages:</p>
         <ul>
@@ -460,16 +484,22 @@ export default function UserGuide() {
           <span>💡</span>
           <span><strong>Tip:</strong> InflowHR is a progressive web app. On mobile, use your browser's "Add to Home Screen" option for a native app experience.</span>
         </div>
-      </div>
+      </div>}
 
-      {SECTIONS.map((section, si) => (
-        <div key={si} className={`user-guide-section ${openSections[si] ? 'user-guide-section-open' : ''}`}>
+      {q && filteredSections.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '40px 20px', color: '#888' }}>
+          No guides match "{search}"
+        </div>
+      )}
+
+      {filteredSections.map((section, si) => (
+        <div key={si} className={`user-guide-section ${(openSections[si] || !!q) ? 'user-guide-section-open' : ''}`}>
           <button className="user-guide-section-toggle" onClick={() => toggleSection(si)}>
             <span className="user-guide-section-icon">{section.icon}</span>
             <span className="user-guide-section-title">{section.title}</span>
             <svg className="user-guide-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
           </button>
-          {openSections[si] && (
+          {(openSections[si] || !!q) && (
             <div className="user-guide-section-body">
               {section.features.map((feat, fi) => (
                 <div key={fi} className="user-guide-feature">

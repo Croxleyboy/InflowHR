@@ -130,6 +130,7 @@ export default function AdminEmployees() {
   const [customFields, setCustomFields] = useState<CustomFieldDef[]>([])
   const [customFieldsLoading, setCustomFieldsLoading] = useState(false)
   const [customFieldsSaving, setCustomFieldsSaving] = useState(false)
+  const [identityProvider, setIdentityProvider] = useState<'entra' | 'google_workspace'>('entra')
   const [moverPrompt, setMoverPrompt] = useState<{ empId: string; empName: string; empEmail: string; changes: Record<string, { old: string; new: string }> } | null>(null)
 
   function maskValue(value: string | null, employeeId: string, field: string): string {
@@ -167,11 +168,13 @@ export default function AdminEmployees() {
 
   async function load() {
     setLoading(true)
-    const [{ data }, { data: onbData }] = await Promise.all([
+    const [{ data }, { data: onbData }, { data: companyData }] = await Promise.all([
       supabase.from('employees').select('*').eq('company_id', selectedCompanyId).order('last_name'),
       supabase.from('onboarding').select('user_email, initial_setup_complete').eq('company_id', selectedCompanyId),
+      supabase.from('companies').select('identity_provider').eq('id', selectedCompanyId).single(),
     ])
     setEmployees((data as Employee[]) || [])
+    if (companyData?.identity_provider) setIdentityProvider(companyData.identity_provider as 'entra' | 'google_workspace')
     const map: Record<string, boolean> = {}
     ;(onbData || []).forEach((o: any) => { map[o.user_email?.toLowerCase()] = o.initial_setup_complete === true })
     setSetupMap(map)
@@ -809,7 +812,9 @@ export default function AdminEmployees() {
                       {features.inflowonboarder_integration && (
                         <>
                           <div><span style={{ color: '#999', display: 'block' }}>Company Device</span><strong>{selectedEmployee.has_company_device ? 'Yes' : 'No'}</strong></div>
-                          <div><span style={{ color: '#999', display: 'block' }}>Persona</span><strong style={{ textTransform: 'capitalize' }}>{selectedEmployee.has_company_device ? (selectedEmployee.persona || 'information-worker').replace(/-/g, ' ') : '—'}</strong></div>
+                          {identityProvider !== 'google_workspace' && (
+                            <div><span style={{ color: '#999', display: 'block' }}>Persona</span><strong style={{ textTransform: 'capitalize' }}>{selectedEmployee.has_company_device ? (selectedEmployee.persona || 'information-worker').replace(/-/g, ' ') : '—'}</strong></div>
+                          )}
                         </>
                       )}
                     </div>
@@ -1192,6 +1197,7 @@ export default function AdminEmployees() {
                                                 </label>
                                               </div>
                                             </div>
+                                            {identityProvider !== 'google_workspace' && (
                                             <div className="admin-form-field">
                                               <label style={{ fontSize: 12 }}>Persona</label>
                                               {editForm.has_company_device ? (
@@ -1205,6 +1211,7 @@ export default function AdminEmployees() {
                                                 <div style={{ fontSize: 12, color: '#888', padding: '6px 0' }}>No company device assigned — persona changes not applicable</div>
                                               )}
                                             </div>
+                                            )}
                                           </>
                                         )}
                                         {showField('leave_allowance') && (

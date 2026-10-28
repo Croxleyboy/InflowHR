@@ -86,7 +86,7 @@ const EMPTY_COURSE: DbCourse = {
   annual_reminder: false, industry: null, external_url: null, is_active: true, company_id: null,
 }
 
-type TabKey = 'courses' | 'visibility' | 'company_courses' | 'library' | 'analytics'
+type TabKey = 'courses' | 'visibility' | 'company_courses' | 'library' | 'analytics' | 'new_starter'
 
 export default function AdminELearning() {
   const { selectedCompanyId } = useAdminCompany()
@@ -140,6 +140,7 @@ export default function AdminELearning() {
     : [
         { key: 'library', label: 'Course Library', show: true },
         { key: 'company_courses', label: 'Company Courses', show: true },
+        { key: 'new_starter', label: 'New Starter Course', show: true },
         { key: 'analytics', label: 'Analytics', show: true },
       ]
 
@@ -194,6 +195,9 @@ export default function AdminELearning() {
       )}
       {tab === 'company_courses' && !isSuperAdmin && (
         <CompanyCourseTab companyId={selectedCompanyId} showError={showError} showSuccess={showSuccess} />
+      )}
+      {tab === 'new_starter' && !isSuperAdmin && (
+        <NewStarterCourseTab companyId={selectedCompanyId} showError={showError} showSuccess={showSuccess} />
       )}
       {tab === 'analytics' && !isSuperAdmin && (
         <AnalyticsTab companyId={selectedCompanyId} />
@@ -1082,6 +1086,215 @@ interface CompletionRow {
   course_id: string
   completed_at: string
 }
+
+/* ────── New Starter Course Config Tab (Company Admins) ────── */
+
+function NewStarterCourseTab({ companyId, showError, showSuccess }: { companyId: string; showError: (m: string) => void; showSuccess: (m: string) => void }) {
+  const [loading, setLoading] = useState(true)
+  const [enabled, setEnabled] = useState(false)
+  const [courseId, setCourseId] = useState<string | null>(null)
+  const [courses, setCourses] = useState<DbCourse[]>([])
+  const [saving, setSaving] = useState(false)
+  const [enrolments, setEnrolments] = useState<any[]>([])
+
+  const loadAll = useCallback(async () => {
+    if (!companyId) return
+    setLoading(true)
+    const [compRes, coursesRes] = await Promise.all([
+      supabase.from('companies').select('new_starter_elearning_enabled, new_starter_course_id').eq('id', companyId).single(),
+      supabase.from('elearning_courses').select('id, title, type, category, days_to_complete, required, is_active').or(`company_id.eq.${companyId},company_id.is.null`).eq('is_active', true).order('title'),
+    ])
+    if (compRes.data) {
+      setEnabled(!!compRes.data.new_starter_elearning_enabled)
+      setCourseId(compRes.data.new_starter_course_id || null)
+    }
+    setCourses((coursesRes.data as any[]) || [])
+    if (compRes.data?.new_starter_course_id) {
+      const { data: enr } = await supabase.from('course_enrolments')
+        .select('id, employee_id, status, progress_pct, enrolled_at, completed_at, employees(first_name, last_name)')
+        .eq('company_id', companyId)
+        .eq('course_id', compRes.data.new_starter_course_id)
+        .order('enrolled_at', { ascending: false })
+        .limit(50)
+      setEnrolments(enr || [])
+    } else {
+      setEnrolments([])
+    }
+    setLoading(false)
+  }, [companyId])
+
+  useEffect(() => { loadAll() }, [loadAll])
+
+  async function toggleEnabled() {
+    if (saving) return
+    setSaving(true)
+    const newVal = !enabled
+    const { error } = await supabase.from('companies').update({ new_starter_elearning_enabled: newVal }).eq('id', companyId)
+    if (error) { showError('Failed to update setting'); setSaving(false); return }
+    setEnabled(newVal)
+    showSuccess(`New starter e-learning ${newVal ? 'enabled' : 'disabled'}`)
+    setSaving(false)
+  }
+
+  async function saveCourse(newCourseId: string) {
+    if (saving) return
+    setSaving(true)
+    const { error } = await supabase.from('companies').update({ new_starter_course_id: newCourseId || null }).eq('id', companyId)
+    if (error) { showError('Failed to update course selection'); setSaving(false); return }
+    setCourseId(newCourseId || null)
+    showSuccess('New starter course updated')
+    setSaving(false)
+    loadAll()
+  }
+
+  async function createNewStarterCourse() {
+    if (saving) return
+    setSaving(true)
+    const id = `${companyId.substring(0, 8)}-new-starter-induction`
+    const existing = courses.find(c => c.id === id)
+    if (existing) {
+      await saveCourse(id)
+      return
+    }
+    const { error } = await supabase.from('elearning_courses').insert({
+      id, title: 'New Starter Induction Course', description: 'Company induction course for new employees. Complete within 7 days of your start date.',
+      category: 'onboarding', type: 'article' as CourseType, duration: '30 min',
+      required: true, days_to_complete: 7, tags: ['induction', 'new-starter'],
+      annual_reminder: false, is_active: true, company_id: companyId,
+    })
+    if (error) { showError('Failed to create course: ' + error.message); setSaving(false); return }
+    await supabase.from('company_elearning_courses').upsert(
+      { company_id: companyId, course_id: id, is_enabled: true, target_departments: [] },
+      { onConflict: 'company_id,course_id' }
+    )
+    await saveCourse(id)
+  }
+
+  if (loading) return <div className="admin-loading">Loading new starter course settings...</div>
+
+  const selectedCourse = courses.find(c => c.id === courseId)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div className="admin-card" style={{ padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>New Starter E-Learning</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>
+              Automatically assign an induction course to new employees during onboarding
+            </p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted, #8b8fa3)' }}>
+              {enabled ? 'Enabled' : 'Disabled'}
+            </span>
+            <button
+              className={`ts-toggle ${enabled ? 'ts-toggle-on' : ''}`}
+              onClick={toggleEnabled}
+              disabled={saving}
+              aria-label="Toggle new starter e-learning"
+            >
+              <span className="ts-toggle-knob" />
+            </button>
+          </div>
+        </div>
+
+        {enabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <label style={{ fontSize: 13, fontWeight: 600, minWidth: 120 }}>Assigned Course</label>
+              <select
+                className="ts-input"
+                style={{ flex: 1, minWidth: 200 }}
+                value={courseId || ''}
+                onChange={(e) => saveCourse(e.target.value)}
+                disabled={saving}
+              >
+                <option value="">— Select a course —</option>
+                {courses.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {TYPE_ICONS[c.type as CourseType] || '📄'} {c.title} ({CATEGORY_LABELS[c.category] || c.category})
+                  </option>
+                ))}
+              </select>
+              <button className="ts-btn ts-btn-sm" onClick={createNewStarterCourse} disabled={saving} title="Create a pre-configured new starter induction course">
+                + Create Default Course
+              </button>
+            </div>
+
+            {selectedCourse && (
+              <div style={{ background: 'var(--bg-card, #f8f9fb)', borderRadius: 8, padding: 16, border: '1px solid var(--border, #e2e4ea)' }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 28 }}>{TYPE_ICONS[selectedCourse.type as CourseType] || '📄'}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{selectedCourse.title}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted, #8b8fa3)', marginTop: 2 }}>
+                      {CATEGORY_LABELS[selectedCourse.category] || selectedCourse.category} &middot; {selectedCourse.type}
+                      {selectedCourse.days_to_complete ? ` · ${selectedCourse.days_to_complete} day deadline` : ''}
+                      {selectedCourse.required ? ' · Required' : ''}
+                    </div>
+                  </div>
+                </div>
+                <p style={{ fontSize: 12, color: 'var(--text-muted, #8b8fa3)', margin: '12px 0 0' }}>
+                  This course is automatically assigned to new starters on their configured start date during onboarding.
+                  Employees have {selectedCourse.days_to_complete || 7} days to complete it. Progress appears on the employee&apos;s dashboard reminders.
+                </p>
+              </div>
+            )}
+
+            {!courseId && (
+              <div style={{ background: '#fff8e1', borderRadius: 8, padding: 12, border: '1px solid #ffe082', fontSize: 13 }}>
+                ⚠️ No course selected. The &quot;Assign New Starter E-Learning&quot; onboarding step will be marked as skippable until a course is configured.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {enabled && courseId && enrolments.length > 0 && (
+        <div className="admin-card" style={{ padding: 24 }}>
+          <h3 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600 }}>Recent Enrolments</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="ts-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Status</th>
+                  <th>Progress</th>
+                  <th>Enrolled</th>
+                  <th>Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {enrolments.map((e: any) => {
+                  const emp = e.employees as any
+                  const enrolled = e.enrolled_at ? new Date(e.enrolled_at) : null
+                  const deadline = enrolled ? new Date(enrolled.getTime() + (selectedCourse?.days_to_complete || 7) * 86400000) : null
+                  const overdue = deadline && !e.completed_at && new Date() > deadline
+                  return (
+                    <tr key={e.id}>
+                      <td>{emp ? `${emp.first_name} ${emp.last_name}` : '—'}</td>
+                      <td>
+                        <span className={`ts-badge ${e.status === 'completed' ? 'ts-badge-success' : overdue ? 'ts-badge-danger' : e.status === 'in_progress' ? 'ts-badge-info' : 'ts-badge-muted'}`}>
+                          {overdue ? 'Overdue' : e.status === 'not_started' ? 'Not Started' : e.status === 'in_progress' ? 'In Progress' : e.status === 'completed' ? 'Completed' : e.status}
+                        </span>
+                      </td>
+                      <td>{e.progress_pct ?? 0}%</td>
+                      <td>{enrolled ? enrolled.toLocaleDateString('en-GB') : '—'}</td>
+                      <td>{e.completed_at ? new Date(e.completed_at).toLocaleDateString('en-GB') : '—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ────── Analytics Tab (Company Admins) ────── */
 
 interface EmployeeRow {
   id: string
