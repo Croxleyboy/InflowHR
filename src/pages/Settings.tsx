@@ -97,6 +97,9 @@ export default function Settings() {
   const [colleagues, setColleagues] = useState<{ id: string; name: string }[]>([])
   const [newDel, setNewDel] = useState({ delegate_id: '', start_date: '', end_date: '', scope: 'all', reason: '' })
   const [delSaving, setDelSaving] = useState(false)
+  const [identityProvider, setIdentityProvider] = useState<'entra' | 'google_workspace'>('entra')
+  const [skipLicence, setSkipLicence] = useState(false)
+  const [idpSaving, setIdpSaving] = useState(false)
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 768px)')
     const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
@@ -211,6 +214,40 @@ export default function Settings() {
         if (data) setColleagues(data.map(e => ({ id: e.id, name: `${e.first_name} ${e.last_name}` })))
       })
   }, [companyUser?.company_id, companyUser?.employee_id])
+
+  useEffect(() => {
+    if (!isCompanyAdmin || !companyUser?.company_id) return
+    supabase.from('companies')
+      .select('identity_provider, skip_licence_assignment')
+      .eq('id', companyUser.company_id)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setIdentityProvider(data.identity_provider || 'entra')
+          setSkipLicence(!!data.skip_licence_assignment)
+        }
+      })
+  }, [isCompanyAdmin, companyUser?.company_id])
+
+  async function saveIdentityProvider(provider: 'entra' | 'google_workspace') {
+    if (!companyUser?.company_id || idpSaving) return
+    setIdpSaving(true)
+    const { error } = await supabase.from('companies').update({ identity_provider: provider }).eq('id', companyUser.company_id)
+    setIdpSaving(false)
+    if (error) { showError('Failed to update identity provider'); return }
+    setIdentityProvider(provider)
+    showSuccess(`Identity provider set to ${provider === 'entra' ? 'Microsoft Entra ID' : 'Google Workspace'}`)
+  }
+
+  async function saveSkipLicence(val: boolean) {
+    if (!companyUser?.company_id || idpSaving) return
+    setIdpSaving(true)
+    const { error } = await supabase.from('companies').update({ skip_licence_assignment: val }).eq('id', companyUser.company_id)
+    setIdpSaving(false)
+    if (error) { showError('Failed to update setting'); return }
+    setSkipLicence(val)
+    showSuccess(`Licence assignment ${val ? 'skipped' : 'enabled'}`)
+  }
 
   const handleCreateDelegation = useCallback(async () => {
     if (!companyUser?.company_id || !companyUser?.employee_id) return
@@ -432,6 +469,53 @@ export default function Settings() {
                 ))}
               </select>
             </div>
+          </div>
+        </section>
+      )}
+
+      {isCompanyAdmin && (
+        <section className="settings-section">
+          <h2>Identity Provider</h2>
+          <div className="settings-info">
+            <div className="settings-row">
+              <span className="settings-label">Provider</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className={`lang-btn ${identityProvider === 'entra' ? 'lang-active' : ''}`}
+                  onClick={() => saveIdentityProvider('entra')}
+                  disabled={idpSaving}
+                >Microsoft Entra ID</button>
+                <button
+                  className={`lang-btn ${identityProvider === 'google_workspace' ? 'lang-active' : ''}`}
+                  onClick={() => saveIdentityProvider('google_workspace')}
+                  disabled={idpSaving}
+                >Google Workspace</button>
+              </div>
+            </div>
+            <div className="settings-row">
+              <span className="settings-label">Skip Licence Assignment</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 13, color: 'var(--text-muted, #8b8fa3)' }}>{skipLicence ? 'On' : 'Off'}</span>
+                <button
+                  className={`ts-toggle ${skipLicence ? 'ts-toggle-on' : ''}`}
+                  onClick={() => saveSkipLicence(!skipLicence)}
+                  disabled={idpSaving}
+                  aria-label="Toggle skip licence assignment"
+                >
+                  <span className="ts-toggle-knob" />
+                </button>
+              </div>
+            </div>
+            {identityProvider === 'google_workspace' && (
+              <div style={{ background: '#fff8e1', borderRadius: 8, padding: 12, marginTop: 8, border: '1px solid #ffe082', fontSize: 13 }}>
+                ⚠️ InflowOnboarder M365 provisioning, licence assignment, and persona management are not available for Google Workspace companies.
+              </div>
+            )}
+            {skipLicence && (
+              <div style={{ background: '#e3f2fd', borderRadius: 8, padding: 12, marginTop: 8, border: '1px solid #90caf9', fontSize: 13 }}>
+                Licence search and assignment will be skipped during onboarding. Enable this when not all employees receive a full Microsoft 365 or Google Workspace licence.
+              </div>
+            )}
           </div>
         </section>
       )}

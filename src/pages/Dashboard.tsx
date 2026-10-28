@@ -28,6 +28,8 @@ interface LatestAnnouncement {
   body: string
   published_at?: string
   priority?: 'low' | 'medium' | 'high'
+  is_system_generated?: boolean
+  target_employee_id?: string | null
 }
 
 interface DashTask {
@@ -266,7 +268,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (companyUser?.company_id) {
       supabase.from('announcements')
-        .select('title, body, published_at, priority')
+        .select('title, body, published_at, priority, is_system_generated, target_employee_id')
         .eq('company_id', companyUser.company_id)
         .order('published_at', { ascending: false })
         .limit(1)
@@ -274,7 +276,7 @@ export default function Dashboard() {
         .then(({ data }) => { if (data) setLatest(data as LatestAnnouncement) })
 
       supabase.from('announcements')
-        .select('title, body, published_at, priority')
+        .select('title, body, published_at, priority, is_system_generated, target_employee_id')
         .eq('company_id', companyUser.company_id)
         .order('published_at', { ascending: false })
         .limit(1)
@@ -1837,6 +1839,7 @@ export default function Dashboard() {
                   <button className="info-card-announce-item" onClick={() => navigate('/notifications', { state: { tab: 'company' } })}>
                     <span className="info-card-announce-row">
                       <span className="info-card-announce-title">{announcements[0].title}</span>
+                      {announcements[0].is_system_generated && <span className="info-card-announce-priority" style={{ background: '#dbeafe', color: '#2563eb' }}>Welcome</span>}
                       {announcements[0].priority && <span className={`info-card-announce-priority info-card-announce-priority--${announcements[0].priority}`}>{announcements[0].priority === 'high' ? 'High' : announcements[0].priority === 'medium' ? 'Medium' : 'Low'}</span>}
                     </span>
                     <span className="info-card-announce-text">{announcements[0].body?.length > 80 ? announcements[0].body.slice(0, 80) + '...' : announcements[0].body}</span>

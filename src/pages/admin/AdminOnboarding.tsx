@@ -314,6 +314,7 @@ const WORKFLOW_STEPS = [
   { key: 'notify_manager', label: 'Notify Manager', icon: '📧', description: 'Inform the line manager of confirmed start date, equipment status and onboarding checklist. Share new starter profile.' },
   { key: 'plan_day1', label: 'Plan First Day', icon: '📅', description: 'Prepare day-one schedule: building access, desk assignment, welcome pack, team introductions and lunch arrangements.' },
   { key: 'inform_starter', label: 'Inform Starter', icon: '✉️', description: 'Send welcome email to the new starter with start date, office location, dress code, parking info and first day schedule.' },
+  { key: 'assign_elearning', label: 'Assign New Starter E-Learning', icon: '📚', description: 'Assign the company new starter e-learning course. 7-day completion deadline from start date, appears in employee reminders.' },
   { key: 'accounts', label: 'Create Accounts & Licences', icon: '🔐', description: 'Create the new starter\'s Microsoft 365 account via InflowOnboarder — checks licence availability, creates the account, assigns the licence and adds to groups. Generates a temporary password.' },
   { key: 'day1_access', label: 'Day 1 Access Verification', icon: '✅', description: 'Confirm the new starter can log in, access email, Teams, shared drives and all required business applications on their first day.' },
 ]
@@ -502,6 +503,9 @@ export default function AdminOnboarding() {
   const [m365ScheduleRefreshing, setM365ScheduleRefreshing] = useState(false)
   const [m365ActiveProvisionCount, setM365ActiveProvisionCount] = useState(0)
 
+  // Identity provider gating
+  const [identityProvider, setIdentityProvider] = useState<'entra' | 'google_workspace'>('entra')
+  const [skipLicence, setSkipLicence] = useState(false)
 
   const COLUMN_MAP: Record<string, string> = {
     'first name': 'firstname', 'surname': 'surname', 'work email': 'user_email',
@@ -636,6 +640,13 @@ export default function AdminOnboarding() {
       loadOffboardCustomSteps()
       loadCompanyContacts()
       loadSyncStatus()
+      // Load identity provider settings
+      supabase.from('companies').select('identity_provider, skip_licence_assignment').eq('id', selectedCompanyId).maybeSingle().then(({ data }) => {
+        if (data) {
+          setIdentityProvider((data.identity_provider as 'entra' | 'google_workspace') || 'entra')
+          setSkipLicence(!!data.skip_licence_assignment)
+        }
+      })
     }
   }, [selectedCompanyId])
 
@@ -2646,6 +2657,30 @@ export default function AdminOnboarding() {
     }
     if (stepKey === 'plan_day1' || stepKey === 'meeting' || stepKey === 'notify_manager') updates.first_day = true
     if (stepKey === 'inform_starter') updates.first_week = true
+    if (stepKey === 'assign_elearning' && selectedCompanyId) {
+      const { data: companyData } = await supabase.from('companies')
+        .select('new_starter_elearning_enabled, new_starter_course_id')
+        .eq('id', selectedCompanyId).single()
+      if (companyData?.new_starter_elearning_enabled && companyData.new_starter_course_id) {
+        const { data: emp } = await supabase.from('employees')
+          .select('id').eq('email', record.user_email).eq('company_id', selectedCompanyId).maybeSingle()
+        if (emp) {
+          await supabase.from('course_enrolments').upsert({
+            company_id: selectedCompanyId,
+            employee_id: emp.id,
+            course_id: companyData.new_starter_course_id,
+            status: 'not_started',
+            progress_pct: 0,
+            enrolled_at: record.start_date ? new Date(record.start_date).toISOString() : new Date().toISOString(),
+          }, { onConflict: 'company_id,employee_id,course_id' })
+          showSuccess('New starter e-learning course assigned')
+        }
+      } else if (!companyData?.new_starter_elearning_enabled) {
+        showSuccess('New starter e-learning not enabled — step marked complete')
+      } else {
+        showError('No new starter course configured — configure one in E-Learning settings')
+      }
+    }
     if (stepKey === 'accounts') {
       const created = await createEmployeeFromOnboard(record)
       if (!created) return
@@ -2695,6 +2730,10 @@ export default function AdminOnboarding() {
           })
         }
       }
+    }
+    if (stepKey === 'assign_elearning') {
+      const existing = record.custom_steps_completed || {}
+      updates.custom_steps_completed = { ...existing, assign_elearning: true }
     }
     if (!updates.status) updates.status = 'in-progress'
     const newSkips = { ...stepSkips, [stepKey]: false }
@@ -2842,7 +2881,7 @@ export default function AdminOnboarding() {
       const checks: Record<string, boolean> = {
         details: true, equipment: r.equipment_order === 'Y',
         meeting: r.first_day, notify_manager: r.first_day, plan_day1: r.first_day,
-        inform_starter: r.first_week, accounts: r.elearning, day1_access: r.is_complete,
+        inform_starter: r.first_week, assign_elearning: !!r.custom_steps_completed?.assign_elearning, accounts: r.elearning, day1_access: r.is_complete,
       }
       const skipped = r.skipped_steps
       const doneCount = activeSteps.filter(s => checks[s.step_key] || (skipped && skipped[s.step_key])).length
@@ -3354,7 +3393,7 @@ export default function AdminOnboarding() {
               ))}
             </div>
           </fieldset>
-          {features.inflowonboarder_integration && (
+          {features.inflowonboarder_integration && identityProvider !== 'google_workspace' && (
             <fieldset style={{ border: '1px solid #e0e0e0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
               <legend style={{ fontWeight: 700, fontSize: 13, color: '#e65100' }}>Persona</legend>
               <p style={{ fontSize: 12, color: '#666', margin: '0 0 12px' }}>
@@ -3579,7 +3618,7 @@ export default function AdminOnboarding() {
                 <tbody>
                   {paginatedFiltered.map(r => {
                     const skipped = r.skipped_steps || {}
-                    const defaultDone = [true, r.equipment_order === 'Y', r.first_day, r.first_day, r.first_day, r.first_week, r.elearning, r.is_complete].filter(Boolean).length
+                    const defaultDone = [true, r.equipment_order === 'Y', r.first_day, r.first_day, r.first_day, r.first_week, !!r.custom_steps_completed?.assign_elearning, r.elearning, r.is_complete].filter(Boolean).length
                     const skippedCount = Object.values(skipped).filter(Boolean).length
                     const customCompleted = (r as any).custom_steps_completed || {}
                     const customDoneCount = Object.values(customCompleted).filter(Boolean).length
@@ -3630,7 +3669,7 @@ export default function AdminOnboarding() {
             <h3>{selectedRecord.firstname} {selectedRecord.surname}</h3>
             <p>{selectedRecord.job_title} · Starting {selectedRecord.start_date ? new Date(selectedRecord.start_date).toLocaleDateString('en-GB') : 'TBC'}</p>
           </div>
-          {features.inflowonboarder_integration && ifoConnected && m365Actions && (
+          {features.inflowonboarder_integration && ifoConnected && m365Actions && identityProvider !== 'google_workspace' && (
             <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: '14px 16px', margin: '0 0 16px', background: 'linear-gradient(135deg, rgba(232,242,255,.6), rgba(227,242,253,.4))' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 16 }}>⚡</span>
@@ -3713,7 +3752,12 @@ export default function AdminOnboarding() {
                           </div>
                         )}
 
-                        {step.step_key === 'accounts' && features.inflowonboarder_integration && ifoConnected && selectedRecord && !done && (
+                        {step.step_key === 'accounts' && identityProvider === 'google_workspace' && !done && (
+                          <div style={{ border: '1px solid #e0e0e0', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: '#f5f5f5' }}>
+                            <p style={{ margin: 0, fontSize: 13, color: '#666' }}>M365 provisioning is not available for Google Workspace companies. Create accounts manually.</p>
+                          </div>
+                        )}
+                        {step.step_key === 'accounts' && features.inflowonboarder_integration && ifoConnected && selectedRecord && !done && identityProvider !== 'google_workspace' && (
                           <div style={{ border: '1px solid #90caf9', borderRadius: 10, padding: 16, marginTop: 12, marginBottom: 8, background: 'rgba(232,242,255,.5)' }} onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                               <svg width="20" height="20" viewBox="0 0 512 512"><rect width="512" height="512" rx="64" fill="#0078D4"/><circle cx="256" cy="256" r="100" fill="none" stroke="#fff" strokeWidth="32"/><circle cx="256" cy="256" r="16" fill="#fff"/></svg>
@@ -3757,7 +3801,7 @@ export default function AdminOnboarding() {
                                     </button>
                                   </div>
                                 )}
-                                {m365ActiveProvisionCount > 0 && (
+                                {m365ActiveProvisionCount > 0 && !skipLicence && (
                                   <div style={{ marginBottom: 10, padding: 10, background: '#fff3e0', borderRadius: 8, border: '1px solid #ffe0b2' }}>
                                     <p style={{ margin: 0, fontSize: 12, color: '#e65100', fontWeight: 600 }}>
                                       {m365ActiveProvisionCount} other joiner{m365ActiveProvisionCount > 1 ? 's' : ''} {m365ActiveProvisionCount > 1 ? 'have' : 'has'} M365 provisioning in progress
@@ -3980,8 +4024,14 @@ export default function AdminOnboarding() {
                               </div>
                             )}
 
+                            {/* Licence assignment skipped notice */}
+                            {skipLicence && !m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && (m365Actions?.run_status === 'checking_licence' || m365Actions?.run_status === 'licence_unavailable') && (
+                              <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, fontSize: 13, color: '#6d4c00' }}>
+                                Licence assignment skipped per company settings.
+                              </div>
+                            )}
                             {/* Checking licence (or unknown status with a run_id) — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && (m365Actions?.run_status === 'checking_licence' || (m365Actions?.run_id && !m365Actions?.run_status)) && (
+                            {!skipLicence && !m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && (m365Actions?.run_status === 'checking_licence' || (m365Actions?.run_id && !m365Actions?.run_status)) && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                   <span style={{ fontSize: 13, color: '#1976d2' }}>Checking licence availability...</span>
@@ -3994,7 +4044,7 @@ export default function AdminOnboarding() {
                             )}
 
                             {/* Licence unavailable — hide if schedule path active */}
-                            {!m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'licence_unavailable' && (
+                            {!skipLicence && !m365Actions?.is_v1_legacy && !m365Actions?.schedule_id && !m365Actions?.schedule_status && m365Actions?.run_status === 'licence_unavailable' && (
                               <div style={{ marginBottom: 12 }}>
                                 <div style={{ background: 'rgba(255,248,225,.5)', border: '1px solid #ffe0b2', borderRadius: 6, padding: 10, marginBottom: 8 }}>
                                   <p style={{ margin: 0, fontSize: 13, color: '#e65100', fontWeight: 600 }}>No licence seats available</p>
@@ -4523,7 +4573,7 @@ export default function AdminOnboarding() {
               <h3>{record.employee_name}</h3>
               <p>{record.job_title} · Last day {record.end_date ? new Date(record.end_date).toLocaleDateString('en-GB') : 'TBC'}</p>
             </div>
-            {features.inflowonboarder_integration && ifoConnected && leaverM365Actions && (
+            {features.inflowonboarder_integration && ifoConnected && leaverM365Actions && identityProvider !== 'google_workspace' && (
               <div style={{ border: '1px solid #ef9a9a', borderRadius: 10, padding: '14px 16px', margin: '0 0 16px', background: 'linear-gradient(135deg, rgba(255,235,238,.6), rgba(252,228,236,.4))' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <span style={{ fontSize: 16 }}>⚡</span>
@@ -4628,8 +4678,14 @@ export default function AdminOnboarding() {
                             )
                           })()}
 
+                          {/* Google Workspace note for remove_accounts */}
+                          {step.key === 'remove_accounts' && identityProvider === 'google_workspace' && !done && !skipped && (
+                            <div style={{ margin: '12px 0', padding: 14, background: '#f5f5f5', borderRadius: 10, border: '1px solid #e0e0e0' }}>
+                              <p style={{ margin: 0, fontSize: 13, color: '#666' }}>M365 provisioning is not available for Google Workspace companies. Create accounts manually.</p>
+                            </div>
+                          )}
                           {/* M365 Offboarding panel (InflowOnboarder leaver) */}
-                          {step.key === 'remove_accounts' && features.inflowonboarder_integration && ifoConnected && !done && !skipped && (
+                          {step.key === 'remove_accounts' && features.inflowonboarder_integration && ifoConnected && !done && !skipped && identityProvider !== 'google_workspace' && (
                             <div style={{ margin: '12px 0', padding: 14, background: 'rgba(0,120,212,.06)', borderRadius: 10, border: '1px solid rgba(0,120,212,.15)' }} onClick={e => e.stopPropagation()}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0078D4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -5525,13 +5581,16 @@ export default function AdminOnboarding() {
                     </div>
                     <button className="admin-btn-sm" onClick={() => { setMoverSelectedEmployee(null); setMoverEmployeeSearch(''); setMoverForm({}) }}>Clear</button>
                   </div>
-                  <div style={{ fontSize: 13 }}>
-                    Current Persona: <span style={{ fontWeight: 600, color: ENGINE_PERSONA_COLORS[moverSelectedEmployee.persona || 'information-worker']?.color || '#333' }}>
-                      {enginePersonas.find(ep => ep.id === (moverSelectedEmployee.persona || 'information-worker'))?.name || moverSelectedEmployee.persona || 'Information worker'}
-                    </span>
-                  </div>
+                  {identityProvider !== 'google_workspace' && (
+                    <div style={{ fontSize: 13 }}>
+                      Current Persona: <span style={{ fontWeight: 600, color: ENGINE_PERSONA_COLORS[moverSelectedEmployee.persona || 'information-worker']?.color || '#333' }}>
+                        {enginePersonas.find(ep => ep.id === (moverSelectedEmployee.persona || 'information-worker'))?.name || moverSelectedEmployee.persona || 'Information worker'}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
+                {identityProvider !== 'google_workspace' && (
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>New Persona</label>
                   {!moverSelectedEmployee.has_company_device ? (
@@ -5586,6 +5645,7 @@ export default function AdminOnboarding() {
                     </div>
                   )}
                 </div>
+                )}
 
                 <div className="admin-form-grid" style={{ marginBottom: 16 }}>
                   <div>
@@ -5936,7 +5996,11 @@ export default function AdminOnboarding() {
                   <div style={{ padding: '10px 14px', background: '#f5f5f5', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
                     <strong>Employee:</strong> {rc.employee_name || '—'} · <strong>UPN:</strong> {rc.employee_email || '—'}
                   </div>
-                  {features.inflowonboarder_integration && ifoConnected ? (
+                  {identityProvider === 'google_workspace' ? (
+                    <div style={{ padding: '12px 16px', background: '#f5f5f5', borderRadius: 8, fontSize: 13, color: '#666' }}>
+                      M365 provisioning is not available for Google Workspace companies. Create accounts manually.
+                    </div>
+                  ) : features.inflowonboarder_integration && ifoConnected ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                       {/* ── M365 Mover Run (profile, manager, groups, licence) ── */}
                       {(() => {
