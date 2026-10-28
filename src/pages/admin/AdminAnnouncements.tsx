@@ -32,7 +32,7 @@ type FilterKey = 'all' | 'company_wide' | 'department' | 'private'
 
 export default function AdminAnnouncements() {
   const { selectedCompanyId } = useAdminCompany()
-  const { employee } = useAuth()
+  const { employeeId } = useAuth()
   const { showError, showSuccess } = useToast()
   const [items, setItems] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
@@ -91,7 +91,7 @@ export default function AdminAnnouncements() {
       is_pinned: createForm.is_pinned,
       expires_at: createForm.expires_at || null,
       company_id: selectedCompanyId,
-      author_id: employee?.id || null,
+      author_id: employeeId || null,
       target_departments: createForm.target_departments.length > 0 ? createForm.target_departments : null,
       published_at: new Date().toISOString(),
     })
