@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { toLocalDateStr } from './formatters'
 
 export async function getManagerEmail(employeeId: string | null, fallbackEmail: string, scope?: 'leave' | 'expenses' | 'timesheets'): Promise<string> {
   if (!employeeId) return fallbackEmail
@@ -10,7 +11,7 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
   if (!emp) return fallbackEmail
 
   let managerEmail: string | null = null
-  let managerId: string | null = null
+  let managerId: string | null = emp.manager_id || null
 
   // Priority 1: manager_email text field (explicitly set by admin)
   if (emp.manager_email) {
@@ -30,7 +31,6 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
 
   // Priority 2: manager_id FK — look up that employee's email (skip inactive/frozen)
   if (!managerEmail && emp.manager_id) {
-    managerId = emp.manager_id
     const { data: mgr } = await supabase
       .from('employees')
       .select('email, is_active')
@@ -65,7 +65,7 @@ export async function getManagerEmail(employeeId: string | null, fallbackEmail: 
 
   // Check for active approval delegation covering today
   if (scope && emp.company_id && managerId) {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = toLocalDateStr()
     const { data: delegation } = await supabase
       .from('approval_delegations')
       .select('delegate_id, scope')

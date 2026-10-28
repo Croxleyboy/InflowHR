@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
-import { toLocalDateStr } from '../lib/formatters'
+import { toLocalDateStr, formatDate } from '../lib/formatters'
 import { useUserPreferences } from '../hooks/useUserPreferences'
 
 interface DirectoryEntry {
@@ -56,7 +56,7 @@ export default function Directory() {
   const [presenceStale, setPresenceStale] = useState(false)
   const presenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const presenceFailCount = useRef(0)
-  const [delegationMap, setDelegationMap] = useState<Record<string, string>>({})
+  const [delegationMap, setDelegationMap] = useState<Record<string, { name: string; start: string; end: string }>>({})
 
   const fetchData = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -107,7 +107,7 @@ export default function Directory() {
     setOnLeaveIds(leaveSet)
 
     const { data: delRows } = await supabase.from('approval_delegations')
-      .select('delegator_id, delegate_id')
+      .select('delegator_id, delegate_id, start_date, end_date')
       .eq('company_id', companyUser.company_id)
       .eq('is_active', true)
       .lte('start_date', today)
@@ -119,9 +119,9 @@ export default function Directory() {
         .in('id', delegateIds)
       const nameMap: Record<string, string> = {}
       ;(delegateEmps || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
-      const dMap: Record<string, string> = {}
+      const dMap: Record<string, { name: string; start: string; end: string }> = {}
       delRows.forEach((d: any) => {
-        if (nameMap[d.delegate_id]) dMap[d.delegator_id] = nameMap[d.delegate_id]
+        if (nameMap[d.delegate_id]) dMap[d.delegator_id] = { name: nameMap[d.delegate_id], start: d.start_date, end: d.end_date }
       })
       setDelegationMap(dMap)
     } else {
@@ -425,7 +425,7 @@ export default function Directory() {
               </span>
               {entry.employee_uuid && delegationMap[entry.employee_uuid] && (
                 <span style={{ display: 'block', marginTop: 6, fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 8, background: '#e8eaf6', color: '#283593', textAlign: 'center' }}>
-                  Approvals delegated to {delegationMap[entry.employee_uuid]}
+                  Approvals delegated to {delegationMap[entry.employee_uuid].name} ({formatDate(delegationMap[entry.employee_uuid].start)} – {formatDate(delegationMap[entry.employee_uuid].end)})
                 </span>
               )}
             </div>
