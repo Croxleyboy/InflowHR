@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 import { useFeatures } from '../context/FeatureContext'
-import { toLocalDateStr, formatDate } from '../lib/formatters'
+import { toLocalDateStr } from '../lib/formatters'
 import { useUserPreferences } from '../hooks/useUserPreferences'
 
 interface DirectoryEntry {

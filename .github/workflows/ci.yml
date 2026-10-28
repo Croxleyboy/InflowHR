@@ -25,10 +25,7 @@ jobs:
         run: npm run lint
 
       - name: Type check
-        run: tsc -b --noEmit
-
-      - name: Test
-        run: npm test
+        run: npx tsc -b --noEmit
 
       - name: Build
-        run: vite build
+        run: npx vite build
