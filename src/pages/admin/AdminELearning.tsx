@@ -136,6 +136,7 @@ export default function AdminELearning() {
     ? [
         { key: 'courses', label: 'Core Courses', show: true },
         { key: 'visibility', label: 'Company Visibility', show: true },
+        { key: 'new_starter', label: 'New Starter Course', show: !!selectedCompanyId },
       ]
     : [
         { key: 'library', label: 'Course Library', show: true },
@@ -196,7 +197,7 @@ export default function AdminELearning() {
       {tab === 'company_courses' && !isSuperAdmin && (
         <CompanyCourseTab companyId={selectedCompanyId} showError={showError} showSuccess={showSuccess} />
       )}
-      {tab === 'new_starter' && !isSuperAdmin && (
+      {tab === 'new_starter' && selectedCompanyId && (
         <NewStarterCourseTab companyId={selectedCompanyId} showError={showError} showSuccess={showSuccess} />
       )}
       {tab === 'analytics' && !isSuperAdmin && (
