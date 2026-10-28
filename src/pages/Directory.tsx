@@ -56,6 +56,7 @@ export default function Directory() {
   const [presenceStale, setPresenceStale] = useState(false)
   const presenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const presenceFailCount = useRef(0)
+  const [delegationMap, setDelegationMap] = useState<Record<string, string>>({})
 
   const fetchData = useCallback(async () => {
     if (!companyUser?.company_id) return
@@ -104,6 +105,28 @@ export default function Directory() {
     const leaveSet = new Set<string>()
     ;(leaveRes.data || []).forEach((r: any) => leaveSet.add(r.employee_id))
     setOnLeaveIds(leaveSet)
+
+    const { data: delRows } = await supabase.from('approval_delegations')
+      .select('delegator_id, delegate_id')
+      .eq('company_id', companyUser.company_id)
+      .eq('is_active', true)
+      .lte('start_date', today)
+      .gte('end_date', today)
+    if (delRows && delRows.length > 0) {
+      const delegateIds = [...new Set(delRows.map((d: any) => d.delegate_id))]
+      const { data: delegateEmps } = await supabase.from('employees')
+        .select('id, first_name, last_name')
+        .in('id', delegateIds)
+      const nameMap: Record<string, string> = {}
+      ;(delegateEmps || []).forEach((e: any) => { nameMap[e.id] = `${e.first_name} ${e.last_name}` })
+      const dMap: Record<string, string> = {}
+      delRows.forEach((d: any) => {
+        if (nameMap[d.delegate_id]) dMap[d.delegator_id] = nameMap[d.delegate_id]
+      })
+      setDelegationMap(dMap)
+    } else {
+      setDelegationMap({})
+    }
 
     setLoading(false)
   }, [companyUser?.company_id])
@@ -400,6 +423,11 @@ export default function Directory() {
               <span className="directory-card-dept">
                 <strong>{t('directory.dept')}</strong> {entry.department || ''}
               </span>
+              {entry.employee_uuid && delegationMap[entry.employee_uuid] && (
+                <span style={{ display: 'block', marginTop: 6, fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 8, background: '#e8eaf6', color: '#283593', textAlign: 'center' }}>
+                  Approvals delegated to {delegationMap[entry.employee_uuid]}
+                </span>
+              )}
             </div>
           </div>
         ))}

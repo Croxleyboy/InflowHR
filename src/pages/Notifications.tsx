@@ -889,6 +889,14 @@ export default function Notifications() {
       setConflictActionItem(item)
       return
     }
+    if (item.record_type === 'Delegation') {
+      supabase.from('workflow_tracker').update({ status: 'Complete', approval_status: 'Acknowledged' }).eq('id', item.id).eq('company_id', companyUser?.company_id).then(() => {
+        window.dispatchEvent(new Event('notifications-updated'))
+      })
+      setActions(prev => prev.filter(a => a.id !== item.id))
+      navigate('/settings')
+      return
+    }
     if (item.record_type === 'Meeting') {
       if (item.approval_id) {
         navigate(`/one-to-ones/${item.approval_id}`)

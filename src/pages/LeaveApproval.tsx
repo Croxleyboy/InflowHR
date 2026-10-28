@@ -206,6 +206,38 @@ export default function LeaveApproval() {
     })
     if (errWf3) { showError('Failed to create manager notification: ' + errWf3.message) }
 
+    if (approved && companyUser?.company_id) {
+      const { count: reportCount } = await supabase.from('employees')
+        .select('id', { count: 'exact', head: true })
+        .eq('manager_id', request.employee_id)
+        .eq('company_id', companyUser.company_id)
+        .eq('is_active', true)
+      if (reportCount && reportCount > 0) {
+        const { count: existingDel } = await supabase.from('approval_delegations')
+          .select('id', { count: 'exact', head: true })
+          .eq('delegator_id', request.employee_id)
+          .eq('company_id', companyUser.company_id)
+          .eq('is_active', true)
+          .gte('end_date', request.start_date)
+          .lte('start_date', request.end_date)
+        if (!existingDel || existingDel === 0) {
+          await supabase.from('workflow_tracker').insert({
+            emp_display_name: empName,
+            step: 1,
+            status: 'Pending',
+            record_type: 'Delegation',
+            action: 'Set up approval delegation while on leave',
+            employee_email: employee.email,
+            assigned_to: employee.email,
+            approval_id: request.id,
+            reminder_count: 0,
+            task_description: `Your leave from ${formatDate(request.start_date)} to ${formatDate(request.end_date)} has been approved. As a manager, please delegate your approval responsibilities while you are away.`,
+            company_id: companyUser.company_id,
+          })
+        }
+      }
+    }
+
     if (approved && shiftConflicts.length > 0 && companyUser?.company_id) {
       const conflictDates = shiftConflicts.map(c => `${new Date(c.date + 'T00:00:00').toLocaleDateString('en-GB')} (${c.shiftName} ${c.startTime}–${c.endTime})`).join(', ')
       await supabase.from('workflow_tracker').insert({
