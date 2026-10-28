@@ -381,6 +381,19 @@ export default function Notifications() {
       }
     }
 
+    const leaveConflictActions = allActions.filter(a => (a.record_type === 'Leave' || a.record_type === 'Conflict') && a.approval_id)
+    if (leaveConflictActions.length > 0) {
+      const leaveIds = [...new Set(leaveConflictActions.map(a => a.approval_id as number))]
+      const { data: existingLeaves } = await supabase.from('leave_requests').select('id').in('id', leaveIds).eq('company_id', companyId)
+      const validIds = new Set((existingLeaves || []).map((l: any) => l.id))
+      allActions = allActions.filter(a => {
+        if ((a.record_type === 'Leave' || a.record_type === 'Conflict') && a.approval_id) {
+          return validIds.has(a.approval_id)
+        }
+        return true
+      })
+    }
+
     setActions(allActions)
     if (notifsRes.data) setMyNotifs(notifsRes.data as WorkflowItem[])
     if (announcementsRes.data) setAnnouncements(announcementsRes.data as Announcement[])

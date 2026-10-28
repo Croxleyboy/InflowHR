@@ -38,6 +38,7 @@ interface DashTask {
   action: string
   task_description: string | null
   approval_status: string | null
+  approval_id: number | null
   created_at: string
   delegated_for?: string
 }
@@ -623,7 +624,7 @@ export default function Dashboard() {
 
       ;(async () => {
         const myTasks = await supabase.from('workflow_tracker')
-          .select('id, record_type, action, task_description, approval_status, created_at')
+          .select('id, record_type, action, task_description, approval_status, approval_id, created_at')
           .ilike('assigned_to', `%${employeeEmail}%`)
           .eq('status', 'Pending')
           .eq('company_id', companyUser.company_id)
@@ -641,7 +642,7 @@ export default function Dashboard() {
             for (const del of delegators) {
               if (tasks.length >= 3) break
               const { data: delTasks } = await supabase.from('workflow_tracker')
-                .select('id, record_type, action, task_description, approval_status, created_at')
+                .select('id, record_type, action, task_description, approval_status, approval_id, created_at')
                 .ilike('assigned_to', `%${del.email}%`)
                 .eq('status', 'Pending')
                 .eq('company_id', companyUser.company_id)
@@ -658,7 +659,19 @@ export default function Dashboard() {
             }
           }
         }
-        setLatestTasks(tasks)
+        const leaveConflictTasks = tasks.filter((t: any) => (t.record_type === 'Leave' || t.record_type === 'Conflict') && t.approval_id)
+        if (leaveConflictTasks.length > 0) {
+          const leaveIds = [...new Set(leaveConflictTasks.map((t: any) => t.approval_id as number))]
+          const { data: existingLeaves } = await supabase.from('leave_requests').select('id').in('id', leaveIds).eq('company_id', companyUser.company_id)
+          const validIds = new Set((existingLeaves || []).map((l: any) => l.id))
+          const filtered = tasks.filter((t: any) => {
+            if ((t.record_type === 'Leave' || t.record_type === 'Conflict') && t.approval_id) return validIds.has(t.approval_id)
+            return true
+          })
+          setLatestTasks(filtered)
+        } else {
+          setLatestTasks(tasks)
+        }
       })()
 
       const todayDate = toLocalDateStr()

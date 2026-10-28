@@ -215,6 +215,8 @@ export default function Settings() {
       if (inRes.data) setDelegationsIn(inRes.data as typeof delegationsIn)
       const hasReports = (byIdRes.data && byIdRes.data.length > 0) || (byEmailRes.data && byEmailRes.data.length > 0)
       setIsManager(!!hasReports)
+      const hasActive = (outRes.data as typeof delegationsOut)?.some(d => d.is_active) || (inRes.data as typeof delegationsIn)?.some(d => d.is_active)
+      if (hasActive) setDelegationsOpen(true)
       setDelegationsLoading(false)
     })
   }, [companyUser?.employee_id, companyUser?.company_id, employeeEmail])

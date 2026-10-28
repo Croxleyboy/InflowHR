@@ -279,16 +279,20 @@ export default function LeaveApproval() {
     if (!request) return
     if (!confirm(`Delete this leave request? This cannot be undone.`)) return
     setDeleting(true)
-    const { error } = await supabase.from('workflow_tracker').delete().eq('record_type', 'Leave').eq('approval_id', request.id).eq('company_id', companyUser?.company_id)
-    if (error) { showError('Failed to delete workflow entries: ' + error.message); setDeleting(false); return }
+    await supabase.from('workflow_tracker').delete().in('record_type', ['Leave', 'Conflict']).eq('approval_id', request.id).eq('company_id', companyUser?.company_id)
     const { error: error2 } = await supabase.from('leave_requests').delete().eq('id', request.id).eq('company_id', companyUser?.company_id)
     if (error2) { showError('Failed to delete leave request: ' + error2.message); setDeleting(false); return }
+    showSuccess('Leave request deleted')
     window.dispatchEvent(new Event('notifications-updated'))
     navigate('/notifications')
   }
 
   if (loading) return <div className="feature-page"><p className="claims-empty">{t('common.loading')}</p></div>
-  if (!request) return <div className="feature-page"><p className="claims-empty">{t('approval.request_not_found')}</p></div>
+  if (!request) {
+    showError(t('approval.request_not_found'))
+    navigate('/notifications')
+    return null
+  }
 
   const isActionable = request.status === 'pending'
 
