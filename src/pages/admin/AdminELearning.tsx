@@ -1218,7 +1218,7 @@ function NewStarterCourseTab({ companyId, showError, showSuccess }: { companyId:
                   </option>
                 ))}
               </select>
-              <button className="ts-btn ts-btn-sm" onClick={createNewStarterCourse} disabled={saving} title="Create a pre-configured new starter induction course">
+              <button className="ts-btn ts-btn-sm" style={{ background: 'var(--ts-color-primary, #4f46e5)', color: '#fff', border: 'none' }} onClick={createNewStarterCourse} disabled={saving} title="Create a pre-configured new starter induction course">
                 + Create Default Course
               </button>
             </div>
