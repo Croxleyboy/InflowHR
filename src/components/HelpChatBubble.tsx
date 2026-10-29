@@ -361,8 +361,8 @@ function renderMarkdown(text: string): string {
 export default function HelpChatBubble() {
   const { features } = useFeatures()
   const { employeeId, employeeName, companyUser, company, session } = useAuth()
-  const { t } = useLanguage()
-  const { dark } = useTheme()
+  useLanguage()
+  useTheme()
   const location = useLocation()
 
   const [isOpen, setIsOpen] = useState(false)
